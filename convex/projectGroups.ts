@@ -44,6 +44,17 @@ export const listByProject = query({
   },
 });
 
+export const listByCategoryId = query({
+  args: { categoryId: v.string() },
+  handler: async (ctx, { categoryId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("projectGroups")
+      .withIndex("by_categoryId", (q) => q.eq("categoryId", categoryId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

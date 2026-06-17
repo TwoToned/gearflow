@@ -26,15 +26,12 @@
  *     still called once so totals reflect any category-scoped surcharges.
  */
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorProjectCategoryCreate,
-  syncProjectGroupsToConvex,
-} from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import {
   buildLineItemAttachMaps,
@@ -54,21 +51,16 @@ import {
   type ReorderMixedGroupsInCategoryInput,
   type CreateCategoryAndPlaceGroupInput,
 } from "@/lib/validations/category-slot";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 // ── Reads ───────────────────────────────────────────────────────────────────
 
 /**
  * Sub-hire groups with no category placement (`targetCategoryId IS NULL`).
- * Mirrors `getUncategorizedLineItems` in project-categories.ts so the
- * equipment tab can render both in the same "uncategorised" zone.
  */
 export async function getUncategorizedSubHireGroups(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  // Mirrors the lineItem include used by getProjectCategories so the
-  // equipment tab can render orphan sub-hire groups with full child
-  // expansion without an additional query.
-  // model + supplier are dual-written to Convex — attached in JS below, not
-  // joined here. See src/lib/line-item-tree-read.ts (Phase 6 decommission).
   const lineItemInclude = {
     asset: true,
     bulkAsset: true,
@@ -118,69 +110,63 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
 }
 
 /**
- * Project groups with no category placement (`categoryId IS NULL`).
- * Mirrors `getUncategorizedSubHireGroups` so the equipment tab can
- * render orphan project groups in the same Uncategorized zone — both
- * group kinds and standalone uncategorised line items now live there
- * together.
- *
- * Available since v0.9.4.0 when `ProjectGroup.categoryId` became
- * nullable. Includes line items so each row can expand its members
- * without an additional query (matches the include shape used by
- * `getProjectCategories` for categorised groups).
+ * Project groups with no category placement (`categoryId` absent/null in Convex).
  */
 export async function getUncategorizedProjectGroups(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  // model + supplier are dual-written to Convex — attached in JS below.
-  const groups = await prisma.projectGroup.findMany({
-    where: {
-      categoryId: null,
-      projectId,
-      organizationId,
+  const client = await getConvexClient();
+
+  const allGroups = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
+  const uncategorized = allGroups
+    .filter((g) => !g.categoryId)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+  if (uncategorized.length === 0) return serialize([]);
+
+  const groupIds = uncategorized.map((g) => g.id);
+  const lineItemInclude = {
+    asset: true,
+    bulkAsset: true,
+    kit: true,
+    childLineItems: {
+      include: { asset: true, bulkAsset: true, kit: true },
+      orderBy: { sortOrder: "asc" as const },
     },
-    include: {
-      lineItems: {
-        include: {
-          asset: true,
-          bulkAsset: true,
-          kit: true,
-          childLineItems: {
-            include: {
-              asset: true,
-              bulkAsset: true,
-              kit: true,
-            },
-            orderBy: { sortOrder: "asc" as const },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  };
+  const allLineItems = await prisma.projectLineItem.findMany({
+    where: { groupId: { in: groupIds }, isKitChild: false, parentLineItemId: null },
+    include: lineItemInclude,
     orderBy: { sortOrder: "asc" },
   });
+
+  const lineItemsByGroupId = new Map<string, typeof allLineItems[number][]>();
+  for (const li of allLineItems) {
+    if (li.groupId) {
+      const arr = lineItemsByGroupId.get(li.groupId) ?? [];
+      arr.push(li);
+      lineItemsByGroupId.set(li.groupId, arr);
+    }
+  }
+
   const attachMaps = await buildLineItemAttachMaps(organizationId);
-  const attached = groups.map((g) => ({
+  const attached = uncategorized.map((g) => ({
     ...g,
-    lineItems: attachLineItemTree(g.lineItems, attachMaps),
+    price: g.price ?? null,
+    suggestedPrice: g.suggestedPrice ?? null,
+    rentalPeriod: g.rentalPeriod ?? null,
+    rentalQuantity: g.rentalQuantity ?? null,
+    createdAt: new Date(g.createdAt ?? 0),
+    updatedAt: new Date(g.updatedAt ?? 0),
+    lineItems: attachLineItemTree(lineItemsByGroupId.get(g.id) ?? [], attachMaps),
   }));
+
   return serialize(attached);
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────
 
 /**
- * Move a sub-hire group between categories (or to uncategorised). Updates:
- *   - `SubHireGroup.targetCategoryId`
- *   - `categoryId` on the synthetic parent ProjectLineItem
- *   - `CategorySlot` row (created / moved / deleted as needed)
- *
- * Skips the full `syncSubHireToProject` regenerate cascade — placement is
- * metadata, not content (Finding 6.1). Calls `recalculateProjectTotals`
- * once after the write.
- *
- * Permission gate: both `project:manage_line_items` and `subHire:update`
- * — moving a sub-hire group between categories crosses both ownership
- * boundaries, so callers must hold both perms (Finding 5.1).
+ * Move a sub-hire group between categories (or to uncategorised).
  */
 export async function moveSubHireGroupToCategory(
   input: MoveSubHireGroupToCategoryInput,
@@ -190,11 +176,8 @@ export async function moveSubHireGroupToCategory(
     "project",
     "manage_line_items",
   );
-  // Second perm check — cross-type writes need sub-hire update too.
   await requirePermission("subHire", "update");
 
-  // Cross-org validation: the sub-hire group must belong to this org, and
-  // the destination category (if any) must also belong to this org.
   const group = await prisma.subHireGroup.findFirst({
     where: { id: parsed.groupId, subHire: { organizationId } },
     include: { subHire: { select: { id: true, projectId: true } } },
@@ -205,11 +188,9 @@ export async function moveSubHireGroupToCategory(
 
   let destCategoryId: string | null = null;
   if (parsed.categoryId) {
-    const category = await prisma.projectCategory.findFirst({
-      where: { id: parsed.categoryId, organizationId },
-      select: { id: true, projectId: true, name: true },
-    });
-    if (!category) {
+    const client = await getConvexClient();
+    const category = await client.query(api.projectCategories.getById, { id: parsed.categoryId });
+    if (!category || category.organizationId !== organizationId) {
       throw new Error("Destination category not found");
     }
     if (group.subHire.projectId && category.projectId !== group.subHire.projectId) {
@@ -218,30 +199,13 @@ export async function moveSubHireGroupToCategory(
     destCategoryId = category.id;
   }
 
-  // Run all writes in one transaction so the SubHireGroup, its synthetic
-  // parent line item, and the CategorySlot stay consistent on failure.
+  // Prisma writes: subHireGroup placement + synthetic parent line item categoryId.
+  // No advisory lock needed (CategorySlot is Convex-only now).
   await prisma.$transaction(async (tx) => {
-    // Serialize concurrent moves into the SAME destination category.
-    // Without this, two parallel moves both read max(sortOrder) and try
-    // to INSERT at sortOrder = N + 1, racing on
-    // UNIQUE(projectCategoryId, sortOrder). Mirrors the lock used by
-    // reorderMixedGroupsInCategory (Finding 7.2 / S11). Null destination
-    // (move to uncategorised) bypasses the lock since there's no slot
-    // to insert.
-    if (destCategoryId) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${destCategoryId})::bigint)`;
-    }
-
-    // 1. Update the group's placement field.
     await tx.subHireGroup.update({
       where: { id: parsed.groupId },
       data: { targetCategoryId: destCategoryId },
     });
-
-    // 2. Update the synthetic parent ProjectLineItem so the existing tab
-    //    query — which still keys on ProjectLineItem.categoryId — sees the
-    //    move immediately. Skipped if no parent exists yet (the sub-hire
-    //    may not have synced line items).
     await tx.projectLineItem.updateMany({
       where: {
         subHireGroupId: parsed.groupId,
@@ -250,28 +214,28 @@ export async function moveSubHireGroupToCategory(
       },
       data: { categoryId: destCategoryId },
     });
-
-    // 3. Delete any existing slot row for this group; if a new category
-    //    was picked, insert a fresh one at the end of that category.
-    await tx.categorySlot.deleteMany({ where: { subHireGroupId: parsed.groupId } });
-    if (destCategoryId) {
-      const lastSlot = await tx.categorySlot.findFirst({
-        where: { projectCategoryId: destCategoryId },
-        orderBy: { sortOrder: "desc" },
-        select: { sortOrder: true },
-      });
-      await tx.categorySlot.create({
-        data: {
-          projectCategoryId: destCategoryId,
-          subHireGroupId: parsed.groupId,
-          sortOrder: (lastSlot?.sortOrder ?? -1) + 1,
-        },
-      });
-    }
   });
 
-  // Mirror the sub-hire group's targetCategoryId move + the synthetic parent
-  // line item's categoryId to Convex.
+  // Convex CategorySlot writes.
+  const client = await getConvexClient();
+  const existingSlots = await client.query(api.categorySlots.listBySubHireGroupId, { subHireGroupId: parsed.groupId });
+  for (const slot of existingSlots) {
+    await client.mutation(api.categorySlots.remove, { id: slot.id });
+  }
+  if (destCategoryId) {
+    const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: destCategoryId });
+    const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+    const now = Date.now();
+    await client.mutation(api.categorySlots.create, {
+      id: createId(),
+      projectCategoryId: destCategoryId,
+      subHireGroupId: parsed.groupId,
+      sortOrder: maxSort + 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
   await syncSubHireToConvex(group.subHire.id);
   if (group.subHire.projectId) {
     await upsertProjectLineItemsToConvex(group.subHire.projectId);
@@ -296,28 +260,6 @@ export async function moveSubHireGroupToCategory(
 /**
  * Move a ProjectGroup to a different ProjectCategory, or to the
  * Uncategorized zone when `categoryId` is null.
- *
- * Updates three things in one transaction:
- *   - `ProjectGroup.categoryId` — the canonical placement (now nullable
- *     since v0.9.4.0).
- *   - `ProjectLineItem.categoryId` for every item in the group — keeps
- *     line-item category in sync so any filter that scopes by category
- *     (PDFs, reports) sees the move.
- *   - `CategorySlot` row — when destination is a category, append at
- *     the end of its slot list so the unified mixed-group order stays
- *     consistent with sub-hire groups already living there. When the
- *     destination is null, the slot is deleted and not recreated
- *     (mirrors the sub-hire move flow).
- *
- * Concurrency: the same `pg_advisory_xact_lock` keyed on destination
- * categoryId that protects sub-hire moves (Finding 7.2 / S11). Two
- * parallel moves of the same group would otherwise race on
- * `UNIQUE(projectCategoryId, sortOrder)` when inserting their CategorySlot.
- * Null destination (move to uncategorised) bypasses the lock — no slot
- * gets inserted, so there's nothing to race on.
- *
- * Permission gate: only `project:manage_line_items` (no sub-hire perm
- * needed — this action never touches sub-hire data).
  */
 export async function moveProjectGroupToCategory(
   input: MoveProjectGroupToCategoryInput,
@@ -328,25 +270,17 @@ export async function moveProjectGroupToCategory(
     "manage_line_items",
   );
 
-  // Cross-org / cross-project validation: the group must belong to
-  // this org, and if a destination category was supplied it must too,
-  // in the same project.
-  const group = await prisma.projectGroup.findFirst({
-    where: { id: parsed.groupId, organizationId },
-    select: { id: true, projectId: true, categoryId: true, title: true },
-  });
-  if (!group) {
+  const client = await getConvexClient();
+  const group = await client.query(api.projectGroups.getById, { id: parsed.groupId });
+  if (!group || group.organizationId !== organizationId) {
     throw new Error("Project group not found");
   }
 
   let destCategoryId: string | null = null;
   let destCategoryName: string | null = null;
   if (parsed.categoryId) {
-    const category = await prisma.projectCategory.findFirst({
-      where: { id: parsed.categoryId, organizationId },
-      select: { id: true, projectId: true, name: true },
-    });
-    if (!category) {
+    const category = await client.query(api.projectCategories.getById, { id: parsed.categoryId });
+    if (!category || category.organizationId !== organizationId) {
       throw new Error("Destination category not found");
     }
     if (category.projectId !== group.projectId) {
@@ -356,63 +290,41 @@ export async function moveProjectGroupToCategory(
     destCategoryName = category.name;
   }
 
-  // No-op fast path — saves a transaction round-trip when the user
-  // picks the same category the group is already in (e.g. accidental
-  // double-confirm in the move dialog).
-  if (group.categoryId === destCategoryId) {
+  // No-op fast path.
+  if ((group.categoryId ?? null) === destCategoryId) {
     return serialize({ success: true, noop: true });
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Serialize concurrent moves into the same destination category.
-    // Skip the lock for null destinations — without a slot insert,
-    // there is no UNIQUE constraint to race on.
-    if (destCategoryId) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${destCategoryId})::bigint)`;
-    }
-
-    // 1. Move the group itself.
-    await tx.projectGroup.update({
-      where: { id: parsed.groupId },
-      data: { categoryId: destCategoryId },
-    });
-
-    // 2. Keep line-item categoryId in sync. Items follow their group —
-    //    any consumer that filters by categoryId (PDFs, reports, the
-    //    Uncategorized zone query) sees the move immediately.
-    await tx.projectLineItem.updateMany({
-      where: {
-        groupId: parsed.groupId,
-        organizationId,
-      },
-      data: { categoryId: destCategoryId },
-    });
-
-    // 3. Update the CategorySlot — delete any existing slot for this
-    //    project group; if a category was chosen, insert a fresh one
-    //    at the end of its slot list. Null destination just deletes
-    //    the old slot (mirrors the sub-hire flow).
-    await tx.categorySlot.deleteMany({ where: { projectGroupId: parsed.groupId } });
-    if (destCategoryId) {
-      const lastSlot = await tx.categorySlot.findFirst({
-        where: { projectCategoryId: destCategoryId },
-        orderBy: { sortOrder: "desc" },
-        select: { sortOrder: true },
-      });
-      await tx.categorySlot.create({
-        data: {
-          projectCategoryId: destCategoryId,
-          projectGroupId: parsed.groupId,
-          sortOrder: (lastSlot?.sortOrder ?? -1) + 1,
-        },
-      });
-    }
+  // Prisma write: keep line-item categoryId in sync.
+  await prisma.projectLineItem.updateMany({
+    where: { groupId: parsed.groupId, organizationId },
+    data: { categoryId: destCategoryId },
   });
 
-  // Mirror the group's categoryId move + the line items that followed it. NB a
-  // move to Uncategorised clears categoryId→null — a no-op in Convex (documented);
-  // infra-only, tolerable.
-  await syncProjectGroupsToConvex([parsed.groupId]);
+  // Convex writes: group categoryId + slot.
+  const now = Date.now();
+  await client.mutation(api.projectGroups.update, {
+    id: parsed.groupId,
+    patch: { categoryId: destCategoryId ?? undefined, updatedAt: now },
+  });
+
+  const existingSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: parsed.groupId });
+  for (const slot of existingSlots) {
+    await client.mutation(api.categorySlots.remove, { id: slot.id });
+  }
+  if (destCategoryId) {
+    const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: destCategoryId });
+    const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+    await client.mutation(api.categorySlots.create, {
+      id: createId(),
+      projectCategoryId: destCategoryId,
+      projectGroupId: parsed.groupId,
+      sortOrder: maxSort + 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
   await upsertProjectLineItemsToConvex(group.projectId);
 
   await recalculateProjectTotals(group.projectId);
@@ -436,13 +348,6 @@ export async function moveProjectGroupToCategory(
  * Reorder the mixed ProjectGroup + SubHireGroup list within a single
  * ProjectCategory. IDs are prefixed (`pg-` / `shg-`) so one ordered array
  * can address both kinds.
- *
- * Concurrency: we UPDATE rows sorted by id ASC so two concurrent reorders
- * touching overlapping IDs always acquire row locks in the same order,
- * which prevents deadlocks (Finding 7.2).
- *
- * Permission gate: both `project:manage_line_items` and `subHire:update`,
- * because a reorder can include sub-hire group rows.
  */
 export async function reorderMixedGroupsInCategory(
   input: ReorderMixedGroupsInCategoryInput,
@@ -451,19 +356,12 @@ export async function reorderMixedGroupsInCategory(
   const { organizationId } = await requirePermission("project", "manage_line_items");
   await requirePermission("subHire", "update");
 
-  const category = await prisma.projectCategory.findFirst({
-    where: { id: parsed.categoryId, organizationId },
-    select: { id: true, projectId: true },
-  });
-  if (!category) {
+  const client = await getConvexClient();
+  const category = await client.query(api.projectCategories.getById, { id: parsed.categoryId });
+  if (!category || category.organizationId !== organizationId) {
     throw new Error("Category not found");
   }
 
-  // Cross-org slot-ID validation. Every parsed pg-/shg- ID must reference
-  // a group that belongs to this org AND this project. Without this check
-  // a malicious caller could craft a payload like
-  // `orderedIds=[pg-<otherOrgGroupId>]` and reparent another org's slot
-  // under our category via the upsert path below.
   const sortedByPrefixedId = parsed.orderedIds
     .map((prefixedId, displayIndex) => ({ prefixedId, displayIndex }))
     .sort((a, b) => (a.prefixedId < b.prefixedId ? -1 : a.prefixedId > b.prefixedId ? 1 : 0));
@@ -471,25 +369,24 @@ export async function reorderMixedGroupsInCategory(
   const parsedSlots = sortedByPrefixedId
     .map(({ prefixedId }) => parseSlotId(prefixedId))
     .filter((s): s is NonNullable<typeof s> => s != null);
-  const projectGroupIds = parsedSlots
-    .filter((s) => s.kind === "projectGroup")
-    .map((s) => s.id);
-  const subHireGroupIds = parsedSlots
-    .filter((s) => s.kind === "subHireGroup")
-    .map((s) => s.id);
+  const projectGroupIds = parsedSlots.filter((s) => s.kind === "projectGroup").map((s) => s.id);
+  const subHireGroupIds = parsedSlots.filter((s) => s.kind === "subHireGroup").map((s) => s.id);
 
+  // Cross-org validation for project groups via Convex
   if (projectGroupIds.length > 0) {
-    const pgCount = await prisma.projectGroup.count({
-      where: {
-        id: { in: projectGroupIds },
-        organizationId,
-        projectId: category.projectId,
-      },
+    const allGroups = await client.query(api.projectGroups.listByProject, {
+      projectId: category.projectId,
+      orgId: organizationId,
     });
-    if (pgCount !== projectGroupIds.length) {
-      throw new Error("One or more project groups do not belong to this project");
+    const groupIdSet = new Set(allGroups.map((g) => g.id));
+    for (const id of projectGroupIds) {
+      if (!groupIdSet.has(id)) {
+        throw new Error("One or more project groups do not belong to this project");
+      }
     }
   }
+
+  // Cross-org validation for sub-hire groups via Prisma (subHireGroup stays Prisma)
   if (subHireGroupIds.length > 0) {
     const shgCount = await prisma.subHireGroup.count({
       where: {
@@ -502,66 +399,59 @@ export async function reorderMixedGroupsInCategory(
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Serialize concurrent reorders of the SAME category. UNIQUE
-    // (projectCategoryId, sortOrder) would otherwise blow up two
-    // parallel calls — they each compute their target sortOrders
-    // independently and would collide mid-flight. pg_advisory_xact_lock
-    // is per-Postgres-connection and auto-releases at COMMIT/ROLLBACK,
-    // so it scopes serialization to one category and doesn't block
-    // unrelated reorders. See Finding 7.2 in the cross-type
-    // unification plan.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${parsed.categoryId})::bigint)`;
+  // Fetch all existing slots for this category so we can upsert by group ID.
+  const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: parsed.categoryId });
+  const slotByProjectGroupId = new Map(catSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
+  const slotBySubHireGroupId = new Map(catSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
 
-    // Phase 1: free up the positive sortOrder range so the upserts
-    // below can write their target sortOrders without temporary
-    // collisions during the loop. UPDATE-all sets every existing slot
-    // in this category to a negative number that mirrors its current
-    // sortOrder — guaranteed distinct because the original sortOrders
-    // were distinct under the same UNIQUE constraint.
-    await tx.$executeRaw`
-      UPDATE category_slot
-      SET "sortOrder" = -1 - "sortOrder"
-      WHERE "projectCategoryId" = ${parsed.categoryId}
-    `;
+  const now = Date.now();
+  for (const { prefixedId, displayIndex } of sortedByPrefixedId) {
+    const parsedSlot = parseSlotId(prefixedId);
+    if (!parsedSlot) continue;
 
-    for (const { prefixedId, displayIndex } of sortedByPrefixedId) {
-      const parsedSlot = parseSlotId(prefixedId);
-      if (!parsedSlot) continue; // Zod already rejected, defensive guard.
-      const where = parsedSlot.kind === "projectGroup"
-        ? { projectGroupId: parsedSlot.id }
-        : { subHireGroupId: parsedSlot.id };
-
-      // Upsert via find+update/create — projectGroupId/subHireGroupId
-      // are unique columns, but the slot may not exist yet (legacy
-      // groups pre-CategorySlot migration). Two-step keeps it portable.
-      const existing = await tx.categorySlot.findFirst({ where });
+    if (parsedSlot.kind === "projectGroup") {
+      const existing = slotByProjectGroupId.get(parsedSlot.id);
       if (existing) {
-        await tx.categorySlot.update({
-          where: { id: existing.id },
-          data: { sortOrder: displayIndex, projectCategoryId: parsed.categoryId },
+        await client.mutation(api.categorySlots.update, {
+          id: existing.id,
+          patch: { sortOrder: displayIndex, projectCategoryId: parsed.categoryId, updatedAt: now },
         });
       } else {
-        await tx.categorySlot.create({
-          data: {
-            projectCategoryId: parsed.categoryId,
-            sortOrder: displayIndex,
-            ...where,
-          },
+        await client.mutation(api.categorySlots.create, {
+          id: createId(),
+          projectCategoryId: parsed.categoryId,
+          projectGroupId: parsedSlot.id,
+          sortOrder: displayIndex,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } else {
+      const existing = slotBySubHireGroupId.get(parsedSlot.id);
+      if (existing) {
+        await client.mutation(api.categorySlots.update, {
+          id: existing.id,
+          patch: { sortOrder: displayIndex, projectCategoryId: parsed.categoryId, updatedAt: now },
+        });
+      } else {
+        await client.mutation(api.categorySlots.create, {
+          id: createId(),
+          projectCategoryId: parsed.categoryId,
+          subHireGroupId: parsedSlot.id,
+          sortOrder: displayIndex,
+          createdAt: now,
+          updatedAt: now,
         });
       }
     }
-  });
+  }
 
   return serialize({ success: true });
 }
 
 /**
  * Atomic: create a new ProjectCategory and place a single group (project
- * or sub-hire) inside it via a fresh CategorySlot row. Used by the
- * "Create '<text>'" footer option in the move dialog's category combobox
- * (Section 8E.b) — avoids orphan-on-failure if the slot insert fails
- * after the category insert succeeded.
+ * or sub-hire) inside it via a fresh CategorySlot row.
  */
 export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceGroupInput) {
   const parsed = createCategoryAndPlaceGroupSchema.parse(input);
@@ -570,7 +460,6 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     "manage_line_items",
   );
 
-  // Project must belong to this org.
   const project = await getProjectById(parsed.projectId);
   if (!project || project.organizationId !== organizationId) {
     throw new Error("Project not found");
@@ -579,14 +468,17 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
   const projectGroupId = parsed.slot.projectGroupId ?? null;
   const subHireGroupId = parsed.slot.subHireGroupId ?? null;
 
-  // Cross-org validation on the target group too — placement crosses the
-  // group ↔ category FK, so both sides have to belong to this org.
+  const client = await getConvexClient();
+
+  // Cross-org validation on the target group.
   if (projectGroupId) {
-    const pg = await prisma.projectGroup.findFirst({
-      where: { id: projectGroupId, organizationId, projectId: parsed.projectId },
-      select: { id: true },
+    const allGroups = await client.query(api.projectGroups.listByProject, {
+      projectId: parsed.projectId,
+      orgId: organizationId,
     });
-    if (!pg) throw new Error("Project group not found in this project");
+    if (!allGroups.find((g) => g.id === projectGroupId)) {
+      throw new Error("Project group not found in this project");
+    }
   }
   if (subHireGroupId) {
     const shg = await prisma.subHireGroup.findFirst({
@@ -596,75 +488,77 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     if (!shg) throw new Error("Sub-hire group not found in this project");
   }
 
-  // New category goes to end of project's category list per Section 8E.c.
-  const result = await prisma.$transaction(async (tx) => {
-    const maxSort = await tx.projectCategory.aggregate({
-      where: { projectId: parsed.projectId, organizationId },
-      _max: { sortOrder: true },
-    });
-    const category = await tx.projectCategory.create({
-      data: {
-        organizationId,
-        projectId: parsed.projectId,
-        name: parsed.name,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      },
-    });
+  // New category goes to end of project's category list.
+  const existingCategories = await client.query(api.projectCategories.listByProject, {
+    projectId: parsed.projectId,
+    orgId: organizationId,
+  });
+  const maxSort = existingCategories.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
 
-    // Reset any existing slot for this group so we don't leak the
-    // UNIQUE(projectGroupId)/UNIQUE(subHireGroupId) constraint.
-    if (projectGroupId) {
-      await tx.categorySlot.deleteMany({ where: { projectGroupId } });
-    } else if (subHireGroupId) {
-      await tx.categorySlot.deleteMany({ where: { subHireGroupId } });
+  const categoryId = createId();
+  const now = Date.now();
+
+  // Delete any existing slot for this group so we don't leak the slot on a
+  // re-categorise after the group was already placed somewhere.
+  if (projectGroupId) {
+    const slots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId });
+    for (const slot of slots) {
+      await client.mutation(api.categorySlots.remove, { id: slot.id });
     }
-
-    await tx.categorySlot.create({
-      data: {
-        projectCategoryId: category.id,
-        sortOrder: 0,
-        projectGroupId,
-        subHireGroupId,
-      },
-    });
-
-    // Keep the group's own placement fields in sync so consumers that
-    // read SubHireGroup.targetCategoryId / ProjectGroup.categoryId
-    // directly (e.g. PDFs) see the new home.
-    if (projectGroupId) {
-      await tx.projectGroup.update({
-        where: { id: projectGroupId },
-        data: { categoryId: category.id },
-      });
-      // Mirror the sub-hire branch: keep the line items' categoryId in
-      // sync so any consumer that filters by category (PDFs, reports,
-      // the Uncategorized zone query) sees the new home.
-      await tx.projectLineItem.updateMany({
-        where: { groupId: projectGroupId, organizationId },
-        data: { categoryId: category.id },
-      });
-    } else if (subHireGroupId) {
-      await tx.subHireGroup.update({
-        where: { id: subHireGroupId },
-        data: { targetCategoryId: category.id },
-      });
-      await tx.projectLineItem.updateMany({
-        where: {
-          subHireGroupId,
-          isKitChild: false,
-          parentLineItemId: null,
-        },
-        data: { categoryId: category.id },
-      });
+  } else if (subHireGroupId) {
+    const slots = await client.query(api.categorySlots.listBySubHireGroupId, { subHireGroupId });
+    for (const slot of slots) {
+      await client.mutation(api.categorySlots.remove, { id: slot.id });
     }
+  }
 
-    return category;
+  // Create category and slot in Convex.
+  await client.mutation(api.projectCategories.create, {
+    id: categoryId,
+    organizationId,
+    projectId: parsed.projectId,
+    name: parsed.name,
+    sortOrder: maxSort + 1,
+    createdAt: now,
+    updatedAt: now,
   });
 
-  // Mirror the new category + the placed group's categoryId update + the line
-  // items that followed it to Convex.
-  await mirrorProjectCategoryCreate(result);
-  if (projectGroupId) await syncProjectGroupsToConvex([projectGroupId]);
+  await client.mutation(api.categorySlots.create, {
+    id: createId(),
+    projectCategoryId: categoryId,
+    sortOrder: 0,
+    projectGroupId: projectGroupId ?? undefined,
+    subHireGroupId: subHireGroupId ?? undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Update group placement — ProjectGroup in Convex, SubHireGroup in Prisma.
+  if (projectGroupId) {
+    await client.mutation(api.projectGroups.update, {
+      id: projectGroupId,
+      patch: { categoryId, updatedAt: now },
+    });
+    // Keep line-item categoryId in sync.
+    await prisma.projectLineItem.updateMany({
+      where: { groupId: projectGroupId, organizationId },
+      data: { categoryId },
+    });
+  } else if (subHireGroupId) {
+    await prisma.subHireGroup.update({
+      where: { id: subHireGroupId },
+      data: { targetCategoryId: categoryId },
+    });
+    await prisma.projectLineItem.updateMany({
+      where: {
+        subHireGroupId,
+        isKitChild: false,
+        parentLineItemId: null,
+      },
+      data: { categoryId },
+    });
+  }
+
   await upsertProjectLineItemsToConvex(parsed.projectId);
 
   await logActivity({
@@ -680,5 +574,13 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
 
   await recalculateProjectTotals(parsed.projectId);
 
-  return serialize(result);
+  return serialize({
+    id: categoryId,
+    organizationId,
+    projectId: parsed.projectId,
+    name: parsed.name,
+    sortOrder: maxSort + 1,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  });
 }

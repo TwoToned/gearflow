@@ -19,7 +19,6 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
-import { mirrorProjectGroupCreate, syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 
@@ -154,27 +153,22 @@ export async function saveGroupAsTemplate(
     "manage_line_items"
   );
 
-  const group = await prisma.projectGroup.findUniqueOrThrow({
-    where: { id: groupId, organizationId },
-    include: {
-      lineItems: {
-        // Only parent rows — kit children get auto-expanded on apply via
-        // addKitLineItem, so templating them again would double-count.
-        where: { isKitChild: false },
-        select: {
-          modelId: true,
-          kitId: true,
-          quantity: true,
-          sortOrder: true,
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  const client = await getConvexClient();
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group || group.organizationId !== organizationId) {
+    throw new Error("Group not found");
+  }
+
+  // Line items stay Prisma — read separately.
+  const groupLineItems = await prisma.projectLineItem.findMany({
+    where: { groupId, organizationId, isKitChild: false },
+    select: { modelId: true, kitId: true, quantity: true, sortOrder: true },
+    orderBy: { sortOrder: "asc" },
   });
 
   // Only items that reference either a model or a kit can be templated.
   // Free-text/service lines (no modelId AND no kitId) are skipped.
-  const templatable = group.lineItems.filter(
+  const templatable = groupLineItems.filter(
     (li) => li.modelId != null || li.kitId != null,
   );
   if (templatable.length === 0) {
@@ -221,7 +215,7 @@ export async function saveGroupAsTemplate(
     entityType: "group_template",
     entityId: template.id,
     entityName: name,
-    summary: `Saved group "${group.title}" as template "${name}"`,
+    summary: `Saved group "${group.title ?? groupId}" as template "${name}"`,
   });
 
   return serialize(template);
@@ -255,46 +249,66 @@ export async function applyGroupTemplate(
     model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
   }));
 
-  // Get next sort order for the group within category
-  const maxSort = await prisma.projectGroup.aggregate({
-    where: { categoryId: parsed.categoryId, organizationId },
-    _max: { sortOrder: true },
-  });
+  // Get next sort order for the group within category from Convex
+  const client = await getConvexClient();
+  const allGroups = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
+  const inBucket = allGroups.filter((g) => (g.categoryId ?? null) === (parsed.categoryId ?? null));
+  const maxSortOrder = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
 
   // Get project defaults for rental period
   const project = await getProjectById(projectId);
   if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
-  // Split items by type — model items go in the same tx as the group create,
-  // kit items get delegated to addKitLineItem *after* the tx commits so it can
-  // run its own transaction for the parent + children expansion.
+  // Split items by type — model items go in the line-item tx, kit items get
+  // delegated to addKitLineItem after the group is created.
   const modelItems = itemsWithModels.filter((i) => i.modelId && i.model);
   const kitItems = itemsWithModels.filter((i) => i.kitId && i.kit);
 
-  const group = await prisma.$transaction(async (tx) => {
-    const newGroup = await tx.projectGroup.create({
-      data: {
-        organizationId,
-        projectId,
-        categoryId: parsed.categoryId,
-        title: parsed.title,
-        description: template.description,
-        quantity: 1,
-        rentalPeriod: project.defaultRentalPeriod,
-        rentalQuantity: project.defaultRentalQuantity,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-        suggestedPrice: 0,
-      },
-    });
+  // Create the group in Convex first so it has a stable ID for line items.
+  const groupId = createId();
+  const now = Date.now();
+  const rentalPeriod = project.defaultRentalPeriod ?? undefined;
+  const rentalQuantity = project.defaultRentalQuantity ?? undefined;
+  await client.mutation(api.projectGroups.create, {
+    id: groupId,
+    organizationId,
+    projectId,
+    categoryId: parsed.categoryId || undefined,
+    title: parsed.title,
+    description: template.description || undefined,
+    quantity: 1,
+    rentalPeriod,
+    rentalQuantity,
+    sortOrder: maxSortOrder + 1,
+    suggestedPrice: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
 
-    // Start line-item sortOrder at 0 for a freshly-created group
-    let sortOrder = 0;
+  const group = {
+    id: groupId,
+    organizationId,
+    projectId,
+    categoryId: parsed.categoryId ?? null,
+    title: parsed.title,
+    description: template.description || null,
+    quantity: 1,
+    price: null as number | null,
+    suggestedPrice: 0,
+    rentalPeriod: project.defaultRentalPeriod ?? null,
+    rentalQuantity: project.defaultRentalQuantity ?? null,
+    sortOrder: maxSortOrder + 1,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  };
 
+  // Create model line items in a Prisma transaction.
+  let sortOrder = 0;
+  await prisma.$transaction(async (tx) => {
     for (const item of modelItems) {
-      const rentalPeriod =
-        newGroup.rentalPeriod ?? project.defaultRentalPeriod ?? "DAILY";
+      const period = project.defaultRentalPeriod ?? "DAILY";
       const rate =
-        rentalPeriod === "WEEKLY"
+        period === "WEEKLY"
           ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? 0)
           : Number(item.model?.dailyRate ?? 0);
 
@@ -303,7 +317,7 @@ export async function applyGroupTemplate(
           organizationId,
           projectId,
           categoryId: parsed.categoryId,
-          groupId: newGroup.id,
+          groupId,
           modelId: item.modelId!,
           description: item.model!.name,
           quantity: item.quantity,
@@ -313,11 +327,7 @@ export async function applyGroupTemplate(
         },
       });
     }
-
-    return newGroup;
   });
-  // Mirror the new project group to Convex (line items are step-4 domain).
-  await mirrorProjectGroupCreate(group);
 
   // Expand kit items outside the tx. Each call creates parent + children and
   // runs its own availability check. We skip kits that conflict (already on an
@@ -347,13 +357,12 @@ export async function applyGroupTemplate(
     }
   }
 
-  // Calculate suggested price after items are created
+  // Calculate suggested price after items are created and update in Convex.
   const suggested = await calculateSuggestedPrice(group.id);
-  await prisma.projectGroup.update({
-    where: { id: group.id },
-    data: { suggestedPrice: suggested },
+  await client.mutation(api.projectGroups.update, {
+    id: group.id,
+    patch: { suggestedPrice: suggested, updatedAt: Date.now() },
   });
-  await syncProjectGroupsToConvex([group.id]);
 
   // Kit expansion touched line items — refresh project totals.
   if (kitItems.length > 0) {

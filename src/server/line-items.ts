@@ -11,7 +11,8 @@ import {
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { patchProjectInConvex } from "@/lib/project-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
@@ -543,11 +544,11 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // Recalculate group suggested price if item was added to a group
   if (result.groupId) {
     const suggested = await calculateSuggestedPrice(result.groupId);
-    await prisma.projectGroup.update({
-      where: { id: result.groupId },
-      data: { suggestedPrice: suggested },
+    const convex = await getConvexClient();
+    await convex.mutation(api.projectGroups.update, {
+      id: result.groupId,
+      patch: { suggestedPrice: suggested, updatedAt: Date.now() },
     });
-    await syncProjectGroupsToConvex([result.groupId]);
   }
 
   await recalculateProjectTotals(projectId);

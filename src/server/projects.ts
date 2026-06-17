@@ -22,7 +22,8 @@ import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
-import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import {
@@ -735,28 +736,10 @@ export async function archiveProject(id: string) {
 export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
   const { organizationId } = await requirePermission("project", "create");
 
+  const client = await getConvexClient();
   const source = await prisma.project.findUniqueOrThrow({
     where: { id: sourceId, organizationId },
     include: {
-      categories: {
-        include: {
-          groups: {
-            include: {
-              lineItems: {
-                include: { childLineItems: true },
-                orderBy: { sortOrder: "asc" },
-              },
-            },
-            orderBy: { sortOrder: "asc" },
-          },
-          lineItems: {
-            where: { groupId: null },
-            include: { childLineItems: true },
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
       lineItems: {
         where: { isKitChild: false, categoryId: null },
         include: { childLineItems: true },
@@ -766,10 +749,50 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
     },
   });
 
-  // Mirror the duplicated grouping substructure to Convex after the tx commits
-  // (the new project + line items are step-6 / step-4 domains, not mirrored here).
-  const createdCategories: Array<Record<string, unknown>> = [];
-  const createdGroups: Array<Record<string, unknown>> = [];
+  // Read source categories/groups from Convex (Convex-only after write inversion).
+  const [sourceCategories, sourceGroups] = await Promise.all([
+    client.query(api.projectCategories.listByProject, { projectId: sourceId, orgId: organizationId }),
+    client.query(api.projectGroups.listByProject, { projectId: sourceId, orgId: organizationId }),
+  ]);
+  const sortedSourceCategories = [...sourceCategories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+  // Read all non-kit-child source line items from Prisma (line items stay Prisma).
+  type SourceLineItem = Awaited<ReturnType<typeof prisma.projectLineItem.findMany<{
+    include: { childLineItems: true }
+  }>>>[number];
+  const allSourceLineItems = await prisma.projectLineItem.findMany({
+    where: { projectId: sourceId, organizationId, isKitChild: false },
+    include: { childLineItems: true },
+    orderBy: { sortOrder: "asc" },
+  }) as SourceLineItem[];
+
+  const lineItemsByGroupId = new Map<string, SourceLineItem[]>();
+  const lineItemsByCatId = new Map<string, SourceLineItem[]>();
+  for (const li of allSourceLineItems) {
+    if (li.groupId) {
+      const arr = lineItemsByGroupId.get(li.groupId) ?? [];
+      arr.push(li);
+      lineItemsByGroupId.set(li.groupId, arr);
+    } else if (li.categoryId) {
+      const arr = lineItemsByCatId.get(li.categoryId) ?? [];
+      arr.push(li);
+      lineItemsByCatId.set(li.categoryId, arr);
+    }
+  }
+
+  // Pre-generate IDs for new categories and groups so line items can reference them
+  // inside the Prisma transaction before Convex rows are written.
+  const catIdMap = new Map(sourceCategories.map((c) => [c.id, createId()]));
+  const groupIdMap = new Map(sourceGroups.map((g) => [g.id, createId()]));
+  const groupsByCatId = new Map<string, typeof sourceGroups[number][]>();
+  for (const g of sourceGroups) {
+    if (g.categoryId) {
+      const arr = groupsByCatId.get(g.categoryId) ?? [];
+      arr.push(g);
+      groupsByCatId.set(g.categoryId, arr);
+    }
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const newProject = await tx.project.create({
@@ -811,7 +834,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
       // Helper to copy a line item and its children
       async function copyLineItem(
-        li: typeof source.lineItems[0],
+        li: SourceLineItem,
         newProjectId: string,
         newCategoryId: string | null,
         newGroupId: string | null,
@@ -875,59 +898,70 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
         }
       }
 
-      // Copy categories → groups → line items
-      for (const cat of source.categories) {
-        const newCat = await tx.projectCategory.create({
-          data: {
-            organizationId,
-            projectId: newProject.id,
-            name: cat.name,
-            sortOrder: cat.sortOrder,
-          },
-        });
-        createdCategories.push(newCat);
+      // Copy category line items using pre-generated category/group IDs.
+      // Categories and groups are Convex-only; no Prisma rows are written for them.
+      for (const cat of sortedSourceCategories) {
+        const newCatId = catIdMap.get(cat.id)!;
+        const catGroups = (groupsByCatId.get(cat.id) ?? [])
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-        for (const group of cat.groups) {
-          const newGroup = await tx.projectGroup.create({
-            data: {
-              organizationId,
-              projectId: newProject.id,
-              categoryId: newCat.id,
-              title: group.title,
-              description: group.description,
-              quantity: group.quantity,
-              price: group.price,
-              suggestedPrice: group.suggestedPrice,
-              rentalPeriod: group.rentalPeriod,
-              rentalQuantity: group.rentalQuantity,
-              sortOrder: group.sortOrder,
-            },
-          });
-          createdGroups.push(newGroup);
-
-          for (const li of group.lineItems) {
-            await copyLineItem(li, newProject.id, newCat.id, newGroup.id);
+        for (const group of catGroups) {
+          const newGroupId = groupIdMap.get(group.id)!;
+          for (const li of lineItemsByGroupId.get(group.id) ?? []) {
+            await copyLineItem(li, newProject.id, newCatId, newGroupId);
           }
         }
 
-        // Copy standalone line items in category
-        for (const li of cat.lineItems) {
-          await copyLineItem(li, newProject.id, newCat.id, null);
+        // Copy standalone line items in category (groupId=null)
+        for (const li of lineItemsByCatId.get(cat.id) ?? []) {
+          await copyLineItem(li, newProject.id, newCatId, null);
         }
       }
 
       // Copy uncategorized line items
-      for (const li of source.lineItems) {
+      const uncategorizedLineItems = allSourceLineItems.filter((li) => !li.categoryId && !li.groupId);
+      for (const li of uncategorizedLineItems) {
         await copyLineItem(li, newProject.id, null, null);
       }
 
       return newProject;
     });
 
-    // Mirror the duplicated project + categories + groups + line items to Convex.
+    // Create duplicated categories + groups in Convex. Line items were written
+    // to Prisma above using the pre-generated IDs.
+    const dupNow = Date.now();
+    for (const cat of sortedSourceCategories) {
+      await client.mutation(api.projectCategories.createIfMissing, {
+        id: catIdMap.get(cat.id)!,
+        organizationId,
+        projectId: result.id,
+        name: cat.name,
+        sortOrder: cat.sortOrder ?? 0,
+        createdAt: dupNow,
+        updatedAt: dupNow,
+      });
+    }
+    for (const group of sourceGroups) {
+      const newCatId = group.categoryId ? catIdMap.get(group.categoryId) : undefined;
+      await client.mutation(api.projectGroups.createIfMissing, {
+        id: groupIdMap.get(group.id)!,
+        organizationId,
+        projectId: result.id,
+        categoryId: newCatId,
+        title: group.title,
+        description: group.description,
+        quantity: group.quantity,
+        price: group.price ?? undefined,
+        suggestedPrice: group.suggestedPrice ?? undefined,
+        rentalPeriod: group.rentalPeriod ?? undefined,
+        rentalQuantity: group.rentalQuantity ?? undefined,
+        sortOrder: group.sortOrder ?? 0,
+        createdAt: dupNow,
+        updatedAt: dupNow,
+      });
+    }
+
     await mirrorProjectCreate(result);
-    for (const c of createdCategories) await mirrorProjectCategoryCreate(c);
-    for (const g of createdGroups) await mirrorProjectGroupCreate(g);
     await upsertProjectLineItemsToConvex(result.id);
     // The duplicate copied project managers — mirror them too.
     await syncProjectManagersToConvex(organizationId, result.id);

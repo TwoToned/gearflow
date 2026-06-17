@@ -43,14 +43,6 @@ import {
   removeProjectFromConvex,
 } from "@/lib/project-mirror";
 import {
-  mirrorProjectCategoryCreate,
-  patchProjectCategoryInConvex,
-  removeProjectCategoryFromConvex,
-  mirrorProjectGroupCreate,
-  patchProjectGroupInConvex,
-  removeProjectGroupFromConvex,
-} from "@/lib/project-grouping-mirror";
-import {
   mirrorLineItemCreate,
   patchLineItemInConvex,
   removeLineItemFromConvex,
@@ -118,8 +110,8 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   Kit: { create: mirrorKitCreate, patch: patchKitInConvex, remove: removeKitFromConvex },
   KitBulkItem: { create: mirrorKitBulkItemCreate, patch: generic(api.kitBulkItems).patch, remove: removeKitBulkItemFromConvex },
   Project: { create: mirrorProjectCreate, patch: patchProjectInConvex, remove: removeProjectFromConvex },
-  ProjectCategory: { create: mirrorProjectCategoryCreate, patch: patchProjectCategoryInConvex, remove: removeProjectCategoryFromConvex },
-  ProjectGroup: { create: mirrorProjectGroupCreate, patch: patchProjectGroupInConvex, remove: removeProjectGroupFromConvex },
+  ProjectCategory: generic(api.projectCategories),
+  ProjectGroup: generic(api.projectGroups),
   ProjectLineItem: { create: mirrorLineItemCreate, patch: patchLineItemInConvex, remove: (id) => removeLineItemFromConvex(id) },
   ProjectLineItemUnit: generic(api.projectLineItemUnits),
   CategorySlot: generic(api.categorySlots),

@@ -31,6 +31,28 @@ export const getById = query({
   },
 });
 
+export const listByProjectGroupId = query({
+  args: { projectGroupId: v.string() },
+  handler: async (ctx, { projectGroupId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
+      .collect();
+  },
+});
+
+export const listBySubHireGroupId = query({
+  args: { subHireGroupId: v.string() },
+  handler: async (ctx, { subHireGroupId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("categorySlots")
+      .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

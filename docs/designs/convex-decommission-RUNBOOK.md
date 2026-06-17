@@ -386,6 +386,43 @@ inbound FKs) → assets/bulkAssets, kits, projects, line-items, sub-hires, wareh
 (the multi-table cascade/ordering core — highest risk, do last with preview validation
 per surface).
 
+- [x] **bucket-2 notif/woo cluster (`notificationDismissal`, `userNotificationPreference`,
+      `wooCommerceOrderLog`) → Convex-only writes + reads + backfills.** DONE (branch
+      `wip/bucket2-notif-woo`, validated `tsc` clean + 2426 vitest pass + eslint clean
+      (only 2 pre-existing warnings on the woo page) + `build` exit 0). These three
+      tables had ZERO inbound Prisma FKs → **no migration needed.**
+      - **`notificationDismissal`** (`src/server/notifications.ts`): `getDismissedKeys`
+        reads Convex (`src/lib/notification-dismissals-read.ts`); `dismissNotification`
+        is Convex-only `create` with the `@@unique([userId,notificationKey])` guard
+        re-implemented as a read-before-write dedup (no-op if already dismissed, keeping
+        the original `dismissedAt`); `pruneStaleDismissals` reads the user's Convex rows
+        and `remove`s those whose key is no longer active. Backfill
+        `scripts/convex-backfill-notification-dismissals.ts`
+        (`convex:backfill:notification-dismissals`).
+      - **`userNotificationPreference`** (`src/server/notification-preferences.ts` +
+        `notification-email-sender.ts`): one row per user (`@unique` on userId)
+        re-implemented as find-by-userId-then-update-else-create.
+        `getNotificationPreferences` + the email-sender fan-out read Convex via
+        `src/lib/user-notification-preferences-read.ts` (`resolvePreferenceValues`
+        applies the conservative defaults for absent rows/fields; the email sender now
+        loads Member/User from Prisma then batches the prefs from Convex instead of the
+        old `notificationPreference` relation include). Backfill
+        `scripts/convex-backfill-user-notification-preferences.ts`
+        (`convex:backfill:user-notification-preferences`).
+      - **`wooCommerceOrderLog`** (`src/server/woocommerce.ts` + the webhook route): the
+        viewer (`getWooCommerceOrderLogs`), retry lookup, processing create/update x3,
+        and the webhook duplicate-log create are all Convex-only via
+        `src/lib/woocommerce-order-logs-read.ts` (status filter + `createdAt`-desc +
+        pagination + project join reproduced in JS). No `@@unique`; webhook idempotency
+        (dedup by `wooOrderId` + COMPLETED) replicated as a Convex read-before-write
+        (`findCompletedOrderLog`). `wooCommerceIntegration` stays on Prisma (not in this
+        bucket). Backfill `scripts/convex-backfill-woocommerce-order-logs.ts`
+        (`convex:backfill:woocommerce-order-logs`).
+      - All three registered in `scripts/convex-backfill-all.ts` (after `saved-views`)
+        and `package.json`. No mirrors existed for these tables (none deleted). **DEPLOY
+        GATE: run the three backfills against prod Convex BEFORE this lands, else reads
+        return empty for pre-existing rows.**
+
 ## Merge-time consolidation TODO (before final merge to main)
 
 De-duplicate helper files that multiple branches created (the integration merge

@@ -277,17 +277,6 @@ export const AccessoryAllocationMode = v.union(
   v.literal("SHIPS_WITH"),
   v.literal("DEDICATED"),
 );
-export const DamageSeverity = v.union(
-  v.literal("MINOR"),
-  v.literal("MAJOR"),
-  v.literal("TOTAL"),
-);
-export const DamageStatus = v.union(
-  v.literal("OPEN"),
-  v.literal("UNDER_REPAIR"),
-  v.literal("RESOLVED"),
-  v.literal("CHARGED_BACK"),
-);
 export const CrewMemberType = v.union(
   v.literal("EMPLOYEE"),
   v.literal("FREELANCER"),
@@ -304,12 +293,6 @@ export const CrewRateType = v.union(
   v.literal("HOURLY"),
   v.literal("DAILY"),
   v.literal("FLAT"),
-);
-export const CrewCertStatus = v.union(
-  v.literal("CURRENT"),
-  v.literal("EXPIRING_SOON"),
-  v.literal("EXPIRED"),
-  v.literal("NOT_VERIFIED"),
 );
 export const AssignmentStatus = v.union(
   v.literal("PENDING"),
@@ -370,40 +353,6 @@ export const WooOrderLogStatus = v.union(
   v.literal("COMPLETED"),
   v.literal("FAILED"),
   v.literal("DUPLICATE"),
-);
-export const DiscordBotDesiredState = v.union(
-  v.literal("RUNNING"),
-  v.literal("STOPPED"),
-);
-export const DiscordOutboxStatus = v.union(
-  v.literal("PENDING"),
-  v.literal("PROCESSING"),
-  v.literal("PROCESSED"),
-  v.literal("FAILED"),
-);
-export const ScheduleFrequency = v.union(
-  v.literal("DAILY"),
-  v.literal("WEEKLY"),
-  v.literal("MONTHLY"),
-);
-export const StocktakeScope = v.union(
-  v.literal("FULL"),
-  v.literal("CATEGORY"),
-  v.literal("SPOT_CHECK"),
-);
-export const StocktakeStatus = v.union(
-  v.literal("DRAFT"),
-  v.literal("IN_PROGRESS"),
-  v.literal("REVIEWING"),
-  v.literal("COMPLETED"),
-  v.literal("CANCELLED"),
-);
-export const StocktakeItemResult = v.union(
-  v.literal("MATCH"),
-  v.literal("MISSING"),
-  v.literal("UNEXPECTED"),
-  v.literal("QUANTITY_MISMATCH"),
-  v.literal("WRONG_LOCATION"),
 );
 export const CustomFieldEntity = v.union(
   v.literal("ASSET"),

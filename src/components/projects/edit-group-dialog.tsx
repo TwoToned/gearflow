@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Edit-group dialog — title, description, quantity, billing override,
- * and price for a ProjectGroup. Extracted from equipment-tab.tsx in
- * Phase 7.
+ * Edit-group dialog — title, description, quantity, and price for a
+ * ProjectGroup. Extracted from equipment-tab.tsx in Phase 7.
  *
  * State lives inside this component, seeded from the `group` prop on
  * each fresh open via the wrapper + keyed-body pattern. The parent
@@ -35,9 +34,6 @@ export interface EditGroupFormValues {
   title: string;
   description?: string;
   quantity: number;
-  billingMonths?: number;
-  billingWeeks?: number;
-  billingDays?: number;
 }
 
 interface EditGroupDialogProps {
@@ -92,15 +88,6 @@ function EditGroupDialogBody({
   const [description, setDescription] = useState(group.description ?? "");
   const [quantity, setQuantity] = useState(String(group.quantity));
   const [price, setPrice] = useState(priceVal != null ? String(priceVal) : "");
-  const [billingMonths, setBillingMonths] = useState(
-    group.billingMonths != null ? String(group.billingMonths) : "",
-  );
-  const [billingWeeks, setBillingWeeks] = useState(
-    group.billingWeeks != null ? String(group.billingWeeks) : "",
-  );
-  const [billingDays, setBillingDays] = useState(
-    group.billingDays != null ? String(group.billingDays) : "",
-  );
 
   function handleSave() {
     if (!title.trim() || formDisabled) return;
@@ -110,9 +97,6 @@ function EditGroupDialogBody({
         title: title.trim(),
         description: description.trim() || undefined,
         quantity: parseInt(quantity) || 1,
-        billingMonths: billingMonths !== "" ? parseInt(billingMonths) : undefined,
-        billingWeeks: billingWeeks !== "" ? parseInt(billingWeeks) : undefined,
-        billingDays: billingDays !== "" ? parseInt(billingDays) : undefined,
       },
       price !== "" ? parseFloat(price) || 0 : undefined,
     );
@@ -177,43 +161,6 @@ function EditGroupDialogBody({
               Suggested: {formatCurrency(Number(group.suggestedPrice))}
             </button>
           )}
-        </div>
-        <div className="space-y-2">
-          <Label className="text-muted-foreground text-xs">
-            Billing Override (leave blank to use project defaults)
-          </Label>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label>Months</Label>
-              <Input
-                type="number"
-                min="0"
-                value={billingMonths}
-                onChange={(e) => setBillingMonths(e.target.value)}
-                placeholder="—"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Weeks</Label>
-              <Input
-                type="number"
-                min="0"
-                value={billingWeeks}
-                onChange={(e) => setBillingWeeks(e.target.value)}
-                placeholder="—"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Days</Label>
-              <Input
-                type="number"
-                min="0"
-                value={billingDays}
-                onChange={(e) => setBillingDays(e.target.value)}
-                placeholder="—"
-              />
-            </div>
-          </div>
         </div>
       </div>
       <DialogFooter>

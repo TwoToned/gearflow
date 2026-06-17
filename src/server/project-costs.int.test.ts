@@ -5,9 +5,7 @@
  *   - revenue + persisted costs read straight from Project columns
  *   - maintenance cost = SUM(MaintenanceRecord.cost) where projectId matches,
  *     excluding CANCELLED
- *   - damage cost = SUM(actualCost ?? estimatedCost) per row
- *   - chargedBack damage is subtracted from "our" damage cost (client pays it)
- *   - netMargin = total − (services + labour + sub-hire + maintenance + our damage)
+ *   - netMargin = total − (services + labour + sub-hire + maintenance)
  *   - empty / missing project returns a zero shell
  *
  * Note: `prisma` (used by the server fn) and `testPrisma` (used by fixtures)
@@ -67,31 +65,6 @@ async function createMaintenanceRecord(
   });
 }
 
-async function createDamageEvent(
-  orgId: string,
-  projectId: string,
-  createdById: string,
-  options: {
-    actualCost?: number;
-    estimatedCost?: number;
-    chargedBack?: boolean;
-    severity?: "MINOR" | "MAJOR" | "TOTAL";
-  },
-) {
-  return testPrisma.damageEvent.create({
-    data: {
-      organizationId: orgId,
-      projectId,
-      createdById,
-      severity: options.severity ?? "MINOR",
-      status: "OPEN",
-      actualCost: options.actualCost ?? null,
-      estimatedCost: options.estimatedCost ?? null,
-      chargedBack: options.chargedBack ?? false,
-    },
-  });
-}
-
 describe("getProjectOperationalCosts", () => {
   beforeEach(async () => {
     await setupIntegrationTest();
@@ -134,41 +107,9 @@ describe("getProjectOperationalCosts", () => {
     expect(result.counts.maintenanceRecords).toBe(2);
   });
 
-  it("prefers actualCost over estimatedCost on damage events", async () => {
+  it("netMargin = total − (services + labour + sub-hire + maintenance)", async () => {
     const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
-    const project = await createProjectFixture(org.id, { total: 5000 });
-
-    await createDamageEvent(org.id, project.id, user.id, { actualCost: 100, estimatedCost: 50 });
-    await createDamageEvent(org.id, project.id, user.id, { estimatedCost: 75 });
-    await createDamageEvent(org.id, project.id, user.id, { actualCost: 25 });
-
-    const result = await computeProjectOperationalCosts(project.id, org.id);
-    // 100 (actual wins) + 75 (estimated fallback) + 25 (actual)
-    expect(result.damageCostTotal).toBe(200);
-    expect(result.counts.damageEvents).toBe(3);
-  });
-
-  it("excludes charged-back damage from our cost", async () => {
-    const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
-    const project = await createProjectFixture(org.id, { total: 5000 });
-
-    await createDamageEvent(org.id, project.id, user.id, { actualCost: 100, chargedBack: false });
-    await createDamageEvent(org.id, project.id, user.id, { actualCost: 300, chargedBack: true });
-
-    const result = await computeProjectOperationalCosts(project.id, org.id);
-    expect(result.damageCostTotal).toBe(400); // gross
-    expect(result.damageChargedBackTotal).toBe(300);
-
-    // net margin should subtract only $100 of damage, not $400
-    // total=5000, all other costs=0, our damage=100 → margin=4900
-    expect(result.netMargin).toBe(4900);
-  });
-
-  it("netMargin = total − (services + labour + sub-hire + maintenance + our damage)", async () => {
-    const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
+    await createUserFixture(org.id);
     const project = await createProjectFixture(org.id, {
       total: 10000,
       serviceCostTotal: 1000,
@@ -176,12 +117,11 @@ describe("getProjectOperationalCosts", () => {
       subHireCostTotal: 500,
     });
     await createMaintenanceRecord(org.id, project.id, { cost: 200 });
-    await createDamageEvent(org.id, project.id, user.id, { actualCost: 100 });
 
     const result = await computeProjectOperationalCosts(project.id, org.id);
-    // 10000 − (1000 + 1500 + 500 + 200 + 100) = 6700
-    expect(result.netMargin).toBe(6700);
-    expect(result.marginPercent).toBeCloseTo(67, 0);
+    // 10000 − (1000 + 1500 + 500 + 200) = 6800
+    expect(result.netMargin).toBe(6800);
+    expect(result.marginPercent).toBeCloseTo(68, 0);
   });
 
   it("returns empty shell for missing/cross-org project", async () => {

@@ -35,7 +35,6 @@ import {
   UserPlus,
   Trash2,
   Shield,
-  Download,
 } from "lucide-react";
 import {
   adminGetOrganizationDetails,
@@ -108,33 +107,9 @@ export default function AdminOrgDetailPage({
     name: string;
   } | null>(null);
 
-  const [exporting, setExporting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
-
-  async function handleExport() {
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/admin/org-export/${orgId}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Export failed" }));
-        throw new Error(body.error || "Export failed");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `org-export-${orgId}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Export downloaded");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setExporting(false);
-    }
-  }
 
   const { data: org, isLoading, refetch: refetchOrg } = useServerQuery({
     queryKey: ["admin-org-detail", orgId],
@@ -250,10 +225,6 @@ export default function AdminOrgDetailPage({
               >
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
-              </Button>
-              <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
-                <Download className="mr-2 h-4 w-4" />
-                {exporting ? "Exporting..." : "Export"}
               </Button>
             </div>
           )}

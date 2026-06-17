@@ -125,40 +125,6 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     ),
   },
   {
-    id: "skills",
-    header: "Skills",
-    sortable: false,
-    responsiveHide: "lg",
-    cell: (row) => (
-      <div className="flex flex-wrap gap-1">
-        {row.skills?.slice(0, 3).map((s: { id: string; name: string }) => (
-          <Badge key={s.id} variant="secondary" className="text-xs">
-            {s.name}
-          </Badge>
-        ))}
-        {row.skills?.length > 3 && (
-          <Badge variant="secondary" className="text-xs">+{row.skills.length - 3}</Badge>
-        )}
-      </div>
-    ),
-  },
-  {
-    id: "certifications",
-    header: "Certs",
-    sortable: false,
-    defaultVisible: true,
-    responsiveHide: "lg",
-    cell: (row) => {
-      const count = row._count?.certifications ?? 0;
-      if (count === 0) return <span className="text-fg-4">&mdash;</span>;
-      return (
-        <Badge variant="secondary" className="text-xs tabular-nums">
-          {count}
-        </Badge>
-      );
-    },
-  },
-  {
     id: "status",
     header: "Status",
     accessorKey: "status",
@@ -207,9 +173,8 @@ export function CrewTable() {
   const orgId = activeOrg?.id;
 
   // Reactive roster straight from Convex (auto-updates on any member/role
-  // create/update/delete). The linked platform user, skills (implicit m2m), and
-  // certification count are cross-domain (Better Auth + Prisma-only crew_*) so
-  // they come from a separate, non-reactive server query and are merged below.
+  // create/update/delete). The linked platform user is cross-domain (Better Auth)
+  // so it comes from a separate, non-reactive server query and is merged below.
   // crewRole name/color is resolved from the reactive crewRoles list.
   const allMembers = useCrewMembers(orgId);
   const roles = useCrewRoles(orgId);
@@ -236,8 +201,6 @@ export function CrewTable() {
         ...m,
         crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,
         user: extra?.userName || extra?.userImage ? { name: extra.userName, image: extra.userImage } : null,
-        skills: extra?.skills ?? [],
-        _count: { certifications: extra?.certCount ?? 0 },
       };
     });
 

@@ -520,19 +520,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               font: fonts.regular,
               color: textColor,
             });
-            // Show price breakdown below for optimized items
-            if (item.priceBreakdown && !item.priceOverridden && item.pricingType === "OPTIMIZED") {
-              const breakdownFontSize = fontSize - 1.5;
-              const breakdownStr = item.priceBreakdown;
-              const breakdownWidth = fonts.regular.widthOfTextAtSize(breakdownStr, breakdownFontSize);
-              page.drawText(breakdownStr, {
-                x: colEndX - breakdownWidth - cellPadding,
-                y: textY - fontSize - 1,
-                size: breakdownFontSize,
-                font: fonts.regular,
-                color: hexToRgb("#999999", pdfLib),
-              });
-            }
             break;
           }
 

@@ -11,15 +11,28 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { useRouter } from "next/navigation";
 import { scanLookup } from "@/server/scan-lookup";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // NOTE (UX-gaps 2026-06-10): The task asked to drop the "Scan" tab for a 4-tab
 // bar, citing a DESIGN.md spec. That spec does not exist — DESIGN.md has no
 // 4-tab rule and explicitly names warehouse staff "scanning gear all day" as a
-// primary persona, so the scanner is deliberately kept one tap away here.
+// primary persona, so the lookup shortcut is deliberately kept one tap away here.
 // Revisit only if a real 4-tab requirement is confirmed.
+//
+// The in-app camera scanner was removed (it never worked on iPhone); the "Scan"
+// tab now opens a manual tag-entry dialog that routes to the same scanLookup
+// handler. External HID barcode wedges still work — they type into the field
+// and submit on Enter.
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Home" },
   { href: "/assets/registry", icon: Package, label: "Assets", matchPrefix: "/assets" },
@@ -36,20 +49,28 @@ const navItems = [
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [scannerOpen, setScannerOpen] = useState(false);
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [lookupValue, setLookupValue] = useState("");
+  const [lookupPending, setLookupPending] = useState(false);
 
-  const handleScan = async (value: string) => {
+  const handleLookup = async (value: string) => {
+    const tag = value.trim();
+    if (!tag) return;
+    setLookupPending(true);
     try {
-      const result = await scanLookup(value);
+      const result = await scanLookup(tag);
       if (result.url) {
-        setScannerOpen(false);
+        setLookupOpen(false);
+        setLookupValue("");
         router.push(result.url);
         toast.success(`Found ${result.label}`);
       } else {
-        toast.error(`Nothing found for "${value}"`);
+        toast.error(`Nothing found for "${tag}"`);
       }
     } catch {
       toast.error("Lookup failed");
+    } finally {
+      setLookupPending(false);
     }
   };
 
@@ -62,7 +83,7 @@ export function MobileNav() {
               return (
                 <button
                   key="scan"
-                  onClick={() => setScannerOpen(true)}
+                  onClick={() => setLookupOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 py-2 px-3 text-primary transition-colors"
                 >
                   <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10">
@@ -94,18 +115,46 @@ export function MobileNav() {
           })}
         </div>
       </nav>
-      {scannerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setScannerOpen(false)}>
-          <div className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <BarcodeScanner
-              open={scannerOpen}
-              onScan={handleScan}
-              onClose={() => setScannerOpen(false)}
-              title="Quick scan"
+
+      <Dialog
+        open={lookupOpen}
+        onOpenChange={(open) => {
+          setLookupOpen(open);
+          if (!open) setLookupValue("");
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Quick lookup</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLookup(lookupValue);
+            }}
+          >
+            <AssetTagInput
+              autoFocus
+              value={lookupValue}
+              onChange={(e) => setLookupValue(e.target.value)}
+              placeholder="Enter an asset, kit, or project tag..."
+              disabled={lookupPending}
             />
-          </div>
-        </div>
-      )}
+            <DialogFooter className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLookupOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={lookupPending || !lookupValue.trim()}>
+                {lookupPending ? "Looking up..." : "Look up"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

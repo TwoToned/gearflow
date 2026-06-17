@@ -4,8 +4,8 @@
  * Invariants under test:
  *   - photos default to empty array on a fresh record
  *   - photos persist through create
- *   - photos survive a status change via setMaintenanceStatus (the workshop
- *     kanban path) — verifies the lightweight update doesn't clobber them
+ *   - photos survive a status-only update — verifies a lightweight status
+ *     change doesn't clobber them
  *   - photos array can be updated independently (replace + clear)
  *
  * The schema migration default is `ARRAY[]::TEXT[]` so any code path that
@@ -106,8 +106,7 @@ describe("MaintenanceRecord.photos", () => {
       status: "IN_PROGRESS",
     });
 
-    // Mirror the kanban's setMaintenanceStatus path: status-only update
-    // shouldn't touch photos.
+    // A status-only update shouldn't touch photos.
     await testPrisma.maintenanceRecord.update({
       where: { id: record.id },
       data: { status: "QA" },

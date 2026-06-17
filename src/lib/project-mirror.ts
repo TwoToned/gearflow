@@ -25,7 +25,7 @@ const RELATION_KEYS = new Set([
   "client", "location", "lineItems", "categories", "groups", "media",
   "services", "managers", "assignments", "tasks", "subHires", "supplierOrders",
   "scanLogs", "warehouseCloses", "organization", "projectManager",
-  "_count", "maintenanceRecords", "damageEvents", "woocommerceOrderLogs",
+  "_count", "maintenanceRecords", "woocommerceOrderLogs",
 ]);
 function strip(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

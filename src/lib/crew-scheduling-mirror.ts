@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 
 /**
  * Crew scheduling / timesheet sub-tables — `crew_assignment`, `crew_shift`,
- * `crew_availability`, `crew_certification`, `crew_time_entry` — are DUAL-WRITTEN
+ * `crew_availability`, `crew_time_entry` — are DUAL-WRITTEN
  * **infra-only**: there is NO Phase 4. They are the project-coupled, cascade-child
  * layer of the crew domain (the roster trio role/member/skill was migrated earlier
  * in `crew-mirror.ts`), composed only inside project-joining and member-detail
@@ -16,9 +16,8 @@ import { api } from "../../convex/_generated/api";
  * Dual-write (not hard cutover): live inbound + outbound FKs cross the boundary —
  * crew_assignment → project / crew_member / crew_role / project_service / user;
  * crew_shift / crew_time_entry are required+Cascade children of crew_assignment;
- * crew_certification / crew_availability are required+Cascade children of
- * crew_member. A net-new row against any of these would FK-fail a Convex-only
- * cutover.
+ * crew_availability is a required+Cascade child of crew_member. A net-new row
+ * against any of these would FK-fail a Convex-only cutover.
  *
  * Cascade handling: Convex has no real FK cascade, so the delete paths capture the
  * descendant ids from Prisma BEFORE the cascading `delete`/`deleteMany`, then
@@ -46,7 +45,6 @@ type AnyQueryRef = FunctionReference<"query", "public", any, any>;
 const RELATION_KEYS = new Set([
   "organization", "project", "crewMember", "crewRole", "service", "confirmedBy",
   "approvedBy", "assignment", "shifts", "timeEntries", "availability",
-  "certifications",
 ]);
 function strip(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -97,10 +95,6 @@ export const removeCrewShiftFromConvex = (id: string) => removeSafe(api.crewShif
 // ─── Crew availability ─────────────────────────────────────────────────────────
 export const mirrorCrewAvailabilityCreate = (row: Record<string, unknown>) => create(api.crewAvailabilities.createIfMissing, row);
 export const removeCrewAvailabilityFromConvex = (id: string) => removeSafe(api.crewAvailabilities.remove, id);
-
-// ─── Crew certifications ─────────────────────────────────────────────────────────
-export const mirrorCrewCertificationCreate = (row: Record<string, unknown>) => create(api.crewCertifications.createIfMissing, row);
-export const removeCrewCertificationFromConvex = (id: string) => removeSafe(api.crewCertifications.remove, id);
 
 // ─── Crew time entries ─────────────────────────────────────────────────────────
 export const mirrorCrewTimeEntryCreate = (row: Record<string, unknown>) => create(api.crewTimeEntries.createIfMissing, row);
@@ -203,18 +197,16 @@ export const snapshotServiceCrew = (serviceId: string) =>
 
 /** Snapshot everything that cascades when a crew member is deleted. Call BEFORE
  *  deleteCrewMember (the member delete cascades assignments → shifts/time-entries,
- *  plus standalone time entries, certifications and availability). */
+ *  plus standalone time entries and availability). */
 export async function snapshotCrewMemberCascade(crewMemberId: string) {
-  const [assignments, timeEntries, certs, avail] = await Promise.all([
+  const [assignments, timeEntries, avail] = await Promise.all([
     readAssignmentCascade({ crewMemberId }),
     prisma.crewTimeEntry.findMany({ where: { crewMemberId }, select: { id: true } }),
-    prisma.crewCertification.findMany({ where: { crewMemberId }, select: { id: true } }),
     prisma.crewAvailability.findMany({ where: { crewMemberId }, select: { id: true } }),
   ]);
   return {
     assignments,
     timeEntryIds: timeEntries.map((t) => t.id),
-    certificationIds: certs.map((c) => c.id),
     availabilityIds: avail.map((a) => a.id),
   };
 }
@@ -233,6 +225,5 @@ export async function removeCrewAssignmentCascadeFromConvex(cascade: CrewAssignm
 export async function removeCrewMemberCascadeFromConvex(snapshot: Awaited<ReturnType<typeof snapshotCrewMemberCascade>>) {
   await removeCrewAssignmentCascadeFromConvex(snapshot.assignments);
   for (const id of snapshot.timeEntryIds) await removeSafe(api.crewTimeEntries.remove, id);
-  for (const id of snapshot.certificationIds) await removeSafe(api.crewCertifications.remove, id);
   for (const id of snapshot.availabilityIds) await removeSafe(api.crewAvailabilities.remove, id);
 }

@@ -45,7 +45,6 @@ const PAIRS: Array<[string, string]> = [
   ["crewAssignment", "crewAssignments"],
   ["crewShift", "crewShifts"],
   ["crewAvailability", "crewAvailabilities"],
-  ["crewCertification", "crewCertifications"],
   ["crewTimeEntry", "crewTimeEntries"],
   // central graph
   ["project", "projects"],
@@ -67,12 +66,8 @@ const PAIRS: Array<[string, string]> = [
   ["subHireGroup", "subHireGroups"],
   ["supplierOrder", "supplierOrders"],
   ["supplierOrderItem", "supplierOrderItems"],
-  ["damageEvent", "damageEvents"],
   ["maintenanceRecord", "maintenanceRecords"],
-  ["stocktake", "stocktakes"],
-  ["stocktakeItem", "stocktakeItems"],
   ["warehouseClose", "warehouseCloses"],
-  ["savedReport", "savedReports"],
   ["savedTableView", "savedTableViews"],
   // media
   ["assetMedia", "assetMedia"],

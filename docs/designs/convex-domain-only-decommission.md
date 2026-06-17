@@ -239,6 +239,44 @@ added only to **existing** module files, so `convex/_generated` needs no regen
 (`api.d.ts` types each module via `typeof import("../<module>.js")`) and no
 shared-dev push was required.
 
+### Wave 2026-06-17b — stuck-on-disk recovery + the named ungated-leaf sweep
+
+A fresh session re-validated four conversions that an earlier session had left
+**uncommitted on disk** (a harness-level shell-init failure had killed the prior
+run mid-flight), then converted the rest of the named ungated-leaf surfaces. 13
+PRs, each its own surface; all base `main` except `#238` (stacked on `#194`).
+Every base-`main` PR is **CI-green (Build / Lint / Tests / Type Check)**; `#238`
+was built locally (stacked PRs get CI only after retarget). All follow the
+established pattern (thin `*-read.ts` fetchers + epoch-ms→Date / Decimal→number /
+absent→null mappers + pure unit-tested filter/sort replicating Prisma
+`where`/`orderBy`, declared-order enum rank maps, Postgres NULLS ordering; no
+Prisma fallback on a miss; new Convex queries added only to **existing** module
+files so `convex/_generated` needs no regen).
+
+| PR | Surface | Base | `*-read.ts` | New Convex queries | Notes / what stays Prisma |
+|----|---------|------|-------------|--------------------|---------------------------|
+| `#228` | test-tag **profiles** (`getTestProfiles`, `getTestProfile`) | main | `test-profiles-read.ts` | none | writes + validation `findFirst`s |
+| `#229` | **saved views** (`getSavedViews`) | main | `saved-views-read.ts` | none | all writes |
+| `#230` | **brand templates** (`getBrandTemplates`, `…ById`) | main | `brand-templates-read.ts` | none | writes + delete-unlink `updateMany` |
+| `#231` | **custom-field definitions** (`getCustomFieldDefinitions`, `getActiveCustomFields`) | main | `custom-fields-read.ts` | none | auth gate + writes |
+| `#232` | **media galleries** (`getAssetMedia`/`getModelMedia`/`getKitMedia`/`getProjectMedia`) | main | extends `media-read.ts` | none (reused `listByParent`) | detail-page composites `getAsset`/`getKit`/`getModel` (terminus) |
+| `#233` | **check items** (`getCheckItems`/`Counts`/`getCheckItem`/`getModelCheckItems`/`getKitCheckItems`) | main | `check-items-read.ts` | `modelCheckItems.listByModelId`/`listByCheckItemId`, `kitCheckItems.listByKitId` | writes + read-then-write |
+| `#234` | **maintenance** (`getMaintenanceRecords`, `getMaintenanceRecord`) | main | `maintenance-read.ts` | none | `maintenanceRecordAsset` join (terminus); workshop queue already removed by #227 |
+| `#235` | **group templates** (`getGroupTemplates`) | main | `group-templates-read.ts` | none | `groupTemplateItem` children stay Prisma (terminus); parent from Convex + items attached from Prisma |
+| `#236` | **project tasks** (`getProjectTasks`, `getMyOpenTasks`, `getTaskAssignees`) | main | `project-tasks-read.ts` | none (reused `listByProject`/`list`) | auth `member`/`User` assignee half (terminus); crew half from Convex |
+| `#237` | **kit/supplier/category trims** (`getKitCounts`, `getAvailable[Bulk]AssetsForKit`, `getSupplierCounts`, `searchContainerAssets`) | main | extends `assets-read`/`kits-read`/`suppliers-read` | none | `getCaseCategoryIds` reads Better Auth `organization.metadata` (terminus) |
+| `#238` | **test-tag records** (`getTestTagRecords`, `getLatestTestRecord`, `getAuditorScopeOptions`, `getAuditorPortalData`) | `#194` (stacked) | extends `test-tag-read.ts` | `testTagRecords.listByOrgAndAsset` | **`testTagAuditorToken` reads BLOCKED** (table not dual-written → stay Prisma); `testedBy`=auth User (terminus) |
+| `#239` | **crew roster** (`getCrewMembers`/`ById`/`getMyCrewMemberId`/roles/skills/options/departments) | main | extends `crew-read.ts` | none | `getCrewMemberExtras` (all cross-domain joins) + `getCrewSkills` `_count` m2m + `getOrgUsersForCrewLink` member half stay Prisma; **deploy-gated on `convex:backfill:crew`** |
+| `#240` | **crew scheduling** (dashboard ×6, time ×3, `getProjectCrew`, `getProjectLabourCost`, `getCrewMembersForAssignment`, availability ×3, calendar ×2) | main | `crew-scheduling-read.ts` | `crewShifts.listByAssignmentIds`, `crewAvailabilities.listByCrewMemberIds` | all writes + read-then-write (incl. `checkCrewConflicts`); `crew-communication.ts` untouched; **deploy-gated on `convex:backfill:crew-scheduling` + `:crew-availability-org`** |
+
+The crew cluster was **rebuilt fresh on post-removal main** (the old `#195`–`#197`
+/ `#209` crew stack was closed because it referenced the dropped
+`crew_certification` table) — split by table-group into roster
+(`crew.ts`→`crew-read.ts`, member/role/skill) and scheduling (the other 5 files →
+new `crew-scheduling-read.ts`, assignment/shift/availability/timeEntry) so the two
+PRs don't both edit `crew-read.ts`. Both carry the standing crew backfill deploy
+gate.
+
 ### Confirmed terminuses (do NOT convert — would read empty / break invariants)
 
 - **`category_slot`** — in the Convex schema but **never dual-written** (zero
@@ -305,6 +343,33 @@ buckets by gate:
 the prior batch) is done and preview-gated; bucket 4 is the next tranche of
 clean leaf PRs, buckets 1–3 unblock as their gates clear (keystone merge / new
 dual-writes / crew backfill).
+
+**Post-wave-2026-06-17b status update.** The wave above cleared a large slice:
+- **Bucket 4 — DONE this wave:** maintenance (`#234`), check-items (`#233`),
+  brand-templates (`#230`), group-templates (`#235`), saved-views (`#229`),
+  project-tasks (`#236`), custom-fields (`#231`), test-profiles (`#228`), media
+  galleries (`#232`), and the kit/supplier/category read-trims (`#237`). Several
+  bucket-4 rows were **already deleted by #227** and are moot: `damage.ts`,
+  `reports.ts`/`scheduled-reports.ts`, `lib/services/asset-service.ts` +
+  `channel-sync-service.ts` (Discord), workshop-queue.
+- **Bucket 4 — STILL TODO (ungated leaves, next session):** the primary
+  list/detail/count server reads for the big domains — `models.ts`, `categories.ts`
+  (full, beyond the `searchContainerAssets` trim), `locations.ts`, `suppliers.ts`
+  (full, beyond `getSupplierCounts`), `assets.ts`, `bulk-assets.ts`, `kits.ts`
+  (full, beyond counts/availability), `projects.ts` (list/detail/counts) — plus
+  `section-presets.ts`, `project-managers.ts`, `tags.ts` (`getOrgTags`),
+  `scan-lookup.ts`, `woocommerce.ts` (read-only log **viewer**),
+  `dashboard.ts`/`notifications.ts` non-line-item composites, `lib/project-costs.ts`.
+- **Bucket 3 — DONE this wave (still deploy-gated):** `crew-availability.ts` +
+  `crew-calendar.ts` (and dashboard/time/assignments) shipped in `#239`/`#240`.
+  These **must not merge** until `convex:backfill:crew` + `:crew-scheduling` +
+  `:crew-availability-org` have run against prod Convex.
+- **Bucket 2 — unchanged + one addition:** `notificationDismissal`,
+  `warehouseDashboardToken`, and now `testTagAuditorToken` (surfaced in `#238`)
+  are all not-dual-written → their reads stay Prisma until a mirror + backfill is
+  added (straddles Phase A/B).
+- **Bucket 1 (keystone-blocked)** unchanged — unblocks when the `#199`–`#203`
+  keystone chain merges.
 
 ---
 

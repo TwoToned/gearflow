@@ -8,11 +8,13 @@
  * `project:manage_line_items` (it reassigns a line item's asset).
  */
 
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { UserFacingError } from "@/lib/errors";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { getAssetById } from "@/lib/assets-read";
 import {
   findProjectConflictsCore,
   findSwapCandidatesCore,
@@ -51,23 +53,27 @@ export async function swapLineItemAsset(lineItemId: string, newAssetId: string) 
     });
   }
 
-  // Look up the line item's project for the activity log.
-  const lineItem = await prisma.projectLineItem.findUnique({
-    where: { id: lineItemId, organizationId },
-    select: { projectId: true, asset: { select: { assetTag: true } } },
-  });
+  // Look up the line item's project for the activity log (pure read — feeds only
+  // the activity log, no mutation). Both the line item and the (now-swapped-on)
+  // asset live in the Convex mirror. The line item's asset is `newAssetId` after
+  // the swap, so resolve the tag from that asset directly.
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  const projectId = lineItem?.organizationId === organizationId ? lineItem.projectId : null;
+  const newAsset = await getAssetById(newAssetId);
+  const assetTag = newAsset?.assetTag ?? null;
 
-  if (lineItem?.projectId) {
+  if (projectId) {
     await logActivity({
       organizationId,
       userId,
       userName,
       action: "UPDATE",
       entityType: "project",
-      entityId: lineItem.projectId,
-      projectId: lineItem.projectId,
-      entityName: lineItem.asset?.assetTag ?? "line item",
-      summary: `Swapped a conflicting line item onto asset ${lineItem.asset?.assetTag ?? newAssetId}`,
+      entityId: projectId,
+      projectId,
+      entityName: assetTag ?? "line item",
+      summary: `Swapped a conflicting line item onto asset ${assetTag ?? newAssetId}`,
     });
   }
 

@@ -2371,6 +2371,38 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **maintenance records** (`server/maintenance.ts` → `src/lib/maintenance-read.ts`).
+  `getMaintenanceRecords` (list + paginate) and `getMaintenanceRecord` (detail) now
+  source the `maintenanceRecord` row from Convex (`maintenanceRecords.list` /
+  `.getById`, both pre-existing) via `getMaintenanceRecordsByOrg` /
+  `getMaintenanceRecordById`. The `maintenanceRecordAssets` join table is the
+  intentional Prisma terminus (NOT mirrored — the record's `updatedAt` is the
+  reactive signal), so the asset/model join is attached from Prisma exactly as the
+  old `include` did, and the Auth-`User` joins (`reportedBy` / `assignedTo`) stay
+  Prisma via a batched `prisma.user.findMany`. The model doc is grafted from Convex
+  (`getModelMap`). Filtering (status / type / assetId / search-across-tag+model-name)
+  and sorting (default `[status asc, scheduledDate asc]` or explicit scalar `sortBy`,
+  with declared-enum-order rank maps + Postgres NULLS-LAST/FIRST) are pure
+  unit-tested predicates in `maintenance-read.ts`; pagination is a JS `slice` over
+  the org's records (mirrors the old `skip`/`take`). All writes
+  (`create`/`update`/`delete` + the asset state-machine) and `getAssetsForMaintenanceSelect`
+  stay Prisma. Org-scope on the by-cuid `getById` is enforced in the action
+  (`record.organizationId !== organizationId → null`), matching the old
+  `where: { id, organizationId }`. No new convex query needed.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

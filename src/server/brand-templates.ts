@@ -1,8 +1,8 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
@@ -16,46 +16,70 @@ import {
   updateBrandTemplateSchema,
 } from "@/lib/validations/template-section";
 
-// Brand templates are DUAL-WRITTEN: every create/update/delete/default-toggle
-// writes the Prisma `brand_template` row (the durable FK anchor — document_template
-// carries a live nullable FK to it) AND the Convex `brandTemplates` doc. Prisma is
-// written first; the Convex payload is derived from the written row via toConvexDoc
-// so they can't drift. The single-default invariant (one isDefault per org) is a
-// multi-row unset, mirrored to Convex too. headerSettings/footerSettings are JSON
-// strings, passed straight through. See FEATUREDOCS/54.
+// Brand templates are CONVEX-ONLY (Phase B write inversion): every
+// create/update/delete/default-toggle writes the Convex `brandTemplates` doc as
+// the sole source of truth — no Prisma row, no mirror. The inbound FK
+// (document_template.brandTemplateId → brand_template, SetNull) was dropped (see
+// migration 20260617130100_drop_brand_template_fk_constraint), so brandTemplateId
+// is now a plain string holding the Convex cuid.
+//
+// Invariants re-implemented in app code (Convex has no constraints/cascades):
+//  - Single-default-per-org: setDefault / unsetDefault toggle isDefault across the
+//    org's brand templates (unsetBrandDefaultsInConvex clears the others).
+//  - delete-unlink: any document_template pointing at the deleted brand template is
+//    unlinked in BOTH stores — the Prisma column (the PDF pipeline still reads
+//    document_template from Prisma) AND the Convex documentTemplates mirror.
+//  - Org-guard: reads the target via api.brandTemplates.getById and verifies
+//    organizationId before any update/remove (matches the old Prisma
+//    findFirst/where:{id,organizationId}).
+//
+// headerSettings/footerSettings are JSON-string columns, passed straight through.
+// See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
 
-/** Mirror a freshly written Prisma brand-template row into Convex (create). */
-async function mirrorBrandTemplateToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.brandTemplates.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.brandTemplates.createIfMissing>,
-  );
-}
+type ConvexBrandTemplate = {
+  id: string;
+  organizationId: string;
+  name: string;
+  headerSettings: string;
+  footerSettings: string;
+  accentColor?: string;
+  isDefault?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+};
 
-/** Mirror an updated Prisma brand-template row into Convex (patch, id stripped). */
-async function patchBrandTemplateInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.brandTemplates.update, {
+/** Fetch the Convex brand-template doc, org-scoped. Returns null on miss/mismatch. */
+async function getOwnedBrandTemplate(
+  id: string,
+  organizationId: string,
+): Promise<ConvexBrandTemplate | null> {
+  const doc = (await (await getConvexClient()).query(api.brandTemplates.getById, {
     id,
-    patch: patch as FunctionArgs<typeof api.brandTemplates.update>["patch"],
-  });
+  })) as ConvexBrandTemplate | null;
+  if (!doc || doc.organizationId !== organizationId) return null;
+  return doc;
 }
 
-/** Clear isDefault in Convex for the org's current defaults (mirrors the Prisma updateMany). */
+/**
+ * Clear isDefault on the org's current default brand templates (Convex-only
+ * re-implementation of the old Prisma `updateMany({ where: { organizationId,
+ * isDefault: true, NOT: { id } }, data: { isDefault: false } })`). Reads the org's
+ * brand templates from Convex and patches every default except `exceptId`.
+ */
 async function unsetBrandDefaultsInConvex(organizationId: string, exceptId?: string) {
-  const prev = await prisma.brandTemplate.findMany({
-    where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
-    select: { id: true },
-  });
-  const convex = (await getConvexClient());
-  for (const d of prev) {
-    await convex.mutation(api.brandTemplates.update, { id: d.id, patch: { isDefault: false } });
+  const convex = await getConvexClient();
+  const brands = (await convex.query(api.brandTemplates.list, {
+    orgId: organizationId,
+  })) as ConvexBrandTemplate[];
+  for (const b of brands) {
+    if (b.isDefault && b.id !== exceptId) {
+      await convex.mutation(api.brandTemplates.update, {
+        id: b.id,
+        patch: { isDefault: false, updatedAt: Date.now() },
+      });
+    }
   }
 }
-import type {
-  CreateBrandTemplateValues,
-  UpdateBrandTemplateValues,
-} from "@/lib/validations/template-section";
 
 /**
  * List all brand templates for the current org.
@@ -96,16 +120,23 @@ export async function createBrandTemplate(data: CreateBrandTemplateValues) {
 
   const validated = createBrandTemplateSchema.parse(data);
 
-  const template = await prisma.brandTemplate.create({
-    data: {
-      organizationId,
-      name: validated.name,
-      headerSettings: JSON.stringify(validated.headerSettings),
-      footerSettings: JSON.stringify(validated.footerSettings),
-      accentColor: validated.accentColor || null,
-    },
+  const id = createId();
+  const now = Date.now();
+  const headerSettings = JSON.stringify(validated.headerSettings);
+  const footerSettings = JSON.stringify(validated.footerSettings);
+  const accentColor = validated.accentColor || undefined;
+
+  await (await getConvexClient()).mutation(api.brandTemplates.create, {
+    id,
+    organizationId,
+    name: validated.name,
+    headerSettings,
+    footerSettings,
+    accentColor,
+    isDefault: false,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorBrandTemplateToConvex(template);
 
   await logActivity({
     organizationId,
@@ -113,12 +144,23 @@ export async function createBrandTemplate(data: CreateBrandTemplateValues) {
     userName,
     action: "create",
     entityType: "brand_template",
-    entityId: template.id,
-    entityName: template.name,
-    summary: `Created brand template "${template.name}"`,
+    entityId: id,
+    entityName: validated.name,
+    summary: `Created brand template "${validated.name}"`,
   });
 
-  return serialize(template);
+  // Return the same serialized Prisma-row shape consumers expect.
+  return serialize({
+    id,
+    organizationId,
+    name: validated.name,
+    headerSettings,
+    footerSettings,
+    accentColor: validated.accentColor || null,
+    isDefault: false,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  });
 }
 
 /**
@@ -133,23 +175,32 @@ export async function updateBrandTemplate(data: UpdateBrandTemplateValues) {
   const validated = updateBrandTemplateSchema.parse(data);
   const { id, ...updateFields } = validated;
 
-  const updateData: Record<string, unknown> = {};
-  if (updateFields.name !== undefined) updateData.name = updateFields.name;
+  const existing = await getOwnedBrandTemplate(id, organizationId);
+  if (!existing) throw new Error("Brand template not found");
+
+  const patch: {
+    name?: string;
+    headerSettings?: string;
+    footerSettings?: string;
+    accentColor?: string;
+    updatedAt: number;
+  } = { updatedAt: Date.now() };
+  if (updateFields.name !== undefined) patch.name = updateFields.name;
   if (updateFields.headerSettings !== undefined) {
-    updateData.headerSettings = JSON.stringify(updateFields.headerSettings);
+    patch.headerSettings = JSON.stringify(updateFields.headerSettings);
   }
   if (updateFields.footerSettings !== undefined) {
-    updateData.footerSettings = JSON.stringify(updateFields.footerSettings);
+    patch.footerSettings = JSON.stringify(updateFields.footerSettings);
   }
   if (updateFields.accentColor !== undefined) {
-    updateData.accentColor = updateFields.accentColor || null;
+    // Convex patch can't set a field to null; pass undefined to clear (the read
+    // mapper coerces absent → null, matching the old Prisma `accentColor || null`).
+    patch.accentColor = updateFields.accentColor || undefined;
   }
 
-  const template = await prisma.brandTemplate.update({
-    where: { id, organizationId },
-    data: updateData,
-  });
-  await patchBrandTemplateInConvex(id, template);
+  await (await getConvexClient()).mutation(api.brandTemplates.update, { id, patch });
+
+  const name = patch.name ?? existing.name;
 
   await logActivity({
     organizationId,
@@ -157,12 +208,26 @@ export async function updateBrandTemplate(data: UpdateBrandTemplateValues) {
     userName,
     action: "update",
     entityType: "brand_template",
-    entityId: template.id,
-    entityName: template.name,
-    summary: `Updated brand template "${template.name}"`,
+    entityId: id,
+    entityName: name,
+    summary: `Updated brand template "${name}"`,
   });
 
-  return serialize(template);
+  // Return the merged Prisma-row shape (immutable fields carried from existing).
+  return serialize({
+    id,
+    organizationId,
+    name,
+    headerSettings: patch.headerSettings ?? existing.headerSettings,
+    footerSettings: patch.footerSettings ?? existing.footerSettings,
+    accentColor:
+      updateFields.accentColor !== undefined
+        ? updateFields.accentColor || null
+        : existing.accentColor ?? null,
+    isDefault: existing.isDefault ?? false,
+    createdAt: existing.createdAt ? new Date(existing.createdAt) : new Date(),
+    updatedAt: new Date(patch.updatedAt),
+  });
 }
 
 /**
@@ -174,22 +239,35 @@ export async function deleteBrandTemplate(id: string) {
     "manage_templates"
   );
 
-  const template = await prisma.brandTemplate.findFirst({
-    where: { id, organizationId },
-  });
-
+  const template = await getOwnedBrandTemplate(id, organizationId);
   if (!template) throw new Error("Brand template not found");
 
-  await prisma.$transaction([
-    // Unlink document templates using this brand template
-    prisma.documentTemplate.updateMany({
+  // Unlink any document templates pointing at this brand template. document_template
+  // is dual-written (Prisma + Convex mirror) and the PDF pipeline still reads it
+  // from Prisma, so the null must land in BOTH stores. Find the affected ids first
+  // so we can mirror each unlink to Convex.
+  const linked = await prisma.documentTemplate.findMany({
+    where: { brandTemplateId: id, organizationId },
+    select: { id: true },
+  });
+  if (linked.length > 0) {
+    await prisma.documentTemplate.updateMany({
       where: { brandTemplateId: id, organizationId },
       data: { brandTemplateId: null },
-    }),
-    prisma.brandTemplate.delete({
-      where: { id },
-    }),
-  ]);
+    });
+    const convex = await getConvexClient();
+    for (const dt of linked) {
+      // Clear brandTemplateId in the Convex documentTemplates mirror (matches the
+      // dropped FK's SetNull). The shared mirror helper (toConvexDoc) drops null
+      // keys, so it can't clear a field — call the mutation directly with an
+      // explicit `undefined`, which Convex `db.patch` treats as field removal.
+      await convex.mutation(api.documentTemplates.update, {
+        id: dt.id,
+        patch: { brandTemplateId: undefined, updatedAt: Date.now() },
+      });
+    }
+  }
+
   await (await getConvexClient()).mutation(api.brandTemplates.remove, { id });
 
   await logActivity({
@@ -198,7 +276,7 @@ export async function deleteBrandTemplate(id: string) {
     userName,
     action: "delete",
     entityType: "brand_template",
-    entityId: template.id,
+    entityId: id,
     entityName: template.name,
     summary: `Deleted brand template "${template.name}"`,
   });
@@ -216,24 +294,15 @@ export async function setDefaultBrandTemplate(id: string) {
     "manage_templates"
   );
 
-  const template = await prisma.brandTemplate.findFirst({
-    where: { id, organizationId },
-  });
-
+  const template = await getOwnedBrandTemplate(id, organizationId);
   if (!template) throw new Error("Brand template not found");
 
+  // Single-default-per-org: clear every other default in the org, then set this one.
   await unsetBrandDefaultsInConvex(organizationId, id);
-  await prisma.$transaction([
-    prisma.brandTemplate.updateMany({
-      where: { organizationId, isDefault: true },
-      data: { isDefault: false },
-    }),
-    prisma.brandTemplate.update({
-      where: { id },
-      data: { isDefault: true },
-    }),
-  ]);
-  await (await getConvexClient()).mutation(api.brandTemplates.update, { id, patch: { isDefault: true } });
+  await (await getConvexClient()).mutation(api.brandTemplates.update, {
+    id,
+    patch: { isDefault: true, updatedAt: Date.now() },
+  });
 
   await logActivity({
     organizationId,
@@ -241,7 +310,7 @@ export async function setDefaultBrandTemplate(id: string) {
     userName,
     action: "set_default",
     entityType: "brand_template",
-    entityId: template.id,
+    entityId: id,
     entityName: template.name,
     summary: `Set "${template.name}" as default brand template`,
   });
@@ -258,11 +327,13 @@ export async function unsetDefaultBrandTemplate(id: string) {
     "manage_templates"
   );
 
-  const template = await prisma.brandTemplate.update({
-    where: { id, organizationId },
-    data: { isDefault: false },
+  const template = await getOwnedBrandTemplate(id, organizationId);
+  if (!template) throw new Error("Brand template not found");
+
+  await (await getConvexClient()).mutation(api.brandTemplates.update, {
+    id,
+    patch: { isDefault: false, updatedAt: Date.now() },
   });
-  await patchBrandTemplateInConvex(id, template);
 
   await logActivity({
     organizationId,
@@ -270,10 +341,15 @@ export async function unsetDefaultBrandTemplate(id: string) {
     userName,
     action: "unset_default",
     entityType: "brand_template",
-    entityId: template.id,
+    entityId: id,
     entityName: template.name,
     summary: `Removed "${template.name}" as default brand template`,
   });
 
   return serialize({ success: true });
 }
+
+import type {
+  CreateBrandTemplateValues,
+  UpdateBrandTemplateValues,
+} from "@/lib/validations/template-section";

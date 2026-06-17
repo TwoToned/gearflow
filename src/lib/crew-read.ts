@@ -294,3 +294,12 @@ export function countMembersByRole(members: CrewMemberRow[]): Record<string, num
   }
   return counts;
 }
+
+/**
+ * Count of ACTIVE crew members (dashboard stat). Operates on the raw Convex docs
+ * from getCrewMembersByOrg. Replicates Prisma
+ * `crewMember.count({ where: { status: "ACTIVE" } })`.
+ */
+export function countActiveCrew(members: ConvexCrewMember[]): number {
+  return members.filter((m) => m.status === "ACTIVE").length;
+}

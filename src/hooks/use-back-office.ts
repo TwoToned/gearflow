@@ -13,7 +13,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
  */
 export type SupplierOrderDoc = Doc<"supplierOrders">;
 export type WarehouseCloseDoc = Doc<"warehouseCloses">;
-export type SavedReportDoc = Doc<"savedReports">;
 export type SavedTableViewDoc = Doc<"savedTableViews">;
 
 export function useSupplierOrders(orgId: string | undefined): SupplierOrderDoc[] | undefined {
@@ -21,9 +20,6 @@ export function useSupplierOrders(orgId: string | undefined): SupplierOrderDoc[]
 }
 export function useWarehouseCloses(orgId: string | undefined): WarehouseCloseDoc[] | undefined {
   return useAuthedQuery(api.warehouseCloses.list, orgId ? { orgId } : "skip");
-}
-export function useSavedReports(orgId: string | undefined): SavedReportDoc[] | undefined {
-  return useAuthedQuery(api.savedReports.list, orgId ? { orgId } : "skip");
 }
 export function useSavedTableViews(orgId: string | undefined): SavedTableViewDoc[] | undefined {
   return useAuthedQuery(api.savedTableViews.list, orgId ? { orgId } : "skip");
@@ -40,13 +36,6 @@ export function fingerprintWarehouseCloses(rows: WarehouseCloseDoc[] | undefined
   if (!rows) return undefined;
   return rows
     .map((c) => `${c.id}:${c.closedAt ?? 0}:${c.projectId ?? ""}:${c.storedCount ?? ""}:${c.damagedCount ?? ""}:${c.lostCount ?? ""}`)
-    .sort()
-    .join("|");
-}
-export function fingerprintSavedReports(rows: SavedReportDoc[] | undefined): string | undefined {
-  if (!rows) return undefined;
-  return rows
-    .map((r) => `${r.id}:${r.updatedAt ?? 0}:${(r.name ?? "").length}:${r.isPinned ?? ""}:${r.isShared ?? ""}`)
     .sort()
     .join("|");
 }

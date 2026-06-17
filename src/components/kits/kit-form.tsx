@@ -18,7 +18,7 @@ import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/layout/page-layouts";
@@ -109,7 +109,7 @@ export function KitForm({ initialData }: KitFormProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="assetTag">Asset Tag *</Label>
-              <ScanInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} scannerTitle="Scan kit tag" placeholder="e.g. KIT-AUD-001" />
+              <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. KIT-AUD-001" />
               {form.formState.errors.assetTag && (
                 <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
               )}

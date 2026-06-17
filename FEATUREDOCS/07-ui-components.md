@@ -9,14 +9,13 @@ shadcn/ui v4 uses Base UI, which uses `render` prop for composition (NOT Radix's
 ```
 
 ## Key Custom Components
-- **BarcodeScanner** (`src/components/ui/barcode-scanner.tsx`) — Camera scanner with Web Audio chime, ref-based callbacks, continuous mode
 - **ComboboxPicker** (`src/components/ui/combobox-picker.tsx`) — Searchable select with `creatable` mode for new entries
-- **ScanInput** (`src/components/ui/scan-input.tsx`) — Text input optimized for barcode scanner focus
+- **AssetTagInput** (`src/components/ui/asset-tag-input.tsx`) — Plain text input for entering asset/test tags. Drop-in replacement for the removed `ScanInput`; the in-app camera scanner was deleted (it never worked on iPhone). Manual typing and external HID barcode wedges (which act like a keyboard) still work everywhere. Accepts and ignores the old camera-only props (`onScan`/`scannerTitle`/`showScanButton`/`continuous`) for compatibility.
 - **DataTable** (`src/components/ui/data-table.tsx`) — Shared table with server-side pagination, sorting, column visibility, enum filters
 - **DynamicIcon** (`src/components/ui/dynamic-icon.tsx`) — Renders Lucide icon by string name
 - **TagInput** (`src/components/ui/tag-input.tsx`) — Tag input with autocomplete from org-wide suggestions
 - **UserAvatar** (`src/components/ui/user-avatar.tsx`) — Avatar with image + initials fallback
-- **MediaUploader** (`src/components/media/media-uploader.tsx`) — Drag-to-reorder, primary marking, bulk upload
+- **MediaUploader** (`src/components/media/media-uploader.tsx`) — Bulk upload + primary marking (manual drag-to-reorder removed; `@dnd-kit` dropped)
 - **MediaThumbnail** (`src/components/media/media-thumbnail.tsx`) — Image with fallback placeholder
 - **AddressInput** (`src/components/ui/address-input.tsx`) — Text input with Google Places API (New) autocomplete. Shows suggestions as user types (debounced 300ms, min 3 chars). On selection, fires `onPlaceSelect` with lat/lng. Freeform text clears coordinates. Shows teal MapPin icon when geocoded. Use with `Controller` from React Hook Form.
 - **AddressMap** (`src/components/ui/address-map.tsx`) — Google Maps via `@vis.gl/react-google-maps` with teal `AdvancedMarker`. Dynamic import (no SSR). Built-in dark/light mode via `colorScheme`. Shows "Get Directions" link (Google Maps / Apple Maps). Props: `latitude`, `longitude`, `address`, `label`, `height`, `zoom`, `interactive`, `showDirectionsLink`.

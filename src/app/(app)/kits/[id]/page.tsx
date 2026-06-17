@@ -8,7 +8,7 @@ import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useKitDetailVersion } from "@/hooks/use-kits";
-import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
+import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
@@ -44,7 +44,6 @@ import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
-import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
@@ -858,7 +857,6 @@ function ScanInput({
 }) {
   const [search, setSearch] = useState("");
   const [showResults, setShowResults] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Filter out already-staged assets
@@ -903,25 +901,6 @@ function ScanInput({
     [search, filtered, handleSelect],
   );
 
-  const handleCameraScan = useCallback(
-    (value: string) => {
-      const remaining = availableAssets.filter((a) => !stagedIds.has(a.id));
-      const lower = value.toLowerCase();
-      const exact = remaining.find((a) => a.assetTag.toLowerCase() === lower);
-      const partial = remaining.find(
-        (a) => a.assetTag.toLowerCase().includes(lower) || (a.model?.name.toLowerCase().includes(lower) ?? false),
-      );
-      const match = exact || partial;
-      if (match) {
-        onAdd(match);
-        toast.success(`Added ${match.assetTag}`);
-      } else {
-        toast.error(`No matching asset for "${value}"`);
-      }
-    },
-    [availableAssets, stagedIds, onAdd],
-  );
-
   return (
     <div className="space-y-2">
       <div className="relative">
@@ -941,16 +920,9 @@ function ScanInput({
             }}
             onKeyDown={handleKeyDown}
             placeholder="Scan barcode or search by tag / model..."
-            className="pl-9 pr-10"
+            className="pl-9"
             autoFocus
           />
-          <button
-            type="button"
-            onClick={() => setCameraOpen((v) => !v)}
-            className={`absolute right-2 top-2 rounded p-0.5 transition-colors ${cameraOpen ? "text-primary bg-primary/10" : "text-fg-3 hover:text-fg"}`}
-          >
-            <Camera className="h-4 w-4" />
-          </button>
         </div>
         {showResults && search && (
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md max-h-48 overflow-y-auto">
@@ -975,15 +947,6 @@ function ScanInput({
           </div>
         )}
       </div>
-      {cameraOpen && (
-        <BarcodeScanner
-          open={cameraOpen}
-          onScan={handleCameraScan}
-          onClose={() => setCameraOpen(false)}
-          title="Scan asset barcode"
-          continuous
-        />
-      )}
     </div>
   );
 }

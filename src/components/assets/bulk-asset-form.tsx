@@ -16,10 +16,9 @@ import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { useModels } from "@/hooks/use-models";
 import { useLocations } from "@/hooks/use-locations";
-import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/layout/page-layouts";
@@ -57,10 +56,6 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     ...l,
     parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
   }));
-
-  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
-  const allSuppliers = useSuppliers(orgId);
-  const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
   const orgTags = useOrgTags(orgId);
 
@@ -124,7 +119,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
           </div>
           <div className="space-y-2">
             <Label htmlFor="assetTag">Asset Tag *</Label>
-            <ScanInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} scannerTitle="Scan asset tag" placeholder="e.g. AV-SM57" />
+            <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. AV-SM57" />
             {form.formState.errors.assetTag && (
               <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
             )}
@@ -153,27 +148,6 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
           <div className="space-y-2">
             <Label htmlFor="purchasePricePerUnit">Price Per Unit ($)</Label>
             <Input id="purchasePricePerUnit" type="number" step="0.01" {...form.register("purchasePricePerUnit")} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="reorderThreshold">Reorder Threshold</Label>
-            <Input id="reorderThreshold" type="number" {...form.register("reorderThreshold")} placeholder="Low stock alert" />
-            <p className="text-[11px] text-fg-4">
-              Items at or below this surface on /warehouse/reorder.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label>Preferred Supplier</Label>
-            <ComboboxPicker
-              value={form.watch("preferredSupplierId") || ""}
-              onChange={(v) => form.setValue("preferredSupplierId", v)}
-              options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-              placeholder="No preferred supplier"
-              searchPlaceholder="Search suppliers..."
-              allowClear
-            />
-            <p className="text-[11px] text-fg-4">
-              Reorder dashboard groups low-stock items by supplier.
-            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>

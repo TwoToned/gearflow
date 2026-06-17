@@ -4,8 +4,7 @@
  * Operational P&L panel for the project detail right-rail (Wave 2).
  *
  * Shows the canonical cost stack: revenue minus services / labour /
- * sub-hire / maintenance / damage. Charged-back damage doesn't count
- * against margin — it's the client's bill, not ours.
+ * sub-hire / maintenance.
  *
  * Per the approved plan: collapsed by default, single right-rail section
  * mirroring FinancialSummary's visual treatment. The deep-view link goes
@@ -92,13 +91,11 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
     return null; // No revenue yet — panel adds noise. Hide until the project has totals.
   }
 
-  const ourDamageCost = data.damageCostTotal - data.damageChargedBackTotal;
   const totalCosts =
     data.serviceCostTotal +
     data.labourCostTotal +
     data.subHireCostTotal +
-    data.maintenanceCostTotal +
-    ourDamageCost;
+    data.maintenanceCostTotal;
 
   return (
     <div className="space-y-3">
@@ -127,17 +124,6 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
         <Row label="Sub-hire" value={formatCurrency(data.subHireCostTotal)} negative />
         {data.maintenanceCostTotal > 0 && (
           <Row label={`Maintenance (${data.counts.maintenanceRecords})`} value={formatCurrency(data.maintenanceCostTotal)} negative />
-        )}
-        {ourDamageCost > 0 && (
-          <Row
-            label={
-              data.damageChargedBackTotal > 0
-                ? `Damage (${data.counts.damageEvents}, ${formatCurrency(data.damageChargedBackTotal)} charged back)`
-                : `Damage (${data.counts.damageEvents})`
-            }
-            value={formatCurrency(ourDamageCost)}
-            negative
-          />
         )}
         <div className="h-px bg-border my-1" />
         <Row label="Total costs" value={formatCurrency(totalCosts)} bold negative />
@@ -170,14 +156,6 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
             className="underline-offset-2 hover:underline"
           >
             Maintenance records →
-          </Link>
-        )}
-        {data.counts.damageEvents > 0 && (
-          <Link
-            href={`/damage?projectId=${encodeURIComponent(projectId)}`}
-            className="underline-offset-2 hover:underline"
-          >
-            Damage events →
           </Link>
         )}
       </div>

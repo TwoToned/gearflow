@@ -20,6 +20,6 @@
 `ModelMedia`, `AssetMedia`, `KitMedia`, `ProjectMedia`, `ClientMedia`, `LocationMedia` — each links entity to `FileUpload` with `type`, `isPrimary`, `displayName`, `sortOrder`.
 
 ## Components
-- **MediaUploader** (`src/components/media/media-uploader.tsx`) — Drag-to-reorder, primary marking, bulk upload
+- **MediaUploader** (`src/components/media/media-uploader.tsx`) — Bulk upload + primary marking. Manual drag-to-reorder was removed (`chore/remove-pdf-builder-and-dnd`, `@dnd-kit` dropped); media keeps its existing `sortOrder`. The `onReorder` prop is retained on the interface but unused.
 - **MediaThumbnail** (`src/components/media/media-thumbnail.tsx`) — Image with fallback placeholder
 - **MediaLightbox** (`src/components/media/media-lightbox.tsx`) — Full-screen image viewer

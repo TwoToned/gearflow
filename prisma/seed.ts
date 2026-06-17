@@ -93,7 +93,8 @@ async function main() {
         type: "CORPORATE",
         rentalStartDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         rentalEndDate: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000),
-        billingDays: 3,
+        defaultRentalPeriod: "DAILY",
+        defaultRentalQuantity: 3,
         description:
           "Cross-type unification fixture. Own stock + sub-hires + customs in two categories + one uncategorised sub-hire group.",
       },

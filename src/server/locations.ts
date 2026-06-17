@@ -18,7 +18,7 @@ import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/
 
 // Locations are DUAL-WRITTEN: every create/update/delete writes the Prisma
 // `location` row (the durable FK anchor — asset/bulk_asset/kit/project/
-// warehouse_dashboard_token hold a nullable FK; location_media + stocktake hold
+// warehouse_dashboard_token hold a nullable FK; location_media holds
 // a required + Cascade FK; plus the self-referential parentId) AND the Convex
 // `locations` doc (the reactive read source). Prisma is written first; the Convex
 // payload is derived from the written row via toConvexDoc so the two can't drift.

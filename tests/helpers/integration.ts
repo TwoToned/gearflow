@@ -71,27 +71,25 @@ function modelKey(delegateName: string): string {
   return delegateName.charAt(0).toUpperCase() + delegateName.slice(1);
 }
 
-/** Re-read a row by id and mirror it (create-if-missing + patch) to Convex. */
-async function mirrorById(model: string, id: string | undefined): Promise<void> {
+/**
+ * Mirror an already-materialised row to Convex (create-if-missing + patch).
+ *
+ * We mirror the ROW the Prisma write RETURNED rather than re-reading via
+ * findUnique. Interleaving an extra Prisma read between the write and the next
+ * fixture write was a source of pooled-connection flake (phantom FK violations).
+ * The returned row already carries every scalar column + DB defaults, which is
+ * all the Convex mirror needs.
+ */
+async function mirrorRow(model: string, row: { id?: string } | null | undefined): Promise<void> {
   const entry = MIRROR_REGISTRY[model];
-  if (!entry || !id) return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fresh = await (prisma as any)[lowerFirst(model)].findUnique({ where: { id } });
-  if (!fresh) return;
-  await entry.create(fresh as Record<string, unknown>);
-  await entry.patch(id, fresh as Record<string, unknown>);
+  if (!entry || !row || !row.id) return;
+  await entry.create(row as Record<string, unknown>);
+  await entry.patch(row.id, row as Record<string, unknown>);
 }
 
-/** Mirror every row matched by a where-clause (updateMany / deleteMany helpers). */
-async function mirrorWhere(model: string, where: unknown): Promise<void> {
-  const entry = MIRROR_REGISTRY[model];
-  if (!entry) return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = await (prisma as any)[lowerFirst(model)].findMany({ where });
-  for (const row of rows as Array<{ id: string }>) {
-    await entry.create(row as Record<string, unknown>);
-    await entry.patch(row.id, row as Record<string, unknown>);
-  }
+/** Mirror a batch of already-materialised rows (createManyAndReturn / updateMany return). */
+async function mirrorRows(model: string, rows: Array<{ id?: string }>): Promise<void> {
+  for (const row of rows) await mirrorRow(model, row);
 }
 
 function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): unknown {
@@ -107,14 +105,22 @@ function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): 
         if (prop === "delete") {
           const id = (result as { id?: string } | null)?.id;
           if (id) await entry.remove(id);
-        } else if (prop === "createMany" || prop === "createManyAndReturn") {
+        } else if (prop === "createManyAndReturn") {
+          await mirrorRows(model, (result as Array<{ id?: string }>) ?? []);
+        } else if (prop === "createMany") {
+          // createMany returns only a count — mirror from the input rows (each
+          // carries an explicit id in our fixtures + the columns we wrote).
           const data = Array.isArray(args?.data) ? args.data : [args?.data];
-          for (const d of data) await mirrorById(model, (d as { id?: string })?.id);
+          await mirrorRows(model, data as Array<{ id?: string }>);
         } else if (prop === "updateMany") {
-          await mirrorWhere(model, args?.where);
+          // updateMany returns a count — re-read the touched rows by where so the
+          // Convex copy reflects the new values. (This path is rare in fixtures.)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rows = await (prisma as any)[lowerFirst(model)].findMany({ where: args?.where });
+          await mirrorRows(model, rows as Array<{ id?: string }>);
         } else {
           // create / update / upsert all return the affected row.
-          await mirrorById(model, (result as { id?: string } | null)?.id);
+          await mirrorRow(model, result as { id?: string } | null);
         }
         return result;
       };
@@ -154,14 +160,16 @@ export const testPrisma: typeof prisma = new Proxy(prisma, {
 const TRUNCATE_EXCLUDE = new Set(["_prisma_migrations", "jwks"]);
 
 export async function truncateAllTables(): Promise<void> {
-  const allTables = await testPrisma.$queryRaw<Array<{ tablename: string }>>`
+  // Use the BASE prisma (not the mirror Proxy) for raw SQL — keeps TRUNCATE off
+  // the wrapped path entirely.
+  const allTables = await prisma.$queryRaw<Array<{ tablename: string }>>`
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public'
   `;
   const tables = allTables.filter((t) => !TRUNCATE_EXCLUDE.has(t.tablename));
   if (tables.length === 0) return;
   const list = tables.map((t) => `"${t.tablename}"`).join(", ");
-  await testPrisma.$executeRawUnsafe(
+  await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`,
   );
 }

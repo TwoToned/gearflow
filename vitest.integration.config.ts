@@ -36,6 +36,11 @@ export default defineConfig({
     // Integration tests need a sequential run within each file to avoid
     // racing on TRUNCATE.
     fileParallelism: false,
+    // Force fully-sequential tests within a file: no concurrent test bodies may
+    // overlap a sibling's beforeEach TRUNCATE (which would leak/wipe rows now that
+    // tests do slow Convex round-trips). Belt-and-suspenders with fileParallelism.
+    maxConcurrency: 1,
+    sequence: { concurrent: false },
     // Each fixture write now also round-trips to the shared dev Convex deployment
     // (auto-mirror), and tests that build many rows fan out many HTTP calls. The
     // old 15s cap was tuned for pure-Postgres tests; bump it so network latency to

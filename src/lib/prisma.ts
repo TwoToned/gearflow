@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "@/env";
@@ -19,7 +20,25 @@ const hardenedUrl = buildRuntimeDatabaseUrl(env.DATABASE_URL, {
   connectionLimit: env.DB_CONNECTION_LIMIT,
 });
 
-const adapter = new PrismaPg({ connectionString: hardenedUrl });
+// Under the integration test runner (Vitest) we pin the pg pool to a SINGLE,
+// never-recycled connection. The default multi-connection pool is correct for
+// the app, but in the Vitest worker its checkout/checkin races (queries land on
+// different physical connections across `await` points) make a per-test
+// `TRUNCATE` non-deterministically race fixture writes — rows leak past a
+// truncate or a just-written row reads back missing. One pinned connection
+// serialises every statement, which is exactly what the integration tests need.
+// (No effect on prod: gated on VITEST.)
+const isVitest = process.env.VITEST === "true";
+const adapter = isVitest
+  ? new PrismaPg(
+      new Pool({
+        connectionString: env.DATABASE_URL,
+        max: 1,
+        idleTimeoutMillis: 0,
+        allowExitOnIdle: false,
+      }),
+    )
+  : new PrismaPg({ connectionString: hardenedUrl });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 

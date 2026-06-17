@@ -638,7 +638,9 @@ export default function WooCommerceSettingsPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-fg-3">
-                      {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
+                      {log.createdAt
+                        ? formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })
+                        : ""}
                     </span>
                     {log.status === "FAILED" && (
                       <Button

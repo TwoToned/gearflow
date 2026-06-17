@@ -1,70 +1,73 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getClientMap } from "@/lib/clients-read";
-import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getKitsByOrg } from "@/lib/kits-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { type FilterValue } from "@/lib/table-utils";
-import { listLocations } from "@/lib/locations-read";
+import {
+  listLocations,
+  getLocationDetail,
+  getLocationById,
+  getLocationsByOrg,
+  getLocationMediaGallery,
+  countLocationRelations,
+  type ConvexLocation,
+} from "@/lib/locations-read";
 
-// Locations are DUAL-WRITTEN: every create/update/delete writes the Prisma
-// `location` row (the durable FK anchor — asset/bulk_asset/kit/project/
-// warehouse_dashboard_token hold a nullable FK; location_media holds
-// a required + Cascade FK; plus the self-referential parentId) AND the Convex
-// `locations` doc (the reactive read source). Prisma is written first; the Convex
-// payload is derived from the written row via toConvexDoc so the two can't drift.
-// The single-default invariant (only one isDefault per org) is enforced by a
-// Prisma updateMany — that multi-row unset is mirrored to Convex too, else the
-// reactive list would show two defaults. Server-side reads + the parent/children
-// hierarchy stay on the always-fresh Prisma mirror. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma location row into Convex (create). */
-async function mirrorLocationToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.locations.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.locations.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma location row into Convex (patch, id stripped). */
-async function patchLocationInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.locations.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.locations.update>["patch"],
-  });
-}
+// Locations are CONVEX-ONLY (Phase B write inversion): every create/update/delete
+// writes the Convex `locations` doc as the sole source of truth — no Prisma row,
+// no mirror. The inbound Prisma FKs into `location` (asset.locationId,
+// bulk_asset.locationId, kit.locationId, project.locationId, the self-ref
+// location.parentId, location_media.locationId [was Cascade], and
+// warehouse_dashboard_token.locationId [was SetNull]) were dropped (migration
+// 20260617131000_drop_location_fk_constraints), so each is now a plain string
+// holding the Convex cuid.
+//
+// Invariants re-implemented in app code (Convex has no constraints/cascades):
+//  - Single-default-per-org: createLocation / updateLocation toggle isDefault; the
+//    Convex-only `unsetDefaultsInConvex` clears every other org default first.
+//  - Delete guards: re-implemented from Convex counts — "Cannot delete location
+//    with sub-locations" if children > 0; "Cannot delete location with assets
+//    assigned to it" if assets/bulkAssets > 0 (matches the old `_count` guard).
+//  - location_media Cascade: the dropped Cascade FK auto-deleted a location's
+//    media on delete. Re-implemented in deleteLocation — after the guards pass,
+//    every locationMedia doc for the location is removed from Convex.
+//  - Org-guard: reads the target via getLocationById and verifies organizationId
+//    before any update/remove (matches the old where:{id,organizationId}).
+//
+// Reads (list, detail, counts) already source from Convex via locations-read.
+// See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
 
 /**
- * Clear `isDefault` in Convex for the given location ids (mirrors the Prisma
- * updateMany that enforces one default per org). Skips one id (the row about to
- * become/stay default) so we don't immediately re-clear it.
+ * Clear `isDefault` in Convex for every other current default in the org
+ * (Convex-only re-implementation of the old Prisma
+ * `updateMany({ where: { organizationId, isDefault: true, NOT: { id } }, data: { isDefault: false } })`).
+ * Reads the org's locations from Convex and patches each default except `exceptId`.
  */
 async function unsetDefaultsInConvex(organizationId: string, exceptId?: string) {
-  const prevDefaults = await prisma.location.findMany({
-    where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
-    select: { id: true },
-  });
-  const convex = (await getConvexClient());
-  for (const d of prevDefaults) {
-    await convex.mutation(api.locations.update, { id: d.id, patch: { isDefault: false } });
+  const locations = await getLocationsByOrg(organizationId);
+  const convex = await getConvexClient();
+  for (const l of locations) {
+    if (l.isDefault && l.id !== exceptId) {
+      await convex.mutation(api.locations.update, {
+        id: l.id,
+        patch: { isDefault: false, updatedAt: Date.now() },
+      });
+    }
   }
 }
 
-// Locations list — READ FROM CONVEX (Phase A). Filter/sort/paginate + the parent
-// name self-join + per-location relation counts are all computed client-side from
-// the dual-written Convex location/asset/bulk-asset/kit/project lists. The enum
-// `filters.type` is pulled out as a plain string[] for the JS filter (no Prisma
-// `where` is built any more). See src/lib/locations-read.ts.
+// Locations list — READ FROM CONVEX. Filter/sort/paginate + the parent name
+// self-join + per-location relation counts are all computed client-side from the
+// Convex location/asset/bulk-asset/kit/project lists. The enum `filters.type` is
+// pulled out as a plain string[] for the JS filter. See src/lib/locations-read.ts.
 export async function getLocations(params?: {
   search?: string;
   type?: string;
@@ -120,102 +123,93 @@ export async function getLocationCounts(): Promise<Record<string, { assets: numb
   return serialize(counts);
 }
 
-/** Inherit address/coordinates from parent when a child location has none of its own. */
-function resolveLocationInheritance<T extends { address?: string | null; latitude?: number | null; longitude?: number | null; parent?: { address?: string | null; latitude?: number | null; longitude?: number | null } | null }>(location: T): T {
-  if (location.parent) {
-    if (!location.address) location.address = location.parent.address;
-    if (location.latitude == null && location.longitude == null && location.parent.latitude != null) {
-      location.latitude = location.parent.latitude;
-      location.longitude = location.parent.longitude;
-    }
-  }
-  return location;
-}
-
+// Detail-page composite — READ FROM CONVEX (Phase B). The deep Prisma include
+// (parent/children/assets/bulkAssets/kits/projects/media + _count) is rebuilt
+// from the Convex domain lists in getLocationDetail (locations-read.ts), since
+// every inbound Location FK relation was dropped.
 export async function getLocation(id: string) {
   const { organizationId } = await getOrgContext();
-  const location = await prisma.location.findUnique({
-    where: { id, organizationId },
-    include: {
-      parent: true,
-      children: {
-        include: { _count: { select: { assets: true, bulkAssets: true } } },
-        orderBy: { name: "asc" },
-      },
-      assets: {
-        where: { isActive: true },
-        orderBy: { assetTag: "asc" },
-        take: 50,
-      },
-      bulkAssets: {
-        where: { isActive: true },
-        orderBy: { assetTag: "asc" },
-        take: 50,
-      },
-      kits: {
-        where: { isActive: true },
-        orderBy: { assetTag: "asc" },
-        take: 50,
-      },
-      projects: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      },
-      media: {
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      },
-      _count: { select: { assets: true, bulkAssets: true, kits: true, children: true, projects: true } },
-    },
-  });
-  if (!location) return null;
+  const detail = await getLocationDetail(id, organizationId);
+  if (!detail) return null;
+  return serialize(detail);
+}
 
-  const [clientMap, modelMap] = await Promise.all([
-    getClientMap(organizationId),
-    getModelMap(organizationId),
-  ]);
-  const enriched = {
-    ...location,
-    assets: location.assets.map((a) => ({
-      ...a,
-      model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
-    })),
-    bulkAssets: location.bulkAssets.map((b) => ({
-      ...b,
-      model: b.modelId ? modelMap.get(b.modelId) ?? null : null,
-    })),
-    projects: location.projects.map((p) => ({
-      ...p,
-      client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
-    })),
+/** Map a Convex location doc to the serialized Prisma-row shape consumers expect. */
+function toLocationRowShape(doc: {
+  id: string;
+  organizationId: string;
+  name: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  type?: string;
+  isDefault?: boolean;
+  parentId?: string | null;
+  notes?: string | null;
+  tags?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+}) {
+  return {
+    id: doc.id,
+    organizationId: doc.organizationId,
+    name: doc.name,
+    address: doc.address ?? null,
+    latitude: doc.latitude ?? null,
+    longitude: doc.longitude ?? null,
+    type: doc.type ?? "WAREHOUSE",
+    isDefault: doc.isDefault ?? false,
+    parentId: doc.parentId ?? null,
+    notes: doc.notes ?? null,
+    tags: doc.tags ?? [],
+    createdAt: new Date(doc.createdAt ?? Date.now()),
+    updatedAt: new Date(doc.updatedAt ?? Date.now()),
   };
-  return serialize(enriched);
 }
 
 export async function createLocation(data: LocationFormValues) {
   const { organizationId, userId, userName } = await requirePermission("location", "create");
   const parsed = locationSchema.parse(data);
 
-  // If this is set as default, unset other defaults (in Prisma AND Convex).
+  // Single-default-per-org: clear other defaults before setting this one.
   if (parsed.isDefault) {
     await unsetDefaultsInConvex(organizationId);
-    await prisma.location.updateMany({
-      where: { organizationId, isDefault: true },
-      data: { isDefault: false },
-    });
   }
 
-  // Explicit cuid so the Prisma row and the Convex doc share one id.
+  // Explicit cuid so external references hold the same id Convex stores.
   const id = createId();
-  const result = await prisma.location.create({
-    data: {
-      ...parsed,
-      id,
-      parentId: parsed.parentId || null,
-      organizationId,
-    },
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.locations.create, {
+    id,
+    organizationId,
+    name: parsed.name,
+    address: parsed.address || undefined,
+    latitude: parsed.latitude ?? undefined,
+    longitude: parsed.longitude ?? undefined,
+    type: parsed.type,
+    isDefault: parsed.isDefault ?? false,
+    parentId: parsed.parentId || undefined,
+    notes: parsed.notes || undefined,
+    tags: parsed.tags ?? [],
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorLocationToConvex(result);
+
+  const result = toLocationRowShape({
+    id,
+    organizationId,
+    name: parsed.name,
+    address: parsed.address,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    type: parsed.type,
+    isDefault: parsed.isDefault ?? false,
+    parentId: parsed.parentId || null,
+    notes: parsed.notes,
+    tags: parsed.tags,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   await logActivity({
     organizationId,
@@ -235,22 +229,46 @@ export async function updateLocation(id: string, data: LocationFormValues) {
   const { organizationId, userId, userName } = await requirePermission("location", "update");
   const parsed = locationSchema.parse(data);
 
+  const existing = await getLocationById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Location not found");
+
   if (parsed.isDefault) {
     await unsetDefaultsInConvex(organizationId, id);
-    await prisma.location.updateMany({
-      where: { organizationId, isDefault: true, id: { not: id } },
-      data: { isDefault: false },
-    });
   }
 
-  const updated = await prisma.location.update({
-    where: { id, organizationId },
-    data: {
-      ...parsed,
-      parentId: parsed.parentId || null,
+  // Convex `db.patch` treats `undefined` as field removal, matching the old
+  // Prisma `address || null` / `parentId || null` clears.
+  await (await getConvexClient()).mutation(api.locations.update, {
+    id,
+    patch: {
+      name: parsed.name,
+      address: parsed.address || undefined,
+      latitude: parsed.latitude ?? undefined,
+      longitude: parsed.longitude ?? undefined,
+      type: parsed.type,
+      isDefault: parsed.isDefault ?? false,
+      parentId: parsed.parentId || undefined,
+      notes: parsed.notes || undefined,
+      tags: parsed.tags ?? [],
+      updatedAt: Date.now(),
     },
   });
-  await patchLocationInConvex(id, updated);
+
+  const updated = toLocationRowShape({
+    id,
+    organizationId,
+    name: parsed.name,
+    address: parsed.address,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    type: parsed.type,
+    isDefault: parsed.isDefault ?? false,
+    parentId: parsed.parentId || null,
+    notes: parsed.notes,
+    tags: parsed.tags,
+    createdAt: existing.createdAt,
+    updatedAt: Date.now(),
+  });
 
   await logActivity({
     organizationId,
@@ -268,17 +286,38 @@ export async function updateLocation(id: string, data: LocationFormValues) {
 
 export async function deleteLocation(id: string) {
   const { organizationId, userId, userName } = await requirePermission("location", "delete");
-  const location = await prisma.location.findUnique({
-    where: { id, organizationId },
-    include: { _count: { select: { assets: true, bulkAssets: true, children: true } } },
-  });
-  if (!location) throw new Error("Location not found");
-  if (location._count.children > 0) throw new Error("Cannot delete location with sub-locations");
-  if (location._count.assets > 0 || location._count.bulkAssets > 0) {
+
+  const location = await getLocationById(id);
+  if (!location || location.organizationId !== organizationId) throw new Error("Location not found");
+
+  // Delete guards re-implemented from Convex counts (replaces the old Prisma
+  // `_count: { assets, bulkAssets, children }`).
+  const [allLocations, allAssets, allBulkAssets] = await Promise.all([
+    getLocationsByOrg(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+  ]);
+  const counts = countLocationRelations(id, allLocations, allAssets, allBulkAssets);
+  if (counts.children > 0) throw new Error("Cannot delete location with sub-locations");
+  if (counts.assets > 0 || counts.bulkAssets > 0) {
     throw new Error("Cannot delete location with assets assigned to it");
   }
-  await prisma.location.delete({ where: { id, organizationId } });
-  await (await getConvexClient()).mutation(api.locations.remove, { id });
+
+  const convex = await getConvexClient();
+
+  // location_media Cascade re-implementation: the dropped Cascade FK auto-deleted
+  // a location's media rows on delete. location_media is still dual-written
+  // (Prisma rows + Convex mirror), so the cascade must land in BOTH stores —
+  // remove every locationMedia row for this location from Convex AND Prisma,
+  // then delete the location itself. (The old Cascade dropped only the join
+  // rows, leaving file_upload rows; this preserves that exact behaviour.)
+  const media = await getLocationMediaGallery(id);
+  for (const m of media) {
+    await convex.mutation(api.locationMedia.remove, { id: m.id });
+  }
+  await prisma.locationMedia.deleteMany({ where: { locationId: id, organizationId } });
+
+  await convex.mutation(api.locations.remove, { id });
 
   await logActivity({
     organizationId,
@@ -297,10 +336,15 @@ export async function deleteLocation(id: string) {
 
 export async function updateLocationNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("location", "update");
-  const updated = await prisma.location.update({
-    where: { id, organizationId },
-    data: { notes: notes || null },
+
+  const existing = await getLocationById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Location not found");
+
+  await (await getConvexClient()).mutation(api.locations.update, {
+    id,
+    patch: { notes: notes || undefined, updatedAt: Date.now() },
   });
-  await patchLocationInConvex(id, updated);
-  return serialize(updated);
+
+  const updated: ConvexLocation = { ...existing, notes: notes || undefined, updatedAt: Date.now() };
+  return serialize(toLocationRowShape(updated));
 }

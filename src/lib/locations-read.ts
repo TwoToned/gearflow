@@ -4,6 +4,9 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getKitsByOrg } from "@/lib/kits-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getModelMap } from "@/lib/models-read";
+import { getClientMap } from "@/lib/clients-read";
+import { mapGalleryFile, type GalleryFile } from "@/lib/media-read";
 
 /**
  * Server-side read helpers for the Locations domain (Phase 3 cutover).
@@ -284,5 +287,213 @@ export async function listLocations(
     page: params.page,
     pageSize: params.pageSize,
     totalPages: Math.ceil(total / params.pageSize),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Detail-page composite (Phase B) — `getLocation` reconstruction.
+//
+// The old `getLocation` was a single Prisma `findUnique` with a deep `include`
+// (parent, children + their _count, assets/bulkAssets/kits/projects, media+file,
+// and a top-level _count). Dropping the inbound Location FKs (Phase B) removed
+// every one of those Prisma relations, so the composite is rebuilt here from the
+// dual-written Convex domain lists. Shape is faithful to the prior serialized
+// output the detail page consumes:
+//   - parent  { id, name, address, latitude, longitude } | null
+//   - children [{ id, name, _count: { assets, bulkAssets } }]  (name asc)
+//   - assets/bulkAssets/kits  (isActive only, assetTag asc, take 50) w/ model {name}
+//   - projects (createdAt desc, take 20) w/ client {name}
+//   - media   [{ ...row, file }]  (sortOrder asc)
+//   - _count  { assets, bulkAssets, kits, children, projects }
+// Counts are over ALL rows; the per-tab arrays are the active/limited subsets,
+// matching the original include's `where`/`take`.
+// ---------------------------------------------------------------------------
+
+type DetailAssetRow = { id: string; assetTag: string; status: string; model: { name: string } | null };
+type DetailKitRow = { id: string; assetTag: string; name: string; status: string };
+type DetailProjectRow = { id: string; projectNumber: string; name: string; status: string; client: { name: string } | null; createdAt: Date };
+type DetailMediaRow = {
+  id: string;
+  organizationId: string;
+  fileId: string;
+  type: string;
+  displayName: string | null;
+  sortOrder: number;
+  createdAt: Date;
+  file: GalleryFile | null;
+};
+
+export interface LocationDetail extends MappedLocation {
+  parent: { id: string; name: string; address: string | null; latitude: number | null; longitude: number | null } | null;
+  children: Array<{ id: string; name: string; _count: { assets: number; bulkAssets: number } }>;
+  assets: DetailAssetRow[];
+  bulkAssets: DetailAssetRow[];
+  kits: DetailKitRow[];
+  projects: DetailProjectRow[];
+  media: DetailMediaRow[];
+  _count: LocationRelCounts;
+}
+
+/**
+ * `getLocation` detail composite from Convex. Returns null when the location
+ * doesn't exist or belongs to another org (matches the old org-scoped
+ * findUnique). One pass over the org's location/asset/bulk-asset/kit/project
+ * lists, plus the location's own media gallery (locationMedia mirror + file
+ * lookups).
+ */
+export async function getLocationDetail(
+  id: string,
+  organizationId: string,
+): Promise<LocationDetail | null> {
+  const [locDocs, allAssets, allBulk, allKits, allProjects, modelMap, clientMap] = await Promise.all([
+    getLocationsByOrg(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getKitsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+    getModelMap(organizationId),
+    getClientMap(organizationId),
+  ]);
+
+  const locations = locDocs.map(mapLocation);
+  const self = locations.find((l) => l.id === id);
+  if (!self) return null;
+
+  const byId = new Map(locations.map((l) => [l.id, l]));
+
+  // Counts over ALL rows for this location.
+  const assetsHere = allAssets.filter((a) => a.locationId === id);
+  const bulkHere = allBulk.filter((b) => b.locationId === id);
+  const kitsHere = allKits.filter((k) => k.locationId === id);
+  const projectsHere = allProjects.filter((p) => p.locationId === id);
+  const childrenAll = locations.filter((l) => l.parentId === id);
+
+  const _count: LocationRelCounts = {
+    assets: assetsHere.length,
+    bulkAssets: bulkHere.length,
+    kits: kitsHere.length,
+    children: childrenAll.length,
+    projects: projectsHere.length,
+  };
+
+  // Parent.
+  const parentRow = self.parentId ? byId.get(self.parentId) : undefined;
+  const parent = parentRow
+    ? {
+        id: parentRow.id,
+        name: parentRow.name,
+        address: parentRow.address,
+        latitude: parentRow.latitude,
+        longitude: parentRow.longitude,
+      }
+    : null;
+
+  // Children (name asc) + their asset/bulk counts.
+  const children = [...childrenAll]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      _count: {
+        assets: allAssets.filter((a) => a.locationId === c.id).length,
+        bulkAssets: allBulk.filter((b) => b.locationId === c.id).length,
+      },
+    }));
+
+  // Active asset/bulk/kit subsets — assetTag asc, take 50.
+  const byTag = (a: { assetTag: string }, b: { assetTag: string }) =>
+    a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0;
+  const assets: DetailAssetRow[] = assetsHere
+    .filter((a) => a.isActive !== false)
+    .sort(byTag)
+    .slice(0, 50)
+    .map((a) => ({
+      id: a.id,
+      assetTag: a.assetTag,
+      status: (a.status ?? "AVAILABLE") as string,
+      model: a.modelId ? { name: modelMap.get(a.modelId)?.name ?? "" } : null,
+    }));
+  const bulkAssets: DetailAssetRow[] = bulkHere
+    .filter((b) => b.isActive !== false)
+    .sort(byTag)
+    .slice(0, 50)
+    .map((b) => ({
+      id: b.id,
+      assetTag: b.assetTag,
+      status: (b.status ?? "ACTIVE") as string,
+      model: b.modelId ? { name: modelMap.get(b.modelId)?.name ?? "" } : null,
+    }));
+  const kits: DetailKitRow[] = kitsHere
+    .filter((k) => k.isActive !== false)
+    .sort(byTag)
+    .slice(0, 50)
+    .map((k) => ({
+      id: k.id,
+      assetTag: k.assetTag,
+      name: k.name,
+      status: (k.status ?? "AVAILABLE") as string,
+    }));
+
+  // Projects — createdAt desc, take 20 (original had no isTemplate filter).
+  const projects: DetailProjectRow[] = [...projectsHere]
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 20)
+    .map((p) => ({
+      id: p.id,
+      projectNumber: p.projectNumber,
+      name: p.name,
+      status: (p.status ?? "DRAFT") as string,
+      client: p.clientId ? { name: clientMap.get(p.clientId)?.name ?? "" } : null,
+      createdAt: new Date(p.createdAt ?? 0),
+    }));
+
+  // Media gallery — locationMedia mirror (sortOrder asc) + file lookups.
+  const media = await getLocationMediaGallery(id);
+
+  return { ...self, parent, children, assets, bulkAssets, kits, projects, media, _count };
+}
+
+/**
+ * A location's media gallery from the Convex `locationMedia` mirror, ordered by
+ * sortOrder asc, each row carrying its resolved `file` (replaces the old
+ * `include: { media: { include: { file } }, orderBy: { sortOrder: "asc" } }`).
+ */
+export async function getLocationMediaGallery(locationId: string): Promise<DetailMediaRow[]> {
+  const convex = await getConvexClient();
+  const rows = (await convex.query(api.locationMedia.listByParent, { parentId: locationId })) as Doc<"locationMedia">[];
+  const sorted = [...rows].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const fileIds = [...new Set(sorted.map((r) => r.fileId))];
+  const fileDocs = await Promise.all(fileIds.map((fid) => convex.query(api.fileUploads.getById, { id: fid })));
+  const fileMap = new Map<string, GalleryFile>();
+  fileIds.forEach((fid, i) => {
+    const mapped = mapGalleryFile(fileDocs[i]);
+    if (mapped) fileMap.set(fid, mapped);
+  });
+  return sorted.map((m) => ({
+    id: m.id,
+    organizationId: m.organizationId,
+    fileId: m.fileId,
+    type: (m.type ?? "DOCUMENT") as string,
+    displayName: m.displayName ?? null,
+    sortOrder: m.sortOrder ?? 0,
+    createdAt: new Date(m.createdAt ?? 0),
+    file: fileMap.get(m.fileId) ?? null,
+  }));
+}
+
+/**
+ * Pure: per-location relation counts for a single location id, from the org
+ * domain lists. Used by deleteLocation's guard (children / assets / bulkAssets).
+ */
+export function countLocationRelations(
+  id: string,
+  locations: Array<{ id: string; parentId?: string | null }>,
+  assets: Array<{ locationId?: string | null }>,
+  bulkAssets: Array<{ locationId?: string | null }>,
+): { children: number; assets: number; bulkAssets: number } {
+  return {
+    children: locations.filter((l) => l.parentId === id).length,
+    assets: assets.filter((a) => a.locationId === id).length,
+    bulkAssets: bulkAssets.filter((b) => b.locationId === id).length,
   };
 }

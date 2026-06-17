@@ -36,3 +36,33 @@ export async function getKitMap(orgId: string): Promise<Map<string, ConvexKit>> 
 export async function getKitByAssetTag(orgId: string, assetTag: string): Promise<ConvexKit | null> {
   return await (await getConvexClient()).query(api.kits.getByAssetTag, { organizationId: orgId, assetTag });
 }
+
+export type ConvexKitSerializedItem = Doc<"kitSerializedItems">;
+export type ConvexKitBulkItem = Doc<"kitBulkItems">;
+
+/** All of an org's kit serialized-member rows (kit_serialized_item), for counts. */
+export async function getKitSerializedItemsByOrg(orgId: string): Promise<ConvexKitSerializedItem[]> {
+  return await (await getConvexClient()).query(api.kitSerializedItems.list, { orgId });
+}
+
+/** All of an org's kit bulk-member rows (kit_bulk_item), for counts. */
+export async function getKitBulkItemsByOrg(orgId: string): Promise<ConvexKitBulkItem[]> {
+  return await (await getConvexClient()).query(api.kitBulkItems.list, { orgId });
+}
+
+/**
+ * Per-kit member counts (kitId -> { serializedItems, bulkItems }) computed in JS
+ * over the two member lists, replacing the two Prisma `groupBy({ by: ["kitId"] })`
+ * calls in `getKitCounts`. A `null`/absent `kitId` is skipped (matches the Prisma
+ * loop that only counts grouped rows carrying a kitId). Pure + unit-tested.
+ */
+export function countKitMembers(
+  serializedItems: Array<{ kitId?: string | null }>,
+  bulkItems: Array<{ kitId?: string | null }>,
+): Record<string, { serializedItems: number; bulkItems: number }> {
+  const out: Record<string, { serializedItems: number; bulkItems: number }> = {};
+  const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0 });
+  for (const s of serializedItems) if (s.kitId) ensure(s.kitId).serializedItems++;
+  for (const b of bulkItems) if (b.kitId) ensure(b.kitId).bulkItems++;
+  return out;
+}

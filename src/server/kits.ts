@@ -27,6 +27,8 @@ import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc } from "@/lib/assets-read";
+import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers } from "@/lib/kits-read";
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
@@ -36,20 +38,28 @@ import { getModelById, getModelMap } from "@/lib/models-read";
  * dual-written). Used by the reactive kit table, which subscribes to the kit
  * list via Convex and merges these (non-reactive) values in. Excludes prep-kits
  * (isPrep) to match the kit list.
+ *
+ * Phase A: the member counts now come off the dual-written Convex
+ * `kitSerializedItems` / `kitBulkItems` lists (counted in JS by countKitMembers)
+ * instead of two Prisma `groupBy`s; the primary photo already came from Convex.
  */
 export async function getKitCounts(): Promise<
   Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [serializedGroups, bulkGroups, photoMap] = await Promise.all([
-    prisma.kitSerializedItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
-    prisma.kitBulkItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
+  const [serializedItems, bulkItems, photoMap] = await Promise.all([
+    getKitSerializedItemsByOrg(organizationId),
+    getKitBulkItemsByOrg(organizationId),
     getPrimaryPhotoMap("kit", organizationId),
   ]);
+  const memberCounts = countKitMembers(serializedItems, bulkItems);
   const out: Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
-  for (const g of serializedGroups) if (g.kitId) ensure(g.kitId).serializedItems = g._count._all;
-  for (const g of bulkGroups) if (g.kitId) ensure(g.kitId).bulkItems = g._count._all;
+  for (const [kitId, c] of Object.entries(memberCounts)) {
+    const e = ensure(kitId);
+    e.serializedItems = c.serializedItems;
+    e.bulkItems = c.bulkItems;
+  }
   for (const [kitId, meta] of Object.entries(photoMap)) ensure(kitId).media = meta;
   return serialize(out);
 }
@@ -685,41 +695,33 @@ export async function removeBulkItemFromKit(
   return serialize({ success: true });
 }
 
-// Serialized assets not in any kit.
+// Serialized assets not in any kit. Reads off the dual-written Convex `assets`
+// list; the eligibility where + assetTag sort are replicated by the pure
+// filterAvailableAssetsForKit / sortByAssetTagAsc helpers (Phase A).
 export async function getAvailableAssetsForKit(modelId?: string) {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: "AVAILABLE",
-      kitId: null,
-      ...(modelId && { modelId }),
-    },
-    orderBy: { assetTag: "asc" },
-  });
-  const modelMap = await getModelMap(organizationId);
+  const [allAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const assets = sortByAssetTagAsc(filterAvailableAssetsForKit(allAssets, modelId));
   return serialize(assets.map((a) => ({
     ...a,
     model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
   })));
 }
 
-// Bulk assets with available quantity.
+// Bulk assets with available quantity. Reads off the dual-written Convex
+// `bulkAssets` list; eligibility + sort via the pure helpers (Phase A).
 export async function getAvailableBulkAssetsForKit() {
   const { organizationId } = await getOrgContext();
 
-  const bulkAssets = await prisma.bulkAsset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: "ACTIVE",
-      availableQuantity: { gt: 0 },
-    },
-    orderBy: { assetTag: "asc" },
-  });
-  const modelMap = await getModelMap(organizationId);
+  const [allBulkAssets, modelMap] = await Promise.all([
+    getBulkAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const bulkAssets = sortByAssetTagAsc(filterAvailableBulkAssetsForKit(allBulkAssets));
   return serialize(bulkAssets.map((b) => ({
     ...b,
     model: b.modelId ? modelMap.get(b.modelId) ?? null : null,

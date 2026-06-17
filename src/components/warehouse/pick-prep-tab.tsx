@@ -28,7 +28,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
@@ -212,7 +211,6 @@ export function PickPrepTab({
                                 <PrepStatusBadge item={item} />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="deploy" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -266,7 +264,6 @@ export function PickPrepTab({
                             </TableRow>
                           );
                         })}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }
@@ -371,7 +368,6 @@ export function PickPrepTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="deploy" />
                     </Fragment>
                   );
                 })}

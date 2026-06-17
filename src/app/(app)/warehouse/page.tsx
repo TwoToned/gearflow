@@ -21,7 +21,7 @@ import { format } from "date-fns";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { batchCloseOut } from "@/server/warehouse-close";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
 import {
@@ -330,14 +330,13 @@ export default function WarehousePage() {
       <FadeIn delay={0.05}>
         <div className="relative max-w-lg">
           <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4.5 w-4.5 text-fg-3" />
-          <ScanInput
+          <AssetTagInput
             placeholder="Scan barcode or search by project name / number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onScan={(scanned) => setSearch(scanned)}
             className="h-10 pl-10 text-[13.5px]"
             autoFocus
-            scannerTitle="Scan project barcode"
           />
           {search && (
             <button

@@ -1,22 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Upload, Download, Building2, Eye, Loader2 } from "lucide-react";
+import { Building2, Eye, Loader2 } from "lucide-react";
 import Link from "next/link";
 import {
   adminGetTheOrg,
@@ -24,68 +11,16 @@ import {
 } from "@/server/site-admin";
 
 export default function AdminOrganizationsPage() {
-  const [importOpen, setImportOpen] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [exporting, setExporting] = useState(false);
-
-  const { data: theOrg, isLoading: orgLoading, refetch: refetchTheOrg } = useServerQuery({
+  const { data: theOrg, isLoading: orgLoading } = useServerQuery({
     queryKey: ["admin-the-org"],
     queryFn: adminGetTheOrg,
   });
 
-  const { data: orgDetails, refetch: refetchOrgDetails } = useServerQuery({
+  const { data: orgDetails } = useServerQuery({
     queryKey: ["admin-org-detail", theOrg?.id],
     queryFn: () => adminGetOrganizationDetails(theOrg!.id),
     enabled: !!theOrg?.id,
   });
-
-  async function handleExport() {
-    if (!theOrg) return;
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/admin/org-export/${theOrg.id}`);
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `org-export-${theOrg.slug}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Export downloaded");
-    } catch {
-      toast.error("Export failed");
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function handleImport() {
-    if (!importFile) return;
-    setImporting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", importFile);
-
-      const res = await fetch("/api/admin/org-import", {
-        method: "POST",
-        body: formData,
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Import failed");
-
-      refetchTheOrg();
-      refetchOrgDetails();
-      toast.success(`Imported "${body.name}" successfully`);
-      setImportOpen(false);
-      setImportFile(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setImporting(false);
-    }
-  }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const counts = (orgDetails as any)?._count ?? { assets: 0, bulkAssets: 0, projects: 0, kits: 0 };
@@ -131,14 +66,6 @@ export default function AdminOrganizationsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
-                    <Download className="mr-2 h-4 w-4" />
-                    {exporting ? "Exporting..." : "Export"}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import
-                  </Button>
                   <Button size="sm" render={<Link href={`/admin/organizations/${theOrg.id}`} />}>
                     <Eye className="mr-2 h-4 w-4" />
                     Manage
@@ -178,48 +105,6 @@ export default function AdminOrganizationsPage() {
           </>
         )}
       </div>
-
-      {/* Import Organization Dialog */}
-      <Dialog
-        open={importOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setImportOpen(false);
-            setImportFile(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Organization</DialogTitle>
-            <DialogDescription>
-              Upload an organization export (.zip) to overwrite the current
-              organization&apos;s data.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Export File</Label>
-              <Input
-                type="file"
-                accept=".zip"
-                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!importFile || importing}
-              onClick={handleImport}
-            >
-              {importing ? "Importing..." : "Import Organization"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </AdminShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Zap, AlertTriangle, RotateCcw } from "lucide-react";
@@ -92,17 +92,15 @@ export function ScanStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <ScanInput
+        <AssetTagInput
           ref={inputRef}
           value={state.scanInput}
           onChange={(e) => dispatch({ type: "SET_SCAN_INPUT", value: e.target.value })}
-          onScan={handleScan}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleScan(state.scanInput);
           }}
           placeholder="Scan or type a tag ID..."
           className="h-12 text-lg font-mono"
-          scannerTitle="Scan test tag"
         />
       </div>
 

@@ -5,9 +5,8 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { Container, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getAccessoryChildren, pickListProgress } from "./pick-list-progress";
+import { pickListProgress } from "./pick-list-progress";
 
 function getStorageKey(projectId: string) {
   return `picklist-checks-${projectId}`;
@@ -251,45 +250,6 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                         onToggle={() => toggle(item.id as string)}
                       />
                     )}
-
-                    {/* Accessories attached to this asset — picked alongside it */}
-                    {!isGroup && getAccessoryChildren(item).map((child) => {
-                      const childModel = child.model as { name: string; modelNumber?: string | null } | null;
-                      const childAsset = child.asset as { assetTag: string } | null;
-                      const childBulk = child.bulkAsset as { assetTag: string } | null;
-                      const childName = childModel?.name || (child.description as string) || "-";
-                      const childTag = childAsset?.assetTag || childBulk?.assetTag || null;
-                      const childQty = child.quantity as number;
-
-                      if (childQty > 1) {
-                        return Array.from({ length: childQty }).map((_, i) => {
-                          const key = `${child.id}-${i}`;
-                          return (
-                            <PickListRow
-                              key={key}
-                              label={childQty > 1 ? `${childName} - ${i + 1}` : childName}
-                              tag={childTag}
-                              accessory
-                              checked={checked.has(key)}
-                              onToggle={() => toggle(key)}
-                              indent={1}
-                            />
-                          );
-                        });
-                      }
-
-                      return (
-                        <PickListRow
-                          key={child.id as string}
-                          label={childName}
-                          tag={childTag}
-                          accessory
-                          checked={checked.has(child.id as string)}
-                          onToggle={() => toggle(child.id as string)}
-                          indent={1}
-                        />
-                      );
-                    })}
                   </React.Fragment>
                 );
               })}
@@ -318,7 +278,6 @@ function PickListRow({
   checked,
   onToggle,
   indent = 0,
-  accessory = false,
 }: {
   label: string;
   tag?: string | null;
@@ -326,7 +285,6 @@ function PickListRow({
   checked: boolean;
   onToggle: () => void;
   indent?: number;
-  accessory?: boolean;
 }) {
   return (
     <button
@@ -337,14 +295,9 @@ function PickListRow({
       style={indent ? { paddingLeft: `${indent * 1.25 + 0.75}rem` } : undefined}
     >
       <Checkbox checked={checked} className="shrink-0 pointer-events-none" />
-      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : accessory ? "" : "font-medium"}`}>
+      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : "font-medium"}`}>
         {label}
       </span>
-      {accessory && (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3 shrink-0">
-          Accessory
-        </Badge>
-      )}
       {tag && (
         <span className="font-mono text-xs text-fg-3 shrink-0">{tag}</span>
       )}

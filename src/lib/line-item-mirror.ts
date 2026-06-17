@@ -13,7 +13,7 @@ import { reconcileUnitsForLineItems, reconcileUnitsForProject } from "@/lib/line
  *
  * Dual-write (not hard cutover): `project_line_item_unit` carries a
  * required+Cascade FK, the table self-references (parent/child + kit children,
- * Cascade), and project_service / check_record / damage_event carry nullable refs.
+ * Cascade), and project_service / check_record carry nullable refs.
  *
  * Strategy — the spine is written from ~17 files / ~80 sites, most of them
  * status mutations inside warehouse / check / fulfillment `$transaction`s. Rather
@@ -67,7 +67,7 @@ export const removeLineItemFromConvex = async (id: string) => {
 const LINE_ITEM_RELATION_KEYS = new Set([
   "model", "asset", "bulkAsset", "kit", "supplier", "category", "group",
   "parentLineItem", "childLineItems", "units", "project", "subHire",
-  "subHireItem", "subHireGroup", "checkRecords", "damageEvents",
+  "subHireItem", "subHireGroup", "checkRecords",
 ]);
 
 /** Strip the nested relations a line-item read may include before mirroring. */

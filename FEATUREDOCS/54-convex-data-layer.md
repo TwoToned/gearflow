@@ -2371,6 +2371,38 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **suppliers (primary reads)** (`server/suppliers.ts` → extends `src/lib/suppliers-read.ts`).
+  `getSuppliers`, `getSuppliersPaginated`, and `getSupplierById` moved off
+  `prisma.supplier` to Convex via new `getMappedSuppliersByOrg` + `mapSupplier`
+  (epoch-ms→Date so `serialize` hands the client the same Date shape; tags `[]` /
+  isActive `true` coerced; absent optionals → null; `_id`/`_creationTime` stripped)
+  and pure unit-tested predicates `supplierMatchesSearch` (name/contact/email/
+  account#/tags, tag arm is exact-membership matching Prisma `hasSome`) +
+  `compareSuppliers` (string/Date/boolean, nulls-last). Per-supplier `_count.assets`
+  and `_count.orders` now come from Convex (`getAssetsByOrg` + `api.supplierOrders.list`
+  via the new private `getOrgSupplierCounts`); `getSupplierById` drops its embedded
+  `orders` array (the detail page fetches orders via `getSupplierOrders`, never reads
+  `supplier.orders`). **`getSupplierCounts` (sibling PR #237) and `getSupplierOrders`/
+  `getSupplierOrderById` (sibling PR #198) left untouched.** **Left on Prisma + why:**
+  `_count.lineItems` and `getSupplierSubhires` read `projectLineItem` (the keystone
+  line-item tree, read-rewired later as one unit) — the count stays a scalar Prisma
+  `count` (NOT a tree read); `getSupplierAssets` was already Convex (`getAssetsByOrg`
+  + `attachModel`). No new Convex query added (reused the existing
+  `suppliers.list` / `supplierOrders.list` / asset read helpers).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

@@ -78,10 +78,6 @@ const serverEnvSchema = z.object({
     .url("NEXT_PUBLIC_CONVEX_SITE_URL must be a valid URL")
     .optional(),
 
-  // Discord bot — RUNS IN-PROCESS NOW. All credentials and config live in the
-  // DiscordIntegration row (encrypted token via secret-vault). No bot env vars
-  // here; instrumentation.ts boots it on server start.
-
   // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
   SENTRY_DSN: z.string().optional(),
   // Source map upload (CI only)

@@ -11,8 +11,8 @@ import { api } from "../../convex/_generated/api";
  *
  * Dual-write (not hard cutover) because live inbound FKs from tables that stay in
  * Prisma cross the boundary: `project_service.crewRoleId` → crew_role;
- * `damage_event` / `project_task` / `discord_account_link` / `discord_link_token`
- * → crew_member; and the implicit m2m `_CrewMemberToCrewSkill` (which has NO Convex
+ * `damage_event` / `project_task` → crew_member; and the implicit m2m
+ * `_CrewMemberToCrewSkill` (which has NO Convex
  * representation — a member's skills stay composed on the Prisma mirror). See
  * FEATUREDOCS/54.
  *

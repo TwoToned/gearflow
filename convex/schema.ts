@@ -685,7 +685,6 @@ export default defineSchema({
     maintenanceRecordId: v.optional(v.string()),
     createdById: v.string(),
     reportedByCrewMemberId: v.optional(v.string()),
-    discordIdempotencyKey: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -699,7 +698,6 @@ export default defineSchema({
     .index("by_maintenanceRecordId", ["maintenanceRecordId"])
     .index("by_createdById", ["createdById"])
     .index("by_reportedByCrewMemberId", ["reportedByCrewMemberId"])
-    .index("by_discordIdempotencyKey", ["discordIdempotencyKey"])
     .index("by_organizationId_status", ["organizationId", "status"]),
 
   // MaintenanceRecordAsset
@@ -790,7 +788,6 @@ export default defineSchema({
     invoicedTotal: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
-    discordChannelId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -798,7 +795,6 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_locationId", ["locationId"])
     .index("by_projectManagerId", ["projectManagerId"])
-    .index("by_discordChannelId", ["discordChannelId"])
     .index("by_organizationId_projectNumber", ["organizationId", "projectNumber"])
     .index("by_status", ["status"])
     .index("by_clientId", ["clientId"])
@@ -1787,88 +1783,10 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_wooOrderId", ["wooOrderId"]),
 
-  // DiscordIntegration
-  discordIntegrations: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    isEnabled: v.optional(v.boolean()),
-    discordApplicationId: v.optional(v.string()),
-    guildId: v.optional(v.string()),
-    projectCategoryId: v.optional(v.string()),
-    archiveCategoryId: v.optional(v.string()),
-    alertChannelId: v.optional(v.string()),
-    auditChannelId: v.optional(v.string()),
-    channelCreateOnStatuses: v.optional(v.array(enums.ProjectStatus)),
-    channelArchiveOnStatuses: v.optional(v.array(enums.ProjectStatus)),
-    postWelcomeOnCreate: v.optional(v.boolean()),
-    postFaultsToProjectChannel: v.optional(v.boolean()),
-    linkTokenTtlMinutes: v.optional(v.number()),
-    enrollmentOpen: v.optional(v.boolean()),
-    lastHeartbeatAt: v.optional(v.number()),
-    botUserId: v.optional(v.string()),
-    botDesiredState: v.optional(enums.DiscordBotDesiredState),
-    botRestartRequestedAt: v.optional(v.number()),
-    botStartError: v.optional(v.string()),
-    botPid: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"]),
-
-  // DiscordOutbox
-  discordOutboxes: defineTable({
-    id: v.number(),
-    organizationId: v.string(),
-    eventType: v.string(),
-    payload: v.any(),
-    dedupeKey: v.string(),
-    status: v.optional(enums.DiscordOutboxStatus),
-    attemptCount: v.optional(v.number()),
-    nextAttemptAt: v.optional(v.number()),
-    lockedAt: v.optional(v.number()),
-    processedAt: v.optional(v.number()),
-    lastError: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_dedupeKey", ["dedupeKey"])
-    .index("by_organizationId_id", ["organizationId", "id"])
-    .index("by_status_nextAttemptAt", ["status", "nextAttemptAt"]),
-
-  // DiscordAccountLink
-  discordAccountLinks: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    crewMemberId: v.string(),
-    discordUserId: v.string(),
-    linkedAt: v.optional(v.number()),
-    linkedById: v.optional(v.string()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_crewMemberId", ["crewMemberId"])
-    .index("by_organizationId_discordUserId", ["organizationId", "discordUserId"])
-    .index("by_discordUserId", ["discordUserId"]),
-
-  // DiscordLinkToken
-  discordLinkTokens: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    crewMemberId: v.string(),
-    tokenHash: v.string(),
-    discordUserId: v.string(),
-    guildId: v.optional(v.string()),
-    expiresAt: v.number(),
-    consumedAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_crewMemberId", ["crewMemberId"])
-    .index("by_tokenHash", ["tokenHash"])
-    .index("by_expiresAt", ["expiresAt"]),
 
   // CheckItem
   checkItems: defineTable({

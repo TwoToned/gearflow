@@ -169,7 +169,6 @@ src/
 │   │
 │   │  # ── Utility ──
 │   ├── availability.ts       # Asset availability queries
-│   ├── discord-integration.ts # Discord bot integration
 │   ├── reservation-conflicts.ts # Conflict detection
 │   ├── split-sibling-collapse.ts # Line item split management
 │   └── woocommerce.ts        # WooCommerce integration

@@ -16,9 +16,7 @@ import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/
 import { patchProjectInConvex } from "@/lib/project-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
-import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
-import { optimizePrice, computeTotalDays } from "@/lib/pricing";
-import { getOrgDaysPerMonth } from "@/lib/org-pricing";
+import { calculateSuggestedPrice } from "./project-groups";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
@@ -440,68 +438,45 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
-  // Auto-optimize pricing when model has rates and group/project has billing period
-  let optimizedUnitPrice = parsed.unitPrice;
-  let optimizedPricingType = parsed.pricingType;
-  let optimizedDuration = parsed.duration;
-  let priceBreakdown: string | null = null;
+  // Simple auto-pricing: when adding a model-backed line with no manual price,
+  // auto-fill the unit price from the model's rate using the project's default
+  // rental period/quantity (the legacy `rate × period × qty` model). The unit
+  // price is the per-period rate; `duration` carries the rental quantity so the
+  // line total is `rate × quantity × rentalQuantity`. Mirrors the legacy branch
+  // in calculateSuggestedPrice. Manual prices (parsed.unitPrice set) are kept.
+  let autoUnitPrice = parsed.unitPrice;
+  let autoDuration = parsed.duration;
+  const autoPricingType = parsed.pricingType;
+  const priceBreakdown: string | null = null;
   const priceOverridden = false;
 
   if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
-    // WHY: Automatically select the best pricing tier (daily/weekly/monthly)
-    // for the project's billing period so the customer gets the optimal rate
-    // without manual calculation. Falls through to manual pricing on failure.
-    try {
-      const daysPerMonth = await getOrgDaysPerMonth(organizationId);
+    // WHY: Adding a line should fill a sensible price from the model's rate so
+    // the quote isn't blank. Falls through to no price if rates are missing.
+    const [model, proj] = await Promise.all([
+      getModelById(parsed.modelId),
+      getProjectById(projectId),
+    ]);
 
-      // Get billing period from group or project
-      let billingTotalDays: number | null = null;
+    if (model) {
+      const rentalPeriod = proj?.defaultRentalPeriod ?? "DAILY";
+      const rentalQuantity = proj?.defaultRentalQuantity ?? 1;
+      const rate =
+        rentalPeriod === "WEEKLY"
+          ? (model.weeklyRate ?? model.dailyRate ?? null)
+          : (model.dailyRate ?? null);
 
-      if (parsed.groupId) {
-        const bp = await getGroupBillingPeriod(parsed.groupId);
-        if (bp) billingTotalDays = bp.totalDays;
+      if (rate != null) {
+        autoUnitPrice = Number(rate);
+        autoDuration = rentalQuantity;
       }
-
-      if (billingTotalDays == null) {
-        // Try project-level billing
-        const proj = await getProjectById(projectId);
-        if (proj && (proj.billingMonths != null || proj.billingWeeks != null || proj.billingDays != null)) {
-          billingTotalDays = computeTotalDays(
-            proj.billingMonths ?? 0,
-            proj.billingWeeks ?? 0,
-            proj.billingDays ?? 0,
-            daysPerMonth
-          );
-        }
-      }
-
-      if (billingTotalDays != null && billingTotalDays > 0) {
-        // Model lives in Convex — fetch for rate fields.
-        const model = await getModelById(parsed.modelId);
-
-        if (model) {
-          const dailyRate = model.dailyRate != null ? Number(model.dailyRate) : null;
-          const weeklyRate = model.weeklyRate != null ? Number(model.weeklyRate) : null;
-          const monthlyRate = model.monthlyRate != null ? Number(model.monthlyRate) : null;
-
-          const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingTotalDays, daysPerMonth);
-          if (result) {
-            optimizedUnitPrice = result.grandTotal;
-            optimizedPricingType = "OPTIMIZED";
-            optimizedDuration = 1; // CRITICAL: grandTotal already includes full period
-            priceBreakdown = result.breakdown;
-          }
-        }
-      }
-    } catch {
-      // Optimization failed — fall through to manual pricing
     }
   }
 
   const lineTotal = calculateLineTotal(
-    optimizedUnitPrice,
+    autoUnitPrice,
     parsed.quantity,
-    optimizedDuration,
+    autoDuration,
     parsed.discount
   );
 
@@ -529,9 +504,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         bulkAssetId: parsed.bulkAssetId || null,
         description: parsed.description || null,
         quantity: parsed.quantity,
-        unitPrice: optimizedUnitPrice ?? null,
-        pricingType: optimizedPricingType,
-        duration: optimizedDuration,
+        unitPrice: autoUnitPrice ?? null,
+        pricingType: autoPricingType,
+        duration: autoDuration,
         discount: parsed.discount ?? null,
         lineTotal,
         priceBreakdown,
@@ -623,7 +598,6 @@ export async function updateLineItem(
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
-  // Detect price override: if user changes unitPrice on an OPTIMIZED item
   const existing = await prisma.projectLineItem.findUnique({
     where: { id, organizationId },
     select: {
@@ -738,10 +712,6 @@ export async function updateLineItem(
     }
   }
 
-  const isPriceChanged = existing && parsed.unitPrice != null
-    && existing.pricingType === "OPTIMIZED"
-    && Number(existing.unitPrice) !== parsed.unitPrice;
-
   const lineTotal = calculateLineTotal(
     parsed.unitPrice,
     parsed.quantity,
@@ -772,12 +742,6 @@ export async function updateLineItem(
       showSubhireOnDocs: parsed.showSubhireOnDocs,
       ...(parsed.supplierId !== undefined && { supplierId: parsed.supplierId || null }),
       subhireOrderNumber: parsed.subhireOrderNumber || null,
-      // Override detection
-      ...(isPriceChanged && {
-        priceOverridden: true,
-        priceBreakdown: null,
-        overrideReason: parsed.overrideReason || null,
-      }),
     },
     include: {
       asset: true,

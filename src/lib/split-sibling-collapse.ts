@@ -14,7 +14,7 @@
  *
  * This module only computes the *plan*: which rows merge into which,
  * which groups are mergeable, and which are flagged. The DB mutation
- * (move units, repoint CheckRecord / DamageEvent, deactivate old rows,
+ * (move units, repoint CheckRecord, deactivate old rows,
  * write `LineItemMergeMap`) is the script's job.
  *
  * Lives outside `"use server"` so the script and unit tests drive it

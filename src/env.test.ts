@@ -96,19 +96,9 @@ describe("env validation", () => {
     expect(env.NEXT_PUBLIC_APP_URL).toBe("https://myapp.test");
   });
 
-  it("accepts optional OAuth credentials as a complete pair", async () => {
-    const { env } = await loadEnv({
-      GOOGLE_CLIENT_ID: "google-id",
-      GOOGLE_CLIENT_SECRET: "google-secret",
-    });
-    expect(env.GOOGLE_CLIENT_ID).toBe("google-id");
-    expect(env.GOOGLE_CLIENT_SECRET).toBe("google-secret");
-  });
-
   it("leaves optional vars undefined when not set", async () => {
     const { env } = await loadEnv({});
     expect(env.RESEND_API_KEY).toBeUndefined();
-    expect(env.GOOGLE_CLIENT_ID).toBeUndefined();
     expect(env.S3_ENDPOINT).toBeUndefined();
     expect(env.CRON_SECRET).toBeUndefined();
   });

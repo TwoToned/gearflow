@@ -106,10 +106,6 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - `S3_BUCKET` (default: `gearflow-uploads`)
 - `S3_ENDPOINT` — Custom endpoint (optional, for S3-compatible providers)
 
-**OAuth (optional, enabled when set):**
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`
-
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 
@@ -290,7 +286,7 @@ Key routing rules:
 4. `npm test` (full vitest suite runs again on the runner)
 5. `npx prisma migrate deploy`
 6. `npm run build`
-7. `pm2 restart gearflow` then `pm2 startOrReload ecosystem.config.js --only gearflow-discord-bot` + `pm2 save` (the Discord bot runs as its own pm2 process — see `docs/operations/discord-bot.md`)
+7. `pm2 restart gearflow` + `pm2 save`
 
 15-minute total timeout. Typical green run is ~5-8 minutes; longer means a migration or build hiccup. A failed `pm2 restart` leaves the previous build serving — rolling back means reverting the merge commit and letting the workflow redeploy.
 

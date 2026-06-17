@@ -135,29 +135,6 @@ export function upcomingProjectEmail(data: UpcomingProjectEmailData) {
   };
 }
 
-export interface LowStockEmailData extends BaseEmailData {
-  modelName: string;
-  assetTag: string;
-  availableQuantity: number;
-  totalQuantity: number;
-}
-
-export function lowStockEmail(data: LowStockEmailData) {
-  const link = absolute(data.appBaseUrl, data.href);
-  return {
-    subject: `Low stock: ${data.modelName}`,
-    html: emailWrapper(
-      `
-        <h2>Bulk asset is low on stock</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.modelName}</strong> (${data.assetTag}) is now at <strong>${data.availableQuantity} of ${data.totalQuantity}</strong> available.</p>
-        ${ctaButton(link, "View asset")}
-      `,
-      data,
-    ),
-  };
-}
-
 export interface PendingInvitationEmailData extends BaseEmailData {
   invitingOrgName: string;
   role: string | null;
@@ -173,33 +150,6 @@ export function pendingInvitationEmail(data: PendingInvitationEmailData) {
         <p>Hi ${data.recipientName},</p>
         <p>You've been invited to join <strong>${data.invitingOrgName}</strong>${data.role ? ` as <strong>${data.role}</strong>` : ""}.</p>
         ${ctaButton(link, "Review invitation")}
-      `,
-      data,
-    ),
-  };
-}
-
-export interface ExpiringCertEmailData extends BaseEmailData {
-  certName: string;
-  crewName: string;
-  expiryDate: string | null;
-  daysLeft: number;
-}
-
-export function expiringCertEmail(data: ExpiringCertEmailData) {
-  const link = absolute(data.appBaseUrl, data.href);
-  return {
-    subject: `Expiring soon: ${data.certName} — ${data.crewName}`,
-    html: emailWrapper(
-      `
-        <h2>A crew certification is expiring</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.certName}</strong> for <strong>${data.crewName}</strong> expires in <strong>${data.daysLeft} day${data.daysLeft === 1 ? "" : "s"}</strong>${
-          data.expiryDate
-            ? ` (${new Date(data.expiryDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })})`
-            : ""
-        }.</p>
-        ${ctaButton(link, "Open crew profile")}
       `,
       data,
     ),

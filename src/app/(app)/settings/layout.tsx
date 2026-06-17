@@ -18,7 +18,6 @@ import {
   ClipboardCheck,
   Bookmark,
   SlidersHorizontal,
-  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,7 +78,6 @@ const settingsNav: SettingsNavSection[] = [
     label: "INTEGRATIONS",
     items: [
       { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" },
-      { title: "Discord", href: "/settings/discord", icon: MessageSquare, permission: "orgSettings" },
     ],
   },
 ];

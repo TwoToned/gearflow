@@ -3,15 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
-import { createCrewMember, updateCrewMember, createCrewSkill, getOrgUsersForCrewLink } from "@/server/crew";
-import { useCrewRoles, useCrewSkills } from "@/hooks/use-crew";
+import { createCrewMember, updateCrewMember, getOrgUsersForCrewLink } from "@/server/crew";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -31,7 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormSection } from "@/components/layout/page-layouts";
-import { Badge } from "@/components/ui/badge";
 
 interface CrewMemberFormProps {
   initialData?: CrewMemberFormValues & { id: string };
@@ -43,34 +40,8 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
-  const [newSkillName, setNewSkillName] = useState("");
 
   const orgTags = useOrgTags(orgId);
-
-  // Reactive crew roles + skills (Convex). Re-apply getCrewRoleOptions's active
-  // filter + sortOrder/name sort, and getCrewSkillOptions's name sort, projecting
-  // to the {id,name,…} shapes the selects expect.
-  const roleDocs = useCrewRoles(orgId);
-  const roleOptions = useMemo(
-    () =>
-      [...(roleDocs ?? [])]
-        .filter((r) => r.isActive === true)
-        .sort((a, b) => {
-          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-          return so !== 0 ? so : a.name.localeCompare(b.name);
-        })
-        .map((r) => ({ id: r.id, name: r.name, department: r.department ?? null })),
-    [roleDocs],
-  );
-
-  const skillDocs = useCrewSkills(orgId);
-  const skillOptions = useMemo(
-    () =>
-      [...(skillDocs ?? [])]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((s) => ({ id: s.id, name: s.name, category: s.category ?? null })),
-    [skillDocs],
-  );
 
   const { data: linkableUsers } = useServerQuery({
     queryKey: ["crew-linkable-users", orgId],
@@ -101,7 +72,6 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
       abnOrGst: "",
       notes: "",
       tags: [],
-      skillIds: [],
       userId: "",
       isActive: true,
     },
@@ -117,7 +87,6 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const selectedSkillIds = form.watch("skillIds") || [];
   const watchedUserId = form.watch("userId");
   const linkedUser = (linkableUsers || []).find(
     (u: { id: string }) => u.id === watchedUserId
@@ -267,27 +236,6 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                 <Label htmlFor="department">Department</Label>
                 <Input id="department" {...form.register("department")} placeholder="e.g. Audio, Lighting, Video" />
               </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Controller
-                  name="crewRoleId"
-                  control={form.control}
-                  render={({ field }) => (
-                    <ComboboxPicker
-                      value={field.value || ""}
-                      onChange={field.onChange}
-                      options={(roleOptions || []).map((r: { id: string; name: string; department: string | null }) => ({
-                        value: r.id,
-                        label: r.name,
-                        description: r.department || undefined,
-                      }))}
-                      placeholder="Select role..."
-                      allowClear
-                      creatable
-                    />
-                  )}
-                />
-              </div>
             </div>
           </FormSection>
 
@@ -304,79 +252,6 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
               <div className="space-y-2">
                 <Label htmlFor="overtimeMultiplier">Overtime Multiplier</Label>
                 <Input id="overtimeMultiplier" type="number" step="0.1" {...form.register("overtimeMultiplier")} placeholder="1.5" />
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection title="Skills">
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {(skillOptions || []).map((skill: { id: string; name: string; category: string | null }) => {
-                  const isSelected = selectedSkillIds.includes(skill.id);
-                  return (
-                    <Badge
-                      key={skill.id}
-                      variant={isSelected ? "default" : "outline"}
-                      className="cursor-pointer select-none"
-                      onClick={() => {
-                        const current = form.getValues("skillIds") || [];
-                        if (isSelected) {
-                          form.setValue("skillIds", current.filter((id: string) => id !== skill.id));
-                        } else {
-                          form.setValue("skillIds", [...current, skill.id]);
-                        }
-                      }}
-                    >
-                      {skill.name}
-                      {skill.category && <span className="ml-1 opacity-60">({skill.category})</span>}
-                    </Badge>
-                  );
-                })}
-                {(!skillOptions || skillOptions.length === 0) && (
-                  <p className="text-sm text-fg-3">No skills defined yet. Add one below.</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="New skill name..."
-                  value={newSkillName}
-                  onChange={(e) => setNewSkillName(e.target.value)}
-                  className="max-w-xs"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (newSkillName.trim()) {
-                        createCrewSkill({ name: newSkillName.trim() }).then((skill) => {
-                          setNewSkillName("");
-                          // Skill list is reactive (useCrewSkills) — appears on commit.
-                          const current = form.getValues("skillIds") || [];
-                          form.setValue("skillIds", [...current, skill.id]);
-                          toast.success(`Skill "${skill.name}" created`);
-                        }).catch((err) => toast.error(err.message));
-                      }
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!newSkillName.trim()}
-                  onClick={() => {
-                    if (newSkillName.trim()) {
-                      createCrewSkill({ name: newSkillName.trim() }).then((skill) => {
-                        setNewSkillName("");
-                        // Skill list is reactive (useCrewSkills) — appears on commit.
-                        const current = form.getValues("skillIds") || [];
-                        form.setValue("skillIds", [...current, skill.id]);
-                        toast.success(`Skill "${skill.name}" created`);
-                      }).catch((err) => toast.error(err.message));
-                    }
-                  }}
-                >
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add Skill
-                </Button>
               </div>
             </div>
           </FormSection>

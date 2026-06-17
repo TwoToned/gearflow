@@ -6,30 +6,11 @@ import {
   Upload,
   X,
   Star,
-  GripVertical,
   FileText,
   Loader2,
   ImageIcon,
 } from "lucide-react";
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  rectSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
-import { Button } from "@/components/ui/button";
 import { MediaLightbox, useLightbox } from "@/components/media/media-lightbox";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useIsViewer } from "@/lib/use-permissions";
@@ -72,7 +53,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function SortableMediaItem({
+function MediaItemRow({
   item,
   onRemove,
   onSetPrimary,
@@ -87,37 +68,10 @@ function SortableMediaItem({
   showPrimary: boolean;
   onImageClick?: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
   const isImage = item.file.mimeType.startsWith("image/");
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="group relative flex items-center gap-2 rounded-lg border bg-bg-surface p-2"
-    >
-      <button
-        className="cursor-grab touch-none text-fg-3 hover:text-fg"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
+    <div className="group relative flex items-center gap-2 rounded-lg border bg-bg-surface p-2">
       {isImage ? (
         <div
           className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-bg-inset"
@@ -186,17 +140,11 @@ export function MediaUploader({
   onUploadComplete,
   onRemove,
   onSetPrimary,
-  onReorder,
   onChanged,
 }: MediaUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
 
   const uploadMutation = useServerMutation({
     mutationFn: async (file: File) => {
@@ -272,18 +220,6 @@ export function MediaUploader({
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update");
     }
-  };
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    if (!onReorder) return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = existingMedia.findIndex((m) => m.id === active.id);
-    const newIndex = existingMedia.findIndex((m) => m.id === over.id);
-    const reordered = arrayMove(existingMedia, oldIndex, newIndex);
-    await onReorder(reordered.map((m) => m.id));
-    onChanged?.();
   };
 
   const isViewer = useIsViewer();
@@ -413,40 +349,29 @@ export function MediaUploader({
 
       {/* Media list */}
       {existingMedia.length > 0 && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={existingMedia.map((m) => m.id)}
-            strategy={rectSortingStrategy}
-          >
-            <div className="space-y-2">
-              {existingMedia.map((item) => (
-                <SortableMediaItem
-                  key={item.id}
-                  item={item}
-                  onRemove={handleRemove}
-                  onSetPrimary={showPrimary ? handleSetPrimary : undefined}
-                  isRemoving={removingId === item.id}
-                  showPrimary={showPrimary}
-                  onImageClick={
-                    item.file.mimeType.startsWith("image/")
-                      ? () => {
-                          const idx = imageMedia.findIndex((m) => m.id === item.id);
-                          openLightbox(
-                            imageMedia.map((m) => ({ url: m.file.url, alt: m.displayName || m.file.fileName })),
-                            idx >= 0 ? idx : 0,
-                          );
-                        }
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <div className="space-y-2">
+          {existingMedia.map((item) => (
+            <MediaItemRow
+              key={item.id}
+              item={item}
+              onRemove={handleRemove}
+              onSetPrimary={showPrimary ? handleSetPrimary : undefined}
+              isRemoving={removingId === item.id}
+              showPrimary={showPrimary}
+              onImageClick={
+                item.file.mimeType.startsWith("image/")
+                  ? () => {
+                      const idx = imageMedia.findIndex((m) => m.id === item.id);
+                      openLightbox(
+                        imageMedia.map((m) => ({ url: m.file.url, alt: m.displayName || m.file.fileName })),
+                        idx >= 0 ? idx : 0,
+                      );
+                    }
+                  : undefined
+              }
+            />
+          ))}
+        </div>
       )}
 
       <MediaLightbox

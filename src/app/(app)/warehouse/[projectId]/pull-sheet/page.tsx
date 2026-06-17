@@ -6,7 +6,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 
 import { getProjectPullSheet } from "@/server/warehouse";
-import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -244,36 +243,6 @@ export default function PullSheetPage({
                         ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
                         : (item.description as string) || "Unnamed item";
 
-                    // Accessories: shown per-unit when the bulk quantity divides
-                    // evenly across the units (e.g. 2 adaptors on a 2x line → 1
-                    // under each unit). Serialised or non-divisible accessories
-                    // fall back to one row under the line.
-                    const accessories = isKit ? [] : getAccessoryChildren(item);
-                    const perUnitAcc = qty > 1
-                      ? accessories.filter((a) => a.bulkAssetId && (a.quantity as number) % qty === 0)
-                      : [];
-                    const lineAcc = accessories.filter((a) => !perUnitAcc.includes(a));
-
-                    const accRow = (child: Record<string, unknown>, q: number, indent: string) => {
-                      const cm = child.model as { name: string } | null;
-                      const ca = child.asset as { assetTag: string; location?: { name: string } | null } | null;
-                      const cb = child.bulkAsset as { assetTag: string } | null;
-                      return (
-                        <TableRow key={`${child.id}-acc`}>
-                          <TableCell className="text-center">
-                            <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
-                          </TableCell>
-                          <TableCell className={indent}>
-                            <span className="text-sm text-fg-3">{cm?.name || (child.description as string) || "-"}</span>
-                            <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 print:bg-transparent print:border-fg-3">Accessory</Badge>
-                          </TableCell>
-                          <TableCell className="text-center text-sm">{q}</TableCell>
-                          <TableCell className="font-mono text-xs text-fg-3">{ca?.assetTag || cb?.assetTag || "—"}</TableCell>
-                          <TableCell className="text-xs text-fg-3">{ca?.location?.name || "—"}</TableCell>
-                        </TableRow>
-                      );
-                    };
-
                     return (
                       <TableBody key={item.id as string} className="print:[break-inside:avoid]">
                         <TableRow className={isGroupParent ? "bg-bg-inset/30" : ""}>
@@ -348,25 +317,20 @@ export default function PullSheetPage({
                             </React.Fragment>
                           );
                         })}
-                        {/* Non-kit units, each with the accessories that unit needs */}
+                        {/* Non-kit units */}
                         {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => (
-                          <React.Fragment key={`${item.id}-sub-${i}`}>
-                            <TableRow>
-                              <TableCell className="text-center">
-                                <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
-                              </TableCell>
-                              <TableCell className="pl-8">
-                                <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
-                              </TableCell>
-                              <TableCell />
-                              <TableCell />
-                              <TableCell />
-                            </TableRow>
-                            {perUnitAcc.map((acc) => accRow(acc, (acc.quantity as number) / qty, "pl-12"))}
-                          </React.Fragment>
+                          <TableRow key={`${item.id}-sub-${i}`}>
+                            <TableCell className="text-center">
+                              <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
+                            </TableCell>
+                            <TableCell className="pl-8">
+                              <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
+                            </TableCell>
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                          </TableRow>
                         ))}
-                        {/* Line-level accessories: qty-1 lines, or serialised / non-divisible bulk */}
-                        {!isKit && (qty > 1 ? lineAcc : accessories).map((acc) => accRow(acc, acc.quantity as number, "pl-8"))}
                       </TableBody>
                     );
                   })}

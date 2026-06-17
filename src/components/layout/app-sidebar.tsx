@@ -28,7 +28,6 @@ import {
   Plus,
   AlertTriangle,
   ClipboardList,
-  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { usePlatformBranding } from "@/lib/use-platform-name";
@@ -139,7 +138,6 @@ const navSections: NavSection[] = [
     items: [
       { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
       { title: "Stocktake", url: "/warehouse/stocktake", icon: ClipboardList, resource: "stocktake" },
-      { title: "Reorder", url: "/warehouse/reorder", icon: ShoppingCart, resource: "bulkAsset" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
       { title: "Damage", url: "/damage", icon: AlertTriangle, resource: "maintenance" },
       {

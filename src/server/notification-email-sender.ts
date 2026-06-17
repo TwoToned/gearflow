@@ -21,12 +21,10 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
-import { getBulkAssetsByOrg } from "@/lib/assets-read";
 import { env } from "@/env";
 import {
   expiringCertEmail,
   flaggedAssetEmail,
-  lowStockEmail,
   overdueMaintenanceEmail,
   overdueReturnEmail,
   pendingOffersEmail,
@@ -80,7 +78,6 @@ function resolvePreferences(
     overdueMaintenance: raw.overdueMaintenance,
     overdueReturn: raw.overdueReturn,
     upcomingProject: raw.upcomingProject,
-    lowStock: raw.lowStock,
     pendingInvitation: raw.pendingInvitation,
     expiringCert: raw.expiringCert,
     pendingOffers: raw.pendingOffers,
@@ -228,39 +225,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     });
   }
 
-  // 4. Low stock — compute live from availableQuantity vs reorderThreshold
-  // rather than trusting BulkAsset.status (which is a cached enum that can
-  // drift). Only fires when a threshold is configured AND availability is
-  // at-or-below it. Mirrors the in-app bell logic in notifications.ts.
-  const allBulkAssets = await getBulkAssetsByOrg(organizationId);
-  const lowStock = allBulkAssets.filter(
-    (b) =>
-      b.isActive !== false &&
-      b.reorderThreshold != null &&
-      b.reorderThreshold > 0 &&
-      (b.availableQuantity ?? 0) <= b.reorderThreshold,
-  ).slice(0, 50);
-  for (const b of lowStock) {
-    const bulkModelName = modelMap.get(b.modelId)?.name ?? b.assetTag;
-    out.push({
-      key: `stock-${b.id}`,
-      type: "low_stock",
-      build: (recipient, c) =>
-        lowStockEmail({
-          recipientName: recipient.name,
-          orgName: c.organizationName,
-          appBaseUrl: c.appBaseUrl,
-          href: `/assets/registry/${b.id}`,
-          notificationKey: `stock-${b.id}`,
-          modelName: bulkModelName,
-          assetTag: b.assetTag,
-          availableQuantity: b.availableQuantity ?? 0,
-          totalQuantity: b.totalQuantity ?? 0,
-        }),
-    });
-  }
-
-  // 5. Expiring certs
+  // 4. Expiring certs
   const expiringCerts = await prisma.crewCertification.findMany({
     where: {
       crewMember: { organizationId },

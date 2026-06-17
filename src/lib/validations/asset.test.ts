@@ -246,7 +246,6 @@ describe("bulkAssetSchema", () => {
     purchasePricePerUnit: 12.5,
     locationId: "loc-1",
     status: "LOW_STOCK" as const,
-    reorderThreshold: 10,
     notes: "Gaffer tape stock",
     isActive: true,
     tags: ["consumable"],
@@ -268,7 +267,6 @@ describe("bulkAssetSchema", () => {
     expect(result.totalQuantity).toBe(100);
     expect(result.purchasePricePerUnit).toBe(12.5);
     expect(result.status).toBe("LOW_STOCK");
-    expect(result.reorderThreshold).toBe(10);
   });
 
   // --- required fields ---
@@ -345,21 +343,6 @@ describe("bulkAssetSchema", () => {
 
   it("rejects negative purchasePricePerUnit", () => {
     const result = bulkAssetSchema.safeParse({ ...validMinimal, purchasePricePerUnit: -1 });
-    expect(result.success).toBe(false);
-  });
-
-  it("coerces string reorderThreshold to integer", () => {
-    const result = bulkAssetSchema.parse({ ...validMinimal, reorderThreshold: "5" });
-    expect(result.reorderThreshold).toBe(5);
-  });
-
-  it("rejects negative reorderThreshold", () => {
-    const result = bulkAssetSchema.safeParse({ ...validMinimal, reorderThreshold: -1 });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects non-integer reorderThreshold", () => {
-    const result = bulkAssetSchema.safeParse({ ...validMinimal, reorderThreshold: 2.5 });
     expect(result.success).toBe(false);
   });
 

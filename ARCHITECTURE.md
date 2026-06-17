@@ -71,7 +71,6 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 39 | [Sub-Hires](./FEATUREDOCS/39-sub-hires.md) | First-class sub-hire orders with dual pricing, margin analysis, and supplier rate memory |
 | 40 | [Damage Capture](./FEATUREDOCS/40-damage-capture.md) | Camera-first damage reporting at checkin, severity, charge-back, auto workshop ticket |
 | 43 | [Stocktake](./FEATUREDOCS/43-stocktake.md) | Scan-driven inventory counts, discrepancy resolution, state machine |
-| 44 | [Reorder Dashboard](./FEATUREDOCS/44-reorder.md) | Low-stock items grouped by preferred supplier, one-click draft supplier orders |
 | 45 | [Error UX](./FEATUREDOCS/45-error-ux.md) | UserFacingError, Prisma-error translator, showError client helper |
 | 46 | [Custom Fields](./FEATUREDOCS/46-custom-fields.md) | Operator-defined entity attributes, definition CRUD, form rendering |
 | 47 | [Cross-Type Equipment Unification](./FEATUREDOCS/47-cross-type-equipment-unification.md) | CategorySlot, mixedGroups query, UnifiedAddDialog, SubHireGroupRow, PriceEditDialog, Drop Matrix 8C |

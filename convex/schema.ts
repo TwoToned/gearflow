@@ -561,9 +561,6 @@ export default defineSchema({
     purchasePricePerUnit: v.optional(v.number()),
     locationId: v.optional(v.string()),
     status: v.optional(enums.BulkAssetStatus),
-    reorderThreshold: v.optional(v.number()),
-    preferredSupplierId: v.optional(v.string()),
-    lastReorderedAt: v.optional(v.number()),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
@@ -574,7 +571,6 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_locationId", ["locationId"])
-    .index("by_preferredSupplierId", ["preferredSupplierId"])
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
     .index("by_isActive", ["isActive"]),

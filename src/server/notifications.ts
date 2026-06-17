@@ -5,11 +5,10 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
-import { getBulkAssetsByOrg } from "@/lib/assets-read";
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "low_stock" | "pending_invitation" | "expiring_cert" | "pending_offers" | "pending_timesheets" | "flagged_asset";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "expiring_cert" | "pending_offers" | "pending_timesheets" | "flagged_asset";
   title: string;
   description: string;
   href: string;
@@ -185,36 +184,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
     });
   }
 
-  // 4. Low stock bulk assets — compute live from availableQuantity vs
-  // reorderThreshold rather than trusting BulkAsset.status (which is a
-  // cached enum that can drift out of sync with actual quantities). An
-  // asset is "low" iff it has a configured threshold AND current
-  // availability is at-or-below it. No threshold → no alert.
-  const allBulkAssets = await getBulkAssetsByOrg(organizationId);
-  const lowStock = allBulkAssets
-    .filter(
-      (b) =>
-        b.isActive !== false &&
-        b.reorderThreshold != null &&
-        b.reorderThreshold > 0 &&
-        (b.availableQuantity ?? 0) <= b.reorderThreshold,
-    )
-    .slice(0, 50);
-
-  for (const b of lowStock) {
-    const bulkModelName = modelMap.get(b.modelId)?.name ?? b.assetTag;
-    notifications.push({
-      id: `stock-${b.id}`,
-      type: "low_stock",
-      title: `Low stock: ${bulkModelName}`,
-      description: `${b.assetTag} — ${b.availableQuantity ?? 0} of ${b.totalQuantity ?? 0} available (threshold ${b.reorderThreshold})`,
-      href: `/assets/registry/${b.id}`,
-      severity: "warning",
-      timestamp: new Date(b.updatedAt as number).toISOString(),
-    });
-  }
-
-  // 5. Pending invitations for the current user
+  // 4. Pending invitations for the current user
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { email: true },

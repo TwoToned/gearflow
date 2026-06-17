@@ -135,29 +135,6 @@ export function upcomingProjectEmail(data: UpcomingProjectEmailData) {
   };
 }
 
-export interface LowStockEmailData extends BaseEmailData {
-  modelName: string;
-  assetTag: string;
-  availableQuantity: number;
-  totalQuantity: number;
-}
-
-export function lowStockEmail(data: LowStockEmailData) {
-  const link = absolute(data.appBaseUrl, data.href);
-  return {
-    subject: `Low stock: ${data.modelName}`,
-    html: emailWrapper(
-      `
-        <h2>Bulk asset is low on stock</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.modelName}</strong> (${data.assetTag}) is now at <strong>${data.availableQuantity} of ${data.totalQuantity}</strong> available.</p>
-        ${ctaButton(link, "View asset")}
-      `,
-      data,
-    ),
-  };
-}
-
 export interface PendingInvitationEmailData extends BaseEmailData {
   invitingOrgName: string;
   role: string | null;

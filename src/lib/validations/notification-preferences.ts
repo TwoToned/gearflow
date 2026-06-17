@@ -10,7 +10,6 @@ export const notificationPreferenceSchema = z.object({
   overdueMaintenance: z.boolean(),
   overdueReturn: z.boolean(),
   upcomingProject: z.boolean(),
-  lowStock: z.boolean(),
   pendingInvitation: z.boolean(),
   expiringCert: z.boolean(),
   pendingOffers: z.boolean(),
@@ -26,7 +25,6 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   overdueMaintenance: true,
   overdueReturn: true,
   upcomingProject: false,
-  lowStock: true,
   pendingInvitation: true,
   expiringCert: true,
   pendingOffers: false,
@@ -39,7 +37,6 @@ export const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, keyof NotificationP
   overdue_maintenance: "overdueMaintenance",
   overdue_return: "overdueReturn",
   upcoming_project: "upcomingProject",
-  low_stock: "lowStock",
   pending_invitation: "pendingInvitation",
   expiring_cert: "expiringCert",
   pending_offers: "pendingOffers",
@@ -60,10 +57,6 @@ export const NOTIFICATION_PREFERENCE_LABELS: Record<keyof NotificationPreference
   upcomingProject: {
     label: "Upcoming projects",
     description: "Email me when a project is starting within 3 days.",
-  },
-  lowStock: {
-    label: "Low stock",
-    description: "Email me when a bulk asset drops into low-stock status.",
   },
   pendingInvitation: {
     label: "Invitations",

@@ -14,6 +14,17 @@ import {
   removeCrewTimeEntryFromConvex,
   syncCrewTimeEntriesToConvex,
 } from "@/lib/crew-scheduling-mirror";
+import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getTimeEntriesByOrg,
+  getAssignmentsByOrg,
+  filterTimeEntries,
+  sortTimeEntries,
+  paginate,
+  sortTimeEntriesDateThenStartDesc,
+  type MappedCrewTimeEntry,
+} from "@/lib/crew-scheduling-read";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -28,6 +39,24 @@ function calculateTotalHours(
   const endMins = eh * 60 + em;
   const worked = endMins - startMins - breakMinutes;
   return Math.max(0, Math.round(worked * 100 / 60) / 100);
+}
+
+// ─── Read-side join helpers (Convex reads + batched auth-User join) ───────────
+
+/**
+ * Batched Better Auth `User.name` lookup for the `approvedBy` join — User stays in
+ * Postgres (auth is not migrated to Convex). One query for all approver ids.
+ */
+async function getApproverNameMap(
+  entries: MappedCrewTimeEntry[],
+): Promise<Map<string, string | null>> {
+  const ids = [...new Set(entries.map((e) => e.approvedById).filter((id): id is string => !!id))];
+  if (ids.length === 0) return new Map();
+  const users = await prisma.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  return new Map(users.map((u) => [u.id, u.name ?? null]));
 }
 
 // ─── Queries ────────────────────────────────────────────────────────────────
@@ -47,55 +76,54 @@ export async function getAllTimeEntries(params?: {
   const sortBy = params?.sortBy || "date";
   const sortOrder = params?.sortOrder || "desc";
 
-  const where: Record<string, unknown> = { organizationId };
-
-  // Search
-  if (params?.search) {
-    where.OR = [
-      { crewMember: { firstName: { contains: params.search, mode: "insensitive" } } },
-      { crewMember: { lastName: { contains: params.search, mode: "insensitive" } } },
-      { description: { contains: params.search, mode: "insensitive" } },
-      { assignment: { project: { name: { contains: params.search, mode: "insensitive" } } } },
-      { assignment: { project: { projectNumber: { contains: params.search, mode: "insensitive" } } } },
-    ];
-  }
-
-  // Filters
-  if (params?.filters) {
-    const f = params.filters as Record<string, string[]>;
-    if (f.status?.length) where.status = { in: f.status };
-    if (f.crewMemberId?.length) where.crewMemberId = { in: f.crewMemberId };
-  }
-
-  // Sort mapping
-  const orderByMap: Record<string, unknown> = {
-    date: { date: sortOrder },
-    crewMember: { crewMember: { lastName: sortOrder } },
-    startTime: { startTime: sortOrder },
-    totalHours: { totalHours: sortOrder },
-    status: { status: sortOrder },
-  };
-  const orderBy = orderByMap[sortBy] || { date: sortOrder };
-
-  const [entries, total] = await Promise.all([
-    prisma.crewTimeEntry.findMany({
-      where,
-      include: {
-        crewMember: { select: { id: true, firstName: true, lastName: true } },
-        assignment: {
-          include: {
-            project: { select: { id: true, name: true, projectNumber: true } },
-            crewRole: { select: { name: true } },
-          },
-        },
-        approvedBy: { select: { name: true } },
-      },
-      orderBy: sortBy === "date" ? [orderBy as Record<string, string>, { startTime: "desc" }] : [orderBy as Record<string, string>],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.crewTimeEntry.count({ where }),
+  const [allEntries, assignments, members, roleMap, projects] = await Promise.all([
+    getTimeEntriesByOrg(organizationId),
+    getAssignmentsByOrg(organizationId),
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+    getProjectsByOrg(organizationId),
   ]);
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const assignmentById = new Map(assignments.map((a) => [a.id, a]));
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+
+  const nameOf = (e: MappedCrewTimeEntry) => {
+    const m = memberById.get(e.crewMemberId);
+    return { firstName: m?.firstName ?? "", lastName: m?.lastName ?? "" };
+  };
+  const projectOf = (e: MappedCrewTimeEntry) => {
+    const a = e.assignmentId ? assignmentById.get(e.assignmentId) : null;
+    const p = a ? projectsById.get(a.projectId) : null;
+    return p ? { name: p.name, projectNumber: p.projectNumber } : null;
+  };
+
+  const filtered = filterTimeEntries(allEntries, params, { nameOf, projectOf });
+  const sorted = sortTimeEntries(filtered, sortBy, sortOrder, {
+    lastNameOf: (e) => memberById.get(e.crewMemberId)?.lastName,
+  });
+  const total = filtered.length;
+  const pageEntries = paginate(sorted, page, pageSize);
+
+  const approverNames = await getApproverNameMap(pageEntries);
+
+  const entries = pageEntries.map((e) => {
+    const member = memberById.get(e.crewMemberId) ?? null;
+    const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) ?? null : null;
+    const project = assignment ? projectsById.get(assignment.projectId) ?? null : null;
+    const role = assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
+    return {
+      ...e,
+      crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null,
+      assignment: assignment
+        ? {
+            ...assignment,
+            project: project ? { id: project.id, name: project.name, projectNumber: project.projectNumber } : null,
+            crewRole: role ? { name: role.name } : null,
+          }
+        : null,
+      approvedBy: e.approvedById ? { name: approverNames.get(e.approvedById) ?? null } : null,
+    };
+  });
 
   return serialize({ entries, total });
 }
@@ -103,24 +131,39 @@ export async function getAllTimeEntries(params?: {
 export async function getTimeEntriesForMember(crewMemberId: string) {
   const { organizationId } = await getOrgContext();
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true },
-  });
+  const [allEntries, assignments, members, roleMap, projects] = await Promise.all([
+    getTimeEntriesByOrg(organizationId),
+    getAssignmentsByOrg(organizationId),
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const member = members.find((m) => m.id === crewMemberId);
   if (!member) throw new Error("Crew member not found");
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: { crewMemberId, organizationId },
-    include: {
-      assignment: {
-        include: {
-          project: { select: { name: true, projectNumber: true } },
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
-    orderBy: [{ date: "desc" }, { startTime: "desc" }],
+  const assignmentById = new Map(assignments.map((a) => [a.id, a]));
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+
+  const sorted = sortTimeEntriesDateThenStartDesc(
+    allEntries.filter((e) => e.crewMemberId === crewMemberId),
+  );
+  const approverNames = await getApproverNameMap(sorted);
+
+  const entries = sorted.map((e) => {
+    const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) ?? null : null;
+    const project = assignment ? projectsById.get(assignment.projectId) ?? null : null;
+    const role = assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
+    return {
+      ...e,
+      assignment: assignment
+        ? {
+            ...assignment,
+            project: project ? { name: project.name, projectNumber: project.projectNumber } : null,
+            crewRole: role ? { name: role.name } : null,
+          }
+        : null,
+      approvedBy: e.approvedById ? { name: approverNames.get(e.approvedById) ?? null } : null,
+    };
   });
 
   return serialize(entries);
@@ -129,21 +172,38 @@ export async function getTimeEntriesForMember(crewMemberId: string) {
 export async function getTimeEntriesForProject(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: {
-      organizationId,
-      assignment: { projectId },
-    },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      assignment: {
-        include: {
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
-    orderBy: [{ date: "desc" }, { startTime: "desc" }],
+  const [allEntries, assignments, members, roleMap] = await Promise.all([
+    getTimeEntriesByOrg(organizationId),
+    getAssignmentsByOrg(organizationId),
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+  ]);
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const assignmentById = new Map(assignments.map((a) => [a.id, a]));
+  const projectAssignmentIds = new Set(
+    assignments.filter((a) => a.projectId === projectId).map((a) => a.id),
+  );
+
+  const sorted = sortTimeEntriesDateThenStartDesc(
+    allEntries.filter((e) => e.assignmentId != null && projectAssignmentIds.has(e.assignmentId)),
+  );
+  const approverNames = await getApproverNameMap(sorted);
+
+  const entries = sorted.map((e) => {
+    const member = memberById.get(e.crewMemberId) ?? null;
+    const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) ?? null : null;
+    const role = assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
+    return {
+      ...e,
+      crewMember: member ? { firstName: member.firstName, lastName: member.lastName } : null,
+      assignment: assignment
+        ? {
+            ...assignment,
+            crewRole: role ? { name: role.name } : null,
+          }
+        : null,
+      approvedBy: e.approvedById ? { name: approverNames.get(e.approvedById) ?? null } : null,
+    };
   });
 
   return serialize(entries);

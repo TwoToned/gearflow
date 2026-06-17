@@ -14,10 +14,10 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * skip (e.g. before org context loads).
  *
  * Scope note: only the roster trio is reactive. The project-coupled
- * scheduling/timesheet sub-tables (assignment/shift/availability/certification/
- * time_entry) stay on server actions over the fresh Prisma mirror — they compose
+ * scheduling/timesheet sub-tables (assignment/shift/availability/time_entry)
+ * stay on server actions over the fresh Prisma mirror — they compose
  * Prisma-resident projects/users. A member's skills (implicit m2m) and linked
- * user / cert counts are also cross-domain — merged in non-reactively via
+ * user are also cross-domain — merged in non-reactively via
  * getCrewMemberExtras(). Lives in src/hooks (NOT convex/) so the Convex bundler
  * never tries to bundle this React module. See FEATUREDOCS/54.
  */

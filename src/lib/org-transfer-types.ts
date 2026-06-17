@@ -43,7 +43,6 @@ export interface OrgExportManifest {
   crewSkills?: Record<string, unknown>[];
   /** Many-to-many join: skillId + crewMemberId */
   crewMemberSkills?: Array<{ crewMemberId: string; skillId: string }>;
-  crewCertifications?: Record<string, unknown>[];
   crewAssignments?: Record<string, unknown>[];
   crewShifts?: Record<string, unknown>[];
   crewAvailability?: Record<string, unknown>[];

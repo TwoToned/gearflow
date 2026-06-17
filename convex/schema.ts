@@ -1479,20 +1479,6 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
 
-  // CrewCertification
-  crewCertifications: defineTable({
-    id: v.string(),
-    crewMemberId: v.string(),
-    name: v.string(),
-    issuedBy: v.optional(v.string()),
-    certificateNumber: v.optional(v.string()),
-    issuedDate: v.optional(v.number()),
-    expiryDate: v.optional(v.number()),
-    status: v.optional(enums.CrewCertStatus),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_crewMemberId", ["crewMemberId"]),
-
   // CrewAssignment
   crewAssignments: defineTable({
     id: v.string(),

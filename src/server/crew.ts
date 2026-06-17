@@ -5,28 +5,15 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import {
   crewMemberSchema,
-  crewRoleSchema,
-  crewSkillSchema,
-  crewCertificationSchema,
   type CrewMemberFormValues,
-  type CrewRoleFormValues,
-  type CrewSkillFormValues,
-  type CrewCertificationFormValues,
 } from "@/lib/validations/crew";
 import { logActivity, buildChanges } from "@/lib/activity-log";
 import {
   mirrorCrewMemberCreate,
   patchCrewMemberInConvex,
   removeCrewMemberFromConvex,
-  mirrorCrewRoleCreate,
-  patchCrewRoleInConvex,
-  removeCrewRoleFromConvex,
-  mirrorCrewSkillCreate,
-  removeCrewSkillFromConvex,
 } from "@/lib/crew-mirror";
 import {
-  mirrorCrewCertificationCreate,
-  removeCrewCertificationFromConvex,
   snapshotCrewMemberCascade,
   removeCrewMemberCascadeFromConvex,
 } from "@/lib/crew-scheduling-mirror";
@@ -80,7 +67,6 @@ export async function getCrewMembers(params: {
         crewRole: { select: { id: true, name: true, color: true } },
         skills: { select: { id: true, name: true, category: true } },
         user: { select: { id: true, name: true, image: true } },
-        _count: { select: { certifications: true } },
       },
       orderBy: { [sortBy]: sortOrder },
       skip: (page - 1) * pageSize,
@@ -99,9 +85,6 @@ export async function getCrewMemberById(id: string) {
     include: {
       crewRole: true,
       skills: true,
-      certifications: {
-        orderBy: { expiryDate: "asc" },
-      },
       user: { select: { id: true, name: true, email: true, image: true } },
       assignments: {
         include: {
@@ -118,16 +101,16 @@ export async function getCrewMemberById(id: string) {
 }
 
 /**
- * Per-crew-member cross-domain extras (memberId -> { user, skills, certCount }).
+ * Per-crew-member cross-domain extras (memberId -> { user, skills }).
  * The reactive roster subscribes to the `crewMembers` table via Convex, but a
- * member's linked platform user (Better Auth, Prisma), skills (implicit m2m,
- * Prisma-only), and certification count (crew_certification stays Prisma) are NOT
- * in Convex — they come from this (non-reactive) server query and are merged into
- * the reactive list client-side. crewRole name/color is resolved client-side from
- * the reactive `crewRoles` list instead (it IS in Convex). See FEATUREDOCS/54.
+ * member's linked platform user (Better Auth, Prisma) and skills (implicit m2m,
+ * Prisma-only) are NOT in Convex — they come from this (non-reactive) server query
+ * and are merged into the reactive list client-side. crewRole name/color is
+ * resolved client-side from the reactive `crewRoles` list instead (it IS in
+ * Convex). See FEATUREDOCS/54.
  */
 export async function getCrewMemberExtras(): Promise<
-  Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[]; certCount: number }>
+  Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[] }>
 > {
   const { organizationId } = await requirePermission("crew", "read");
   const members = await prisma.crewMember.findMany({
@@ -136,16 +119,14 @@ export async function getCrewMemberExtras(): Promise<
       id: true,
       user: { select: { name: true, image: true } },
       skills: { select: { id: true, name: true } },
-      _count: { select: { certifications: true } },
     },
   });
-  const out: Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[]; certCount: number }> = {};
+  const out: Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[] }> = {};
   for (const m of members) {
     out[m.id] = {
       userName: m.user?.name ?? null,
       userImage: m.user?.image ?? null,
       skills: m.skills,
-      certCount: m._count.certifications,
     };
   }
   return serialize(out);
@@ -165,7 +146,7 @@ export async function createCrewMember(data: CrewMemberFormValues) {
   const { organizationId, userId, userName } = await requirePermission("crew", "create");
   const parsed = crewMemberSchema.parse(data);
 
-  const { skillIds, userId: linkUserId, ...rest } = parsed;
+  const { userId: linkUserId, ...rest } = parsed;
 
   const cleaned = {
     firstName: rest.firstName,
@@ -196,9 +177,6 @@ export async function createCrewMember(data: CrewMemberFormValues) {
     data: {
       ...cleaned,
       organizationId,
-      ...(skillIds && skillIds.length > 0
-        ? { skills: { connect: skillIds.map((id: string) => ({ id })) } }
-        : {}),
     },
   });
   await mirrorCrewMemberCreate(result);
@@ -223,11 +201,10 @@ export async function updateCrewMember(id: string, data: CrewMemberFormValues) {
 
   const before = await prisma.crewMember.findUnique({
     where: { id, organizationId },
-    include: { skills: { select: { id: true } } },
   });
   if (!before) throw new Error("Crew member not found");
 
-  const { skillIds, userId: linkUserId, ...rest } = parsed;
+  const { userId: linkUserId, ...rest } = parsed;
 
   const cleaned = {
     firstName: rest.firstName,
@@ -258,9 +235,6 @@ export async function updateCrewMember(id: string, data: CrewMemberFormValues) {
     where: { id, organizationId },
     data: {
       ...cleaned,
-      skills: {
-        set: (skillIds || []).map((sid: string) => ({ id: sid })),
-      },
     },
   });
   await patchCrewMemberInConvex(id, updated);
@@ -293,7 +267,7 @@ export async function deleteCrewMember(id: string) {
   if (!member) throw new Error("Crew member not found");
 
   // Capture cascade children (assignments → shifts/time-entries, plus standalone
-  // time entries, certifications and availability) before the delete removes them.
+  // time entries and availability) before the delete removes them.
   const cascade = await snapshotCrewMemberCascade(id);
 
   await prisma.crewMember.delete({ where: { id, organizationId } });
@@ -328,93 +302,6 @@ export async function getCrewRoles() {
   );
 }
 
-export async function createCrewRole(data: CrewRoleFormValues) {
-  const { organizationId, userId, userName } = await requirePermission("crew", "create");
-  const parsed = crewRoleSchema.parse(data);
-  const result = await prisma.crewRole.create({
-    data: {
-      ...parsed,
-      rateType: parsed.rateType || null,
-      defaultRate: parsed.defaultRate ?? null,
-      description: parsed.description || null,
-      department: parsed.department || null,
-      color: parsed.color || null,
-      organizationId,
-    },
-  });
-  await mirrorCrewRoleCreate(result);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "crew_role",
-    entityId: result.id,
-    entityName: result.name,
-    summary: `Created crew role ${result.name}`,
-  });
-
-  return serialize(result);
-}
-
-export async function updateCrewRole(id: string, data: CrewRoleFormValues) {
-  const { organizationId, userId, userName } = await requirePermission("crew", "update");
-  const parsed = crewRoleSchema.parse(data);
-  const updated = await prisma.crewRole.update({
-    where: { id, organizationId },
-    data: {
-      ...parsed,
-      rateType: parsed.rateType || null,
-      defaultRate: parsed.defaultRate ?? null,
-      description: parsed.description || null,
-      department: parsed.department || null,
-      color: parsed.color || null,
-    },
-  });
-  await patchCrewRoleInConvex(id, updated);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "crew_role",
-    entityId: updated.id,
-    entityName: updated.name,
-    summary: `Updated crew role ${updated.name}`,
-  });
-
-  return serialize(updated);
-}
-
-export async function deleteCrewRole(id: string) {
-  const { organizationId, userId, userName } = await requirePermission("crew", "delete");
-  const role = await prisma.crewRole.findUnique({
-    where: { id, organizationId },
-    include: { _count: { select: { crewMembers: true } } },
-  });
-  if (!role) throw new Error("Crew role not found");
-  if (role._count.crewMembers > 0) {
-    throw new Error("Cannot delete a role that is assigned to crew members. Remove the role from all members first.");
-  }
-  await prisma.crewRole.delete({ where: { id, organizationId } });
-  await removeCrewRoleFromConvex(id);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "crew_role",
-    entityId: id,
-    entityName: role.name,
-    summary: `Deleted crew role ${role.name}`,
-  });
-
-  return { success: true };
-}
-
 // ─── Crew Skills ─────────────────────────────────────────────────────────────
 
 export async function getCrewSkills() {
@@ -426,98 +313,6 @@ export async function getCrewSkills() {
       include: { _count: { select: { crewMembers: true } } },
     })
   );
-}
-
-/**
- * Cross-domain member-count per skill for the crew-settings UI. The
- * crew_member↔crew_skill link is an implicit Prisma m2m that is NOT mirrored to
- * Convex, so this count can't be derived from the reactive crewSkills list (the
- * way role counts are derived from crewMembers.crewRoleId). Mirrors the
- * getCategoryCounts pattern — a non-reactive server read merged into the
- * reactive list client-side.
- */
-export async function getCrewSkillCounts(): Promise<Record<string, number>> {
-  const { organizationId } = await requirePermission("crew", "read");
-  const skills = await prisma.crewSkill.findMany({
-    where: { organizationId },
-    select: { id: true, _count: { select: { crewMembers: true } } },
-  });
-  const counts: Record<string, number> = {};
-  for (const s of skills) counts[s.id] = s._count.crewMembers;
-  return serialize(counts);
-}
-
-export async function createCrewSkill(data: CrewSkillFormValues) {
-  const { organizationId } = await requirePermission("crew", "create");
-  const parsed = crewSkillSchema.parse(data);
-  const result = await prisma.crewSkill.create({
-    data: {
-      ...parsed,
-      category: parsed.category || null,
-      organizationId,
-    },
-  });
-  await mirrorCrewSkillCreate(result);
-  return serialize(result);
-}
-
-export async function deleteCrewSkill(id: string) {
-  const { organizationId } = await requirePermission("crew", "delete");
-  await prisma.crewSkill.delete({ where: { id, organizationId } });
-  await removeCrewSkillFromConvex(id);
-  return { success: true };
-}
-
-// ─── Certifications ──────────────────────────────────────────────────────────
-
-export async function addCertification(crewMemberId: string, data: CrewCertificationFormValues) {
-  const { organizationId, userId, userName } = await requirePermission("crew", "update");
-  // Verify crew member belongs to this org
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-  });
-  if (!member) throw new Error("Crew member not found");
-
-  const parsed = crewCertificationSchema.parse(data);
-  const result = await prisma.crewCertification.create({
-    data: {
-      ...parsed,
-      issuedBy: parsed.issuedBy || null,
-      certificateNumber: parsed.certificateNumber || null,
-      issuedDate: parsed.issuedDate ? new Date(parsed.issuedDate as unknown as string) : null,
-      expiryDate: parsed.expiryDate ? new Date(parsed.expiryDate as unknown as string) : null,
-      crewMemberId,
-    },
-  });
-
-  await mirrorCrewCertificationCreate(result as unknown as Record<string, unknown>);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "crew_member",
-    entityId: crewMemberId,
-    entityName: `${member.firstName} ${member.lastName}`,
-    summary: `Added certification "${parsed.name}" to ${member.firstName} ${member.lastName}`,
-  });
-
-  return serialize(result);
-}
-
-export async function removeCertification(certId: string) {
-  const { organizationId } = await requirePermission("crew", "update");
-  const cert = await prisma.crewCertification.findUnique({
-    where: { id: certId },
-    include: { crewMember: { select: { organizationId: true } } },
-  });
-  if (!cert || cert.crewMember.organizationId !== organizationId) {
-    throw new Error("Certification not found");
-  }
-  await prisma.crewCertification.delete({ where: { id: certId } });
-  await removeCrewCertificationFromConvex(certId);
-  return { success: true };
 }
 
 // ─── Quick Helpers ───────────────────────────────────────────────────────────

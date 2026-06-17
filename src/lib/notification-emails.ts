@@ -156,33 +156,6 @@ export function pendingInvitationEmail(data: PendingInvitationEmailData) {
   };
 }
 
-export interface ExpiringCertEmailData extends BaseEmailData {
-  certName: string;
-  crewName: string;
-  expiryDate: string | null;
-  daysLeft: number;
-}
-
-export function expiringCertEmail(data: ExpiringCertEmailData) {
-  const link = absolute(data.appBaseUrl, data.href);
-  return {
-    subject: `Expiring soon: ${data.certName} — ${data.crewName}`,
-    html: emailWrapper(
-      `
-        <h2>A crew certification is expiring</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.certName}</strong> for <strong>${data.crewName}</strong> expires in <strong>${data.daysLeft} day${data.daysLeft === 1 ? "" : "s"}</strong>${
-          data.expiryDate
-            ? ` (${new Date(data.expiryDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })})`
-            : ""
-        }.</p>
-        ${ctaButton(link, "Open crew profile")}
-      `,
-      data,
-    ),
-  };
-}
-
 export interface PendingOffersEmailData extends BaseEmailData {
   count: number;
 }

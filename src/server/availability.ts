@@ -1,13 +1,23 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
 import { getModelById } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getOrgLineItems,
+  getOrgLineItemUnits,
+  indexProjectsById,
+  projectMatchesCalendarWindow,
+  buildModelBookings,
+  buildKitBookings,
+  buildAssetBookings,
+  countLineItemsByProject,
+  type BookingRow,
+  type DateWindow,
+} from "@/lib/availability-read";
 
 export interface CalendarProject {
   id: string;
@@ -36,6 +46,26 @@ export interface BookingEntry {
   quantity: number;
 }
 
+/** epoch-ms (Convex) → ISO string (matching the old `.toISOString()`); null → "". */
+function msToIso(ms: number | null): string {
+  return ms == null ? "" : new Date(ms).toISOString();
+}
+
+/** Resolve `clientName` onto a {@link BookingRow}, producing the public BookingEntry shape. */
+function toBookingEntry(row: BookingRow, clientMap: Map<string, { name: string }>): BookingEntry {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    projectNumber: row.projectNumber,
+    projectName: row.projectName,
+    clientName: clientMap.get(row.clientId ?? "")?.name ?? null,
+    projectStatus: row.projectStatus,
+    rentalStartDate: msToIso(row.rentalStartMs),
+    rentalEndDate: msToIso(row.rentalEndMs),
+    quantity: row.quantity,
+  };
+}
+
 /**
  * Get bookings for a specific model within a date range.
  * Returns line items with project details for calendar display.
@@ -45,67 +75,21 @@ export async function getModelBookings(
   params: { startDate: string; endDate: string }
 ): Promise<{ bookings: BookingEntry[]; totalStock: number; effectiveStock: number }> {
   const { organizationId } = await getOrgContext();
-  const start = new Date(params.startDate);
-  const end = new Date(params.endDate);
+  const window: DateWindow = { start: new Date(params.startDate), end: new Date(params.endDate) };
 
-  // Model + active assets live in Convex — fetch in parallel with line items.
-  const [lineItems, model, activeAssets, activeBulkAssets] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: {
-        organizationId,
-        modelId,
-        status: { not: "CANCELLED" },
-        project: {
-          isTemplate: false,
-          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          rentalStartDate: { lte: end },
-          rentalEndDate: { gte: start },
-        },
-      },
-      include: {
-        project: {
-          select: {
-            id: true,
-            projectNumber: true,
-            name: true,
-            status: true,
-            rentalStartDate: true,
-            rentalEndDate: true,
-            clientId: true,
-          },
-        },
-      },
-      orderBy: { project: { rentalStartDate: "asc" } },
-    }),
+  // Line items + projects + model + active assets all live in Convex — fetch in parallel.
+  const [lineItems, projects, model, activeAssets, activeBulkAssets, clientMap] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getProjectsByOrg(organizationId),
     getModelById(modelId),
     getActiveAssetsByModel(modelId, organizationId),
     getActiveBulkAssetsByModel(modelId, organizationId),
+    getClientMap(organizationId),
   ]);
 
-  // Clients live in Convex — resolve names by clientId.
-  const clientMap = await getClientMap(organizationId);
-
-  // Deduplicate by project (sum quantities per project)
-  const byProject = new Map<string, BookingEntry>();
-  for (const li of lineItems) {
-    const key = li.project.id;
-    const existing = byProject.get(key);
-    if (existing) {
-      existing.quantity += li.quantity;
-    } else {
-      byProject.set(key, {
-        id: li.id,
-        projectId: li.project.id,
-        projectNumber: li.project.projectNumber,
-        projectName: li.project.name,
-        clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
-        projectStatus: li.project.status,
-        rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
-        rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
-        quantity: li.quantity,
-      });
-    }
-  }
+  const projectsById = indexProjectsById(projects);
+  const rows = buildModelBookings(modelId, lineItems, projectsById, window);
+  const bookings = rows.map((r) => toBookingEntry(r, clientMap));
 
   let totalStock = 0;
   let effectiveStock = 0;
@@ -122,7 +106,7 @@ export async function getModelBookings(
     }
   }
 
-  return serialize({ bookings: [...byProject.values()], totalStock, effectiveStock }) as {
+  return serialize({ bookings, totalStock, effectiveStock }) as {
     bookings: BookingEntry[];
     totalStock: number;
     effectiveStock: number;
@@ -137,86 +121,20 @@ export async function getAssetBookings(
   params: { startDate: string; endDate: string }
 ): Promise<BookingEntry[]> {
   const { organizationId } = await getOrgContext();
-  const start = new Date(params.startDate);
-  const end = new Date(params.endDate);
+  const window: DateWindow = { start: new Date(params.startDate), end: new Date(params.endDate) };
 
   // An asset is booked via a legacy line.assetId row OR via a
-  // ProjectLineItemUnit row (the fulfillment model) — query both.
-  const projectWindow: Prisma.ProjectWhereInput = {
-    isTemplate: false,
-    status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-    rentalStartDate: { lte: end },
-    rentalEndDate: { gte: start },
-  };
-  const projectSelect = {
-    id: true,
-    projectNumber: true,
-    name: true,
-    status: true,
-    rentalStartDate: true,
-    rentalEndDate: true,
-    clientId: true,
-  } as const;
-
-  const [lineItems, units] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: {
-        organizationId,
-        assetId,
-        status: { not: "CANCELLED" },
-        project: projectWindow,
-      },
-      include: { project: { select: projectSelect } },
-      orderBy: { project: { rentalStartDate: "asc" } },
-    }),
-    prisma.projectLineItemUnit.findMany({
-      where: {
-        organizationId,
-        assetId,
-        status: { not: "CANCELLED" },
-        lineItem: { status: { not: "CANCELLED" }, project: projectWindow },
-      },
-      select: {
-        lineItemId: true,
-        lineItem: { select: { project: { select: projectSelect } } },
-      },
-      orderBy: { lineItem: { project: { rentalStartDate: "asc" } } },
-    }),
+  // ProjectLineItemUnit row (the fulfillment model) — both come from Convex now.
+  const [lineItems, units, projects, clientMap] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getOrgLineItemUnits(organizationId),
+    getProjectsByOrg(organizationId),
+    getClientMap(organizationId),
   ]);
 
-  const clientMap = await getClientMap(organizationId);
-  const seenLineIds = new Set<string>();
-  const bookings: BookingEntry[] = [];
-  for (const li of lineItems) {
-    seenLineIds.add(li.id);
-    bookings.push({
-      id: li.id,
-      projectId: li.project.id,
-      projectNumber: li.project.projectNumber,
-      projectName: li.project.name,
-      clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
-      projectStatus: li.project.status,
-      rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
-      rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
-      quantity: li.quantity,
-    });
-  }
-  for (const u of units) {
-    if (seenLineIds.has(u.lineItemId)) continue;
-    const p = u.lineItem.project;
-    bookings.push({
-      id: u.lineItemId,
-      projectId: p.id,
-      projectNumber: p.projectNumber,
-      projectName: p.name,
-      clientName: clientMap.get(p.clientId ?? "")?.name ?? null,
-      projectStatus: p.status,
-      rentalStartDate: p.rentalStartDate?.toISOString() || "",
-      rentalEndDate: p.rentalEndDate?.toISOString() || "",
-      // One unit == one physical asset booked.
-      quantity: 1,
-    });
-  }
+  const projectsById = indexProjectsById(projects);
+  const rows = buildAssetBookings(assetId, lineItems, units, projectsById, window);
+  const bookings = rows.map((r) => toBookingEntry(r, clientMap));
 
   return serialize(bookings) as BookingEntry[];
 }
@@ -229,50 +147,17 @@ export async function getKitBookings(
   params: { startDate: string; endDate: string }
 ): Promise<BookingEntry[]> {
   const { organizationId } = await getOrgContext();
-  const start = new Date(params.startDate);
-  const end = new Date(params.endDate);
+  const window: DateWindow = { start: new Date(params.startDate), end: new Date(params.endDate) };
 
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      kitId,
-      isKitChild: false,
-      status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-        rentalStartDate: { lte: end },
-        rentalEndDate: { gte: start },
-      },
-    },
-    include: {
-      project: {
-        select: {
-          id: true,
-          projectNumber: true,
-          name: true,
-          status: true,
-          rentalStartDate: true,
-          rentalEndDate: true,
-          clientId: true,
-        },
-      },
-    },
-    orderBy: { project: { rentalStartDate: "asc" } },
-  });
+  const [lineItems, projects, clientMap] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getProjectsByOrg(organizationId),
+    getClientMap(organizationId),
+  ]);
 
-  const clientMap = await getClientMap(organizationId);
-  const bookings: BookingEntry[] = lineItems.map((li) => ({
-    id: li.id,
-    projectId: li.project.id,
-    projectNumber: li.project.projectNumber,
-    projectName: li.project.name,
-    clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
-    projectStatus: li.project.status,
-    rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
-    rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
-    quantity: li.quantity,
-  }));
+  const projectsById = indexProjectsById(projects);
+  const rows = buildKitBookings(kitId, lineItems, projectsById, window);
+  const bookings = rows.map((r) => toBookingEntry(r, clientMap));
 
   return serialize(bookings) as BookingEntry[];
 }
@@ -282,36 +167,20 @@ export async function getCalendarData(params: {
   endDate: string;
 }) {
   const { organizationId } = await getOrgContext();
-  const start = new Date(params.startDate);
-  const end = new Date(params.endDate);
+  const window: DateWindow = { start: new Date(params.startDate), end: new Date(params.endDate) };
 
-  const [allOrgProjects, clientMap] = await Promise.all([
+  const [allOrgProjects, clientMap, lineItems] = await Promise.all([
     getProjectsByOrg(organizationId),
     getClientMap(organizationId),
+    getOrgLineItems(organizationId),
   ]);
 
   const calendarProjects = allOrgProjects
-    .filter(
-      (p) =>
-        !p.isTemplate &&
-        p.status !== "CANCELLED" &&
-        p.rentalStartDate != null &&
-        p.rentalEndDate != null &&
-        (p.rentalStartDate as number) <= end.getTime() &&
-        (p.rentalEndDate as number) >= start.getTime(),
-    )
+    .filter((p) => projectMatchesCalendarWindow(p, window))
     .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number));
 
   const calendarIds = calendarProjects.map((p) => p.id);
-  const lineItemCounts =
-    calendarIds.length > 0
-      ? await prisma.projectLineItem.groupBy({
-          by: ["projectId"],
-          where: { organizationId, projectId: { in: calendarIds }, status: { not: "CANCELLED" } },
-          _count: { _all: true },
-        })
-      : [];
-  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+  const liCountMap = countLineItemsByProject(calendarIds, lineItems);
 
   const result: CalendarProject[] = calendarProjects.map((p) => ({
     id: p.id,

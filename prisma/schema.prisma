@@ -677,8 +677,7 @@ model Model {
   testAndTagIntervalDays  Int?
   defaultEquipmentClass   EquipmentClass?
   defaultApplianceType    ApplianceType?
-  defaultTestProfileId    String?
-  defaultTestProfile      TestProfile?    @relation("ModelDefaultTestProfile", fields: [defaultTestProfileId], references: [id], onDelete: SetNull)
+  defaultTestProfileId    String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   maintenanceIntervalDays Int?
   assetType               AssetType       @default(SERIALIZED)
   barcodeLabelTemplate    String?
@@ -1958,9 +1957,10 @@ model TestProfile {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
-  testTagAssets  TestTagAsset[]
-  testTagRecords TestTagRecord[]
-  models         Model[]         @relation("ModelDefaultTestProfile")
+  // Inbound SetNull FKs (model.defaultTestProfileId, test_tag_asset.testProfileId,
+  // test_tag_record.testProfileId) were dropped in Phase B (write inversion) — those
+  // columns now hold a Convex testProfiles doc cuid, so the Prisma back-relations
+  // are gone. The organizationId FK stays (test profiles remain org-cascade-scoped).
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
@@ -1993,8 +1993,7 @@ model TestTagAsset {
   bulkAssetId String?
   bulkAsset   BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
 
-  testProfileId String?
-  testProfile   TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  testProfileId String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   outletCount   Int?
 
   isActive  Boolean  @default(true)
@@ -2020,8 +2019,7 @@ model TestTagRecord {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   testTagAssetId String
   testTagAsset   TestTagAsset @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
-  testProfileId  String?
-  testProfile    TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  testProfileId  String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   testDate       DateTime
   testedById     String
   testedBy       User         @relation(fields: [testedById], references: [id])

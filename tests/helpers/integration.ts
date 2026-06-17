@@ -94,13 +94,23 @@ async function mirrorRow(
   const entry = MIRROR_REGISTRY[model];
   if (!entry || !row || !row.id) return;
   const id = row.id;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fresh = (await (prisma as any)[lowerFirst(model)].findUnique({ where: { id } })) as
-    | Record<string, unknown>
-    | null;
-  if (!fresh) return;
-  await entry.create(fresh);
-  if (mode === "update") await entry.patch(id, fresh);
+
+  // Fast path: a full write return value (no `select`) carries every scalar
+  // column + DB defaults — mirror it directly (one round-trip). A `select`-
+  // truncated row has few keys and would be missing required Convex fields, so
+  // re-read the full row. Heuristic: a real row has many columns; ≤3 keys means
+  // a projection. (Re-read is safe — the test connection is pinned.)
+  let full: Record<string, unknown> = row as Record<string, unknown>;
+  if (Object.keys(full).length <= 3) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fresh = (await (prisma as any)[lowerFirst(model)].findUnique({ where: { id } })) as
+      | Record<string, unknown>
+      | null;
+    if (!fresh) return;
+    full = fresh;
+  }
+  await entry.create(full);
+  if (mode === "update") await entry.patch(id, full);
 }
 
 /** Mirror a batch of already-materialised rows. */

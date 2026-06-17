@@ -11,6 +11,7 @@ import {
   removeSavedViewFromConvex,
   syncUserTableViewsToConvex,
 } from "@/lib/saved-views-mirror";
+import { getSavedViewsForUser } from "@/lib/saved-views-read";
 
 /**
  * Saved table views are personal: each is owned by the user who created it and
@@ -23,10 +24,9 @@ import {
 export async function getSavedViews(tableId: string) {
   const { organizationId, userId } = await getOrgContext();
 
-  const views = await prisma.savedTableView.findMany({
-    where: { organizationId, userId, tableId },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-  });
+  // Convex-only read (Phase A): savedTableView is dual-written + backfilled, so we
+  // read the Convex copy and apply the user + table scope and ordering in JS.
+  const views = await getSavedViewsForUser(organizationId, userId, tableId);
 
   return serialize(views);
 }

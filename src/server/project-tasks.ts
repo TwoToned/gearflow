@@ -2,12 +2,71 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
-import { getProjectById } from "@/lib/projects-read";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
+import { getCrewMembersByOrg } from "@/lib/crew-read";
+import {
+  getProjectTaskRowsByProject,
+  getProjectTaskRowsByOrg,
+  filterTasksForProject,
+  sortProjectTasks,
+  filterMyOpenTasks,
+  sortMyOpenTasks,
+  selectCrewAssignees,
+  type MappedProjectTask,
+} from "@/lib/project-tasks-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncProjectTasksToConvex } from "@/lib/project-subtable-mirror";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ChecklistItem, ProjectTaskStatus, ProjectTaskPriority } from "@/lib/project-tasks";
+
+/**
+ * Attach the include relations onto Convex-sourced projectTask rows, replicating
+ * `taskInclude`:
+ *   - assigneeUser ({ id, name, image }) + createdBy ({ id, name }) → Better Auth
+ *     User (AUTH TERMINUS, stays Prisma) via one batched findMany.
+ *   - assigneeCrew ({ id, firstName, lastName }) → CrewMember (dual-written domain)
+ *     attached from the Convex crew docs.
+ * No fallback on a map miss: a missing assignee/creator reads null, exactly as a
+ * Prisma `SetNull` relation would after the referenced row is deleted.
+ */
+async function attachTaskRelations<T extends MappedProjectTask>(
+  organizationId: string,
+  tasks: T[],
+) {
+  const userIds = new Set<string>();
+  const crewIds = new Set<string>();
+  for (const t of tasks) {
+    if (t.assigneeUserId) userIds.add(t.assigneeUserId);
+    if (t.createdById) userIds.add(t.createdById);
+    if (t.assigneeCrewId) crewIds.add(t.assigneeCrewId);
+  }
+
+  const [users, crew] = await Promise.all([
+    userIds.size
+      ? prisma.user.findMany({
+          where: { id: { in: [...userIds] } },
+          select: { id: true, name: true, image: true },
+        })
+      : Promise.resolve([] as { id: string; name: string; image: string | null }[]),
+    crewIds.size ? getCrewMembersByOrg(organizationId) : Promise.resolve([]),
+  ]);
+
+  const userMap = new Map(users.map((u) => [u.id, u]));
+  const crewMap = new Map(crew.map((c) => [c.id, c]));
+
+  return tasks.map((t) => {
+    const u = t.assigneeUserId ? userMap.get(t.assigneeUserId) : undefined;
+    const creator = t.createdById ? userMap.get(t.createdById) : undefined;
+    const c = t.assigneeCrewId ? crewMap.get(t.assigneeCrewId) : undefined;
+    return {
+      ...t,
+      assigneeUser: u ? { id: u.id, name: u.name, image: u.image } : null,
+      assigneeCrew: c ? { id: c.id, firstName: c.firstName, lastName: c.lastName } : null,
+      createdBy: creator ? { id: creator.id, name: creator.name } : null,
+    };
+  });
+}
 
 const taskInclude = {
   assigneeUser: { select: { id: true, name: true, image: true } },
@@ -57,33 +116,32 @@ function normaliseChecklist(checklist?: ChecklistItem[] | null): Prisma.InputJso
 export async function getTaskAssignees() {
   const { organizationId } = await requirePermission("project", "read");
 
-  const [members, crew] = await Promise.all([
+  // Auth half (org members → Better Auth User) STAYS on Prisma — auth terminus.
+  // Crew half moves to the dual-written Convex crewMember docs (filter/sort in the
+  // pure helper, replicating `status != ARCHIVED` + firstName asc, lastName asc).
+  const [members, crewDocs] = await Promise.all([
     prisma.member.findMany({
       where: { organizationId },
       select: { user: { select: { id: true, name: true, image: true } } },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.crewMember.findMany({
-      where: { organizationId, status: { not: "ARCHIVED" } },
-      select: { id: true, firstName: true, lastName: true },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    }),
+    getCrewMembersByOrg(organizationId),
   ]);
 
   return serialize({
     users: members.map((m) => m.user).filter(Boolean),
-    crew,
+    crew: selectCrewAssignees(crewDocs),
   });
 }
 
 export async function getProjectTasks(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
 
-  const tasks = await prisma.projectTask.findMany({
-    where: { organizationId, projectId },
-    include: taskInclude,
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  // projectTask rows from Convex (dual-written); assignee/creator joins attached
+  // below (crew from Convex, User from Prisma — auth terminus).
+  const rows = await getProjectTaskRowsByProject(projectId, organizationId);
+  const sorted = sortProjectTasks(filterTasksForProject(rows, projectId, organizationId));
+  const tasks = await attachTaskRelations(organizationId, sorted);
 
   return serialize(tasks);
 }
@@ -273,24 +331,32 @@ export async function getMyOpenTasks(limit = 25) {
   // the same { organizationId, userId } shape as getOrgContext.
   const { organizationId, userId } = await requirePermission("project", "read");
 
-  const tasks = await prisma.projectTask.findMany({
-    where: {
-      organizationId,
-      assigneeUserId: userId,
-      status: { not: "DONE" },
-      project: { isTemplate: false },
-    },
-    include: {
-      ...taskInclude,
-      project: { select: { id: true, name: true, projectNumber: true } },
-    },
-    orderBy: [
-      // Nulls last on dueDate so dated tasks surface first.
-      { dueDate: { sort: "asc", nulls: "last" } },
-      { priority: "desc" },
-      { createdAt: "asc" },
-    ],
-    take: limit,
+  // org projectTask rows + org projects from Convex (both dual-written). The
+  // `project.isTemplate: false` relation-filter becomes a non-template projectId
+  // set; the `project` include ({ id, name, projectNumber }) is attached from the
+  // same project docs. assignee/creator joins attached below.
+  const [rows, projects] = await Promise.all([
+    getProjectTaskRowsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+
+  const nonTemplateProjectIds = new Set(
+    projects.filter((p) => !p.isTemplate).map((p) => p.id),
+  );
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+  const matched = sortMyOpenTasks(
+    filterMyOpenTasks(rows, organizationId, userId, nonTemplateProjectIds),
+  ).slice(0, limit);
+
+  const withRelations = await attachTaskRelations(organizationId, matched);
+
+  const tasks = withRelations.map((t) => {
+    const p = projectMap.get(t.projectId);
+    return {
+      ...t,
+      project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null,
+    };
   });
 
   return serialize(tasks);

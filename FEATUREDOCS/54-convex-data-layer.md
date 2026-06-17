@@ -2371,6 +2371,34 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **project tasks** (`server/project-tasks.ts` → `src/lib/project-tasks-read.ts`).
+  Moved the three read-only actions: `getProjectTasks` (project task list, sortOrder
+  asc → createdAt asc), `getMyOpenTasks` (cross-project "my open work": assignee=me,
+  status≠DONE, project not template; dueDate asc NULLS LAST → priority desc by
+  DECLARED order → createdAt asc), and the **crewMember half** of `getTaskAssignees`
+  (org crew, status≠ARCHIVED, firstName asc → lastName asc). The `projectTask` rows
+  come from Convex (`projectTasks.listByProject` / `projectTasks.list` — both already
+  existed, no new query); `assigneeCrew` is grafted from the dual-written Convex
+  `crewMembers` docs; the `project` name/number join (getMyOpenTasks) from Convex
+  `projects.list`. **`assigneeUser` + `createdBy` + the member/User half of
+  getTaskAssignees STAY on Prisma** — those are Better Auth `User`/`member` rows (auth
+  terminus, never moves), resolved via a single batched `prisma.user.findMany` +
+  `prisma.member.findMany`. All writes (create/update/delete/reorder) + assignee
+  org-validation stay Prisma (read-then-write). No new Convex query added.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

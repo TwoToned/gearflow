@@ -5,8 +5,8 @@ import { api } from "../../convex/_generated/api";
 
 /**
  * `maintenanceRecord` dual-write (Phase 4 — reactive). The maintenance list +
- * workshop kanban + detail pages subscribe to the Convex mirror so a new repair,
- * a kanban status move, or a completion shows up live in every tab.
+ * detail pages subscribe to the Convex mirror so a new repair, a status
+ * change, or a completion shows up live in every tab.
  *
  * SCOPE: only the maintenanceRecord row (scalars) is mirrored. The
  * `maintenanceRecordAssets` join table stays Prisma — the record's `updatedAt`

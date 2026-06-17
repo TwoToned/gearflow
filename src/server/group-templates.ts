@@ -1,13 +1,16 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById } from "@/lib/projects-read";
-import { getGroupTemplateParents } from "@/lib/group-templates-read";
+import {
+  getGroupTemplateParents,
+  getGroupTemplateParentById,
+} from "@/lib/group-templates-read";
 import {
   groupTemplateSchema,
   applyGroupTemplateSchema,
@@ -20,32 +23,29 @@ import { mirrorProjectGroupCreate, syncProjectGroupsToConvex } from "@/lib/proje
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 
-// Group templates are DUAL-WRITTEN: every create/update/delete writes the Prisma
-// `group_template` row (the durable FK anchor — group_template_item carries a
-// required + Cascade FK to it) AND the Convex `groupTemplates` doc. Only the PARENT
-// scalar fields live in Convex; the child items (with model/kit joins) stay in
-// Prisma and are composed by getGroupTemplates, which therefore stays on the
-// always-fresh Prisma mirror (no Phase 4 reactive conversion). The nested `items`
-// relation is stripped before mirroring. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma group-template parent row into Convex (create). */
-async function mirrorGroupTemplateToConvex(row: Record<string, unknown>) {
-  const { items: _items, ...scalar } = row;
-  await (await getConvexClient()).mutation(
-    api.groupTemplates.createIfMissing,
-    toConvexDoc(scalar) as FunctionArgs<typeof api.groupTemplates.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma group-template parent row into Convex (patch, id stripped). */
-async function patchGroupTemplateInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, items: _items, ...rest } = row;
-  const patch = toConvexDoc(rest);
-  await (await getConvexClient()).mutation(api.groupTemplates.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.groupTemplates.update>["patch"],
-  });
-}
+// Group templates are SPLIT-STORE (Phase B write inversion):
+//
+//  - The PARENT `groupTemplate` is CONVEX-ONLY. create/update/delete write the
+//    Convex `groupTemplates` doc as the sole source of truth (createId() + the
+//    `api.groupTemplates.create/update/remove` mutations). No Prisma
+//    `group_template` row is written; no mirror. The org-guard for update/delete
+//    reads the target via `getGroupTemplateParentById` and verifies
+//    `organizationId` (replaces the old Prisma findUniqueOrThrow /
+//    where:{id,organizationId}). No Prisma fallback for the parent read.
+//
+//  - The CHILD `groupTemplateItem` rows STAY a Prisma table (not a Convex
+//    domain). They carry model/kit joins and are composed by getGroupTemplates
+//    (hybrid read: Convex parents + Prisma items). Their inbound Cascade FK to
+//    group_template was DROPPED (migration 20260617131400) so a Convex-only
+//    parent doesn't reject the child write — `templateId` is now a plain string
+//    holding the Convex cuid.
+//
+//  - CASCADE re-implemented CROSS-STORE: the dropped Cascade auto-deleted a
+//    template's child items on parent delete. deleteGroupTemplate now removes the
+//    Convex parent AND deletes the Prisma child items explicitly (ordered so a
+//    failure can't orphan — children first, then parent).
+//
+// See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
 
 export async function getGroupTemplates() {
   const { organizationId } = await requirePermission("project", "read");
@@ -96,34 +96,39 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
   );
   const parsed = groupTemplateSchema.parse(data);
 
-  const template = await prisma.groupTemplate.create({
-    data: {
-      organizationId,
-      name: parsed.name,
-      description: parsed.description || null,
-      items: {
-        create: parsed.items.map((item, idx) => ({
-          organizationId,
-          modelId: item.modelId ?? null,
-          kitId: item.kitId ?? null,
-          quantity: item.quantity,
-          sortOrder: item.sortOrder ?? idx,
-        })),
-      },
-    },
-    include: {
-      items: {
-        include: {
-          model: {
-            select: { id: true, name: true, dailyRate: true, weeklyRate: true },
-          },
-          kit: { select: { id: true, name: true, assetTag: true } },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  // PARENT → Convex-only (explicit cuid so the Prisma child items reference the
+  // same id Convex stores).
+  const templateId = createId();
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.groupTemplates.create, {
+    id: templateId,
+    organizationId,
+    name: parsed.name,
+    description: parsed.description || undefined,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorGroupTemplateToConvex(template);
+
+  // CHILD items → Prisma (stay a Prisma table).
+  await prisma.groupTemplateItem.createMany({
+    data: parsed.items.map((item, idx) => ({
+      organizationId,
+      templateId,
+      modelId: item.modelId ?? null,
+      kitId: item.kitId ?? null,
+      quantity: item.quantity,
+      sortOrder: item.sortOrder ?? idx,
+    })),
+  });
+
+  const template = {
+    id: templateId,
+    organizationId,
+    name: parsed.name,
+    description: parsed.description || null,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  };
 
   await logActivity({
     organizationId,
@@ -176,34 +181,37 @@ export async function saveGroupAsTemplate(
     throw new Error("Group has no model- or kit-backed items to template");
   }
 
-  const template = await prisma.groupTemplate.create({
-    data: {
-      organizationId,
-      name,
-      description: description || null,
-      items: {
-        create: templatable.map((li, idx) => ({
-          organizationId,
-          modelId: li.modelId ?? null,
-          kitId: li.kitId ?? null,
-          quantity: li.quantity,
-          sortOrder: idx,
-        })),
-      },
-    },
-    include: {
-      items: {
-        include: {
-          model: {
-            select: { id: true, name: true, dailyRate: true, weeklyRate: true },
-          },
-          kit: { select: { id: true, name: true, assetTag: true } },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  // PARENT → Convex-only; CHILD items → Prisma (templateId = the new cuid).
+  const templateId = createId();
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.groupTemplates.create, {
+    id: templateId,
+    organizationId,
+    name,
+    description: description || undefined,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorGroupTemplateToConvex(template);
+
+  await prisma.groupTemplateItem.createMany({
+    data: templatable.map((li, idx) => ({
+      organizationId,
+      templateId,
+      modelId: li.modelId ?? null,
+      kitId: li.kitId ?? null,
+      quantity: li.quantity,
+      sortOrder: idx,
+    })),
+  });
+
+  const template = {
+    id: templateId,
+    organizationId,
+    name,
+    description: description || null,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  };
 
   await logActivity({
     organizationId,
@@ -229,17 +237,20 @@ export async function applyGroupTemplate(
   );
   const parsed = applyGroupTemplateSchema.parse(data);
 
-  const template = await prisma.groupTemplate.findUniqueOrThrow({
-    where: { id: parsed.templateId, organizationId },
-    include: {
-      items: {
-        include: { kit: true },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  // PARENT from Convex (org-guard via the mapped row), CHILD items from Prisma
+  // (with the kit join — items stay a Prisma table). No Prisma fallback for the
+  // parent read.
+  const template = await getGroupTemplateParentById(parsed.templateId);
+  if (!template || template.organizationId !== organizationId) {
+    throw new Error("Group template not found");
+  }
+  const templateItems = await prisma.groupTemplateItem.findMany({
+    where: { templateId: parsed.templateId, organizationId },
+    include: { kit: true },
+    orderBy: { sortOrder: "asc" },
   });
   const modelMap = await getModelMap(organizationId);
-  const itemsWithModels = template.items.map((i) => ({
+  const itemsWithModels = templateItems.map((i) => ({
     ...i,
     model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
   }));
@@ -351,8 +362,8 @@ export async function applyGroupTemplate(
 
   const summary =
     kitWarnings.length > 0
-      ? `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s); skipped ${kitWarnings.length} kit item(s): ${kitWarnings.join("; ")}`
-      : `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s)`;
+      ? `Applied template "${template.name}" as group "${parsed.title}" with ${templateItems.length} item(s); skipped ${kitWarnings.length} kit item(s): ${kitWarnings.join("; ")}`
+      : `Applied template "${template.name}" as group "${parsed.title}" with ${templateItems.length} item(s)`;
 
   await logActivity({
     organizationId,
@@ -372,7 +383,7 @@ export async function applyGroupTemplate(
       entityType: "project",
       entityId: projectId,
       action: "template_applied",
-      summary: `imported ${template.items.length} item${template.items.length === 1 ? "" : "s"} from template "${template.name}" into "${parsed.title}"`,
+      summary: `imported ${templateItems.length} item${templateItems.length === 1 ? "" : "s"} from template "${template.name}" into "${parsed.title}"`,
       targetType: "group",
       targetId: group.id,
     },
@@ -390,25 +401,32 @@ export async function updateGroupTemplate(
     "manage_line_items"
   );
 
-  const template = await prisma.$transaction(async (tx) => {
-    const updated = await tx.groupTemplate.update({
-      where: { id: templateId, organizationId },
-      data: {
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.description !== undefined && {
-          description: data.description || null,
-        }),
-      },
-    });
+  // Org-guard via the Convex parent (replaces Prisma where:{id,organizationId}).
+  const existing = await getGroupTemplateParentById(templateId);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Group template not found");
+  }
 
-    // If items are provided, replace all items
-    if (data.items !== undefined) {
-      const parsed = groupTemplateSchema.shape.items.parse(data.items);
+  // PARENT → Convex-only patch. Convex `db.patch` treats `undefined` as "leave
+  // unchanged"; matching the old conditional spread, only provided fields are
+  // sent. `description: ""` clears to undefined (the old `|| null`).
+  const patch: { name?: string; description?: string; updatedAt: number } = {
+    updatedAt: Date.now(),
+  };
+  if (data.name !== undefined) patch.name = data.name;
+  if (data.description !== undefined) patch.description = data.description || undefined;
+  await (await getConvexClient()).mutation(api.groupTemplates.update, {
+    id: templateId,
+    patch,
+  });
 
+  // CHILD items → Prisma. If items are provided, replace all of them.
+  if (data.items !== undefined) {
+    const parsed = groupTemplateSchema.shape.items.parse(data.items);
+    await prisma.$transaction(async (tx) => {
       await tx.groupTemplateItem.deleteMany({
         where: { templateId, organizationId },
       });
-
       await tx.groupTemplateItem.createMany({
         data: parsed.map((item, idx) => ({
           organizationId,
@@ -419,11 +437,20 @@ export async function updateGroupTemplate(
           sortOrder: item.sortOrder ?? idx,
         })),
       });
-    }
+    });
+  }
 
-    return updated;
-  });
-  await patchGroupTemplateInConvex(templateId, template);
+  const template = {
+    id: templateId,
+    organizationId,
+    name: data.name !== undefined ? data.name : existing.name,
+    description:
+      data.description !== undefined
+        ? data.description || null
+        : existing.description,
+    createdAt: existing.createdAt,
+    updatedAt: new Date(),
+  };
 
   await logActivity({
     organizationId,
@@ -445,12 +472,19 @@ export async function deleteGroupTemplate(templateId: string) {
     "manage_line_items"
   );
 
-  const template = await prisma.groupTemplate.findUniqueOrThrow({
-    where: { id: templateId, organizationId },
-  });
+  // Org-guard via the Convex parent (replaces Prisma findUniqueOrThrow).
+  const template = await getGroupTemplateParentById(templateId);
+  if (!template || template.organizationId !== organizationId) {
+    throw new Error("Group template not found");
+  }
 
-  await prisma.groupTemplate.delete({
-    where: { id: templateId, organizationId },
+  // CROSS-STORE cascade re-implementation: the dropped Cascade FK auto-deleted
+  // a template's child items on parent delete. Delete the Prisma children FIRST,
+  // then the Convex parent — so a mid-failure leaves (at worst) an empty parent,
+  // never orphaned children pointing at a missing template. Both ops are
+  // idempotent (deleteMany on no rows + a remove that 404s harmlessly on retry).
+  await prisma.groupTemplateItem.deleteMany({
+    where: { templateId, organizationId },
   });
   await (await getConvexClient()).mutation(api.groupTemplates.remove, { id: templateId });
 

@@ -79,3 +79,19 @@ export async function getGroupTemplateParents(
   );
   return sortGroupTemplatesByName(docs.map(mapGroupTemplate));
 }
+
+/**
+ * A single group-template PARENT row from Convex by cuid, mapped — or `null` if
+ * absent. Used as the org-guard for update/delete (Phase B write inversion
+ * replaces the old Prisma `findUniqueOrThrow where:{id,organizationId}`). No
+ * Prisma fallback: a miss reads as an absent template. The caller verifies
+ * `organizationId` before mutating.
+ */
+export async function getGroupTemplateParentById(
+  id: string,
+): Promise<MappedGroupTemplate | null> {
+  const doc = await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.groupTemplates.getById, { id }),
+  );
+  return doc ? mapGroupTemplate(doc) : null;
+}

@@ -530,6 +530,48 @@ per surface).
         GATE: run the three backfills against prod Convex BEFORE this lands, else reads
         return empty for pre-existing rows.**
 
+- [x] **`group-templates` (parent) → Convex-only writes; child `groupTemplateItem`
+      STAYS Prisma (cross-store cascade).** DONE (branch `wip/phaseb-group-templates`,
+      validated `tsc` clean + 2433 vitest pass + eslint clean + `build` exit 0).
+      Cascade-tier: the PARENT `groupTemplate` had ONE inbound Cascade FK
+      (`group_template_item.templateId`), so this followed the locations/suppliers
+      cross-store pattern — the parent inverts to Convex, the child stays Prisma, and
+      the cascade is re-implemented across the two stores.
+      - **FK dropped:** migration `20260617131400_drop_group_template_fk_constraint`
+        drops `group_template_item_templateId_fkey` (`IF EXISTS`). Schema: removed the
+        `template GroupTemplate @relation(...Cascade)` field on `GroupTemplateItem` + the
+        `items GroupTemplateItem[]` back-ref on `GroupTemplate`; `templateId` stays a
+        plain `String` cuid (now holding the Convex id). `GroupTemplate` is retained as a
+        (now-unwritten) Prisma model — only the raw search query still reads it. Not
+        applied locally (prod cutover only).
+      - **PARENT writes inverted (Convex-only, no Prisma row, no mirror):**
+        `createGroupTemplate`, `saveGroupAsTemplate`, `updateGroupTemplate`,
+        `deleteGroupTemplate`, and the `applyGroupTemplate` parent read all go through
+        `api.groupTemplates.create/update/remove/getById` with an explicit `createId()` +
+        `Date.now()`. Inline mirror helpers (`mirrorGroupTemplateToConvex`,
+        `patchGroupTemplateInConvex`) removed.
+      - **CHILD `groupTemplateItem` STAYS Prisma** (not a Convex domain): create
+        (`createMany`, `templateId` = the new parent cuid), the update item-replace
+        (delete-all + createMany in a Prisma tx), and the `applyGroupTemplate` item read
+        (`findMany` with the `kit` join) are all unchanged Prisma. `getGroupTemplates`
+        remains the hybrid read (Convex parents + Prisma items) it already was.
+      - **CROSS-STORE cascade re-impl:** the dropped Cascade auto-deleted a template's
+        child items on parent delete. `deleteGroupTemplate` now deletes the Prisma
+        children FIRST (`prisma.groupTemplateItem.deleteMany({ where:{ templateId } })`)
+        then removes the Convex parent — ordered so a mid-failure leaves at worst an empty
+        parent, never orphaned children; both ops idempotent on retry.
+      - **Invariants:** org-guard re-implemented via `getGroupTemplateParentById`
+        (new helper in `group-templates-read.ts`, wraps `api.groupTemplates.getById`) +
+        `organizationId` check before update/remove/apply (replaces Prisma
+        `findUniqueOrThrow` / `where:{id,organizationId}`). NO Prisma fallback for the
+        parent read. `logActivity` preserved on every path.
+      - **Blast radius:** `src/server/search.ts` still reads the Prisma `group_template`
+        table via raw SQL — left as-is, matching how the already-inverted
+        `supplier`/`location` raw search queries were handled (search conversion is a
+        separate deferred concern). No tsc/build breakage. No backfill script needed
+        (parent rows were already mirrored to Convex by the prior dual-write; the
+        `groupTemplates` table is already populated in prod).
+
 ## Merge-time consolidation TODO (before final merge to main)
 
 De-duplicate helper files that multiple branches created (the integration merge

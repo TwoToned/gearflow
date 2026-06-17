@@ -1682,7 +1682,12 @@ model GroupTemplate {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  items GroupTemplateItem[]
+  // GroupTemplate PARENT rows are CONVEX-ONLY (Phase B write inversion). No
+  // Prisma row is written; the Convex `groupTemplates` doc is the sole source of
+  // truth. This model is retained only as a (now-unwritten) anchor for the raw
+  // search query. The `items` back-relation is gone — the child
+  // group_template_item.templateId FK was dropped (Phase B), so the cascade
+  // delete is re-implemented cross-store in deleteGroupTemplate.
 
   @@index([organizationId])
   @@map("group_template")
@@ -1698,8 +1703,7 @@ model GroupTemplateItem {
   id             String        @id @default(cuid())
   organizationId String
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  templateId     String
-  template       GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId     String // references a Convex groupTemplates doc; FK dropped Phase B
   modelId        String? // references a Convex models doc; FK dropped Phase B
   kitId          String?
   kit            Kit?          @relation(fields: [kitId], references: [id], onDelete: Cascade)

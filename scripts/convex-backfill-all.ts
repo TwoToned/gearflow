@@ -61,6 +61,10 @@ const ORDER: string[] = [
   "maintenance",
   "warehouse-close",
   "saved-views",
+  // bucket-2 Phase B: token tables + maintenance-asset join (no inbound FK).
+  "warehouse-dashboard-tokens",
+  "test-tag-auditor-tokens",
+  "maintenance-record-assets",
   // media + denormalized stamps last
   "media",
   "crew-availability-org",

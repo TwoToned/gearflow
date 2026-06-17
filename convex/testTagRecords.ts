@@ -48,6 +48,25 @@ export const listByAssetId = query({
   },
 });
 
+/**
+ * Records for one asset within an org, in one round trip. Used by the
+ * per-asset test history (`getTestTagRecords`) and the Quick Pass pre-fill
+ * (`getLatestTestRecord`) reads. Org-scoped via the composite index so a stray
+ * cross-org id can't leak. Caller sorts by `testDate` desc + paginates.
+ * HAND-ADDED for the Phase A read-rewiring of the test-tag records surface.
+ */
+export const listByOrgAndAsset = query({
+  args: { orgId: v.string(), testTagAssetId: v.string() },
+  handler: async (ctx, { orgId, testTagAssetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_organizationId_testTagAssetId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagAssetId", testTagAssetId),
+      )
+      .collect();
+  },
+});
 export const create = mutation({
   args: {
     id: v.string(),

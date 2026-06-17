@@ -247,6 +247,30 @@ export async function getTestTagAssetByTestTagId(
   return row ? mapTTAsset(row) : null;
 }
 
+/**
+ * All records for one asset within an org (unsorted — caller sorts by `testDate`).
+ * Backs the per-asset test history (`getTestTagRecords`) and the Quick Pass
+ * pre-fill (`getLatestTestRecord`). Org-scoped at the Convex layer.
+ */
+export async function getTestTagRecordsByAsset(orgId: string, testTagAssetId: string): Promise<TTRecord[]> {
+  const rows = (await (await getConvexClient()).query(api.testTagRecords.listByOrgAndAsset, {
+    orgId,
+    testTagAssetId,
+  })) as RawTTRecord[];
+  return rows.map(mapTTRecord);
+}
+
+/** Sort a record list by `testDate` descending — replicates `orderBy: { testDate: "desc" }`. */
+export function sortRecordsByTestDateDesc(records: TTRecord[]): TTRecord[] {
+  return [...records].sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+}
+
+/**
+ * Codepoint string compare (ascending) — matches Postgres default `orderBy asc`
+ * byte ordering more faithfully than `localeCompare`. Used for `testTagId asc`
+ * in the auditor reads, consistent with the T&T reports surface.
+ */
+export const cmpStrAsc = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 /** Sub-test records for a set of test records, in one round trip, sorted by sortOrder. */
 export async function getSubTestRecordsByRecordIds(recordIds: string[]): Promise<SubTestRecord[]> {
   if (recordIds.length === 0) return [];
@@ -313,6 +337,35 @@ export function recordMatchesFilters(record: TTRecord, filters: ReportFilters): 
   }
   if (filters.results?.length && !filters.results.includes(record.result)) return false;
   if (filters.testedBy?.length && !filters.testedBy.includes(record.testedById)) return false;
+  return true;
+}
+
+// ─── Auditor portal scope filter (replicates the Prisma scope `where` AND) ────
+
+/** Auditor token scope (mirror of `AuditorTokenScope` in the server action). */
+export interface AuditorScope {
+  categories?: string[];       // applianceType values
+  equipmentClasses?: string[]; // equipmentClass values
+  locations?: string[];        // location strings
+  assetIds?: string[];         // specific testTagAsset ids
+}
+
+/**
+ * Mirrors the auditor portal's Prisma `where` AND: org + `isActive: true` are
+ * applied at fetch (`getTestTagAssetsByOrg` + `assetMatchesFilters`-style
+ * `isActive` guard here), this covers the optional scope facets. Each present
+ * facet is an `in` over the asset's field; absent facets impose no constraint.
+ * Pure → unit-tested.
+ */
+export function assetMatchesAuditorScope(item: TTAsset, scope: AuditorScope | null | undefined): boolean {
+  if (item.isActive !== true) return false;
+  if (!scope) return true;
+  if (scope.categories?.length && !scope.categories.includes(item.applianceType)) return false;
+  if (scope.equipmentClasses?.length && !scope.equipmentClasses.includes(item.equipmentClass)) return false;
+  if (scope.locations?.length) {
+    if (item.location == null || !scope.locations.includes(item.location)) return false;
+  }
+  if (scope.assetIds?.length && !scope.assetIds.includes(item.id)) return false;
   return true;
 }
 

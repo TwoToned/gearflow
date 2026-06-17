@@ -5,6 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  getTestTagAssetsByOrg,
+  assetMatchesAuditorScope,
+  cmpStrAsc,
+} from "@/lib/test-tag-read";
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -193,34 +198,24 @@ export async function deleteAuditorToken(id: string) {
 export async function getAuditorScopeOptions() {
   const { organizationId } = await getOrgContext();
 
-  const [applianceTypes, equipmentClasses, locations, assets] = await Promise.all([
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { applianceType: true },
-      distinct: ["applianceType"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { equipmentClass: true },
-      distinct: ["equipmentClass"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true, location: { not: null } },
-      select: { location: true },
-      distinct: ["location"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { id: true, testTagId: true, description: true },
-      orderBy: { testTagId: "asc" },
-    }),
-  ]);
+  // Convex read (testTagAsset is dual-written). Distinct facets + the sorted
+  // asset list are computed in JS — replicating the old Prisma `distinct` /
+  // `orderBy` queries over `isActive: true` assets.
+  const active = (await getTestTagAssetsByOrg(organizationId)).filter((a) => a.isActive === true);
+
+  const applianceTypes = [...new Set(active.map((a) => a.applianceType))];
+  const equipmentClasses = [...new Set(active.map((a) => a.equipmentClass))];
+  const locations = [...new Set(active.map((a) => a.location).filter((l): l is string => Boolean(l)))];
+
+  const assets = active
+    .map((a) => ({ id: a.id, testTagId: a.testTagId, description: a.description }))
+    .sort((x, y) => cmpStrAsc(x.testTagId, y.testTagId));
 
   return serialize({
-    applianceTypes: applianceTypes.map((a) => a.applianceType),
-    equipmentClasses: equipmentClasses.map((e) => e.equipmentClass),
-    locations: locations.map((l) => l.location).filter(Boolean) as string[],
-    assets: assets,
+    applianceTypes,
+    equipmentClasses,
+    locations,
+    assets,
   });
 }
 
@@ -263,62 +258,41 @@ export async function getAuditorPortalData(
   organizationId: string,
   scope?: AuditorTokenScope | null,
 ) {
-  // Build where clause with scope filtering
-  const where: Record<string, unknown> = { organizationId, isActive: true };
-
-  if (scope) {
-    const andConditions: Record<string, unknown>[] = [];
-    if (scope.categories?.length) {
-      andConditions.push({ applianceType: { in: scope.categories } });
-    }
-    if (scope.equipmentClasses?.length) {
-      andConditions.push({ equipmentClass: { in: scope.equipmentClasses } });
-    }
-    if (scope.locations?.length) {
-      andConditions.push({ location: { in: scope.locations } });
-    }
-    if (scope.assetIds?.length) {
-      andConditions.push({ id: { in: scope.assetIds } });
-    }
-    if (andConditions.length > 0) {
-      where.AND = andConditions;
-    }
-  }
-
-  const [org, assets, stats] = await Promise.all([
+  // org/name stays Prisma — Better Auth `Organization` is not a domain table.
+  // testTagAsset is dual-written → read from Convex, then apply the scope `where`
+  // (org + `isActive: true` + the optional scope facets) as a pure JS predicate.
+  const [org, allAssets] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: { name: true, metadata: true },
     }),
-    prisma.testTagAsset.findMany({
-      where,
-      select: {
-        id: true,
-        testTagId: true,
-        description: true,
-        equipmentClass: true,
-        applianceType: true,
-        make: true,
-        modelName: true,
-        serialNumber: true,
-        location: true,
-        status: true,
-        lastTestDate: true,
-        nextDueDate: true,
-        testIntervalMonths: true,
-      },
-      orderBy: { testTagId: "asc" },
-    }),
-    prisma.testTagAsset.groupBy({
-      by: ["status"],
-      where,
-      _count: true,
-    }),
+    getTestTagAssetsByOrg(organizationId),
   ]);
 
+  const scoped = allAssets.filter((a) => assetMatchesAuditorScope(a, scope));
+
+  const assets = scoped
+    .map((a) => ({
+      id: a.id,
+      testTagId: a.testTagId,
+      description: a.description,
+      equipmentClass: a.equipmentClass,
+      applianceType: a.applianceType,
+      make: a.make,
+      modelName: a.modelName,
+      serialNumber: a.serialNumber,
+      location: a.location,
+      status: a.status,
+      lastTestDate: a.lastTestDate,
+      nextDueDate: a.nextDueDate,
+      testIntervalMonths: a.testIntervalMonths,
+    }))
+    .sort((x, y) => cmpStrAsc(x.testTagId, y.testTagId));
+
+  // groupBy status → counts, computed over the same scoped set.
   const statusCounts: Record<string, number> = {};
-  for (const s of stats) {
-    statusCounts[s.status] = s._count;
+  for (const a of scoped) {
+    statusCounts[a.status] = (statusCounts[a.status] ?? 0) + 1;
   }
 
   const total = assets.length;

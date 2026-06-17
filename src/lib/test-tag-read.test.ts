@@ -4,6 +4,9 @@ import {
   recordMatchesFilters,
   listAssetMatchesFilters,
   compareTestTagAssets,
+  assetMatchesAuditorScope,
+  sortRecordsByTestDateDesc,
+  cmpStrAsc,
   mapTTAsset,
   mapTTRecord,
   mapSubTest,
@@ -162,6 +165,70 @@ describe("recordMatchesFilters", () => {
 
   it("empty filters match any record", () => {
     expect(recordMatchesFilters(record(), {})).toBe(true);
+  });
+});
+
+// ─── assetMatchesAuditorScope ─────────────────────────────────────────────────
+
+describe("assetMatchesAuditorScope", () => {
+  it("excludes inactive items regardless of scope (where always sets isActive:true)", () => {
+    expect(assetMatchesAuditorScope(asset({ isActive: false }), null)).toBe(false);
+    expect(assetMatchesAuditorScope(asset({ isActive: false }), { categories: ["APPLIANCE"] })).toBe(false);
+  });
+
+  it("null/empty scope matches any active item", () => {
+    expect(assetMatchesAuditorScope(asset(), null)).toBe(true);
+    expect(assetMatchesAuditorScope(asset(), undefined)).toBe(true);
+    expect(assetMatchesAuditorScope(asset(), {})).toBe(true);
+  });
+
+  it("filters by categories (applianceType IN)", () => {
+    expect(assetMatchesAuditorScope(asset({ applianceType: "APPLIANCE" }), { categories: ["APPLIANCE"] })).toBe(true);
+    expect(assetMatchesAuditorScope(asset({ applianceType: "POWER_BOARD" }), { categories: ["APPLIANCE"] })).toBe(false);
+  });
+
+  it("filters by equipmentClasses (IN)", () => {
+    expect(assetMatchesAuditorScope(asset({ equipmentClass: "CLASS_I" }), { equipmentClasses: ["CLASS_I"] })).toBe(true);
+    expect(assetMatchesAuditorScope(asset({ equipmentClass: "CLASS_II" }), { equipmentClasses: ["CLASS_I"] })).toBe(false);
+  });
+
+  it("filters by locations (IN); null location never matches", () => {
+    expect(assetMatchesAuditorScope(asset({ location: "Warehouse A" }), { locations: ["Warehouse A"] })).toBe(true);
+    expect(assetMatchesAuditorScope(asset({ location: "Truck 1" }), { locations: ["Warehouse A"] })).toBe(false);
+    expect(assetMatchesAuditorScope(asset({ location: null }), { locations: ["Warehouse A"] })).toBe(false);
+  });
+
+  it("filters by assetIds (IN over id)", () => {
+    expect(assetMatchesAuditorScope(asset({ id: "tt1" }), { assetIds: ["tt1", "tt2"] })).toBe(true);
+    expect(assetMatchesAuditorScope(asset({ id: "tt9" }), { assetIds: ["tt1", "tt2"] })).toBe(false);
+  });
+
+  it("combines facets with AND", () => {
+    const item = asset({ applianceType: "APPLIANCE", equipmentClass: "CLASS_I", location: "Warehouse A", id: "tt1" });
+    expect(assetMatchesAuditorScope(item, { categories: ["APPLIANCE"], equipmentClasses: ["CLASS_I"], locations: ["Warehouse A"], assetIds: ["tt1"] })).toBe(true);
+    expect(assetMatchesAuditorScope(item, { categories: ["APPLIANCE"], equipmentClasses: ["CLASS_II"] })).toBe(false);
+  });
+});
+
+// ─── sortRecordsByTestDateDesc / cmpStrAsc ────────────────────────────────────
+
+describe("sortRecordsByTestDateDesc", () => {
+  it("orders records newest testDate first and does not mutate the input", () => {
+    const a = record({ id: "a", testDate: new Date("2026-01-01") });
+    const b = record({ id: "b", testDate: new Date("2026-06-01") });
+    const c = record({ id: "c", testDate: new Date("2026-03-01") });
+    const input = [a, b, c];
+    const sorted = sortRecordsByTestDateDesc(input);
+    expect(sorted.map((r) => r.id)).toEqual(["b", "c", "a"]);
+    expect(input.map((r) => r.id)).toEqual(["a", "b", "c"]); // unmutated
+  });
+});
+
+describe("cmpStrAsc", () => {
+  it("codepoint-orders ascending (uppercase before lowercase, unlike localeCompare)", () => {
+    expect(["TT-010", "TT-002", "TT-001"].sort(cmpStrAsc)).toEqual(["TT-001", "TT-002", "TT-010"]);
+    expect(cmpStrAsc("A", "a")).toBe(-1);
+    expect(cmpStrAsc("x", "x")).toBe(0);
   });
 });
 

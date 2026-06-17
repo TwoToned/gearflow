@@ -2650,7 +2650,9 @@ model BrandTemplate {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  documentTemplates DocumentTemplate[]
+  // Phase B (Convex domain-only decommission): brand_template is Convex-only.
+  // The inbound document_template.brandTemplateId FK was dropped; the
+  // back-relation is removed (DocumentTemplate now carries a plain string id).
 
   @@index([organizationId])
   @@map("brand_template")
@@ -2673,8 +2675,7 @@ model DocumentTemplate {
 
   // New section-based fields
   sections        String?        @db.Text // JSON — TemplateSection[] (ordered section list)
-  brandTemplateId String?
-  brandTemplate   BrandTemplate? @relation(fields: [brandTemplateId], references: [id], onDelete: SetNull)
+  brandTemplateId String? // references a Convex brandTemplates doc (cuid); FK dropped in Phase B
   thumbnailData   String?        @db.Text // base64 thumbnail image
 
   isDefault    Boolean   @default(false)

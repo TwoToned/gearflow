@@ -8,7 +8,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * Locations are dual-written like Suppliers: every create/update/delete writes
  * BOTH the Prisma `location` row (the durable FK anchor — `asset`, `bulk_asset`,
  * `kit`, `project`, `warehouse_dashboard_token` carry a nullable FK, and
- * `location_media` + `stocktake` carry a **required + Cascade** FK; plus the
+ * `location_media` carries a **required + Cascade** FK; plus the
  * self-referential `parentId`) AND the Convex `locations` doc (the reactive read
  * source the browser subscribes to). Reads that want reactivity — the location
  * list, the location dropdowns, the edit form — go through Convex via this helper

@@ -39,7 +39,6 @@ import {
   sendCrewOfferAll,
   sendBulkMessage,
 } from "@/server/crew-communication";
-import { createCrewRole } from "@/server/crew";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
 import { useProjectCrew, refreshProjectCrew, useProjectLabourCost, refreshProjectLabourCost, useProjectCrewLiveSync } from "@/hooks/use-project-crew";
@@ -923,30 +922,9 @@ function AssignmentDialog({
             <ComboboxPicker
               options={roleOptions}
               value={form.watch("crewRoleId") || ""}
-              onChange={(v) => {
-                // If the value is a known role ID, use it directly
-                const isExisting = roleOptions.some(
-                  (r: { value: string }) => r.value === v
-                );
-                if (isExisting || !v) {
-                  form.setValue("crewRoleId", v);
-                } else {
-                  // Creatable mode — typed a new role name, create it. The role
-                  // dropdown is reactive (useCrewRoles), so the new role appears
-                  // automatically once the dual-write commits — no invalidation.
-                  createCrewRole({ name: v })
-                    .then((role) => {
-                      form.setValue("crewRoleId", role.id);
-                      toast.success(`Role "${role.name}" created`);
-                    })
-                    .catch((err) =>
-                      toast.error((err as Error).message)
-                    );
-                }
-              }}
-              placeholder="Select or create role..."
+              onChange={(v) => form.setValue("crewRoleId", v)}
+              placeholder="Select role..."
               allowClear
-              creatable
             />
           </div>
 

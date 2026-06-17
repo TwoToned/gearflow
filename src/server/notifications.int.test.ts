@@ -1,7 +1,5 @@
 /**
  * Integration tests for Wave 2.D notifications work:
- *  • LOW_STOCK live compute (replaces stale BulkAsset.status filter — the
- *    bug that emailed "7 of 7 available" as low stock)
  *  • NotificationDismissal persistence (replaces localStorage)
  *  • UserNotificationPreference upsert with defaults
  *  • NotificationEmailLog dedupe (one email per (user, key))
@@ -13,151 +11,7 @@ import {
   setupIntegrationTest,
   createOrgFixture,
   createUserFixture,
-  createModelFixture,
-  createBulkAssetFixture,
 } from "../../tests/helpers/integration";
-
-/** Replicates the LOW_STOCK live-compute query from notifications.ts. */
-async function queryLowStockBulks(orgId: string) {
-  const candidates = await testPrisma.bulkAsset.findMany({
-    where: {
-      organizationId: orgId,
-      isActive: true,
-      reorderThreshold: { not: null, gt: 0 },
-    },
-  });
-  return candidates.filter(
-    (b) =>
-      b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
-  );
-}
-
-describe("LOW_STOCK live compute (the bogus-email bug fix)", () => {
-  beforeEach(async () => {
-    await setupIntegrationTest();
-  });
-
-  afterAll(async () => {
-    await testPrisma.$disconnect();
-  });
-
-  it("bulk with no reorderThreshold is NEVER low-stock (no opt-in, no alert)", async () => {
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    // available = 0, total = 5 — would have been "low stock" under the old
-    // logic that trusted BulkAsset.status. With no threshold, no alert.
-    await createBulkAssetFixture(org.id, model.id, {
-      assetTag: "NO-THRESHOLD",
-      total: 5,
-      available: 0,
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(0);
-  });
-
-  it("bulk at threshold IS low-stock", async () => {
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    const bulk = await testPrisma.bulkAsset.create({
-      data: {
-        organizationId: org.id,
-        modelId: model.id,
-        assetTag: "AT-THRESHOLD",
-        totalQuantity: 20,
-        availableQuantity: 5,
-        reorderThreshold: 5,
-      },
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(1);
-    expect(lowStock[0].id).toBe(bulk.id);
-  });
-
-  it("bulk below threshold IS low-stock", async () => {
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    await testPrisma.bulkAsset.create({
-      data: {
-        organizationId: org.id,
-        modelId: model.id,
-        assetTag: "BELOW",
-        totalQuantity: 20,
-        availableQuantity: 2,
-        reorderThreshold: 5,
-      },
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(1);
-  });
-
-  it("bulk above threshold is NOT low-stock — fixes the 7-of-7 bogus email", async () => {
-    // The exact bug: TTP00097 had 7 of 7 available but received a "low stock"
-    // email because its cached `status` enum was LOW_STOCK. With live compute,
-    // available > threshold means no alert regardless of cached status.
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    await testPrisma.bulkAsset.create({
-      data: {
-        organizationId: org.id,
-        modelId: model.id,
-        assetTag: "BOGUS-7-OF-7",
-        totalQuantity: 7,
-        availableQuantity: 7,
-        reorderThreshold: 2,
-        status: "LOW_STOCK", // stale cached enum — proves we don't trust it
-      },
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(0);
-  });
-
-  it("inactive bulk is NEVER low-stock", async () => {
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    await testPrisma.bulkAsset.create({
-      data: {
-        organizationId: org.id,
-        modelId: model.id,
-        assetTag: "INACTIVE",
-        totalQuantity: 20,
-        availableQuantity: 0,
-        reorderThreshold: 5,
-        isActive: false,
-      },
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(0);
-  });
-
-  it("threshold of 0 is treated as no-threshold (gt: 0 filter)", async () => {
-    const org = await createOrgFixture();
-    await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    await testPrisma.bulkAsset.create({
-      data: {
-        organizationId: org.id,
-        modelId: model.id,
-        assetTag: "ZERO-THRESHOLD",
-        totalQuantity: 10,
-        availableQuantity: 0,
-        reorderThreshold: 0,
-      },
-    });
-
-    const lowStock = await queryLowStockBulks(org.id);
-    expect(lowStock).toHaveLength(0);
-  });
-});
 
 describe("NotificationDismissal persistence", () => {
   beforeEach(async () => {
@@ -253,11 +107,10 @@ describe("UserNotificationPreference defaults", () => {
     });
 
     // Defaults documented in schema: true for compliance-shaped (maintenance,
-    // return, low stock, cert, flagged, invitation); false for opt-in noisy
+    // return, cert, flagged, invitation); false for opt-in noisy
     // (upcoming project, crew offers, timesheets).
     expect(pref.overdueMaintenance).toBe(true);
     expect(pref.overdueReturn).toBe(true);
-    expect(pref.lowStock).toBe(true);
     expect(pref.expiringCert).toBe(true);
     expect(pref.flaggedAsset).toBe(true);
     expect(pref.pendingInvitation).toBe(true);
@@ -271,13 +124,13 @@ describe("UserNotificationPreference defaults", () => {
     const user = await createUserFixture(org.id);
 
     await testPrisma.userNotificationPreference.create({
-      data: { userId: user.id, lowStock: false, pendingOffers: true },
+      data: { userId: user.id, upcomingProject: true, pendingOffers: true },
     });
 
     const after = await testPrisma.userNotificationPreference.findUnique({
       where: { userId: user.id },
     });
-    expect(after?.lowStock).toBe(false);
+    expect(after?.upcomingProject).toBe(true);
     expect(after?.pendingOffers).toBe(true);
     // Untouched fields keep defaults
     expect(after?.overdueMaintenance).toBe(true);

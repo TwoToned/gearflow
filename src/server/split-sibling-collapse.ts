@@ -4,7 +4,7 @@
  * The pure plan / equivalence-key logic lives in
  * `src/lib/split-sibling-collapse.ts`. This module owns the
  * transactional writes: moving units, repointing CheckRecord /
- * DamageEvent / ProjectService FKs, deactivating the sibling row, and
+ * ProjectService FKs, deactivating the sibling row, and
  * writing the LineItemMergeMap audit row.
  *
  * Lives outside `"use server"` so the script and integration tests can
@@ -31,7 +31,6 @@ export interface CollapseRunStats {
   rowsMergedAway: number;
   unitsMoved: number;
   checkRecordsRepointed: number;
-  damageEventsRepointed: number;
   servicesRepointed: number;
   /** Echoed back for logging — caller-supplied. */
   runId: string;
@@ -126,7 +125,6 @@ export async function runCollapse(opts: RunOptions): Promise<CollapseRunResult> 
     rowsMergedAway: 0,
     unitsMoved: 0,
     checkRecordsRepointed: 0,
-    damageEventsRepointed: 0,
     servicesRepointed: 0,
     runId: opts.runId,
   };
@@ -265,24 +263,6 @@ export async function mergeGroup(
       }
       stats.checkRecordsRepointed += remaining.count;
 
-      if (movedUnitId && (move.assetId || move.bulkAssetId)) {
-        const matched = await tx.damageEvent.updateMany({
-          where: {
-            lineItemId: move.siblingId,
-            ...(move.assetId
-              ? { assetId: move.assetId }
-              : { bulkAssetId: move.bulkAssetId }),
-          },
-          data: { lineItemId: plan.canonicalId, lineItemUnitId: movedUnitId },
-        });
-        stats.damageEventsRepointed += matched.count;
-      }
-      const remainingDmg = await tx.damageEvent.updateMany({
-        where: { lineItemId: move.siblingId },
-        data: { lineItemId: plan.canonicalId },
-      });
-      stats.damageEventsRepointed += remainingDmg.count;
-
       const serviceMove = await tx.projectService.updateMany({
         where: { lineItemId: move.siblingId },
         data: { lineItemId: plan.canonicalId },
@@ -297,7 +277,6 @@ export async function mergeGroup(
           canonicalLineItemId: plan.canonicalId,
           movedUnitId,
           checkRecordsRepointed: 0, // per-row counts aggregate at stats level
-          damageEventsRepointed: 0,
           serviceRepointed: serviceMove.count > 0,
           notes: `${runId} | key=${plan.key}`,
         },

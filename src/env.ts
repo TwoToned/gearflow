@@ -45,12 +45,6 @@ const serverEnvSchema = z.object({
   S3_BUCKET: z.string().default("gearflow-uploads"),
   S3_ENDPOINT: z.string().optional(),
 
-  // OAuth — both client id + secret must be set together
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  MICROSOFT_CLIENT_ID: z.string().optional(),
-  MICROSOFT_CLIENT_SECRET: z.string().optional(),
-
   // Admin registration (legacy + new names — code references both)
   ADMIN_REGISTRATION_TOKEN: z.string().optional(),
   SITE_ADMIN_SECRET_TOKEN: z.string().optional(),
@@ -84,10 +78,6 @@ const serverEnvSchema = z.object({
     .url("NEXT_PUBLIC_CONVEX_SITE_URL must be a valid URL")
     .optional(),
 
-  // Discord bot — RUNS IN-PROCESS NOW. All credentials and config live in the
-  // DiscordIntegration row (encrypted token via secret-vault). No bot env vars
-  // here; instrumentation.ts boots it on server start.
-
   // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
   SENTRY_DSN: z.string().optional(),
   // Source map upload (CI only)
@@ -100,8 +90,6 @@ const serverEnvSchema = z.object({
   // Public — duplicated in clientEnv for typed access on server too
   NEXT_PUBLIC_APP_URL: z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL"),
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.string().optional(),
-  NEXT_PUBLIC_GOOGLE_CONFIGURED: z.string().optional(),
-  NEXT_PUBLIC_MICROSOFT_CONFIGURED: z.string().optional(),
   NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED: z.string().optional(),
   // Sentry — client-side DSN (separate from server DSN by Next convention)
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
@@ -137,22 +125,9 @@ if (!validated.success) {
 
 const parsed = validated.data;
 
-// Pair checks — warn on partial OAuth config rather than hard-fail (legacy data)
+// Warn on missing optional config rather than hard-fail
 if (parsed.NODE_ENV !== "test") {
-  if (parsed.GOOGLE_CLIENT_ID && !parsed.GOOGLE_CLIENT_SECRET) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[env] GOOGLE_CLIENT_ID is set but GOOGLE_CLIENT_SECRET is not — Google OAuth will not initialize.",
-    );
-  }
-  if (parsed.MICROSOFT_CLIENT_ID && !parsed.MICROSOFT_CLIENT_SECRET) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[env] MICROSOFT_CLIENT_ID is set but MICROSOFT_CLIENT_SECRET is not — Microsoft OAuth will not initialize.",
-    );
-  }
   if (!parsed.RESEND_API_KEY) {
-    // eslint-disable-next-line no-console
     console.warn(
       "[env] RESEND_API_KEY is not set — emails will log to console instead of being sent.",
     );

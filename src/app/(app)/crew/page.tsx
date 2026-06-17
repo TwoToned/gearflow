@@ -237,12 +237,6 @@ function CrewDashboard() {
           description="Approved"
           icon={Timer}
         />
-        <StatCard
-          title="Expiring Certs"
-          value={stats?.expiringCerts ?? "—"}
-          icon={AlertTriangle}
-          alert={!!stats?.expiringCerts}
-        />
       </div>
 
       {/* Two-column grid */}

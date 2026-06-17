@@ -450,27 +450,6 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
-/* Barcode scanner — fit camera feed in container */
-.scanner-viewport {
-  height: 220px;
-  overflow: hidden;
-}
-.scanner-viewport > div {
-  width: 100% !important;
-  height: 220px !important;
-  overflow: hidden !important;
-}
-.scanner-viewport video {
-  object-fit: cover !important;
-  min-width: 100% !important;
-  min-height: 100% !important;
-}
-/* Hide html5-qrcode scan region overlay */
-.scanner-viewport #qr-shaded-region,
-.scanner-viewport [style*="border-width"] {
-  display: none !important;
-}
-
 /* ═══════════════════════════════════════════════════════
    pdfme Designer — Polished overrides
    ═══════════════════════════════════════════════════════ */

@@ -36,8 +36,6 @@ import { toast } from "sonner";
 import {
   getCrewMemberById,
   deleteCrewMember,
-  addCertification,
-  removeCertification,
 } from "@/server/crew";
 import {
   updateAssignmentStatus,
@@ -67,7 +65,6 @@ import {
 import {
   crewMemberStatusLabels,
   crewMemberTypeLabels,
-  crewCertStatusLabels,
   assignmentStatusLabels,
   phaseLabels,
   availabilityTypeLabels,
@@ -75,8 +72,6 @@ import {
   formatLabel,
 } from "@/lib/status-labels";
 import {
-  crewCertificationSchema,
-  type CrewCertificationFormValues,
   crewAvailabilitySchema,
   type CrewAvailabilityFormValues,
   crewTimeEntrySchema,
@@ -131,14 +126,6 @@ import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/compo
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { formatDate } from "@/lib/formatters";
 
-const certStatusColors: Record<string, string> = {
-  CURRENT: "bg-green-500/10 text-green-500 border-green-500/20",
-  EXPIRING_SOON: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  EXPIRED: "bg-red-500/10 text-red-500 border-red-500/20",
-  NOT_VERIFIED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
-
-
 const availabilityTypeColors: Record<string, string> = {
   UNAVAILABLE: "bg-red-500/10 text-red-500 border-red-500/20",
   TENTATIVE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
@@ -173,14 +160,12 @@ export default function CrewMemberDetailPage({
   const canReadCrew = useCanDo("crew", "read");
 
   const [tabValue, setTabValue] = useState("assignments");
-  const [addCertOpen, setAddCertOpen] = useState(false);
   const [addAvailOpen, setAddAvailOpen] = useState(false);
   const [addTimeOpen, setAddTimeOpen] = useState(false);
   const [editingTimeEntry, setEditingTimeEntry] = useState<string | null>(null);
   const [deleteCrewOpen, setDeleteCrewOpen] = useState(false);
   const [regenerateTokenOpen, setRegenerateTokenOpen] = useState(false);
   const [removeAvailId, setRemoveAvailId] = useState<string | null>(null);
-  const [removeCertTarget, setRemoveCertTarget] = useState<{ id: string; name: string } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Slash command listener
@@ -197,7 +182,6 @@ export default function CrewMemberDetailPage({
 
       // Dialog opening
       if (dialog === "add-availability") setAddAvailOpen(true);
-      if (dialog === "add-certification") setAddCertOpen(true);
       if (dialog === "add-time-entry") setAddTimeOpen(true);
     };
 
@@ -217,15 +201,6 @@ export default function CrewMemberDetailPage({
       // The crew roster (/crew) is Convex-reactive (useCrewMembers); the old
       // ["crew-members"] invalidation had no React Query reader left. Navigate.
       router.push("/crew");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const removeCertMutation = useServerMutation({
-    mutationFn: (certId: string) => removeCertification(certId),
-    onSuccess: () => {
-      toast.success("Certification removed");
-      refetchMember();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -407,15 +382,9 @@ export default function CrewMemberDetailPage({
   const displayEmail = member.user?.email || member.email;
 
   const fullName = displayName;
-  const certifications = member.certifications || [];
   const skills = member.skills || [];
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const assignments = (member as any).assignments || [];
-
-  // Compute certification summary
-  const currentCerts = certifications.filter((c: { status: string }) => c.status === "CURRENT").length;
-  const expiringCerts = certifications.filter((c: { status: string }) => c.status === "EXPIRING_SOON").length;
-  const expiredCerts = certifications.filter((c: { status: string }) => c.status === "EXPIRED").length;
 
   // Compute availability status
   const now = new Date();
@@ -561,9 +530,6 @@ export default function CrewMemberDetailPage({
                   </TabsTrigger>
                   <TabsTrigger value="availability">
                     Availability ({availabilityRecords?.length || 0})
-                  </TabsTrigger>
-                  <TabsTrigger value="certifications">
-                    Certifications ({certifications.length})
                   </TabsTrigger>
                   <TabsTrigger value="time-entries">
                     Time ({timeEntries?.length || 0})
@@ -829,119 +795,6 @@ export default function CrewMemberDetailPage({
                                           size="icon"
                                           className="h-7 w-7 text-destructive"
                                           onClick={() => setRemoveAvailId(av.id)}
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </CanDo>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
-                  </div>
-                </TabsContent>
-
-                {/* Certifications Tab */}
-                <TabsContent value="certifications" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="t-heading text-fg">Certifications & Qualifications</h3>
-                      <CanDo resource="crew" action="update">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setAddCertOpen(true)}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Certification
-                        </Button>
-                      </CanDo>
-                    </div>
-                      {certifications.length === 0 ? (
-                        <p className="text-sm text-fg-3 text-center py-4">
-                          No certifications recorded.
-                        </p>
-                      ) : (
-                        <div className="rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead className="hidden md:table-cell">
-                                  Issued By
-                                </TableHead>
-                                <TableHead className="hidden md:table-cell">
-                                  Certificate #
-                                </TableHead>
-                                <TableHead className="hidden md:table-cell">
-                                  Issued
-                                </TableHead>
-                                <TableHead>Expiry</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="w-10" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {certifications.map(
-                                (cert: {
-                                  id: string;
-                                  name: string;
-                                  issuedBy: string | null;
-                                  certificateNumber: string | null;
-                                  issuedDate: Date | string | null;
-                                  expiryDate: Date | string | null;
-                                  status: string;
-                                }) => (
-                                  <TableRow key={cert.id}>
-                                    <TableCell className="font-medium">
-                                      {cert.name}
-                                    </TableCell>
-                                    <TableCell className="text-fg-3 hidden md:table-cell">
-                                      {cert.issuedBy || "\u2014"}
-                                    </TableCell>
-                                    <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
-                                      {cert.certificateNumber || "\u2014"}
-                                    </TableCell>
-                                    <TableCell className="text-fg-3 hidden md:table-cell">
-                                      {cert.issuedDate
-                                        ? new Date(
-                                            cert.issuedDate
-                                          ).toLocaleDateString()
-                                        : "\u2014"}
-                                    </TableCell>
-                                    <TableCell className="text-fg-3">
-                                      {cert.expiryDate
-                                        ? new Date(
-                                            cert.expiryDate
-                                          ).toLocaleDateString()
-                                        : "\u2014"}
-                                    </TableCell>
-                                    <TableCell>
-                                      <Badge
-                                        variant="outline"
-                                        className={
-                                          certStatusColors[cert.status] || ""
-                                        }
-                                      >
-                                        {crewCertStatusLabels[cert.status] ||
-                                          formatLabel(cert.status)}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                      <CanDo resource="crew" action="update">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7 text-destructive"
-                                          onClick={() =>
-                                            setRemoveCertTarget({
-                                              id: cert.id,
-                                              name: cert.name,
-                                            })
-                                          }
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
@@ -1376,37 +1229,6 @@ export default function CrewMemberDetailPage({
                     </div>
                   </div>
                 </SidebarSection>
-
-                {/* Certifications Summary */}
-                <SidebarSection title="Certifications">
-                  {certifications.length === 0 ? (
-                    <p className="text-sm text-fg-3">No certifications</p>
-                  ) : (
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Current</span>
-                        <span className="font-medium text-green-500">{currentCerts}</span>
-                      </div>
-                      {expiringCerts > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-fg-3">Expiring Soon</span>
-                          <span className="font-medium text-amber-500">{expiringCerts}</span>
-                        </div>
-                      )}
-                      {expiredCerts > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-fg-3">Expired</span>
-                          <span className="font-medium text-red-500">{expiredCerts}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Total</span>
-                        <span className="font-medium">{certifications.length}</span>
-                      </div>
-                    </div>
-                  )}
-                </SidebarSection>
-
                 {/* Skills */}
                 {skills.length > 0 && (
                   <SidebarSection title="Skills">
@@ -1481,7 +1303,7 @@ export default function CrewMemberDetailPage({
         open={deleteCrewOpen}
         onOpenChange={setDeleteCrewOpen}
         title="Delete this crew member?"
-        description="Removes the crew member from your roster. Past assignments, timesheets, and certifications are preserved but unlinked. This cannot be undone."
+        description="Removes the crew member from your roster. Past assignments and timesheets are preserved but unlinked. This cannot be undone."
         confirmLabel="Delete crew member"
         onConfirm={() => {
           deleteMutation.mutate();
@@ -1515,29 +1337,6 @@ export default function CrewMemberDetailPage({
         }}
         pending={removeAvailMutation.isPending}
       />
-      <DeleteDialog
-        open={!!removeCertTarget}
-        onOpenChange={(open) => !open && setRemoveCertTarget(null)}
-        title={`Remove certification "${removeCertTarget?.name ?? ""}"?`}
-        description="The certification is removed from this crew member's profile."
-        confirmLabel="Remove certification"
-        onConfirm={() => {
-          if (removeCertTarget) {
-            removeCertMutation.mutate(removeCertTarget.id);
-            setRemoveCertTarget(null);
-          }
-        }}
-        pending={removeCertMutation.isPending}
-      />
-
-      {/* Add Certification Dialog */}
-      <AddCertificationDialog
-        crewMemberId={id}
-        open={addCertOpen}
-        onOpenChange={setAddCertOpen}
-        onSaved={refetchMember}
-      />
-
       {/* Add Availability Dialog */}
       <AddAvailabilityDialog
         crewMemberId={id}
@@ -1567,137 +1366,6 @@ export default function CrewMemberDetailPage({
     </>
   );
 }
-
-// ─── Add Certification Dialog ──────────────────────────────────────────────────
-
-function AddCertificationDialog({
-  crewMemberId,
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  crewMemberId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: () => void;
-}) {
-  const form = useForm<CrewCertificationFormValues>({
-    resolver: zodResolver(crewCertificationSchema),
-    defaultValues: {
-      name: "",
-      issuedBy: "",
-      certificateNumber: "",
-      status: "NOT_VERIFIED",
-    },
-  });
-
-  const mutation = useServerMutation({
-    mutationFn: (data: CrewCertificationFormValues) =>
-      addCertification(crewMemberId, data),
-    onSuccess: () => {
-      toast.success("Certification added");
-      onSaved();
-      onOpenChange(false);
-      form.reset();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add Certification</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={form.handleSubmit((data) => mutation.mutate(data))}
-          className="space-y-4"
-        >
-          <div className="space-y-1.5">
-            <Label>Name *</Label>
-            <Input
-              placeholder="e.g. White Card, Working at Heights"
-              {...form.register("name")}
-            />
-            {form.formState.errors.name && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.name.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Issued By</Label>
-            <Input
-              placeholder="Issuing authority"
-              {...form.register("issuedBy")}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Certificate Number</Label>
-            <Input
-              placeholder="Certificate #"
-              {...form.register("certificateNumber")}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Issued Date</Label>
-              <Input type="date" {...form.register("issuedDate")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expiry Date</Label>
-              <Input type="date" {...form.register("expiryDate")} />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <Select
-              value={form.watch("status")}
-              onValueChange={(v) =>
-                form.setValue(
-                  "status",
-                  v as CrewCertificationFormValues["status"]
-                )
-              }
-            >
-              <SelectTrigger>
-                <SelectValue>{({"CURRENT": "Current", "EXPIRING_SOON": "Expiring Soon", "EXPIRED": "Expired", "NOT_VERIFIED": "Not Verified"} as Record<string, string>)[form.watch("status") ?? ""] ?? form.watch("status")}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="CURRENT">Current</SelectItem>
-                <SelectItem value="EXPIRING_SOON">Expiring Soon</SelectItem>
-                <SelectItem value="EXPIRED">Expired</SelectItem>
-                <SelectItem value="NOT_VERIFIED">Not Verified</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Add Certification
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Add Availability Dialog ──────────────────────────────────────────────────
 
 function AddAvailabilityDialog({
   crewMemberId,

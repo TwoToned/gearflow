@@ -11,7 +11,6 @@ import {
   type CrewShiftFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
-import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import {
   syncCrewAssignmentToConvex,
   patchCrewAssignmentInConvex,
@@ -163,19 +162,6 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
     },
     });
 
-    // Outbox: grant the linked crew member channel access (no-op for unlinked).
-    await emitIfDiscordEnabled(tx, {
-      organizationId,
-      eventType: "crew.assignment.changed",
-      payload: {
-        projectId,
-        crewMemberId: parsed.crewMemberId,
-        assignmentId: created.id,
-        action: "added",
-      },
-      dedupeKey: `crew.assignment.changed:${created.id}:added`,
-    });
-
     return created;
   });
 
@@ -309,20 +295,6 @@ export async function deleteAssignment(id: string) {
 
   await prisma.$transaction(async (tx) => {
     await tx.crewAssignment.delete({ where: { id, organizationId } });
-
-    // Outbox: revoke channel access. Emitted in the same txn as the delete so a
-    // failed delete never revokes access (and vice-versa).
-    await emitIfDiscordEnabled(tx, {
-      organizationId,
-      eventType: "crew.assignment.changed",
-      payload: {
-        projectId: assignment.projectId,
-        crewMemberId: assignment.crewMemberId,
-        assignmentId: id,
-        action: "removed",
-      },
-      dedupeKey: `crew.assignment.changed:${id}:removed`,
-    });
   });
 
   await removeCrewAssignmentCascadeFromConvex(cascade);

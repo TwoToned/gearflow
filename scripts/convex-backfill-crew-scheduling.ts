@@ -38,11 +38,6 @@ async function main() {
     { const __res = await convex.mutation(api.crewAvailabilities.createIfMissing, toConvexDoc(av) as FunctionArgs<typeof api.crewAvailabilities.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
-  const certifications = await prisma.crewCertification.findMany();
-  for (const c of certifications) {
-    { const __res = await convex.mutation(api.crewCertifications.createIfMissing, toConvexDoc(c) as FunctionArgs<typeof api.crewCertifications.createIfMissing>); if (__res.created) created++; else skipped++; }
-  }
-
   const timeEntries = await prisma.crewTimeEntry.findMany();
   for (const t of timeEntries) {
     { const __res = await convex.mutation(api.crewTimeEntries.createIfMissing, toConvexDoc(t) as FunctionArgs<typeof api.crewTimeEntries.createIfMissing>); if (__res.created) created++; else skipped++; }
@@ -51,7 +46,7 @@ async function main() {
   console.log(
     `Crew scheduling backfill complete: ${created} created, ${skipped} already present ` +
     `(${assignments.length} assignments, ${shifts.length} shifts, ${availability.length} availability, ` +
-    `${certifications.length} certifications, ${timeEntries.length} time entries).`,
+    `${timeEntries.length} time entries).`,
   );
   await prisma.$disconnect();
 }

@@ -208,6 +208,60 @@
       `brandTemplateId: undefined` (the shared mirror helper drops null keys and can't
       clear a field, so the mutation is called directly). headerSettings/footerSettings
       pass through unchanged; `logActivity` kept.
+
+- [x] **`locations` → Convex-only writes (cascade tier).** DONE (branch
+      `wip/phaseb-locations`, validated `tsc` clean + 2413 vitest pass + eslint clean
+      [0 errors, only pre-existing unused-var warnings] + `build` exit 0). **High blast
+      radius — 7 inbound FKs across 7 tables.** **Migration**
+      `20260617131000_drop_location_fk_constraints` drops (all `IF EXISTS`):
+      `asset_locationId_fkey`, `bulk_asset_locationId_fkey`, `kit_locationId_fkey`,
+      `project_locationId_fkey`, `location_parentId_fkey` (self-ref),
+      `location_media_locationId_fkey` (was Cascade), and
+      `warehouse_dashboard_token_locationId_fkey` (was SetNull). (`stocktake_locationId_fkey`
+      no longer exists — table removed by `20260617000000_remove_stocktake`.) Schema:
+      removed the inbound `@relation` fields on `Asset`/`BulkAsset`/`Kit`/`Project`/
+      `LocationMedia`/`WarehouseDashboardToken`, the self-ref `parent`/`children`, and
+      ALL back-relation lists (`assets`/`bulkAssets`/`kits`/`projects`/`media`/
+      `warehouseDashboardTokens`/`children`) on `model Location`; the `*Id`/`parentId`
+      columns stay as plain strings holding the Convex cuid (the `organizationId`
+      org-cascade FK stays). Not applied locally (prod cutover only).
+      - **Writes inverted (Convex-only, no Prisma, no mirror):** `createLocation`,
+        `updateLocation`, `deleteLocation`, `updateLocationNotes` (+ the WooCommerce
+        venue auto-create in `woocommerce.ts`) use `createId()` + `Date.now()` via
+        `api.locations.create/update/remove`. Deleted the inline
+        `mirrorLocationToConvex`/`patchLocationInConvex` helpers + the `prisma` (write
+        path) / `toConvexDoc` / `FunctionArgs` imports (`prisma` kept only for the
+        location_media Prisma-side cascade delete below).
+      - **Invariants re-implemented:** single-default-per-org (`unsetDefaultsInConvex`
+        now lists the org's locations from Convex and clears every other default before
+        setting the target); org-guard via `getLocationById` before update/remove;
+        **delete guards from Convex counts** (`countLocationRelations` over the org's
+        Convex location/asset/bulk-asset lists) — "Cannot delete location with
+        sub-locations" if children > 0, "Cannot delete location with assets assigned to
+        it" if assets/bulkAssets > 0 (exact prior `_count` semantics); **location_media
+        Cascade re-implemented in deleteLocation across BOTH stores** — `location_media`
+        is still dual-written (Prisma + Convex mirror; the PDF/detail galleries read it),
+        so after the guards pass every locationMedia doc for the location is removed from
+        Convex (`api.locationMedia.remove` each, via the new `getLocationMediaGallery`)
+        AND the Prisma rows (`prisma.locationMedia.deleteMany`), matching the old
+        Cascade (which dropped only the join rows, leaving `file_upload`).
+      - **Detail composite rebuilt:** the FK drop broke `getLocation`'s deep Prisma
+        `include` (parent/children/assets/bulkAssets/kits/projects/media + `_count`), so
+        it's reconstructed from the Convex domain lists in `getLocationDetail`
+        (locations-read.ts): parent + children-with-counts, active asset/bulk/kit subsets
+        (assetTag asc, take 50) with model attach, projects (createdAt desc, take 20)
+        with client attach, the locationMedia gallery with file lookups, and the
+        top-level `_count`.
+      - **Cross-cutting consumer fixes (FK drop broke ~10 other readers):** every Prisma
+        `include: { location }` / nested `project.location` select was converted to a
+        Convex attach (`getLocationMap`/`getLocationById`/`attachLocation`): `models.ts`
+        getModel (asset/bulk location), `assets.ts` getAsset, `kits.ts` getKit,
+        `projects.ts` (getProjects list + search-by-location-name now resolves matching
+        location ids from Convex → `locationId: { in }`; getProject location+parent
+        inheritance; getTemplates), `crew-communication.ts`, the two crew iCal routes,
+        and `warehouse-display.ts` (4 token queries). `TestTagAsset.location` is a plain
+        `String?` column (not a relation) — untouched.
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

@@ -49,6 +49,30 @@
       delete backfills/parity/mirrors, migrate the DB to drop the tables.
 - [ ] **Final prod backfill + cutover + reopen** (see below).
 
+## Bucket-1 progress
+
+- **line-item counts/flags** (branch `wip/bucket1-counts`, off `integration/convex-decommission`):
+  Converted the keystone-unblocked projectLineItem COUNT/flag reads to Convex via a
+  new pure read helper `src/lib/line-item-count-read.ts` (fetchers
+  `getLineItemsByOrg` / `getLineItemsByProjectIds` over `projectLineItems.list` /
+  `listByProjectIds`, + unit-tested pure count/group functions). No new Convex
+  queries (reused existing `projectLineItems.list` / `listByProjectIds`).
+  - `dashboard.ts`: `getDashboardStats` overdueReturns (CHECKED_OUT items in the
+    JS-resolved overdue-project set), `getMyHomeData` + `getUpcomingProjects`
+    EQUIPMENT per-project `_count.lineItems` groupBys → Convex.
+  - `projects.ts`: `getProjects({includeLineItems})` slim list, `getTemplates`
+    `_count.lineItems` (non kit-child), `getProjectIssueFlags` line-item input
+    findMany → Convex. (`computeOverbookedStatus`'s own overlapping-bookings query
+    LEFT on Prisma — shared by warehouse/project-categories, out of bucket scope.)
+  - `suppliers.ts`: per-supplier `_count.lineItems` (now an org-wide Convex count
+    folded into `getOrgSupplierCounts`) + `getSupplierSubhires` (filter
+    subHireId!=null, createdAt-desc, paginate, project select grafted from Convex
+    project list) → Convex. `deleteSupplier`'s `_count` guard LEFT on Prisma
+    (feeds a same-action delete mutation).
+  - `clients.ts`: `getClient` per-project `_count.lineItems` groupBy → Convex.
+  - Validation: `tsc` clean, 10/10 new vitest pass, eslint clean (only the
+    pre-existing `_id`-strip warning in suppliers.ts).
+
 ## Merge-time consolidation TODO (before final merge to main)
 
 De-duplicate helper files that multiple branches created (the integration merge

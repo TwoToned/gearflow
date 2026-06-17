@@ -110,7 +110,8 @@ export const update = mutation({
     patch: v.object({
       organizationId: v.optional(v.string()),
       projectId: v.optional(v.string()),
-      categoryId: v.optional(v.string()),
+      // null means "clear this field" (JSON strips undefined so we use null as sentinel)
+      categoryId: v.optional(v.union(v.string(), v.null())),
       title: v.optional(v.string()),
       description: v.optional(v.string()),
       quantity: v.optional(v.number()),
@@ -127,9 +128,14 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("projectGroups not found: " + id);
-    const safePatch = { ...patch };
-    delete safePatch.organizationId;
-    await ctx.db.patch(doc._id, safePatch);
+    const { organizationId: _drop, categoryId, ...rest } = patch;
+    if (categoryId === null) {
+      // Explicit clear: replace the doc without the categoryId field.
+      const { _id, _creationTime, categoryId: _clear, ...docRest } = doc;
+      await ctx.db.replace(_id, { ...docRest, ...rest });
+    } else {
+      await ctx.db.patch(doc._id, categoryId !== undefined ? { ...rest, categoryId } : rest);
+    }
     return doc._id;
   },
 });

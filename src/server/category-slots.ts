@@ -216,25 +216,15 @@ export async function moveSubHireGroupToCategory(
     });
   });
 
-  // Convex CategorySlot writes.
+  // Convex CategorySlot writes (atomic to prevent concurrent duplicates).
   const client = await getConvexClient();
-  const existingSlots = await client.query(api.categorySlots.listBySubHireGroupId, { subHireGroupId: parsed.groupId });
-  for (const slot of existingSlots) {
-    await client.mutation(api.categorySlots.remove, { id: slot.id });
-  }
-  if (destCategoryId) {
-    const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: destCategoryId });
-    const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
-    const now = Date.now();
-    await client.mutation(api.categorySlots.create, {
-      id: createId(),
-      projectCategoryId: destCategoryId,
-      subHireGroupId: parsed.groupId,
-      sortOrder: maxSort + 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
+  const now = Date.now();
+  await client.mutation(api.categorySlots.upsertSlotForSubHireGroup, {
+    subHireGroupId: parsed.groupId,
+    destCategoryId,
+    newSlotId: createId(),
+    now,
+  });
 
   await syncSubHireToConvex(group.subHire.id);
   if (group.subHire.projectId) {
@@ -301,29 +291,20 @@ export async function moveProjectGroupToCategory(
     data: { categoryId: destCategoryId },
   });
 
-  // Convex writes: group categoryId + slot.
+  // Convex writes: group categoryId + slot (atomic to prevent concurrent duplicates).
   const now = Date.now();
   await client.mutation(api.projectGroups.update, {
     id: parsed.groupId,
-    patch: { categoryId: destCategoryId ?? undefined, updatedAt: now },
+    // Pass null explicitly so Convex clears the field (undefined is stripped by JSON serialization).
+    patch: { categoryId: destCategoryId, updatedAt: now },
   });
 
-  const existingSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: parsed.groupId });
-  for (const slot of existingSlots) {
-    await client.mutation(api.categorySlots.remove, { id: slot.id });
-  }
-  if (destCategoryId) {
-    const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: destCategoryId });
-    const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
-    await client.mutation(api.categorySlots.create, {
-      id: createId(),
-      projectCategoryId: destCategoryId,
-      projectGroupId: parsed.groupId,
-      sortOrder: maxSort + 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
+  await client.mutation(api.categorySlots.upsertSlotForProjectGroup, {
+    projectGroupId: parsed.groupId,
+    destCategoryId,
+    newSlotId: createId(),
+    now,
+  });
 
   await upsertProjectLineItemsToConvex(group.projectId);
 
@@ -399,52 +380,20 @@ export async function reorderMixedGroupsInCategory(
     }
   }
 
-  // Fetch all existing slots for this category so we can upsert by group ID.
-  const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: parsed.categoryId });
-  const slotByProjectGroupId = new Map(catSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
-  const slotBySubHireGroupId = new Map(catSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
-
   const now = Date.now();
-  for (const { prefixedId, displayIndex } of sortedByPrefixedId) {
-    const parsedSlot = parseSlotId(prefixedId);
-    if (!parsedSlot) continue;
-
-    if (parsedSlot.kind === "projectGroup") {
-      const existing = slotByProjectGroupId.get(parsedSlot.id);
-      if (existing) {
-        await client.mutation(api.categorySlots.update, {
-          id: existing.id,
-          patch: { sortOrder: displayIndex, projectCategoryId: parsed.categoryId, updatedAt: now },
-        });
-      } else {
-        await client.mutation(api.categorySlots.create, {
-          id: createId(),
-          projectCategoryId: parsed.categoryId,
-          projectGroupId: parsedSlot.id,
-          sortOrder: displayIndex,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    } else {
-      const existing = slotBySubHireGroupId.get(parsedSlot.id);
-      if (existing) {
-        await client.mutation(api.categorySlots.update, {
-          id: existing.id,
-          patch: { sortOrder: displayIndex, projectCategoryId: parsed.categoryId, updatedAt: now },
-        });
-      } else {
-        await client.mutation(api.categorySlots.create, {
-          id: createId(),
-          projectCategoryId: parsed.categoryId,
-          subHireGroupId: parsedSlot.id,
-          sortOrder: displayIndex,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    }
-  }
+  await client.mutation(api.categorySlots.reorderSlots, {
+    categoryId: parsed.categoryId,
+    items: sortedByPrefixedId.map(({ prefixedId, displayIndex }) => {
+      const parsedSlot = parseSlotId(prefixedId)!;
+      return {
+        kind: parsedSlot.kind,
+        groupId: parsedSlot.id,
+        sortOrder: displayIndex,
+        newSlotId: createId(),
+      };
+    }).filter(Boolean),
+    now,
+  });
 
   return serialize({ success: true });
 }

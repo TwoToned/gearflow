@@ -18,9 +18,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * semantics and are unit-tested independently. They take a numeric millisecond
  * window so the caller keeps owning the today/upcoming day math.
  *
- * NOTE: the `warehouseDashboardToken` table is NOT dual-written to Convex — token
- * CRUD + validation stay Prisma (a blocked terminus). Only the project-domain
- * reads inside `getWarehouseDisplayData` move here. See FEATUREDOCS/54.
+ * NOTE: the `warehouseDashboardToken` table is now CONVEX-ONLY (Phase B write
+ * inversion, bucket-2) — token CRUD + validation read/write Convex via
+ * `src/lib/warehouse-display-token-read.ts` + `api.warehouseDashboardTokens.*`.
+ * This module only owns the project-domain reads inside
+ * `getWarehouseDisplayData`. See FEATUREDOCS/54 + the decommission runbook.
  */
 
 type RawService = Doc<"projectServices">;

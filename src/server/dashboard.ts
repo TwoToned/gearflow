@@ -15,6 +15,7 @@ import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg, getProjectIdsForManager } from "@/lib/projects-read";
 import { getMaintenanceRecordsByOrg, countDueMaintenance } from "@/lib/maintenance-read";
+import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
 import { getCrewMembersByOrg, countActiveCrew } from "@/lib/crew-read";
 import { getCrewAssignmentsByOrg, countAssignmentsByStatus } from "@/lib/crew-scheduling-read";
 
@@ -217,10 +218,6 @@ export async function getRecentActivity() {
     prisma.maintenanceRecord.findMany({
       where: { organizationId },
       include: {
-        assets: {
-          include: { asset: true },
-          take: 3,
-        },
         reportedBy: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -228,6 +225,22 @@ export async function getRecentActivity() {
     }),
     getModelMap(organizationId),
   ]);
+
+  // The maintenanceRecordAsset join is Convex-only (Phase B): fetch the links for
+  // the top-10 records, attach asset scalars from Convex (assets are dual-written),
+  // and keep the old `take: 3` cap per record.
+  const maintenanceRecordIds = maintenanceRecords.map((m) => m.id);
+  const [maintenanceLinks, orgAssetsForMaint] = await Promise.all([
+    getMaintenanceAssetLinksByRecordIds(maintenanceRecordIds),
+    getAssetsByOrg(organizationId),
+  ]);
+  const maintAssetMap = new Map(orgAssetsForMaint.map((a) => [a.id, a]));
+  const linksByRecord = new Map<string, typeof maintenanceLinks>();
+  for (const l of maintenanceLinks) {
+    const arr = linksByRecord.get(l.maintenanceRecordId) ?? [];
+    arr.push(l);
+    linksByRecord.set(l.maintenanceRecordId, arr);
+  }
 
   const withModels = {
     logs: logs.map((l) => ({
@@ -238,10 +251,19 @@ export async function getRecentActivity() {
     testRecords,
     maintenanceRecords: maintenanceRecords.map((m) => ({
       ...m,
-      assets: m.assets.map((a) => ({
-        ...a,
-        asset: { ...a.asset, model: a.asset.modelId ? modelMap.get(a.asset.modelId) ?? null : null },
-      })),
+      assets: (linksByRecord.get(m.id) ?? [])
+        .slice(0, 3) // preserve the old include `take: 3`
+        .map((l) => {
+          const asset = maintAssetMap.get(l.assetId) ?? null;
+          return {
+            id: l.id,
+            maintenanceRecordId: l.maintenanceRecordId,
+            assetId: l.assetId,
+            asset: asset
+              ? { ...asset, model: asset.modelId ? modelMap.get(asset.modelId) ?? null : null }
+              : null,
+          };
+        }),
     })),
   };
 

@@ -31,6 +31,51 @@ export const getById = query({
   },
 });
 
+/**
+ * Join rows for many maintenance records in one round trip. The maintenance reads
+ * (`attachJoins`, `getRecentActivity`) need the asset links for a whole result set;
+ * fetching per-record would be N round trips. HAND-ADDED for Phase B write
+ * inversion (bucket-2 maintenance-join).
+ */
+export const listByMaintenanceRecordIds = query({
+  args: { maintenanceRecordIds: v.array(v.string()) },
+  handler: async (ctx, { maintenanceRecordIds }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const recordId of maintenanceRecordIds) {
+      const rows = await ctx.db
+        .query("maintenanceRecordAssets")
+        .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", recordId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
+/**
+ * Join rows for many assets in one round trip — the `releaseAssets` "is any other
+ * active record still holding this asset?" cross-check (old Prisma
+ * `findMany({ where: { assetId: { in } } })`). The record-status side of that
+ * `where` (maintenanceRecord.status IN holding) is re-applied in JS by the caller
+ * against the Convex record rows. HAND-ADDED for Phase B write inversion.
+ */
+export const listByAssetIds = query({
+  args: { assetIds: v.array(v.string()) },
+  handler: async (ctx, { assetIds }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const assetId of assetIds) {
+      const rows = await ctx.db
+        .query("maintenanceRecordAssets")
+        .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

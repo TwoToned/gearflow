@@ -16,6 +16,12 @@ import {
   getModelFailureAnalyticsRows,
 } from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { mirrorMaintenanceCreate } from "@/lib/maintenance-mirror";
+import {
+  getMaintenanceAssetLinksByAssetIds,
+  createMaintenanceAssetLinks,
+} from "@/lib/maintenance-record-asset-read";
 import {
   prepUnit,
   syncLineItemRollup,
@@ -138,15 +144,22 @@ async function checkPredictiveMaintenance(
       // model name lives in Convex — resolve for the maintenance description.
       const modelName = asset.modelId ? (await getModelById(asset.modelId))?.name ?? "" : "";
 
-      // Check if a maintenance record already exists for this pattern (avoid duplicates)
-      const existingMaintenance = await prisma.maintenanceRecord.findFirst({
-        where: {
-          organizationId,
-          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-          title: { contains: `[Auto] ${checkItem.label}` },
-          assets: { some: { assetId } },
-        },
-      });
+      // Check if a maintenance record already exists for this pattern (avoid
+      // duplicates). The record scalars (org/status/title) come from the Convex
+      // maintenance records; the `assets: { some: { assetId } }` join filter is
+      // resolved from the Convex-only maintenanceRecordAsset join (Phase B).
+      const titleNeedle = `[Auto] ${checkItem.label}`;
+      const [orgRecords, assetLinks] = await Promise.all([
+        getMaintenanceRecordsByOrg(organizationId),
+        getMaintenanceAssetLinksByAssetIds([assetId]),
+      ]);
+      const recordIdsForAsset = new Set(assetLinks.map((l) => l.maintenanceRecordId));
+      const existingMaintenance = orgRecords.find(
+        (m) =>
+          (m.status === "SCHEDULED" || m.status === "IN_PROGRESS") &&
+          m.title.includes(titleNeedle) &&
+          recordIdsForAsset.has(m.id),
+      );
 
       if (!existingMaintenance) {
         const maintenance = await prisma.maintenanceRecord.create({
@@ -161,12 +174,10 @@ async function checkPredictiveMaintenance(
           },
         });
 
-        await prisma.maintenanceRecordAsset.create({
-          data: {
-            maintenanceRecordId: maintenance.id,
-            assetId,
-          },
-        });
+        // Mirror the auto-created record to Convex so it shows in the
+        // Convex-sourced maintenance reads, then write the Convex-only join link.
+        await mirrorMaintenanceCreate(maintenance as unknown as Record<string, unknown>);
+        await createMaintenanceAssetLinks(maintenance.id, [assetId]);
 
         await logActivity({
           organizationId,

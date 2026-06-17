@@ -350,6 +350,70 @@
       still-dual-written `modelMedia`/`modelBulkAccessory` reads + T&T propagation + the
       `archiveModel` asset/bulk `deleteMany`.
 
+- [x] **bucket-2: `warehouseDashboardToken` + `testTagAuditorToken` +
+      `maintenanceRecordAsset` → Convex-only writes.** DONE (branch
+      `wip/bucket2-tokens-mra`, validated `tsc` clean + 2420 vitest pass + eslint clean
+      on changed files + `build` exit 0). **Last not-yet-Convex domain tables. NO
+      migration — all three have ZERO inbound Prisma FK** (token `locationId`/`createdById`
+      are outbound; the join's `maintenanceRecordId`/`assetId` are outbound too), so the
+      frozen Prisma tables are just left unwritten until Phase C drops them.
+      - **Convex queries added (hand-added, service-only):**
+        `warehouseDashboardTokens.getByTokenHash` + `testTagAuditorTokens.getByTokenHash`
+        (secure `@unique` tokenHash lookup via `by_tokenHash`, `.unique()`);
+        `maintenanceRecordAssets.listByMaintenanceRecordIds` + `.listByAssetIds`
+        (batched join reads via `by_maintenanceRecordId` / `by_assetId`).
+      - **Read helpers:** `src/lib/warehouse-display-token-read.ts`,
+        `src/lib/test-tag-auditor-token-read.ts`,
+        `src/lib/maintenance-record-asset-read.ts` (mappers epoch-ms→Date, absent→null,
+        `isActive` `@default(true)` + `layout` `@default("standard")` coerced; createdAt-desc
+        sort in JS; the join module also owns the Convex-only link writers
+        `createMaintenanceAssetLinks` (dedups → re-implements `@@unique([maintenanceRecordId,
+        assetId])`), `removeMaintenanceAssetLinks`, `removeAllMaintenanceAssetLinks`). Unit-tested.
+      - **`warehouseDashboardToken` writes inverted** (`warehouse-display.ts`):
+        create/update/regenerate/revoke → `api.warehouseDashboardTokens.create/update/remove`
+        (`createId()`+`Date.now()`); org-guard via `getWarehouseTokenById` before update/remove;
+        `createdBy:{name}` attached from Prisma `user.findMany` (Auth User stays Prisma).
+        **SECURITY: `validateDisplayToken`** (public warehouse-display endpoint) now hashes →
+        `getWarehouseTokenByHash` → preserves the EXACT `!record || !record.isActive → null`
+        match; lastAccessedAt touch is fire-and-forget Convex patch.
+      - **`testTagAuditorToken` writes inverted** (`test-tag-auditor.ts`):
+        create/update/revoke(soft `isActive=false`)/delete → Convex; org-guard via
+        `getAuditorTokenById`; `getAuditorTokens` reads Convex + attaches `createdBy:{name,email}`
+        from Prisma. **SECURITY: `validateAuditorToken`** (public auditor portal) hashes →
+        `getAuditorTokenByHash` → preserves `!isActive → null` AND the `expiresAt < now → null`
+        expiry check; lastAccessedAt fire-and-forget. (Unblocks the auditor-token reads left
+        Prisma in #238/#210.)
+      - **`maintenanceRecordAsset` (join) writes inverted Convex-only:**
+        - `maintenance.ts` create/update/delete no longer use Prisma nested
+          `assets.create`/`deleteMany`; the record write stays Prisma (dual-written FK anchor),
+          links written post-tx via `createMaintenanceAssetLinks`/`removeMaintenanceAssetLinks`.
+          `releaseAssets`' cross-check (`maintenanceRecordAsset` joined to `maintenanceRecord.status
+          IN holding`) is now `computeStillHeldIds` — reads Convex links (`listByAssetIds`) +
+          Convex records, re-applies the holding-status + exclude-current-record filter in JS
+          OUTSIDE the Prisma tx (Convex can't run inside it), and passes the precomputed
+          `stillHeldIds` set into the tx (only the Prisma `asset.updateMany` stays transactional).
+          **maintenanceRecord→join Cascade re-implemented** in the delete path via
+          `removeAllMaintenanceAssetLinks`. `attachJoins` reads links from Convex + asset scalars
+          from `getAssetsByOrg`.
+        - `check-records.ts` predictive auto-create: the `assets:{some:{assetId}}` dedup filter →
+          Convex records (org/status/title) ∩ Convex links (`listByAssetIds`); the auto-created
+          record is now mirrored to Convex (`mirrorMaintenanceCreate`) so it appears in the
+          Convex-sourced maintenance reads, then the link is written via
+          `createMaintenanceAssetLinks`.
+        - `dashboard.ts` `getRecentActivity` (left Prisma in #248): the maintenance `assets`
+          include → Convex links + Convex asset scalars (model grafted from `getModelMap`),
+          preserving the old `take:3` per-record cap. The record read + `reportedBy` User join
+          stay Prisma.
+      - **Backfills** (idempotent `createIfMissing`, run BEFORE read rewiring deploys):
+        `convex-backfill-warehouse-dashboard-tokens.ts`,
+        `convex-backfill-test-tag-auditor-tokens.ts`,
+        `convex-backfill-maintenance-record-assets.ts` — registered in
+        `convex-backfill-all.ts` ORDER + `package.json` (`convex:backfill:{warehouse-dashboard-tokens,
+        test-tag-auditor-tokens,maintenance-record-assets}`).
+      - **NOTE:** `maintenance-state.int.test.ts` is a self-contained Prisma replica of the
+        invariant logic (writes+reads the join directly via `testPrisma`); the Prisma table/relation
+        still exists, so it stays valid (excluded from `vitest run`; integration-config only).
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

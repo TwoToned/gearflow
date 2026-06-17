@@ -158,7 +158,7 @@ export default function ServiceTemplatesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(templates as Record<string, unknown>[]).map((t) => {
+              {(templates as unknown as Record<string, unknown>[]).map((t) => {
                 const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
                 return (
                   <TableRow key={t.id as string}>

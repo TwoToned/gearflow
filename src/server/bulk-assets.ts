@@ -14,6 +14,12 @@ import {
   patchBulkAssetInConvex,
   removeBulkAssetFromConvex,
 } from "@/lib/asset-mirror";
+import {
+  getMappedBulkAssetsByOrg,
+  filterBulkAssets,
+  sortBulkAssets,
+  paginate,
+} from "@/lib/assets-read";
 
 // model (+ nested equipment category) + location live in Convex (dual-written) —
 // attached from the maps below, not Prisma joins. Sorts/filters on model.name /
@@ -42,39 +48,29 @@ export async function getBulkAssets(params?: {
     sortBy = "assetTag", sortOrder = "asc",
   } = params || {};
 
-  const where: Prisma.BulkAssetWhereInput = {
-    organizationId,
-    isActive,
-    ...(status && { status: status as Prisma.EnumBulkAssetStatusFilter }),
-    ...(locationId && { locationId }),
-    ...(modelId && { modelId }),
-    ...(categoryId && { model: { categoryId } }),
-    ...(search && {
-      OR: [
-        { assetTag: { contains: search, mode: "insensitive" } },
-        { model: { name: { contains: search, mode: "insensitive" } } },
-      ],
-    }),
-  };
-
-  const [bulkAssets, total] = await Promise.all([
-    prisma.bulkAsset.findMany({
-      where,
-      // model + location attached from Convex below; sort stays on the Prisma mirror.
-      orderBy: sortBy === "model" ? { model: { name: sortOrder } }
-        : sortBy === "location" ? { location: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.bulkAsset.count({ where }),
-  ]);
-
-  const [modelMap, locationMap] = await Promise.all([
+  // Bulk-asset rows + model/location maps all come from Convex (dual-written).
+  // The org's full row set is fetched then filtered/sorted/paginated in JS,
+  // replicating the old Prisma where/orderBy. See src/lib/assets-read.ts.
+  const [allBulk, modelMap, locationMap] = await Promise.all([
+    getMappedBulkAssetsByOrg(organizationId),
     getModelWithCategoryMap(organizationId),
     getLocationMap(organizationId),
   ]);
-  const withRelations = bulkAssets.map((b) => ({
+  const modelNameFor = (id: string) => modelMap.get(id)?.name;
+  const categoryFor = (id: string) => modelMap.get(id)?.categoryId;
+  const locationNameFor = (id: string | null) => (id ? locationMap.get(id)?.name : null);
+
+  const filtered = filterBulkAssets(
+    allBulk,
+    { search, categoryId, status, locationId, modelId, isActive },
+    modelNameFor,
+    categoryFor,
+  );
+  const total = filtered.length;
+  const sorted = sortBulkAssets(filtered, sortBy, sortOrder, modelNameFor, locationNameFor);
+  const pageRows = paginate(sorted, page, pageSize);
+
+  const withRelations = pageRows.map((b) => ({
     ...b,
     model: b.modelId ? modelMap.get(b.modelId) ?? null : null,
     location: b.locationId ? locationMap.get(b.locationId) ?? null : null,

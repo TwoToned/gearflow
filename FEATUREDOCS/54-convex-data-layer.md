@@ -2371,6 +2371,21 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **assets + bulk-assets (primary reads)** (`server/assets.ts`, `server/bulk-assets.ts` → `src/lib/assets-read.ts`). `getAssets` and `getBulkAssets` (the paginated `prisma.asset`/`prisma.bulkAsset` `findMany` + `count`) now read every org row from Convex `assets.list`/`bulkAssets.list` and filter/sort/paginate in JS. New pure helpers in `assets-read.ts`: `mapConvexAssetToPrisma`/`mapConvexBulkAssetToPrisma` (rebuild the Prisma row shape — epoch-ms→Date, number→`Prisma.Decimal`, defaulted `status`/`condition`/`isActive`/`images`/`tags`/quantities coerced non-null, `_id`/`_creationTime` stripped); `filterAssets`/`filterBulkAssets` (replicate the Prisma `where` incl. `categoryId`→model.categoryId, the DataTable enum `in` filters, `tags` `hasSome`, and the `assetTag`/`serialNumber`/`customName`/`model.name` search OR); `sortAssets`/`sortBulkAssets` (model.name / location.name joins, enum columns by DECLARED order via rank maps, Postgres NULLS-LAST-on-asc); `paginate`. Model/category/location names come from `getModelWithCategoryMap`/`getLocationMap` (already Convex). **No new Convex query** — the existing `list({orgId})` returns the full row set. **Stays Prisma (documented terminus / out of scope):** `getAsset` (detail composite — `media`+`file`, `maintenanceLinks`, `scanLogs`, `lineItems`, `childAssets`/`childBulkItems`, `modelMedia`, `modelBulkAccessory` cross-domain joins) and `getBulkAsset` (detail composite — `scanLogs`/`lineItems`/`testTagAssets`); the read-then-write `findUnique`s in `updateAsset`/`updateBulkAsset` (quantity reconcile), `deleteAsset`/`deleteBulkAsset` (`_count` referential guard), and the `testTagAsset` find→retire in `deleteAsset`/`archiveAsset`; `customFieldDefinition.findMany` (custom-field domain, not asset). 19 unit tests in `assets-read.test.ts`.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

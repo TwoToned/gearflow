@@ -450,7 +450,6 @@ async function main() {
   let touched = 0;
   let unitsMoved = 0;
   let checkRecordsRepointed = 0;
-  let damageEventsRepointed = 0;
 
   for (const g of groups) {
     const proj = projById.get(g.canonical.projectId);
@@ -478,7 +477,6 @@ async function main() {
   if (apply) {
     console.log(`  Units moved:             ${unitsMoved}`);
     console.log(`  CheckRecords repointed:  ${checkRecordsRepointed}`);
-    console.log(`  DamageEvents repointed:  ${damageEventsRepointed}`);
   } else {
     console.log();
     console.log("Re-run with --apply to execute.");
@@ -542,13 +540,6 @@ async function main() {
         });
         checkRecordsRepointed += cr.count;
 
-        // Repoint DamageEvent rows.
-        const de = await tx.damageEvent.updateMany({
-          where: { lineItemId: child.id },
-          data: { lineItemId: g.canonical.id, lineItemUnitId: unitId },
-        });
-        damageEventsRepointed += de.count;
-
         // ProjectService 1:1 (if any).
         await tx.projectService.updateMany({
           where: { lineItemId: child.id },
@@ -563,7 +554,6 @@ async function main() {
             canonicalLineItemId: g.canonical.id,
             movedUnitId: unitId,
             checkRecordsRepointed: cr.count,
-            damageEventsRepointed: de.count,
             notes: `${runId} | historic-splits | parent qty=${g.canonical.quantity} child qty=${child.quantity}`,
           },
         });

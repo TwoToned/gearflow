@@ -26,11 +26,6 @@ import {
   HardHat,
   Clock,
   Plus,
-  AlertTriangle,
-  Hammer,
-  Activity,
-  ClipboardList,
-  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { usePlatformBranding } from "@/lib/use-platform-name";
@@ -134,18 +129,13 @@ const navSections: NavSection[] = [
       { title: "Models", url: "/assets/models", icon: Boxes, resource: "model" },
       { title: "Categories", url: "/assets/categories", icon: Tags, resource: "model" },
       { title: "Kits", url: "/kits", icon: Container, resource: "kit" },
-      { title: "Utilization", url: "/utilization", icon: Activity, resource: "asset" },
     ],
   },
   {
     label: "OPERATIONS",
     items: [
       { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
-      { title: "Stocktake", url: "/warehouse/stocktake", icon: ClipboardList, resource: "stocktake" },
-      { title: "Reorder", url: "/warehouse/reorder", icon: ShoppingCart, resource: "bulkAsset" },
-      { title: "Workshop", url: "/workshop", icon: Hammer, resource: "maintenance" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
-      { title: "Damage", url: "/damage", icon: AlertTriangle, resource: "maintenance" },
       {
         title: "Test & Tag",
         url: "/test-and-tag",
@@ -171,7 +161,6 @@ const navSections: NavSection[] = [
         items: [
           { title: "Planner", url: "/crew/planner", icon: CalendarRange, resource: "crew" },
           { title: "Timesheets", url: "/crew/timesheets", icon: Clock, resource: "crew" },
-          { title: "Roles & Skills", url: "/crew/settings", icon: Settings, resource: "crew" },
         ],
       },
       { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },
@@ -181,7 +170,6 @@ const navSections: NavSection[] = [
     label: "ADMIN",
     items: [
       { title: "Locations", url: "/locations", icon: MapPin, resource: "location" },
-      { title: "Reports", url: "/reports", icon: BarChart3, resource: "reports" },
       { title: "Activity Log", url: "/activity", icon: ScrollText, resource: "reports" },
     ],
   },

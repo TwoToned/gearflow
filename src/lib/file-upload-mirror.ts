@@ -12,8 +12,8 @@ import { api } from "../../convex/_generated/api";
  * No reactive consumer / Phase-4 hook: media galleries compose fileUpload
  * cross-domain through the `*_media` joins on the always-fresh Prisma mirror, so
  * there is nothing to subscribe to here. These helpers are shared because the
- * file_upload write paths live across 9 files (the uploads API route, org-import,
- * and the 7 `*-media` server actions) rather than one dedicated server module.
+ * file_upload write paths live across 8 files (the uploads API route and the 7
+ * `*-media` server actions) rather than one dedicated server module.
  * See FEATUREDOCS/54.
  */
 

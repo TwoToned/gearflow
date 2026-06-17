@@ -1,13 +1,13 @@
 /**
  * Symmetric secret vault — encrypt/decrypt values that must round-trip through
- * the DB (e.g. the Discord bot token an admin pastes into the settings page).
+ * the DB (e.g. a third-party API secret an admin pastes into a settings page).
  *
  * Choices:
  *  - AES-256-GCM (authenticated encryption — tamper detection comes for free).
  *  - Master key derived from `BETTER_AUTH_SECRET` via HKDF-SHA256, so there's no
  *    new env var to rotate. Rotating BETTER_AUTH_SECRET would invalidate every
- *    encrypted Discord token; document that on the rotation runbook (operators
- *    re-paste the bot token after rotation).
+ *    encrypted secret; document that on the rotation runbook (operators
+ *    re-paste affected secrets after rotation).
  *  - Storage format `v1:base64(iv).base64(ciphertext).base64(authTag)`. The
  *    leading `v1:` makes a future algorithm change forward-compatible.
  *  - Random 96-bit IV per encryption (NIST-recommended for GCM).
@@ -23,8 +23,8 @@ const KEY_LEN = 32;
 const IV_LEN = 12;
 const TAG_LEN = 16;
 const FORMAT_PREFIX = "v1:";
-const HKDF_INFO = Buffer.from("discord-secret-vault.v1");
-const HKDF_SALT = Buffer.from("gearflow.discord-token");
+const HKDF_INFO = Buffer.from("gearflow-secret-vault.v1");
+const HKDF_SALT = Buffer.from("gearflow.secret-vault");
 
 let cachedKey: Buffer | null = null;
 function masterKey(): Buffer {

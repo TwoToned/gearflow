@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   crewMemberSchema,
-  crewRoleSchema,
-  crewSkillSchema,
-  crewCertificationSchema,
   crewAssignmentSchema,
   crewShiftSchema,
   crewAvailabilitySchema,
@@ -38,7 +35,6 @@ describe("crewMemberSchema", () => {
     abnOrGst: "12345678901",
     notes: "Experienced audio engineer",
     tags: ["audio", "senior"],
-    skillIds: ["skill-1", "skill-2"],
     userId: "user-1",
     isActive: false,
   };
@@ -71,7 +67,6 @@ describe("crewMemberSchema", () => {
       expect(result.data.type).toBe("FREELANCER");
       expect(result.data.status).toBe("ACTIVE");
       expect(result.data.tags).toEqual([]);
-      expect(result.data.skillIds).toEqual([]);
       expect(result.data.isActive).toBe(true);
     }
   });
@@ -303,246 +298,6 @@ describe("crewMemberSchema", () => {
   it("accepts empty string for userId", () => {
     const result = crewMemberSchema.safeParse({ ...minimal, userId: "" });
     expect(result.success).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// crewRoleSchema
-// ---------------------------------------------------------------------------
-describe("crewRoleSchema", () => {
-  const minimal = { name: "Sound Engineer" };
-
-  const complete = {
-    name: "Sound Engineer",
-    description: "Manages audio equipment",
-    department: "Audio",
-    color: "#FF5733",
-    defaultRate: 450,
-    rateType: "DAILY" as const,
-    isActive: false,
-  };
-
-  it("accepts valid minimal data", () => {
-    const result = crewRoleSchema.safeParse(minimal);
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts valid complete data", () => {
-    const result = crewRoleSchema.safeParse(complete);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.defaultRate).toBe(450);
-      expect(result.data.rateType).toBe("DAILY");
-    }
-  });
-
-  it("applies default isActive to true", () => {
-    const result = crewRoleSchema.safeParse(minimal);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.isActive).toBe(true);
-    }
-  });
-
-  it("rejects empty name", () => {
-    const result = crewRoleSchema.safeParse({ name: "" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects missing name", () => {
-    const result = crewRoleSchema.safeParse({});
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects name exceeding 200 characters", () => {
-    const result = crewRoleSchema.safeParse({ name: "a".repeat(201) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects description exceeding 500 characters", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, description: "a".repeat(501) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects department exceeding 100 characters", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, department: "a".repeat(101) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects color exceeding 20 characters", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, color: "a".repeat(21) });
-    expect(result.success).toBe(false);
-  });
-
-  it("transforms empty string defaultRate to undefined", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, defaultRate: "" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.defaultRate).toBeUndefined();
-    }
-  });
-
-  it("coerces string number for defaultRate", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, defaultRate: "250" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.defaultRate).toBe(250);
-    }
-  });
-
-  it("rejects negative defaultRate", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, defaultRate: -5 });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid rateType enum value", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, rateType: "MONTHLY" });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts empty string for rateType", () => {
-    const result = crewRoleSchema.safeParse({ ...minimal, rateType: "" });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts all valid rateType values", () => {
-    for (const rt of ["HOURLY", "DAILY", "FLAT"] as const) {
-      const result = crewRoleSchema.safeParse({ ...minimal, rateType: rt });
-      expect(result.success).toBe(true);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// crewSkillSchema
-// ---------------------------------------------------------------------------
-describe("crewSkillSchema", () => {
-  it("accepts valid minimal data", () => {
-    const result = crewSkillSchema.safeParse({ name: "Rigging" });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts valid data with category", () => {
-    const result = crewSkillSchema.safeParse({ name: "Rigging", category: "Staging" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.category).toBe("Staging");
-    }
-  });
-
-  it("rejects empty name", () => {
-    const result = crewSkillSchema.safeParse({ name: "" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects missing name", () => {
-    const result = crewSkillSchema.safeParse({});
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects name exceeding 200 characters", () => {
-    const result = crewSkillSchema.safeParse({ name: "x".repeat(201) });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts name at exactly 200 characters", () => {
-    const result = crewSkillSchema.safeParse({ name: "x".repeat(200) });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects category exceeding 100 characters", () => {
-    const result = crewSkillSchema.safeParse({ name: "Rigging", category: "x".repeat(101) });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts category at exactly 100 characters", () => {
-    const result = crewSkillSchema.safeParse({ name: "Rigging", category: "x".repeat(100) });
-    expect(result.success).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// crewCertificationSchema
-// ---------------------------------------------------------------------------
-describe("crewCertificationSchema", () => {
-  const minimal = { name: "Working at Heights" };
-
-  it("accepts valid minimal data", () => {
-    const result = crewCertificationSchema.safeParse(minimal);
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts valid complete data", () => {
-    const result = crewCertificationSchema.safeParse({
-      name: "Working at Heights",
-      issuedBy: "SafeWork NSW",
-      certificateNumber: "CERT-12345",
-      issuedDate: "2023-01-15",
-      expiryDate: "2025-01-15",
-      status: "CURRENT",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.issuedDate).toBeInstanceOf(Date);
-      expect(result.data.expiryDate).toBeInstanceOf(Date);
-      expect(result.data.status).toBe("CURRENT");
-    }
-  });
-
-  it("applies default status NOT_VERIFIED", () => {
-    const result = crewCertificationSchema.safeParse(minimal);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.status).toBe("NOT_VERIFIED");
-    }
-  });
-
-  it("rejects empty name", () => {
-    const result = crewCertificationSchema.safeParse({ name: "" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects name exceeding 200 characters", () => {
-    const result = crewCertificationSchema.safeParse({ name: "x".repeat(201) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects issuedBy exceeding 200 characters", () => {
-    const result = crewCertificationSchema.safeParse({ ...minimal, issuedBy: "x".repeat(201) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects certificateNumber exceeding 100 characters", () => {
-    const result = crewCertificationSchema.safeParse({ ...minimal, certificateNumber: "x".repeat(101) });
-    expect(result.success).toBe(false);
-  });
-
-  it("transforms empty string issuedDate to undefined", () => {
-    const result = crewCertificationSchema.safeParse({ ...minimal, issuedDate: "" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.issuedDate).toBeUndefined();
-    }
-  });
-
-  it("transforms empty string expiryDate to undefined", () => {
-    const result = crewCertificationSchema.safeParse({ ...minimal, expiryDate: "" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.expiryDate).toBeUndefined();
-    }
-  });
-
-  it("rejects invalid status enum value", () => {
-    const result = crewCertificationSchema.safeParse({ ...minimal, status: "PENDING" });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts all valid status values", () => {
-    for (const s of ["CURRENT", "EXPIRING_SOON", "EXPIRED", "NOT_VERIFIED"] as const) {
-      const result = crewCertificationSchema.safeParse({ ...minimal, status: s });
-      expect(result.success).toBe(true);
-    }
   });
 });
 

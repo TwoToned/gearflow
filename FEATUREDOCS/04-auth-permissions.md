@@ -19,8 +19,8 @@ This instance runs in **single-org mode**: exactly one `Organization` row exists
 - `getSingleOrgSSOInfo()` — Returns SSO config for the single org (used by login page for domain-based SSO detection)
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
-- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`
-- Social providers: Google and Microsoft (conditional on env vars `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID`)
+- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`
+- Social OAuth login (Google/Microsoft) was removed — only email/password, passkeys, and SSO remain. (Existing `account` rows for legacy google/microsoft links are left untouched.)
 - SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — org provider configuration
 - Account linking: `accountLinking: { enabled: true, trustedProviders: ["sso"] }` — existing users with matching email auto-linked on SSO login
 - Email verification, password reset via Resend
@@ -91,11 +91,10 @@ await requirePermission("asset", "create"); // throws if denied
 - **Account page**: Passkey management — list, add (`authClient.passkey.addPasskey()`), rename, delete.
 - **Env vars**: `PASSKEY_RP_ID` (e.g. `gearflow.com` in production, `localhost` for dev).
 
-### Social Login (Google & Microsoft)
-- Conditional on env vars — providers only enabled when `GOOGLE_CLIENT_ID` / `MICROSOFT_CLIENT_ID` are set.
-- Login page shows social buttons dynamically via `/api/auth/social-providers`.
-- Account page "Connected Accounts" section with Connect buttons via `authClient.linkSocial()`.
-- Better Auth auto-links social accounts to existing users with matching email.
+### Social Login (Google & Microsoft) — REMOVED
+- Google/Microsoft OAuth social login was removed end-to-end. There is no longer a `socialProviders` block in `auth.ts`, no `/api/auth/social-providers` route, no social buttons on the login page, and no "Connected Accounts" section on the account page.
+- The admin "Social Login" toggles and the `SiteSettings.socialLoginGoogle` / `socialLoginMicrosoft` columns were dropped (migration `20260617120500_remove_social_login_settings`).
+- Existing Better Auth `account` rows for legacy google/microsoft links are left in place (harmless, no destructive migration). SSO (a separate plugin) is unaffected.
 
 ### Invitations
 - **Invite-only registration**: Site admin can set registration policy to INVITE_ONLY.

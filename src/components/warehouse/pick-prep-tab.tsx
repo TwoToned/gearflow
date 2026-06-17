@@ -10,7 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
@@ -28,7 +28,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
@@ -113,15 +112,13 @@ export function PickPrepTab({
         <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <ScanInput
+                <AssetTagInput
                   ref={scanInputRef}
                   placeholder="Scan or enter asset tag to prep..."
                   value={scanValue}
                   onChange={(e) => setScanValue(e.target.value)}
                   onKeyDown={handleScanKeyDown}
                   onScan={(value) => scanMutationMutate(value)}
-                  scannerTitle="Scan asset to prep"
-                  continuous
                   disabled={scanMutationIsPending}
                   autoFocus
                 />
@@ -214,7 +211,6 @@ export function PickPrepTab({
                                 <PrepStatusBadge item={item} />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="deploy" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -268,7 +264,6 @@ export function PickPrepTab({
                             </TableRow>
                           );
                         })}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }
@@ -373,7 +368,6 @@ export function PickPrepTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="deploy" />
                     </Fragment>
                   );
                 })}

@@ -32,6 +32,19 @@ export const getById = query({
   },
 });
 
+/** Assignments for one kit, org-scoped. Replaces a Prisma findMany by kitId. */
+export const listByKitId = query({
+  args: { orgId: v.string(), kitId: v.string() },
+  handler: async (ctx, { orgId, kitId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("kitCheckItems")
+      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

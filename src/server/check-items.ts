@@ -6,6 +6,14 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import {
+  getCheckItemsForOrg,
+  getCheckItemById,
+  getCheckItemUsageCounts,
+  getModelCheckItemsForModel,
+  getKitCheckItemsForKit,
+  getModelAssignmentsForCheckItem,
+} from "@/lib/check-items-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -53,56 +61,53 @@ async function patchCheckItemInConvex(id: string, row: Record<string, unknown>) 
 export async function getCheckItems() {
   const { organizationId } = await requirePermission("checkItem", "read");
 
+  // Convex reads: the check-item list + the usage counts (both join tables are
+  // dual-written) replace the Prisma findMany + `_count` aggregate.
+  const [items, counts] = await Promise.all([
+    getCheckItemsForOrg(organizationId),
+    getCheckItemUsageCounts(organizationId),
+  ]);
   return serialize(
-    await prisma.checkItem.findMany({
-      where: { organizationId },
-      include: {
-        _count: { select: { modelCheckItems: true, checkRecords: true } },
-      },
-      orderBy: [{ category: "asc" }, { label: "asc" }],
-    })
+    items.map((item) => ({
+      ...item,
+      _count: counts[item.id] ?? { modelCheckItems: 0, checkRecords: 0 },
+    }))
   );
 }
 
 /**
  * Per-check-item usage counts (checkItemId -> { modelCheckItems, checkRecords }).
- * Cross-domain: the assignment + record join tables stay in Prisma, so this can't
- * come from Convex. Used by the reactive check-item library, which subscribes to
- * the list via Convex and merges these (non-reactive) counts in.
+ * Both the modelCheckItem and checkRecord join tables are dual-written, so the
+ * counts come from Convex. Used by the reactive check-item library, which
+ * subscribes to the list via Convex and merges these (non-reactive) counts in.
  */
 export async function getCheckItemCounts(): Promise<Record<string, { modelCheckItems: number; checkRecords: number }>> {
   const { organizationId } = await getOrgContext();
-  const [modelGroups, recordGroups] = await Promise.all([
-    prisma.modelCheckItem.groupBy({ by: ["checkItemId"], where: { organizationId }, _count: { _all: true } }),
-    prisma.checkRecord.groupBy({ by: ["checkItemId"], where: { organizationId }, _count: { _all: true } }),
-  ]);
-  const counts: Record<string, { modelCheckItems: number; checkRecords: number }> = {};
-  const ensure = (id: string) => (counts[id] ??= { modelCheckItems: 0, checkRecords: 0 });
-  for (const g of modelGroups) if (g.checkItemId) ensure(g.checkItemId).modelCheckItems = g._count._all;
-  for (const g of recordGroups) if (g.checkItemId) ensure(g.checkItemId).checkRecords = g._count._all;
-  return serialize(counts);
+  return serialize(await getCheckItemUsageCounts(organizationId));
 }
 
 export async function getCheckItem(id: string) {
   const { organizationId } = await requirePermission("checkItem", "read");
 
-  const item = await prisma.checkItem.findFirst({
-    where: { id, organizationId },
-    include: {
-      _count: { select: { modelCheckItems: true, checkRecords: true } },
-      modelCheckItems: true,
-    },
-  });
+  // Convex reads: the check item itself + its model assignments (replacing the
+  // Prisma findFirst with `_count` + `modelCheckItems` include).
+  const [item, assignments, counts] = await Promise.all([
+    getCheckItemById(organizationId, id),
+    getModelAssignmentsForCheckItem(organizationId, id),
+    getCheckItemUsageCounts(organizationId),
+  ]);
   if (!item) {
     throw new Error("Check item not found");
   }
 
-  const models = await Promise.all(item.modelCheckItems.map((m) => getModelById(m.modelId)));
+  // Model name is a cross-domain join — Model lives in Convex too.
+  const models = await Promise.all(assignments.map((m) => getModelById(m.modelId)));
   const modelNameMap = new Map<string, { id: string; name: string }>();
   for (const m of models) if (m) modelNameMap.set(m.id, { id: m.id, name: m.name });
   const enriched = {
     ...item,
-    modelCheckItems: item.modelCheckItems
+    _count: counts[item.id] ?? { modelCheckItems: 0, checkRecords: 0 },
+    modelCheckItems: assignments
       .map((m) => ({ ...m, model: modelNameMap.get(m.modelId) ?? null }))
       .sort((a, b) => (a.model?.name ?? "").localeCompare(b.model?.name ?? "")),
   };
@@ -220,13 +225,7 @@ export async function deleteCheckItem(id: string) {
 export async function getModelCheckItems(modelId: string) {
   const { organizationId } = await requirePermission("checkItem", "read");
 
-  return serialize(
-    await prisma.modelCheckItem.findMany({
-      where: { modelId, organizationId },
-      include: { checkItem: true },
-      orderBy: { sortOrder: "asc" },
-    })
-  );
+  return serialize(await getModelCheckItemsForModel(organizationId, modelId));
 }
 
 export async function addCheckItemToModel(
@@ -419,13 +418,7 @@ export async function bulkAddCheckItemsToModels(
 export async function getKitCheckItems(kitId: string) {
   const { organizationId } = await requirePermission("checkItem", "read");
 
-  return serialize(
-    await prisma.kitCheckItem.findMany({
-      where: { kitId, organizationId },
-      include: { checkItem: true },
-      orderBy: { sortOrder: "asc" },
-    })
-  );
+  return serialize(await getKitCheckItemsForKit(organizationId, kitId));
 }
 
 export async function addCheckItemToKit(

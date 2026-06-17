@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { getLocationById } from "@/lib/locations-read";
+import { getLocationById, getLocationMap } from "@/lib/locations-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
   getDisplayServices,
@@ -27,13 +27,31 @@ export async function getDisplayTokens() {
   const tokens = await prisma.warehouseDashboardToken.findMany({
     where: { organizationId },
     include: {
-      location: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return serialize(tokens);
+  // Location FK was dropped (Phase B); attach `{ id, name }` from the Convex mirror.
+  const locationMap = await getLocationMap(organizationId);
+  const withLocation = tokens.map((t) => ({
+    ...t,
+    location: t.locationId
+      ? (() => {
+          const l = locationMap.get(t.locationId!);
+          return l ? { id: l.id, name: l.name } : null;
+        })()
+      : null,
+  }));
+
+  return serialize(withLocation);
+}
+
+/** Resolve a token's `{ id, name }` location from the Convex mirror (FK dropped Phase B). */
+async function tokenLocation(orgId: string, locationId: string | null) {
+  if (!locationId) return null;
+  const l = await getLocationById(locationId);
+  return l ? { id: l.id, name: l.name } : null;
 }
 
 export async function createDisplayToken(data: {
@@ -60,7 +78,6 @@ export async function createDisplayToken(data: {
       createdById: userId,
     },
     include: {
-      location: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
     },
   });
@@ -76,7 +93,8 @@ export async function createDisplayToken(data: {
     summary: `Created warehouse display token "${token.name}"`,
   });
 
-  return serialize({ token: rawToken, display: token });
+  const display = { ...token, location: await tokenLocation(organizationId, token.locationId) };
+  return serialize({ token: rawToken, display });
 }
 
 export async function revokeDisplayToken(id: string) {
@@ -133,7 +151,6 @@ export async function updateDisplayToken(
       }),
     },
     include: {
-      location: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
     },
   });
@@ -149,7 +166,7 @@ export async function updateDisplayToken(
     summary: `Updated warehouse display "${token.name}"`,
   });
 
-  return serialize(token);
+  return serialize({ ...token, location: await tokenLocation(organizationId, token.locationId) });
 }
 
 export async function regenerateDisplayToken(id: string) {
@@ -170,7 +187,6 @@ export async function regenerateDisplayToken(id: string) {
     where: { id },
     data: { token: rawToken, tokenHash },
     include: {
-      location: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
     },
   });
@@ -186,7 +202,8 @@ export async function regenerateDisplayToken(id: string) {
     summary: `Regenerated URL for warehouse display "${existing.name}"`,
   });
 
-  return serialize({ token: rawToken, display: updated });
+  const display = { ...updated, location: await tokenLocation(organizationId, updated.locationId) };
+  return serialize({ token: rawToken, display });
 }
 
 // ─── Display Data ────────────────────────────────────────────────────────────

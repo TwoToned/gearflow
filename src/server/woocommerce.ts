@@ -601,15 +601,22 @@ async function resolveLocation(
 
       if (bestMatch) return bestMatch.id;
 
-      // 4. No match — create a new VENUE location
-      const newLocation = await prisma.location.create({
-        data: {
-          organizationId: orgId,
-          name: locationName,
-          type: "VENUE",
-          // If the meta value looks like an address (contains comma or numbers), store as address too
-          address: /\d/.test(locationName) || locationName.includes(",") ? locationName : null,
-        },
+      // 4. No match — create a new VENUE location. Locations are Convex-only
+      // (Phase B write inversion), so write the Convex doc directly (no Prisma row).
+      const newLocationId = createId();
+      const now = Date.now();
+      const address =
+        /\d/.test(locationName) || locationName.includes(",") ? locationName : undefined;
+      await (await getConvexClient()).mutation(api.locations.create, {
+        id: newLocationId,
+        organizationId: orgId,
+        name: locationName,
+        type: "VENUE",
+        address,
+        isDefault: false,
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
       });
 
       await logActivity({
@@ -618,12 +625,12 @@ async function resolveLocation(
         userName: "WooCommerce",
         action: "CREATE",
         entityType: "location",
-        entityId: newLocation.id,
-        entityName: newLocation.name,
+        entityId: newLocationId,
+        entityName: locationName,
         summary: `Auto-created venue location from WooCommerce order`,
       });
 
-      return newLocation.id;
+      return newLocationId;
     }
   }
 

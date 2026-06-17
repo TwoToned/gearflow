@@ -7,6 +7,7 @@ import {
   type ICalEvent,
 } from "@/lib/ical";
 import type { OrgSettings } from "@/server/settings";
+import { getLocationById } from "@/lib/locations-read";
 
 /**
  * GET /api/crew/calendar/assignment/[id]
@@ -45,7 +46,7 @@ export async function GET(
           select: {
             name: true,
             projectNumber: true,
-            location: { select: { name: true, address: true } },
+            locationId: true,
             siteContactName: true,
             siteContactPhone: true,
           },
@@ -67,8 +68,10 @@ export async function GET(
     const roleName = assignment.crewRole?.name || "Crew";
     const project = assignment.project;
     const crew = assignment.crewMember;
-    const locationName = project.location?.name || "";
-    const locationAddress = project.location?.address || "";
+    // Location FK was dropped (Phase B); resolve from the Convex mirror.
+    const projLocation = project.locationId ? await getLocationById(project.locationId) : null;
+    const locationName = projLocation?.name || "";
+    const locationAddress = projLocation?.address || "";
     const location = [locationName, locationAddress]
       .filter(Boolean)
       .join(", ");

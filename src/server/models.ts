@@ -15,6 +15,7 @@ import {
 } from "@/lib/models-read";
 import { getCategoryMap } from "@/lib/categories-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { attachLocation } from "@/lib/locations-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -165,12 +166,10 @@ export async function getModel(id: string) {
       category: true,
       assets: {
         where: { isActive: true },
-        include: { location: true },
         orderBy: { assetTag: "asc" },
       },
       bulkAssets: {
         where: { isActive: true },
-        include: { location: true },
         orderBy: { assetTag: "asc" },
       },
       media: {
@@ -185,8 +184,15 @@ export async function getModel(id: string) {
   });
   if (!model) return serialize(null);
   const modelMap = await getModelMap(organizationId);
+  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  const [assetsWithLoc, bulkWithLoc] = await Promise.all([
+    attachLocation(organizationId, model.assets),
+    attachLocation(organizationId, model.bulkAssets),
+  ]);
   const enriched = {
     ...model,
+    assets: assetsWithLoc,
+    bulkAssets: bulkWithLoc,
     bulkAccessories: model.bulkAccessories.map((ba) => ({
       ...ba,
       bulkAsset: {

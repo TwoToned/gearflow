@@ -135,7 +135,6 @@ export async function getAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      location: true,
       media: {
         include: { file: true },
         orderBy: { sortOrder: "asc" },
@@ -226,8 +225,14 @@ export async function getAsset(id: string) {
     },
   }));
 
+  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  const location = asset.locationId
+    ? (await getLocationMap(organizationId)).get(asset.locationId) ?? null
+    : null;
+
   return serialize({
     ...asset,
+    location,
     model: assetModel
       ? { ...assetModel, media: modelMediaRows, bulkAccessories: bulkAccessoriesWithModel }
       : null,

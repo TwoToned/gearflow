@@ -27,6 +27,7 @@ import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc } from "@/lib/assets-read";
 import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
 
@@ -78,7 +79,6 @@ export async function getKit(id: string) {
         include: { bulkAsset: true },
       },
       category: true,
-      location: true,
       lineItems: {
         take: 20,
         orderBy: { createdAt: "desc" },
@@ -101,8 +101,13 @@ export async function getKit(id: string) {
   });
   if (!kit) return serialize(null);
   const modelMap = await getModelMap(organizationId);
+  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  const location = kit.locationId
+    ? (await getLocationMap(organizationId)).get(kit.locationId) ?? null
+    : null;
   return serialize({
     ...kit,
+    location,
     serializedItems: kit.serializedItems.map((si) => ({
       ...si,
       asset: {

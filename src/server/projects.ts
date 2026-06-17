@@ -33,7 +33,7 @@ import {
 import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
-import { getDefaultLocation } from "@/lib/locations-read";
+import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
@@ -237,6 +237,15 @@ export async function getProjects(params?: {
   // Build filter where from DataTable filters
   const filterWhere = buildFilterWhere(filters, projectFilterColumns);
 
+  // The location FK was dropped (Phase B) — the search-by-location-name clause
+  // can no longer be a Prisma relational filter. Resolve matching location ids
+  // from the Convex mirror and match projects by `locationId in [...]` instead.
+  const searchLocationIds = search
+    ? (await getMappedLocationsByOrg(organizationId))
+        .filter((l) => l.name.toLowerCase().includes(search.toLowerCase()))
+        .map((l) => l.id)
+    : [];
+
   const where: Prisma.ProjectWhereInput = {
     organizationId,
     isTemplate: false,
@@ -251,7 +260,7 @@ export async function getProjects(params?: {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
         { projectNumber: { contains: search, mode: "insensitive" } },
-        { location: { name: { contains: search, mode: "insensitive" } } },
+        ...(searchLocationIds.length > 0 ? [{ locationId: { in: searchLocationIds } }] : []),
       ],
     }),
     ...(rentalStartDate && {
@@ -271,9 +280,6 @@ export async function getProjects(params?: {
   const [projectsRaw, total] = await Promise.all([
     prisma.project.findMany({
       where,
-      include: {
-        location: true,
-      },
       ...(sortByClient
         ? {}
         : { orderBy: { [sortBy]: sortOrder }, skip: (page - 1) * pageSize, take: pageSize }),
@@ -281,10 +287,14 @@ export async function getProjects(params?: {
     prisma.project.count({ where }),
   ]);
 
-  const clientMap = await getClientMap(organizationId);
+  const [clientMap, locationMap] = await Promise.all([
+    getClientMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
   let projects = projectsRaw.map((p) => ({
     ...p,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    location: p.locationId ? locationMap.get(p.locationId) ?? null : null,
   }));
 
   // includeLineItems: the slim `{id,status,type,isKitChild}` list (status !=
@@ -379,10 +389,9 @@ export async function getProject(id: string) {
   // src/lib/project-line-item-read.ts (Phase A keystone). Prisma here only
   // supplies the project scalars + location + projectManagers + media, which stay
   // Prisma reads for now.
-  const project = await prisma.project.findUnique({
+  const projectRow = await prisma.project.findUnique({
     where: { id, organizationId },
     include: {
-      location: { include: { parent: true } },
       projectManagers: {
         include: {
           user: { select: { id: true, name: true, email: true, image: true } },
@@ -395,7 +404,27 @@ export async function getProject(id: string) {
       },
     },
   });
-  if (!project) return null;
+  if (!projectRow) return null;
+
+  // Location FK was dropped (Phase B) — reconstruct `location` (with its parent)
+  // from the Convex mirror, replacing the old `include: { location: { include:
+  // { parent } } }`. Returns the Prisma-row business shape (mapLocation) so the
+  // address/lat/long inheritance below behaves identically.
+  let location:
+    | (import("@/lib/locations-read").MappedLocation & {
+        parent: import("@/lib/locations-read").MappedLocation | null;
+      })
+    | null = null;
+  if (projectRow.locationId) {
+    const locationMap = await getLocationMap(organizationId);
+    const locDoc = locationMap.get(projectRow.locationId);
+    if (locDoc) {
+      const loc = mapLocation(locDoc);
+      const parentDoc = loc.parentId ? locationMap.get(loc.parentId) : undefined;
+      location = { ...loc, parent: parentDoc ? mapLocation(parentDoc) : null };
+    }
+  }
+  const project = { ...projectRow, location };
 
   // Inherit address/coordinates from parent location if child has none
   if (project.location?.parentId) {
@@ -1042,21 +1071,23 @@ export async function getTemplates() {
 
   const templates = await prisma.project.findMany({
     where: { organizationId, isTemplate: true },
-    include: {
-      location: true,
-    },
     orderBy: { updatedAt: "desc" },
   });
 
   // The `_count.lineItems` (top-level / non kit-child) now comes from the
   // dual-written Convex line items instead of a Prisma `_count` aggregate.
   const templateIds = templates.map((t) => t.id);
-  const topLevelCounts = countTopLevelLineItemsByProject(
-    await getLineItemsByProjectIds(organizationId, templateIds),
-    templateIds,
-  );
+  const [topLevelCounts, locationMap] = await Promise.all([
+    countTopLevelLineItemsByProject(
+      await getLineItemsByProjectIds(organizationId, templateIds),
+      templateIds,
+    ),
+    // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+    getLocationMap(organizationId),
+  ]);
   const withCounts = templates.map((t) => ({
     ...t,
+    location: t.locationId ? locationMap.get(t.locationId) ?? null : null,
     _count: { lineItems: topLevelCounts.get(t.id) ?? 0 },
   }));
 

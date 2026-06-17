@@ -14,6 +14,7 @@ import {
   crewBulkMessageEmail,
 } from "@/lib/crew-emails";
 import { syncCrewAssignmentToConvex } from "@/lib/crew-scheduling-mirror";
+import { getLocationById } from "@/lib/locations-read";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -33,7 +34,7 @@ async function buildAssignmentEmailData(assignmentId: string) {
         select: {
           name: true,
           projectNumber: true,
-          location: { select: { name: true, address: true } },
+          locationId: true,
           siteContactName: true,
           siteContactPhone: true,
         },
@@ -43,6 +44,12 @@ async function buildAssignmentEmailData(assignmentId: string) {
   });
 
   if (!assignment) throw new Error("Assignment not found");
+
+  // Location FK was dropped (Phase B); resolve the project's location from the
+  // Convex mirror (replaces the old nested `project.location` select).
+  const location = assignment.project.locationId
+    ? await getLocationById(assignment.project.locationId)
+    : null;
 
   return {
     assignment,
@@ -56,8 +63,8 @@ async function buildAssignmentEmailData(assignmentId: string) {
       endDate: assignment.endDate?.toISOString() || null,
       startTime: assignment.startTime,
       endTime: assignment.endTime,
-      locationName: assignment.project.location?.name || null,
-      locationAddress: assignment.project.location?.address || null,
+      locationName: location?.name || null,
+      locationAddress: location?.address || null,
       siteContactName: assignment.project.siteContactName,
       siteContactPhone: assignment.project.siteContactPhone,
       notes: assignment.notes,

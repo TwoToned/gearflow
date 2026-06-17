@@ -6,6 +6,7 @@ import {
   type ICalEvent,
 } from "@/lib/ical";
 import type { OrgSettings } from "@/server/settings";
+import { getLocationMap } from "@/lib/locations-read";
 
 /** Read the org's configured IANA timezone (default Australia/Sydney). */
 async function getOrgTimezone(organizationId: string): Promise<string> {
@@ -55,7 +56,7 @@ export async function GET(
             select: {
               name: true,
               projectNumber: true,
-              location: { select: { name: true, address: true } },
+              locationId: true,
               siteContactName: true,
               siteContactPhone: true,
             },
@@ -77,14 +78,18 @@ export async function GET(
   }
 
   const tzid = await getOrgTimezone(member.organizationId);
+  // Location FK was dropped (Phase B); resolve project locations from the Convex
+  // mirror (replaces the old nested `project.location` select).
+  const locationMap = await getLocationMap(member.organizationId);
   const events: ICalEvent[] = [];
   const calName = `GearFlow - ${member.firstName} ${member.lastName}`;
 
   for (const a of member.assignments) {
     const roleName = a.crewRole?.name || "Crew";
     const project = a.project;
-    const locationName = project.location?.name || "";
-    const locationAddress = project.location?.address || "";
+    const projLocation = project.locationId ? locationMap.get(project.locationId) ?? null : null;
+    const locationName = projLocation?.name || "";
+    const locationAddress = projLocation?.address || "";
     const location = [locationName, locationAddress]
       .filter(Boolean)
       .join(", ");

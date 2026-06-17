@@ -1,9 +1,7 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -13,6 +11,8 @@ import { type FilterValue } from "@/lib/table-utils";
 import { attachModel } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { removeSupplierModelRateFromConvex } from "@/lib/supplier-model-rate-mirror";
+import { prisma } from "@/lib/prisma";
 import {
   getLineItemsByOrg,
   countLineItemsBySupplierMap,
@@ -27,34 +27,34 @@ import {
   mapSupplier,
   supplierMatchesSearch,
   compareSuppliers,
+  type MappedSupplier,
 } from "@/lib/suppliers-read";
 
-// Suppliers are DUAL-WRITTEN: every create/update/delete writes the Prisma
-// `supplier` row (the durable FK anchor — asset/bulk_asset/project_line_item/
-// sub_hire/supplier_order/supplier_model_rate all carry a real FK, two required
-// + Cascade) AND the Convex `suppliers` doc (the reactive read source the
-// browser subscribes to via use-suppliers). Prisma is written first so it stays
-// the integrity anchor and the idempotent backfill can heal a missing Convex
-// row; the Convex payload is derived from the written Prisma row via toConvexDoc
-// so the two stores can't drift. Server-side reads below stay on the (always
-// fresh) Prisma mirror; the reactive UI reads Convex. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma supplier row into Convex (create). */
-async function mirrorSupplierToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.suppliers.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.suppliers.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma supplier row into Convex (patch, id stripped). */
-async function patchSupplierInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.suppliers.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.suppliers.update>["patch"],
-  });
-}
+// Suppliers are CONVEX-ONLY (Phase B write inversion): every create/update/delete
+// writes the Convex `suppliers` doc as the sole source of truth — no Prisma row,
+// no mirror. The inbound FKs into the frozen Prisma `supplier` table
+// (asset/project_line_item/supplier_order/sub_hire/supplier_model_rate
+// .supplierId) were dropped (see migration
+// 20260617131100_drop_supplier_fk_constraints), so each `supplierId` is now a
+// plain string holding the Convex cuid.
+//
+// Invariants re-implemented in app code (Convex has no constraints/cascades):
+//  - Delete guard: deleteSupplier blocks deletion while the supplier has assets,
+//    line items, or orders (counts computed from Convex via getOrgSupplierCounts).
+//    Because the guard blocks whenever any of those exist, the supplier->order/
+//    item/rate Cascade the dropped FKs carried never fired in practice — so no
+//    full cascade re-impl is needed.
+//  - supplier_model_rate cleanup: rates are NOT covered by the delete guard (a
+//    supplier with only rates CAN be deleted), and they used to cascade-delete.
+//    deleteSupplier re-implements that one: after the guards pass it deletes the
+//    supplier's supplier_model_rate rows from BOTH stores (still dual-written —
+//    Prisma deleteMany + Convex remove each).
+//  - Org-guard: reads the target via getConvexSupplierById and verifies
+//    organizationId before any update/remove.
+//
+// `isActive`/tags/etc pass through unchanged. logActivity + buildChanges retained.
+// The `before` diff for the update activity log reads the prior Convex doc.
+// See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
 
 /**
  * Per-supplier `{ assets, orders, lineItems }` counts for an org — all from Convex
@@ -234,27 +234,33 @@ export async function getSupplierSubhires(supplierId: string, params: {
 export async function createSupplier(data: SupplierFormValues) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "create");
   const parsed = supplierSchema.parse(data);
-  const cleaned = {
-    ...parsed,
-    email: parsed.email || null,
-    contactName: parsed.contactName || null,
-    phone: parsed.phone || null,
-    website: parsed.website || null,
-    address: parsed.address || null,
-    latitude: parsed.latitude ?? null,
-    longitude: parsed.longitude ?? null,
-    notes: parsed.notes || null,
-    accountNumber: parsed.accountNumber || null,
-    paymentTerms: parsed.paymentTerms || null,
-    defaultLeadTime: parsed.defaultLeadTime || null,
-    tags: (parsed.tags || []).map((t: string) => t.toLowerCase()),
-  };
-  // Explicit cuid so the Prisma row and the Convex doc share one id.
+  const tags = (parsed.tags || []).map((t: string) => t.toLowerCase());
   const id = createId();
-  const result = await prisma.supplier.create({
-    data: { ...cleaned, id, organizationId },
+  const now = Date.now();
+
+  // Convex `db.patch`/insert can't store a null scalar — pass `undefined` for
+  // empty optionals; the read mapper coerces absent -> null, matching the old
+  // Prisma `field || null` shape.
+  await (await getConvexClient()).mutation(api.suppliers.create, {
+    id,
+    organizationId,
+    name: parsed.name,
+    contactName: parsed.contactName || undefined,
+    email: parsed.email || undefined,
+    phone: parsed.phone || undefined,
+    website: parsed.website || undefined,
+    address: parsed.address || undefined,
+    latitude: parsed.latitude ?? undefined,
+    longitude: parsed.longitude ?? undefined,
+    notes: parsed.notes || undefined,
+    accountNumber: parsed.accountNumber || undefined,
+    paymentTerms: parsed.paymentTerms || undefined,
+    defaultLeadTime: parsed.defaultLeadTime || undefined,
+    tags,
+    isActive: parsed.isActive ?? true,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorSupplierToConvex(result);
 
   await logActivity({
     organizationId,
@@ -262,25 +268,19 @@ export async function createSupplier(data: SupplierFormValues) {
     userName,
     action: "CREATE",
     entityType: "supplier",
-    entityId: result.id,
-    entityName: result.name,
-    summary: `Created supplier ${result.name}`,
+    entityId: id,
+    entityName: parsed.name,
+    summary: `Created supplier ${parsed.name}`,
   });
 
-  return serialize(result);
-}
-
-export async function updateSupplier(id: string, data: SupplierFormValues) {
-  const { organizationId, userId, userName } = await requirePermission("supplier", "update");
-  const parsed = supplierSchema.parse(data);
-
-  const before = await prisma.supplier.findUnique({ where: { id, organizationId } });
-  if (!before) throw new Error("Supplier not found");
-
-  const cleaned = {
-    ...parsed,
-    email: parsed.email || null,
+  // Return the same serialized Prisma-row shape consumers expect (a brand-new
+  // supplier has zero dependents).
+  return serialize({
+    id,
+    organizationId,
+    name: parsed.name,
     contactName: parsed.contactName || null,
+    email: parsed.email || null,
     phone: parsed.phone || null,
     website: parsed.website || null,
     address: parsed.address || null,
@@ -290,18 +290,82 @@ export async function updateSupplier(id: string, data: SupplierFormValues) {
     accountNumber: parsed.accountNumber || null,
     paymentTerms: parsed.paymentTerms || null,
     defaultLeadTime: parsed.defaultLeadTime || null,
-    tags: (parsed.tags || []).map((t: string) => t.toLowerCase()),
-  };
-  const updated = await prisma.supplier.update({
-    where: { id, organizationId },
-    data: cleaned,
+    tags,
+    isActive: parsed.isActive ?? true,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
   });
-  await patchSupplierInConvex(id, updated);
+}
 
-  const changes = buildChanges(before, updated, [
-    "name", "contactName", "email", "phone", "website", "address",
-    "notes", "accountNumber", "paymentTerms", "defaultLeadTime", "isActive",
-  ]);
+export async function updateSupplier(id: string, data: SupplierFormValues) {
+  const { organizationId, userId, userName } = await requirePermission("supplier", "update");
+  const parsed = supplierSchema.parse(data);
+
+  // Org-guard + change-diff source: read the prior Convex doc (mapped to the
+  // Prisma-row shape so buildChanges compares like-for-like).
+  const beforeDoc = await getConvexSupplierById(id);
+  if (!beforeDoc || beforeDoc.organizationId !== organizationId) {
+    throw new Error("Supplier not found");
+  }
+  const before = mapSupplier(beforeDoc);
+
+  const tags = (parsed.tags || []).map((t: string) => t.toLowerCase());
+
+  // Mirror the prior cleaned-row shape (empty -> null) for the activity-log diff
+  // and the returned shape.
+  const updated: MappedSupplier = {
+    id,
+    organizationId,
+    name: parsed.name,
+    contactName: parsed.contactName || null,
+    email: parsed.email || null,
+    phone: parsed.phone || null,
+    website: parsed.website || null,
+    address: parsed.address || null,
+    latitude: parsed.latitude ?? null,
+    longitude: parsed.longitude ?? null,
+    notes: parsed.notes || null,
+    accountNumber: parsed.accountNumber || null,
+    paymentTerms: parsed.paymentTerms || null,
+    defaultLeadTime: parsed.defaultLeadTime || null,
+    tags,
+    isActive: parsed.isActive ?? true,
+    createdAt: before.createdAt,
+    updatedAt: new Date(),
+  };
+
+  // Convex patch can't set a field to null; pass `undefined` to clear an optional
+  // (Convex `db.patch` treats undefined as field removal; the read mapper coerces
+  // absent -> null, matching the old Prisma `field || null`).
+  await (await getConvexClient()).mutation(api.suppliers.update, {
+    id,
+    patch: {
+      name: parsed.name,
+      contactName: parsed.contactName || undefined,
+      email: parsed.email || undefined,
+      phone: parsed.phone || undefined,
+      website: parsed.website || undefined,
+      address: parsed.address || undefined,
+      latitude: parsed.latitude ?? undefined,
+      longitude: parsed.longitude ?? undefined,
+      notes: parsed.notes || undefined,
+      accountNumber: parsed.accountNumber || undefined,
+      paymentTerms: parsed.paymentTerms || undefined,
+      defaultLeadTime: parsed.defaultLeadTime || undefined,
+      tags,
+      isActive: parsed.isActive ?? true,
+      updatedAt: updated.updatedAt.getTime(),
+    },
+  });
+
+  const changes = buildChanges(
+    before as unknown as Record<string, unknown>,
+    updated as unknown as Record<string, unknown>,
+    [
+      "name", "contactName", "email", "phone", "website", "address",
+      "notes", "accountNumber", "paymentTerms", "defaultLeadTime", "isActive",
+    ],
+  );
 
   await logActivity({
     organizationId,
@@ -320,22 +384,43 @@ export async function updateSupplier(id: string, data: SupplierFormValues) {
 
 export async function deleteSupplier(id: string) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "delete");
-  const supplier = await prisma.supplier.findUnique({
-    where: { id, organizationId },
-    include: { _count: { select: { assets: true, lineItems: true, orders: true } } },
-  });
-  if (!supplier) throw new Error("Supplier not found");
-  if (supplier._count.assets > 0) {
+
+  // Org-guard via the Convex doc (replaces the old Prisma findUnique).
+  const supplier = await getConvexSupplierById(id);
+  if (!supplier || supplier.organizationId !== organizationId) {
+    throw new Error("Supplier not found");
+  }
+
+  // Delete guard — re-implemented from Convex counts (the dropped FKs' Cascade
+  // never fired because this guard blocks deletion whenever dependents exist).
+  // Same messages + order as the old Prisma `_count` guard.
+  const counts = (await getOrgSupplierCounts(organizationId)).get(id);
+  if ((counts?.assets ?? 0) > 0) {
     throw new Error("Cannot delete supplier with linked assets");
   }
-  if (supplier._count.lineItems > 0) {
+  if ((counts?.lineItems ?? 0) > 0) {
     throw new Error("Cannot delete supplier with linked line items");
   }
-  if (supplier._count.orders > 0) {
+  if ((counts?.orders ?? 0) > 0) {
     throw new Error("Cannot delete supplier with existing orders. Archive it instead.");
   }
-  await prisma.supplier.delete({ where: { id, organizationId } });
-  await (await getConvexClient()).mutation(api.suppliers.remove, { id });
+
+  // supplier_model_rate is NOT covered by the guard, so a supplier with only
+  // rates can reach here — those rows used to cascade-delete. supplier_model_rate
+  // is still dual-written (Prisma + Convex), so delete from BOTH stores.
+  const convex = await getConvexClient();
+  const orgRates = await convex.query(api.supplierModelRates.list, { orgId: organizationId });
+  const supplierRateIds = orgRates.filter((r) => r.supplierId === id).map((r) => r.id);
+  if (supplierRateIds.length > 0) {
+    await prisma.supplierModelRate.deleteMany({
+      where: { id: { in: supplierRateIds }, organizationId },
+    });
+    for (const rateId of supplierRateIds) {
+      await removeSupplierModelRateFromConvex(rateId);
+    }
+  }
+
+  await convex.mutation(api.suppliers.remove, { id });
 
   await logActivity({
     organizationId,

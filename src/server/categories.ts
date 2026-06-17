@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getModelMap } from "@/lib/models-read";
+import { getModelMap, mapConvexModelToRow } from "@/lib/models-read";
+import { getPrimaryPhotoMap } from "@/lib/media-read";
 import {
   listCategoriesWithCounts,
   getCategoryModelKitCounts,
@@ -62,17 +63,6 @@ export async function getCategory(id: string) {
         include: { _count: { select: { models: true, kits: true, children: true } } },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       },
-      models: {
-        include: {
-          _count: { select: { assets: true } },
-          media: {
-            include: { file: true },
-            orderBy: { sortOrder: "asc" },
-            take: 1,
-          },
-        },
-        orderBy: { name: "asc" },
-      },
       kits: {
         include: {
           _count: { select: { serializedItems: true, bulkItems: true } },
@@ -84,7 +74,32 @@ export async function getCategory(id: string) {
   });
 
   if (!category) throw new Error("Category not found");
-  return serialize(category);
+
+  // Models are CONVEX-ONLY (Phase B) — the dropped Model FK removed the Prisma
+  // `category.models` back-relation and the `model._count.assets` / `model.media`
+  // sub-includes. Rebuild the per-model `{ _count.assets, media[primary] }` list
+  // (name ASC, active only — matching the old include) from the Convex mirror:
+  // models in this category, the org asset counts, and the primary-photo map.
+  const [modelMap, allAssets, photoMap] = await Promise.all([
+    getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getPrimaryPhotoMap("model", organizationId),
+  ]);
+  const assetCount = new Map<string, number>();
+  for (const a of allAssets) if (a.isActive !== false) assetCount.set(a.modelId, (assetCount.get(a.modelId) ?? 0) + 1);
+  const models = [...modelMap.values()]
+    .filter((m) => m.categoryId === id && m.isActive !== false)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((m) => {
+      const photo = photoMap[m.id];
+      return {
+        ...mapConvexModelToRow(m),
+        _count: { assets: assetCount.get(m.id) ?? 0 },
+        media: photo ? [{ url: photo.url, thumbnailUrl: photo.thumbnailUrl }] : [],
+      };
+    });
+
+  return serialize({ ...category, models });
 }
 
 /**

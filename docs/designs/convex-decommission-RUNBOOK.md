@@ -37,33 +37,33 @@
       `*-mirror.ts` (mirror-source, deleted in Phase B); `category-slots.ts`
       (terminus); minor `notifications.ts`/`check-records.ts` count leftovers.
       **⇒ Phase A read-rewiring is COMPLETE for all non-write-coupled reads.**
-- [ ] **Phase A — bucket 2 (dual-write-blocked):** NOT STARTED. Add a
-      `*-mirror.ts` dual-write + `convex-backfill-*.ts` + register in
-      `convex-backfill-all.ts` for: `notificationDismissal`, `warehouseDashboardToken`,
-      `testTagAuditorToken`, `wooCommerceOrderLog`, `userNotificationPreference`,
-      and mirror `maintenanceRecordAssets` (for `getRecentActivity`). Then convert
-      their reads. (These straddle A/B — they add write-path code.)
-- [~] **Phase B — write inversion:** IN PROGRESS. **Clean tier DONE + validated
-      (tsc + 2413 vitest + build, integration tip pushed): `custom-fields`
-      (no FK), `test-profiles` (3 SetNull FKs dropped), `brand-templates` (1 SetNull
-      FK + PDF-pipeline reader converted).** That exhausts the SetNull-only,
-      child-free, cascade-free tier. **Every remaining domain has a `Cascade`
-      inbound FK and/or a non-Convex child, so each needs cascade-delete
-      re-implementation (higher risk):** `group-templates` (Cascade child
-      `groupTemplateItem` — not in Convex; move it first or re-impl cascade),
-      `locations` (Cascade from `location_media` + a SetNull set),
-      `categories` (Cascade to `category_slot` — itself a non-Convex terminus —
-      + 5 SetNull), `suppliers` (3 Cascade: supplierOrder/Item/ModelRate), `models`
-      (required Restrict from asset/bulkAsset), then the multi-table core
-      (line-items/warehouse/kits/sub-hires). Recommend per-surface preview
-      validation from here. Flip
-      every domain mutation from Prisma-first+mirror to Convex-only; re-implement
-      the invariants Prisma transactions + FK cascades enforce (warehouse
-      checkout/checkin, line-item fulfillment, kit composition, sub-hire
-      regeneration, accessory expand/collapse, `maxSort`-then-insert ordering,
-      cascade deletes) inside Convex mutations (single-document-atomic, no
-      cross-table tx → design idempotency/ordering deliberately). Delete the ~19
-      `src/lib/*-mirror.ts`. Keep auth/RBAC/activityLog on Prisma.
+- [x] **Bucket 2 (formerly dual-write-blocked):** DONE + dev-validated. All 6 tables
+      taken Convex-only directly (Phase-B style, NOT a dual-write intermediate — they
+      had ZERO inbound FKs so no migration): `notificationDismissal`,
+      `userNotificationPreference`, `wooCommerceOrderLog`, `warehouseDashboardToken`,
+      `testTagAuditorToken`, `maintenanceRecordAsset`. Each: Convex-only writes + reads
+      + a `convex-backfill-*.ts` (registered). Unblocked `getRecentActivity` (the
+      maintenance join), `validateDisplayToken`/`validateAuditorToken` (security-
+      sensitive token reads preserved exactly), the woo log viewer, dismissals/prefs.
+      Dev: 6 backfills run + live round-trips pass (incl. revoked-token→inactive).
+- [~] **Phase B — write inversion:** IN PROGRESS. **6 domains DONE + dev-validated
+      (each: tsc + full vitest + build, FK-drop migration applied to dev +
+      pg_constraint-verified, live CRUD/guard/cascade round-trips):** `custom-fields`
+      (no FK), `test-profiles` (3 FKs), `brand-templates` (1 FK + PDF-pipeline reader),
+      `locations` (7 FKs, ~10-file blast radius rewired), `suppliers` (5 FKs),
+      `models` (10 FKs, blast radius rewired) — plus the 6 bucket-2 tables above.
+      **REMAINING:** (a) `categories` — BLOCKED: Cascade to `category_slot`, a
+      non-Convex terminus read inside `$transaction`; move `category_slot` to Convex
+      (or its reads out of the tx) first. (b) `group-templates` — BLOCKED: Cascade
+      child `groupTemplateItem` not in Convex; move the child to Convex first.
+      (c) **the MULTI-TABLE CORE (highest risk, do last, per-surface preview-gate):**
+      line-items, warehouse checkout/checkin, kit composition, sub-hire regeneration,
+      accessory expand/collapse, project-categories/groups, bulk-checkin,
+      split-sibling-collapse — these have real cross-table `$transaction` invariants +
+      `maxSort`-then-insert ordering races + cascade deletes that must be redesigned as
+      Convex single-document-atomic mutations (idempotency/ordering deliberate). This
+      is where the ~19 `src/lib/*-mirror.ts` get deleted. Keep auth/RBAC/activityLog
+      on Prisma.
 - [ ] **Phase C — drop Prisma domain tables:** NOT STARTED. Remove domain models
       from `prisma/schema.prisma` (keep Better Auth + `customRole` + `activityLog`),
       delete backfills/parity/mirrors, migrate the DB to drop the tables.

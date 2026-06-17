@@ -12,6 +12,13 @@ import { logActivity, buildChanges } from "@/lib/activity-log";
 import { type FilterValue } from "@/lib/table-utils";
 import { attachModel } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getLineItemsByOrg,
+  countLineItemsBySupplierMap,
+  buildSupplierSubhires,
+  type SubhireProjectSelect,
+} from "@/lib/line-item-count-read";
 import {
   getSupplierOrdersByOrg,
   countSupplierAssetsAndOrders,
@@ -50,37 +57,30 @@ async function patchSupplierInConvex(id: string, row: Record<string, unknown>) {
 }
 
 /**
- * Per-supplier `{ assets, orders }` counts for an org, both from Convex (assets via
- * the asset read helper, orders via the supplierOrders list). `projectLineItem`
- * stays in Prisma (keystone tree, not yet cut over), so `lineItems` is counted
- * separately by `getLineItemCount` when a consumer needs it.
+ * Per-supplier `{ assets, orders, lineItems }` counts for an org — all from Convex
+ * now (assets via the asset read helper, orders via the supplierOrders list,
+ * lineItems via the dual-written projectLineItems table). One org-wide line-item
+ * fetch replaces the old per-supplier Prisma `projectLineItem.count`.
  */
 async function getOrgSupplierCounts(
   organizationId: string,
-): Promise<Map<string, { assets: number; orders: number }>> {
-  const [allAssets, allOrders] = await Promise.all([
+): Promise<Map<string, { assets: number; orders: number; lineItems: number }>> {
+  const [allAssets, allOrders, allLineItems] = await Promise.all([
     getAssetsByOrg(organizationId),
     (await getConvexClient()).query(api.supplierOrders.list, { orgId: organizationId }),
+    getLineItemsByOrg(organizationId),
   ]);
-  const counts = new Map<string, { assets: number; orders: number }>();
+  const lineItemCounts = countLineItemsBySupplierMap(allLineItems);
+  const counts = new Map<string, { assets: number; orders: number; lineItems: number }>();
   const bump = (id: string) => {
     let c = counts.get(id);
-    if (!c) counts.set(id, (c = { assets: 0, orders: 0 }));
+    if (!c) counts.set(id, (c = { assets: 0, orders: 0, lineItems: 0 }));
     return c;
   };
   for (const a of allAssets) if (a.supplierId) bump(a.supplierId).assets++;
   for (const o of allOrders) if (o.supplierId) bump(o.supplierId).orders++;
+  for (const [supplierId, n] of lineItemCounts) bump(supplierId).lineItems = n;
   return counts;
-}
-
-/**
- * Count of sub-hire / supplier line items for a supplier. KEYSTONE-BLOCKED:
- * `projectLineItem` is the project line-item tree, which is read-rewired as a
- * single keystone unit later — until then this stays a Prisma count (a scalar
- * cross-domain count, NOT a tree read). Same rationale as `getSupplierSubhires`.
- */
-async function getLineItemCount(organizationId: string, supplierId: string): Promise<number> {
-  return prisma.projectLineItem.count({ where: { organizationId, supplierId } });
 }
 
 export async function getSuppliers() {
@@ -131,17 +131,13 @@ export async function getSuppliersPaginated(params: {
   const sorted = filtered.sort(compareSuppliers(sortBy, sortOrder));
   const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
 
-  // lineItems count is keystone-blocked (projectLineItem), so it's a per-page
-  // Prisma count; assets/orders come from Convex.
-  const lineItemCounts = await Promise.all(
-    pageItems.map((s) => getLineItemCount(organizationId, s.id)),
-  );
-  const suppliers = pageItems.map((s, i) => ({
+  // assets/orders/lineItems all come from the Convex counts map now.
+  const suppliers = pageItems.map((s) => ({
     ...s,
     _count: {
       assets: counts.get(s.id)?.assets ?? 0,
       orders: counts.get(s.id)?.orders ?? 0,
-      lineItems: lineItemCounts[i],
+      lineItems: counts.get(s.id)?.lineItems ?? 0,
     },
   }));
 
@@ -170,20 +166,17 @@ export async function getSupplierById(id: string) {
   const doc = await getConvexSupplierById(id);
   if (!doc || doc.organizationId !== organizationId) throw new Error("Supplier not found");
 
-  // assets/orders counts from Convex; lineItems keystone-blocked (Prisma count).
+  // assets/orders/lineItems counts all from Convex now.
   // The embedded `orders` array the old shape carried is dropped — the detail page
   // fetches its order list via getSupplierOrders, never reads `supplier.orders`.
-  const [counts, lineItems] = await Promise.all([
-    getOrgSupplierCounts(organizationId),
-    getLineItemCount(organizationId, id),
-  ]);
+  const counts = await getOrgSupplierCounts(organizationId);
 
   return serialize({
     ...mapSupplier(doc),
     _count: {
       assets: counts.get(id)?.assets ?? 0,
       orders: counts.get(id)?.orders ?? 0,
-      lineItems,
+      lineItems: counts.get(id)?.lineItems ?? 0,
     },
   });
 }
@@ -213,21 +206,26 @@ export async function getSupplierSubhires(supplierId: string, params: {
   const { organizationId } = await getOrgContext();
   const { page = 1, pageSize = 25 } = params;
 
-  // Sub-hire line items now identified by `subHireId != null` (Wave 2).
-  const where = { organizationId, supplierId, subHireId: { not: null } };
-
-  const [rawLineItems, total] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where,
-      include: {
-        project: { select: { id: true, name: true, projectNumber: true, status: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.projectLineItem.count({ where }),
+  // Sub-hire line items now identified by `subHireId != null` (Wave 2). Read from
+  // the dual-written Convex line items; the per-line `project` select is grafted
+  // from the Convex project list (a missing project → null, no Prisma fallback).
+  const [allLineItems, allProjects] = await Promise.all([
+    getLineItemsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
   ]);
+  const projectById = new Map<string, SubhireProjectSelect>(
+    allProjects.map((p) => [
+      p.id,
+      { id: p.id, name: p.name, projectNumber: p.projectNumber ?? null, status: p.status ?? "" },
+    ]),
+  );
+  const { items: rawLineItems, total } = buildSupplierSubhires(
+    allLineItems,
+    supplierId,
+    projectById,
+    page,
+    pageSize,
+  );
 
   const lineItems = await attachModel(organizationId, rawLineItems);
   return serialize({ lineItems, total });

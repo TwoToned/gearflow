@@ -44,6 +44,27 @@ export const listByProject = query({
   },
 });
 
+/**
+ * Fetch a batch of line items by their cuids (one by_cuid lookup per id).
+ * Backs getCheckHistory's lineItemId → projectId resolution (Phase A). Misses
+ * are skipped. Org-scoped read.
+ */
+export const listByIds = query({
+  args: { ids: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { ids, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const out = [];
+    for (const id of ids) {
+      const doc = await ctx.db
+        .query("projectLineItems")
+        .withIndex("by_cuid", (q) => q.eq("id", id))
+        .unique();
+      if (doc) out.push(doc);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

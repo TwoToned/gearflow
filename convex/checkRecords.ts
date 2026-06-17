@@ -32,6 +32,24 @@ export const getById = query({
   },
 });
 
+/**
+ * All check records for one asset within an org (newest-first sort done in the
+ * caller). Backs getCheckHistory's read-rewire to Convex (Phase A). Uses the
+ * composite by_organizationId_assetId index.
+ */
+export const listByOrgAndAsset = query({
+  args: { orgId: v.string(), assetId: v.string() },
+  handler: async (ctx, { orgId, assetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("checkRecords")
+      .withIndex("by_organizationId_assetId", (q) =>
+        q.eq("organizationId", orgId).eq("assetId", assetId),
+      )
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

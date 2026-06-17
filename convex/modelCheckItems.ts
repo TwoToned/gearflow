@@ -32,6 +32,25 @@ export const getById = query({
   },
 });
 
+/**
+ * Check items assigned to a single model within an org. Backs
+ * getModelFailureAnalytics's read-rewire to Convex (Phase A). Uses the composite
+ * by_organizationId_modelId index. Caller sorts by sortOrder asc and resolves
+ * checkItem label/type via checkItems.list.
+ */
+export const listByModel = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_organizationId_modelId", (q) =>
+        q.eq("organizationId", orgId).eq("modelId", modelId),
+      )
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

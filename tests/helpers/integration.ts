@@ -108,36 +108,54 @@ async function mirrorRows(
   for (const row of rows) await mirrorRow(model, row, mode);
 }
 
-function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): unknown {
+/**
+ * Build a wrapped delegate for one Convex-backed model. The wrapped write
+ * methods call the REAL `prisma.<model>.<method>` (the un-proxied delegate) and
+ * then replay the write into Convex.
+ *
+ * CRITICAL — we do NOT Proxy the PrismaClient object itself. Wrapping the whole
+ * client in `new Proxy(prisma, …)` corrupts Better Auth + the query engine when
+ * a heavy server module is imported (they rely on the client's identity /
+ * internal slots), which non-deterministically wiped just-committed rows. Wrapping
+ * only the individual delegates — and routing everything else straight to the raw
+ * client — keeps Better Auth and the engine on the untouched `prisma`.
+ */
+// Per-delegate Proxy: write methods are intercepted (real op + Convex mirror);
+// everything else (findMany, count, aggregate, …) falls through to the raw
+// delegate untouched. The raw delegate is fetched fresh from `prisma` per access
+// so we never alias a stale/recursive reference.
+function getWrappedDelegate(delegateName: string): Record<string, unknown> | null {
   const model = modelKey(delegateName);
-  if (!MIRROR_REGISTRY[model]) return delegate; // not Convex-backed — pass through
-  return new Proxy(delegate, {
+  if (!MIRROR_REGISTRY[model]) return null;
+  const entry = MIRROR_REGISTRY[model]!;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = (prisma as any)[lowerFirst(model)] as Record<string, unknown>;
+
+  return new Proxy(raw, {
     get(target, prop: string) {
       const orig = (target as Record<string, unknown>)[prop];
-      if (typeof orig !== "function" || !WRITE_METHODS.has(prop)) return orig;
+      if (typeof orig !== "function" || !WRITE_METHODS.has(prop)) {
+        return typeof orig === "function" ? (orig as (...a: unknown[]) => unknown).bind(target) : orig;
+      }
       return async (args: Record<string, unknown>) => {
         const result = await (orig as (a: unknown) => Promise<unknown>).call(target, args);
-        const entry = MIRROR_REGISTRY[model]!;
         if (prop === "delete") {
           const id = (result as { id?: string } | null)?.id;
           if (id) await entry.remove(id);
         } else if (prop === "createManyAndReturn") {
           await mirrorRows(model, (result as Array<{ id?: string }>) ?? [], "create");
         } else if (prop === "createMany") {
-          // createMany returns only a count — mirror from the input rows (each
-          // carries an explicit id in our fixtures + the columns we wrote).
           const data = Array.isArray(args?.data) ? args.data : [args?.data];
           await mirrorRows(model, data as Array<{ id?: string }>, "create");
         } else if (prop === "updateMany") {
-          // updateMany returns a count — re-read the touched rows by where so the
-          // Convex copy reflects the new values. (This path is rare in fixtures.)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rows = await (prisma as any)[lowerFirst(model)].findMany({ where: args?.where });
-          await mirrorRows(model, rows as Array<{ id?: string }>, "update");
+          const rows = await (target.findMany as (a: unknown) => Promise<Array<{ id?: string }>>).call(
+            target,
+            { where: args?.where },
+          );
+          await mirrorRows(model, rows, "update");
         } else if (prop === "create") {
           await mirrorRow(model, result as { id?: string } | null, "create");
         } else {
-          // update / upsert return the affected row — push the new values.
           await mirrorRow(model, result as { id?: string } | null, "update");
         }
         return result;
@@ -146,20 +164,20 @@ function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): 
   });
 }
 
+/**
+ * `testPrisma` — the app `prisma` for all reads, raw delegates for non-mirrored
+ * tables and `$`-methods, and wrapped delegates (auto-mirror) for Convex-backed
+ * tables. A LIGHT Proxy whose `get` only diverts the Convex-backed delegate
+ * accessors and otherwise returns the raw member bound to `prisma`. (Better Auth
+ * and the engine never see this object — they import `prisma` directly.)
+ */
 export const testPrisma: typeof prisma = new Proxy(prisma, {
   get(target, prop: string) {
-    const value = (target as unknown as Record<string, unknown>)[prop];
-    // Model delegates are objects with a `create`/`findMany` etc. Wrap only those
-    // that are Convex-backed; everything else ($queryRaw, $transaction, $connect,
-    // user/member/organization delegates, …) passes straight through.
-    if (
-      value &&
-      typeof value === "object" &&
-      !prop.startsWith("$") &&
-      typeof (value as Record<string, unknown>).create === "function"
-    ) {
-      return wrapDelegate(prop, value as Record<string, unknown>);
+    if (typeof prop === "string" && !prop.startsWith("$")) {
+      const w = getWrappedDelegate(prop);
+      if (w) return w;
     }
+    const value = (target as unknown as Record<string, unknown>)[prop];
     return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
   },
 }) as unknown as typeof prisma;

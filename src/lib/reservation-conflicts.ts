@@ -16,6 +16,14 @@
  * Dateless projects can't conflict (no window to overlap) — skipped.
  *
  * Lives outside `"use server"` so integration tests drive it directly.
+ *
+ * **Convex read-rewiring (Phase A, Bucket-1).** The PURE conflict-detection
+ * reads (`findProjectConflictsCore`, `findSwapCandidatesCore`) read line items +
+ * units from the Convex mirror via `reservation-conflicts-read.ts` and replicate
+ * the Prisma `where` filters in JS. `swapLineItemAssetCore` STAYS on Prisma — its
+ * pre-write line-item lookup and the in-`$transaction` TOCTOU guard reads gate a
+ * `tx.projectLineItem.update`, so they must read the store they write inside the
+ * same transaction (read-then-write).
  */
 
 import { prisma } from "@/lib/prisma";
@@ -23,55 +31,17 @@ import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById, getProjectsByOrg, type ConvexProject } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
-
-/**
- * Map a Convex project doc to the conflict-report project shape. Convex stores
- * rental dates as epoch-ms numbers; the UI contract wants `Date | null`.
- */
-function toConflictProject(p: ConvexProject): ReservationConflict["conflictingProject"] {
-  return {
-    id: p.id,
-    projectNumber: p.projectNumber,
-    name: p.name,
-    status: p.status ?? "",
-    rentalStartDate: p.rentalStartDate != null ? new Date(p.rentalStartDate as number) : null,
-    rentalEndDate: p.rentalEndDate != null ? new Date(p.rentalEndDate as number) : null,
-  };
-}
-
-/**
- * Org projects that overlap `[startMs, endMs]` in a live (non-dead) status,
- * excluding templates and `excludeProjectId`. Replaces the cross-domain
- * `project: { isTemplate, status, rentalStartDate, rentalEndDate }` Prisma join
- * — collect the ids here, then filter the line/unit queries by
- * `projectId: { in: [...] }`.
- */
-function overlappingProjectIds(
-  projects: ConvexProject[],
-  startMs: number,
-  endMs: number,
-  excludeProjectId: string,
-): string[] {
-  return projects
-    .filter(
-      (p) =>
-        p.id !== excludeProjectId &&
-        !p.isTemplate &&
-        !(DEAD_PROJECT_STATUSES as readonly string[]).includes(p.status ?? "") &&
-        p.rentalStartDate != null &&
-        p.rentalEndDate != null &&
-        (p.rentalStartDate as number) <= endMs &&
-        (p.rentalEndDate as number) >= startMs,
-    )
-    .map((p) => p.id);
-}
-
-/**
- * Project statuses where the booking is released — excluded from conflict
- * checks. Everything else (ENQUIRY → ON_SITE) still holds the asset.
- * Mirrors the exclusion list in addLineItem's conflict guard.
- */
-const DEAD_PROJECT_STATUSES = ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] as const;
+import {
+  getOrgLineItems,
+  getOrgLineItemUnits,
+  overlappingProjectIds as overlappingProjectIdSet,
+  collectHereAssetRefs,
+  buildOverlapByAsset,
+  toConflictProject,
+  filterSwapCandidateAssets,
+  collectBookedAssetIds,
+  DEAD_PROJECT_STATUSES,
+} from "@/lib/reservation-conflicts-read";
 
 export interface ReservationConflict {
   lineItemId: string;
@@ -94,6 +64,11 @@ export interface ReservationConflict {
 /**
  * Every double-booked asset on the given project. Empty array when the
  * project has no rental window or no conflicts.
+ *
+ * Fully Convex-read: this project's asset assignments (line.assetId rows AND
+ * ProjectLineItemUnit rows), the org's models/assets/projects, and the other
+ * projects' overlapping bookings all come from the Convex mirror; the Prisma
+ * `where` filters are replicated in JS by the pure helpers.
  */
 export async function findProjectConflictsCore(
   projectId: string,
@@ -103,36 +78,9 @@ export async function findProjectConflictsCore(
   if (!project || project.organizationId !== organizationId) return [];
   if (!project?.rentalStartDate || !project.rentalEndDate) return [];
 
-  // This project's asset assignments — from legacy line.assetId rows AND
-  // from ProjectLineItemUnit rows (the fulfillment model). Deployed assets
-  // now live on units, so both sources must be checked. asset (assetTag/modelId)
-  // + the org's projects all live in Convex — attached/resolved in JS.
-  const [assetLines, assetUnits, modelMap, allOrgAssets, allProjects] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: {
-        projectId,
-        organizationId,
-        assetId: { not: null },
-        status: { not: "CANCELLED" },
-      },
-      select: {
-        id: true,
-        assetId: true,
-        modelId: true,
-      },
-    }),
-    prisma.projectLineItemUnit.findMany({
-      where: {
-        organizationId,
-        assetId: { not: null },
-        status: { not: "RETURNED" },
-        lineItem: { projectId, status: { not: "CANCELLED" } },
-      },
-      select: {
-        lineItemId: true,
-        assetId: true,
-      },
-    }),
+  const [allLineItems, allUnits, modelMap, allOrgAssets, allProjects] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getOrgLineItemUnits(organizationId),
     getModelMap(organizationId),
     getAssetsByOrg(organizationId),
     getProjectsByOrg(organizationId),
@@ -140,93 +88,26 @@ export async function findProjectConflictsCore(
   const assetMap = new Map(allOrgAssets.map((a) => [a.id, a]));
   const projectMap = new Map(allProjects.map((p) => [p.id, p]));
 
-  interface AssetRef {
-    lineItemId: string;
-    assetId: string;
-    modelId: string | null;
-    assetTag: string;
-    modelName: string;
-  }
-  const here: AssetRef[] = [
-    ...assetLines
-      .filter((l) => l.assetId)
-      .map((l) => ({
-        lineItemId: l.id,
-        assetId: l.assetId as string,
-        modelId: l.modelId,
-        assetTag: assetMap.get(l.assetId as string)?.assetTag ?? "—",
-        modelName: l.modelId ? (modelMap.get(l.modelId)?.name ?? "—") : "—",
-      })),
-    ...assetUnits
-      .filter((u) => u.assetId)
-      .map((u) => {
-        const unitAsset = assetMap.get(u.assetId as string);
-        const unitModelId = unitAsset?.modelId ?? null;
-        return {
-          lineItemId: u.lineItemId,
-          assetId: u.assetId as string,
-          modelId: unitModelId,
-          assetTag: unitAsset?.assetTag ?? "—",
-          modelName: unitModelId ? (modelMap.get(unitModelId)?.name ?? "—") : "—",
-        };
-      }),
-  ];
+  const here = collectHereAssetRefs(projectId, allLineItems, allUnits, assetMap, modelMap);
   if (here.length === 0) return [];
 
-  const assetIds = [...new Set(here.map((r) => r.assetId))];
-  // Other live projects overlapping this project's window — collect ids from
-  // the Convex mirror, then filter the Prisma line/unit queries by projectId.
-  const conflictProjectIds = overlappingProjectIds(
+  const assetIds = new Set(here.map((r) => r.assetId));
+  // Other live projects overlapping this project's window.
+  const conflictProjectIds = overlappingProjectIdSet(
     allProjects,
     project.rentalStartDate as number,
     project.rentalEndDate as number,
     projectId,
   );
-  if (conflictProjectIds.length === 0) return [];
+  if (conflictProjectIds.size === 0) return [];
 
   // Overlapping other-project bookings of those assets — both tables.
-  const [overlapLines, overlapUnits] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: {
-        organizationId,
-        assetId: { in: assetIds },
-        status: { not: "CANCELLED" },
-        projectId: { in: conflictProjectIds },
-      },
-      select: { id: true, assetId: true, projectId: true },
-    }),
-    prisma.projectLineItemUnit.findMany({
-      where: {
-        organizationId,
-        assetId: { in: assetIds },
-        status: { not: "RETURNED" },
-        lineItem: {
-          projectId: { in: conflictProjectIds },
-          status: { not: "CANCELLED" },
-        },
-      },
-      select: {
-        lineItemId: true,
-        assetId: true,
-        lineItem: { select: { projectId: true } },
-      },
-    }),
-  ]);
-
-  const overlapByAsset = new Map<string, { id: string; projectId: string }>();
-  for (const o of overlapLines) {
-    if (o.assetId && !overlapByAsset.has(o.assetId)) {
-      overlapByAsset.set(o.assetId, { id: o.id, projectId: o.projectId });
-    }
-  }
-  for (const o of overlapUnits) {
-    if (o.assetId && !overlapByAsset.has(o.assetId)) {
-      overlapByAsset.set(o.assetId, {
-        id: o.lineItemId,
-        projectId: o.lineItem.projectId,
-      });
-    }
-  }
+  const overlapByAsset = buildOverlapByAsset(
+    assetIds,
+    conflictProjectIds,
+    allLineItems,
+    allUnits,
+  );
 
   const conflicts: ReservationConflict[] = [];
   const seen = new Set<string>();
@@ -263,81 +144,52 @@ export interface SwapCandidate {
  * Free same-model assets that the conflicting line item could swap to.
  * "Free" = not booked on any live overlapping project in this project's
  * rental window, not in a kit, not RETIRED / LOST.
+ *
+ * Fully Convex-read. The line item itself is read from Convex (pure read — its
+ * result feeds no mutation here; the actual reassignment lives in
+ * `swapLineItemAssetCore`).
  */
 export async function findSwapCandidatesCore(
   lineItemId: string,
   organizationId: string,
 ): Promise<SwapCandidate[]> {
-  const lineItem = await prisma.projectLineItem.findUnique({
-    where: { id: lineItemId, organizationId },
-    select: {
-      id: true,
-      modelId: true,
-      assetId: true,
-      projectId: true,
-    },
-  });
+  const [allLineItems, allUnits, allOrgAssets, allProjects] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getOrgLineItemUnits(organizationId),
+    getAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+
+  const lineItem = allLineItems.find(
+    (l) => l.id === lineItemId && l.organizationId === organizationId,
+  );
   if (!lineItem?.modelId) return [];
 
-  // Project header (rental window) lives in Convex.
-  const lineItemProject = await getProjectById(lineItem.projectId);
+  // Project header (rental window).
+  const lineItemProject = allProjects.find((p) => p.id === lineItem.projectId) ?? null;
   if (!lineItemProject?.rentalStartDate || !lineItemProject.rentalEndDate) {
     return [];
   }
   const startMs = lineItemProject.rentalStartDate as number;
   const endMs = lineItemProject.rentalEndDate as number;
 
-  // All bookable assets of this model (Convex read, filter in JS).
-  const allOrgAssets = await getAssetsByOrg(organizationId);
-  const assets = allOrgAssets.filter(
-    (a) =>
-      a.modelId === lineItem.modelId &&
-      a.isActive !== false &&
-      !a.kitId &&
-      a.status !== "RETIRED" &&
-      a.status !== "LOST",
-  );
+  // All bookable assets of this model.
+  const assets = filterSwapCandidateAssets(allOrgAssets, lineItem.modelId);
   if (assets.length === 0) return [];
 
-  // Which of those are booked in an overlapping live project? Bookings
-  // live on legacy line.assetId rows AND on ProjectLineItemUnit rows
-  // (the fulfillment model) — both tables must be checked or a swap
-  // candidate that's actually deployed via a unit looks free.
-  const candidateAssetIds = assets.map((a) => a.id);
-  // Other live projects overlapping this project's window (Convex mirror →
-  // projectId filter, replacing the cross-domain `project` join).
-  const allProjects = await getProjectsByOrg(organizationId);
-  const conflictProjectIds = overlappingProjectIds(allProjects, startMs, endMs, "");
-  const [bookedLines, bookedUnits] = conflictProjectIds.length
-    ? await Promise.all([
-        prisma.projectLineItem.findMany({
-          where: {
-            organizationId,
-            assetId: { in: candidateAssetIds },
-            status: { not: "CANCELLED" },
-            id: { not: lineItemId },
-            projectId: { in: conflictProjectIds },
-          },
-          select: { assetId: true },
-        }),
-        prisma.projectLineItemUnit.findMany({
-          where: {
-            organizationId,
-            assetId: { in: candidateAssetIds },
-            status: { not: "RETURNED" },
-            lineItemId: { not: lineItemId },
-            lineItem: {
-              status: { not: "CANCELLED" },
-              projectId: { in: conflictProjectIds },
-            },
-          },
-          select: { assetId: true },
-        }),
-      ])
-    : [[], []];
-  const bookedIds = new Set<string>();
-  for (const b of bookedLines) if (b.assetId) bookedIds.add(b.assetId);
-  for (const b of bookedUnits) if (b.assetId) bookedIds.add(b.assetId);
+  // Which of those are booked in an overlapping live project? Bookings live on
+  // legacy line.assetId rows AND on ProjectLineItemUnit rows — both checked.
+  const candidateAssetIds = new Set(assets.map((a) => a.id));
+  const conflictProjectIds = overlappingProjectIdSet(allProjects, startMs, endMs, "");
+  const bookedIds = conflictProjectIds.size
+    ? collectBookedAssetIds(
+        candidateAssetIds,
+        conflictProjectIds,
+        lineItemId,
+        allLineItems,
+        allUnits,
+      )
+    : new Set<string>();
 
   return assets
     .filter((a) => a.id !== lineItem.assetId && !bookedIds.has(a.id))
@@ -357,6 +209,13 @@ export async function findSwapCandidatesCore(
  *
  * Returns the updated line item id. Throws a plain Error on validation
  * failure; the server-action wrapper translates to UserFacingError.
+ *
+ * **Stays on Prisma (read-then-write).** The pre-write line-item lookup and the
+ * in-`$transaction` TOCTOU guard reads gate `tx.projectLineItem.update`; they
+ * MUST read the same store they write, inside the same transaction. Converting
+ * them to a Convex read would re-open the double-booking race this method exists
+ * to close (the asset/window context still comes from Convex — only the
+ * write-gating booking reads stay Prisma).
  */
 export async function swapLineItemAssetCore(
   lineItemId: string,
@@ -404,12 +263,14 @@ export async function swapLineItemAssetCore(
   const swapProjectMap = new Map(swapAllProjects.map((p) => [p.id, p]));
   await prisma.$transaction(async (tx) => {
     if (rentalStartDate != null && rentalEndDate != null) {
-      const swapConflictProjectIds = overlappingProjectIds(
-        swapAllProjects,
-        rentalStartDate as number,
-        rentalEndDate as number,
-        "",
-      );
+      const swapConflictProjectIds = [
+        ...overlappingProjectIdSet(
+          swapAllProjects,
+          rentalStartDate as number,
+          rentalEndDate as number,
+          "",
+        ),
+      ];
       // Re-check both the legacy line.assetId rows AND the unit table —
       // a fresh deployment may have landed on a ProjectLineItemUnit.
       const [lineConflict, unitConflict] = swapConflictProjectIds.length
@@ -459,3 +320,4 @@ export async function swapLineItemAssetCore(
 }
 
 export { DEAD_PROJECT_STATUSES };
+export type { ConvexProject };

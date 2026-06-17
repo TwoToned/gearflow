@@ -51,12 +51,13 @@
       pg_constraint-verified, live CRUD/guard/cascade round-trips):** `custom-fields`
       (no FK), `test-profiles` (3 FKs), `brand-templates` (1 FK + PDF-pipeline reader),
       `locations` (7 FKs, ~10-file blast radius rewired), `suppliers` (5 FKs),
-      `models` (10 FKs, blast radius rewired) — plus the 6 bucket-2 tables above.
-      **REMAINING:** (a) `categories` — BLOCKED: Cascade to `category_slot`, a
-      non-Convex terminus read inside `$transaction`; move `category_slot` to Convex
-      (or its reads out of the tx) first. (b) `group-templates` — BLOCKED: Cascade
-      child `groupTemplateItem` not in Convex; move the child to Convex first.
-      (c) **the MULTI-TABLE CORE (highest risk, do last, per-surface preview-gate):**
+      `models` (10 FKs, blast radius rewired), `categories` (3 SetNull FKs — the
+      "Cascade to category_slot" was a misattribution; category_slot belongs to
+      ProjectCategory, not the equipment Category), `group-templates` (1 Cascade FK,
+      cross-store cascade: Convex parent remove + Prisma child `groupTemplateItem`
+      deleteMany) — plus the 6 bucket-2 tables above. **= 14 surfaces Convex-only,
+      all dev-validated.**
+      **REMAINING — only the MULTI-TABLE CORE (highest risk, do last, per-surface preview-gate):**
       line-items, warehouse checkout/checkin, kit composition, sub-hire regeneration,
       accessory expand/collapse, project-categories/groups, bulk-checkin,
       split-sibling-collapse — these have real cross-table `$transaction` invariants +

@@ -66,3 +66,66 @@ export function countKitMembers(
   for (const b of bulkItems) if (b.kitId) ensure(b.kitId).bulkItems++;
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// canDeleteKit predicate (Phase A read-rewiring)
+// ---------------------------------------------------------------------------
+/**
+ * The Convex `kits` doc declares `status`/`isActive` as `v.optional` (a row that
+ * predates the column, or one mirrored before the field was set, reads
+ * `undefined`). Prisma defaults them (`status @default(AVAILABLE)`,
+ * `isActive @default(true)`), so coerce to those defaults to match what the
+ * Prisma read returned.
+ */
+export type KitDeletabilityRow = {
+  id: string;
+  status: ConvexKit["status"];
+  isActive: boolean;
+};
+
+/** Coerce the Convex-optional status/isActive to their Prisma defaults. */
+export function coerceKitDeletabilityRow(kit: ConvexKit): KitDeletabilityRow {
+  return {
+    id: kit.id,
+    status: kit.status ?? "AVAILABLE",
+    isActive: kit.isActive ?? true,
+  };
+}
+
+export type KitDeletability = {
+  canArchive: boolean;
+  canHardDelete: boolean;
+  referencingLineItems: number;
+  reason?: string;
+};
+
+/**
+ * Pure replication of `canDeleteKit`'s decision logic. `referencingLineItems`
+ * is supplied by the caller — it comes from `prisma.projectLineItem.count`,
+ * which stays on Prisma until the keystone project-line-item tree migrates
+ * (see FEATUREDOCS/54). The kit row itself comes from Convex.
+ */
+export function computeKitDeletability(
+  kit: KitDeletabilityRow,
+  referencingLineItems: number,
+): KitDeletability {
+  // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
+  const canArchive = kit.status === "AVAILABLE" && kit.isActive;
+
+  // Hard delete adds two extra constraints: (a) no ProjectLineItem references,
+  // (b) AVAILABLE status. This prevents losing historical project data.
+  const canHardDelete =
+    kit.status === "AVAILABLE" && kit.isActive && referencingLineItems === 0;
+
+  let reason: string | undefined;
+  if (!canArchive) {
+    reason =
+      kit.status !== "AVAILABLE"
+        ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
+        : "Kit is already archived.";
+  } else if (!canHardDelete) {
+    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
+  }
+
+  return { canArchive, canHardDelete, referencingLineItems, reason };
+}

@@ -208,6 +208,38 @@
       `brandTemplateId: undefined` (the shared mirror helper drops null keys and can't
       clear a field, so the mutation is called directly). headerSettings/footerSettings
       pass through unchanged; `logActivity` kept.
+
+- [x] **`suppliers` → Convex-only writes (cascade tier).** DONE (branch
+      `wip/phaseb-suppliers`, validated `tsc` clean + 2413 vitest pass + eslint clean +
+      `build` exit 0). Highest-FK-fanout domain so far — **5 inbound FKs dropped**.
+      **Migration** `20260617131100_drop_supplier_fk_constraints` drops (all `IF EXISTS`):
+      `asset_supplierId_fkey`, `project_line_item_supplierId_fkey` (sub-hire),
+      `supplier_order_supplierId_fkey` [Cascade], `sub_hire_supplierId_fkey` [Cascade],
+      `supplier_model_rate_supplierId_fkey` [Cascade]. Schema: removed all 5 inbound
+      `@relation` fields + the `assets/lineItems/orders/subHires/supplierModelRates`
+      back-relations on `Supplier`; each `supplierId` stays a plain `String?`/`String`
+      cuid referencing the Convex `suppliers` doc. Not applied locally (prod cutover only).
+      **Writes inverted (Convex-only, no Prisma row, no mirror):** `createSupplier`,
+      `updateSupplier`, `deleteSupplier` use `createId()`+`Date.now()` via
+      `api.suppliers.create/update/remove`; inline `mirrorSupplierToConvex`/
+      `patchSupplierInConvex` + `toConvexDoc`/`FunctionArgs` imports removed. The
+      `updateSupplier` activity-log `before` diff now reads the prior Convex doc
+      (`getConvexSupplierById` → `mapSupplier`) instead of a Prisma `findUnique`; empty
+      optionals passed as `undefined` (Convex clears the field; read mapper coerces
+      absent→null). **Invariants re-implemented:** delete guard
+      (assets/lineItems/orders) re-derived from the existing `getOrgSupplierCounts`
+      (already all-Convex), preserving the EXACT three messages + order — and because the
+      guard blocks deletion whenever any dependent exists, the dropped Cascade FKs never
+      fired in practice, so **no full cascade re-impl needed**. The one delete-time
+      cleanup that DID rely on a cascade — `supplier_model_rate` (NOT in the guard; a
+      supplier with only rates can be deleted) — is re-implemented: `deleteSupplier`
+      lists the supplier's rates from Convex and deletes them from BOTH stores
+      (`supplier_model_rate` is still dual-written: Prisma `deleteMany` + Convex
+      `removeSupplierModelRateFromConvex` per id). Org-guard via `getConvexSupplierById`
+      before update/remove. `isActive`/tags pass through; `logActivity`+`buildChanges`
+      kept. `getSupplierCounts`/list reads already Convex — left as-is. `prisma` import
+      retained ONLY for the dual-written `supplierModelRate.deleteMany`.
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

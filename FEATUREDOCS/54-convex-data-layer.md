@@ -2371,6 +2371,45 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **projects (non-line-item reads)** (`server/projects.ts` → extends `src/lib/projects-read.ts`).
+  Only **`getCallSheetDates`** was moved to Convex — it reads the project's scalar
+  milestone dates (`loadInDate`/`eventStartDate`/`eventEndDate`/`loadOutDate`) plus its
+  non-cancelled, dated `projectService` rows with a per-service `_count.crewAssignments`,
+  none of which touch the line-item tree. New helper `getCallSheetData` (+ pure,
+  unit-tested `mapCallSheetMilestoneDates` and `buildCallSheetServiceDates`) reads via the
+  existing `api.projects.getById`, `api.projectServices.listByProject`, and
+  `api.crewAssignments.listByProject` queries (no new Convex query added). `crewCount` is
+  computed in JS by counting assignments whose `serviceId` matches the service (replacing
+  Prisma's relation `_count`); services are filtered `status != CANCELLED` + `date != null`
+  and ordered `date` asc, exactly mirroring the old query. **Everything else in
+  `server/projects.ts` stays on Prisma:**
+  - `getProject` — the KEYSTONE equipment-tree read (handled separately by the unmerged
+    keystone tree reader); pulls `categories`/`groups`/`lineItems`/`units`/`media`.
+  - `getProjectIssueFlags` — KEYSTONE-blocked (reads `projectLineItem` for overbooked/
+    reduced-stock status).
+  - `getTemplates` — KEYSTONE-blocked (`_count: { lineItems }`).
+  - `getProjects` — KEYSTONE-coupled: its `includeLineItems: true` branch (used by the
+    warehouse page) selects `lineItems`, plus a `location.name` relation-filter on search
+    and arbitrary-field sort/pagination; left on Prisma until the keystone lands.
+  - `peekNextProjectNumber` / `generateTemplateCode` — read-then-write number-allocation
+    logic; `projectNumberSequence` and `organization` are not dual-written.
+  - `createProject` / `updateProject` / `updateProjectStatus` / `updateProjectNotes` /
+    `archiveProject` / `duplicateProject` / `saveAsTemplate` / `deleteTemplate` /
+    `deleteProject` — all read-then-write (status/before-image reads feeding a mutation).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

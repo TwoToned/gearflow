@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
+import { getCallSheetData } from "@/lib/projects-read";
 import {
   projectSchema,
   type ProjectFormValues,
@@ -1204,26 +1205,12 @@ export async function deleteProject(id: string) {
 /** Get project milestone dates for call sheet dialog */
 export async function getCallSheetDates(projectId: string) {
   const { organizationId } = await getOrgContext();
-  const [project, services] = await Promise.all([
-    prisma.project.findUnique({
-      where: { id: projectId, organizationId },
-      select: {
-        loadInDate: true,
-        eventStartDate: true,
-        eventEndDate: true,
-        loadOutDate: true,
-      },
-    }),
-    prisma.projectService.findMany({
-      where: { projectId, organizationId, status: { not: "CANCELLED" } },
-      select: {
-        date: true,
-        _count: { select: { crewAssignments: true } },
-      },
-      orderBy: { date: "asc" },
-    }),
-  ]);
-  if (!project) {
+  // project (scalar milestone dates), projectService (date + per-service crew
+  // count) and crewAssignment are all dual-written to Convex — read from there
+  // instead of Prisma. No line-item/group/category data is touched, so this is
+  // safe ahead of the keystone tree reader. See src/lib/projects-read.ts.
+  const data = await getCallSheetData(organizationId, projectId);
+  if (!data) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Project not found",
@@ -1231,9 +1218,7 @@ export async function getCallSheetDates(projectId: string) {
     });
   }
   return serialize({
-    ...project,
-    serviceDates: services
-      .filter((s) => s.date != null)
-      .map((s) => ({ date: s.date, crewCount: s._count.crewAssignments })),
+    ...data.milestones,
+    serviceDates: data.serviceDates,
   });
 }

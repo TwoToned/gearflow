@@ -8,7 +8,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * Both are dual-written (see src/lib/asset-mirror.ts). Reactive reads — the
  * registry table, the asset/bulk edit forms — go through Convex via the
  * `use-assets` hooks. Cross-domain `asset.*` / `bulkAsset.*` joins (T&T, scan,
- * check, damage, stocktake, line-item composition, the PDF pipeline) stay on the
+ * check, damage, line-item composition, the PDF pipeline) stay on the
  * always-fresh Prisma mirror and migrate at Prisma-decommission. See FEATUREDOCS/54.
  */
 export type ConvexAsset = Doc<"assets">;

@@ -46,7 +46,6 @@ import {
   convertLineItemToService,
   generateCrewMessage,
 } from "@/server/project-services";
-import { createCrewRole } from "@/server/crew";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { getCrewMembersForAssignment } from "@/server/crew-assignments";
 import {
@@ -1360,25 +1359,10 @@ function ServiceDialog({
                 <Label>Crew Role</Label>
                 <ComboboxPicker
                   value={form.watch("crewRoleId") || ""}
-                  onChange={(v) => {
-                    const isExisting = roleOptions.some((r) => r.value === v);
-                    if (isExisting || !v) {
-                      form.setValue("crewRoleId", v);
-                    } else {
-                      createCrewRole({ name: v })
-                        .then((role) => {
-                          // Role dropdown is reactive (useCrewRoles) — the new
-                          // role appears once the dual-write commits.
-                          form.setValue("crewRoleId", role.id);
-                          toast.success(`Role "${role.name}" created`);
-                        })
-                        .catch((err) => toast.error((err as Error).message));
-                    }
-                  }}
+                  onChange={(v) => form.setValue("crewRoleId", v)}
                   options={roleOptions}
-                  placeholder="Select or create role..."
+                  placeholder="Select role..."
                   allowClear
-                  creatable
                 />
               </div>
               <div className="space-y-1.5">

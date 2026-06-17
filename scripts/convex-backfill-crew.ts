@@ -7,8 +7,8 @@
  * absent. Also the heal path for the dual-write.
  *
  * SCOPE: only the roster trio (role/skill/member) is mirrored — the project-coupled
- * scheduling/timesheet sub-tables (assignment/shift/availability/certification/
- * time_entry) stay Prisma-only until their UIs go reactive. See src/lib/crew-mirror.ts
+ * scheduling/timesheet sub-tables (assignment/shift/availability/time_entry)
+ * stay Prisma-only until their UIs go reactive. See src/lib/crew-mirror.ts
  * and FEATUREDOCS/54. The implicit m2m `_CrewMemberToCrewSkill` has no Convex
  * representation, so a member's skills are NOT copied (composed on the Prisma mirror).
  *

@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * Edit-line-item dialog — description, quantity, unit price (with
- * auto/manual toggle for OPTIMIZED items), discount, notes, and the
- * overbook confirmation flow. Extracted from equipment-tab.tsx in
- * Phase 7.
+ * Edit-line-item dialog — description, quantity, unit price (manual),
+ * discount, notes, and the overbook confirmation flow. Extracted from
+ * equipment-tab.tsx in Phase 7.
  *
  * State + the availability query live inside the body keyed by
  * item.id so re-opening for a different row remounts the body and
@@ -30,7 +29,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { checkAvailability } from "@/server/line-items";
-import { formatCurrency } from "@/lib/formatters";
 import type { LineItemData } from "./equipment-rows";
 
 export interface EditLineItemPayload {
@@ -111,9 +109,6 @@ function EditLineItemDialogBody({
     item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "",
   );
   const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
-  const [priceMode, setPriceMode] = useState<"auto" | "manual">(
-    item.pricingType === "OPTIMIZED" && !item.priceOverridden ? "auto" : "manual",
-  );
   const [notes, setNotes] = useState(item.notes ?? "");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
 
@@ -158,22 +153,9 @@ function EditLineItemDialogBody({
   const isOverbooked =
     availableForEdit != null && requestedQty > availableForEdit;
 
-  function handleTogglePriceMode() {
-    if (priceMode === "auto") {
-      setPriceMode("manual");
-      setUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
-    } else {
-      setPriceMode("auto");
-      setUnitPrice("");
-    }
-  }
-
   function handleSave() {
     const qty = Number(quantity) || 1;
-    const isAuto = priceMode === "auto";
-    const price = isAuto
-      ? (item.unitPrice != null ? Number(item.unitPrice) : undefined)
-      : (unitPrice ? Number(unitPrice) : undefined);
+    const price = unitPrice ? Number(unitPrice) : undefined;
     const dur = item.duration ?? 1;
     let disc: number | undefined;
     if (discount && Number(discount) > 0) {
@@ -276,47 +258,18 @@ function EditLineItemDialogBody({
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label>Pricing</Label>
-            {item.pricingType === "OPTIMIZED" && (
-              <button
-                type="button"
-                onClick={handleTogglePriceMode}
-                className="text-xs text-primary hover:underline"
-              >
-                {priceMode === "auto" ? "Set manual price" : "Revert to auto"}
-              </button>
-            )}
+          <Label htmlFor="edit-unitPrice">Unit price</Label>
+          <div className="space-y-2">
+            <Input
+              id="edit-unitPrice"
+              type="number"
+              step="0.01"
+              min={0}
+              value={unitPrice}
+              onChange={(e) => setUnitPrice(e.target.value)}
+              placeholder="Enter price"
+            />
           </div>
-
-          {priceMode === "auto" && item.pricingType === "OPTIMIZED" ? (
-            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-primary">Auto-priced</span>
-                <span className="text-sm font-semibold">
-                  {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-                </span>
-              </div>
-              {item.priceBreakdown && (
-                <p className="text-xs text-fg-3 mt-0.5">{item.priceBreakdown}</p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Input
-                id="edit-unitPrice"
-                type="number"
-                step="0.01"
-                min={0}
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                placeholder="Enter price"
-              />
-              {item.pricingType === "OPTIMIZED" && (
-                <p className="text-xs text-amber-500">This will override the auto-calculated price</p>
-              )}
-            </div>
-          )}
 
           <div className="flex items-center gap-2">
             <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>

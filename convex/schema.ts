@@ -561,9 +561,6 @@ export default defineSchema({
     purchasePricePerUnit: v.optional(v.number()),
     locationId: v.optional(v.string()),
     status: v.optional(enums.BulkAssetStatus),
-    reorderThreshold: v.optional(v.number()),
-    preferredSupplierId: v.optional(v.string()),
-    lastReorderedAt: v.optional(v.number()),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
@@ -574,7 +571,6 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_locationId", ["locationId"])
-    .index("by_preferredSupplierId", ["preferredSupplierId"])
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
     .index("by_isActive", ["isActive"]),
@@ -670,41 +666,6 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_scheduledDate", ["scheduledDate"]),
 
-  // DamageEvent
-  damageEvents: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    projectId: v.optional(v.string()),
-    lineItemId: v.optional(v.string()),
-    lineItemUnitId: v.optional(v.string()),
-    assetId: v.optional(v.string()),
-    bulkAssetId: v.optional(v.string()),
-    severity: enums.DamageSeverity,
-    status: v.optional(enums.DamageStatus),
-    notes: v.optional(v.string()),
-    photos: v.optional(v.array(v.string())),
-    estimatedCost: v.optional(v.number()),
-    actualCost: v.optional(v.number()),
-    chargedBack: v.optional(v.boolean()),
-    maintenanceRecordId: v.optional(v.string()),
-    createdById: v.string(),
-    reportedByCrewMemberId: v.optional(v.string()),
-    discordIdempotencyKey: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
-    .index("by_lineItemId", ["lineItemId"])
-    .index("by_lineItemUnitId", ["lineItemUnitId"])
-    .index("by_assetId", ["assetId"])
-    .index("by_bulkAssetId", ["bulkAssetId"])
-    .index("by_maintenanceRecordId", ["maintenanceRecordId"])
-    .index("by_createdById", ["createdById"])
-    .index("by_reportedByCrewMemberId", ["reportedByCrewMemberId"])
-    .index("by_discordIdempotencyKey", ["discordIdempotencyKey"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
 
   // MaintenanceRecordAsset
   maintenanceRecordAssets: defineTable({
@@ -772,9 +733,6 @@ export default defineSchema({
     projectManagerId: v.optional(v.string()),
     defaultRentalPeriod: v.optional(enums.RentalPeriod),
     defaultRentalQuantity: v.optional(v.number()),
-    billingMonths: v.optional(v.number()),
-    billingWeeks: v.optional(v.number()),
-    billingDays: v.optional(v.number()),
     taxRate: v.optional(v.number()),
     equipmentRevenue: v.optional(v.number()),
     serviceCostTotal: v.optional(v.number()),
@@ -794,7 +752,6 @@ export default defineSchema({
     invoicedTotal: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
-    discordChannelId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -802,7 +759,6 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_locationId", ["locationId"])
     .index("by_projectManagerId", ["projectManagerId"])
-    .index("by_discordChannelId", ["discordChannelId"])
     .index("by_organizationId_projectNumber", ["organizationId", "projectNumber"])
     .index("by_status", ["status"])
     .index("by_clientId", ["clientId"])
@@ -929,7 +885,6 @@ export default defineSchema({
     canonicalLineItemId: v.string(),
     movedUnitId: v.optional(v.string()),
     checkRecordsRepointed: v.optional(v.number()),
-    damageEventsRepointed: v.optional(v.number()),
     serviceRepointed: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     mergedAt: v.optional(v.number()),
@@ -982,9 +937,6 @@ export default defineSchema({
     suggestedPrice: v.optional(v.number()),
     rentalPeriod: v.optional(enums.RentalPeriod),
     rentalQuantity: v.optional(v.number()),
-    billingMonths: v.optional(v.number()),
-    billingWeeks: v.optional(v.number()),
-    billingDays: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -1381,8 +1333,6 @@ export default defineSchema({
     defaultCurrency: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
     allowOrgCreation: v.optional(v.boolean()),
-    socialLoginGoogle: v.optional(v.boolean()),
-    socialLoginMicrosoft: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1484,20 +1434,6 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
-
-  // CrewCertification
-  crewCertifications: defineTable({
-    id: v.string(),
-    crewMemberId: v.string(),
-    name: v.string(),
-    issuedBy: v.optional(v.string()),
-    certificateNumber: v.optional(v.string()),
-    issuedDate: v.optional(v.number()),
-    expiryDate: v.optional(v.number()),
-    status: v.optional(enums.CrewCertStatus),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_crewMemberId", ["crewMemberId"]),
 
   // CrewAssignment
   crewAssignments: defineTable({
@@ -1807,115 +1743,6 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_wooOrderId", ["wooOrderId"]),
 
-  // DiscordIntegration
-  discordIntegrations: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    isEnabled: v.optional(v.boolean()),
-    discordApplicationId: v.optional(v.string()),
-    guildId: v.optional(v.string()),
-    projectCategoryId: v.optional(v.string()),
-    archiveCategoryId: v.optional(v.string()),
-    alertChannelId: v.optional(v.string()),
-    auditChannelId: v.optional(v.string()),
-    channelCreateOnStatuses: v.optional(v.array(enums.ProjectStatus)),
-    channelArchiveOnStatuses: v.optional(v.array(enums.ProjectStatus)),
-    postWelcomeOnCreate: v.optional(v.boolean()),
-    postFaultsToProjectChannel: v.optional(v.boolean()),
-    linkTokenTtlMinutes: v.optional(v.number()),
-    enrollmentOpen: v.optional(v.boolean()),
-    lastHeartbeatAt: v.optional(v.number()),
-    botUserId: v.optional(v.string()),
-    botDesiredState: v.optional(enums.DiscordBotDesiredState),
-    botRestartRequestedAt: v.optional(v.number()),
-    botStartError: v.optional(v.string()),
-    botPid: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"]),
-
-  // DiscordOutbox
-  discordOutboxes: defineTable({
-    id: v.number(),
-    organizationId: v.string(),
-    eventType: v.string(),
-    payload: v.any(),
-    dedupeKey: v.string(),
-    status: v.optional(enums.DiscordOutboxStatus),
-    attemptCount: v.optional(v.number()),
-    nextAttemptAt: v.optional(v.number()),
-    lockedAt: v.optional(v.number()),
-    processedAt: v.optional(v.number()),
-    lastError: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_dedupeKey", ["dedupeKey"])
-    .index("by_organizationId_id", ["organizationId", "id"])
-    .index("by_status_nextAttemptAt", ["status", "nextAttemptAt"]),
-
-  // DiscordAccountLink
-  discordAccountLinks: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    crewMemberId: v.string(),
-    discordUserId: v.string(),
-    linkedAt: v.optional(v.number()),
-    linkedById: v.optional(v.string()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_crewMemberId", ["crewMemberId"])
-    .index("by_organizationId_discordUserId", ["organizationId", "discordUserId"])
-    .index("by_discordUserId", ["discordUserId"]),
-
-  // DiscordLinkToken
-  discordLinkTokens: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    crewMemberId: v.string(),
-    tokenHash: v.string(),
-    discordUserId: v.string(),
-    guildId: v.optional(v.string()),
-    expiresAt: v.number(),
-    consumedAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_crewMemberId", ["crewMemberId"])
-    .index("by_tokenHash", ["tokenHash"])
-    .index("by_expiresAt", ["expiresAt"]),
-
-  // SavedReport
-  savedReports: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    dataSource: v.string(),
-    config: v.any(),
-    createdById: v.optional(v.string()),
-    isShared: v.optional(v.boolean()),
-    isPinned: v.optional(v.boolean()),
-    scheduleFrequency: v.optional(enums.ScheduleFrequency),
-    scheduleHour: v.optional(v.number()),
-    scheduleDayOfWeek: v.optional(v.number()),
-    scheduleDayOfMonth: v.optional(v.number()),
-    scheduleRecipients: v.optional(v.array(v.string())),
-    scheduleLastRunAt: v.optional(v.number()),
-    lastRunAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_createdById", ["createdById"])
-    .index("by_organizationId_createdById", ["organizationId", "createdById"])
-    .index("by_scheduleFrequency_scheduleLastRunAt", ["scheduleFrequency", "scheduleLastRunAt"]),
 
   // CheckItem
   checkItems: defineTable({
@@ -2064,55 +1891,6 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_sentAt", ["organizationId", "sentAt"]),
-
-  // Stocktake
-  stocktakes: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    locationId: v.string(),
-    scope: enums.StocktakeScope,
-    categoryId: v.optional(v.string()),
-    status: v.optional(enums.StocktakeStatus),
-    startedAt: v.optional(v.number()),
-    startedById: v.optional(v.string()),
-    completedAt: v.optional(v.number()),
-    reviewedById: v.optional(v.string()),
-    expectedCount: v.optional(v.number()),
-    foundCount: v.optional(v.number()),
-    missingCount: v.optional(v.number()),
-    unexpectedCount: v.optional(v.number()),
-    discrepancyCount: v.optional(v.number()),
-    notes: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_locationId", ["locationId"])
-    .index("by_startedById", ["startedById"])
-    .index("by_reviewedById", ["reviewedById"]),
-
-  // StocktakeItem
-  stocktakeItems: defineTable({
-    id: v.string(),
-    stocktakeId: v.string(),
-    assetId: v.optional(v.string()),
-    bulkAssetId: v.optional(v.string()),
-    expectedAtLocation: v.optional(v.boolean()),
-    expectedQuantity: v.optional(v.number()),
-    found: v.optional(v.boolean()),
-    foundQuantity: v.optional(v.number()),
-    scannedAt: v.optional(v.number()),
-    scannedById: v.optional(v.string()),
-    result: v.optional(enums.StocktakeItemResult),
-    conditionNote: v.optional(v.string()),
-    actionTaken: v.optional(v.string()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_stocktakeId", ["stocktakeId"])
-    .index("by_assetId", ["assetId"])
-    .index("by_bulkAssetId", ["bulkAssetId"]),
 
   // CustomFieldDefinition
   customFieldDefinitions: defineTable({

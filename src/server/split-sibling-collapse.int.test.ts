@@ -8,7 +8,7 @@
  *
  * Each test verifies one of:
  *   - mergeable group: 3 split siblings collapse to 1 canonical line +
- *     3 units, sibling rows deactivated, CheckRecord/DamageEvent
+ *     3 units, sibling rows deactivated, CheckRecord
  *     repointed, audit row written, rollup counters recomputed.
  *   - flagged group: divergent unitPrice ⇒ not merged.
  *   - dry-run: zero mutations, plan reflects what would happen.
@@ -236,47 +236,6 @@ describe("runCollapse — split-sibling collapse", () => {
     expect(refreshed.lineItemUnitId).toBe(movedUnit.id);
   });
 
-  it("DamageEvent rows on a sibling get repointed similarly", async () => {
-    const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    const project = await createProject(org.id);
-    const a1 = await createAssetFixture(org.id, model.id, { assetTag: "DE-1" });
-    const a2 = await createAssetFixture(org.id, model.id, { assetTag: "DE-2" });
-    const [canonical, sibling] = await createSplitSiblings(
-      org.id,
-      project.id,
-      model.id,
-      [a1.id, a2.id],
-    );
-
-    const damage = await testPrisma.damageEvent.create({
-      data: {
-        organizationId: org.id,
-        projectId: project.id,
-        lineItemId: sibling.id,
-        assetId: a2.id,
-        severity: "MINOR",
-        status: "OPEN",
-        createdById: user.id,
-      },
-    });
-
-    await runCollapse({
-      apply: true,
-      projectId: project.id,
-      runId: "test-de",
-    });
-
-    const refreshed = await testPrisma.damageEvent.findUniqueOrThrow({
-      where: { id: damage.id },
-    });
-    expect(refreshed.lineItemId).toBe(canonical.id);
-    const movedUnit = await testPrisma.projectLineItemUnit.findFirstOrThrow({
-      where: { lineItemId: canonical.id, assetId: a2.id },
-    });
-    expect(refreshed.lineItemUnitId).toBe(movedUnit.id);
-  });
 
   it("flags a group with divergent unitPrice — refuses to merge", async () => {
     const org = await createOrgFixture();

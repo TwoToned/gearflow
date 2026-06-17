@@ -43,7 +43,7 @@
       `testTagAuditorToken`, `wooCommerceOrderLog`, `userNotificationPreference`,
       and mirror `maintenanceRecordAssets` (for `getRecentActivity`). Then convert
       their reads. (These straddle A/B — they add write-path code.)
-- [ ] **Phase B — write inversion:** NOT STARTED. The large, high-risk half. Flip
+- [~] **Phase B — write inversion:** STARTED (low-risk tranche). Flip
       every domain mutation from Prisma-first+mirror to Convex-only; re-implement
       the invariants Prisma transactions + FK cascades enforce (warehouse
       checkout/checkin, line-item fulfillment, kit composition, sub-hire
@@ -127,6 +127,52 @@
   - `clients.ts`: `getClient` per-project `_count.lineItems` groupBy → Convex.
   - Validation: `tsc` clean, 10/10 new vitest pass, eslint clean (only the
     pre-existing `_id`-strip warning in suppliers.ts).
+
+## Phase B progress (write inversion)
+
+- [x] **`custom-fields` → Convex-only writes.** DONE (commit on integration,
+      validated `tsc` + 2413 vitest + build). create/update/delete/reorder write the
+      Convex `customFieldDefinitions` doc as sole source of truth; Prisma row + inline
+      mirror removed. Re-implemented `@@unique([organizationId,entityType,fieldKey])`
+      in app code + the `where:{id,organizationId}` org-guard (verify org via `getById`
+      before update/remove/reorder). **Lowest-risk: zero inbound Prisma FK, no child
+      table, no cascade → no migration needed.**
+
+- **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
+  The other single-table domains I'd flagged as low-risk turned out NOT to be, because
+  each still has a residual Prisma **relation reader** that depends on the inbound FK,
+  and dropping the FK needs a DB migration:
+  - `test-profiles`: `test-tag-profiles.ts:resolveTestProfile` reads `testProfile` +
+    `model.defaultTestProfile` via Prisma `include` (3 SetNull inbound FKs to drop).
+  - `brand-templates`: `lib/pdfme/generate-pdf.ts` reads `documentTemplate … include:
+    {brandTemplate:true}` — **PDF pipeline** (high cross-cutting risk per CLAUDE.md);
+    1 SetNull FK + the delete-unlink `documentTemplate.updateMany`.
+  These are MEDIUM-risk per-domain passes (convert the relation reader → DB migration
+  to drop the FK → invert writes → delete mirror), not part of the low-risk batch.
+
+### Phase B per-domain recipe (for the medium/high-risk domains, next)
+
+1. Convert any residual Prisma **relation reader** of the domain to Convex (so nothing
+   reads the FK relation).
+2. **DB migration** (hand-authored — `migrate dev` resets; use `migrate deploy`): drop
+   the inbound `@relation` FK constraints, leaving the FK columns as plain `String`
+   cuids that reference the Convex doc (the `Project.clientId` pattern). Remove the
+   `@relation` fields from `prisma/schema.prisma`; regenerate the client.
+3. Invert the domain's writes to Convex-only (`api.X.create/update/remove`); generate
+   cuids with `createId()`; set `createdAt/updatedAt = Date.now()`.
+4. **Re-implement invariants the DB enforced:** `@@unique` → app-level dedup check;
+   `onDelete: Cascade` → explicit Convex cascade in the remove path; `where:{id,orgId}`
+   → org-guard via `getById` before mutate; `maxSort`-then-insert ordering races →
+   Convex-side ordering. Multi-table mutations have NO cross-table transaction in
+   Convex → design idempotency/ordering deliberately.
+5. Delete the `src/lib/*-mirror.ts` for the domain.
+6. Validate `tsc` + `vitest` + `build`; behaviour is human-gated on Coolify preview.
+
+Rough risk order for the remaining domains: test-profiles, brand-templates,
+group-templates (Cascade child) → locations, categories, suppliers, models (many
+inbound FKs) → assets/bulkAssets, kits, projects, line-items, sub-hires, warehouse
+(the multi-table cascade/ordering core — highest risk, do last with preview validation
+per surface).
 
 ## Merge-time consolidation TODO (before final merge to main)
 

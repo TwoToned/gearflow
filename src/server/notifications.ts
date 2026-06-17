@@ -8,6 +8,7 @@ import { getProjectsByOrg } from "@/lib/projects-read";
 
 export interface AppNotification {
   id: string;
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset";
   title: string;
   description: string;
   href: string;

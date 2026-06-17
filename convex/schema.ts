@@ -666,43 +666,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_scheduledDate", ["scheduledDate"]),
 
-<<<<<<< HEAD
-  // DamageEvent
-  damageEvents: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    projectId: v.optional(v.string()),
-    lineItemId: v.optional(v.string()),
-    lineItemUnitId: v.optional(v.string()),
-    assetId: v.optional(v.string()),
-    bulkAssetId: v.optional(v.string()),
-    severity: enums.DamageSeverity,
-    status: v.optional(enums.DamageStatus),
-    notes: v.optional(v.string()),
-    photos: v.optional(v.array(v.string())),
-    estimatedCost: v.optional(v.number()),
-    actualCost: v.optional(v.number()),
-    chargedBack: v.optional(v.boolean()),
-    maintenanceRecordId: v.optional(v.string()),
-    createdById: v.string(),
-    reportedByCrewMemberId: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
-    .index("by_lineItemId", ["lineItemId"])
-    .index("by_lineItemUnitId", ["lineItemUnitId"])
-    .index("by_assetId", ["assetId"])
-    .index("by_bulkAssetId", ["bulkAssetId"])
-    .index("by_maintenanceRecordId", ["maintenanceRecordId"])
-    .index("by_createdById", ["createdById"])
-    .index("by_reportedByCrewMemberId", ["reportedByCrewMemberId"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
 
-=======
->>>>>>> origin/chore/remove-damage-capture
   // MaintenanceRecordAsset
   maintenanceRecordAssets: defineTable({
     id: v.string(),
@@ -1779,10 +1743,6 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_wooOrderId", ["wooOrderId"]),
 
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
 
   // CheckItem
   checkItems: defineTable({

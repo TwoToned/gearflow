@@ -354,7 +354,6 @@ export const WooOrderLogStatus = v.union(
   v.literal("FAILED"),
   v.literal("DUPLICATE"),
 );
-);
 export const CustomFieldEntity = v.union(
   v.literal("ASSET"),
   v.literal("BULK_ASSET"),

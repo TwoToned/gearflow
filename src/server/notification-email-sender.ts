@@ -221,10 +221,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     });
   }
 
-        }),
-    });
-  }
-
+    // 6. Pending crew offers — aggregate, one email per day-bucket.
   const pendingOffers = await prisma.crewAssignment.count({
     where: { organizationId, status: "OFFERED" },
   });

@@ -277,6 +277,38 @@ new `crew-scheduling-read.ts`, assignment/shift/availability/timeEntry) so the t
 PRs don't both edit `crew-read.ts`. Both carry the standing crew backfill deploy
 gate.
 
+### Wave 2026-06-17c — ungated bucket-4 sweep (the big-domain primary reads) — COMPLETE
+
+The same session then cleared the **entire remaining ungated bucket-4 inventory**:
+the primary list/detail/count server reads for the big domains plus the last small
+leaves. 8 PRs, each base `main`, validated `tsc + vitest + eslint`, none touching
+`convex/_generated`. Where a domain's list is already served reactively by a
+`useQuery` hook (so the server action has no live caller), the still-Prisma
+`"use server"` export was converted anyway to remove the Prisma dependency and keep
+the documented return shape — a safe rewire either way.
+
+| PR | Surface | `*-read.ts` | Converted | Left on Prisma (why) |
+|----|---------|-------------|-----------|----------------------|
+| `#242` | **models** | extends `models-read.ts` | `getModels` (list/filter/sort/paginate, `_count` + primary photo from mirrors) | `getModel` (detail media composite — terminus); create/update/archive/bulkUpdateRates (read-then-write) |
+| `#243` | **assets + bulk-assets** | extends `assets-read.ts` | `getAssets`, `getBulkAssets` | `getAsset`/`getBulkAsset` (detail composite — terminus); update/delete `_count` guards (read-then-write) |
+| `#241` | **kits** | extends `kits-read.ts` | `canDeleteKit` (kit row; `projectLineItem.count` ref-check stays Prisma) | `getKit` (detail composite — terminus); #237's count/availability reads; kit-composition read-then-write |
+| `#244` | **categories + locations** | extends `categories-read.ts`/`locations-read.ts` | `getCategories`, `getCategoryCounts`, `getCategoryTree`, `getCaseCategoryIds` tree-walk; `getLocations` (tree rebuilt client-side) | `getCategory`/`getLocation` (detail composites); default-toggle unset (read-then-write); #237's `searchContainerAssets`; `org.metadata` (Better Auth) |
+| `#247` | **suppliers** | extends `suppliers-read.ts` | `getSuppliers`, `getSuppliersPaginated`, `getSupplierById` | `_count.lineItems` + `getSupplierSubhires` (keystone-blocked); #237/#198 reads |
+| `#245` | **projects** | extends `projects-read.ts` | `getCallSheetDates` (scalar dates + projectService + crew counts — no line items) | `getProject` (keystone); `getProjects`/`getTemplates`/`getProjectIssueFlags` (keystone-blocked `_count.lineItems`/overbooked); number-allocation + all mutations (read-then-write) |
+| `#246` | **small leaves** (project-managers / tags / scan-lookup) | new `project-managers-read.ts`; `maintenance-read.ts` for tags; reuse for scan | `getProjectManagers`, `getOrgTags` (maintenance tags arm — last Prisma read in the file), scan-lookup `testTagAsset` resolve (+ new `testTagAssets.getByOrgTestTagId`) | add/remove manager (read-then-write); `user` joins (Better Auth) |
+| `#248` | **dashboard / notifications / project-costs** | reuse `maintenance-read`/`crew-scheduling-read`/`project-services-read`; `countActiveCrew` added to `crew-read.ts` | dashboard `maintenanceDue`/`activeCrew`/`pendingCrewOffers`; notifications `pendingOffers`/`submittedTimesheets`; project-costs `projectService`+`maintenanceRecord` aggregates (file no longer imports Prisma) | line-item counts/groupBys (keystone-blocked); `getDismissedKeys`+`getRecentActivity` (dual-write-blocked: `notificationDismissal` not mirrored, `maintenanceRecordAssets` not mirrored); invitation/user/org (Better Auth) |
+
+**Caveat for the merge-time consolidator:** several of these branches independently
+re-created the same new helper file (`maintenance-read.ts` in `#234` and `#248`;
+`crew-scheduling-read.ts` in `#240` and `#248`; `project-service(s)-read.ts` naming
+differs between `#206` and `#248`). They don't conflict in isolation but will need
+de-duplication when merged together — keep one canonical copy per helper.
+
+**Result: the ungated leaf surface is exhausted.** Every dual-written domain whose
+read was a pure, non-keystone, non-blocked server read is now converted on a PR.
+What remains is entirely behind the three gates (keystone merge / new dual-writes /
+crew prod-backfill) — see the updated bucket status below.
+
 ### Confirmed terminuses (do NOT convert — would read empty / break invariants)
 
 - **`category_slot`** — in the Convex schema but **never dual-written** (zero
@@ -339,10 +371,20 @@ buckets by gate:
    `lib/project-costs.ts`, `lib/services/asset-service.ts` +
    `channel-sync-service.ts` (the `db.*`-alias Discord reads).
 
-**Phase A is therefore NOT complete.** The named work-list (the six surfaces +
-the prior batch) is done and preview-gated; bucket 4 is the next tranche of
-clean leaf PRs, buckets 1–3 unblock as their gates clear (keystone merge / new
-dual-writes / crew backfill).
+**Phase A status (post-2026-06-17c): the ungated/unblocked half is COMPLETE; the
+remainder is fully gated.** Every dual-written domain whose read was a pure,
+non-keystone, non-blocked server read is now converted on a preview-gated PR. The
+honest inventory below was the pre-wave snapshot; the bucket-by-bucket status that
+follows it is authoritative. The three remaining gates and their unblock actions:
+1. **Merge the keystone chain `#199`–`#203`** → then convert the bucket-1
+   projectLineItem/Group/Category readers (they reuse the keystone helpers; building
+   them on the unmerged chain would be a fragile deep stack, so they wait for merge).
+2. **Add dual-write + backfill** for the 5 bucket-2 tables, run each backfill in
+   prod, then convert their reads.
+3. **Run the crew backfills in prod** (`convex:backfill:crew` + `:crew-scheduling` +
+   `:crew-availability-org`) → then `#239`/`#240` can merge.
+Only after all three clear is Phase A 100% done and Phase B (write inversion)
+unblocked.
 
 **Post-wave-2026-06-17b status update.** The wave above cleared a large slice:
 - **Bucket 4 — DONE this wave:** maintenance (`#234`), check-items (`#233`),
@@ -352,24 +394,36 @@ dual-writes / crew backfill).
   bucket-4 rows were **already deleted by #227** and are moot: `damage.ts`,
   `reports.ts`/`scheduled-reports.ts`, `lib/services/asset-service.ts` +
   `channel-sync-service.ts` (Discord), workshop-queue.
-- **Bucket 4 — STILL TODO (ungated leaves, next session):** the primary
-  list/detail/count server reads for the big domains — `models.ts`, `categories.ts`
-  (full, beyond the `searchContainerAssets` trim), `locations.ts`, `suppliers.ts`
-  (full, beyond `getSupplierCounts`), `assets.ts`, `bulk-assets.ts`, `kits.ts`
-  (full, beyond counts/availability), `projects.ts` (list/detail/counts) — plus
-  `section-presets.ts`, `project-managers.ts`, `tags.ts` (`getOrgTags`),
-  `scan-lookup.ts`, `woocommerce.ts` (read-only log **viewer**),
-  `dashboard.ts`/`notifications.ts` non-line-item composites, `lib/project-costs.ts`.
+- **Bucket 4 — NOW EXHAUSTED (wave 2026-06-17c, PRs `#241`–`#248`):** the big-domain
+  primary reads (`models`, `assets`+`bulk-assets`, `kits`, `categories`+`locations`,
+  `suppliers`, `projects` non-line-item), the small leaves (`project-managers`,
+  `tags getOrgTags`, `scan-lookup`), and the non-blocked `dashboard`/`notifications`/
+  `project-costs` reads are all converted on PRs. `section-presets.ts` was deleted by
+  #227 (moot). `woocommerce.ts` (`getWooCommerceOrderLogs` viewer) turned out to be
+  **bucket 2, not bucket 4** — `wooCommerceOrderLog` is not dual-written. So **no
+  ungated leaf reads remain**; everything still on Prisma is behind a gate (1/2/3).
 - **Bucket 3 — DONE this wave (still deploy-gated):** `crew-availability.ts` +
   `crew-calendar.ts` (and dashboard/time/assignments) shipped in `#239`/`#240`.
   These **must not merge** until `convex:backfill:crew` + `:crew-scheduling` +
   `:crew-availability-org` have run against prod Convex.
-- **Bucket 2 — unchanged + one addition:** `notificationDismissal`,
-  `warehouseDashboardToken`, and now `testTagAuditorToken` (surfaced in `#238`)
-  are all not-dual-written → their reads stay Prisma until a mirror + backfill is
-  added (straddles Phase A/B).
-- **Bucket 1 (keystone-blocked)** unchanged — unblocks when the `#199`–`#203`
-  keystone chain merges.
+- **Bucket 2 — the now-complete dual-write-blocked set:** `notificationDismissal`
+  (+ `getRecentActivity`'s un-mirrored `maintenanceRecordAssets` join, `#248`),
+  `warehouseDashboardToken`, `testTagAuditorToken` (`#238`), `wooCommerceOrderLog`
+  (the `getWooCommerceOrderLogs` viewer — confirmed not dual-written, `#248`-adjacent),
+  and `userNotificationPreference`. Each needs a `*-mirror.ts` dual-write + a
+  `convex-backfill-*.ts` (+ a prod backfill run) before its read can move — write-path
+  groundwork that straddles Phase A/B. **Deliberately NOT attempted in the read-only
+  waves.**
+- **Bucket 1 (keystone-blocked)** — the projectLineItem/projectGroup/projectCategory
+  readers. **Unblocks the instant the `#199`–`#203` keystone chain merges**; the
+  `project-line-item-read.ts` / `project-line-item-tree-read.ts` helpers it produces
+  are exactly what these readers reuse. This is now the single largest remaining
+  Phase A tranche: `project-categories.ts`, `category-slots.ts`, `project-groups.ts`,
+  `availability.ts` + `lib/availability.ts`, `lib/reservation-conflicts.ts`,
+  `lib/report-engine.ts`, `warehouse-close.ts`, `bulk-checkin.ts`, the
+  `dashboard.ts`/`notifications.ts` line-item counts, `suppliers.ts` sub-hires +
+  `_count.lineItems`, and `projects.ts` `getProjects`/`getTemplates`/
+  `getProjectIssueFlags`.
 
 ---
 

@@ -49,6 +49,32 @@
       delete backfills/parity/mirrors, migrate the DB to drop the tables.
 - [ ] **Final prod backfill + cutover + reopen** (see below).
 
+## Bucket-1 progress
+
+- **`reservation-conflicts`** (`wip/bucket1-reservation`) — DONE (branch, no PR).
+  Converted the PURE conflict-detection reads in `src/lib/reservation-conflicts.ts`
+  to Convex: `findProjectConflictsCore` + `findSwapCandidatesCore` now read line
+  items + units from the Convex mirror (`projectLineItems.list` / `projectLineItemUnits.list`)
+  via new `src/lib/reservation-conflicts-read.ts`, replicating every Prisma `where`
+  filter (date-range overlap with inclusive bounds, `status != CANCELLED` on lines,
+  `status != RETURNED` on units, exclude-self/templates/dead-status projects,
+  kit/retired/lost/inactive asset filter, line-wins-tie-break) in unit-tested pure
+  helpers. New helpers only — keystone files untouched. No new Convex query (reused
+  existing `list` queries + `mapLineItemDoc`/`mapUnitDoc`). The `swapLineItemAsset`
+  server-action's post-swap activity-log read was also moved to Convex
+  (`projectLineItems.getById` + `assets.getById`).
+  **LEFT ON PRISMA (read-then-write):** `swapLineItemAssetCore` — its pre-write
+  line-item lookup and the in-`$transaction` TOCTOU guard reads (`tx.projectLineItem`/
+  `tx.projectLineItemUnit.findFirst`) gate `tx.projectLineItem.update`, so they must
+  read the same store they write inside the same transaction; converting them would
+  re-open the double-booking race the feature closes. (Asset/window context for that
+  method still comes from Convex; only the write-gating booking reads stay Prisma.)
+  **DEPLOY GATE:** `projectLineItem` + `projectLineItemUnit` Convex backfills must be
+  run in prod before this read-rewiring deploys, else conflict detection reads empty.
+  The existing `reservation-conflicts.int.test.ts` now requires live mirrored Convex
+  data (it drives the cores end-to-end) — re-validate on Coolify preview, not in a
+  dev worktree.
+
 ## Merge-time consolidation TODO (before final merge to main)
 
 De-duplicate helper files that multiple branches created (the integration merge

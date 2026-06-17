@@ -616,3 +616,81 @@ Notes:
   (or by adding prod creds to a worktree's `.env.local`).
 - The dual-write stays active until Phase B flips writes to Convex-only; until then
   re-running the backfill is always a safe heal.
+
+## Integration-test harness (regression net)
+
+The `*.int.test.ts` suite is the automated regression net for the Phase B
+multi-table-core work. Post-decommission the domain data is Convex-only for the
+migrated surfaces, so the harness exercises the converted reads/writes against a
+real Convex deployment + a local Postgres for the still-Prisma tables (Better
+Auth, customRole, activityLog, project sub-tables not yet inverted).
+
+### Run it
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/gearflow_test \
+BETTER_AUTH_URL=https://preview.lab.rvlt.app \
+NEXT_PUBLIC_CONVEX_URL=https://groovy-koala-475.convex.cloud \
+pnpm exec vitest run --config vitest.integration.config.ts
+```
+
+…or just `npm run test:integration` (the script already exports those three).
+Single file: append the file path. Single test: add `-t "<name>"`.
+
+Prereqs:
+- Local `gearflow_test` Postgres up (`postgres:17`), schema via
+  `DATABASE_URL=…gearflow_test pnpm exec prisma db push --accept-data-loss`
+  (the migration history is NOT cleanly replayable — use `db push`, not migrate).
+- Network access to the shared dev Convex deployment (`groovy-koala-475`).
+
+### How the Convex trust works
+
+The migrated server actions call Convex with a **service token** minted by Better
+Auth's `jwt` plugin. Dev Convex trusts that token only when:
+1. its issuer is `https://preview.lab.rvlt.app` — set via `BETTER_AUTH_URL` (the
+   `test:integration` script + `tests/helpers/integration-setup.ts` both set it), and
+2. it's signed by the ES256 keypair dev Convex published — the row in the DEV
+   Postgres `jwks` table.
+
+So `tests/helpers/integration-globalsetup.ts` (Vitest `globalSetup`, runs once)
+copies the `jwks` row from the dev Postgres into `gearflow_test`, and
+`truncateAllTables` excludes `jwks` (+ `_prisma_migrations`) so the trusted key
+survives the per-test TRUNCATE. Override the trust source with
+`CONVEX_TRUST_DATABASE_URL` if the dev DB moves.
+
+### How seeding works (auto-mirror)
+
+Tests seed via `testPrisma` (the fixture factories or direct
+`testPrisma.<model>.create(...)`). Because the code under test now READS from
+Convex, every write to a Convex-backed table must also land in Convex.
+`testPrisma` is a light Proxy over the app `prisma` singleton: it intercepts the
+write methods of the **Convex-backed model delegates** and replays each write into
+dev Convex using the same `src/lib/*-mirror.ts` helpers the inverted server
+actions use (registry: `tests/helpers/convex-mirror-registry.ts`). Reads,
+`$`-methods, and non-mirrored tables (user/member/organization/…) pass straight
+to the raw client.
+
+Each test roots at a fresh `createOrgFixture()` (unique cuid org id), so Convex
+docs accumulated across runs stay org-isolated — no Convex truncation needed, and
+`createIfMissing` makes re-runs idempotent.
+
+### Two load-bearing harness invariants (do NOT remove)
+
+- **Single pinned pg connection under Vitest** (`src/lib/prisma.ts`, gated on
+  `VITEST`): the PrismaPg adapter is backed by a `max:1` pg Pool. The default
+  multi-connection pool races the per-test TRUNCATE under Vitest's scheduling
+  (a just-committed row reads back missing / leaks past a truncate). One pinned
+  connection serialises every statement. Zero effect on the app/prod.
+- **Delegate-level wrapping, NOT a whole-client Proxy.** `testPrisma` wraps only
+  the individual model delegates. Wrapping the entire `PrismaClient` in a Proxy
+  corrupts Better Auth + the query engine when a heavy server module is imported
+  (phantom row wipes). Better Auth and the engine must keep importing the raw
+  `prisma`.
+
+### Cost / speed
+
+Every fixture write fan-outs an HTTP round-trip to dev Convex, and the single
+pinned connection serialises them, so the suite is network-bound and slow
+(minutes). `testTimeout`/`hookTimeout` are 120s to accommodate the heaviest
+multi-line fixture trees. This is acceptable for a regression net run pre-merge,
+not in a tight inner loop.

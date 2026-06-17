@@ -33,19 +33,12 @@ async function seed() {
   h.ctx.organizationId = org.id;
   h.ctx.userId = user.id;
   const lightModel = await createModelFixture(org.id);
-  const venue = await testPrisma.location.create({
-    data: { organizationId: org.id, name: "Venue", isDefault: false },
-  });
-  await testPrisma.location.create({
-    data: { organizationId: org.id, name: "Warehouse", isDefault: true },
-  });
   const project = await testPrisma.project.create({
     data: {
       id: createId(),
       organizationId: org.id,
       projectNumber: `P-${createId().slice(0, 6)}`,
       name: "Accessory-heavy gig",
-      locationId: venue.id,
     },
   });
   return { org, user, lightModel, project };
@@ -115,14 +108,20 @@ describe("bulk check-in totals", () => {
 
     const childA = await testPrisma.projectLineItem.findFirst({
       where: { parentLineItemId: lineA.lineId, childKind: "ACCESSORY" },
-      include: { units: true },
+      include: { units: { orderBy: { ordinal: "asc" } } },
     });
     const childB = await testPrisma.projectLineItem.findFirst({
       where: { parentLineItemId: lineB.lineId, childKind: "ACCESSORY" },
-      include: { units: true },
+      include: { units: { orderBy: { ordinal: "asc" } } },
     });
-    expect(childA?.units[0]).toMatchObject({ returnedQuantity: 2, status: "RETURNED" });
-    expect(childB?.units[0]).toMatchObject({ returnedQuantity: 1, status: "CHECKED_OUT" });
+    // childA had 2 parent units → 2 accessory unit rows (each qty=1). Both returned.
+    expect(childA?.units.length).toBe(2);
+    expect(childA?.units.every((u) => u.status === "RETURNED" && u.returnedQuantity === 1)).toBe(true);
+    // childB had 3 parent units → 3 accessory unit rows. 1 returned, 2 still out.
+    const returnedB = childB?.units.filter((u) => u.status === "RETURNED");
+    const outB = childB?.units.filter((u) => u.status === "CHECKED_OUT");
+    expect(returnedB?.length).toBe(1);
+    expect(outB?.length).toBe(2);
 
     expect(outstandingFor(await getBulkCheckInTotals(s.project.id), clampKey)).toBe(2);
   });

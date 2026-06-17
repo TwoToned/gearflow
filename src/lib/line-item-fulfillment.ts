@@ -310,15 +310,21 @@ export async function returnLineUnits(
   // ── 2. Bulk line return ────────────────────────────────────────
   const targetBulkId = args.bulkAssetId || lineItem.bulkAssetId || null;
   if (targetBulkId) {
-    const returnQty = args.quantity || 1;
-    const unit = await tx.projectLineItemUnit.findFirst({
-      where: { lineItemId: lineItem.id, bulkAssetId: targetBulkId },
+    const returnQty = args.quantity ?? 1;
+    // A bulk accessory child may have multiple unit rows (one per parent
+    // unit, each qty=1). Distribute the return across all still-CHECKED_OUT
+    // unit rows in ordinal order to handle both single-aggregate and
+    // per-parent-unit layouts correctly.
+    const units = await tx.projectLineItemUnit.findMany({
+      where: { lineItemId: lineItem.id, bulkAssetId: targetBulkId, status: "CHECKED_OUT" },
+      orderBy: { ordinal: "asc" },
     });
-    if (unit) {
-      const newReturned = Math.min(
-        unit.quantity,
-        unit.returnedQuantity + returnQty,
-      );
+    let remaining = returnQty;
+    for (const unit of units) {
+      if (remaining <= 0) break;
+      const canReturn = Math.min(remaining, unit.quantity - unit.returnedQuantity);
+      if (canReturn <= 0) continue;
+      const newReturned = unit.returnedQuantity + canReturn;
       const fullyReturned = newReturned >= unit.quantity;
       await tx.projectLineItemUnit.update({
         where: { id: unit.id },
@@ -331,8 +337,9 @@ export async function returnLineUnits(
           returnNotes: args.notes || unit.returnNotes,
         },
       });
+      remaining -= canReturn;
     }
-    return { unitsFlipped: unit ? 1 : 0, assetsTouched: [] };
+    return { unitsFlipped: units.length, assetsTouched: [] };
   }
 
   // ── 3. Partial or whole-line return ────────────────────────────

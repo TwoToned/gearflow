@@ -2371,6 +2371,24 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **small leaves (project-managers / tags / scan-lookup)** (`server/project-managers.ts`, `server/tags.ts`, `server/scan-lookup.ts`).
+  - `project-managers.ts` — `getProjectManagers` now reads `projectManager` rows from Convex via new `src/lib/project-managers-read.ts` (`getProjectManagerRows` + pure unit-tested `filterAndSortManagers`: org/project scope + `addedAt asc`, epoch-ms→Date, absent `addedAt`→epoch). The `user` join stays a batched `prisma.user.findMany({ id: { in } })` (Better Auth — never moves). `addProjectManager`/`removeProjectManager` stay Prisma (read-then-write: member check + create/delete, still own RBAC/audit/mirror sync). Backfill: `convex-backfill-project-subtables.ts`.
+  - `tags.ts` — `getOrgTags`'s last Prisma read (`maintenanceRecord.findMany({ select: { tags } })`) moved to Convex via new `src/lib/maintenance-read.ts` `getMaintenanceTagsByOrg` (`maintenanceRecords.list` → `{ tags }`, `tags ?? []`); Prisma import dropped. (`tag` has no table — `getOrgTags` aggregates per-domain `tags` arrays, all already Convex-backed.)
+  - `scan-lookup.ts` — the test & tag branch's `testTagAsset.findUnique` moved to Convex via **new query `testTagAssets.getByOrgTestTagId`** (uses existing `by_organizationId_testTagId` index, mirrors the Prisma `organizationId_testTagId` unique). Stale "no Convex mirror" comment corrected; this is a read-only lookup (no read-then-write), so the Prisma import is fully dropped. Backfill: `convex-backfill-test-tag-assets.ts`.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

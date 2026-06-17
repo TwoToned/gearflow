@@ -159,6 +159,52 @@ agent; **data-correctness is human-gated on the Coolify preview before merge**
 (hard constraint #1). Live golden-diff was deferred to unit tests + preview for
 this batch (the shared dev Convex is volatile/contended and not the merge gate).
 
+### ⚠️ Post-removal reset (2026-06-17) — READ THIS FIRST
+
+After the surfaces below were opened, **main PR #227 "all-feature-removals"**
+landed: ~40,836 deletions / 330 files, removing **Stocktake, Reports tab
+(SavedReport + scheduled exports), Damage Capture, Utilization tab, Workshop
+kanban, Reorder tab, Discord integration, Org Transfer (export/import), the PDF
+template *builder* (PDF generation kept), the built-in camera scanner, warehouse
+accessories, crew *certifications*, drag-and-drop, social login, and the pricing
+min-cost optimizer** — with DB migrations dropping the corresponding tables/enums
+(`stocktakes`, `damage_event`, `saved_report`, `crew_certification`, Discord
+tables, bulk_asset reorder columns, …) and a Convex purge tool for orphans.
+
+Recovery applied this session:
+- **Closed as obsolete:** **#204** stocktake (`stocktake.ts` + `stocktakes`
+  table gone); **#195 / #196 / #197 / #209** the crew stack (the
+  `crewCertifications` table was dropped and the certs feature removed → the
+  branches reference a deleted table and merge-conflict; also still deploy-gated).
+- **Rebased onto new main (clean 3-way merge; CI re-validates):** **#194**,
+  **#198**, the keystone chain **#199–#203**, **#205**, **#206**, **#208**,
+  **#210**. Each now contains new main.
+- **Reworked onto new main:** **#207** document-templates — the builder removal
+  gutted `document-templates.ts` 826→147 lines; reworked to convert only the 3
+  surviving reads (`getDocumentTemplates`, `getPublishedTemplatesForDropdown`,
+  `getDocumentTemplate` — the `system-` virtual-default synthesis + `brandTemplate`
+  join survive). (Gate: confirm `documentTemplate` is still dual-written
+  post-removal; if not, it becomes a blocked terminus.)
+- **New tracked task — crew read-rewiring rebuild:** rebuild the surviving crew
+  reads (dashboard minus cert widgets, time, `getProjectCrew` minus cert badges,
+  `getCrewMembersForAssignment` + availability) **fresh on post-removal main with
+  all `crewCertifications` references stripped**, once the crew-scheduling backfill
+  (the standing deploy gate) is addressed. Do NOT rebase the old crew branches —
+  rebuild clean.
+
+The "Shipped this program" table and "Remaining Phase A scope" inventory below
+were written **before** #227 — treat the removed-feature rows as struck through:
+the `reports`, `damage`, `utilization`, `scheduled-reports`, `org-export`,
+`stocktake`, Discord `asset-service`/`channel-sync`, and `workshop-kanban`
+(maintenance queue) entries no longer exist, so **Phase A's remaining surface is
+smaller than stated below.** Bucket 4's still-valid leaf targets are: models,
+categories, locations, suppliers, assets, bulk-assets, kits, projects
+(list/detail/counts), maintenance (minus workshop queue), check-items,
+brand-templates, group-templates, section-presets, project-tasks,
+project-managers, custom-fields, tags, scan-lookup. Bucket 1 (keystone-blocked)
+is unchanged. Bucket 2/3 gates unchanged (notificationDismissal +
+warehouseDashboardToken still not dual-written; crew still backfill-gated).
+
 ### Shipped this program (PRs open, not merged — merge order matters)
 
 **Earlier batch (leaf + cluster + keystone):**

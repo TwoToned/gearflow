@@ -138,6 +138,29 @@
       before update/remove/reorder). **Lowest-risk: zero inbound Prisma FK, no child
       table, no cascade → no migration needed.**
 
+- [x] **`brand-templates` → Convex-only writes.** DONE (branch
+      `wip/phaseb-brand-templates`, validated `tsc` + 2413 vitest + eslint + build).
+      Medium-risk (touches the PDF pipeline + 1 inbound FK). create/update/delete/
+      set-default/unset-default now write the Convex `brandTemplates` doc as sole
+      source of truth (`createId()`+`Date.now()`, `api.brandTemplates.create/update/
+      remove`); inline `mirrorBrandTemplateToConvex`/`patchBrandTemplateInConvex` +
+      `toConvexDoc`/`FunctionArgs` removed. **Migration**
+      `20260617130100_drop_brand_template_fk_constraint` drops
+      `document_template_brandTemplateId_fkey` (SetNull); `brandTemplateId` is now a
+      plain string cuid (FK removed from `schema.prisma`, back-relation removed from
+      `BrandTemplate`). **PDF pipeline:** `lib/pdfme/generate-pdf.ts` no longer
+      `include: {brandTemplate:true}` — `documentTemplate` stays a Prisma read, and
+      the brand template is resolved from Convex via `getBrandTemplateForOrg(
+      brandTemplateId, orgId)` (identical `accentColor`/`footerSettings` shape).
+      **Invariants re-implemented:** single-default-per-org (`unsetBrandDefaultsInConvex`
+      lists the org's brand templates and clears every other default before setting the
+      target); org-guard via `getById` before update/remove; **delete-unlink across BOTH
+      stores** — Prisma `documentTemplate.updateMany(brandTemplateId→null)` (PDF path
+      still reads Prisma) AND a per-doc Convex `documentTemplates.update` with explicit
+      `brandTemplateId: undefined` (the shared mirror helper drops null keys and can't
+      clear a field, so the mutation is called directly). headerSettings/footerSettings
+      pass through unchanged; `logActivity` kept.
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

@@ -10,11 +10,6 @@ export async function register() {
     // intermittent-502 failure mode). See src/lib/process-safety.ts.
     const { installProcessSafetyNet } = await import("./src/lib/process-safety");
     installProcessSafetyNet("web");
-
-    // The Discord bot NO LONGER runs in this process. It runs as its own pm2 app
-    // (`gearflow-discord-bot`, scripts/discord-bot.ts) so a gateway crash can't
-    // take the website down. The web app controls it via the DB
-    // (src/lib/discord/bot-control.ts); the bot's supervisor loop reconciles.
   }
   if (process.env.NEXT_RUNTIME === "edge") {
     await import("./sentry.edge.config");

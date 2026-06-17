@@ -68,7 +68,7 @@ describe("installProcessSafetyNet", () => {
 
   it("reports and exits on an uncaught exception", async () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
-    installProcessSafetyNet("discord-bot");
+    installProcessSafetyNet("worker");
 
     handlers.uncaughtException?.(new Error("fatal"));
 

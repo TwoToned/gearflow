@@ -299,12 +299,6 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     });
     const project = await createProjectFixture(org.id);
 
-    // Project needs daily billing for the optimizer to fire
-    await testPrisma.project.update({
-      where: { id: project.id },
-      data: { billingDays: 1 },
-    });
-
     const group = await createProjectGroupFixture(org.id, project.id, {
       price: 0,
       quantity: 1,

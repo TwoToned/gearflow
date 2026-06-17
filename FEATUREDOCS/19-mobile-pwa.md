@@ -39,8 +39,10 @@ div.app-shell (position: fixed, inset: 0, flex column, overflow: hidden)
 ## Mobile Bottom Nav (`src/components/layout/mobile-nav.tsx`)
 - Flow element (NOT position: fixed) — sits at bottom of flex column
 - 5 items: Home, Assets, Scan, Projects, Warehouse
-- Scan button opens camera overlay via `BarcodeScanner`
-- Scan result resolved via `scanLookup()` → navigates to matched entity
+- Scan button opens a manual tag-entry dialog (`AssetTagInput` + submit). The
+  in-app camera scanner was removed (it never worked on iPhone); external HID
+  barcode wedges still work by typing into the field and submitting on Enter.
+- Entered tag resolved via `scanLookup()` → navigates to matched entity
 - **Note**: A UX-gaps pass proposed dropping Scan for a "4-tab" bar citing DESIGN.md.
   DESIGN.md has no such rule and names warehouse scanning as a primary daily
   workflow, so the Scan tab is intentionally kept (see header comment in the file).
@@ -49,14 +51,17 @@ div.app-shell (position: fixed, inset: 0, flex column, overflow: hidden)
   TopBar. That `Sheet` **is** `AppSidebar`'s mobile rendering — it must stay
   mounted on mobile, so the sidebar is not stripped on small screens.
 
-## Barcode & QR Code Scanning
+## Tag Entry & QR Code
 
-### Scanner Component (`src/components/ui/barcode-scanner.tsx`)
-- Uses `html5-qrcode` library
-- No overlay — whole camera feed is scan area
-- Audio chime: Web Audio API, 1200Hz sine wave, 150ms with exponential fade
-- **Callbacks stored in refs** to prevent re-render loop
-- `continuous` prop: keeps scanning after first result (for multi-asset forms)
+### Tag Input (`src/components/ui/asset-tag-input.tsx`)
+- Plain text input for asset/test tags — no camera. The in-app camera scanner
+  (`html5-qrcode` via the old `BarcodeScanner`/`ScanInput`) was removed because
+  it never worked reliably on iPhone.
+- Manual typing works everywhere. External USB/Bluetooth HID barcode wedges
+  behave like a keyboard, so physical scanners still work — they "type" the tag
+  and submit on Enter through each call site's existing keydown/form handler.
+- QR generation (`qrcode`, `react-qr-code`) and `AssetScanLog` logging are
+  unaffected and retained.
 
 ### Scan Lookup (`src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:

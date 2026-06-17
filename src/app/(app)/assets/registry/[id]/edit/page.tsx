@@ -52,7 +52,6 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
       purchasePricePerUnit: ba.purchasePricePerUnit ? Number(ba.purchasePricePerUnit) : undefined,
       locationId: ba.locationId || "",
       status: ba.status as BulkAssetFormValues["status"],
-      reorderThreshold: ba.reorderThreshold ?? undefined,
       notes: ba.notes || "",
       isActive: ba.isActive,
       tags: ba.tags ?? [],

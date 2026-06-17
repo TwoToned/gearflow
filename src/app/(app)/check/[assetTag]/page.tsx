@@ -20,7 +20,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 
 import { Button } from "@/components/ui/button";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { PageMeta } from "@/components/layout/page-meta";
 
 export default function AdHocCheckPage({
@@ -184,20 +184,18 @@ function ScanNavInput({ currentTag }: { currentTag: string }) {
     go(value);
   }
 
-  // Use ScanInput so the camera button is available on phones. The leading
-  // ScanBarcode icon is preserved for typed-input affordance.
+  // Plain tag input. The leading ScanBarcode icon is preserved as a typed-input
+  // affordance; submitting (Enter / form submit) routes the typed tag to `go`.
   return (
     <form onSubmit={handleSubmit} className="max-w-md">
       <div className="relative">
         <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4 w-4 text-fg-3" />
-        <ScanInput
+        <AssetTagInput
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onScan={(scanned) => go(scanned)}
           placeholder="Scan another asset tag..."
           className="pl-10 text-sm"
-          scannerTitle="Scan asset tag"
         />
       </div>
     </form>

@@ -47,11 +47,8 @@ const ORDER: string[] = [
   "kit",
   // transactional
   "sub-hires",
-  "stocktake",
-  "damage",
   "maintenance",
   "warehouse-close",
-  "saved-reports",
   "saved-views",
   // media + denormalized stamps last
   "media",

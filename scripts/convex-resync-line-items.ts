@@ -25,7 +25,7 @@ import { api } from "../convex/_generated/api";
 const RELATION_KEYS = new Set([
   "model", "asset", "bulkAsset", "kit", "supplier", "category", "group",
   "parentLineItem", "childLineItems", "units", "project", "subHire",
-  "subHireItem", "subHireGroup", "checkRecords", "damageEvents",
+  "subHireItem", "subHireGroup", "checkRecords",
 ]);
 function strip(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

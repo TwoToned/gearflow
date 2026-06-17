@@ -46,8 +46,6 @@ export interface CategoryForStructuring {
     price: number | null;
     rentalPeriod: string | null;
     rentalQuantity: number | null;
-    billingWeeks: number | null;
-    billingDays: number | null;
     sortOrder: number;
   }>;
 }
@@ -218,7 +216,7 @@ export function structureLineItems(
 
     // Emit each group
     for (const group of cat.groups) {
-      const duration = group.billingDays ?? group.rentalQuantity ?? 1;
+      const duration = group.rentalQuantity ?? 1;
       const price = group.price ?? 0;
       const total = group.quantity * price * duration;
 

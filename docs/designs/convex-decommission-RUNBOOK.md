@@ -21,15 +21,22 @@
 - [x] **Phase A — ungated reads:** DONE. All `feat/convex-read-*` branches merged
       into `integration/convex-decommission`. Validated: `tsc` clean,
       **2364 vitest pass**, `pnpm build` exit 0. Pushed.
-- [ ] **Phase A — bucket 1 (keystone-blocked reads):** NOT STARTED. Now UNBLOCKED
-      (keystone helpers `project-line-item-read.ts` / `project-line-item-tree-read.ts`
-      are on the integration branch). Convert the projectLineItem/Group/Category
-      readers: `project-categories.ts`, `category-slots.ts`, `project-groups.ts`,
-      `availability.ts` + `lib/availability.ts`, `lib/reservation-conflicts.ts`,
-      `lib/report-engine.ts`, `warehouse-close.ts`, `bulk-checkin.ts`, the
-      `dashboard.ts`/`notifications.ts` line-item counts, `suppliers.ts` sub-hires +
-      `_count.lineItems`, `projects.ts` `getProjects`/`getTemplates`/
-      `getProjectIssueFlags`. Build on the integration branch (or worktrees off it).
+- [x] **Phase A — bucket 1 (keystone-blocked reads):** DONE (merged into integration,
+      validated `tsc` + **2413 vitest** + `pnpm build` exit 0). Converted the PURE
+      keystone-unblocked reads: `availability` (server + `lib/availability.ts`
+      incl. `computeOverbookedStatus`), `reservation-conflicts` (conflict-detection
+      reads; the TOCTOU swap-guard reads correctly stay Prisma), and the line-item
+      **counts/flags** in `dashboard.ts`/`projects.ts`/`suppliers.ts`/`clients.ts`.
+      `report-engine.ts` is gone (removed with Reports by #227).
+      **Everything still reading `prisma.projectLineItem/Group/Category` is now
+      read-then-write, mirror-source, or the `category_slot` terminus** —
+      i.e. Phase-B territory (those reads move only when the enclosing mutation
+      inverts to Convex-only). Files: `line-items.ts`, `sub-hires.ts`,
+      `warehouse.ts`, `warehouse-close.ts`, `bulk-checkin.ts`, `project-categories.ts`,
+      `project-groups.ts`, `split-sibling-collapse.ts` (all read-then-write);
+      `*-mirror.ts` (mirror-source, deleted in Phase B); `category-slots.ts`
+      (terminus); minor `notifications.ts`/`check-records.ts` count leftovers.
+      **⇒ Phase A read-rewiring is COMPLETE for all non-write-coupled reads.**
 - [ ] **Phase A — bucket 2 (dual-write-blocked):** NOT STARTED. Add a
       `*-mirror.ts` dual-write + `convex-backfill-*.ts` + register in
       `convex-backfill-all.ts` for: `notificationDismissal`, `warehouseDashboardToken`,

@@ -628,9 +628,7 @@ model Category {
   organizationId     String
   organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name               String
-  parentId           String?
-  parent             Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children           Category[]   @relation("CategoryHierarchy")
+  parentId           String? // self-reference to a Convex categories doc; FK dropped Phase B (tree rebuilt client-side in categories-read)
   description        String?
   icon               String?
   sortOrder          Int          @default(0)
@@ -639,8 +637,11 @@ model Category {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  models Model[]
-  kits   Kit[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // categories are now CONVEX-ONLY (no Prisma `category` row is written), so the
+  // inbound FK constraints from model.categoryId, kit.categoryId, and the self-ref
+  // category.parentId were dropped (migration 20260617131300_drop_category_fk_constraints).
+  // Dependent rows keep a plain `categoryId`/`parentId` referencing the Convex doc.
 
   @@index([organizationId])
   @@index([parentId])
@@ -657,8 +658,7 @@ model Model {
   manufacturer            String?
   modelNumber             String?
   sku                     String?
-  categoryId              String?
-  category                Category?       @relation(fields: [categoryId], references: [id])
+  categoryId              String? // references a Convex categories doc; FK dropped Phase B
   description             String?
   image                   String?
   images                  String[]        @default([])
@@ -915,8 +915,7 @@ model Kit {
   assetTag          String
   name              String
   description       String?
-  categoryId        String?
-  category          Category?      @relation(fields: [categoryId], references: [id])
+  categoryId        String? // references a Convex categories doc; FK dropped Phase B
   status            KitStatus      @default(AVAILABLE)
   condition         AssetCondition @default(NEW)
   locationId        String? // references a Convex locations doc; FK dropped Phase B

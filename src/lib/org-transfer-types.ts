@@ -37,8 +37,6 @@ export interface OrgExportManifest {
   clientMedia: Record<string, unknown>[];
   locationMedia: Record<string, unknown>[];
 
-  savedReports: Record<string, unknown>[];
-
   // ─── Crew (32 in FEATUREDOCS — added in Track B integration-checklist pass) ──
   crewMembers?: Record<string, unknown>[];
   crewRoles?: Record<string, unknown>[];

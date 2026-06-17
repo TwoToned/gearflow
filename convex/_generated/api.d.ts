@@ -70,7 +70,6 @@ import type * as projectNumberSequences from "../projectNumberSequences.js";
 import type * as projectServices from "../projectServices.js";
 import type * as projectTasks from "../projectTasks.js";
 import type * as projects from "../projects.js";
-import type * as savedReports from "../savedReports.js";
 import type * as savedTableViews from "../savedTableViews.js";
 import type * as sectionPresets from "../sectionPresets.js";
 import type * as serviceTemplates from "../serviceTemplates.js";
@@ -168,7 +167,6 @@ declare const fullApi: ApiFromModules<{
   projectServices: typeof projectServices;
   projectTasks: typeof projectTasks;
   projects: typeof projects;
-  savedReports: typeof savedReports;
   savedTableViews: typeof savedTableViews;
   sectionPresets: typeof sectionPresets;
   serviceTemplates: typeof serviceTemplates;

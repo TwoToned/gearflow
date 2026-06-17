@@ -179,7 +179,6 @@ const navSections: NavSection[] = [
     label: "ADMIN",
     items: [
       { title: "Locations", url: "/locations", icon: MapPin, resource: "location" },
-      { title: "Reports", url: "/reports", icon: BarChart3, resource: "reports" },
       { title: "Activity Log", url: "/activity", icon: ScrollText, resource: "reports" },
     ],
   },

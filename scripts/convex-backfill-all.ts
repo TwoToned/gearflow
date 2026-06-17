@@ -51,7 +51,6 @@ const ORDER: string[] = [
   "damage",
   "maintenance",
   "warehouse-close",
-  "saved-reports",
   "saved-views",
   // media + denormalized stamps last
   "media",

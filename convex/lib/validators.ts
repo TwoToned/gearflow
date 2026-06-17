@@ -381,11 +381,6 @@ export const DiscordOutboxStatus = v.union(
   v.literal("PROCESSED"),
   v.literal("FAILED"),
 );
-export const ScheduleFrequency = v.union(
-  v.literal("DAILY"),
-  v.literal("WEEKLY"),
-  v.literal("MONTHLY"),
-);
 export const StocktakeScope = v.union(
   v.literal("FULL"),
   v.literal("CATEGORY"),

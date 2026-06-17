@@ -96,7 +96,6 @@ async function main() {
   if (apply) {
     console.log(`  Units moved:             ${stats.unitsMoved}`);
     console.log(`  CheckRecords repointed:  ${stats.checkRecordsRepointed}`);
-    console.log(`  DamageEvents repointed:  ${stats.damageEventsRepointed}`);
     console.log(`  Services repointed:      ${stats.servicesRepointed}`);
   } else {
     console.log();

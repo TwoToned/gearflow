@@ -666,6 +666,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_scheduledDate", ["scheduledDate"]),
 
+<<<<<<< HEAD
   // DamageEvent
   damageEvents: defineTable({
     id: v.string(),
@@ -700,6 +701,8 @@ export default defineSchema({
     .index("by_reportedByCrewMemberId", ["reportedByCrewMemberId"])
     .index("by_organizationId_status", ["organizationId", "status"]),
 
+=======
+>>>>>>> origin/chore/remove-damage-capture
   // MaintenanceRecordAsset
   maintenanceRecordAssets: defineTable({
     id: v.string(),
@@ -918,7 +921,6 @@ export default defineSchema({
     canonicalLineItemId: v.string(),
     movedUnitId: v.optional(v.string()),
     checkRecordsRepointed: v.optional(v.number()),
-    damageEventsRepointed: v.optional(v.number()),
     serviceRepointed: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     mergedAt: v.optional(v.number()),

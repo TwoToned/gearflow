@@ -16,13 +16,10 @@ export interface ProjectOperationalCosts {
   labourCostTotal: number;
   subHireCostTotal: number;
   maintenanceCostTotal: number;
-  damageCostTotal: number;
-  damageChargedBackTotal: number;
   netMargin: number;
   marginPercent: number;
   counts: {
     maintenanceRecords: number;
-    damageEvents: number;
   };
 }
 
@@ -44,23 +41,6 @@ export async function computeProjectOperationalCosts(
     _count: true,
   });
 
-  const damageRows = await prisma.damageEvent.findMany({
-    where: { projectId, organizationId },
-    select: { actualCost: true, estimatedCost: true, chargedBack: true },
-  });
-
-  let damageCostTotal = 0;
-  let damageChargedBackTotal = 0;
-  for (const d of damageRows) {
-    const cost = d.actualCost != null
-      ? Number(d.actualCost)
-      : d.estimatedCost != null
-        ? Number(d.estimatedCost)
-        : 0;
-    damageCostTotal += cost;
-    if (d.chargedBack) damageChargedBackTotal += cost;
-  }
-
   const equipmentRevenue = Number(project.equipmentRevenue ?? 0);
   const serviceRevenue = Number(serviceRevenueAgg._sum.lineTotal ?? 0);
   const total = Number(project.total ?? 0);
@@ -69,10 +49,8 @@ export async function computeProjectOperationalCosts(
   const subHireCostTotal = Number(project.subHireCostTotal ?? 0);
   const maintenanceCostTotal = Number(maintenanceAgg._sum.cost ?? 0);
 
-  // Charged-back damage isn't our cost — the client pays for it.
-  const ourDamage = damageCostTotal - damageChargedBackTotal;
   const allCosts =
-    serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal + ourDamage;
+    serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal;
 
   const netMargin = total - allCosts;
   const marginPercent = total > 0 ? Math.max(0, Math.min(100, (netMargin / total) * 100)) : 0;
@@ -85,13 +63,10 @@ export async function computeProjectOperationalCosts(
     labourCostTotal,
     subHireCostTotal,
     maintenanceCostTotal,
-    damageCostTotal,
-    damageChargedBackTotal,
     netMargin,
     marginPercent,
     counts: {
       maintenanceRecords: maintenanceAgg._count,
-      damageEvents: damageRows.length,
     },
   };
 }
@@ -105,10 +80,8 @@ function emptyResult(): ProjectOperationalCosts {
     labourCostTotal: 0,
     subHireCostTotal: 0,
     maintenanceCostTotal: 0,
-    damageCostTotal: 0,
-    damageChargedBackTotal: 0,
     netMargin: 0,
     marginPercent: 0,
-    counts: { maintenanceRecords: 0, damageEvents: 0 },
+    counts: { maintenanceRecords: 0 },
   };
 }

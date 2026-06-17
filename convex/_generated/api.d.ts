@@ -30,7 +30,6 @@ import type * as crewShifts from "../crewShifts.js";
 import type * as crewSkills from "../crewSkills.js";
 import type * as crewTimeEntries from "../crewTimeEntries.js";
 import type * as customFieldDefinitions from "../customFieldDefinitions.js";
-import type * as damageEvents from "../damageEvents.js";
 import type * as documentTemplates from "../documentTemplates.js";
 import type * as fileUploads from "../fileUploads.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
@@ -118,7 +117,6 @@ declare const fullApi: ApiFromModules<{
   crewSkills: typeof crewSkills;
   crewTimeEntries: typeof crewTimeEntries;
   customFieldDefinitions: typeof customFieldDefinitions;
-  damageEvents: typeof damageEvents;
   documentTemplates: typeof documentTemplates;
   fileUploads: typeof fileUploads;
   groupTemplateItems: typeof groupTemplateItems;

@@ -27,7 +27,7 @@ type AnyRef = FunctionReference<"mutation", "public", any, any>;
 
 const RELATION_KEYS = new Set([
   "assets", "kit", "project", "reportedBy", "assignedTo",
-  "organization", "damageEvents", "media", "_count",
+  "organization", "media", "_count",
 ]);
 function strip(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

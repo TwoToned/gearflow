@@ -72,24 +72,40 @@ function modelKey(delegateName: string): string {
 }
 
 /**
- * Mirror an already-materialised row to Convex (create-if-missing + patch).
+ * Mirror an already-materialised row to Convex.
  *
  * We mirror the ROW the Prisma write RETURNED rather than re-reading via
  * findUnique. Interleaving an extra Prisma read between the write and the next
- * fixture write was a source of pooled-connection flake (phantom FK violations).
- * The returned row already carries every scalar column + DB defaults, which is
- * all the Convex mirror needs.
+ * fixture write was a source of pooled-connection flake. The returned row
+ * already carries every scalar column + DB defaults, which is all the mirror
+ * needs.
+ *
+ * `mode`:
+ *   • "create" — a fresh insert. `createIfMissing` alone sets every field, so we
+ *     skip the extra `patch` round-trip (halves the create-path latency — the
+ *     hot path for fixtures, which mostly insert).
+ *   • "update" — the row may already exist with stale fields. `createIfMissing`
+ *     (idempotent — covers a row that was inserted via the un-wrapped `prisma`
+ *     and never mirrored) THEN `patch` to push the new values.
  */
-async function mirrorRow(model: string, row: { id?: string } | null | undefined): Promise<void> {
+async function mirrorRow(
+  model: string,
+  row: { id?: string } | null | undefined,
+  mode: "create" | "update",
+): Promise<void> {
   const entry = MIRROR_REGISTRY[model];
   if (!entry || !row || !row.id) return;
   await entry.create(row as Record<string, unknown>);
-  await entry.patch(row.id, row as Record<string, unknown>);
+  if (mode === "update") await entry.patch(row.id, row as Record<string, unknown>);
 }
 
-/** Mirror a batch of already-materialised rows (createManyAndReturn / updateMany return). */
-async function mirrorRows(model: string, rows: Array<{ id?: string }>): Promise<void> {
-  for (const row of rows) await mirrorRow(model, row);
+/** Mirror a batch of already-materialised rows. */
+async function mirrorRows(
+  model: string,
+  rows: Array<{ id?: string }>,
+  mode: "create" | "update",
+): Promise<void> {
+  for (const row of rows) await mirrorRow(model, row, mode);
 }
 
 function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): unknown {
@@ -106,21 +122,23 @@ function wrapDelegate(delegateName: string, delegate: Record<string, unknown>): 
           const id = (result as { id?: string } | null)?.id;
           if (id) await entry.remove(id);
         } else if (prop === "createManyAndReturn") {
-          await mirrorRows(model, (result as Array<{ id?: string }>) ?? []);
+          await mirrorRows(model, (result as Array<{ id?: string }>) ?? [], "create");
         } else if (prop === "createMany") {
           // createMany returns only a count — mirror from the input rows (each
           // carries an explicit id in our fixtures + the columns we wrote).
           const data = Array.isArray(args?.data) ? args.data : [args?.data];
-          await mirrorRows(model, data as Array<{ id?: string }>);
+          await mirrorRows(model, data as Array<{ id?: string }>, "create");
         } else if (prop === "updateMany") {
           // updateMany returns a count — re-read the touched rows by where so the
           // Convex copy reflects the new values. (This path is rare in fixtures.)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const rows = await (prisma as any)[lowerFirst(model)].findMany({ where: args?.where });
-          await mirrorRows(model, rows as Array<{ id?: string }>);
+          await mirrorRows(model, rows as Array<{ id?: string }>, "update");
+        } else if (prop === "create") {
+          await mirrorRow(model, result as { id?: string } | null, "create");
         } else {
-          // create / update / upsert all return the affected row.
-          await mirrorRow(model, result as { id?: string } | null);
+          // update / upsert return the affected row — push the new values.
+          await mirrorRow(model, result as { id?: string } | null, "update");
         }
         return result;
       };

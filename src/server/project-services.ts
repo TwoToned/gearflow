@@ -10,14 +10,13 @@ import {
   type ServiceTemplateFormValues,
 } from "@/lib/validations/project-service";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorServiceTemplateCreate,
-  patchServiceTemplateInConvex,
-  removeServiceTemplateFromConvex,
-} from "@/lib/template-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import { roundCurrency } from "@/lib/formatters";
 import { getCategoriesByOrg } from "@/lib/categories-read";
 import {
+  mapServiceTemplate,
   getProjectServicesFromConvex,
   getProjectServiceByIdFromConvex,
   getServiceTemplatesFromConvex,
@@ -1290,30 +1289,35 @@ export async function createServiceTemplate(data: ServiceTemplateFormValues) {
   );
   const parsed = serviceTemplateSchema.parse(data);
 
-  const maxSort = await prisma.serviceTemplate.aggregate({
-    where: { organizationId },
-    _max: { sortOrder: true },
-  });
+  const convex = await getConvexClient();
+  const existing = await convex.query(api.serviceTemplates.list, { orgId: organizationId });
+  const maxSort = existing.reduce((m, t) => Math.max(m, t.sortOrder ?? 0), -1);
 
-  const template = await prisma.serviceTemplate.create({
-    data: {
-      organizationId,
-      type: parsed.type,
-      title: parsed.title,
-      description: parsed.description || null,
-      defaultCrewCount: parsed.defaultCrewCount || null,
-      defaultVehicle: parsed.defaultVehicle || null,
-      defaultPricingType: (parsed.defaultPricingType && String(parsed.defaultPricingType) !== ""
-        ? parsed.defaultPricingType
-        : null) as PricingType | null,
-      defaultUnitPrice: parsed.defaultUnitPrice ?? null,
-      showOnDocuments: parsed.showOnDocuments,
-      isAutoAdded: parsed.isAutoAdded,
-      isActive: parsed.isActive,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
+  const id = createId();
+  const now = Date.now();
+  const defaultPricingType = (parsed.defaultPricingType && String(parsed.defaultPricingType) !== ""
+    ? parsed.defaultPricingType
+    : null) as PricingType | null;
+
+  await convex.mutation(api.serviceTemplates.create, {
+    id,
+    organizationId,
+    type: parsed.type,
+    title: parsed.title,
+    ...(parsed.description ? { description: parsed.description } : {}),
+    ...(parsed.defaultCrewCount ? { defaultCrewCount: parsed.defaultCrewCount } : {}),
+    ...(parsed.defaultVehicle ? { defaultVehicle: parsed.defaultVehicle } : {}),
+    ...(defaultPricingType ? { defaultPricingType } : {}),
+    ...(parsed.defaultUnitPrice != null ? { defaultUnitPrice: Number(parsed.defaultUnitPrice) } : {}),
+    showOnDocuments: parsed.showOnDocuments,
+    isAutoAdded: parsed.isAutoAdded,
+    isActive: parsed.isActive,
+    sortOrder: maxSort + 1,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorServiceTemplateCreate(template);
+  const raw = await convex.query(api.serviceTemplates.getById, { id });
+  const template = raw ? mapServiceTemplate(raw) : null;
 
   await logActivity({
     organizationId,
@@ -1321,9 +1325,9 @@ export async function createServiceTemplate(data: ServiceTemplateFormValues) {
     userName,
     action: "created",
     entityType: "serviceTemplate",
-    entityId: template.id,
-    entityName: template.title,
-    summary: `Created service template "${template.title}"`,
+    entityId: id,
+    entityName: parsed.title,
+    summary: `Created service template "${parsed.title}"`,
   });
 
   return serialize(template);
@@ -1339,29 +1343,33 @@ export async function updateServiceTemplate(
   );
   const parsed = serviceTemplateSchema.parse(data);
 
-  const existing = await prisma.serviceTemplate.findFirst({
-    where: { id, organizationId },
-  });
-  if (!existing) throw new Error("Template not found");
+  const convex = await getConvexClient();
+  const existingDoc = await convex.query(api.serviceTemplates.getById, { id });
+  if (!existingDoc || existingDoc.organizationId !== organizationId) throw new Error("Template not found");
 
-  const template = await prisma.serviceTemplate.update({
-    where: { id },
-    data: {
-      type: parsed.type,
-      title: parsed.title,
-      description: parsed.description || null,
-      defaultCrewCount: parsed.defaultCrewCount || null,
-      defaultVehicle: parsed.defaultVehicle || null,
-      defaultPricingType: (parsed.defaultPricingType && String(parsed.defaultPricingType) !== ""
-        ? parsed.defaultPricingType
-        : null) as PricingType | null,
-      defaultUnitPrice: parsed.defaultUnitPrice ?? null,
-      showOnDocuments: parsed.showOnDocuments,
-      isAutoAdded: parsed.isAutoAdded,
-      isActive: parsed.isActive,
-    },
+  const now = Date.now();
+  const defaultPricingType = (parsed.defaultPricingType && String(parsed.defaultPricingType) !== ""
+    ? parsed.defaultPricingType
+    : null) as PricingType | null;
+
+  await convex.mutation(api.serviceTemplates.replaceForOrg, {
+    id,
+    organizationId,
+    type: parsed.type,
+    title: parsed.title,
+    ...(parsed.description ? { description: parsed.description } : {}),
+    ...(parsed.defaultCrewCount ? { defaultCrewCount: parsed.defaultCrewCount } : {}),
+    ...(parsed.defaultVehicle ? { defaultVehicle: parsed.defaultVehicle } : {}),
+    ...(defaultPricingType ? { defaultPricingType } : {}),
+    ...(parsed.defaultUnitPrice != null ? { defaultUnitPrice: Number(parsed.defaultUnitPrice) } : {}),
+    showOnDocuments: parsed.showOnDocuments,
+    isAutoAdded: parsed.isAutoAdded,
+    isActive: parsed.isActive,
+    sortOrder: existingDoc.sortOrder ?? 0,
+    now,
   });
-  await patchServiceTemplateInConvex(template.id, template);
+  const raw = await convex.query(api.serviceTemplates.getById, { id });
+  const template = raw ? mapServiceTemplate(raw) : null;
 
   await logActivity({
     organizationId,
@@ -1369,9 +1377,9 @@ export async function updateServiceTemplate(
     userName,
     action: "updated",
     entityType: "serviceTemplate",
-    entityId: template.id,
-    entityName: template.title,
-    summary: `Updated service template "${template.title}"`,
+    entityId: id,
+    entityName: parsed.title,
+    summary: `Updated service template "${parsed.title}"`,
   });
 
   return serialize(template);
@@ -1383,13 +1391,11 @@ export async function deleteServiceTemplate(id: string) {
     "update",
   );
 
-  const template = await prisma.serviceTemplate.findFirst({
-    where: { id, organizationId },
-  });
-  if (!template) throw new Error("Template not found");
+  const convex = await getConvexClient();
+  const template = await convex.query(api.serviceTemplates.getById, { id });
+  if (!template || template.organizationId !== organizationId) throw new Error("Template not found");
 
-  await prisma.serviceTemplate.delete({ where: { id } });
-  await removeServiceTemplateFromConvex(id);
+  await convex.mutation(api.serviceTemplates.remove, { id });
 
   await logActivity({
     organizationId,

@@ -123,3 +123,41 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Replace a service template doc in full (supports clearing optional fields).
+ * Unlike `update` (which patches), this replaces the doc entirely so absent
+ * optional fields are physically removed from the Convex doc.
+ */
+export const replaceForOrg = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    type: enums.ServiceType,
+    title: v.string(),
+    description: v.optional(v.string()),
+    defaultCrewCount: v.optional(v.number()),
+    defaultVehicle: v.optional(v.string()),
+    defaultPricingType: v.optional(enums.PricingType),
+    defaultUnitPrice: v.optional(v.number()),
+    showOnDocuments: v.boolean(),
+    isAutoAdded: v.boolean(),
+    isActive: v.boolean(),
+    sortOrder: v.number(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, now, ...fields }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("serviceTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc || doc.organizationId !== organizationId) {
+      throw new ConvexError("serviceTemplates not found: " + id);
+    }
+    await ctx.db.replace(doc._id, {
+      id,
+      organizationId,
+      ...fields,
+      createdAt: doc.createdAt,
+      updatedAt: now,
+    });
+  },
+});

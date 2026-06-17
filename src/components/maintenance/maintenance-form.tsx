@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
-import { X, Camera } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
   maintenanceSchema,
@@ -25,7 +25,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
-import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { PhotoGridInput } from "@/components/ui/photo-grid-input";
 import {
   Select,
@@ -75,7 +74,6 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
 
   const orgTags = useOrgTags(orgId);
 
-  const [cameraOpen, setCameraOpen] = useState(false);
   const [photosUploading, setPhotosUploading] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>(
     initialData?.assetIds?.length
@@ -143,25 +141,6 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
     form.clearErrors("assetIds");
   }
 
-  function handleScan(value: string) {
-    const lower = value.toLowerCase();
-    // Match by asset tag (label format: "TAG — Model Name")
-    const match = assetOptions.find((opt: { value: string; label: string }) => {
-      const tag = opt.label.split(" — ")[0];
-      return tag?.toLowerCase() === lower;
-    });
-    if (match) {
-      if (selectedAssetIds.includes(match.value)) {
-        toast.info("Asset already selected");
-      } else {
-        addAsset(match.value);
-        toast.success(`Added ${match.label}`);
-      }
-    } else {
-      toast.error(`No asset found for "${value}"`);
-    }
-  }
-
   function removeAsset(assetId: string) {
     const next = selectedAssetIds.filter((id) => id !== assetId);
     setSelectedAssetIds(next);
@@ -180,42 +159,20 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
       {/* Assets */}
       <div className="space-y-2">
         <Label>Assets *</Label>
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <ComboboxPicker
-              value=""
-              onChange={(v) => {
-                addAsset(v);
-              }}
-              options={availableOptions}
-              placeholder="Search and select assets..."
-              searchPlaceholder="Search by tag, model, or name..."
-              emptyMessage={
-                selectedAssetIds.length > 0 && availableOptions.length === 0
-                  ? "All matching assets already selected."
-                  : "No assets found."
-              }
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setCameraOpen((v) => !v)}
-            className={cameraOpen ? "text-primary bg-primary/10 border-primary/30" : ""}
-          >
-            <Camera className="h-4 w-4" />
-          </Button>
-        </div>
-        {cameraOpen && (
-          <BarcodeScanner
-            open={cameraOpen}
-            onScan={handleScan}
-            onClose={() => setCameraOpen(false)}
-            title="Scan asset barcode"
-            continuous
-          />
-        )}
+        <ComboboxPicker
+          value=""
+          onChange={(v) => {
+            addAsset(v);
+          }}
+          options={availableOptions}
+          placeholder="Search and select assets..."
+          searchPlaceholder="Search by tag, model, or name..."
+          emptyMessage={
+            selectedAssetIds.length > 0 && availableOptions.length === 0
+              ? "All matching assets already selected."
+              : "No assets found."
+          }
+        />
         {selectedAssetIds.length > 0 && (
           <div className="flex flex-col gap-1.5 mt-2">
             {selectedAssetIds.map((id) => {

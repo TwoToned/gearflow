@@ -18,7 +18,6 @@ import { api } from "../../convex/_generated/api";
  * tables that stay in Prisma — `asset`: kit_serialized_item / asset_media /
  * maintenance_record_asset / asset_bulk_child; `bulk_asset`: kit_bulk_item /
  * asset_bulk_child / model_bulk_accessory — plus many nullable inbound refs
- * (line items, scan logs, T&T, check/damage/stocktake records, line-item units).
  * `asset.parentAssetId` is a self-reference (accessories) stored as a plain
  * v.string() in Convex, so backfill needs no ordering. `customFieldValues` is
  * Json (Convex v.any()).
@@ -64,7 +63,7 @@ export const removeBulkAssetFromConvex = (id: string) => remove(api.bulkAssets.r
 
 /**
  * Multi-row heal: re-read the given asset ids from Prisma (the fresh mirror) and
- * patch each into Convex. The workhorse for the warehouse / stocktake / project /
+ * patch each into Convex. The workhorse for the warehouse / project /
  * maintenance / fault `$transaction`s that mutate `asset.status` / `locationId` /
  * checkout fields across many assets (often via `updateMany`). Call AFTER the
  * transaction commits (Convex is an out-of-transaction HTTP write). Unknown/empty

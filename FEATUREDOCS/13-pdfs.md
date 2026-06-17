@@ -77,7 +77,22 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 - `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, text wrapping, formatCurrency/formatDate
 - `ui` and `propPanel` are stubs (template designer visual polish is a future phase)
 
-## Section-Based Template Builder
+## Section-Based Templates
+
+> **Builder UI removed (chore/remove-pdf-builder-and-dnd).** The interactive
+> PDF template designer/builder (the `(designer)` route, `BlockEditor`,
+> `SectionBuilder`, `TemplateEditor`, `DocumentDesigner`,
+> `DocumentTemplateManager`, and all builder/write server actions) has been
+> deleted. **PDF generation itself is unchanged** — the generator pipeline
+> (`src/lib/pdfme/*`, `@pdfme/common|generator|pdf-lib|schemas`) and the
+> built-in/system-default templates remain. The `DocumentTemplate` /
+> `SectionPreset` Prisma + Convex tables are left **dormant** (no migration).
+> The section/block data model below documents that dormant persisted shape;
+> it is no longer editable in-app. `/settings/documents` is now a read-only
+> view listing each document type and its built-in default. Read functions
+> kept in `src/server/document-templates.ts`: `getDocumentTemplates`,
+> `getPublishedTemplatesForDropdown`, `getDocumentTemplate`. `@pdfme/ui`
+> dependency removed.
 
 ### Section Types (11 types)
 | Type | Description | Settings |
@@ -113,9 +128,12 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 - **Inheritance**: Document templates link to a brand template via `brandTemplateId`
 - **Server actions**: `src/server/brand-templates.ts` — CRUD, set/unset default
 
-### Block Editor (current)
+### Block / Section Data Model (dormant)
 
-The block editor provides a Notion-like editing experience with a 2-level block tree: rows → columns → content blocks. The persisted format stays as flat `TemplateSection[]` with `layoutHint` metadata; the block tree is an editor-only concept.
+The former block editor persisted a flat `TemplateSection[]` with `layoutHint`
+metadata (the block tree was an editor-only concept). The editor UI is gone,
+but this persisted shape still drives the generator's `flattenBlocks()` /
+`section-renderer` path, so the data model is documented here.
 
 #### Data Model
 - **`TemplateBlock`**: `{ id, type: 'row'|'column'|content, children?, settings?, visibility?, content?, columnWidths?, styling? }`
@@ -132,44 +150,27 @@ The block editor provides a Notion-like editing experience with a 2-level block 
 | `src/lib/pdfme/plugins/gearflow-rect.ts` | Background rectangles + borders for block styling in PDF |
 | `src/lib/validations/template-section.ts` | Discriminated union Zod validation for all section types |
 
-#### Block Editor UI
-| Component | File | Purpose |
-|-----------|------|---------|
-| `BlockEditor` | `src/components/settings/template-builder/block-editor.tsx` | Three-pane editor: block tree + preview + settings |
-| `BlockTree` | `block-tree.tsx` | DnD section list with insert buttons between rows |
-| `BlockCard` | `block-card.tsx` | Row/content block cards with drag handles |
-| `ColumnWidthPicker` | `column-width-picker.tsx` | 9 presets + custom width inputs |
-| `HtmlPreview` | `html-preview.tsx` | Instant HTML preview of block tree |
-| `SectionSettingsPanel` | `section-settings-panel.tsx` | Per-type settings + block styling (colors, borders, padding) |
-| `SectionLibrary` | `section-library.tsx` | Dialog to add new sections from catalog |
+> The interactive editor UI (`BlockEditor`, `BlockTree`, `BlockCard`,
+> `ColumnWidthPicker`, `HtmlPreview`, `SectionSettingsPanel`,
+> `SectionLibrary`, `SectionBuilder`, `SectionCard`, `TemplateEditor`) and
+> the `/template-designer/[id]` route were **deleted**. The block/section
+> persisted shape and the `flattenBlocks()` / `section-renderer` generator
+> path remain. All builder write server actions (`saveTemplateSections`,
+> `saveTemplateBlocks`, `exportTemplate`, `importTemplate`,
+> `duplicateSystemDefault*`, `saveTemplateThumbnail`,
+> `create/update/publish/setDefault/unsetDefault/deleteDocumentTemplate`,
+> `duplicateDocumentTemplate`, `saveTemplateSettings`, `getTemplateForEditor`)
+> were removed.
 
-#### Editor Features
-- **Layout**: 3-pane — block tree (260px) + preview (flex-1) + settings (320px)
-- **Preview modes**: Instant HTML preview (default) or rendered PDF
-- **Keyboard shortcuts**: Cmd+Z/Shift+Z undo/redo, Cmd+S save, Cmd+D duplicate, Delete, Arrow keys, Escape
-- **Undo/redo**: 50-state history
-- **Optimistic locking**: Version check on save (reject on mismatch)
-- **Save**: `saveTemplateBlocks()` — converts blocks → flat sections, saves with version increment
-
-### Legacy Section Builder
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| `SectionBuilder` | `src/components/settings/template-builder/section-builder.tsx` | Flat-list editor — dnd-kit reordering, undo/redo, preview, save |
-| `SectionCard` | `section-card.tsx` | Draggable card with type icon, actions |
-
-### Editor Page
-- **URL**: `/template-designer/[id]`
-- **Detection**: Page checks for `sections` field → renders `BlockEditor` (new) or `TemplateEditor` (legacy)
-- **Preview API**: POST `/api/documents/template-preview` with `{ docType, sections }` body
-
-### Template Management
-- **Settings page**: `/settings/documents` — template cards grouped by doc type (tabs)
-- **System defaults**: Virtual entries from `getDefaultSections()` — "Customise" creates section-based template
-- **Custom templates**: Edit, duplicate, delete, set/unset default, publish
-- **Export/Import**: JSON format with version, type, name, sections, exportedAt
-- **Thumbnails**: Stored as base64 in `thumbnailData` column
-- **Server actions**: `src/server/document-templates.ts` — `saveTemplateSections()`, `saveTemplateBlocks()` (with optimistic locking), `exportTemplate()`, `importTemplate()`, `duplicateSystemDefaultWithSections()`, `saveTemplateThumbnail()`
+### Template Management (read-only)
+- **Settings page**: `/settings/documents` — a thin read-only list of each
+  document type and its built-in (system-default) template name. No
+  create/edit/duplicate/delete/builder affordances.
+- **System defaults**: Virtual entries from `getDefaultSections()` /
+  `getTemplateBuilder()`, surfaced via `getDocumentTemplates()`.
+- **Read server actions** (`src/server/document-templates.ts`):
+  `getDocumentTemplates`, `getPublishedTemplatesForDropdown`,
+  `getDocumentTemplate`.
 
 ### Database Models
 

@@ -11,7 +11,7 @@ describe("secret-vault", () => {
   beforeEach(() => _resetSecretVaultCache());
 
   it("round-trips an arbitrary secret string", () => {
-    // Intentionally NOT shaped like a Discord bot token (the GitHub secret
+    // Intentionally NOT shaped like a real API token (the GitHub secret
     // scanner is fooled by anything resembling one, even in tests).
     const secret = "test-secret-round-trip-not-a-token";
     const c = encryptSecret(secret);

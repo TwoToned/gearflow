@@ -61,6 +61,10 @@ const ORDER: string[] = [
   "maintenance",
   "warehouse-close",
   "saved-views",
+  // bucket-2 notif/woo cluster (Phase B write inversion); no inbound FKs.
+  "notification-dismissals",
+  "user-notification-preferences",
+  "woocommerce-order-logs",
   // media + denormalized stamps last
   "media",
   "crew-availability-org",

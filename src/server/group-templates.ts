@@ -7,6 +7,7 @@ import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById } from "@/lib/projects-read";
+import { getGroupTemplateParents } from "@/lib/group-templates-read";
 import {
   groupTemplateSchema,
   applyGroupTemplateSchema,
@@ -49,32 +50,41 @@ async function patchGroupTemplateInConvex(id: string, row: Record<string, unknow
 export async function getGroupTemplates() {
   const { organizationId } = await requirePermission("project", "read");
 
-  const templates = await prisma.groupTemplate.findMany({
-    where: { organizationId },
+  // HYBRID read (Phase A): parent rows from Convex (the dual-write source of
+  // truth for group-template scalars), child `items` attached from Prisma — the
+  // mirror strips `items` before writing, so the children are the Prisma
+  // terminus for this surface. No Prisma fallback on a parent miss. See
+  // src/lib/group-templates-read.ts + FEATUREDOCS/54.
+  const parents = await getGroupTemplateParents(organizationId);
+  if (parents.length === 0) return serialize([]);
+
+  // One Prisma round-trip for ALL templates' items, then group by templateId —
+  // reproduces the per-template `include: { items: { include: { model, kit } } }`
+  // with the same selects and `orderBy: { sortOrder: "asc" }`.
+  const items = await prisma.groupTemplateItem.findMany({
+    where: { organizationId, templateId: { in: parents.map((p) => p.id) } },
     include: {
-      items: {
-        include: {
-          model: {
-            select: {
-              id: true,
-              name: true,
-              dailyRate: true,
-              weeklyRate: true,
-            },
-          },
-          kit: {
-            select: {
-              id: true,
-              name: true,
-              assetTag: true,
-            },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
+      model: {
+        select: { id: true, name: true, dailyRate: true, weeklyRate: true },
+      },
+      kit: {
+        select: { id: true, name: true, assetTag: true },
       },
     },
-    orderBy: { name: "asc" },
+    orderBy: { sortOrder: "asc" },
   });
+
+  const itemsByTemplate = new Map<string, typeof items>();
+  for (const item of items) {
+    const list = itemsByTemplate.get(item.templateId);
+    if (list) list.push(item);
+    else itemsByTemplate.set(item.templateId, [item]);
+  }
+
+  const templates = parents.map((p) => ({
+    ...p,
+    items: itemsByTemplate.get(p.id) ?? [],
+  }));
 
   return serialize(templates);
 }

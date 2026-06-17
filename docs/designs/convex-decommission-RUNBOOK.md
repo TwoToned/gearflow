@@ -49,6 +49,32 @@
       delete backfills/parity/mirrors, migrate the DB to drop the tables.
 - [ ] **Final prod backfill + cutover + reopen** (see below).
 
+## Bucket-1 progress
+
+- [x] **`availability` (read-only) → Convex.** Branch `wip/bucket1-availability`.
+      Converted every line-item read in `src/server/availability.ts`
+      (`getModelBookings`, `getAssetBookings`, `getKitBookings`, `getCalendarData`)
+      and `computeOverbookedStatus` in `src/lib/availability.ts` from Prisma to
+      Convex. The old nested `where: { project: { ... } }` join is replaced by
+      fetching the org's flat line items (`projectLineItems.list`) + units
+      (`projectLineItemUnits.list`) + projects (`getProjectsByOrg`) and reproducing
+      the project-window join, status filters, dedup and quantity math in JS.
+      - New pure helpers + Convex fetchers in `src/lib/availability-read.ts`
+        (20 unit tests in `availability-read.test.ts`), mapped via the shared
+        keystone mappers (`mapLineItemDoc`/`mapUnitDoc`) — keystone helpers NOT edited.
+      - **Fidelity note:** the calendar filter (`projectMatchesCalendarWindow`) is
+        deliberately looser than the booking filter (`projectMatchesWindow`) — the
+        calendar only excludes `CANCELLED`, keeping RETURNED/COMPLETED/INVOICED
+        projects exactly as the old Prisma `getCalendarData` did, whereas the
+        booking reads exclude the full `notIn` set. Asset bookings union the legacy
+        `lineItem.assetId` path with the unit-level (`projectLineItemUnit.assetId`)
+        fulfillment path, deduping by line id, same as before.
+      - **Stayed Prisma:** nothing in these two files — both were 0-write. Auth-User
+        joins n/a here; `clientName` resolution stays in the server-action layer via
+        the existing Convex `getClientMap` (already a Convex domain, not Prisma).
+      - No new Convex queries added — reused existing `projectLineItems.list`,
+        `projectLineItemUnits.list`, `projects.list`.
+
 ## Merge-time consolidation TODO (before final merge to main)
 
 De-duplicate helper files that multiple branches created (the integration merge

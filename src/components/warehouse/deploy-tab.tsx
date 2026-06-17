@@ -10,7 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   TabsContent,
@@ -27,7 +27,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 export interface DeployTabProps {
@@ -116,7 +115,7 @@ export function DeployTab({
     <TabsContent value="check-out">
       <div className="space-y-4 pt-4">
         <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-            <ScanInput
+            <AssetTagInput
               ref={deployScanInputRef}
               placeholder="Scan asset tag to deploy..."
               value={deployScanValue}
@@ -244,7 +243,6 @@ export function DeployTab({
                                 <PrepStatusBadge item={item} />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="deploy" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -299,10 +297,6 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
-                        {/* Accessories on a multi-qty serialised model line (classified
-                            bulk-group) still travel with the parent. Gated on
-                            isExpanded so they hide with the group's unit rows. */}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }
@@ -417,7 +411,6 @@ export function DeployTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="deploy" />
                     </Fragment>
                   );
                 })}

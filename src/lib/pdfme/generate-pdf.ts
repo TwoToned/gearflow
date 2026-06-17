@@ -16,12 +16,10 @@ import { gearflowPlugins } from "./plugins";
 import { getPdfmeFonts } from "./fonts";
 import { buildDocumentData } from "./build-document-data";
 import { getTemplateBuilder, getTtReportBuilder } from "./templates";
-import { buildReportTemplate, buildReportInputs, calculatePageCount, countSummaryItems } from "./templates/report";
 import { renderSections } from "./section-renderer";
 import { getDefaultSections } from "./section-types";
 import type { TemplateSection } from "./section-types";
 import type { DocumentType, DocumentData, TestTagReportType } from "./types";
-import type { ReportResult } from "@/lib/report-types";
 import { resolveTemplateSettings, type StoredTemplateSettings, type TemplateSettings } from "./template-settings";
 
 // ─── Template Loading ────────────────────────────────────────────────────────
@@ -395,38 +393,6 @@ export async function generateTestTagReport(
   const pdf = await generate({
     template,
     inputs: [inputs],
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
-}
-
-/**
- * Generate a PDF from a report result (custom or pre-built report).
- *
- * @param title - Report title
- * @param result - The executed report result
- * @param orgData - Organization data (name, branding, logos)
- * @param subtitle - Optional subtitle (e.g. data source label)
- * @returns PDF as Uint8Array
- */
-export async function generateReportPdf(
-  title: string,
-  result: ReportResult,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  orgData: any,
-  subtitle?: string,
-  dataSource?: string,
-): Promise<Uint8Array> {
-  const summaryItemCount = countSummaryItems(result);
-  const pageCount = calculatePageCount(result.rows.length, summaryItemCount);
-  const template = buildReportTemplate(pageCount, summaryItemCount);
-  const inputs = buildReportInputs({ title, subtitle, result, dataSource }, orgData);
-
-  const pdf = await generate({
-    template,
-    inputs,
     plugins: gearflowPlugins,
     options: { font: getPdfmeFonts() },
   });

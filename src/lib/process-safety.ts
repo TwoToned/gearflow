@@ -7,20 +7,16 @@ let installed = false;
  *
  * Why this exists: since Node 15 an unhandled promise rejection or uncaught
  * exception terminates the process by default. In production that means the
- * whole web server (or, after isolation, the standalone Discord bot process)
- * dies and pm2 restarts it — which users see as an intermittent Cloudflare 502
- * with NO application-level log to explain it. The original offender was the
- * in-process discord.js client emitting a gateway `error` event with no
- * listener (see `bot-process.ts`); this net is the backstop for any other stray
- * async error.
+ * whole web server dies and pm2 restarts it — which users see as an intermittent
+ * Cloudflare 502 with NO application-level log to explain it. This net is the
+ * backstop for any stray async error.
  *
  * Guarantees the failure is always written to stderr (captured by pm2's log)
  * and reported to Sentry when configured — turning a silent crash into a
  * diagnosable event.
  *
  * Idempotent: safe to call from multiple entrypoints; only the first call wires
- * the listeners. `scope` tags the source ("web" | "discord-bot") in logs and
- * Sentry.
+ * the listeners. `scope` tags the source in logs and Sentry.
  */
 export function installProcessSafetyNet(scope: string): void {
   if (installed) return;

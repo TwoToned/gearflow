@@ -6,6 +6,12 @@ import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { getCallSheetData } from "@/lib/projects-read";
 import {
+  getLineItemsByProjectIds,
+  buildIncludeLineItemsByProject,
+  groupActiveLineItemsByProject,
+  countTopLevelLineItemsByProject,
+} from "@/lib/line-item-count-read";
+import {
   projectSchema,
   type ProjectFormValues,
 } from "@/lib/validations/project";
@@ -267,12 +273,6 @@ export async function getProjects(params?: {
       where,
       include: {
         location: true,
-        ...(includeLineItems && {
-          lineItems: {
-            where: { status: { not: "CANCELLED" }, type: "EQUIPMENT" },
-            select: { id: true, status: true, type: true, isKitChild: true },
-          },
-        }),
       },
       ...(sortByClient
         ? {}
@@ -286,6 +286,18 @@ export async function getProjects(params?: {
     ...p,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
   }));
+
+  // includeLineItems: the slim `{id,status,type,isKitChild}` list (status !=
+  // CANCELLED && type === EQUIPMENT) now comes from the dual-written Convex line
+  // items, not a Prisma include. Fetched only for the page being returned.
+  if (includeLineItems) {
+    const pageProjectIds = projects.map((p) => p.id);
+    const liByProject = buildIncludeLineItemsByProject(
+      await getLineItemsByProjectIds(organizationId, pageProjectIds),
+      pageProjectIds,
+    );
+    projects = projects.map((p) => ({ ...p, lineItems: liByProject.get(p.id) ?? [] }));
+  }
 
   if (sortByClient) {
     const dir = sortOrder === "desc" ? -1 : 1;
@@ -324,24 +336,21 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 
   const activeIds = projects.map((p) => p.id);
 
-  // Batch fetch all line items across all active projects
-  const allLineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      projectId: { in: activeIds },
-      status: { not: "CANCELLED" },
-    },
-    select: {
-      id: true, projectId: true, modelId: true, quantity: true,
-      isKitChild: true, parentLineItemId: true, kitId: true, status: true,
-    },
-  });
+  // Batch fetch all (non-CANCELLED) line items across all active projects from the
+  // dual-written Convex table, grouped per project. computeOverbookedStatus reads
+  // id/modelId/quantity/isKitChild/parentLineItemId/kitId/status/subHireId — all
+  // present on the mapped row. (computeOverbookedStatus's own overlapping-bookings
+  // query stays Prisma; it's shared by warehouse/project-categories.)
+  const itemsByProject = groupActiveLineItemsByProject(
+    await getLineItemsByProjectIds(organizationId, activeIds),
+    activeIds,
+  );
 
   const result: Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }> = {};
 
   // Compute per project
   for (const project of projects) {
-    const items = allLineItems.filter((li) => li.projectId === project.id);
+    const items = itemsByProject.get(project.id) ?? [];
     if (items.length === 0) continue;
 
     const overbookedMap = await computeOverbookedStatus(
@@ -1035,13 +1044,24 @@ export async function getTemplates() {
     where: { organizationId, isTemplate: true },
     include: {
       location: true,
-      _count: { select: { lineItems: { where: { isKitChild: false } } } },
     },
     orderBy: { updatedAt: "desc" },
   });
 
+  // The `_count.lineItems` (top-level / non kit-child) now comes from the
+  // dual-written Convex line items instead of a Prisma `_count` aggregate.
+  const templateIds = templates.map((t) => t.id);
+  const topLevelCounts = countTopLevelLineItemsByProject(
+    await getLineItemsByProjectIds(organizationId, templateIds),
+    templateIds,
+  );
+  const withCounts = templates.map((t) => ({
+    ...t,
+    _count: { lineItems: topLevelCounts.get(t.id) ?? 0 },
+  }));
+
   // Clients live in Convex — attach instead of a Prisma join.
-  return serialize(await attachClient(organizationId, templates));
+  return serialize(await attachClient(organizationId, withCounts));
 }
 
 export async function deleteTemplate(id: string) {

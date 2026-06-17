@@ -33,6 +33,30 @@ export const getById = query({
   },
 });
 
+/**
+ * Availability rows for a set of crew members (read-rewiring for crew scheduling
+ * reads). `organizationId` is OPTIONAL on this table (older rows may lack the
+ * denormalized org), so a by-member fetch must use the `by_crewMemberId` index,
+ * not the org index — the caller has already org-scoped the crew member ids.
+ * Service-only (server actions own authorization). One indexed query per member
+ * id, flattened.
+ */
+export const listByCrewMemberIds = query({
+  args: { crewMemberIds: v.array(v.string()) },
+  handler: async (ctx, { crewMemberIds }) => {
+    await requireService(ctx);
+    const groups = await Promise.all(
+      crewMemberIds.map((crewMemberId) =>
+        ctx.db
+          .query("crewAvailabilities")
+          .withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId))
+          .collect(),
+      ),
+    );
+    return groups.flat();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

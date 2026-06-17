@@ -2371,6 +2371,21 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **crew scheduling** (`server/crew-dashboard.ts`, `crew-time.ts`, `crew-assignments.ts`, `crew-availability.ts`, `crew-calendar.ts` → `src/lib/crew-scheduling-read.ts`). **Converted (pure reads):** crew-dashboard — `getCrewPickerList`, `getCrewDashboardStats`, `getPendingTimeEntries`, `getActiveAssignmentsSummary`, `getPendingOffers`, `getUpcomingShifts`; crew-time — `getAllTimeEntries` (JS filter/search/sort/paginate + count), `getTimeEntriesForMember`, `getTimeEntriesForProject`; crew-assignments — `getProjectCrew`, `getProjectLabourCost` (JS sum/count aggregate), `getCrewMembersForAssignment` (members + JS date-overlap conflicts + UNAVAILABLE set — converted, stayed clean); crew-availability — `getCrewAvailability`, `getCrewPlannerData`, `getCrewAvailabilityStatus`; crew-calendar — `getIcalSettings` (crewMember icalEnabled/icalToken), `getAssignmentIcsData` (assignment + member + role + project + location + shifts). Joins reuse `crew-read.ts` (member/role maps), `projects-read.ts` (project name/number/status), `locations-read.ts` (ics location). **Stayed Prisma:** all writes (clock/approve/dispute, create/update/delete assignment+shift+availability, ical token writes), all read-then-write (`createTimeEntry`/`updateTimeEntry` in-action verify reads, `checkCrewConflicts` overlap-check, `exportTimesheetCSV` is a `requirePermission("crew","read")` read but left Prisma with the write-adjacent CRUD), and Better Auth `User` joins (`approvedBy`/`confirmedBy` — batched `prisma.user`). **New convex queries:** `crewShifts.listByAssignmentIds` (shifts have no org column — scoped by the org-fetched assignment ids; service-only) and `crewAvailabilities.listByCrewMemberIds` (org is OPTIONAL on availability → by-member access path, per the gate note). **DEPLOY-GATED:** `convex:backfill:crew-scheduling` (+ `convex-backfill-crew-availability-org`) must run in prod Convex before merge, else existing rows read empty.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

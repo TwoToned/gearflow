@@ -7,6 +7,13 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getLocationById } from "@/lib/locations-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getDisplayServices,
+  getDisplayLineItems,
+  filterDeliveryServices,
+  filterPickupServices,
+  buildLineItemCountMaps,
+} from "@/lib/warehouse-display-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -311,55 +318,20 @@ export async function getWarehouseDisplayData(
     })
     .slice(0, 5);
 
-  // Fetch today's and upcoming services without project filter — cross-ref via Convex projectMap
+  // Fetch today's and upcoming services without project filter — cross-ref via Convex projectMap.
+  // projectService is dual-written; read all org services once from Convex and replicate the four
+  // Prisma where-clauses with pure JS filters (see src/lib/warehouse-display-read.ts).
   const sevenDaysEnd = new Date(todayStart);
   sevenDaysEnd.setDate(sevenDaysEnd.getDate() + 8);
+  const todayStartMs = todayStart.getTime();
+  const todayEndMs = todayEnd.getTime();
+  const sevenDaysEndMs = sevenDaysEnd.getTime();
 
-  const [deliveryServices, pickupServices, upcomingDeliverySvcs, upcomingPickupSvcs] =
-    await Promise.all([
-      prisma.projectService.findMany({
-        where: {
-          organizationId,
-          type: "DELIVERY",
-          status: { not: "CANCELLED" },
-          date: { gte: todayStart, lt: todayEnd },
-        },
-        select: {
-          projectId: true,
-          scheduledTime: true,
-          startTime: true,
-          address: true,
-          vehicleDescription: true,
-        },
-      }),
-      prisma.projectService.findMany({
-        where: {
-          organizationId,
-          type: "PICKUP",
-          status: { not: "CANCELLED" },
-          date: { gte: todayStart, lt: todayEnd },
-        },
-        select: { projectId: true, scheduledTime: true, startTime: true },
-      }),
-      prisma.projectService.findMany({
-        where: {
-          organizationId,
-          type: "DELIVERY",
-          status: { not: "CANCELLED" },
-          date: { gte: todayEnd, lt: sevenDaysEnd },
-        },
-        select: { projectId: true, date: true },
-      }),
-      prisma.projectService.findMany({
-        where: {
-          organizationId,
-          type: "PICKUP",
-          status: { not: "CANCELLED" },
-          date: { gte: todayEnd, lt: sevenDaysEnd },
-        },
-        select: { projectId: true, date: true },
-      }),
-    ]);
+  const allServices = await getDisplayServices(organizationId);
+  const deliveryServices = filterDeliveryServices(allServices, todayStartMs, todayEndMs);
+  const pickupServices = filterPickupServices(allServices, todayStartMs, todayEndMs);
+  const upcomingDeliverySvcs = filterDeliveryServices(allServices, todayEndMs, sevenDaysEndMs);
+  const upcomingPickupSvcs = filterPickupServices(allServices, todayEndMs, sevenDaysEndMs);
 
   // Filter today's services to only projects that are active in Convex
   const activeDeliveries = deliveryServices.filter((s) => {
@@ -401,32 +373,10 @@ export async function getWarehouseDisplayData(
     ]),
   ];
 
-  const [totalCountsRows, checkedOutCountsRows] =
-    allNeededIds.length > 0
-      ? await Promise.all([
-          prisma.projectLineItem.groupBy({
-            by: ["projectId"],
-            where: {
-              projectId: { in: allNeededIds },
-              isKitChild: false,
-              status: { not: "CANCELLED" },
-            },
-            _count: { id: true },
-          }),
-          prisma.projectLineItem.groupBy({
-            by: ["projectId"],
-            where: {
-              projectId: { in: allNeededIds },
-              isKitChild: false,
-              status: "CHECKED_OUT",
-            },
-            _count: { id: true },
-          }),
-        ])
-      : [[], []];
-
-  const totalCountMap = new Map(totalCountsRows.map((r) => [r.projectId, r._count.id]));
-  const checkedOutCountMap = new Map(checkedOutCountsRows.map((r) => [r.projectId, r._count.id]));
+  // projectLineItem is dual-written; read only the needed projects' line items from Convex
+  // (narrow listByProjectIds — no full-org scan on a public endpoint) and group-count in JS.
+  const lineItems = await getDisplayLineItems(organizationId, allNeededIds);
+  const { totalCountMap, checkedOutCountMap } = buildLineItemCountMaps(lineItems);
 
   // ─── Today's Dispatch ──────────────────────────────────────────────────────
   const todaysDispatch: DispatchProject[] = [];

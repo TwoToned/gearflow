@@ -4,9 +4,8 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import type { SavedViewConfig } from "@/lib/saved-views";
 
 /**
- * Server-side read helpers for the saved-table-view domain (Phase A read-rewiring
- * of the Convex domain-only decommission). `savedTableView` is dual-written (see
- * src/lib/saved-views-mirror.ts) and backfilled (scripts/convex-backfill-saved-views.ts).
+ * Server-side read helpers for the saved-table-view domain (Phase B Convex-only).
+ * Backfilled via scripts/convex-backfill-saved-views.ts.
  *
  * These helpers read the Convex copy and shape it back into the Prisma-row form the
  * saved-view server actions return (epoch-ms → Date, absent optionals → null,

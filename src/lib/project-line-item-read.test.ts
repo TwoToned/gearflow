@@ -108,7 +108,7 @@ describe("mapCategoryDoc / mapGroupDoc", () => {
     expect((r.createdAt as Date).getTime()).toBe(EPOCH);
   });
 
-  it("maps group money + nullable billing", () => {
+  it("maps group money + nullable fields", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const doc: any = { id: "g1", organizationId: "o", projectId: "p", title: "Stage", quantity: 2, price: 100, createdAt: EPOCH, updatedAt: EPOCH };
     const r = mapGroupDoc(doc);
@@ -117,6 +117,6 @@ describe("mapCategoryDoc / mapGroupDoc", () => {
     expect(r.suggestedPrice).toBeNull();
     expect(r.categoryId).toBeNull();
     expect(r.rentalPeriod).toBeNull();
-    expect(r.billingDays).toBeNull();
+    expect(r.rentalQuantity).toBeNull();
   });
 });

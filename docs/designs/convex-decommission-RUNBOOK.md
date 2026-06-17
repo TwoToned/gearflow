@@ -138,6 +138,41 @@
       before update/remove/reorder). **Lowest-risk: zero inbound Prisma FK, no child
       table, no cascade → no migration needed.**
 
+- [x] **`test-profiles` → Convex-only writes.** DONE (branch `wip/phaseb-test-profiles`,
+      validated `tsc` clean + 2413 vitest pass + eslint clean + `build` exit 0).
+      - **Relation reader converted:** `resolveTestProfile` no longer does the Prisma
+        `include: { testProfile, asset.model.defaultTestProfile }` cascade. Re-implemented
+        over Convex copies, preserving the EXACT fallback order: (1) testTagAsset's own
+        `testProfileId` (`getTestProfileFromConvex`, org-guarded), (2) linked
+        `asset.modelId → model.defaultTestProfileId` (`getAssetById` → `getModelById` →
+        `getFullTestProfileById`, org-guarded), (3) org default for class+type
+        (`isDefault && isActive`), (4) any active for class+type, else null.
+        `test-tag-table.tsx:124` reads an already-attached serialized `testProfile` (from
+        the Convex `profileMap` attach in `test-tag-assets.ts`), not a Prisma relation →
+        no change.
+      - **FKs dropped:** migration `20260617130000_drop_test_profile_fk_constraints`
+        drops `model_defaultTestProfileId_fkey`, `test_tag_asset_testProfileId_fkey`,
+        `test_tag_record_testProfileId_fkey` (all `IF EXISTS`). Schema: removed the three
+        inbound `@relation` fields + the `Model[]/TestTagAsset[]/TestTagRecord[]`
+        back-refs on `TestProfile`; the `*Id` columns stay as plain `String?` cuids (the
+        `organizationId` org-cascade FK stays). Not applied locally (prod cutover only).
+      - **Writes inverted (Convex-only, no Prisma, no mirror):** `createTestProfile`,
+        `updateTestProfile`, `duplicateTestProfile`, `seedDefaultProfiles`,
+        `deleteTestProfile` all use `createId()` + `Date.now()` ms via
+        `api.testProfiles.create/update/remove`. Deleted the inline
+        `mirrorTestProfileToConvex`/`patchTestProfileInConvex` helpers + the
+        `prisma`/`toConvexDoc`/`FunctionArgs` imports.
+      - **Invariants re-implemented:** `@@unique([organizationId, name])` → app-level
+        dedup against ALL org profiles (added `getAllTestProfilesFromConvex`, since the
+        existing read helper defaults `isActive` to true and would miss inactive names) on
+        create/duplicate-loop/rename; `where:{id,organizationId}` org-guard via
+        `getTestProfileFromConvex` before update/delete; `deleteTestProfile`'s
+        in-use→soft-deactivate vs hard-delete branch preserved by counting referencing
+        rows from Convex (`testTagAssets`/`testTagRecords`/`models` lists) now that the
+        `_count` FK relations are gone; `seedDefaultProfiles` keeps the by-name skip + the
+        same SEED_PROFILES. The three Json fields pass straight through (`v.any()`).
+        `logActivity` calls retained; testedBy/auth stays Prisma.
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

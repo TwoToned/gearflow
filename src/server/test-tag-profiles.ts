@@ -1,8 +1,7 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
-import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -10,32 +9,94 @@ import { logActivity } from "@/lib/activity-log";
 import { SEED_PROFILES } from "@/lib/test-profiles/seed-data";
 import {
   getTestProfilesFromConvex,
+  getAllTestProfilesFromConvex,
   getTestProfileFromConvex,
+  type TestProfileRow,
 } from "@/lib/test-profiles-read";
+import {
+  getTestTagAssetById,
+  getFullTestProfileById,
+} from "@/lib/test-tag-read";
+import { getAssetById } from "@/lib/assets-read";
+import { getModelById } from "@/lib/models-read";
 
-// Test profiles are DUAL-WRITTEN: every create/update/duplicate/seed/delete writes
-// the Prisma `test_profile` row (the durable FK anchor — model.defaultTestProfileId,
-// test_tag_asset.testProfileId, test_tag_record.testProfileId carry a live nullable
-// FK to it) AND the Convex `testProfiles` doc (the reactive read source). Prisma is
-// written first; the Convex payload is derived from the written row via toConvexDoc
-// so they can't drift. The visualChecks/electricalTests/thresholds Json fields pass
-// straight through to Convex `v.any()`. See FEATUREDOCS/54.
+// Test profiles are CONVEX-ONLY (Phase B write inversion): every
+// create/update/duplicate/seed/delete writes the Convex `testProfiles` doc as the
+// SOLE source of truth — no Prisma row, no mirror. The three inbound Prisma FKs
+// (model.defaultTestProfileId, test_tag_asset.testProfileId,
+// test_tag_record.testProfileId) were dropped in migration
+// 20260617130000_drop_test_profile_fk_constraints, so those columns now hold a
+// Convex testProfiles doc cuid. The `@@unique([organizationId, name])` DB
+// constraint is re-implemented in app code below (Convex has no unique index).
+// The visualChecks/electricalTests/thresholds Json fields pass straight through to
+// Convex `v.any()`. testedBy / auth stays Prisma. See FEATUREDOCS/54 +
+// docs/designs/convex-decommission-RUNBOOK.md.
 
-/** Mirror a freshly written Prisma test-profile row into Convex (create). */
-async function mirrorTestProfileToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.testProfiles.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.testProfiles.createIfMissing>,
-  );
-}
+const EQUIPMENT_CLASSES = [
+  "CLASS_I",
+  "CLASS_II",
+  "CLASS_II_DOUBLE_INSULATED",
+  "LEAD_CORD_ASSEMBLY",
+] as const;
+const APPLIANCE_TYPES = [
+  "APPLIANCE",
+  "CORD_SET",
+  "EXTENSION_LEAD",
+  "POWER_BOARD",
+  "RCD_PORTABLE",
+  "RCD_FIXED",
+  "THREE_PHASE",
+  "MICROWAVE",
+  "OTHER",
+] as const;
 
-/** Mirror an updated Prisma test-profile row into Convex (patch, id stripped). */
-async function patchTestProfileInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.testProfiles.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.testProfiles.update>["patch"],
-  });
+type EquipmentClass = (typeof EQUIPMENT_CLASSES)[number];
+type ApplianceType = (typeof APPLIANCE_TYPES)[number];
+
+const coerceEquipmentClass = (v?: string): EquipmentClass =>
+  (EQUIPMENT_CLASSES as readonly string[]).includes(v ?? "")
+    ? (v as EquipmentClass)
+    : "CLASS_I";
+const coerceApplianceType = (v?: string): ApplianceType =>
+  (APPLIANCE_TYPES as readonly string[]).includes(v ?? "")
+    ? (v as ApplianceType)
+    : "APPLIANCE";
+
+/** Shape the create/update return into the Prisma-row form consumers expect. */
+function profileRow(args: {
+  id: string;
+  organizationId: string;
+  name: string;
+  equipmentClass: EquipmentClass;
+  applianceType: ApplianceType;
+  visualChecks: unknown;
+  electricalTests: unknown;
+  thresholds: unknown;
+  requiresSubTests: boolean;
+  defaultSubTestCount: number;
+  subTestLabel: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}): TestProfileRow {
+  return {
+    id: args.id,
+    organizationId: args.organizationId,
+    name: args.name,
+    equipmentClass: args.equipmentClass,
+    applianceType: args.applianceType,
+    visualChecks: args.visualChecks,
+    electricalTests: args.electricalTests,
+    thresholds: args.thresholds,
+    requiresSubTests: args.requiresSubTests,
+    defaultSubTestCount: args.defaultSubTestCount,
+    subTestLabel: args.subTestLabel,
+    isDefault: args.isDefault,
+    isActive: args.isActive,
+    createdAt: new Date(args.createdAt),
+    updatedAt: new Date(args.updatedAt),
+  };
 }
 
 export async function getTestProfiles(params?: {
@@ -45,8 +106,8 @@ export async function getTestProfiles(params?: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  // Read-rewired to Convex (Phase A). testProfile is dual-written; filtering +
-  // orderBy replicated in src/lib/test-profiles-read.ts. See FEATUREDOCS/54.
+  // Convex-only read (Phase A). Filtering + orderBy replicated in
+  // src/lib/test-profiles-read.ts. See FEATUREDOCS/54.
   const profiles = await getTestProfilesFromConvex(organizationId, params);
 
   return serialize(profiles);
@@ -55,7 +116,7 @@ export async function getTestProfiles(params?: {
 export async function getTestProfile(id: string) {
   const { organizationId } = await getOrgContext();
 
-  // Read-rewired to Convex (Phase A). getById is cuid-only; org-scope re-applied
+  // Convex-only read (Phase A). getById is cuid-only; org-scope re-applied
   // in JS to match the Prisma { id, organizationId } scoping. See FEATUREDOCS/54.
   const profile = await getTestProfileFromConvex(id, organizationId);
   if (!profile) throw new Error("Test profile not found");
@@ -65,58 +126,66 @@ export async function getTestProfile(id: string) {
 
 /**
  * Find the best matching profile for an asset based on cascade:
- * asset.testProfileId → model.defaultTestProfileId → default for class+type → null
+ * asset.testProfileId → model.defaultTestProfileId → default for class+type → any
+ * active for class+type → null.
+ *
+ * Convex-only (Phase B): the old Prisma `include` cascade is re-implemented over
+ * the Convex copies. The org-scope (testTagAsset `{ id, organizationId }`,
+ * testProfile `{ id, organizationId }`) is re-applied in JS exactly as before.
  */
 export async function resolveTestProfile(testTagAssetId: string) {
   const { organizationId } = await getOrgContext();
 
-  const asset = await prisma.testTagAsset.findFirst({
-    where: { id: testTagAssetId, organizationId },
-    include: {
-      testProfile: true,
-      asset: {
-        include: {
-          model: {
-            include: {
-              defaultTestProfile: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!asset) throw new Error("Test tag asset not found");
-
-  // 1. Asset-level profile
-  if (asset.testProfile) return serialize(asset.testProfile);
-
-  // 2. Model-level profile
-  if (asset.asset?.model?.defaultTestProfile) {
-    return serialize(asset.asset.model.defaultTestProfile);
+  const asset = await getTestTagAssetById(testTagAssetId);
+  if (!asset || asset.organizationId !== organizationId) {
+    throw new Error("Test tag asset not found");
   }
 
-  // 3. Default for class+type
-  const defaultProfile = await prisma.testProfile.findFirst({
-    where: {
-      organizationId,
-      equipmentClass: asset.equipmentClass,
-      applianceType: asset.applianceType,
-      isDefault: true,
-      isActive: true,
-    },
-  });
+  // 1. Asset-level profile (testTagAsset.testProfileId). Re-apply the org scope:
+  //    the old Prisma `testProfile: true` join could only resolve to a profile in
+  //    the same org (org-cascade FK), so guard ownership here too.
+  if (asset.testProfileId) {
+    const own = await getTestProfileFromConvex(asset.testProfileId, organizationId);
+    if (own) return serialize(own);
+  }
+
+  // 2. Model-level profile (testTagAsset.assetId → Asset.modelId → Model →
+  //    defaultTestProfileId). The Prisma chain was asset.asset.model.defaultTestProfile.
+  if (asset.assetId) {
+    const linkedAsset = await getAssetById(asset.assetId);
+    if (linkedAsset?.modelId) {
+      const model = await getModelById(linkedAsset.modelId);
+      if (model?.defaultTestProfileId) {
+        const modelProfile = await getFullTestProfileById(model.defaultTestProfileId);
+        if (modelProfile && modelProfile.organizationId === organizationId) {
+          return serialize(modelProfile);
+        }
+      }
+    }
+  }
+
+  // The remaining fallbacks are org-scoped findFirst over class+type. Read all org
+  // profiles once (active + inactive) and replicate the Prisma `where` in JS
+  // (findFirst → first match); each fallback filters `isActive` explicitly.
+  const orgProfiles = await getAllTestProfilesFromConvex(organizationId);
+
+  // 3. Default for class+type (isDefault: true, isActive: true).
+  const defaultProfile = orgProfiles.find(
+    (p) =>
+      p.equipmentClass === asset.equipmentClass &&
+      p.applianceType === asset.applianceType &&
+      p.isDefault === true &&
+      p.isActive === true,
+  );
   if (defaultProfile) return serialize(defaultProfile);
 
-  // 4. Any active profile for this class+type
-  const anyProfile = await prisma.testProfile.findFirst({
-    where: {
-      organizationId,
-      equipmentClass: asset.equipmentClass,
-      applianceType: asset.applianceType,
-      isActive: true,
-    },
-  });
+  // 4. Any active profile for this class+type.
+  const anyProfile = orgProfiles.find(
+    (p) =>
+      p.equipmentClass === asset.equipmentClass &&
+      p.applianceType === asset.applianceType &&
+      p.isActive === true,
+  );
 
   return anyProfile ? serialize(anyProfile) : null;
 }
@@ -134,27 +203,37 @@ export async function createTestProfile(data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  // Check for duplicate name
-  const existing = await prisma.testProfile.findFirst({
-    where: { organizationId, name: data.name },
-  });
-  if (existing) throw new Error(`A profile named "${data.name}" already exists`);
+  // Re-implement @@unique([organizationId, name]): reject a duplicate name in org.
+  const existing = await getAllTestProfilesFromConvex(organizationId);
+  if (existing.some((p) => p.name === data.name)) {
+    throw new Error(`A profile named "${data.name}" already exists`);
+  }
 
-  const profile = await prisma.testProfile.create({
-    data: {
-      organizationId,
-      name: data.name,
-      equipmentClass: (data.equipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
-      applianceType: (data.applianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "MICROWAVE" | "OTHER") || "APPLIANCE",
-      visualChecks: data.visualChecks as object,
-      electricalTests: data.electricalTests as object,
-      thresholds: data.thresholds as object,
-      requiresSubTests: data.requiresSubTests ?? false,
-      defaultSubTestCount: data.defaultSubTestCount ?? 1,
-      subTestLabel: data.subTestLabel ?? "Outlet",
-    },
+  const id = createId();
+  const now = Date.now();
+  const equipmentClass = coerceEquipmentClass(data.equipmentClass);
+  const applianceType = coerceApplianceType(data.applianceType);
+  const requiresSubTests = data.requiresSubTests ?? false;
+  const defaultSubTestCount = data.defaultSubTestCount ?? 1;
+  const subTestLabel = data.subTestLabel ?? "Outlet";
+
+  await (await getConvexClient()).mutation(api.testProfiles.create, {
+    id,
+    organizationId,
+    name: data.name,
+    equipmentClass,
+    applianceType,
+    visualChecks: data.visualChecks,
+    electricalTests: data.electricalTests,
+    thresholds: data.thresholds,
+    requiresSubTests,
+    defaultSubTestCount,
+    subTestLabel,
+    isDefault: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorTestProfileToConvex(profile);
 
   await logActivity({
     organizationId,
@@ -162,12 +241,30 @@ export async function createTestProfile(data: {
     userName,
     action: "CREATE",
     entityType: "testProfile",
-    entityId: profile.id,
-    entityName: profile.name,
-    summary: `Created test profile "${profile.name}"`,
+    entityId: id,
+    entityName: data.name,
+    summary: `Created test profile "${data.name}"`,
   });
 
-  return serialize(profile);
+  return serialize(
+    profileRow({
+      id,
+      organizationId,
+      name: data.name,
+      equipmentClass,
+      applianceType,
+      visualChecks: data.visualChecks,
+      electricalTests: data.electricalTests,
+      thresholds: data.thresholds,
+      requiresSubTests,
+      defaultSubTestCount,
+      subTestLabel,
+      isDefault: false,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
 }
 
 export async function updateTestProfile(id: string, data: {
@@ -184,35 +281,62 @@ export async function updateTestProfile(id: string, data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "update");
 
-  const existing = await prisma.testProfile.findFirst({
-    where: { id, organizationId },
-  });
+  // Org-scope guard (replaces Prisma `where: { id, organizationId }`).
+  const existing = await getTestProfileFromConvex(id, organizationId);
   if (!existing) throw new Error("Test profile not found");
 
-  // Check for duplicate name
+  // Re-implement @@unique([organizationId, name]) on rename.
   if (data.name && data.name !== existing.name) {
-    const dup = await prisma.testProfile.findFirst({
-      where: { organizationId, name: data.name, id: { not: id } },
-    });
-    if (dup) throw new Error(`A profile named "${data.name}" already exists`);
+    const all = await getAllTestProfilesFromConvex(organizationId);
+    if (all.some((p) => p.id !== id && p.name === data.name)) {
+      throw new Error(`A profile named "${data.name}" already exists`);
+    }
   }
 
-  const profile = await prisma.testProfile.update({
-    where: { id },
-    data: {
+  const now = Date.now();
+  const next = {
+    name: data.name ?? existing.name,
+    equipmentClass:
+      data.equipmentClass !== undefined
+        ? coerceEquipmentClass(data.equipmentClass)
+        : (existing.equipmentClass as EquipmentClass),
+    applianceType:
+      data.applianceType !== undefined
+        ? coerceApplianceType(data.applianceType)
+        : (existing.applianceType as ApplianceType),
+    visualChecks: data.visualChecks !== undefined ? data.visualChecks : existing.visualChecks,
+    electricalTests:
+      data.electricalTests !== undefined ? data.electricalTests : existing.electricalTests,
+    thresholds: data.thresholds !== undefined ? data.thresholds : existing.thresholds,
+    requiresSubTests:
+      data.requiresSubTests !== undefined ? data.requiresSubTests : existing.requiresSubTests,
+    defaultSubTestCount:
+      data.defaultSubTestCount !== undefined
+        ? data.defaultSubTestCount
+        : existing.defaultSubTestCount,
+    subTestLabel: data.subTestLabel !== undefined ? data.subTestLabel : existing.subTestLabel,
+    isActive: data.isActive !== undefined ? data.isActive : existing.isActive,
+  };
+
+  // Patch only the supplied fields (mirror the old conditional `data` spread).
+  await (await getConvexClient()).mutation(api.testProfiles.update, {
+    id,
+    patch: {
       ...(data.name !== undefined && { name: data.name }),
-      ...(data.equipmentClass !== undefined && { equipmentClass: data.equipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY" }),
-      ...(data.applianceType !== undefined && { applianceType: data.applianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "MICROWAVE" | "OTHER" }),
-      ...(data.visualChecks !== undefined && { visualChecks: data.visualChecks as object }),
-      ...(data.electricalTests !== undefined && { electricalTests: data.electricalTests as object }),
-      ...(data.thresholds !== undefined && { thresholds: data.thresholds as object }),
+      ...(data.equipmentClass !== undefined && { equipmentClass: next.equipmentClass }),
+      ...(data.applianceType !== undefined && { applianceType: next.applianceType }),
+      ...(data.visualChecks !== undefined && { visualChecks: data.visualChecks }),
+      ...(data.electricalTests !== undefined && { electricalTests: data.electricalTests }),
+      ...(data.thresholds !== undefined && { thresholds: data.thresholds }),
       ...(data.requiresSubTests !== undefined && { requiresSubTests: data.requiresSubTests }),
-      ...(data.defaultSubTestCount !== undefined && { defaultSubTestCount: data.defaultSubTestCount }),
+      ...(data.defaultSubTestCount !== undefined && {
+        defaultSubTestCount: data.defaultSubTestCount,
+      }),
       ...(data.subTestLabel !== undefined && { subTestLabel: data.subTestLabel }),
       ...(data.isActive !== undefined && { isActive: data.isActive }),
+      updatedAt: now,
     },
   });
-  await patchTestProfileInConvex(id, profile);
 
   await logActivity({
     organizationId,
@@ -220,46 +344,70 @@ export async function updateTestProfile(id: string, data: {
     userName,
     action: "UPDATE",
     entityType: "testProfile",
-    entityId: profile.id,
-    entityName: profile.name,
-    summary: `Updated test profile "${profile.name}"`,
+    entityId: id,
+    entityName: next.name,
+    summary: `Updated test profile "${next.name}"`,
   });
 
-  return serialize(profile);
+  return serialize(
+    profileRow({
+      id,
+      organizationId,
+      name: next.name,
+      equipmentClass: next.equipmentClass,
+      applianceType: next.applianceType,
+      visualChecks: next.visualChecks,
+      electricalTests: next.electricalTests,
+      thresholds: next.thresholds,
+      requiresSubTests: next.requiresSubTests,
+      defaultSubTestCount: next.defaultSubTestCount,
+      subTestLabel: next.subTestLabel,
+      isDefault: existing.isDefault,
+      isActive: next.isActive,
+      createdAt: existing.createdAt ? existing.createdAt.getTime() : now,
+      updatedAt: now,
+    }),
+  );
 }
 
 export async function duplicateTestProfile(id: string) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  const source = await prisma.testProfile.findFirst({
-    where: { id, organizationId },
-  });
+  const source = await getTestProfileFromConvex(id, organizationId);
   if (!source) throw new Error("Test profile not found");
 
-  // Find a unique name
+  // Find a unique name (replicates the old findFirst dedup loop).
+  const all = await getAllTestProfilesFromConvex(organizationId);
+  const names = new Set(all.map((p) => p.name));
   let copyName = `${source.name} (Copy)`;
   let counter = 2;
-  while (await prisma.testProfile.findFirst({ where: { organizationId, name: copyName } })) {
+  while (names.has(copyName)) {
     copyName = `${source.name} (Copy ${counter})`;
     counter++;
   }
 
-  const profile = await prisma.testProfile.create({
-    data: {
-      organizationId,
-      name: copyName,
-      equipmentClass: source.equipmentClass,
-      applianceType: source.applianceType,
-      visualChecks: source.visualChecks as object,
-      electricalTests: source.electricalTests as object,
-      thresholds: source.thresholds as object,
-      requiresSubTests: source.requiresSubTests,
-      defaultSubTestCount: source.defaultSubTestCount,
-      subTestLabel: source.subTestLabel,
-      isDefault: false,
-    },
+  const newId = createId();
+  const now = Date.now();
+  const equipmentClass = source.equipmentClass as EquipmentClass;
+  const applianceType = source.applianceType as ApplianceType;
+
+  await (await getConvexClient()).mutation(api.testProfiles.create, {
+    id: newId,
+    organizationId,
+    name: copyName,
+    equipmentClass,
+    applianceType,
+    visualChecks: source.visualChecks,
+    electricalTests: source.electricalTests,
+    thresholds: source.thresholds,
+    requiresSubTests: source.requiresSubTests,
+    defaultSubTestCount: source.defaultSubTestCount,
+    subTestLabel: source.subTestLabel,
+    isDefault: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorTestProfileToConvex(profile);
 
   await logActivity({
     organizationId,
@@ -267,12 +415,30 @@ export async function duplicateTestProfile(id: string) {
     userName,
     action: "CREATE",
     entityType: "testProfile",
-    entityId: profile.id,
-    entityName: profile.name,
-    summary: `Duplicated test profile "${source.name}" as "${profile.name}"`,
+    entityId: newId,
+    entityName: copyName,
+    summary: `Duplicated test profile "${source.name}" as "${copyName}"`,
   });
 
-  return serialize(profile);
+  return serialize(
+    profileRow({
+      id: newId,
+      organizationId,
+      name: copyName,
+      equipmentClass,
+      applianceType,
+      visualChecks: source.visualChecks,
+      electricalTests: source.electricalTests,
+      thresholds: source.thresholds,
+      requiresSubTests: source.requiresSubTests,
+      defaultSubTestCount: source.defaultSubTestCount,
+      subTestLabel: source.subTestLabel,
+      isDefault: false,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
 }
 
 /**
@@ -282,39 +448,57 @@ export async function duplicateTestProfile(id: string) {
 export async function seedDefaultProfiles() {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  const existingNames = new Set(
-    (await prisma.testProfile.findMany({
-      where: { organizationId },
-      select: { name: true },
-    })).map(p => p.name)
-  );
+  const existing = await getAllTestProfilesFromConvex(organizationId);
+  const existingNames = new Set(existing.map((p) => p.name));
 
-  const toCreate = SEED_PROFILES.filter(p => !existingNames.has(p.name));
+  const toCreate = SEED_PROFILES.filter((p) => !existingNames.has(p.name));
 
   if (toCreate.length === 0) {
     return { created: 0, message: "All default profiles already exist" };
   }
 
-  const created = await prisma.$transaction(
-    toCreate.map(p =>
-      prisma.testProfile.create({
-        data: {
-          organizationId,
-          name: p.name,
-          equipmentClass: p.equipmentClass,
-          applianceType: p.applianceType,
-          visualChecks: p.visualChecks as object,
-          electricalTests: p.electricalTests as object,
-          thresholds: p.thresholds as object,
-          requiresSubTests: p.requiresSubTests,
-          defaultSubTestCount: p.defaultSubTestCount,
-          subTestLabel: p.subTestLabel,
-          isDefault: true,
-        },
-      })
-    )
-  );
-  for (const p of created) await mirrorTestProfileToConvex(p);
+  const convex = await getConvexClient();
+  const created: TestProfileRow[] = [];
+  for (const p of toCreate) {
+    const id = createId();
+    const now = Date.now();
+    await convex.mutation(api.testProfiles.create, {
+      id,
+      organizationId,
+      name: p.name,
+      equipmentClass: p.equipmentClass,
+      applianceType: p.applianceType,
+      visualChecks: p.visualChecks,
+      electricalTests: p.electricalTests,
+      thresholds: p.thresholds,
+      requiresSubTests: p.requiresSubTests,
+      defaultSubTestCount: p.defaultSubTestCount,
+      subTestLabel: p.subTestLabel,
+      isDefault: true,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    created.push(
+      profileRow({
+        id,
+        organizationId,
+        name: p.name,
+        equipmentClass: p.equipmentClass,
+        applianceType: p.applianceType,
+        visualChecks: p.visualChecks,
+        electricalTests: p.electricalTests,
+        thresholds: p.thresholds,
+        requiresSubTests: p.requiresSubTests,
+        defaultSubTestCount: p.defaultSubTestCount,
+        subTestLabel: p.subTestLabel,
+        isDefault: true,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+  }
 
   await logActivity({
     organizationId,
@@ -333,22 +517,37 @@ export async function seedDefaultProfiles() {
 export async function deleteTestProfile(id: string) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "delete");
 
-  const existing = await prisma.testProfile.findFirst({
-    where: { id, organizationId },
-    include: {
-      _count: { select: { testTagAssets: true, testTagRecords: true, models: true } },
-    },
-  });
+  // Org-scope guard (replaces Prisma `where: { id, organizationId }`).
+  const existing = await getTestProfileFromConvex(id, organizationId);
   if (!existing) throw new Error("Test profile not found");
 
-  // If in use, just deactivate
-  const inUse = (existing._count.testTagAssets + existing._count.testTagRecords + existing._count.models) > 0;
+  // Replicate the Prisma `_count` in-use check. The inbound FKs were dropped, so
+  // count referencing rows by reading the Convex copies (testTagAssets +
+  // testTagRecords are org-scoped Convex tables; models is the asset-model table).
+  const convex = await getConvexClient();
+  const [ttAssets, ttRecords, models] = await Promise.all([
+    convex.query(api.testTagAssets.list, { orgId: organizationId }) as Promise<
+      Array<{ testProfileId?: string | null }>
+    >,
+    convex.query(api.testTagRecords.list, { orgId: organizationId }) as Promise<
+      Array<{ testProfileId?: string | null }>
+    >,
+    convex.query(api.models.list, { orgId: organizationId }) as Promise<
+      Array<{ defaultTestProfileId?: string | null }>
+    >,
+  ]);
+  const assetUses = ttAssets.filter((a) => a.testProfileId === id).length;
+  const recordUses = ttRecords.filter((r) => r.testProfileId === id).length;
+  const modelUses = models.filter((m) => m.defaultTestProfileId === id).length;
+
+  // If in use, just deactivate (preserve the soft-deactivate branch).
+  const inUse = assetUses + recordUses + modelUses > 0;
   if (inUse) {
-    const profile = await prisma.testProfile.update({
-      where: { id },
-      data: { isActive: false },
+    const now = Date.now();
+    await convex.mutation(api.testProfiles.update, {
+      id,
+      patch: { isActive: false, updatedAt: now },
     });
-    await patchTestProfileInConvex(id, profile);
 
     await logActivity({
       organizationId,
@@ -358,14 +557,31 @@ export async function deleteTestProfile(id: string) {
       entityType: "testProfile",
       entityId: id,
       entityName: existing.name,
-      summary: `Deactivated test profile "${existing.name}" (in use by ${existing._count.testTagAssets} assets, ${existing._count.testTagRecords} records)`,
+      summary: `Deactivated test profile "${existing.name}" (in use by ${assetUses} assets, ${recordUses} records)`,
     });
 
-    return serialize(profile);
+    return serialize(
+      profileRow({
+        id,
+        organizationId,
+        name: existing.name,
+        equipmentClass: existing.equipmentClass as EquipmentClass,
+        applianceType: existing.applianceType as ApplianceType,
+        visualChecks: existing.visualChecks,
+        electricalTests: existing.electricalTests,
+        thresholds: existing.thresholds,
+        requiresSubTests: existing.requiresSubTests,
+        defaultSubTestCount: existing.defaultSubTestCount,
+        subTestLabel: existing.subTestLabel,
+        isDefault: existing.isDefault,
+        isActive: false,
+        createdAt: existing.createdAt ? existing.createdAt.getTime() : now,
+        updatedAt: now,
+      }),
+    );
   }
 
-  await prisma.testProfile.delete({ where: { id } });
-  await (await getConvexClient()).mutation(api.testProfiles.remove, { id });
+  await convex.mutation(api.testProfiles.remove, { id });
 
   await logActivity({
     organizationId,

@@ -22,7 +22,13 @@ import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps } from "@/lib/media-read";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { type FilterValue } from "@/lib/table-utils";
+import {
+  getMappedAssetsByOrg,
+  filterAssets,
+  sortAssets,
+  paginate,
+} from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
 
@@ -50,14 +56,6 @@ async function resolveAssetCustomFields(
     });
   }
 }
-
-const assetFilterColumns: FilterColumnDef[] = [
-  { id: "status", filterType: "enum" },
-  { id: "condition", filterType: "enum" },
-  { id: "locationId", filterType: "enum" },
-  { id: "categoryId", filterType: "enum", filterKey: "model.categoryId" },
-  { id: "tags", filterType: "enum" },
-];
 
 // model (+ nested equipment category) + location live in Convex (dual-written) —
 // attached from the maps, not Prisma joins. Sorts/filters on model.name /
@@ -89,57 +87,41 @@ export async function getAssets(params?: {
     filters,
   } = params || {};
 
-  // Build filter where from DataTable filters
-  const filterWhere = buildFilterWhere(filters, assetFilterColumns);
+  // Extract the DataTable enum `in` filters (status/condition/locationId/
+  // categoryId) and the tags hasSome filter from the raw filter map.
+  const asArr = (v: FilterValue | undefined): string[] | undefined =>
+    Array.isArray(v) && v.length > 0 ? (v as string[]) : undefined;
 
-  // Handle tags filter specially (hasSome)
-  let tagsFilter: Prisma.AssetWhereInput | undefined;
-  if (filters?.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
-    tagsFilter = { tags: { hasSome: filters.tags as string[] } };
-    delete (filterWhere as Record<string, unknown>).tags;
-  }
-
-  const where: Prisma.AssetWhereInput = {
-    organizationId,
-    isActive,
-    ...(status && { status: status as Prisma.EnumAssetStatusFilter }),
-    ...(condition && { condition: condition as Prisma.EnumAssetConditionFilter }),
-    ...(locationId && { locationId }),
-    ...(modelId && { modelId }),
-    ...(categoryId && { model: { categoryId } }),
-    ...filterWhere,
-    ...tagsFilter,
-    ...(search && {
-      OR: [
-        { assetTag: { contains: search, mode: "insensitive" } },
-        { serialNumber: { contains: search, mode: "insensitive" } },
-        { customName: { contains: search, mode: "insensitive" } },
-        { model: { name: { contains: search, mode: "insensitive" } } },
-      ],
-    }),
-  };
-
-  const [assets, total] = await Promise.all([
-    prisma.asset.findMany({
-      where,
-      // model (+ category) + location attached from Convex below. The sole
-      // consumer (test-tag form) reads model scalars only, so the old primary-photo
-      // media joins are dropped (the reactive registry table gets photos from
-      // getAssetRegistryPhotos, not this query). Sort stays on the Prisma mirror.
-      orderBy: sortBy === "model" ? { model: { name: sortOrder } }
-        : sortBy === "location" ? { location: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.asset.count({ where }),
-  ]);
-
-  const [modelMap, locationMap] = await Promise.all([
+  // Asset rows + model/location maps all come from Convex (dual-written). The
+  // org's full row set is fetched then filtered/sorted/paginated in JS,
+  // replicating the old Prisma where/orderBy. See src/lib/assets-read.ts.
+  const [allAssets, modelMap, locationMap] = await Promise.all([
+    getMappedAssetsByOrg(organizationId),
     getModelWithCategoryMap(organizationId),
     getLocationMap(organizationId),
   ]);
-  const withRelations = assets.map((a) => ({
+  const modelNameFor = (id: string) => modelMap.get(id)?.name;
+  const categoryFor = (id: string) => modelMap.get(id)?.categoryId;
+  const locationNameFor = (id: string | null) => (id ? locationMap.get(id)?.name : null);
+
+  const filtered = filterAssets(
+    allAssets,
+    {
+      search, categoryId, status, condition, locationId, modelId, isActive,
+      statusIn: asArr(filters?.status),
+      conditionIn: asArr(filters?.condition),
+      locationIdIn: asArr(filters?.locationId),
+      categoryIdIn: asArr(filters?.categoryId),
+      tagsHasSome: asArr(filters?.tags),
+    },
+    modelNameFor,
+    categoryFor,
+  );
+  const total = filtered.length;
+  const sorted = sortAssets(filtered, sortBy, sortOrder, modelNameFor, locationNameFor);
+  const pageRows = paginate(sorted, page, pageSize);
+
+  const withRelations = pageRows.map((a) => ({
     ...a,
     model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
     location: a.locationId ? locationMap.get(a.locationId) ?? null : null,

@@ -2371,6 +2371,42 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **media galleries** (`src/server/{asset,model,kit,project}-media.ts` →
+  `src/lib/media-read.ts`). The four standalone gallery getters — `getAssetMedia`,
+  `getModelMedia`, `getKitMedia`, `getProjectMedia` — moved off the Prisma
+  `*_media` + `file_upload` join to the Convex mirror via new
+  `get{Asset,Model,Kit,Project}MediaFromConvex` helpers. Each reconstructs the
+  EXACT prior serialized shape: media rows sorted by `sortOrder` asc (Prisma
+  `orderBy`), each with a nested `file` object, all timestamps converted epoch-ms→`Date`
+  (the old read ran `serialize()`, which keeps `Date`), and the optional Convex
+  columns `type`/`isPrimary`/`sortOrder`/`createdAt` coerced to the Prisma defaults
+  (PHOTO·OTHER / false / 0 / epoch). Project media carries no `isPrimary` and uses
+  `ProjectMediaType` (default OTHER). The org filter is reapplied in the server
+  action for parity with the old `where: { <fk>, organizationId }`.
+  **Dual-write status:** all four tables (`asset_media`/`model_media`/`kit_media`/`project_media`)
+  are dual-written via `media-mirror.ts`, backfilled via `scripts/convex-backfill-media.ts`,
+  and have Convex modules (`convex/{asset,model,kit,project}Media.ts`) — pre-flight gate satisfied.
+  **No new Convex query** — the existing per-table `listByParent` (added for the
+  mirror reconcile) is reused for the gallery read; `file` resolution uses the
+  existing `fileUploads.getById`. **Stays on Prisma (documented terminus):** the
+  detail-page composites `assets.ts:getAsset`, `kits.ts:getKit`, `models.ts:getModel`
+  compose their `*_media` galleries inside large cross-domain Prisma detail queries —
+  splitting a `media` include out is gratuitous risk. Pure mappers/sort unit-tested in
+  `src/lib/media-read.test.ts`.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

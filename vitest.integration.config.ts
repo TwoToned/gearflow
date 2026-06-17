@@ -45,7 +45,7 @@ export default defineConfig({
     // (auto-mirror), and tests that build many rows fan out many HTTP calls. The
     // old 15s cap was tuned for pure-Postgres tests; bump it so network latency to
     // dev Convex doesn't spuriously time out multi-row setups.
-    testTimeout: 60000,
-    hookTimeout: 60000,
+    testTimeout: 120000,
+    hookTimeout: 120000,
   },
 });

@@ -2371,6 +2371,34 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **check items** (`server/check-items.ts` → `src/lib/check-items-read.ts`). Moved all
+  five pure-read actions: `getCheckItems` (list + `_count`), `getCheckItemCounts`,
+  `getCheckItem` (single + its model assignments), `getModelCheckItems`, and
+  `getKitCheckItems`. Tables: `checkItem`, `modelCheckItem`, `kitCheckItem` are all
+  dual-written + backfilled (`convex-backfill-check-items.ts`,
+  `convex-backfill-check-item-assignments.ts`); the `_count` halves come from the
+  dual-written `modelCheckItem` and `checkRecord` (`convex-backfill-check-records.ts`)
+  lists, computed in JS. New Convex queries added to the existing modules:
+  `modelCheckItems.listByModelId`, `modelCheckItems.listByCheckItemId`, and
+  `kitCheckItems.listByKitId` (org-scoped FK-index reads). Stayed on their own
+  sources: the cross-domain `model` name join in `getCheckItem` (Model is read from
+  Convex via `getModelById`); all writes (create/update/delete + the model/kit
+  assignment mutations and their read-then-write `aggregate`/`groupBy`/`findFirst`
+  guards) stay Prisma-anchored as before.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

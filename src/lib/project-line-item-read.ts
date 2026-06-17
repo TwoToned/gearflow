@@ -298,9 +298,6 @@ export interface MappedGroup {
   suggestedPrice: number | null;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
-  billingMonths: number | null;
-  billingWeeks: number | null;
-  billingDays: number | null;
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -319,9 +316,6 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     suggestedPrice: d.suggestedPrice ?? null,
     rentalPeriod: d.rentalPeriod ?? null,
     rentalQuantity: d.rentalQuantity ?? null,
-    billingMonths: d.billingMonths ?? null,
-    billingWeeks: d.billingWeeks ?? null,
-    billingDays: d.billingDays ?? null,
     sortOrder: d.sortOrder ?? 0,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),

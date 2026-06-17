@@ -686,17 +686,13 @@ model Model {
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
 
-  assets             Asset[]
-  bulkAssets         BulkAsset[]
-  lineItems          ProjectLineItem[]
-  media              ModelMedia[]
-  modelCheckItems    ModelCheckItem[]
-  groupTemplateItems GroupTemplateItem[]
-  bulkAccessories    ModelBulkAccessory[]
-
-  supplierOrderItems SupplierOrderItem[]
-  subHireItems       SubHireItem[]
-  supplierModelRates SupplierModelRate[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // models are now CONVEX-ONLY (no Prisma `model` row is written), so the inbound
+  // FK constraints from asset / bulk_asset / project_line_item / model_media /
+  // model_check_item / group_template_item / model_bulk_accessory /
+  // supplier_order_item / sub_hire_item / supplier_model_rate were dropped (see
+  // migration 20260617131200_drop_model_fk_constraints). The dependent rows keep a
+  // plain `modelId` referencing the Convex `models` doc.
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -781,8 +777,7 @@ model SupplierOrderItem {
   quantity    Int           @default(1)
   unitPrice   Decimal?      @db.Decimal(10, 2)
   lineTotal   Decimal?      @db.Decimal(10, 2)
-  modelId     String?
-  model       Model?        @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelId     String? // references a Convex models doc; FK dropped Phase B
   assetId     String?
   asset       Asset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
   notes       String?
@@ -842,8 +837,7 @@ model SubHireItem {
   subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
   groupId          String?
   group            SubHireGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  modelId          String?
-  model            Model?            @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelId          String? // references a Convex models doc; FK dropped Phase B
   description      String
   quantity         Int               @default(1)
   unitCost         Decimal           @default(0) @db.Decimal(10, 2)
@@ -900,8 +894,7 @@ model SupplierModelRate {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   supplierId     String // references a Convex suppliers doc; FK dropped Phase B
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   lastUnitCost   Decimal      @db.Decimal(10, 2)
   pricingType    PricingType  @default(FLAT)
   lastUsedAt     DateTime     @default(now())
@@ -1012,8 +1005,7 @@ model Asset {
   id                  String         @id @default(cuid())
   organizationId      String
   organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId             String
-  model               Model          @relation(fields: [modelId], references: [id])
+  modelId             String // references a Convex models doc; FK dropped Phase B
   assetTag            String
   serialNumber        String?
   customName          String?
@@ -1080,8 +1072,7 @@ model BulkAsset {
   id                   String          @id @default(cuid())
   organizationId       String
   organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId              String
-  model                Model           @relation(fields: [modelId], references: [id])
+  modelId              String // references a Convex models doc; FK dropped Phase B
   assetTag             String
   totalQuantity        Int             @default(0)
   availableQuantity    Int             @default(0)
@@ -1158,8 +1149,7 @@ model ModelBulkAccessory {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   bulkAssetId    String
   bulkAsset      BulkAsset    @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
   quantity       Int
@@ -1388,8 +1378,7 @@ model ProjectLineItem {
   projectId           String
   project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   type                LineItemType          @default(EQUIPMENT)
-  modelId             String?
-  model               Model?                @relation(fields: [modelId], references: [id])
+  modelId             String? // references a Convex models doc; FK dropped Phase B
   assetId             String?
   asset               Asset?                @relation(fields: [assetId], references: [id], onDelete: SetNull)
   bulkAssetId         String?
@@ -1712,8 +1701,7 @@ model GroupTemplateItem {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   templateId     String
   template       GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  modelId        String?
-  model          Model?        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String? // references a Convex models doc; FK dropped Phase B
   kitId          String?
   kit            Kit?          @relation(fields: [kitId], references: [id], onDelete: Cascade)
   quantity       Int           @default(1)
@@ -1790,8 +1778,7 @@ model ModelMedia {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   fileId         String
   file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
   type           MediaType    @default(PHOTO)
@@ -2850,8 +2837,7 @@ model ModelCheckItem {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   checkItemId    String
   checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
   sortOrder      Int          @default(0)

@@ -440,6 +440,42 @@ this is **infra-only**.
 - Backfill `pnpm convex:backfill:templates` (0/0). Verified: tsc clean, 2185 tests,
   0 new lint errors, `pnpm build` exit 0.
 
+#### Phase A read-rewire — `server/document-templates.ts` (DONE, surface shrank to 3)
+
+**Surface shrank after the PDF template-builder removal (#227).** That feature
+removal gutted `server/document-templates.ts` from 826 → **147 lines**, deleting the
+entire write surface (the "all 15 write paths" inventory above is now historical —
+`create`/`duplicate*`/`import`/`save*`/section+block tx saves/`setDefaultTemplate`/
+`delete` are gone, along with `getTemplateForEditor` and `exportTemplate`). Only **3
+read functions survive**: `getDocumentTemplates`, `getPublishedTemplatesForDropdown`,
+`getDocumentTemplate`. Document templates are therefore now **read-only from the app's
+perspective** — but still **dual-written infra** (mirror helpers in
+`src/lib/template-mirror.ts`, the brand-delete unlink in `brand-templates.ts`, the
+Convex modules `documentTemplates`/`brandTemplates`, and the re-runnable backfill heal
+path `scripts/convex-backfill-templates.ts` all remain). Gate satisfied → safe to read
+from Convex.
+
+- New read-lib `src/lib/document-template-read.ts` (+ unit tests
+  `document-template-read.test.ts`): `mapDocumentTemplate`/`mapBrandTemplate`
+  (epoch-ms→Date, absent→null, Prisma-defaults coerced `isDefault/isDraft ?? false`,
+  `version ?? 1`, non-null Prisma columns→non-null Date, strip `_id`/`_creationTime`),
+  two pure sort comparators (`type` is a plain String column → lexicographic, NOT enum
+  rank), and four fetchers over `api.documentTemplates.list/getById` +
+  `api.brandTemplates.list/getById` (no new Convex queries needed).
+- `getDocumentTemplates` → `documentTemplates.list` + `brandTemplates.list` for the
+  `{id,name}` FK join + pure `[type ASC, isDefault DESC, updatedAt DESC]` sort; the
+  virtual `system-` synthesis is untouched and runs over the mapped rows.
+  `getPublishedTemplatesForDropdown` → same list, JS `isDraft===false` filter + `[type,
+  isDefault DESC, name ASC]` sort. `getDocumentTemplate` → `system-` branch unchanged;
+  real-read branch is `documentTemplates.getById` + JS org re-check (same "Template not
+  found" throw) + `brandTemplates.getById` for the full `brandTemplate` FK. No Prisma
+  fallback on a miss.
+- **Deploy gate:** templates backfill must have run against prod Convex before this
+  deploys, else existing rows read empty (re-runnable: `pnpm convex:backfill:templates`).
+- PR `feat/convex-read-document-templates` (reworked onto new main, force-pushed over
+  the stale #207 whose diff was mostly against now-deleted code). Verified: tsc clean,
+  `vitest run document-template-read.test.ts` green, eslint clean, `pnpm build` exit 0.
+
 ### Central graph — analysis & recommended sequencing (NOT yet migrated)
 
 The remaining domains (`asset`, `bulk_asset`, `kit`, `project`, `project_line_item`,

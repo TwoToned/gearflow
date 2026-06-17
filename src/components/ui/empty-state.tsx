@@ -1,215 +1,100 @@
+import * as React from "react";
+
 import { cn } from "@/lib/utils";
-import {
-  Package, FolderOpen, Users, Wrench, Truck, FileText, BarChart3,
-  Calendar, MapPin, Settings, Bell, Tag, Box, ClipboardList, UserCheck,
-  Clock, type LucideIcon,
-} from "lucide-react";
-import { type ComponentType, type SVGProps } from "react";
-import { Button } from "./button";
-import { FadeIn } from "./motion";
-import {
-  SpotAssets, SpotProjects, SpotCrew, SpotMaintenance,
-  SpotCalendar, SpotDocuments, SpotClients, SpotKits,
-  SpotLocations, SpotNotifications,
-} from "./spot-illustrations";
+import { FlowMascot } from "@/components/ui/flow-mascot";
+import { Button } from "@/components/ui/button";
 
-// ─── Domain-specific presets ────────────────────────────────────
+type EmptyStateAction = React.ReactNode | { label: React.ReactNode; onClick?: () => void; href?: string };
 
-type SpotIllustration = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
+type EmptyStateProps = React.HTMLAttributes<HTMLDivElement> & {
+  title?: React.ReactNode;
+  heading?: React.ReactNode;
+  description?: React.ReactNode;
+  action?: EmptyStateAction;
+  preset?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+};
 
-interface EmptyPreset {
-  icon: LucideIcon;
-  heading: string;
-  description: string;
-  spotIllustration?: SpotIllustration | null;
-}
-
-const presets: Record<string, EmptyPreset> = {
-  assets: {
-    icon: Package,
-    heading: "No assets yet",
-    description: "Add your first piece of gear to start tracking inventory.",
-    spotIllustration: SpotAssets,
+const PRESETS: Record<string, { title: string; description: string }> = {
+  activity: {
+    title: "No activity yet",
+    description: "Nothing has moved. Suspiciously peaceful.",
   },
-  models: {
-    icon: Box,
-    heading: "No models defined",
-    description: "Models group identical assets — create one to start adding individual units.",
-    spotIllustration: SpotAssets,
+  assets: {
+    title: "No assets yet",
+    description: "Add gear when it exists outside someone’s head.",
   },
   projects: {
-    icon: FolderOpen,
-    heading: "No projects",
-    description: "Projects track gigs, shows, and events. Create one to start quoting.",
-    spotIllustration: SpotProjects,
-  },
-  clients: {
-    icon: Users,
-    heading: "No clients",
-    description: "Add production companies, venues, and contacts you work with.",
-    spotIllustration: SpotClients,
-  },
-  maintenance: {
-    icon: Wrench,
-    heading: "No maintenance records",
-    description: "Schedule repairs, test & tag, and inspections to keep gear in top shape.",
-    spotIllustration: SpotMaintenance,
-  },
-  warehouse: {
-    icon: Truck,
-    heading: "Nothing to prep",
-    description: "Confirmed projects with upcoming dates will appear here for checkout.",
-    spotIllustration: SpotAssets,
-  },
-  documents: {
-    icon: FileText,
-    heading: "No documents",
-    description: "Quotes, invoices, and pull sheets generated from projects appear here.",
-    spotIllustration: SpotDocuments,
-  },
-  reports: {
-    icon: BarChart3,
-    heading: "No data to report",
-    description: "Reports will populate as you use the system — track projects and assets to see insights.",
-    spotIllustration: SpotDocuments,
-  },
-  calendar: {
-    icon: Calendar,
-    heading: "No bookings",
-    description: "Confirmed projects and reservations will appear on the calendar.",
-    spotIllustration: SpotCalendar,
-  },
-  locations: {
-    icon: MapPin,
-    heading: "No locations",
-    description: "Add warehouses, venues, and vehicles to track where gear lives.",
-    spotIllustration: SpotLocations,
-  },
-  settings: {
-    icon: Settings,
-    heading: "Nothing configured",
-    description: "Adjust this setting to customise how your organisation uses GearFlow.",
-    spotIllustration: null,
-  },
-  notifications: {
-    icon: Bell,
-    heading: "All caught up",
-    description: "New notifications will appear here as they come in.",
-    spotIllustration: SpotNotifications,
-  },
-  categories: {
-    icon: Tag,
-    heading: "No categories",
-    description: "Categories organise your gear — create groups like Audio, Lighting, Video.",
-    spotIllustration: SpotAssets,
-  },
-  kits: {
-    icon: ClipboardList,
-    heading: "No kits",
-    description: "Kits bundle assets that always go together — build one to speed up checkout.",
-    spotIllustration: SpotKits,
-  },
-  crew: {
-    icon: UserCheck,
-    heading: "No crew members",
-    description: "Add freelancers, employees, and contractors who work your events.",
-    spotIllustration: SpotCrew,
-  },
-  activity: {
-    icon: Clock,
-    heading: "No activity",
-    description: "Actions taken by your team will be logged here for audit trailing.",
-    spotIllustration: null,
+    title: "No jobs yet",
+    description: "Create the job before the job creates problems.",
   },
   suppliers: {
-    icon: Truck,
-    heading: "No suppliers",
-    description: "Add the vendors and suppliers you purchase or hire gear from.",
-    spotIllustration: SpotClients,
+    title: "No supplier records yet",
+    description: "Useful once the paperwork starts breeding.",
   },
-  lineItems: {
-    icon: ClipboardList,
-    heading: "No line items",
-    description: "Add assets and kits to this project to build the quote.",
-    spotIllustration: SpotAssets,
+  calendar: {
+    title: "Nothing scheduled",
+    description: "A clear calendar. Rare. Enjoy the silence.",
   },
-  history: {
-    icon: Clock,
-    heading: "No history",
-    description: "Past checkout and return records will appear here.",
-    spotIllustration: null,
+  kits: {
+    title: "No kits yet",
+    description: "Bundle the repeat offenders before they wander off.",
   },
-  search: {
-    icon: Package,
-    heading: "No results",
-    description: "Try adjusting your search or filters to find what you're looking for.",
-    spotIllustration: null,
+  maintenance: {
+    title: "No maintenance records",
+    description: "No faults logged. Either excellent or terrifying.",
+  },
+  models: {
+    title: "No models yet",
+    description: "Add the reusable gear template before tracking the individual unit.",
   },
 };
 
-// ─── Component ──────────────────────────────────────────────────
-
-interface EmptyStateProps {
-  /** Use a preset domain context */
-  preset?: keyof typeof presets;
-  /** Custom icon (overrides preset) */
-  icon?: LucideIcon;
-  /** Custom heading (overrides preset) */
-  heading?: string;
-  /** Custom description (overrides preset) */
-  description?: string;
-  /** Optional CTA button */
-  action?: {
-    label: string;
-    onClick: () => void;
-  };
-  className?: string;
-}
-
 /**
- * Empty state component per DESIGN.md:
- * - Spot illustration at 56px with text-primary/60 when available
- * - Falls back to 44px icon container with teal border + teal-subtle background, rounded-[10px]
- * - Heading: 14px/700
- * - Description: 11px, fg-3
- * - Optional primary CTA button
+ * RVLT empty state (DESIGN.md §15.5) — the Flow mascot + one operator-voice line, the
+ * sanctioned home for personality in the app. Compatible with the old app's `heading`
+ * and object-action props while new pages use `title`.
  */
-export function EmptyState({
-  preset: presetKey,
-  icon: customIcon,
-  heading: customHeading,
-  description: customDescription,
-  action,
-  className,
-}: EmptyStateProps) {
-  const preset = presetKey ? presets[presetKey] : undefined;
-  const Icon = customIcon ?? preset?.icon ?? Package;
-  const heading = customHeading ?? preset?.heading ?? "Nothing here yet";
-  const description = customDescription ?? preset?.description ?? "Items will appear here once added.";
-
-  // Use spot illustration when available and no custom icon override
-  const SpotIllustration = !customIcon ? preset?.spotIllustration : null;
-
-  return (
-    <FadeIn>
-      <div className={cn("flex flex-col items-center py-12 text-center", className)}>
-        {SpotIllustration ? (
-          <SpotIllustration className="mb-3 size-14 text-primary/60" />
+const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
+  ({ className, title, heading, description, action, children, preset, icon: Icon, ...props }, ref) => {
+    const presetCopy = preset ? PRESETS[preset] : undefined;
+    const resolvedTitle = title ?? heading ?? presetCopy?.title;
+    const resolvedDescription = description ?? presetCopy?.description;
+    const resolvedAction =
+      action && typeof action === "object" && !React.isValidElement(action) && "label" in action ? (
+        action.href ? (
+          <Button asChild variant="line" size="sm">
+            <a href={action.href}>{action.label}</a>
+          </Button>
         ) : (
-          <div className="mb-3 flex size-11 items-center justify-center rounded-[10px] border border-primary/20 bg-teal-subtle">
-            <Icon className="size-5 text-primary" strokeWidth={1.75} />
-          </div>
-        )}
-        <h3 className="t-heading text-fg">{heading}</h3>
-        <p className="mt-1 max-w-[280px] text-[11px] leading-relaxed text-fg-3">
-          {description}
-        </p>
-        {action && (
-          <Button size="sm" className="mt-4" onClick={action.onClick}>
+          <Button type="button" variant="line" size="sm" onClick={action.onClick}>
             {action.label}
           </Button>
+        )
+      ) : (
+        action
+      );
+
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "flex flex-col items-center gap-3 rounded-[var(--r-lg)] border-2 border-dashed border-border p-7 text-center",
+          className,
         )}
+        {...props}
+      >
+        {Icon ? <Icon className="size-12 text-muted" /> : <FlowMascot className="size-12 text-muted" />}
+        <div className="flex flex-col gap-1">
+          <p className="text-[14px] font-medium text-ink-2">{resolvedTitle}</p>
+          {resolvedDescription ? <p className="text-[12.5px] text-faint">{resolvedDescription}</p> : null}
+        </div>
+        {resolvedAction}
+        {children}
       </div>
-    </FadeIn>
-  );
-}
+    );
+  },
+);
+EmptyState.displayName = "EmptyState";
+
+export { EmptyState };

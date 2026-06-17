@@ -33,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <AppSidebar />
             <SidebarInset className="min-h-0">
               <TopBar />
-              <main className="flex-1 overflow-auto p-4 md:p-6 animate-page-enter">{children}</main>
+              <main className="flex-1 overflow-auto p-4 pb-24 md:p-6 md:pb-6 animate-page-enter">{children}</main>
             </SidebarInset>
           </MiraContextProvider>
         </BrandingProvider>

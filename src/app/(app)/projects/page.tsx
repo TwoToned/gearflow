@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Projects list (RVLT Flow, DESIGN.md §15).
+ * ProjectsPage → RequirePermission → ListPageLayout(title/desc) → ProjectTable
+ * Keyboard: "n" → new project. Data table stays calm; chrome carries the brand.
+ */
+
 import { useRouter } from "next/navigation";
 import { ProjectTable } from "@/components/projects/project-table";
 import { RequirePermission } from "@/components/auth/require-permission";

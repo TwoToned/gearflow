@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Onboarding — first-run org creation (RVLT Flow, DESIGN.md §15.5 chrome).
+ *
+ * OnboardingPage
+ * └── surface-ring card
+ *     ├── Brand mark (red "R" tile) + Kalam eyebrow + title/sub
+ *     └── Form (org name → auto-slug · URL slug · "Create organization")
+ *
+ * Single-org bootstrap: redirects to /dashboard once an org exists.
+ */
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
@@ -66,12 +77,13 @@ export default function OnboardingPage() {
     <FadeIn>
     <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-          GF
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl border-2 border-border bg-red font-display text-[18px] font-black text-white shadow-[var(--sh-card),var(--lit)]">
+          R
         </div>
-        <h2 className="t-title">Set up your instance</h2>
-        <p className="text-sm text-fg-3">
-          Create your organization to start managing gear and projects.
+        <p className="font-hand text-[16px] text-red">first the warehouse, then the world</p>
+        <h2 className="t-title mt-1">Set up your warehouse</h2>
+        <p className="mt-1 text-sm text-fg-3">
+          Name your operation — gear, jobs and crew live under it.
         </p>
       </div>
       <div>

@@ -1,5 +1,18 @@
 "use client";
 
+/**
+ * Settings · General — org profile & defaults (RVLT Flow, DESIGN.md §15).
+ *
+ * GeneralSettingsPage
+ * └── Single surface-ring card (sections divided by border-top)
+ *     ├── General           (name · email · phone · website · address · country)
+ *     ├── Timezone
+ *     └── Project Defaults  (tax rate · ProjectNumberingSettings)
+ *     + Save bar            (red primary Button, gated by orgSettings:update)
+ *
+ * Calm chrome: restyled selects (2px outline, red focus ring), no soft shadows.
+ */
+
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -56,7 +69,7 @@ export default function GeneralSettingsPage() {
   };
 
   const selectClassName =
-    "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+    "flex h-9 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red disabled:cursor-not-allowed disabled:opacity-45";
 
   return (
     <FadeIn className="space-y-6">

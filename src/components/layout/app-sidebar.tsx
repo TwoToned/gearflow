@@ -7,24 +7,12 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
-  Boxes,
   FolderOpen,
   Users,
-  MapPin,
-  Wrench,
-  BarChart3,
-  ScrollText,
   Settings,
   CalendarRange,
-  Warehouse,
-  Container,
-  ShieldCheck,
-  BookTemplate,
   ChevronRight,
-  Tags,
-  Truck,
-  HardHat,
-  Clock,
+  FileText,
   Plus,
   type LucideIcon,
 } from "lucide-react";
@@ -87,6 +75,8 @@ interface NavItem {
   title: string;
   url: string;
   icon: LucideIcon;
+  /** Module wayfinding hue (DESIGN.md §15.5) applied to the Lucide icon */
+  tint?: string;
   /** Resource key — if set, item is hidden when user has no access to this resource */
   resource?: Resource;
   items?: { title: string; url: string; icon: LucideIcon; resource?: Resource }[];
@@ -102,75 +92,15 @@ interface NavSection {
 
 const navSections: NavSection[] = [
   {
-    label: "CORE",
+    label: "RVLT FLOW",
+    // Module hues per DESIGN.md §15.5: Jobs=blue · Crew=purple · Gear=amber.
     items: [
       { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-      {
-        title: "Projects",
-        url: "/projects",
-        icon: FolderOpen,
-        resource: "project",
-        items: [
-          { title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" },
-        ],
-      },
-      { title: "Availability", url: "/availability", icon: CalendarRange, resource: "asset" },
-    ],
-  },
-  {
-    label: "ASSETS",
-    items: [
-      {
-        title: "Registry",
-        url: "/assets/registry",
-        icon: Package,
-        resource: "asset",
-      },
-      { title: "Models", url: "/assets/models", icon: Boxes, resource: "model" },
-      { title: "Categories", url: "/assets/categories", icon: Tags, resource: "model" },
-      { title: "Kits", url: "/kits", icon: Container, resource: "kit" },
-    ],
-  },
-  {
-    label: "OPERATIONS",
-    items: [
-      { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
-      { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
-      {
-        title: "Test & Tag",
-        url: "/test-and-tag",
-        icon: ShieldCheck,
-        resource: "testTag",
-        items: [
-          { title: "Registry", url: "/test-and-tag/registry", icon: Package, resource: "testTag" },
-          { title: "Quick Test", url: "/test-and-tag/quick-test", icon: ShieldCheck, resource: "testTag" },
-          { title: "Reports", url: "/test-and-tag/reports", icon: BarChart3, resource: "reports" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "PEOPLE",
-    items: [
-      { title: "Clients", url: "/clients", icon: Users, resource: "client" },
-      {
-        title: "Crew",
-        url: "/crew",
-        icon: HardHat,
-        resource: "crew",
-        items: [
-          { title: "Planner", url: "/crew/planner", icon: CalendarRange, resource: "crew" },
-          { title: "Timesheets", url: "/crew/timesheets", icon: Clock, resource: "crew" },
-        ],
-      },
-      { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },
-    ],
-  },
-  {
-    label: "ADMIN",
-    items: [
-      { title: "Locations", url: "/locations", icon: MapPin, resource: "location" },
-      { title: "Activity Log", url: "/activity", icon: ScrollText, resource: "reports" },
+      { title: "Jobs", url: "/projects", icon: FolderOpen, tint: "text-blue", resource: "project" },
+      { title: "Schedule", url: "/crew/planner", icon: CalendarRange, tint: "text-purple", resource: "crew" },
+      { title: "Crew", url: "/crew", icon: Users, tint: "text-purple", resource: "crew" },
+      { title: "Equipment", url: "/assets/registry", icon: Package, tint: "text-amber", resource: "asset" },
+      { title: "Quotes", url: "/quotes", icon: FileText, tint: "text-blue", resource: "project" },
     ],
   },
 ];
@@ -201,10 +131,9 @@ const quickActions: QuickAction[] = [
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { name: platformName, icon: platformIcon } = usePlatformBranding();
+  const { icon: platformIcon } = usePlatformBranding();
   const { permissions, isLoading } = useCurrentRole();
   const { isMobile, setOpenMobile } = useSidebar();
-  const initials = platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
   const closeMobile = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -261,7 +190,7 @@ export function AppSidebar() {
             isActive={isActive}
             className="flex-1"
           >
-            <item.icon className="h-4 w-4" />
+            <item.icon className={`h-4 w-4 ${item.tint ?? ""}`} />
             <span>{item.title}</span>
           </SidebarMenuButton>
           <button
@@ -297,7 +226,7 @@ export function AppSidebar() {
           render={<NavLink href={item.url} onClick={closeMobile} />}
           isActive={isActive}
         >
-          <item.icon className="h-4 w-4" />
+          <item.icon className={`h-4 w-4 ${item.tint ?? ""}`} />
           <span>{item.title}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -308,23 +237,26 @@ export function AppSidebar() {
   const visibleQuickActions = quickActions.filter((a) => hasAccess(a.resource));
 
   return (
-    <Sidebar>
+    <Sidebar className="border-r-2 border-line-2 bg-paper-2 p-2 text-ink">
       {/* ── Brand header ──────────────────────────────────────── */}
-      <SidebarHeader className="border-b border-sidebar-border px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <Link href="/dashboard" className="flex items-center gap-2.5 group/brand">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold text-sm shadow-[inset_0_1px_0_oklch(1_0_0/12%)]">
+      <SidebarHeader className="border-b-2 border-line-2 px-2 py-3">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="group/brand flex min-w-0 items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-border bg-red text-white font-display text-[16px] font-black shadow-[var(--sh-card),var(--lit)]">
               {platformIcon ? (
-                <DynamicIcon name={platformIcon} className="h-4 w-4" />
+                <DynamicIcon name={platformIcon} className="h-5 w-5" />
               ) : (
-                initials
+                "R"
               )}
             </div>
-            <span className="font-bold text-base tracking-tight">{platformName}</span>
+            <span className="truncate text-[20px] leading-none tracking-[-0.03em]">
+              <span className="font-display font-black">RVLT</span>{" "}
+              <span className="font-sans font-semibold text-ink-2">Flow</span>
+            </span>
           </Link>
           <Link
             href="/changelog"
-            className="ml-auto t-overline font-mono text-fg-3 hover:text-fg transition-colors bg-bg-inset/50 hover:bg-bg-inset px-1.5 py-0.5 rounded-md"
+            className="ml-auto rounded-full border border-line px-2 py-1 font-mono text-[11px] font-bold text-muted transition-colors hover:bg-elev hover:text-ink"
           >
             {buildLabel}
           </Link>
@@ -336,13 +268,11 @@ export function AppSidebar() {
         {visibleQuickActions.length > 0 && (
           <div className="px-3 pt-3 pb-1">
             <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button className="flex w-full items-center justify-center gap-1.5 rounded-md border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-xs font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors cursor-pointer" />
-                }
-              >
-                <Plus className="h-3.5 w-3.5" />
+              <DropdownMenuTrigger asChild>
+                <button className="flex w-full items-center justify-center gap-2 rounded-full border-2 border-border bg-elev px-3 py-2 text-[14px] font-semibold text-ink shadow-[var(--sh-card),var(--lit)] transition-transform hover:-translate-y-0.5 active:translate-y-0.5">
+                <Plus className="h-4 w-4" />
                 <span>Quick Create</span>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="bottom" align="start" sideOffset={4} className="w-48">
                 {visibleQuickActions.map((action) => (

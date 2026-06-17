@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * Crew — people, timesheets & invitations (RVLT Flow, DESIGN.md §15.4c).
+ *
+ * CrewPage
+ * ├── Header + actions       (invite crew · export · stat tiles)
+ * ├── Pending timesheets     (approve=ok · dispute=warn, ghost icon buttons)
+ * ├── CrewTable              (roster — avatars on the deterministic crew palette)
+ * └── Invite dialog          (--elev panel, red primary, Select with explicit labels)
+ *
+ * Crew module hue = --purple; status by token+label, red reserved for primary/alert.
+ */
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -292,7 +304,7 @@ function CrewDashboard() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 text-green-500 hover:text-green-600"
+                      className="h-7 text-ok hover:text-green"
                       onClick={() => approveMutation.mutate([entry.id])}
                       disabled={approveMutation.isPending}
                     >
@@ -301,7 +313,7 @@ function CrewDashboard() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 text-amber-500 hover:text-amber-600"
+                      className="h-7 text-warn hover:text-amber"
                       onClick={() => disputeMutation.mutate(entry.id)}
                       disabled={disputeMutation.isPending}
                     >

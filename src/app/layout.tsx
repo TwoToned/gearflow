@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans, Geist_Mono } from "next/font/google";
+import { Archivo, Hanken_Grotesk, Kalam, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
@@ -18,14 +18,27 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-    { media: "(prefers-color-scheme: light)", color: "#0d9488" },
+    { media: "(prefers-color-scheme: dark)", color: "#141210" },
+    { media: "(prefers-color-scheme: light)", color: "#F4EEE1" },
   ],
 };
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
+  weight: ["700", "800", "900"],
+});
+
+const hanken = Hanken_Grotesk({
+  variable: "--font-hanken-grotesk",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const kalam = Kalam({
+  variable: "--font-kalam",
+  subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -36,9 +49,9 @@ const geistMono = Geist_Mono({
 export async function generateMetadata(): Promise<Metadata> {
   const platformName = await getPlatformName();
   return {
-    title: `${platformName} — Asset & Rental Management`,
+    title: `${platformName} — Production Ops`,
     description:
-      "Professional asset and rental management for AV and theatre production companies.",
+      "Production operations software built by a live-events production company.",
     manifest: "/manifest.json",
     appleWebApp: {
       capable: true,
@@ -63,7 +76,7 @@ export default function RootLayout({
         <DomPatch />
       </head>
       <body
-        className={`${dmSans.variable} ${geistMono.variable} antialiased`}
+        className={`${archivo.variable} ${hanken.variable} ${kalam.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
         <GlobalErrorBoundary>

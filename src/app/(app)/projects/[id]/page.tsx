@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * Project detail — the job's command surface (RVLT Flow, DESIGN.md §15.4a).
+ *
+ * ProjectDetailPage
+ * ├── Header            (breadcrumb · title · StatusIndicator · PM avatars · presence)
+ * ├── ProjectConflictsBanner
+ * ├── Tabs              (Equipment · Crew · Services · Tasks · Costs · Financials)
+ * │   └── EquipmentTab / CrewPanel / ServicesPanel / TasksPanel / ProjectCostsPanel
+ * └── SidebarSection ×N (status select · dates · location+directions · client/contact)
+ *
+ * Calm data, fun chrome: status by token+label, blue=Projects module hue,
+ * directions as a blue --link, red reserved for primary/destructive actions.
+ */
+
 import { use, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
@@ -238,7 +252,7 @@ export default function ProjectDetailPage({
                     label={projectStatusLabels[project.status] || formatLabel(project.status)}
                   />
                   {project.isTemplate && (
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                    <Badge variant="outline" className="bg-blue-soft text-blue border-blue/30">
                       <BookTemplate className="mr-1 h-3 w-3" />
                       Template
                     </Badge>
@@ -575,7 +589,7 @@ export default function ProjectDetailPage({
                         value={currentStatus}
                         onChange={(e) => statusMutation.mutate(e.target.value)}
                         disabled={statusMutation.isPending}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        className="flex h-9 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
                       >
                         {allStatuses.map((s) => (
                           <option key={s} value={s}>
@@ -703,7 +717,7 @@ export default function ProjectDetailPage({
                             href={`https://www.google.com/maps/dir/?api=1&destination=${project.location.latitude},${project.location.longitude}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-teal-500 hover:text-teal-400 pl-5.5"
+                            className="inline-flex items-center gap-1.5 text-xs text-link hover:underline pl-5.5"
                           >
                             <Navigation className="h-3 w-3" />
                             Get Directions

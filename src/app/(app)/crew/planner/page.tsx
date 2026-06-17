@@ -1,5 +1,18 @@
 "use client";
 
+/**
+ * Crew planner — the weekly availability board (RVLT Flow, DESIGN.md §15.4c).
+ *
+ * CrewPlannerPage
+ * ├── Week toolbar          (prev/next · "this week" · date range)
+ * ├── Availability grid     (person rows × day columns)
+ * │   └── DayCell           (assignment=purple · unavailable=red · tentative=amber
+ * │                          · preferred=green — soft fill + solid dot, tooltip)
+ * └── Legend                (the four categorical swatches above)
+ *
+ * Crew module hue = --purple for bookings; red flags clashes/unavailability only.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -211,19 +224,19 @@ export default function CrewPlannerPage() {
 
         <div className="flex flex-wrap gap-4 text-xs text-fg-3">
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-primary/70" />
+            <span className="h-3 w-3 rounded-sm bg-purple/70" />
             Assignment
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-red-500/70" />
+            <span className="h-3 w-3 rounded-sm bg-red/70" />
             Unavailable
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-amber-500/70" />
+            <span className="h-3 w-3 rounded-sm bg-amber/70" />
             Tentative
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-green-500/70" />
+            <span className="h-3 w-3 rounded-sm bg-green/70" />
             Preferred
           </span>
         </div>
@@ -368,17 +381,17 @@ function DayCell({
   const hasPreferred = availability.some((a) => a.type === "PREFERRED");
 
   if (hasUnavailable) {
-    bgClass = "bg-red-500/15";
-    dotColor = "bg-red-500";
+    bgClass = "bg-out-soft";
+    dotColor = "bg-red";
   } else if (assignments.length > 0) {
-    bgClass = "bg-primary/15";
-    dotColor = "bg-primary";
+    bgClass = "bg-purple-soft";
+    dotColor = "bg-purple";
   } else if (hasTentative) {
-    bgClass = "bg-amber-500/15";
-    dotColor = "bg-amber-500";
+    bgClass = "bg-amber-soft";
+    dotColor = "bg-amber";
   } else if (hasPreferred) {
-    bgClass = "bg-green-500/15";
-    dotColor = "bg-green-500";
+    bgClass = "bg-green-soft";
+    dotColor = "bg-green";
   }
 
   const hasContent = assignments.length > 0 || availability.length > 0;

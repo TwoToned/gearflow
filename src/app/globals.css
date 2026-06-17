@@ -4,362 +4,290 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ----------------------------------------------------------------------------
+ * @rvlt/flow-theme — GENERATED from tokens.json. Do not edit by hand.
+ * Source of truth: tokens.json  ·  Design spec: DESIGN.md v1.1.1
+ * Tailwind v4 + shadcn convention (direct hex / var() aliases, @theme inline).
+ * Dark "espresso" is the default; .light is the opt-in "Paper" alternate.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  /* === primitives: dark "espresso" (default) === */
+  --paper: #141210;
+  --paper-2: #1A1613;
+  --card: #211C17;
+  --elev: #2A241D;
+  --ink: #F5EFE2;
+  --ink-2: #CDC4B2;
+  --muted: #9E9483;
+  --faint: #6E665A;
+  --line: #332C24;
+  --line-2: #473E32;
+  --red: #E0363D;
+  --red-700: #B21F26;
+  --red-soft: rgba(224,54,61,.16);
+  --ok: #4FD888;
+  --warn: #EBA53A;
+  --rep: #B6AC9A;
+  --t-out: #F26F73;
+  --ok-soft: rgba(62,207,122,.14);
+  --warn-soft: rgba(235,165,58,.15);
+  --rep-soft: rgba(158,148,131,.14);
+  --out-soft: rgba(224,54,61,.18);
+  --amber: #EBA53A;
+  --blue: #5B8DEF;
+  --green: #3ECF7A;
+  --purple: #9B82E6;
+  --dark: #0E0C0A;
+  --coral: #EF7E55;
+  --teal: #3FC8BE;
+  --pink: #E875AC;
+  --lime: #AFC44E;
+  --blue-soft: rgba(91,141,239,.15);
+  --amber-soft: rgba(235,165,58,.15);
+  --green-soft: rgba(62,207,122,.14);
+  --purple-soft: rgba(155,130,230,.15);
+  --coral-soft: rgba(239,126,85,.15);
+  --teal-soft: rgba(63,200,190,.15);
+  --scrim: rgba(14,12,10,.66);
+  --select: rgba(224,54,61,.20);
+  --link: #5B8DEF;
+  --sh-card: 0 3px 0 #0C0A08;
+  --sh-hover: 0 7px 0 #0C0A08;
+  --lit: inset 0 1px 0 rgba(255,253,248,.14);
+  --sh-stk: 2px 4px 0 rgba(0,0,0,.5);
+  /* === radius === */
+  --radius: 0.875rem;
+  --r: 14px; --r-lg: 20px;
+  /* === shadcn semantic aliases + brand constants (restyle primitives through these) === */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--red);
+  --primary-foreground: #fff;
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted-foreground: var(--muted);
+  --accent: var(--elev);
+  --accent-foreground: var(--ink);
+  --destructive: var(--red);
+  --destructive-foreground: #fff;
+  --input: var(--border);
+  --ring: var(--red);
+  --sidebar: var(--paper-2);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--red);
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: var(--elev);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line-2);
+  --sidebar-ring: var(--red);
+  --cream: #F5EFE2;
+  --cream-ink: #1D1A15;
+  --sh-halo: 0 3px 0 var(--red-700), 0 0 28px rgba(224,54,61,.5);
+  --sh-cream: 0 3px 0 rgba(0,0,0,.25);
+  --sh-cream-press: 0 1px 0 rgba(0,0,0,.25);
+  /* === theme-dependent aliases: 2px outline = --line-2 on dark === */
+  --border: var(--line-2);
+}
+
+.light {
+  /* === primitives: light "Paper" (opt-in) === */
+  --paper: #F4EEE1;
+  --paper-2: #EDE4D2;
+  --card: #FFFDF8;
+  --elev: #FFFDF8;
+  --ink: #1D1A15;
+  --ink-2: #4B4539;
+  --muted: #7D7565;
+  --faint: #A89E89;
+  --line: #E4DAC3;
+  --line-2: #D8CCB0;
+  --red: #C12229;
+  --red-700: #9C1B21;
+  --red-soft: #FBE7E3;
+  --ok: #2EA65C;
+  --warn: #C98A14;
+  --rep: #8A8270;
+  --t-out: #9C1B21;
+  --ok-soft: #E7F5EC;
+  --warn-soft: #FBF0D6;
+  --rep-soft: #EFE9DC;
+  --out-soft: #FBE7E3;
+  --amber: #E79A2B;
+  --blue: #2F6BD6;
+  --green: #2EA65C;
+  --purple: #7A5CD0;
+  --dark: #241F1A;
+  --coral: #CC5E2E;
+  --teal: #1C8B83;
+  --pink: #C2487E;
+  --lime: #6E8C12;
+  --blue-soft: #E2ECFB;
+  --amber-soft: #FBF0D6;
+  --green-soft: #E7F5EC;
+  --purple-soft: #ECE6FA;
+  --coral-soft: #FBE6DB;
+  --teal-soft: #DBF1EF;
+  --scrim: rgba(40,30,15,.45);
+  --select: rgba(193,34,41,.16);
+  --link: #2F6BD6;
+  --sh-card: 0 3px 0 var(--line-2);
+  --sh-hover: 0 7px 0 var(--line-2);
+  --lit: inset 0 1px 0 rgba(255,253,248,.14);
+  --sh-stk: 2px 4px 0 rgba(40,30,15,.13);
+  /* === theme-dependent aliases: 2px outline = --ink on light === */
+  --border: var(--ink);
+}
+
 @theme inline {
-  /* Base shadcn color mappings */
+  /* brand palette → bg-paper, text-ink, border-line-2, text-ok, bg-ok-soft, bg-red… */
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-card: var(--card);
+  --color-elev: var(--elev);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-red: var(--red);
+  --color-red-700: var(--red-700);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-rep: var(--rep);
+  --color-t-out: var(--t-out);
+  --color-amber: var(--amber);
+  --color-blue: var(--blue);
+  --color-green: var(--green);
+  --color-purple: var(--purple);
+  --color-coral: var(--coral);
+  --color-teal: var(--teal);
+  --color-pink: var(--pink);
+  --color-lime: var(--lime);
+  --color-dark: var(--dark);
+  --color-link: var(--link);
+  --color-red-soft: var(--red-soft);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn-soft: var(--warn-soft);
+  --color-rep-soft: var(--rep-soft);
+  --color-out-soft: var(--out-soft);
+  --color-blue-soft: var(--blue-soft);
+  --color-amber-soft: var(--amber-soft);
+  --color-green-soft: var(--green-soft);
+  --color-purple-soft: var(--purple-soft);
+  --color-coral-soft: var(--coral-soft);
+  --color-teal-soft: var(--teal-soft);
+  --color-scrim: var(--scrim);
+  --color-select: var(--select);
+  --color-cream: var(--cream);
+  --color-cream-ink: var(--cream-ink);
+  /* shadcn role utilities → bg-primary, text-foreground, border-border, ring-ring… */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-dm-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* app functional type ramp (§5.5) → text-page-title, text-ui-text, text-table-cell… */
+  --text-page-title: 1.5rem;
+  --text-section-header: 1.125rem;
+  --text-card-title: 0.9375rem;
+  --text-reading-body: 1rem;
+  --text-ui-text: 0.875rem;
+  --text-table-cell: 0.84375rem;
+  --text-caption: 0.75rem;
+  --text-badge: 0.6875rem;
+  --text-button: 0.875rem;
+  /* fonts */
+  --font-display: var(--font-archivo), "bc-alphapipe", sans-serif;
+  --font-sans: var(--font-hanken-grotesk), "Hanken Grotesk", system-ui, sans-serif;
+  --font-hand: var(--font-kalam), "Kalam", cursive;
+  --font-wordmark: var(--font-archivo), "BC Alphapipe", sans-serif;
+  --font-mono: var(--font-geist-mono), "JetBrains Mono", ui-monospace, monospace;
 
-  /* Surface depth colors */
-  --color-bg-inset: var(--bg-inset);
-  --color-bg-base: var(--bg-base);
-  --color-bg-surface: var(--bg-surface);
-  --color-bg-elevated: var(--bg-elevated);
-  --color-bg-popover: var(--bg-popover);
-
-  /* Foreground hierarchy */
-  --color-fg: var(--fg);
-  --color-fg-2: var(--fg-2);
-  --color-fg-3: var(--fg-3);
-  --color-fg-4: var(--fg-4);
-
-  /* Teal ramp */
-  --color-teal-50: var(--teal-50);
-  --color-teal-100: var(--teal-100);
-  --color-teal-200: var(--teal-200);
-  --color-teal-300: var(--teal-300);
-  --color-teal-400: var(--teal-400);
-  --color-teal-500: var(--teal-500);
-  --color-teal-600: var(--teal-600);
-  --color-teal-700: var(--teal-700);
-  --color-teal-800: var(--teal-800);
-  --color-teal-900: var(--teal-900);
-  --color-teal-subtle: var(--teal-subtle);
-
-  /* Semantic colors */
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-error: var(--error);
-  --color-info: var(--info);
-  --color-success-subtle: var(--success-subtle);
-  --color-warning-subtle: var(--warning-subtle);
-  --color-error-subtle: var(--error-subtle);
-  --color-info-subtle: var(--info-subtle);
-
-  /* Border strong */
-  --color-border-strong: var(--border-strong);
-
-  /* Radius — tighter scale per DESIGN.md */
-  --radius-sm: calc(var(--radius) * 0.667);
-  --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) * 1.333);
-  --radius-xl: calc(var(--radius) * 2);
-  --radius-2xl: calc(var(--radius) * 2.667);
-  --radius-3xl: calc(var(--radius) * 3.333);
-  --radius-4xl: calc(var(--radius) * 4);
+  /* compatibility aliases for the pre-redesign app while pages are rebuilt */
+  --color-bg-inset: var(--paper);
+  --color-bg-base: var(--paper);
+  --color-bg-surface: var(--card);
+  --color-bg-elevated: var(--elev);
+  --color-bg-popover: var(--elev);
+  --color-fg: var(--ink);
+  --color-fg-2: var(--ink-2);
+  --color-fg-3: var(--muted);
+  --color-fg-4: var(--faint);
+  --color-success: var(--ok);
+  --color-warning: var(--warn);
+  --color-error: var(--red);
+  --color-info: var(--blue);
+  --color-success-subtle: var(--ok-soft);
+  --color-warning-subtle: var(--warn-soft);
+  --color-error-subtle: var(--out-soft);
+  --color-info-subtle: var(--blue-soft);
+  --color-border-strong: var(--line-2);
+  /* radius */
+  --radius: 0.875rem;
+  /* accordion animation (shadcn) */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
 }
 
-/* Light theme — Industrial Calm */
-:root {
-  /* Surface depth (5 levels: inset < base < surface < elevated < popover) */
-  --background: oklch(0.975 0.003 220);
-  --foreground: oklch(0.12 0.02 220);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.12 0.02 220);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.12 0.02 220);
-
-  /* Surface depth custom properties */
-  --bg-inset: oklch(0.955 0.005 220);
-  --bg-base: oklch(0.975 0.003 220);
-  --bg-surface: oklch(1 0 0);
-  --bg-elevated: oklch(0.985 0.002 210);
-  --bg-popover: oklch(1 0 0);
-
-  /* Foreground hierarchy */
-  --fg: oklch(0.12 0.02 220);
-  --fg-2: oklch(0.35 0.015 220);
-  --fg-3: oklch(0.52 0.008 220);
-  --fg-4: oklch(0.68 0.005 220);
-
-  /* Primary teal */
-  --primary: oklch(0.45 0.12 195);
-  --primary-foreground: oklch(0.98 0.005 200);
-
-  /* Teal ramp */
-  --teal-50: oklch(0.96 0.02 195);
-  --teal-100: oklch(0.87 0.06 195);
-  --teal-200: oklch(0.77 0.10 195);
-  --teal-300: oklch(0.67 0.12 195);
-  --teal-400: oklch(0.58 0.13 195);
-  --teal-500: oklch(0.45 0.12 195);
-  --teal-600: oklch(0.38 0.10 195);
-  --teal-700: oklch(0.30 0.08 195);
-  --teal-800: oklch(0.22 0.06 195);
-  --teal-900: oklch(0.14 0.04 195);
-  --teal-subtle: oklch(0.96 0.02 195);
-
-  /* Secondary & muted */
-  --secondary: oklch(0.95 0.01 200);
-  --secondary-foreground: oklch(0.20 0.02 220);
-  --muted: oklch(0.955 0.005 220);
-  --muted-foreground: oklch(0.52 0.008 220);
-  --accent: oklch(0.94 0.015 200);
-  --accent-foreground: oklch(0.20 0.02 220);
-
-  /* Semantic colors */
-  --destructive: oklch(0.58 0.22 27);
-  --success: oklch(0.55 0.16 155);
-  --warning: oklch(0.72 0.17 70);
-  --error: oklch(0.58 0.22 27);
-  --info: oklch(0.55 0.14 255);
-
-  /* Semantic subtle backgrounds (8-10% opacity) */
-  --success-subtle: oklch(0.55 0.16 155 / 10%);
-  --warning-subtle: oklch(0.72 0.17 70 / 10%);
-  --error-subtle: oklch(0.58 0.22 27 / 8%);
-  --info-subtle: oklch(0.55 0.14 255 / 8%);
-
-  /* Borders — opacity-based for consistency */
-  --border: oklch(0 0 0 / 6%);
-  --border-strong: oklch(0 0 0 / 10%);
-  --input: oklch(0 0 0 / 10%);
-  --ring: oklch(0.45 0.12 195);
-
-  /* Shadows */
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 3%);
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 5%), 0 1px 2px oklch(0 0 0 / 3%);
-  --shadow-md: 0 4px 12px oklch(0 0 0 / 6%), 0 1px 3px oklch(0 0 0 / 4%);
-  --shadow-focus: 0 0 0 2px var(--bg-base), 0 0 0 4px oklch(0.45 0.12 195 / 40%);
-
-  /* Charts */
-  --chart-1: oklch(0.45 0.12 195);
-  --chart-2: oklch(0.55 0.16 155);
-  --chart-3: oklch(0.72 0.17 70);
-  --chart-4: oklch(0.58 0.22 27);
-  --chart-5: oklch(0.55 0.14 255);
-
-  /* Radius — tighter than shadcn defaults */
-  --radius: 0.375rem;
-
-  /* Sidebar */
-  --sidebar: oklch(0.97 0.008 200);
-  --sidebar-foreground: oklch(0.12 0.02 220);
-  --sidebar-primary: oklch(0.45 0.12 195);
-  --sidebar-primary-foreground: oklch(0.98 0.005 200);
-  --sidebar-accent: oklch(0.93 0.015 200);
-  --sidebar-accent-foreground: oklch(0.20 0.02 220);
-  --sidebar-border: oklch(0 0 0 / 6%);
-  --sidebar-ring: oklch(0.45 0.12 195);
+@keyframes accordion-down {
+  from { height: 0 }
+  to { height: var(--radix-accordion-content-height) }
 }
-
-/* Dark theme — Industrial Calm with layered depth */
-.dark {
-  /* Surface depth (5 levels with warm undertone hue 240) */
-  --background: oklch(0.115 0.01 240);
-  --foreground: oklch(0.94 0.005 220);
-  --card: oklch(0.155 0.01 240);
-  --card-foreground: oklch(0.94 0.005 220);
-  --popover: oklch(0.20 0.012 235);
-  --popover-foreground: oklch(0.94 0.005 220);
-
-  /* Surface depth custom properties */
-  --bg-inset: oklch(0.095 0.01 240);
-  --bg-base: oklch(0.115 0.01 240);
-  --bg-surface: oklch(0.155 0.01 240);
-  --bg-elevated: oklch(0.185 0.01 240);
-  --bg-popover: oklch(0.20 0.012 235);
-
-  /* Foreground hierarchy */
-  --fg: oklch(0.94 0.005 220);
-  --fg-2: oklch(0.72 0.006 220);
-  --fg-3: oklch(0.52 0.005 220);
-  --fg-4: oklch(0.38 0.004 220);
-
-  /* Primary teal — boosted for dark mode vibrancy */
-  --primary: oklch(0.60 0.14 195);
-  --primary-foreground: oklch(0.13 0.015 220);
-
-  /* Teal ramp (dark adjusted) */
-  --teal-50: oklch(0.20 0.02 195);
-  --teal-100: oklch(0.25 0.04 195);
-  --teal-200: oklch(0.30 0.06 195);
-  --teal-300: oklch(0.40 0.08 195);
-  --teal-400: oklch(0.50 0.11 195);
-  --teal-500: oklch(0.60 0.14 195);
-  --teal-600: oklch(0.67 0.12 195);
-  --teal-700: oklch(0.77 0.10 195);
-  --teal-800: oklch(0.87 0.06 195);
-  --teal-900: oklch(0.94 0.03 195);
-  --teal-subtle: oklch(0.60 0.14 195 / 10%);
-
-  /* Secondary & muted */
-  --secondary: oklch(0.22 0.015 240);
-  --secondary-foreground: oklch(0.94 0.005 220);
-  --muted: oklch(0.185 0.01 240);
-  --muted-foreground: oklch(0.52 0.005 220);
-  --accent: oklch(0.22 0.02 235);
-  --accent-foreground: oklch(0.94 0.005 220);
-
-  /* Semantic colors (boosted for dark) */
-  --destructive: oklch(0.68 0.20 25);
-  --success: oklch(0.65 0.17 155);
-  --warning: oklch(0.78 0.15 70);
-  --error: oklch(0.68 0.20 25);
-  --info: oklch(0.62 0.14 255);
-
-  /* Semantic subtle backgrounds */
-  --success-subtle: oklch(0.65 0.17 155 / 10%);
-  --warning-subtle: oklch(0.78 0.15 70 / 10%);
-  --error-subtle: oklch(0.68 0.20 25 / 8%);
-  --info-subtle: oklch(0.62 0.14 255 / 8%);
-
-  /* Borders — white at low opacity (not gray) */
-  --border: oklch(1 0 0 / 6%);
-  --border-strong: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.60 0.14 195);
-
-  /* Shadows — stronger in dark mode */
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 15%);
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 20%), 0 1px 2px oklch(0 0 0 / 15%);
-  --shadow-md: 0 4px 12px oklch(0 0 0 / 25%), 0 1px 3px oklch(0 0 0 / 20%);
-  --shadow-focus: 0 0 0 2px var(--bg-base), 0 0 0 4px oklch(0.60 0.14 195 / 40%);
-
-  /* Charts */
-  --chart-1: oklch(0.60 0.14 195);
-  --chart-2: oklch(0.65 0.17 155);
-  --chart-3: oklch(0.78 0.15 70);
-  --chart-4: oklch(0.68 0.20 25);
-  --chart-5: oklch(0.62 0.14 255);
-
-  /* Sidebar */
-  --sidebar: oklch(0.095 0.01 240);
-  --sidebar-foreground: oklch(0.94 0.005 220);
-  --sidebar-primary: oklch(0.60 0.14 195);
-  --sidebar-primary-foreground: oklch(0.13 0.015 220);
-  --sidebar-accent: oklch(0.185 0.01 240);
-  --sidebar-accent-foreground: oklch(0.94 0.005 220);
-  --sidebar-border: oklch(1 0 0 / 6%);
-  --sidebar-ring: oklch(0.60 0.14 195);
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height) }
+  to { height: 0 }
 }
-
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
+  * { @apply border-border outline-ring/50; }
+
+  html { background: var(--paper); }
+
   body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
-    font-size: 13.5px;
-    line-height: 1.55;
+    @apply bg-paper text-ink font-sans;
+    font-size: 14px;
+    line-height: 1.45;
     -webkit-tap-highlight-color: transparent;
   }
-}
 
-/* ═══════════════════════════════════════════════════════
-   Design System — Typography utilities
-   ═══════════════════════════════════════════════════════ */
-@layer components {
-  /* Typography scale from DESIGN.md */
-  .t-display { font-size: 32px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; }
-  .t-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
-  .t-heading { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; }
-  .t-body { font-size: 13.5px; font-weight: 400; line-height: 1.55; }
-  .t-small { font-size: 12px; font-weight: 500; line-height: 1.4; }
-  .t-micro { font-size: 11px; font-weight: 500; letter-spacing: 0.005em; line-height: 1.3; }
-  .t-overline {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    line-height: 1.2;
-  }
-  .t-data { font-variant-numeric: tabular-nums; }
+  input, textarea, select { font-size: 16px; }
 
-  /* Shadow + border ring pattern for surfaces */
-  .surface-ring {
-    box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
-  }
-  .surface-ring-xs {
-    box-shadow: var(--shadow-xs), 0 0 0 1px var(--border);
-  }
-
-  /* Focus ring — double-ring pattern */
-  .focus-ring:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-
-  /* Section header with extending line */
-  .section-label {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
+  @media (min-width: 768px) {
+    input, textarea, select { font-size: 14px; }
   }
 }
 
-/* ═══════════════════════════════════════════════════════
-   Design System — Skeleton shimmer animation
-   ═══════════════════════════════════════════════════════ */
-.skeleton-shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--bg-elevated) 0%,
-    var(--bg-popover) 40%,
-    var(--bg-elevated) 80%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* ═══════════════════════════════════════════════════════
-   Page entrance animation — subtle fade-up on mount
-   ═══════════════════════════════════════════════════════ */
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -367,88 +295,60 @@
   }
 }
 
-.animate-page-enter {
-  animation: page-enter 0.2s cubic-bezier(0.2, 0, 0, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-page-enter {
-    animation: none;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   Live collaboration row feedback (Phase 4 — live quote build)
-   `--collab-color` is set inline from the editor's user colour.
-   Animations are gated behind prefers-reduced-motion: a static
-   left-edge marker / no flash is shown instead of motion.
-   ═══════════════════════════════════════════════════════ */
 @keyframes collab-edit-pulse {
-  0%, 100% { box-shadow: inset 3px 0 0 0 var(--collab-color, transparent); }
-  50%      { box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--collab-color, transparent) 25%, transparent); }
-}
-
-/* A row another user is currently editing. */
-.collab-editing {
-  box-shadow: inset 3px 0 0 0 var(--collab-color, transparent);
+  0%, 100% { box-shadow: inset 3px 0 0 0 var(--collab-color, var(--red)); }
+  50% { box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--collab-color, var(--red)) 25%, transparent); }
 }
 
 @keyframes collab-changed-flash {
-  from { background-color: color-mix(in srgb, var(--collab-color, var(--color-primary)) 16%, transparent); }
-  to   { background-color: transparent; }
+  from { background-color: color-mix(in srgb, var(--collab-color, var(--red)) 16%, transparent); }
+  to { background-color: transparent; }
 }
 
-/* A row that just changed (own save or a realtime update from someone else). */
-.collab-changed {
-  animation: collab-changed-flash 1.6s ease-out;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .collab-editing { animation: collab-edit-pulse 2.2s ease-in-out infinite; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .collab-changed { animation: none; }
-}
-
-/* Touch device optimizations */
-@media (hover: none) and (pointer: coarse) {
-  /* Larger checkboxes on touch devices */
-  button[role="checkbox"] {
-    min-width: 24px;
-    min-height: 24px;
+@layer utilities {
+  .animate-page-enter {
+    animation: page-enter 0.18s cubic-bezier(0.2, 0, 0, 1) both;
   }
 
-  /* Minimum touch target size for interactive elements */
-  .touch-target {
-    min-height: 44px;
-    min-width: 44px;
+  .collab-editing {
+    box-shadow: inset 3px 0 0 0 var(--collab-color, var(--red));
+  }
+
+  .collab-changed {
+    animation: collab-changed-flash 1.6s ease-out;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .collab-editing { animation: collab-edit-pulse 2.2s ease-in-out infinite; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-page-enter,
+    .collab-changed { animation: none; }
   }
 }
 
-/* iOS PWA viewport fix.
-   With viewport-fit:cover + black-translucent, iOS pushes content up
-   into the status bar but doesn't extend the viewport height to match,
-   leaving a gap at the bottom. min-height on html fills that background gap.
-   The app-shell uses position:fixed to pin to actual viewport edges so
-   the flex layout works correctly (top bar stays, content scrolls, nav sticks).
-   Only applies when .app-shell is present — other layouts (admin) scroll normally. */
-html {
-  min-height: calc(100% + env(safe-area-inset-top));
-}
-@media (max-width: 767px) {
-  .app-shell {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-  }
+@layer components {
+  .t-display { @apply font-display text-[32px] font-black leading-[0.95] tracking-[-0.04em] text-ink md:text-[44px]; }
+  .t-title { @apply font-display text-[24px] font-black leading-none tracking-[-0.03em] text-ink; }
+  .t-heading { @apply text-[18px] font-bold leading-tight text-ink; }
+  .t-body { @apply text-[14px] leading-relaxed text-ink-2; }
+  .t-small { @apply text-[12px] font-medium leading-snug text-muted; }
+  .t-micro { @apply text-[11px] font-medium leading-tight text-muted; }
+  .t-overline { @apply text-[11px] font-bold uppercase tracking-[0.12em] text-faint; }
+  .t-data { @apply font-mono tabular-nums; }
+
+  .surface-ring { border: 2px solid var(--border); box-shadow: var(--sh-card); }
+  .surface-ring-xs { border: 2px solid var(--line); box-shadow: var(--sh-card); }
+
+  .section-label { @apply flex items-center gap-3; }
+  .section-label::after { content: ""; flex: 1; height: 2px; background: var(--line); }
+
+  .nav-i { @apply relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-semibold text-muted transition-colors hover:bg-elev hover:text-ink; }
+  .nav-i[data-active="true"] { @apply bg-elev text-ink; box-shadow: var(--lit); }
+  .nav-i[data-active="true"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 999px; background: var(--red); }
 }
 
-/* Safe areas on iOS */
-body {
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
-}
 
 /* ═══════════════════════════════════════════════════════
    pdfme Designer — Polished overrides

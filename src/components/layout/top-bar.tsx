@@ -84,7 +84,7 @@ export function TopBar({ title }: { title?: string }) {
   }, [displayTitle, platformName]);
 
   return (
-    <header className="sticky z-30 flex shrink-0 items-center gap-2 border-b bg-background px-4" style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}>
+    <header className="sticky z-30 flex shrink-0 items-center gap-2 border-b-2 border-line-2 bg-paper/95 px-4 backdrop-blur-none" style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}>
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4 hidden sm:block" />
       <Breadcrumb className="hidden sm:flex">

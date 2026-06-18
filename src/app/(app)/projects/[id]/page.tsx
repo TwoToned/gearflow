@@ -81,6 +81,8 @@ import type { ProjectMediaType } from "@/generated/prisma/client";
 import { FadeIn } from "@/components/ui/motion";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
+import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
+import { useCanDo } from "@/lib/use-permissions";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -189,6 +191,8 @@ export default function ProjectDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const canUpdate = useCanDo("project", "update");
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
@@ -245,11 +249,13 @@ export default function ProjectDetailPage({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="t-title text-ink">{project.name}</h1>
-                  <StatusIndicator
-                    category="project"
-                    value={project.status}
-                    label={projectStatusLabels[project.status] || formatLabel(project.status)}
-                  />
+                  {project.isTemplate && (
+                    <StatusIndicator
+                      category="project"
+                      value={project.status}
+                      label={projectStatusLabels[project.status] || formatLabel(project.status)}
+                    />
+                  )}
                   {project.isTemplate && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
                       <BookTemplate className="h-3 w-3" />
@@ -441,6 +447,22 @@ export default function ProjectDetailPage({
               </div>
             </div>
           </div>
+
+          {/* ── Lifecycle hero ─────────────────────────────────────── */}
+          {!project.isTemplate && (
+            <ProjectLifecycle
+              status={project.status}
+              advancing={statusMutation.isPending}
+              canAdvance={canUpdate}
+              onAdvance={(next) => statusMutation.mutate(next)}
+              dateByStage={{
+                confirmed: project.rentalStartDate ? new Date(project.rentalStartDate as unknown as string) : null,
+                prep: project.loadInDate ? new Date(project.loadInDate as unknown as string) : null,
+                onsite: project.eventStartDate ? new Date(project.eventStartDate as unknown as string) : null,
+                return: (project.loadOutDate ?? project.rentalEndDate) ? new Date((project.loadOutDate ?? project.rentalEndDate) as unknown as string) : null,
+              }}
+            />
+          )}
 
           {/* ── Summary Strip ──────────────────────────────────────── */}
           {!project.isTemplate && (

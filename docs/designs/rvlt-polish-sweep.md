@@ -82,3 +82,23 @@ buttons, picker rows, breadcrumb/table links); skeleton loading replaced spinner
 sentence case + 11px floor enforced; placeholder folder emoji replaced with Lucide
 icons (user-set category icons preserved). tsc + eslint clean (only pre-existing
 form.watch/unused-import warnings).
+
+**Chunk 4 supporting components (follow-up):** the components rendering on the
+assets pages (`asset-table`, `model-table`, `asset/model-accessories-manager`,
+`asset-qr-code`, `category-manager`, `csv-import-dialog`, `model-failure-analytics`,
+`model-form`, `specifications-editor`) had regressed against the refreshed registry
+(41 tsc errors total). Migrated: `Button variant="outline"+render=` →
+`variant="line"+asChild`; `Badge variant=secondary/default/outline` → status-only
+`Badge status="neutral"` (type-as-status pills are neutral); `DialogTrigger/DialogClose
+render=` → Radix `asChild`; Radix `Checkbox indeterminate` boolean →
+`checked="indeterminate"`. Tables: left-edge red hover already via DataTable; t-mono
+on tags/serials, t-data tabular-nums on counts/rates, status filter dots + utilization /
+failure bars via status-colors (red=live/threshold, warn=at-risk, ok=available — §3
+data-viz red-is-threshold). §9.1 focusRing/disabledState on hand-built view-toggle,
+bulk-edit selects, picker rows, rate-suggestion links. §5.2 sentence case + dropped
+uppercase section/category labels; 11px floor (sub-floor 10px tags → text-badge).
+Skeleton loading replaced all spinners; CSV-import result → left-edge accent notice
+(plain copy, §9 no personality in import-failure). Folder placeholder emoji → Lucide
+FolderOpen (user icons kept). Forms aligned to swept asset-form container/select; links
+use text-link (blue, § links-never-red). tsc clean (0 assets errors), eslint clean
+(only pre-existing model-form unused Select-import + form.watch warnings).

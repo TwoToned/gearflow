@@ -22,6 +22,7 @@ import { existsSync } from "node:fs";
 // Backfill script basenames (under scripts/), in run order.
 const ORDER: string[] = [
   // reference / config
+  "site-settings",
   "clients",
   "suppliers",
   "locations",

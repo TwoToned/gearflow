@@ -1,9 +1,11 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
@@ -43,11 +45,9 @@ export async function isSiteAdmin(): Promise<boolean> {
 // ─── Site Settings ─────────────────────────────────────────────────────────
 
 export async function getSiteSettings() {
-  let settings = await prisma.siteSettings.findFirst();
-  if (!settings) {
-    settings = await prisma.siteSettings.create({ data: {} });
-  }
-  return serialize(settings);
+  // siteSettings is Convex-only (Phase C). Returns the singleton or defaults; a
+  // row is created on the first updateSiteSettings save (no create-on-read).
+  return serialize(await getSiteSettingsFromConvex());
 }
 
 export async function updateSiteSettings(data: {
@@ -62,15 +62,12 @@ export async function updateSiteSettings(data: {
 }) {
   const session = await requireSiteAdmin();
 
-  let settings = await prisma.siteSettings.findFirst();
-  if (!settings) {
-    settings = await prisma.siteSettings.create({ data: {} });
-  }
-
-  const updated = await prisma.siteSettings.update({
-    where: { id: settings.id },
-    data,
-  });
+  // Upsert the Convex singleton (create-if-missing + patch in one race-safe
+  // mutation). null on platformIcon/platformLogo clears the field.
+  const updated = await (await getConvexClient()).mutation(
+    api.siteSettings.upsertSingleton,
+    { fallbackId: createId(), now: Date.now(), patch: data },
+  );
 
   // Invalidate the cached platform name so it picks up changes immediately
   invalidatePlatformNameCache();
@@ -90,7 +87,8 @@ export async function updateSiteSettings(data: {
     });
   }
 
-  return serialize(updated);
+  // Return the mapped singleton so the write result matches getSiteSettings's shape.
+  return serialize(await getSiteSettingsFromConvex());
 }
 
 // ─── Org Creation Policy ──────────────────────────────────────────────────

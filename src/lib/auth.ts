@@ -7,6 +7,7 @@ import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
+import { getSiteSettingsFromConvex } from "./site-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
 import { getTheOrg } from "./single-org";
 import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL } from "./convex-auth-constants";
@@ -190,9 +191,9 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          // Enforce registration policy
-          const settings = await prisma.siteSettings.findFirst();
-          const policy = settings?.registrationPolicy ?? "OPEN";
+          // Enforce registration policy (siteSettings is Convex-only since Phase C)
+          const settings = await getSiteSettingsFromConvex();
+          const policy = settings.registrationPolicy;
           if (policy === "DISABLED" || policy === "INVITE_ONLY") {
             // Allow if this is the very first user (bootstrap)
             const count = await prisma.user.count();

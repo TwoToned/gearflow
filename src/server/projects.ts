@@ -27,7 +27,6 @@ import { api } from "../../convex/_generated/api";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import {
-  syncProjectManagersToConvex,
   syncProjectServicesToConvex,
   syncProjectTasksToConvex,
 } from "@/lib/project-subtable-mirror";
@@ -821,17 +820,6 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
         },
       });
 
-      // Copy project managers
-      for (const pm of source.projectManagers) {
-        await tx.projectManager.create({
-          data: {
-            organizationId,
-            projectId: newProject.id,
-            userId: pm.userId,
-          },
-        });
-      }
-
       // Helper to copy a line item and its children
       async function copyLineItem(
         li: SourceLineItem,
@@ -963,8 +951,16 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
     await mirrorProjectCreate(result);
     await upsertProjectLineItemsToConvex(result.id);
-    // The duplicate copied project managers — mirror them too.
-    await syncProjectManagersToConvex(organizationId, result.id);
+    // Copy project managers directly to Convex (Convex-only after Phase B).
+    for (const pm of source.projectManagers) {
+      await client.mutation(api.projectManagers.createIfMissing, {
+        id: createId(),
+        organizationId,
+        projectId: result.id,
+        userId: pm.userId,
+        addedAt: dupNow,
+      });
+    }
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1152,8 +1148,10 @@ export async function deleteTemplate(id: string) {
 
   await prisma.project.delete({ where: { id, organizationId } });
   await removeProjectFromConvex(id);
-  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
-  await syncProjectManagersToConvex(organizationId, id);
+  // Explicitly delete Convex-only PM rows and reconcile Prisma-cascade sub-tables.
+  const convexForDelete = await getConvexClient();
+  const pmRows = await convexForDelete.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId });
+  await Promise.all(pmRows.map((pm) => convexForDelete.mutation(api.projectManagers.remove, { id: pm.id })));
   await syncProjectServicesToConvex(organizationId, id);
   await syncProjectTasksToConvex(organizationId, id);
   return { success: true };
@@ -1265,8 +1263,10 @@ export async function deleteProject(id: string) {
   for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
   await removeCrewAssignmentCascadeFromConvex(crewCascade);
   await removeProjectFromConvex(id);
-  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
-  await syncProjectManagersToConvex(organizationId, id);
+  // Remove Convex-only PM rows and reconcile Prisma-cascade sub-tables.
+  const convex = await getConvexClient();
+  const pmRows = await convex.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId });
+  await Promise.all(pmRows.map((pm) => convex.mutation(api.projectManagers.remove, { id: pm.id })));
   await syncProjectServicesToConvex(organizationId, id);
   await syncProjectTasksToConvex(organizationId, id);
 

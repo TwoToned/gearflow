@@ -100,18 +100,3 @@ export async function syncProjectTasksToConvex(orgId: string, projectId: string)
   );
 }
 
-export async function syncProjectManagersToConvex(orgId: string, projectId: string) {
-  const rows = await prisma.projectManager.findMany({ where: { projectId } });
-  await reconcile(
-    {
-      listByProject: api.projectManagers.listByProject,
-      getById: api.projectManagers.getById,
-      create: api.projectManagers.createIfMissing,
-      update: api.projectManagers.update,
-      remove: api.projectManagers.remove,
-    },
-    orgId,
-    projectId,
-    rows as unknown as Array<Record<string, unknown>>,
-  );
-}

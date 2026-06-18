@@ -197,17 +197,10 @@ export async function getRecentActivity() {
   const { organizationId } = await getOrgContext();
 
   const convex = await getConvexClient();
-  const [rawScanLogs, testRecords, maintenanceRecords, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
+  const [rawScanLogs, rawTestTagRecords, rawTestTagAssets, maintenanceRecords, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
     convex.query(api.assetScanLogs.list, { orgId: organizationId }),
-    prisma.testTagRecord.findMany({
-      where: { organizationId },
-      include: {
-        testTagAsset: { select: { testTagId: true, description: true } },
-        testedBy: { select: { id: true, name: true } },
-      },
-      orderBy: { testDate: "desc" },
-      take: 10,
-    }),
+    convex.query(api.testTagRecords.list, { orgId: organizationId }),
+    convex.query(api.testTagAssets.list, { orgId: organizationId }),
     prisma.maintenanceRecord.findMany({
       where: { organizationId },
       include: {
@@ -237,6 +230,26 @@ export async function getRecentActivity() {
   const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
   const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));
+
+  // Sort testTagRecords newest-first and take top 10, attaching testTagAsset + testedBy.
+  const testTagRecordsSorted = [...rawTestTagRecords]
+    .sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0))
+    .slice(0, 10);
+  const testTagAssetMap = new Map(rawTestTagAssets.map((a) => [a.id, a]));
+  const testedByIds = [...new Set(testTagRecordsSorted.map((r) => r.testedById))];
+  const testedByUsers = testedByIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: testedByIds } }, select: { id: true, name: true } })
+    : [];
+  const testedByMap = new Map(testedByUsers.map((u) => [u.id, u]));
+  const testRecords = testTagRecordsSorted.map((r) => {
+    const tta = r.testTagAssetId ? testTagAssetMap.get(r.testTagAssetId) ?? null : null;
+    return {
+      ...r,
+      testDate: r.testDate != null ? new Date(r.testDate) : null,
+      testTagAsset: tta ? { testTagId: tta.testTagId, description: tta.description ?? null } : null,
+      testedBy: testedByMap.get(r.testedById) ?? null,
+    };
+  });
 
   // The maintenanceRecordAsset join is Convex-only (Phase B): fetch the links for
   // the top-10 records, attach asset scalars from Convex (assets are dual-written),

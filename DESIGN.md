@@ -21,13 +21,15 @@
   - Floating-card-in-space login (use split-panel with brand mark)
   - Centered-everything layouts
   - Placeholder emoji or purely decorative icons
+  - **ALL-CAPS / uppercase text** (§5.2 — sentence case everywhere; uppercase is the rejected industrial misfire)
+  - White text assumed on coloured fills (§3.7 on-fill rule — use `text-dark`, never assume white)
 
 ## Typography
 
 ### Type Stack
 | Role | Font | CSS var | Notes |
 |------|------|---------|-------|
-| Display / Hero | BC Alphapipe → Archivo | `--font-display` | Commercial — see §11. Registry fallback is Archivo. |
+| Display / Hero | Archivo | `--font-display` | Google Fonts. Bold geometric — the intentional display choice. |
 | UI / Body | Hanken Grotesk | `--font-sans` | Google Fonts |
 | Wordmark | Baloo 2 | `--font-wordmark` | Google Fonts — RVLT wordmark/brand moments only |
 | Annotations | Kalam | `--font-hand` | Google Fonts — **only** in empty states and annotation moments |
@@ -42,15 +44,31 @@
 | `t-body` | 13.5px | 400 | 0 | 1.55 | Body text |
 | `t-small` | 12px | 500 | 0 | 1.4 | Labels, supplementary |
 | `t-micro` | 11px | 500 | 0.005em | 1.3 | Captions, hints — minimum size |
-| `t-overline` | 10px | 700 | 0.08em | 1.2 | Section labels, uppercase headers |
+| `t-overline` | 11px | 600 | 0.02em | 1.2 | Section labels — **sentence case, never uppercase** (§5.2) |
 | `t-data` | inherit | — | — | — | + `font-variant-numeric: tabular-nums` |
-| `t-mono` | 12px | 400 | 0 | 1.4 | JetBrains Mono for IDs, tags, counts |
+| `t-mono` | 12px | 400 | 0 | 1.4 | Geist Mono for IDs, tags, counts |
+
+### Theme Text Utilities (from `@theme inline` — use these in components)
+| Class | Size | Usage |
+|-------|------|-------|
+| `text-page-title` | 24px | Page-level headings |
+| `text-section-header` | 18px | Section headings within a page |
+| `text-card-title` | 15px | Card headings |
+| `text-reading-body` | 16px | Long-form content |
+| `text-ui-text` | 14px | Standard UI text, labels |
+| `text-table-cell` | 13.5px | Table row content |
+| `text-caption` | 12px | Captions, meta |
+| `text-badge` | 11px | Badge / pill labels |
+| `text-button` | 14px | Button labels |
+
+The `.t-*` classes in `globals.css` (`t-display`, `t-title`, etc.) are app-level composites that set font-weight and font-family too. Use theme utilities for size-only overrides; use `.t-*` classes for full text role presets.
 
 ### Type Rules
-- **Absolute font-size floor: 11px.** Never render text smaller.
-- Page titles: `t-title` (20px/700), never `text-2xl font-bold` scattered inline
-- Section overlines: `t-overline` (10px/700/uppercase, `fg-3` color)
-- Asset tags, IDs, quantity counts: `t-mono` (JetBrains Mono, `fg-3`)
+- **Absolute font-size floor: 11px.** Never render text smaller. App ramp: 11 / 12 / 13.5 / 14 / 15 / 16 / 18 / 24 / 38px (38px = the one bright hero `Stat` figure only).
+- **§5.2 No ALL-CAPS — sentence case everywhere.** Uppercase / `text-transform: uppercase` is banned. Section labels, overlines, badges, nav headers: sentence case. (Uppercase was the rejected "industrial" misfire.)
+- Page titles: `t-title` (20px/700) or `text-page-title` (24px), never `text-2xl font-bold` scattered inline
+- Section overlines: `t-overline` (11px/600, sentence case, `muted` color) — or use the `SectionHeader` component
+- Asset tags, IDs, quantity counts: `t-mono` (Geist Mono, `muted`)
 - Annotation moments (empty state captions, handwritten callouts): Kalam only
 - Financial/numeric columns: always `tabular-nums`
 
@@ -91,6 +109,33 @@ Dark espresso is the default app surface (`--paper: #141210`). Light "Paper" mod
 | `--sh-hover` | `0 7px 0 #0C0A08` | `shadow-[var(--sh-hover)]` | Hover lift shadow |
 | `--sh-stk` | `2px 4px 0 rgba(0,0,0,.5)` | `shadow-[var(--sh-stk)]` | Hard stroke shadow |
 | `--scrim` | `rgba(14,12,10,.66)` | `bg-scrim` | Modal backdrop |
+| `--select` | `rgba(224,54,61,.20)` | `bg-select` | Selected row background |
+| `--link` | `#5B8DEF` (= `--blue`) | `text-link` | Link text — always blue, never red |
+| `--cream` | `#F5EFE2` | `bg-cream` | Cream tier / editorial highlight surface |
+| `--cream-ink` | `#1D1A15` | `text-cream-ink` | Text on cream surfaces |
+
+### Module Hues (§3.7) — for nav badges, module wayfinding
+Eight named hues assigned to modules. **Red is never a module colour.** Each module gets one hue; use its soft fill for backgrounds.
+
+| Module | Token | Soft fill |
+|--------|-------|-----------|
+| Projects | `--blue` / `bg-blue` | `bg-blue-soft` |
+| Crew | `--purple` / `bg-purple` | `bg-purple-soft` |
+| Gear / Assets | `--amber` / `bg-amber` | `bg-amber-soft` |
+| Compliance / T&T | `--teal` / `bg-teal` | `bg-teal-soft` |
+| Maintenance | `--coral` / `bg-coral` | `bg-coral-soft` |
+| Schedule | `--green` / `bg-green` | `bg-green-soft` |
+| Clients/Suppliers | `--pink` / `bg-pink` | *(no soft-fill token)* |
+| Warehouse | `--lime` / `bg-lime` | *(no soft-fill token)* |
+
+The same hue palette is used for avatar colours (8 deterministic hues, never red). Data-viz series order: blue → amber → green → purple → coral → teal → pink → lime. Red is reserved for threshold indicators only.
+
+### §3.7 On-Fill Text Rule
+**Never assume white text on a coloured fill.** Text sitting on any categorical/module fill (badge, patch, shift bar, avatar):
+- Dark theme: `text-dark` (the espresso near-black `--dark`)
+- Light theme: `text-primary-foreground` — **except** amber and lime fills, which always use `text-dark` (their luminance fails white)
+- The `--red` primary fill is the one exception: it uses `text-white` / `text-primary-foreground` (`#fff`) in both themes
+Use `PersonAvatar` and `FeaturePatch` components, which encode this rule internally — don't hand-roll on-fill colours.
 
 ### §1 Red Disambiguation Rule
 **Two distinct red values for distinct meanings:**
@@ -126,13 +171,16 @@ Add `.light` class to `<html>` to switch. Paper uses `--border: var(--ink)` (ful
 - **Responsive:** See §15 (Mobile Rules)
 
 ## Border Radius
-| Name | Value | Usage |
-|------|-------|-------|
-| sm | 4px | Inputs, badges, pills |
-| md | 6px | Buttons, nav items |
-| lg | 8px | Cards, containers, table wrappers |
-| xl | 12px | Modals, large panels |
-| full | 9999px | Avatars, toggle pills |
+Token source: `--r: 14px`, `--r-lg: 20px` (from theme.json). RVLT components are intentionally rounded.
+
+| Token | Value | Tailwind | Usage |
+|-------|-------|----------|-------|
+| `--r` | `14px` | `rounded-[var(--r)]` | Buttons, inputs, cards, badges — default |
+| `--r-lg` | `20px` | `rounded-[var(--r-lg)]` | Modals, large panels, dialogs |
+| pill | `9999px` | `rounded-full` | Avatars, toggle pills |
+| `--radius` | `0.875rem` | (shadcn alias = `--r`) | shadcn component default |
+
+Note: the shadcn registry button/card/input components use `--radius` (14px) by default. Do not override to smaller values.
 
 ## §2 Shadows — Hard Offset Style
 RVLT Flow uses **hard offset shadows** (no blur). This is the primary visual texture distinguishing it from generic SaaS dashboards.
@@ -179,11 +227,25 @@ Motion utilities live in `@/components/ui/motion`: `FadeIn`, `StaggerList`/`Stag
 - **Danger:** Starts muted (outline + text), escalates to filled red on hover (progressive disclosure)
 - **All:** `scale(0.97)` on press
 
+### §9.1 Required States — Every Interactive Element
+Every button, input, link, menu item, tab, etc. must carry:
+- **Focus:** `focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper`
+- **Disabled:** `disabled:opacity-45 disabled:cursor-not-allowed`
+- **Motion:** any looping/active animation guarded by `motion-safe:` (respects `prefers-reduced-motion`)
+- **Invalid (inputs):** `aria-invalid` drives the error ring — never colour-only
+
+Registry components encode these already. Hand-built interactive elements must replicate them.
+
+### Avatars / People
+Always use `PersonAvatar name="…"` for any crew/person display. It derives a deterministic hue from the name hash (one of the 8 module hues, never red) and renders AA-safe initials per the §3.7 on-fill rule. Never hand-pick avatar background colours.
+
 ### Status Indicators
+Registry `StatusIndicator` (when deployed) offers `dot` / `glow` / `inline` variants; `live` state is a pulsing green dot. Until migrated, the app's existing `status-indicator.tsx` (33 consumers) stays — see migration note in the redesign plan.
 - **Dot + Text:** 7px dot with 2px ring glow + status text. For detail views and headers.
 - **Pill:** Compact badge, dot inside. Use `intentStyles` from `status-colors.ts` — NEVER hardcode pill classes.
 - **Live/Active pill:** `bg-primary text-primary-foreground` (solid red) — CHECKED_OUT, ON_SITE, ACCEPTED
-- **Error/Problem pill:** `bg-error-subtle text-error` (tinted red) — CANCELLED, overdue, conflict
+- **Error/Problem pill:** `bg-out-soft text-t-out` (tinted red) — CANCELLED, overdue, conflict
+- **Status encoded by colour AND label, never colour-only** (§3.3 — accessibility)
 - **Never:** Plain colored rectangles, badges without semantic mapping
 
 ### Tables
@@ -220,8 +282,9 @@ SVG spot illustrations from `@/components/ui/spot-illustrations`:
 - Domains: assets, projects, crew, maintenance, calendar, documents, clients, kits, locations, notifications
 
 ### Skeleton Loading
-- Linear gradient shimmer: `var(--bg-elevated)` → `var(--bg-popover)` → `var(--bg-elevated)`, 1.5s
-- Match actual content layout shapes
+- **Solid `--elev` pulse, no gradient.** (RVLT design rule — gradient shimmer is a SaaS anti-pattern)
+- Use `<Skeleton />` from the registry — it uses the correct token and animation
+- Match actual content layout shapes (circle for avatars, rounded rects for text/buttons)
 - Minimum 200ms display to avoid flash
 
 ### Page Layout Templates
@@ -252,7 +315,11 @@ Parent > Entity Name > Edit
 `ChevronRight` separator (3×3), `t-small text-fg-3`, links `hover:text-fg`.
 
 ### Section Headers
-RVLT red overline chip (`t-overline`, red text on red-subtle bg, 4px radius) + extending `1px border` line.
+Use the registry `SectionHeader` component. Two variants:
+- **default** — `t-overline` label in mono, `muted` color (sentence case) + extending `1px --line` rule. The everyday section divider.
+- **prominent** — Kalam label in RVLT red + extending rule. Reserve for marketing / hero / personality moments, never compliance or alert sections.
+
+(Legacy `.section-label` CSS utility remains for non-migrated pages; new work uses `SectionHeader`.)
 
 ### Navigation
 - **Sidebar items:** `t-small` (12px/500), `fg-2`. Active: red text + `bg-red-subtle` + 2px left-edge red bar.
@@ -341,15 +408,10 @@ Apply UX structure (information hierarchy, interaction patterns, navigation IA).
 
 Fallback references: Linear, Notion, Airtable, ServiceTitan, Jobber, Vercel, Supabase, Stripe Dashboard.
 
-## §11 BC Alphapipe Font Licensing
-BC Alphapipe (Berton Hasebe) is a commercial typeface. **NOT on Google Fonts.**
+## §11 Display Font
+`--font-display` is set to **Archivo** (Google Fonts). This is the intentional display choice — not a fallback.
 
-- The registry theme sets `--font-display: "bc-alphapipe", "Archivo", sans-serif` — Archivo is the fallback until licensed
-- Font files must be purchased and placed in `public/fonts/bc-alphapipe/` then loaded via `next/font/local`
-- **Until licensed:** Archivo (Google Fonts) renders as the display font fallback — acceptable for development
-- The registry will load Archivo automatically if bc-alphapipe is absent
-
-**Do not hardcode `font-family: 'BC Alphapipe'` anywhere.** Always use `var(--font-display)` or `.t-display` class.
+Archivo is loaded via `next/font/google` with weights 400–900. Always reference it via `var(--font-display)` or the `.t-display` class. Never hardcode `font-family: 'Archivo'`.
 
 ## §15 Mobile Rules — Touch, Density, Safe Areas
 
@@ -418,6 +480,47 @@ BC Alphapipe (Berton Hasebe) is a commercial typeface. **NOT on Google Fonts.**
 - "Back" always goes to the list (no breadcrumb trees on mobile)
 - Destructive actions behind one confirmation step (no long dialogs)
 
+## §17 Marketing Page Design
+
+The marketing page (`/` root) is a distinct design mode from the app UI. These rules apply only to marketing/landing routes.
+
+### Typography — marketing is Archivo dominant
+- Every section heading: Archivo, large and bold (800–900 weight). This is the reverse of the app where Hanken Grotesk dominates.
+- Kalam is used MORE freely: section annotations above headings (e.g. *"built from the actual job flow"*), written in RVLT red. Not restricted to empty states as in the app.
+- Body copy: Hanken Grotesk as normal.
+
+### Red emphasis word
+Each hero/section heading has one key word or phrase in solid `--red` text, often with a red underline decoration element. One emphasis per heading maximum.
+
+### Layout sections
+1. **Sticky nav** — `--paper` bg, `RVLT Flow` wordmark (RVLT in red italic display, Flow in white bold), ghost Sign in + Halo CTA Book a demo
+2. **Hero** — centered, floating feature-patch icons as decorative imagery, dual CTA
+3. **Metrics strip** — 3–4 `Stat` widgets, one bright hero metric + siblings dim
+4. **How it works** — numbered 4-step horizontal cards (BC Alphapipe step numbers in red)
+5. **Features grid** — 3×2 cards, each with module-colored feature-patch icon + mini UI mockup
+6. **Why section** — 2-col split: text+stat left / crew scheduler preview right
+7. **Pricing** — 3-tier cards (Core dark / Flow cream featured / Network dark), cream tier pops
+8. **FAQ** — accordion
+9. **Final CTA** — full `bg-red` section, white headline, cream "Book a workflow demo" button
+10. **Footer** — 4-col, logo+tagline, Product/Company/Resources columns
+
+### Feature-patch floating decorations
+Module-colored square icon badges (14-20px radius, soft fill bg + icon) scattered at varying scales around the hero. Same component as the module wayfinding patches — decorative use only here.
+
+### Cream tier (pricing highlight)
+Featured pricing tier: `bg-cream text-cream-ink` card, elevated above flanking dark cards. Primary CTA inside is a red `Button` (Halo CTA variant for the hero plan). Kalam annotation in the card.
+
+### Full red CTA section
+Bottom of page: `bg-red` full-width rounded section, white heading text, cream `Button` CTA, GAFF sticker badge decorative element.
+
+### GAFF brand mark
+The GAFF tape roll icon (black-and-white round sticker) is a production-industry in-joke used as a brand mark in marketing contexts. Different from the FlowMascot (the robot), which is the app-context empty-state icon. Both are decorative and never used in functional alerts.
+
+### Auth pages
+Login / register / onboarding follow marketing aesthetics, not app UI rules:
+- Split-panel layout: brand side (dark, BC Alphapipe headline) + form side
+- NOT a floating card centered on espresso — that reads as generic SaaS
+
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
@@ -425,9 +528,9 @@ BC Alphapipe (Berton Hasebe) is a commercial typeface. **NOT on Google Fonts.**
 | 2026-06-18 | Dark espresso forced, no light mode | RVLT brand identity; operator screens in low-light venues |
 | 2026-06-18 | Single RVLT red accent | Brand distinction; no palette sprawl |
 | 2026-06-18 | Hard offset shadows | Tactile, distinctive, avoids generic SaaS shadow blur |
-| 2026-06-18 | BC Alphapipe for display (Hanken Grotesk fallback) | Brand identity; fallback until licensed |
-| 2026-06-18 | Hanken Grotesk replaces DM Sans | Similar weight/quality; distinct from GearFlow aesthetic |
-| 2026-06-18 | JetBrains Mono replaces Geist Mono | Better legibility for long asset tag strings |
+| 2026-06-18 | Archivo as display font (not BC Alphapipe) | Preferred the Archivo look; BC Alphapipe removed entirely |
+| 2026-06-18 | Hanken Grotesk as font-sans | Registry canonical; replaces DM Sans from old GearFlow layout |
+| 2026-06-18 | Geist Mono as font-mono | Registry canonical (`--font-mono: "Geist Mono"`) |
 | 2026-06-18 | Red disambiguation: fill vs tint, not separate hues | Single accent is non-negotiable; treatment carries semantic meaning |
 | 2026-06-18 | Personality banned from alert/compliance contexts | Operator trust; clarity over character in high-stakes UI moments |
 | 2026-06-18 | Bottom nav: Dashboard/Jobs/Warehouse/Crew/Assets | Daily operator workflows; Settings → avatar menu |

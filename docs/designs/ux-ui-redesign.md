@@ -55,11 +55,85 @@ Key constraints:
 - Depth via luminance ladder, 2px outlines, hard offset shadows
 - No soft blurred SaaS depth
 - 11px absolute font-size floor
-- Type stack: BC Alphapipe (display), Hanken Grotesk (UI), Kalam (annotations only), JetBrains Mono (data/code)
+- Type stack: Archivo (display), Hanken Grotesk (UI), Kalam (annotations only), Geist Mono (data/code) — sentence case only, no ALL-CAPS (§5.2)
 - Spacing on a 4px grid
 - Mobile follows DESIGN.md §15 and §16 especially
 
 Cross-check DESIGN.md against `RVLT-Labs/rvlt-designlanguage` canonical source if local copy is stale.
+
+---
+
+## RVLT Flow Component Registry
+
+**All UI components must come from the RVLT Flow registry first. Never build bespoke components when a registry equivalent exists.**
+
+Registry: `https://rvlt-labs.github.io/rvlt-designlanguage`
+Install: `npx shadcn add https://rvlt-labs.github.io/rvlt-designlanguage/r/<name>.json` (shadcn 4.10.0 resolves directly — `@canary` no longer required). Use `--overwrite` to refresh an audited component.
+
+### Currently DEPLOYED registry components (29 — verified live 2026-06-18):
+`theme` `utils` `button` `badge` `card` `input` `textarea` `label` `checkbox` `switch`
+`select` `dialog` `sheet` `drawer` `popover` `dropdown-menu` `tooltip` `command`
+`sonner` `tabs` `accordion` `table` `separator` `skeleton` `avatar` `flow-mascot`
+`stat` `empty-state` `stepper`
+
+### ANNOUNCED but NOT YET DEPLOYED (7 — registry index + URLs still 404 as of 2026-06-18):
+`page-header` `breadcrumb` `section-header` `combobox` `status-indicator` `feature-patch` `crew-scheduler`
+The maintainer announced these (+ a compliance audit of the 29) but the GitHub Pages deploy hasn't propagated — `registry.json` still lists 29 and `r/<name>.json` 404 for all 7. **Install them once live** (DEPLOY GATE). The live `button.json` is byte-identical to our local copy, confirming the audit hasn't landed either.
+
+### Component Inventory
+
+| Component | Source | Notes |
+|-----------|--------|-------|
+| Button | Registry | RVLT variants: default/outline/ghost/destructive |
+| Badge | Registry | Status pill: use with status-colors.ts intent |
+| Card | Registry | Has `--sh-card` shadow baked in |
+| Input / Textarea / Label | Registry | Form primitives |
+| Checkbox / Switch | Registry | |
+| Select | Registry | Remember: always pass explicit label to `<SelectValue>` |
+| Dialog / Sheet / Drawer | Registry | Overlays — all render-prop trigger pattern |
+| Popover / Dropdown Menu | Registry | DropdownMenuLabel MUST be in DropdownMenuGroup |
+| Tooltip | Registry | |
+| Command | Registry | Used for search/command palettes |
+| Sonner | Registry | Toast system (already wired in layout) |
+| Tabs | Registry | |
+| Accordion | Registry | |
+| Table | Registry | Uses `border-line` classes (not `border-border`) |
+| Separator | Registry | |
+| Skeleton | Registry | Already uses RVLT shimmer tokens |
+| Avatar | Registry | |
+| FlowMascot | Registry | `eyeColor` prop, aria-hidden; banned in alerts |
+| Stat | Registry | `{ figure, label, bright? }` — for dashboard widgets |
+| EmptyState | Registry | `{ title, description?, action? }` — includes FlowMascot |
+| Stepper | Registry | Multi-step flows |
+| StatusBadge (app-specific) | KEEP_CUSTOM | Reads from status-colors.ts intent map; uses Badge |
+| StatusDot (app-specific) | KEEP_CUSTOM | Dot + optional ring-glow for compact status signals |
+| AppSidebar | KEEP_CUSTOM | NavLink wrapper required (DOM crash risk) |
+| MobileNav | KEEP_CUSTOM | Must stay in sync with AppSidebar IA |
+| PageHeader | REGISTRY (pending deploy) | `page-header` — title + description + actions; net-new, no collision |
+| SectionHeader | REGISTRY (pending deploy) | `section-header` — default=mono muted / prominent=Kalam red (NOT uppercase); net-new |
+| FeaturePatch | REGISTRY (pending deploy) | `feature-patch` — module icon badge (sticker / soft); net-new |
+| CrewScheduler | REGISTRY (pending deploy) | `crew-scheduler` — horizontal Gantt, internal clash detection; net-new |
+| Combobox | REGISTRY (pending deploy) | `combobox` — installs as `combobox.tsx`; no collision with existing `combobox-picker.tsx` (26 consumers) |
+| Breadcrumb | ⚠ COLLISION | Registry `breadcrumb` would overwrite app `breadcrumb.tsx` (7 consumers, commit 39b2965b). Do NOT blind-install — migrate consumers in a dedicated PR |
+| StatusIndicator | ⚠ COLLISION | Registry `status-indicator` would overwrite app `status-indicator.tsx` (33 consumers, commit 5a5b268a). Do NOT blind-install — migrate consumers in a dedicated PR |
+| StatusBadge (app-specific) | KEEP_CUSTOM | Reads from status-colors.ts intent map; uses Badge |
+| StatusDot (app-specific) | KEEP_CUSTOM | Dot + optional ring-glow for compact status signals |
+
+### Registry-First Rule
+Before writing any new UI component:
+1. Check the deployed registry components (29 live; 7 more pending — re-check `registry.json`)
+2. If a needed component is announced-but-404, it's behind the DEPLOY GATE — don't rebuild it bespoke, wait for deploy
+3. Only write bespoke if genuinely not covered by the registry
+
+### Install Plan — DONE 2026-06-18 (registry deployed)
+- ✅ **Net-new installed:** `page-header`, `section-header`, `feature-patch`, `crew-scheduler`, `combobox` (5 files created; all typecheck clean)
+- ✅ **Audited refresh:** re-ran the 27 deployed primitives with `--overwrite` — 16 updated (compliance fixes: removed `uppercase`, added `disabled:cursor-not-allowed`, `aria-hidden` on icons, `text-white`→`text-primary-foreground`), 9 already identical. No export/prop-API changes. `theme`/`utils` deliberately excluded.
+- ✅ **Verification:** `tsc --noEmit` src errors held at **1290** (pre-existing mid-migration baseline; HEAD=1290, after=1290, delta 0). `globals.css --font-display` confirmed still `"Archivo"`.
+- ⏳ **STILL PENDING — collision migration (own PR each):** `breadcrumb` (7 consumers) and `status-indicator` (33 consumers) NOT installed — would overwrite app-bespoke files. Migrate consumers in dedicated PRs.
+
+**Registry bug found:** the shipped `combobox.json` uses `<PopoverTrigger render={…}>`, but the shipped `popover.json` is Radix (`asChild`) — the registry's own combobox doesn't compile against its own popover. We locally patched `combobox.tsx` to `asChild` (commented in-file). **Report upstream; re-apply patch after any `combobox` reinstall.**
+
+**Pre-existing 1290 errors are expected:** the design-system-foundation commit swapped UI primitives to the RVLT API (`asChild`, `primary/halo/line/cream` variants), but the 94 app pages still use the old GearFlow call patterns (`render` prop, `outline`/`destructive`/`secondary` variants, `icon-sm`, EmptyState `label`). Phase 4 page-by-page redesign migrates those call sites. The app does not fully typecheck mid-migration — by design.
 
 ---
 
@@ -234,10 +308,18 @@ Critical: Button variants/sizes, Badge variants/status, EmptyState presets, Skel
 ### Phase 2 — Design Research
 Use Mobbin MCP per module. 3-5 references per major area.
 
-### Phase 3 — Design System Foundation
-- Global tokens, typography, root theme, app shell
-- Shared UI primitives, loading/error/empty states
-- Navigation, responsive shell, RVLT Flow brand application
+### Phase 3 — Design System Foundation ✅ COMPLETE (2026-06-18)
+Delivered in two commits on `worktree-bridge-cse_01X8Vs3P7wTZzycnYRKHgcmV`:
+- `DESIGN.md` — fully replaced (RVLT Flow; red disambiguation §1; shadow tokens §2; mobile §15/§16; personality rules §9; state matrix §8)
+- `src/app/globals.css` — installed from registry `theme` component (canonical RVLT tokens: `--paper`, `--ink`, `--card`, `--red: #E0363D`, `--t-out: #F26F73`, etc.) + app-specific CSS preserved
+- `src/app/layout.tsx` — font swap: Hanken Grotesk + Geist Mono + Kalam + Baloo 2; themeColor → espresso `#1a100d`
+- `src/lib/status-colors.ts` — updated to RVLT token names (`bg-ok`, `bg-warn`, `bg-t-out`, `bg-blue`, `bg-rep`, `bg-red`)
+- All 29 registry components installed in `src/components/ui/`
+
+**Registry-first rule for all remaining phases:**
+1. Install from registry before building bespoke UI
+2. Check `NEEDS_REGISTRY` list — user may add missing components on request
+3. `theme` already installed — do NOT reinstall (it would wipe app-specific CSS)
 
 ### Phase 4 — Page-by-page Redesign
 For every page:
@@ -273,8 +355,9 @@ Clean verification → commit → push → open PR
 - DESIGN.md followed across all surfaces
 - No rogue colours/typefaces/gradients
 - Dark espresso default, semantic tokens only
-- Red accent used correctly
+- Red accent used correctly (solid fill = live/active; tinted = error/overdue)
 - Fresh/fun moments via actual design language, not random decoration
+- All UI components sourced from RVLT registry or KEEP_CUSTOM list — no bespoke equivalents of registry components
 
 ### 3. UX Quality
 - Major workflows feel redesigned, not merely restyled
@@ -319,6 +402,45 @@ Roughly 90+ pages across 15+ major modules. Each page requires:
 - Empty/loading/error states
 
 Significant effort. Full build estimated at 3-5 days of concentrated CC time.
+
+---
+
+## Execution Log (Phase 4 — page-by-page redesign)
+
+### Unit 1 — App Shell ✅ (2026-06-18)
+Files: `globals.css`, `app-sidebar.tsx`, `mobile-nav.tsx`, `top-bar.tsx`.
+- **globals.css:** added the `--sidebar-*` token block (the RVLT theme.json omits them, so the sidebar bg was rendering with no surface). Defined once in `:root` via `var()` refs so `.light` flows through. Mapped in `@theme inline` as `--color-sidebar-*`.
+- **app-sidebar.tsx:** sentence-cased section labels (Core/Assets/Operations/People/Admin per §5.2), stale tokens → RVLT (`fg-3/fg-4`→`muted/faint`, `bg-inset`→`paper-2/elev`, raw `oklch`→`var(--lit)`), Quick Create `DropdownMenuTrigger render=`→`asChild`. Active-state red text + 2px left bar already lived in the `sidebar.tsx` primitive — just needed the tokens. NavLink, render-on-SidebarMenuButton, routes, and permission gates all preserved.
+- **mobile-nav.tsx:** rebuilt to the §16 5-tab spec (Dashboard / Projects / Warehouse / Crew / Assets), 56px tall, 22px icons, 11px labels, red active / faint inactive. Scan tab removed (warehouse page already owns scan/lookup — zero feature loss, per user "strict bible" call).
+- **top-bar.tsx:** sticky backdrop-blur RVLT pass (§7 permits blur on sticky nav); functionality (breadcrumb, command search, notifications) preserved.
+- **Verify:** shell files typecheck-clean; total `tsc` src errors 1290→1288 (fixed 2, added 0).
+
+**KEY MIGRATION FINDING — the dominant Phase-4 mechanical task is `render`→`asChild`.** The RVLT registry primitives (Button, DropdownMenu, Popover, Dialog, Select, Tabs…) are Radix-based and use **`asChild`**, but the 94 app pages were written with the Base-UI **`render`** prop (per the now-stale CLAUDE.md note). Most of the ~1288 pre-existing errors are this, plus variant renames (`outline`/`destructive`/`secondary`→`line`/`primary`/`cream`), size renames (`icon-sm`→`icon`), `Badge variant`→`status`, and `EmptyState label`→children. NOTE: the app-bespoke `sidebar.tsx` primitive is the exception — it still uses `render` (Base UI), so SidebarMenuButton `render=` is correct. Per-page redesign converts each call site. **CLAUDE.md's "render not asChild" convention should be updated to reflect the RVLT components are `asChild`** (flag for a follow-up).
+
+### Next units (P1 order): Dashboard → Job/Project detail → Warehouse → Assets → Crew → Quotes/Documents
+
+---
+
+## Registry Gaps — RESOLVED (announced 2026-06-18, pending deploy)
+
+All 5 originally-flagged gaps + 2 preview-spotted components have been **built by the registry maintainer** and announced. They are **not yet live** on GitHub Pages (`registry.json` still lists 29; all 7 `r/<name>.json` return 404). See the DEPLOY GATE + Install Plan in the "RVLT Flow Component Registry" section above. Status:
+
+| Component | Was | Now | Install action when live |
+|-----------|-----|-----|--------------------------|
+| `page-header` | gap | built | direct install (net-new) |
+| `section-header` | gap | built — default mono-muted / prominent Kalam-red (NOT uppercase per §5.2) | direct install (net-new) |
+| `combobox` | gap | built | direct install as `combobox.tsx` (no collision with `combobox-picker.tsx`) |
+| `breadcrumb` | gap | built | ⚠ migrate — collides with app `breadcrumb.tsx` (7 consumers) |
+| `status-indicator` | gap | built — dot/glow/inline, live=pulsing green | ⚠ migrate — collides with app `status-indicator.tsx` (33 consumers) |
+| `feature-patch` | (preview-spotted) | built — sticker / soft variants | direct install (net-new) |
+| `crew-scheduler` | (preview-spotted) | built — horizontal Gantt, internal clash detection | direct install (net-new) |
+
+New spec rules that shipped with this library update (already folded into DESIGN.md):
+- §5.2 No ALL-CAPS — sentence case everywhere (removed uppercase from `.t-overline`)
+- §3.7 on-fill rule — text on categorical fills uses `text-dark`, never assume white
+- §9.1 required interactive states — focus ring / disabled / motion-safe on every element
+- Type ramp formalised: 11 / 12 / 13.5 / 14 / 15 / 16 / 18 / 24 / 38px (38 = the one bright hero Stat)
+- `PersonAvatar name="…"` mandatory for all people displays
 
 ---
 

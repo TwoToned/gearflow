@@ -22,7 +22,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[state=open]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[state=open]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
       inset && "pl-8",
       className,
     )}
@@ -78,7 +78,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
       inset && "pl-8",
       className,
     )}
@@ -94,7 +94,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] py-1.5 pl-8 pr-2.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] py-1.5 pl-8 pr-2.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
       className,
     )}
     checked={checked}
@@ -117,7 +117,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] py-1.5 pl-8 pr-2.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[8px] py-1.5 pl-8 pr-2.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-paper-2 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
       className,
     )}
     {...props}
@@ -141,7 +141,7 @@ const DropdownMenuLabel = React.forwardRef<
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2.5 py-1 text-[12px] font-semibold uppercase tracking-widest text-muted",
+      "px-2.5 py-1 text-[12px] font-semibold text-muted",
       inset && "pl-8",
       className,
     )}

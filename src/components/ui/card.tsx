@@ -17,7 +17,7 @@ const Card = React.forwardRef<
       // 2px outline = --border (--line-2 dark / --ink light, §7); hard offset shadow, no blur
       "rounded-[var(--radius)] border-2 border-border bg-card text-ink shadow-[var(--sh-card)]",
       interactive &&
-        "cursor-pointer transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-[var(--sh-hover)]",
+        "cursor-pointer transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-[var(--sh-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
       live && "bg-elev shadow-[var(--sh-card),var(--lit)]",
       className,
     )}

@@ -15,7 +15,7 @@ const EmptyState = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex flex-col items-center gap-3 rounded-[var(--r-lg)] border-2 border-dashed border-border p-7 text-center",
+      "flex flex-col items-center gap-3 rounded-[20px] border-2 border-border p-7 text-center",
       className,
     )}
     {...props}
@@ -23,7 +23,7 @@ const EmptyState = React.forwardRef<
     <FlowMascot className="size-12 text-muted" />
     <div className="flex flex-col gap-1">
       <p className="text-[14px] font-medium text-ink-2">{title}</p>
-      {description ? <p className="text-[12.5px] text-faint">{description}</p> : null}
+      {description ? <p className="text-[12px] text-faint">{description}</p> : null}
     </div>
     {action}
     {children}

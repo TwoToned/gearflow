@@ -8,7 +8,7 @@ function Skeleton({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("animate-pulse rounded-[8px] bg-elev", className)}
+      className={cn("motion-safe:animate-pulse rounded-[8px] bg-elev", className)}
       {...props}
     />
   );

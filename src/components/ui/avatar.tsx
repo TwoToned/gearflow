@@ -25,13 +25,13 @@ export function initials(name: string): string {
 // AA-safe, theme-aware initials (§3.7): dark theme (bright fills) → --dark ink;
 // light theme (deeper fills) → white, except amber/lime (still light) → --dark.
 const FALLBACK: Record<AvatarHue, string> = {
-  blue: "bg-blue text-dark [.light_&]:text-white",
+  blue: "bg-blue text-dark [.light_&]:text-[#fff]",
   amber: "bg-amber text-dark [.light_&]:text-dark",
-  green: "bg-green text-dark [.light_&]:text-white",
-  purple: "bg-purple text-dark [.light_&]:text-white",
-  coral: "bg-coral text-dark [.light_&]:text-white",
-  teal: "bg-teal text-dark [.light_&]:text-white",
-  pink: "bg-pink text-dark [.light_&]:text-white",
+  green: "bg-green text-dark [.light_&]:text-[#fff]",
+  purple: "bg-purple text-dark [.light_&]:text-[#fff]",
+  coral: "bg-coral text-dark [.light_&]:text-[#fff]",
+  teal: "bg-teal text-dark [.light_&]:text-[#fff]",
+  pink: "bg-pink text-dark [.light_&]:text-[#fff]",
   lime: "bg-lime text-dark [.light_&]:text-dark",
 };
 

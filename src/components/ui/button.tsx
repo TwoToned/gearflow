@@ -11,15 +11,15 @@ import { cn } from "@/lib/utils";
 const buttonVariants = cva(
   // states (§9.1): focus-visible ring on every variant; tactile press; disabled = greyed,
   // not-allowed cursor, no lift/shadow (clicks blocked by the `disabled` attr).
-  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-sans font-semibold text-[14px] transition-[transform,box-shadow,background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:translate-y-0 disabled:hover:translate-y-0 [&_svg]:size-5 [&_svg]:shrink-0",
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-sans font-semibold text-[14px] transition-[transform,box-shadow,background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:translate-y-0 disabled:hover:translate-y-0 [&_svg]:size-5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         // primary action — the one red
         primary:
-          "bg-red text-white shadow-[0_3px_0_var(--red-700)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
+          "bg-red text-primary-foreground shadow-[0_3px_0_var(--red-700)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
         // hero CTA only — primary + sanctioned red bloom (§8); bloom is the --sh-halo token
-        halo: "bg-red text-white shadow-[var(--sh-halo)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
+        halo: "bg-red text-primary-foreground shadow-[var(--sh-halo)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
         // outline — 2px outline (--line-2 dark / --ink light, §9); fills ink on hover
         line: "border-2 border-border bg-transparent text-ink hover:bg-ink hover:text-paper active:translate-y-px",
         // text only — hover to red

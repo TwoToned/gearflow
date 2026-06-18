@@ -16,7 +16,7 @@ const Input = React.forwardRef<
     className={cn(
       "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink",
       "placeholder:text-faint",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-0",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
       "aria-[invalid=true]:border-t-out aria-[invalid=true]:focus-visible:ring-t-out",
       "disabled:cursor-not-allowed disabled:opacity-45",
       "file:border-0 file:bg-transparent file:text-sm file:font-medium",

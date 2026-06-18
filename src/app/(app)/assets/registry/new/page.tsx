@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,7 +21,7 @@ function NewAssetContent() {
   const type = searchParams.get("type") || "serialized";
   const modelId = searchParams.get("modelId") || undefined;
 
-  const title = type === "bulk" ? "New Bulk Asset" : "New Asset";
+  const title = type === "bulk" ? "New bulk asset" : "New asset";
 
   return (
     <FadeIn>
@@ -37,11 +38,11 @@ function NewAssetContent() {
           </BreadcrumbList>
         </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">{title}</h1>
-          <p className="t-body text-fg-3">
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">{title}</h1>
+          <p className="mt-1 text-ui-text text-muted">
             {type === "bulk"
               ? "Create a bulk stock entry tracked by quantity."
-              : "Create a serialized asset tracked individually."}
+              : "Create a serialised asset tracked individually."}
           </p>
         </div>
         {type === "bulk" ? (
@@ -56,7 +57,7 @@ function NewAssetContent() {
 
 export default function NewAssetPage() {
   return (
-    <Suspense fallback={<div className="t-body text-fg-3">Loading...</div>}>
+    <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
       <NewAssetContent />
     </Suspense>
   );

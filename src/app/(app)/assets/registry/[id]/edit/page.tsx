@@ -42,7 +42,14 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
 
   if (isBulk) {
-    if (!ba) return <div className="t-body text-fg-3">Bulk asset not found.</div>;
+    if (!ba) {
+      return (
+        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Bulk asset not found.</p>
+          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        </div>
+      );
+    }
 
     const initialData: BulkAssetFormValues & { id: string } = {
       id: ba.id,
@@ -76,8 +83,8 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-fg">Edit Bulk Asset</h1>
-            <p className="t-body text-fg-3 font-mono">{ba.assetTag}</p>
+            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit bulk asset</h1>
+            <p className="mt-1 t-mono text-ui-text text-muted">{ba.assetTag}</p>
           </div>
           <EditLockGate entityType="asset" entityId={id}>
             <BulkAssetForm initialData={initialData} />
@@ -87,7 +94,14 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
     );
   }
 
-  if (!asset) return <div className="t-body text-fg-3">Asset not found.</div>;
+  if (!asset) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Asset not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+      </div>
+    );
+  }
 
   const formatDateForInput = (date: Date | string | number | null | undefined) => {
     if (!date) return undefined;
@@ -135,8 +149,8 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">Edit Asset</h1>
-          <p className="t-body text-fg-3 font-mono">{asset.assetTag}</p>
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit asset</h1>
+          <p className="mt-1 t-mono text-ui-text text-muted">{asset.assetTag}</p>
         </div>
         <EditLockGate entityType="asset" entityId={id}>
           <AssetForm initialData={initialData} />

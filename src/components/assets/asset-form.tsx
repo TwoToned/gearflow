@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
@@ -151,13 +151,13 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-8">
-      <SectionHeader label="Asset Details" />
+      <SectionHeader label="Asset details" />
       <FormSection>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label>Equipment Model *</Label>
+            <Label>Equipment model *</Label>
             <ComboboxPicker
               value={form.watch("modelId")}
               onChange={(v) => form.setValue("modelId", v, { shouldValidate: true })}
@@ -170,26 +170,26 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
               searchPlaceholder="Search models..."
             />
             {form.formState.errors.modelId && (
-              <p className="text-xs text-destructive">{form.formState.errors.modelId.message}</p>
+              <p className="text-caption text-t-out">{form.formState.errors.modelId.message}</p>
             )}
           </div>
           <div className="space-y-2 sm:col-span-2">
             <div className="flex items-center gap-2">
-              <Label className="flex-none">Asset Tag *</Label>
-              <Label className="flex-none text-fg-3">/ Serial Number</Label>
+              <Label className="flex-none">Asset tag *</Label>
+              <Label className="flex-none text-muted">/ Serial number</Label>
             </div>
             <div className="space-y-2">
               <div className="flex gap-2">
                 <AssetTagInput {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="Asset tag" className="flex-1" />
                 <Input {...form.register("serialNumber")} placeholder="Serial number" className="flex-1" />
                 {!isEditing && (
-                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={addExtraAsset} title="Add another asset">
+                  <Button type="button" variant="line" size="icon" className="shrink-0" onClick={addExtraAsset} title="Add another asset">
                     <Plus className="h-4 w-4" />
                   </Button>
                 )}
               </div>
               {form.formState.errors.assetTag && (
-                <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.assetTag.message}</p>
               )}
               {extraAssets.map((asset, i) => (
                 <div key={i} className="flex gap-2">
@@ -206,20 +206,20 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                     placeholder="Serial number"
                     className="flex-1"
                   />
-                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => removeExtraAsset(i)}>
+                  <Button type="button" variant="line" size="icon" className="shrink-0" onClick={() => removeExtraAsset(i)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
               {extraAssets.length > 0 && (
-                <p className="text-xs text-fg-3">
+                <p className="text-caption text-muted">
                   Creating {totalCount} assets with the same details
                 </p>
               )}
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="customName">Custom Name</Label>
+            <Label htmlFor="customName">Custom name</Label>
             <Input id="customName" {...form.register("customName")} placeholder="e.g. FOH Console 1" />
           </div>
           <div className="space-y-2">
@@ -244,11 +244,11 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
             <select
               id="status"
               {...form.register("status")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="AVAILABLE">Available</option>
               <option value="CHECKED_OUT">Deployed</option>
-              <option value="IN_MAINTENANCE">In Maintenance</option>
+              <option value="IN_MAINTENANCE">In maintenance</option>
               <option value="RESERVED">Reserved</option>
               <option value="RETIRED">Retired</option>
               <option value="LOST">Lost</option>
@@ -259,7 +259,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
             <select
               id="condition"
               {...form.register("condition")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="NEW">New</option>
               <option value="GOOD">Good</option>
@@ -271,15 +271,15 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
         </div>
       </FormSection>
 
-      <SectionHeader label="Purchase Information" />
+      <SectionHeader label="Purchase information" />
       <FormSection>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="purchaseDate">Purchase Date</Label>
+            <Label htmlFor="purchaseDate">Purchase date</Label>
             <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="purchasePrice">Purchase Price ($)</Label>
+            <Label htmlFor="purchasePrice">Purchase price ($)</Label>
             <Input id="purchasePrice" type="number" step="0.01" {...form.register("purchasePrice")} />
           </div>
           <div className="space-y-2">
@@ -301,12 +301,12 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           </div>
           {form.watch("supplierId") && (
             <div className="space-y-2">
-              <Label htmlFor="purchaseOrderNumber">Purchase Order #</Label>
+              <Label htmlFor="purchaseOrderNumber">Purchase order #</Label>
               <Input id="purchaseOrderNumber" {...form.register("purchaseOrderNumber")} placeholder="e.g. PO-2024-001" />
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="warrantyExpiry">Warranty Expiry</Label>
+            <Label htmlFor="warrantyExpiry">Warranty expiry</Label>
             <Input id="warrantyExpiry" type="date" {...form.register("warrantyExpiry")} />
           </div>
         </div>
@@ -351,13 +351,12 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
       </FormSection>
 
         </div>
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Asset" : totalCount > 1 ? `Create ${totalCount} Assets` : "Create Asset"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update asset" : totalCount > 1 ? `Create ${totalCount} assets` : "Create asset"}
           </Button>
         </div>
       </div>

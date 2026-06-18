@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
@@ -96,12 +95,12 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-6">
-      <FormSection title="Bulk Asset Details">
+      <FormSection title="Bulk asset details">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label>Equipment Model *</Label>
+            <Label>Equipment model *</Label>
             <ComboboxPicker
               value={form.watch("modelId")}
               onChange={(v) => form.setValue("modelId", v, { shouldValidate: true })}
@@ -114,18 +113,18 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
               searchPlaceholder="Search models..."
             />
             {form.formState.errors.modelId && (
-              <p className="text-xs text-destructive">{form.formState.errors.modelId.message}</p>
+              <p className="text-caption text-t-out">{form.formState.errors.modelId.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="assetTag">Asset Tag *</Label>
+            <Label htmlFor="assetTag">Asset tag *</Label>
             <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. AV-SM57" />
             {form.formState.errors.assetTag && (
-              <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
+              <p className="text-caption text-t-out">{form.formState.errors.assetTag.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="totalQuantity">Total Quantity *</Label>
+            <Label htmlFor="totalQuantity">Total quantity *</Label>
             <Input id="totalQuantity" type="number" {...form.register("totalQuantity")} />
           </div>
           <div className="space-y-2">
@@ -146,7 +145,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="purchasePricePerUnit">Price Per Unit ($)</Label>
+            <Label htmlFor="purchasePricePerUnit">Price per unit ($)</Label>
             <Input id="purchasePricePerUnit" type="number" step="0.01" {...form.register("purchasePricePerUnit")} />
           </div>
           <div className="space-y-2">
@@ -154,11 +153,11 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
             <select
               id="status"
               {...form.register("status")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="ACTIVE">Active</option>
-              <option value="LOW_STOCK">Low Stock</option>
-              <option value="OUT_OF_STOCK">Out of Stock</option>
+              <option value="LOW_STOCK">Low stock</option>
+              <option value="OUT_OF_STOCK">Out of stock</option>
               <option value="RETIRED">Retired</option>
             </select>
           </div>
@@ -189,13 +188,12 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
       </FormSection>
 
         </div>
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Bulk Asset" : "Create Bulk Asset"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update bulk asset" : "Create bulk asset"}
           </Button>
         </div>
       </div>

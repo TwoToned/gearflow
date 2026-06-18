@@ -92,7 +92,7 @@ const projectStatusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -100,8 +100,8 @@ const projectStatusLabels: Record<string, string> = {
 };
 
 const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry Hire",
-  WET_HIRE: "Wet Hire",
+  DRY_HIRE: "Dry hire",
+  WET_HIRE: "Wet hire",
   INSTALLATION: "Installation",
   TOUR: "Tour",
   CORPORATE: "Corporate",
@@ -328,11 +328,11 @@ export default function ProjectDetailPage({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {([
-                        { label: "Quote / Proposal", type: "quote", apiType: "quote" },
+                        { label: "Quote / proposal", type: "quote", apiType: "quote" },
                         { label: "Invoice", type: "invoice", apiType: "invoice" },
-                        { label: "Pull Slip", type: "packing-list", apiType: "pull-slip" },
-                        { label: "Delivery Docket", type: "delivery-docket", apiType: "delivery-docket" },
-                        { label: "Return Sheet", type: "return-sheet", apiType: "return-sheet" },
+                        { label: "Pull slip", type: "packing-list", apiType: "pull-slip" },
+                        { label: "Delivery docket", type: "delivery-docket", apiType: "delivery-docket" },
+                        { label: "Return sheet", type: "return-sheet", apiType: "return-sheet" },
                       ] as const).map(({ label, type, apiType }) => {
                         const templates = customTemplates?.filter((t: { type: string }) => t.type === type) || [];
                         if (templates.length === 0) {
@@ -367,12 +367,12 @@ export default function ProjectDetailPage({
                         );
                       })}
                       <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
-                        Call Sheet
+                        Call sheet
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => window.open(`/api/documents/timeline/${id}`, "_blank")}
                       >
-                        Project Timeline
+                        Project timeline
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -461,7 +461,7 @@ export default function ProjectDetailPage({
               <Tabs defaultValue="equipment">
                 <TabsList>
                   <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                  <TabsTrigger value="labour">Labour &amp; Logistics</TabsTrigger>
+                  <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
                   <TabsTrigger value="tasks">Tasks</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
@@ -503,7 +503,7 @@ export default function ProjectDetailPage({
                 <TabsContent value="notes">
                   <div className="grid gap-4 pt-4">
                     <NotesEditor
-                      title="Crew Notes"
+                      title="Crew notes"
                       initialNotes={project.crewNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -513,7 +513,7 @@ export default function ProjectDetailPage({
                       rows={4}
                     />
                     <NotesEditor
-                      title="Internal Notes"
+                      title="Internal notes"
                       initialNotes={project.internalNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -523,7 +523,7 @@ export default function ProjectDetailPage({
                       rows={4}
                     />
                     <NotesEditor
-                      title="Client Notes"
+                      title="Client notes"
                       initialNotes={project.clientNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -894,7 +894,7 @@ export default function ProjectDetailPage({
         open={cancelOpen}
         onOpenChange={setCancelOpen}
         title="Cancel this project?"
-        description="The project will be marked CANCELLED. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
+        description="The project will be marked cancelled. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
         confirmLabel="Cancel project"
         cancelLabel="Keep project"
         onConfirm={() => {

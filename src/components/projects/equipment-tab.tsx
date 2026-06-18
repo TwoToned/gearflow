@@ -59,6 +59,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
+import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
@@ -657,7 +658,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <TableHead className="px-1" />
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
-              <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
+              <TableHead className="text-right hidden md:table-cell">Unit price</TableHead>
               {showCostColumn && (
                 <TableHead className="text-right hidden md:table-cell">Cost</TableHead>
               )}
@@ -1211,7 +1212,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 <div key={svc.id} className="flex items-center justify-between px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-ui-text text-ink-2">{svc.title}</span>
-                    <span className="rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">{svc.type.replace("_", " ")}</span>
+                    <span className="rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">{SERVICE_TYPE_LABELS[svc.type as keyof typeof SERVICE_TYPE_LABELS] ?? svc.type}</span>
                   </div>
                   <div className="flex items-center gap-4 text-ui-text">
                     {svc.lineTotal != null && Number(svc.lineTotal) > 0 && (

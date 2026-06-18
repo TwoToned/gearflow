@@ -850,7 +850,7 @@ function AssignmentDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {mode === "add" ? "Add Crew to Project" : "Edit Assignment"}
+            {mode === "add" ? "Add crew to project" : "Edit assignment"}
           </DialogTitle>
         </DialogHeader>
 
@@ -858,7 +858,7 @@ function AssignmentDialog({
           {/* Crew member picker (add mode only) */}
           {mode === "add" && (
             <div className="space-y-1.5">
-              <Label>Crew Member *</Label>
+              <Label>Crew member *</Label>
               <ComboboxPicker
                 options={crewOptions}
                 value={form.watch("crewMemberId")}
@@ -878,7 +878,7 @@ function AssignmentDialog({
           {/* Service */}
           {serviceOptions.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Linked Service</Label>
+              <Label>Linked service</Label>
               <ComboboxPicker
                 options={serviceOptions}
                 value={form.watch("serviceId") || ""}
@@ -962,7 +962,7 @@ function AssignmentDialog({
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Start Date</Label>
+              <Label>Start date</Label>
               <Input
                 type="date"
                 {...form.register("startDate")}
@@ -976,7 +976,7 @@ function AssignmentDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>End Date</Label>
+              <Label>End date</Label>
               <Input
                 type="date"
                 {...form.register("endDate")}
@@ -994,14 +994,14 @@ function AssignmentDialog({
           {/* Times */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Start Time</Label>
+              <Label>Start time</Label>
               <Input
                 type="time"
                 {...form.register("startTime")}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>End Time</Label>
+              <Label>End time</Label>
               <Input
                 type="time"
                 {...form.register("endTime")}
@@ -1012,7 +1012,7 @@ function AssignmentDialog({
           {/* Rate override */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Rate Override</Label>
+              <Label>Rate override</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -1022,7 +1022,7 @@ function AssignmentDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Rate Type</Label>
+              <Label>Rate type</Label>
               <Select
                 value={form.watch("rateType") || ""}
                 onValueChange={(v) =>
@@ -1046,7 +1046,7 @@ function AssignmentDialog({
 
           {/* Estimated hours (for hourly) */}
           <div className="space-y-1.5">
-            <Label>Estimated Hours</Label>
+            <Label>Estimated hours</Label>
             <Input
               type="number"
               step="0.5"
@@ -1093,7 +1093,7 @@ function AssignmentDialog({
               }
             />
             <Label htmlFor="isProjectManager" className="cursor-pointer">
-              Project Manager
+              Project manager
             </Label>
           </div>
 
@@ -1124,7 +1124,7 @@ function AssignmentDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Internal Notes</Label>
+            <Label>Internal notes</Label>
             <Textarea
               rows={2}
               placeholder="Internal only..."
@@ -1174,7 +1174,7 @@ function AssignmentDialog({
             </Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "add" ? "Add to Project" : "Save Changes"}
+              {mode === "add" ? "Add to project" : "Save changes"}
             </Button>
           </DialogFooter>
         </form>
@@ -1213,7 +1213,7 @@ function BulkMessageDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Message Project Crew</DialogTitle>
+          <DialogTitle>Message project crew</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-ui-text text-muted">
@@ -1244,7 +1244,7 @@ function BulkMessageDialog({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               <Send className="mr-2 h-4 w-4" />
-              Send Message
+              Send message
             </Button>
           </DialogFooter>
         </div>

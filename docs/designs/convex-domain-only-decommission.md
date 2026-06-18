@@ -290,6 +290,29 @@ schema edits on kept models are deleting Prisma back-relation array fields.
   is dropped. Order: **warehouse-close** → file-upload+media → crew → crew-scheduling
   → project-subtable → asset → kit → sub-hire → **project+line-item (keystone, last;
   full-pipeline PDF integration test)**.
+  - **Refined core plan** — the entangled remainder (line-items+units, asset
+    allocation, kit, sub-hire, crew-scheduling, grouping, project scalars) is
+    bound by shared Prisma `$transaction`s and is sequenced separately in
+    [`convex-core-inversion-design.md`](./convex-core-inversion-design.md): each
+    `$transaction` → ONE purpose-built atomic Convex mutation (a single mutation
+    is fully ACID + serializable). Steps: **(1) grouping ✅ DONE** →
+    (2) line-item+asset checkout mega-flip → (3) kit → (4) sub-hire →
+    (5) projectService+crew-scheduling → (6) project scalars.
+  - **Core step 1 — grouping ✅ DONE** (`phase-c/core-grouping`). Writes were
+    already Convex-only (Phase B `e625763a`) but via non-atomic sequenced
+    `client.mutation` calls. This PR ports cascade/reorder/create into atomic
+    custom mutations (`createAtEnd`/`reorder`/`deleteCascade`/`deleteAllForProject`),
+    fixes 3 residual stale `prisma.projectGroup` reads (incl. a silent revenue
+    bug in `recalculateProjectTotals`), and fixes the **`deleteProject` Convex
+    orphan** (categories/groups/slots were leaked after #254 dropped the FK
+    cascade). Dev-validated live: 13/13 invariant checks.
+  - **⚠ Finding (broader, NOT grouping-scoped):** #254 dropped *all* domain↔domain
+    FKs, so `tx.project.delete` in `deleteProject` no longer cascades **any**
+    Prisma child rows (line-items, units, services, tasks, media, …). Grouping is
+    handled (Convex purge above); the remaining still-Prisma children are leaked
+    on project delete until their cluster inverts. Each Stage-2/core PR that
+    inverts a project-child cluster must add explicit cleanup in `deleteProject`,
+    or a stopgap `deleteMany`-by-`projectId` sweep should be added.
 - **Stage 3 — schema removal** (1 PR): delete the 71 domain models + orphaned
   `User`/`Organization` back-relation arrays from `schema.prisma`; `prisma validate`
   + `generate` clean; grep-gate zero `prisma.<domainModel>.` remaining.

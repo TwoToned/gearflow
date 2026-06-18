@@ -24,6 +24,7 @@ import {
 import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PersonAvatar } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,27 +126,52 @@ function CrewDashboard() {
     return () => window.removeEventListener("slash-command", handler);
   }, []);
 
-  const { data: stats, refetch: refetchStats } = useServerQuery({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useServerQuery({
     queryKey: ["crew-dashboard-stats", orgId],
     queryFn: getCrewDashboardStats,
   });
 
-  const { data: pendingTime, refetch: refetchPendingTime } = useServerQuery({
+  const {
+    data: pendingTime,
+    isLoading: pendingTimeLoading,
+    error: pendingTimeError,
+    refetch: refetchPendingTime,
+  } = useServerQuery({
     queryKey: ["crew-pending-time", orgId],
     queryFn: getPendingTimeEntries,
   });
 
-  const { data: activeAssignments } = useServerQuery({
+  const {
+    data: activeAssignments,
+    isLoading: activeAssignmentsLoading,
+    error: activeAssignmentsError,
+    refetch: refetchActiveAssignments,
+  } = useServerQuery({
     queryKey: ["crew-active-assignments", orgId],
     queryFn: getActiveAssignmentsSummary,
   });
 
-  const { data: pendingOffers, refetch: refetchPendingOffers } = useServerQuery({
+  const {
+    data: pendingOffers,
+    isLoading: pendingOffersLoading,
+    error: pendingOffersError,
+    refetch: refetchPendingOffers,
+  } = useServerQuery({
     queryKey: ["crew-pending-offers", orgId],
     queryFn: getPendingOffers,
   });
 
-  const { data: upcomingShifts } = useServerQuery({
+  const {
+    data: upcomingShifts,
+    isLoading: upcomingShiftsLoading,
+    error: upcomingShiftsError,
+    refetch: refetchUpcomingShifts,
+  } = useServerQuery({
     queryKey: ["crew-upcoming-shifts", orgId],
     queryFn: getUpcomingShifts,
   });
@@ -206,41 +232,55 @@ function CrewDashboard() {
       />
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        <StatCard
-          title="Active crew"
-          value={stats?.totalActive ?? "—"}
-          icon={Users}
-          href="/crew"
-        />
-        <StatCard
-          title="Assignments"
-          value={stats?.activeAssignments ?? "—"}
-          description="Active"
-          icon={Briefcase}
-          href="/crew/planner"
-        />
-        <StatCard
-          title="Pending offers"
-          value={stats?.pendingOffers ?? "—"}
-          description="Awaiting response"
-          icon={Send}
-          alert={!!stats?.pendingOffers}
-        />
-        <StatCard
-          title="Timesheets"
-          value={stats?.submittedTime ?? "—"}
-          description="Need approval"
-          icon={Clock}
-          alert={!!stats?.submittedTime}
-        />
-        <StatCard
-          title="Hours (7d)"
-          value={stats?.hoursThisWeek != null ? `${stats.hoursThisWeek.toFixed(1)}h` : "—"}
-          description="Approved"
-          icon={Timer}
-        />
-      </div>
+      {statsError ? (
+        <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+          <p className="text-ui-text text-t-out">Couldn&apos;t load crew stats. Check your connection and try again.</p>
+          <Button variant="line" size="sm" onClick={() => refetchStats()}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard
+            title="Active crew"
+            value={stats?.totalActive ?? "—"}
+            icon={Users}
+            href="/crew"
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Assignments"
+            value={stats?.activeAssignments ?? "—"}
+            description="Active"
+            icon={Briefcase}
+            href="/crew/planner"
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Pending offers"
+            value={stats?.pendingOffers ?? "—"}
+            description="Awaiting response"
+            icon={Send}
+            alert={!!stats?.pendingOffers}
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Timesheets"
+            value={stats?.submittedTime ?? "—"}
+            description="Need approval"
+            icon={Clock}
+            alert={!!stats?.submittedTime}
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Hours (7d)"
+            value={stats?.hoursThisWeek != null ? `${stats.hoursThisWeek.toFixed(1)}h` : "—"}
+            description="Approved"
+            icon={Timer}
+            loading={statsLoading}
+          />
+        </div>
+      )}
 
       {/* Two-column grid */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -263,7 +303,14 @@ function CrewDashboard() {
               </Button>
             )}
           </div>
-          {!pendingTime || pendingTime.length === 0 ? (
+          {pendingTimeError ? (
+            <CardErrorNotice
+              message="Couldn't load pending timesheets. Check your connection and try again."
+              onRetry={() => refetchPendingTime()}
+            />
+          ) : pendingTimeLoading ? (
+            <CardRowSkeleton count={3} />
+          ) : !pendingTime || pendingTime.length === 0 ? (
             <p className="text-ui-text text-muted">
               No timesheets awaiting approval.
             </p>
@@ -332,7 +379,14 @@ function CrewDashboard() {
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          {!activeAssignments || activeAssignments.length === 0 ? (
+          {activeAssignmentsError ? (
+            <CardErrorNotice
+              message="Couldn't load active assignments. Check your connection and try again."
+              onRetry={() => refetchActiveAssignments()}
+            />
+          ) : activeAssignmentsLoading ? (
+            <CardRowSkeleton count={3} avatar />
+          ) : !activeAssignments || activeAssignments.length === 0 ? (
             <p className="text-ui-text text-muted">
               No active assignments.
             </p>
@@ -388,7 +442,14 @@ function CrewDashboard() {
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          {!upcomingShifts || upcomingShifts.length === 0 ? (
+          {upcomingShiftsError ? (
+            <CardErrorNotice
+              message="Couldn't load upcoming shifts. Check your connection and try again."
+              onRetry={() => refetchUpcomingShifts()}
+            />
+          ) : upcomingShiftsLoading ? (
+            <CardRowSkeleton count={3} avatar />
+          ) : !upcomingShifts || upcomingShifts.length === 0 ? (
             <p className="text-ui-text text-muted">
               No upcoming shifts scheduled.
             </p>
@@ -434,7 +495,14 @@ function CrewDashboard() {
         {/* Pending offers */}
         <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
           <h3 className="text-card-title font-bold text-ink mb-4">Pending offers</h3>
-          {!pendingOffers || pendingOffers.length === 0 ? (
+          {pendingOffersError ? (
+            <CardErrorNotice
+              message="Couldn't load pending offers. Check your connection and try again."
+              onRetry={() => refetchPendingOffers()}
+            />
+          ) : pendingOffersLoading ? (
+            <CardRowSkeleton count={3} avatar />
+          ) : !pendingOffers || pendingOffers.length === 0 ? (
             <p className="text-ui-text text-muted">
               No pending offers.
             </p>
@@ -557,6 +625,46 @@ function groupShiftsByAssignment(shifts: any[]) {
   }
 
   return groups;
+}
+
+// ─── Dashboard card states (§8 loading / error) ─────────────────────────────
+
+/** Skeleton rows mirroring the dashboard list-card row layout. */
+function CardRowSkeleton({ count = 3, avatar = false }: { count?: number; avatar?: boolean }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+        >
+          {avatar && <Skeleton className="size-8 rounded-full" />}
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Left-edge red error notice with retry, for a single failed dashboard query. */
+function CardErrorNotice({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+      <p className="text-ui-text text-t-out">{message}</p>
+      <Button variant="line" size="sm" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
 }
 
 // ─── Export Timesheet Dialog ────────────────────────────────────────────────
@@ -1007,6 +1115,7 @@ function StatCard({
   icon: Icon,
   href,
   alert,
+  loading,
 }: {
   title: string;
   value: string | number;
@@ -1014,6 +1123,7 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
   href?: string;
   alert?: boolean;
+  loading?: boolean;
 }) {
   const content = (
     <div
@@ -1025,11 +1135,15 @@ function StatCard({
           className={`size-4 ${alert ? "text-t-out" : "text-muted"}`}
         />
       </div>
-      <div
-        className={`text-section-header font-display font-extrabold tabular-nums ${alert ? "text-t-out" : "text-ink"}`}
-      >
-        {value}
-      </div>
+      {loading ? (
+        <Skeleton className="h-7 w-12" />
+      ) : (
+        <div
+          className={`text-section-header font-display font-extrabold tabular-nums ${alert ? "text-t-out" : "text-ink"}`}
+        >
+          {value}
+        </div>
+      )}
       {description && (
         <p className="text-caption text-muted">{description}</p>
       )}

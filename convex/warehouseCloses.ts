@@ -102,3 +102,57 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ── CUSTOM (Phase C) — NOT emitted by the CRUD generator. Re-add if regenerating
+// convex/warehouseCloses.ts via `pnpm convex:crud`. ──────────────────────────
+
+/**
+ * Look up the (at most one) close-out for a project. Powers the "already closed"
+ * banner — replaces the `prisma.warehouseClose.findFirst` residual read in
+ * `getCloseOutSummary` now that warehouseCloses is Convex-only.
+ */
+export const getByProject = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("warehouseCloses")
+      .withIndex("by_projectId_organizationId", (q) =>
+        q.eq("projectId", projectId).eq("organizationId", orgId),
+      )
+      .first();
+  },
+});
+
+/**
+ * Race-safe close-out insert. Enforces the [projectId, organizationId]
+ * uniqueness invariant the dropped Prisma unique constraint used to guarantee:
+ * Convex mutations are serializable, so a concurrent close reads the same index
+ * range this insert writes → OCC forces the loser to retry and observe the
+ * existing row. Returns `{ alreadyClosed }` (rather than throwing on the dup) so
+ * the server action maps it to the existing user-facing message.
+ */
+export const closeOutIfNotClosed = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    closedById: v.string(),
+    closedAt: v.number(),
+    storedCount: v.number(),
+    damagedCount: v.number(),
+    lostCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db
+      .query("warehouseCloses")
+      .withIndex("by_projectId_organizationId", (q) =>
+        q.eq("projectId", args.projectId).eq("organizationId", args.organizationId),
+      )
+      .first();
+    if (existing) return { alreadyClosed: true as const, id: existing.id };
+    await ctx.db.insert("warehouseCloses", args);
+    return { alreadyClosed: false as const, id: args.id };
+  },
+});

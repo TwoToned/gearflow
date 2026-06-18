@@ -1030,11 +1030,10 @@ async function syncNewSubHireLineItem(
     const groupCategoryMap = new Map<string, string | null>();
     const gId = item.targetGroupId ?? orderDefaults.defaultTargetGroupId;
     if (gId) {
-      const pg = await prisma.projectGroup.findUnique({
-        where: { id: gId },
-        select: { categoryId: true },
-      });
-      if (pg) groupCategoryMap.set(gId, pg.categoryId);
+      // Project groups are Convex-only now.
+      const convex = await getConvexClient();
+      const pg = await convex.query(api.projectGroups.getById, { id: gId });
+      if (pg) groupCategoryMap.set(gId, pg.categoryId ?? null);
     }
 
     const placement = resolvePlacement(

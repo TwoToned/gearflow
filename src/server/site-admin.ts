@@ -2,7 +2,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
-import { removeAssetScanLogFromConvex } from "@/lib/asset-scan-log-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requireSession } from "@/lib/auth-server";
@@ -503,11 +502,12 @@ export async function adminDeleteUser(userId: string) {
   // Capture the dual-written rows this user owns, so we can mirror their
   // deletion to Convex after the transaction commits (Convex calls cannot run
   // inside a Prisma $transaction).
+  const convexForDelete = await getConvexClient();
   const [serializedItemsToRemove, bulkItemsToRemove, scanLogsToRemove, testTagRecordsToRemove] =
     await Promise.all([
       prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
       prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
-      prisma.assetScanLog.findMany({ where: { scannedById: userId }, select: { id: true } }),
+      convexForDelete.query(api.assetScanLogs.listByScannedById, { scannedById: userId }),
       prisma.testTagRecord.findMany({ where: { testedById: userId }, select: { id: true } }),
     ]);
   // SubTestRecords cascade-delete when their TestTagRecord is removed; capture
@@ -541,15 +541,12 @@ export async function adminDeleteUser(userId: string) {
   // post-commit, since Convex calls cannot run inside a $transaction.
   for (const item of serializedItemsToRemove) await removeKitSerializedItemFromConvex(item.id);
   for (const item of bulkItemsToRemove) await removeKitBulkItemFromConvex(item.id);
-  for (const item of scanLogsToRemove) await removeAssetScanLogFromConvex(item.id);
-  if (subTestRecordsToRemove.length || testTagRecordsToRemove.length) {
-    const convexForRemove = await getConvexClient();
-    for (const item of subTestRecordsToRemove) {
-      await convexForRemove.mutation(api.subTestRecords.remove, { id: item.id });
-    }
-    for (const item of testTagRecordsToRemove) {
-      await convexForRemove.mutation(api.testTagRecords.remove, { id: item.id });
-    }
+  for (const item of scanLogsToRemove) await convexForDelete.mutation(api.assetScanLogs.remove, { id: item.id });
+  for (const item of subTestRecordsToRemove) {
+    await convexForDelete.mutation(api.subTestRecords.remove, { id: item.id });
+  }
+  for (const item of testTagRecordsToRemove) {
+    await convexForDelete.mutation(api.testTagRecords.remove, { id: item.id });
   }
 
   const theOrg = await getTheOrg();

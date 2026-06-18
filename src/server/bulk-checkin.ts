@@ -6,7 +6,9 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
-import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import { getModelMap } from "@/lib/models-read";
 import {
   returnLineUnits,
@@ -156,7 +158,9 @@ export async function checkInBulkTotals(
   const allTouchedAssets = new Set<string>();
   // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits
   // (Convex calls can't run inside a Prisma tx).
-  const scanLogSink: Record<string, unknown>[] = [];
+  type ScanLogDoc = { id: string; organizationId: string; assetId?: string; bulkAssetId?: string; projectId?: string; action: string; scannedById: string; scannedAt: number; notes?: string };
+  const scanLogSink: ScanLogDoc[] = [];
+  const scanLogNow = Date.now();
   const returned = await prisma.$transaction(async (tx) => {
     const defaultLocation = await tx.location.findFirst({
       where: { organizationId, isDefault: true },
@@ -271,26 +275,9 @@ export async function checkInBulkTotals(
       }
 
       for (const assetId of assetsTouched) {
-        scanLogSink.push(await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            assetId,
-            projectId,
-            action: "CHECK_IN",
-            scannedById: userId,
-            notes: `Bulk check-in (${condition})`,
-          },
-        }));
+        scanLogSink.push({ id: createId(), organizationId, assetId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: scanLogNow, notes: `Bulk check-in (${condition})` });
       }
-      scanLogSink.push(await tx.assetScanLog.create({
-        data: {
-          organizationId,
-          projectId,
-          action: "CHECK_IN",
-          scannedById: userId,
-          notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})`,
-        },
-      }));
+      scanLogSink.push({ id: createId(), organizationId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: scanLogNow, notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})` });
 
       summary.push({ key: req.key, quantity: distributed, condition });
     }
@@ -303,8 +290,12 @@ export async function checkInBulkTotals(
   await syncAssetsToConvex([...allTouchedAssets]);
   await upsertProjectLineItemsToConvex(projectId);
 
-  // Mirror the append-only scan-log rows created inside the tx (post-commit).
-  for (const row of scanLogSink) await mirrorAssetScanLogCreate(row);
+  // Write scan log rows to Convex (Phase B: Convex-only).
+  const convexForScanLog = await getConvexClient();
+  for (const row of scanLogSink) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await convexForScanLog.mutation(api.assetScanLogs.createIfMissing, row as any);
+  }
 
   for (const r of returned) {
     await logActivity({

@@ -32,6 +32,44 @@ export const getById = query({
   },
 });
 
+/** List scan logs for a project (paginator/scan-log view). Filters org in JS since there's no composite index. */
+export const listByProject = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("assetScanLogs")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** List scan logs for a single asset within an org. */
+export const listByOrgAndAsset = query({
+  args: { orgId: v.string(), assetId: v.string() },
+  handler: async (ctx, { orgId, assetId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("assetScanLogs")
+      .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** List scan logs for a user (for user-delete cascade). */
+export const listByScannedById = query({
+  args: { scannedById: v.string() },
+  handler: async (ctx, { scannedById }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("assetScanLogs")
+      .withIndex("by_scannedById", (q) => q.eq("scannedById", scannedById))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

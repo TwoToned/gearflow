@@ -18,6 +18,8 @@ import { getMaintenanceRecordsByOrg, countDueMaintenance } from "@/lib/maintenan
 import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
 import { getCrewMembersByOrg, countActiveCrew } from "@/lib/crew-read";
 import { getCrewAssignmentsByOrg, countAssignmentsByStatus } from "@/lib/crew-scheduling-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
@@ -194,18 +196,9 @@ export async function getUpcomingProjects() {
 export async function getRecentActivity() {
   const { organizationId } = await getOrgContext();
 
-  const [logs, testRecords, maintenanceRecords, modelMap] = await Promise.all([
-    prisma.assetScanLog.findMany({
-      where: { organizationId },
-      include: {
-        asset: true,
-        bulkAsset: true,
-        project: true,
-        scannedBy: true,
-      },
-      orderBy: { scannedAt: "desc" },
-      take: 10,
-    }),
+  const convex = await getConvexClient();
+  const [rawScanLogs, testRecords, maintenanceRecords, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
+    convex.query(api.assetScanLogs.list, { orgId: organizationId }),
     prisma.testTagRecord.findMany({
       where: { organizationId },
       include: {
@@ -224,17 +217,33 @@ export async function getRecentActivity() {
       take: 10,
     }),
     getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
   ]);
+
+  // Sort scan logs newest-first and take top 10
+  const scanLogsSorted = [...rawScanLogs]
+    .sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0))
+    .slice(0, 10);
+
+  // Attach scannedBy (Better Auth user — stays Prisma)
+  const scannedByIds = [...new Set(scanLogsSorted.map((l) => l.scannedById))];
+  const scanUsers = scannedByIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: scannedByIds } } })
+    : [];
+  const scanUserMap = new Map(scanUsers.map((u) => [u.id, u]));
+
+  const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
+  const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));
 
   // The maintenanceRecordAsset join is Convex-only (Phase B): fetch the links for
   // the top-10 records, attach asset scalars from Convex (assets are dual-written),
   // and keep the old `take: 3` cap per record.
   const maintenanceRecordIds = maintenanceRecords.map((m) => m.id);
-  const [maintenanceLinks, orgAssetsForMaint] = await Promise.all([
-    getMaintenanceAssetLinksByRecordIds(maintenanceRecordIds),
-    getAssetsByOrg(organizationId),
-  ]);
-  const maintAssetMap = new Map(orgAssetsForMaint.map((a) => [a.id, a]));
+  const maintenanceLinks = await getMaintenanceAssetLinksByRecordIds(maintenanceRecordIds);
+  const maintAssetMap = new Map(allAssets.map((a) => [a.id, a]));
   const linksByRecord = new Map<string, typeof maintenanceLinks>();
   for (const l of maintenanceLinks) {
     const arr = linksByRecord.get(l.maintenanceRecordId) ?? [];
@@ -243,11 +252,18 @@ export async function getRecentActivity() {
   }
 
   const withModels = {
-    logs: logs.map((l) => ({
-      ...l,
-      asset: l.asset ? { ...l.asset, model: l.asset.modelId ? modelMap.get(l.asset.modelId) ?? null : null } : null,
-      bulkAsset: l.bulkAsset ? { ...l.bulkAsset, model: l.bulkAsset.modelId ? modelMap.get(l.bulkAsset.modelId) ?? null : null } : null,
-    })),
+    logs: scanLogsSorted.map((l) => {
+      const convexAsset = l.assetId ? scanAssetMap.get(l.assetId) ?? null : null;
+      return {
+        ...l,
+        asset: convexAsset
+          ? { ...convexAsset, model: convexAsset.modelId ? modelMap.get(convexAsset.modelId) ?? null : null }
+          : null,
+        bulkAsset: l.bulkAssetId ? scanBulkAssetMap.get(l.bulkAssetId) ?? null : null,
+        project: l.projectId ? scanProjectMap.get(l.projectId) ?? null : null,
+        scannedBy: scanUserMap.get(l.scannedById) ?? null,
+      };
+    }),
     testRecords,
     maintenanceRecords: maintenanceRecords.map((m) => ({
       ...m,

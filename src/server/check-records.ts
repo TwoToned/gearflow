@@ -7,7 +7,6 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
-import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
 import { getAssetById, getAssetByAssetTag } from "@/lib/assets-read";
@@ -1102,20 +1101,18 @@ export async function completeCheckAndStore(
       touchedAssets.push(...acc.assetsTouched);
     }
 
-    // 6. Scan log
-    const scanLog = await tx.assetScanLog.create({
-      data: {
-        organizationId,
-        assetId: assetsTouched.length === 1 ? assetsTouched[0] : null,
-        bulkAssetId: lineItem.bulkAssetId || null,
-        projectId: parsed.projectId,
-        action: "CHECK_IN",
-        scannedById: userId,
-        notes:
-          parsed.notes ||
-          `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
-      },
-    });
+    // 6. Scan log (Phase B: build doc for post-tx Convex write)
+    const scanLog = {
+      id: createId(),
+      organizationId,
+      ...(assetsTouched.length === 1 ? { assetId: assetsTouched[0] } : {}),
+      ...(lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
+      projectId: parsed.projectId,
+      action: "CHECK_IN" as const,
+      scannedById: userId,
+      scannedAt: Date.now(),
+      notes: parsed.notes || `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
+    };
 
     const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
@@ -1125,9 +1122,10 @@ export async function completeCheckAndStore(
     return { updatedItem, resolvedAssetId, touchedAssets, scanLog };
   });
 
-  // Mirror created check records + the scan log to Convex post-commit.
+  // Write check records + scan log to Convex post-commit (Phase B).
   await writeCheckRecordsToConvex(checkRecordSink);
-  await mirrorAssetScanLogCreate(result.scanLog as unknown as Record<string, unknown>);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (await getConvexClient()).mutation(api.assetScanLogs.createIfMissing, result.scanLog as any);
 
   // Mirror the returned asset(s) status/location changes to Convex.
   await syncAssetsToConvex(result.touchedAssets);

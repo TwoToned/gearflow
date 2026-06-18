@@ -23,6 +23,7 @@ import { logActivity } from "@/lib/activity-log";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { getConvexClient } from "@/lib/convex-client";
+import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
@@ -395,13 +396,13 @@ export async function getProject(id: string) {
         },
         orderBy: { addedAt: "asc" },
       },
-      media: {
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      },
     },
   });
   if (!projectRow) return null;
+
+  // project media gallery now from the Convex mirror (dual-written → identical
+  // data); was a Prisma projectMedia + file join. See media-read.ts.
+  const media = withResolvedFile(await getProjectMediaFromConvex(projectRow.id));
 
   // Location FK was dropped (Phase B) — reconstruct `location` (with its parent)
   // from the Convex mirror, replacing the old `include: { location: { include:
@@ -421,7 +422,7 @@ export async function getProject(id: string) {
       location = { ...loc, parent: parentDoc ? mapLocation(parentDoc) : null };
     }
   }
-  const project = { ...projectRow, location };
+  const project = { ...projectRow, media, location };
 
   // Inherit address/coordinates from parent location if child has none
   if (project.location?.parentId) {

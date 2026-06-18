@@ -4,7 +4,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
-import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { getPrimaryPhotoMap, getModelMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import {
   getModelById,
   getModelMap,
@@ -232,11 +232,11 @@ export async function getModel(id: string) {
       getCategoryMap(organizationId),
       getActiveAssetsByModel(id, organizationId),
       getActiveBulkAssetsByModel(id, organizationId),
-      prisma.modelMedia.findMany({
-        where: { modelId: id, organizationId },
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      }),
+      // modelMedia gallery from the Convex mirror (was a Prisma modelMedia + file
+      // join). Dual-written → identical data. See media-read.ts.
+      getModelMediaFromConvex(id).then((rows) =>
+        rows.filter((m) => m.organizationId === organizationId),
+      ),
       convex.query(api.modelBulkAccessories.listByModelId, { modelId: id, organizationId }),
       getModelMap(organizationId),
     ]);
@@ -271,7 +271,7 @@ export async function getModel(id: string) {
     category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null,
     assets: assetsWithLoc,
     bulkAssets: bulkWithLoc,
-    media: mediaRows,
+    media: withResolvedFile(mediaRows),
     bulkAccessories: bulkAccessoriesRaw.map((ba) => ({
       id: ba.id,
       organizationId: ba.organizationId,

@@ -11,6 +11,7 @@ import {
 } from "@/lib/sub-hire-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { getConvexClient } from "@/lib/convex-client";
+import { getSubHireMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { createId } from "@paralleldrive/cuid2";
 import {
@@ -221,19 +222,17 @@ export async function getSubHire(id: string) {
         },
         orderBy: { sortOrder: "asc" },
       },
-      media: {
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      },
     },
   });
 
   if (!subHire) throw new Error("Sub-hire not found");
-  // Model + supplier + project live in Convex — enrich after query.
-  const [modelMap, supplier, convexProject] = await Promise.all([
+  // Model + supplier + project live in Convex — enrich after query. subHire media
+  // gallery from the Convex mirror (dual-written → identical data).
+  const [modelMap, supplier, convexProject, media] = await Promise.all([
     getModelMap(organizationId),
     getSupplierById(subHire.supplierId),
     subHire.projectId ? getProjectById(subHire.projectId) : Promise.resolve(null),
+    getSubHireMediaFromConvex(subHire.id),
   ]);
   const project = convexProject
     ? { id: convexProject.id, name: convexProject.name, projectNumber: convexProject.projectNumber }
@@ -249,7 +248,7 @@ export async function getSubHire(id: string) {
     ...item,
     model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
   }));
-  return serialize({ ...subHire, groups: enrichedGroups, items: enrichedItems, supplier, project });
+  return serialize({ ...subHire, media: withResolvedFile(media), groups: enrichedGroups, items: enrichedItems, supplier, project });
 }
 
 export async function createSubHire(input: unknown) {
@@ -1837,11 +1836,11 @@ export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubH
 export async function getSubHireMedia(subHireId: string) {
   const { organizationId } = await requirePermission("subHire", "read");
 
-  const media = await prisma.subHireMedia.findMany({
-    where: { subHireId, organizationId },
-    include: { file: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // subHireMedia gallery from the Convex mirror (was a Prisma subHireMedia + file
+  // join). Dual-written → identical data. See media-read.ts.
+  const media = (await getSubHireMediaFromConvex(subHireId)).filter(
+    (m) => m.organizationId === organizationId,
+  );
 
   return serialize(media);
 }

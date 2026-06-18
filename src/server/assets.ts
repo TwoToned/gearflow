@@ -18,7 +18,7 @@ import {
 import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
-import { getPrimaryPhotoMaps } from "@/lib/media-read";
+import { getPrimaryPhotoMaps, getAssetMediaFromConvex, getModelMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { type FilterValue } from "@/lib/table-utils";
 import {
   getMappedAssetsByOrg,
@@ -134,10 +134,6 @@ export async function getAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      media: {
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      },
       maintenanceLinks: {
         include: { maintenanceRecord: true },
         orderBy: { maintenanceRecord: { createdAt: "desc" } },
@@ -176,13 +172,10 @@ export async function getAsset(id: string) {
   if (!asset) return serialize(asset);
 
   // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
-  // Model media stays a Prisma read (gallery terminus); bulkAccessories now from Convex.
-  const modelMediaPromise: Promise<Prisma.ModelMediaGetPayload<{ include: { file: true } }>[]> = asset.modelId
-    ? prisma.modelMedia.findMany({
-        where: { modelId: asset.modelId },
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      })
+  // Asset + model media galleries now read from the Convex mirror (dual-written →
+  // identical data); bulkAccessories from Convex. See media-read.ts.
+  const modelMediaPromise = asset.modelId
+    ? getModelMediaFromConvex(asset.modelId)
     : Promise.resolve([]);
 
   const convex = await getConvexClient();
@@ -193,9 +186,10 @@ export async function getAsset(id: string) {
       })
     : Promise.resolve([]);
 
-  const [modelMap, modelMediaRows, supplier] = await Promise.all([
+  const [modelMap, modelMediaRows, assetMediaRows, supplier] = await Promise.all([
     getModelWithCategoryMap(organizationId),
     modelMediaPromise,
+    getAssetMediaFromConvex(id),
     asset.supplierId ? getSupplierById(asset.supplierId) : null,
   ]);
   const modelBulkAccessoriesRaw = await modelBulkAccessoriesPromise;
@@ -240,9 +234,10 @@ export async function getAsset(id: string) {
 
   return serialize({
     ...asset,
+    media: withResolvedFile(assetMediaRows),
     location,
     model: assetModel
-      ? { ...assetModel, media: modelMediaRows, bulkAccessories: bulkAccessoriesWithModel }
+      ? { ...assetModel, media: withResolvedFile(modelMediaRows), bulkAccessories: bulkAccessoriesWithModel }
       : null,
     childAssets: childAssetsWithModel,
     childBulkItems: childBulkItemsWithModel,

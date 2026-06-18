@@ -8,7 +8,6 @@ import {
   Download,
   Upload,
   ClipboardCheck,
-  Loader2,
   CheckCircle2,
   FileText,
   Ruler,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn, focusRing } from "@/lib/utils";
 import { getModelCounts, bulkUpdateRates } from "@/server/models";
 import { useModels } from "@/hooks/use-models";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -39,6 +39,7 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import {
@@ -70,10 +71,10 @@ const TYPE_ICONS: Record<CheckItemType, typeof CheckCircle2> = {
 };
 
 const TYPE_COLORS: Record<CheckItemType, string> = {
-  PASS_FAIL: "bg-green-500/10 text-green-500 border-green-500/20",
-  NOTES: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  MEASUREMENT: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  DROPDOWN: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  PASS_FAIL: "bg-ok-soft text-ok",
+  NOTES: "bg-blue-soft text-blue",
+  MEASUREMENT: "bg-warn-soft text-warn",
+  DROPDOWN: "bg-blue-soft text-blue",
 };
 
 function useModelColumns(
@@ -95,11 +96,11 @@ function useModelColumns(
             size={36}
           />
           <div>
-            <Link href={`/assets/models/${row.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/assets/models/${row.id}`} className={cn("text-table-cell font-medium hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
               {row.name}
             </Link>
             {row.modelNumber && (
-              <span className="ml-2 text-xs text-fg-3">{row.modelNumber}</span>
+              <span className="ml-2 t-mono text-muted">{row.modelNumber}</span>
             )}
           </div>
         </div>
@@ -111,7 +112,7 @@ function useModelColumns(
       accessorKey: "manufacturer",
       sortKey: "manufacturer",
       cell: (row) => (
-        <span className="text-fg-3">{row.manufacturer || "\u2014"}</span>
+        <span className="text-muted">{row.manufacturer || "\u2014"}</span>
       ),
     },
     {
@@ -126,9 +127,9 @@ function useModelColumns(
       })),
       cell: (row) =>
         row.category ? (
-          <Badge variant="secondary">{row.category.name}</Badge>
+          <Badge status="neutral">{row.category.name}</Badge>
         ) : (
-          <span className="text-fg-3">{"\u2014"}</span>
+          <span className="text-muted">{"\u2014"}</span>
         ),
     },
     {
@@ -143,7 +144,7 @@ function useModelColumns(
         { value: "BULK", label: "Bulk" },
       ],
       cell: (row) => (
-        <Badge variant={row.assetType === "SERIALIZED" ? "default" : "outline"}>
+        <Badge status="neutral">
           {row.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}
         </Badge>
       ),
@@ -153,11 +154,15 @@ function useModelColumns(
       header: "Assets",
       sortable: false,
       align: "right",
-      cell: (row) => row._count.assets + row._count.bulkAssets,
+      cell: (row) => (
+        <span className="t-data tabular-nums text-ink">
+          {row._count.assets + row._count.bulkAssets}
+        </span>
+      ),
     },
     {
       id: "dailyRate",
-      header: "Daily Rate",
+      header: "Daily rate",
       accessorKey: "dailyRate",
       sortKey: "dailyRate",
       align: "right",
@@ -170,11 +175,11 @@ function useModelColumns(
         return (
           <div className="flex items-center justify-end gap-2">
             {rateCount === 3 ? (
-              <span className="inline-block h-2 w-2 rounded-full bg-teal-500" aria-label="Pricing complete" />
+              <span className="inline-block h-2 w-2 rounded-full bg-ok" aria-label="Pricing complete" title="Pricing complete" />
             ) : rateCount > 0 ? (
-              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" aria-label="Pricing incomplete" />
+              <span className="inline-block h-2 w-2 rounded-full bg-warn" aria-label="Pricing incomplete" title="Pricing incomplete" />
             ) : null}
-            <span className="t-data">
+            <span className="t-data tabular-nums text-ink">
               {hasDaily ? `$${Number(row.dailyRate).toFixed(2)}` : "\u2014"}
             </span>
           </div>
@@ -190,7 +195,7 @@ function useModelColumns(
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
+            <Badge key={tag} status="neutral">
               {tag}
             </Badge>
           ))}
@@ -305,9 +310,9 @@ export function ModelTable() {
     <>
       <CanDo resource="model" action="create">
         <Button
-          variant="outline"
+          variant="line"
           size="sm"
-          className="hidden sm:inline-flex h-8"
+          className="hidden sm:inline-flex"
           onClick={async () => {
             const csv = await exportModelsCSV();
             const blob = new Blob([csv], { type: "text/csv" });
@@ -322,21 +327,23 @@ export function ModelTable() {
           <Download className="mr-2 h-4 w-4" />
           Export
         </Button>
-        <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setImportOpen(true)}>
+        <Button variant="line" size="sm" className="hidden sm:inline-flex" onClick={() => setImportOpen(true)}>
           <Upload className="mr-2 h-4 w-4" />
           Import
         </Button>
       </CanDo>
       <CanDo resource="model" action="update">
-        <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setRatesImportOpen(true)}>
+        <Button variant="line" size="sm" className="hidden sm:inline-flex" onClick={() => setRatesImportOpen(true)}>
           <DollarSign className="mr-2 h-4 w-4" />
-          Import Rates
+          Import rates
         </Button>
       </CanDo>
       <CanDo resource="model" action="create">
-        <Button size="sm" className="h-8" render={<Link href="/assets/models/new" />}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Model
+        <Button size="sm" asChild>
+          <Link href="/assets/models/new">
+            <Plus className="mr-2 h-4 w-4" />
+            New model
+          </Link>
         </Button>
       </CanDo>
     </>
@@ -344,20 +351,20 @@ export function ModelTable() {
 
   return (
     <div className="space-y-4">
-      {/* Bulk Action Bar */}
+      {/* Bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
-          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+        <div className="flex items-center gap-3 rounded-[var(--r)] border-2 border-line-2 bg-paper-2/50 px-4 py-2">
+          <span className="text-ui-text font-medium text-ink tabular-nums">{selectedIds.size} selected</span>
           <CanDo resource="model" action="update">
-            <Button size="sm" variant="outline" onClick={() => setBulkRatesOpen(true)}>
+            <Button size="sm" variant="line" onClick={() => setBulkRatesOpen(true)}>
               <DollarSign className="mr-2 h-3 w-3" />
-              Set Rates
+              Set rates
             </Button>
           </CanDo>
           <CanDo resource="checkItem" action="update">
-            <Button size="sm" variant="outline" onClick={() => setAssignChecksOpen(true)}>
+            <Button size="sm" variant="line" onClick={() => setAssignChecksOpen(true)}>
               <ClipboardCheck className="mr-2 h-3 w-3" />
-              Assign Checks
+              Assign checks
             </Button>
           </CanDo>
           <Button size="sm" variant="ghost" onClick={clearSelection}>
@@ -398,7 +405,7 @@ export function ModelTable() {
       <div className="flex gap-2 sm:hidden">
         <CanDo resource="model" action="create">
           <Button
-            variant="outline"
+            variant="line"
             size="sm"
             onClick={async () => {
               const csv = await exportModelsCSV();
@@ -414,13 +421,13 @@ export function ModelTable() {
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+          <Button variant="line" size="sm" onClick={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
         </CanDo>
         <CanDo resource="model" action="update">
-          <Button variant="outline" size="sm" onClick={() => setRatesImportOpen(true)}>
+          <Button variant="line" size="sm" onClick={() => setRatesImportOpen(true)}>
             <DollarSign className="mr-2 h-4 w-4" />
             Rates
           </Button>
@@ -535,28 +542,29 @@ function BulkAssignChecksDialog({
       <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
-            Assign Checks to {selectedModelIds.size} Model{selectedModelIds.size !== 1 ? "s" : ""}
+            Assign checks to {selectedModelIds.size} model{selectedModelIds.size !== 1 ? "s" : ""}
           </DialogTitle>
         </DialogHeader>
 
-        <p className="text-sm text-fg-3">
+        <p className="text-ui-text text-muted">
           Select check items to assign. Already-assigned items will be skipped.
         </p>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8 text-fg-3">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Loading...
+          <div className="space-y-2 py-2">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-[var(--r)]" />
+            ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-fg-3">
+          <div className="flex flex-col items-center justify-center py-8 text-muted">
             <ClipboardCheck className="mb-2 h-6 w-6 opacity-50" />
-            <p className="text-sm">No check items in library yet.</p>
+            <p className="text-ui-text">No check items in the library yet.</p>
             <Link
               href="/settings/check-items"
-              className="mt-2 text-xs text-primary hover:underline"
+              className={cn("mt-2 text-caption text-link hover:underline rounded-[var(--r)]", focusRing)}
             >
-              Create check items in Settings
+              Create check items in settings
             </Link>
           </div>
         ) : (
@@ -565,20 +573,25 @@ function BulkAssignChecksDialog({
             <button
               type="button"
               onClick={toggleAll}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-bg-elevated"
+              className={cn("flex w-full items-center gap-3 rounded-[var(--r)] px-3 py-2 text-left text-ui-text font-medium text-ink motion-safe:transition-colors hover:bg-elev", focusRing)}
             >
               <Checkbox
-                checked={selectedCheckIds.size === items.length}
-                indeterminate={selectedCheckIds.size > 0 && selectedCheckIds.size < items.length}
+                checked={
+                  selectedCheckIds.size === items.length
+                    ? true
+                    : selectedCheckIds.size > 0
+                      ? "indeterminate"
+                      : false
+                }
               />
               <span>Select all ({items.length})</span>
             </button>
 
-            <div className="h-px bg-border" />
+            <div className="h-px bg-line" />
 
             {sortedCategories.map((category) => (
               <div key={category}>
-                <p className="px-3 text-xs font-medium text-fg-3 uppercase tracking-wide mb-1">
+                <p className="px-3 t-overline text-muted mb-1">
                   {category}
                 </p>
                 {grouped[category].map((item) => {
@@ -590,21 +603,23 @@ function BulkAssignChecksDialog({
                       key={item.id as string}
                       type="button"
                       onClick={() => toggleCheckItem(item.id as string)}
-                      className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-bg-elevated"
+                      className={cn("flex w-full items-center gap-3 rounded-[var(--r)] px-3 py-2 text-left motion-safe:transition-colors hover:bg-elev", focusRing)}
                     >
                       <Checkbox checked={isSelected} />
-                      <Icon className="h-4 w-4 shrink-0 text-fg-3" />
+                      <Icon className="h-4 w-4 shrink-0 text-muted" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">
+                        <p className="text-ui-text font-medium text-ink truncate">
                           {item.label as string}
                         </p>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`shrink-0 text-[10px] ${TYPE_COLORS[type]}`}
+                      <span
+                        className={cn(
+                          "shrink-0 inline-flex items-center rounded-full px-2.5 py-1 text-badge font-bold",
+                          TYPE_COLORS[type],
+                        )}
                       >
                         {TYPE_LABELS[type]}
-                      </Badge>
+                      </span>
                     </button>
                   );
                 })}
@@ -614,15 +629,15 @@ function BulkAssignChecksDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || selectedCheckIds.size === 0}
+            loading={mutation.isPending}
+            disabled={selectedCheckIds.size === 0}
           >
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Assign {selectedCheckIds.size} Check{selectedCheckIds.size !== 1 ? "s" : ""}
+            Assign {selectedCheckIds.size} check{selectedCheckIds.size !== 1 ? "s" : ""}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -648,9 +663,9 @@ function BulkRateUpdateDialog({
   const [value, setValue] = useState("");
 
   const rateTypeLabels: Record<string, string> = {
-    dailyRate: "Daily Rate",
-    weeklyRate: "Weekly Rate",
-    monthlyRate: "Monthly Rate",
+    dailyRate: "Daily rate",
+    weeklyRate: "Weekly rate",
+    monthlyRate: "Monthly rate",
   };
 
   const operationLabels: Record<string, string> = {
@@ -679,19 +694,19 @@ function BulkRateUpdateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Set Rates — {selectedModelIds.size} model{selectedModelIds.size !== 1 ? "s" : ""}</DialogTitle>
+          <DialogTitle>Set rates — {selectedModelIds.size} model{selectedModelIds.size !== 1 ? "s" : ""}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>Rate Type</Label>
+            <Label>Rate type</Label>
             <Select value={rateType} onValueChange={(v) => setRateType(v as typeof rateType)}>
               <SelectTrigger>
                 <SelectValue>{rateTypeLabels[rateType]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="dailyRate">Daily Rate</SelectItem>
-                <SelectItem value="weeklyRate">Weekly Rate</SelectItem>
-                <SelectItem value="monthlyRate">Monthly Rate</SelectItem>
+                <SelectItem value="dailyRate">Daily rate</SelectItem>
+                <SelectItem value="weeklyRate">Weekly rate</SelectItem>
+                <SelectItem value="monthlyRate">Monthly rate</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -723,14 +738,14 @@ function BulkRateUpdateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !value || Number(value) === 0}
+            loading={mutation.isPending}
+            disabled={!value || Number(value) === 0}
           >
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {mutation.isPending ? `Updating ${selectedModelIds.size} models...` : "Apply"}
           </Button>
         </DialogFooter>

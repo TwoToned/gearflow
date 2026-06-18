@@ -19,8 +19,11 @@ describe("MyWorkSection smoke", () => {
       { ...base, id: "b", status: "CONFIRMED", rentalStartDate: "2026-09-01T00:00:00.000Z", rentalEndDate: "2026-09-05T00:00:00.000Z" },
       { ...base, id: "c", status: "PREPPING", rentalStartDate: "2026-12-01T00:00:00.000Z", rentalEndDate: null },
     ];
+    const blockers = [
+      { projectId: "a", threadId: "t1", snippet: "Need sign-off on the revised quote", reason: "pm", projectName: "Gig", projectNumber: "260601", createdByName: "Jay", createdAt: 1 },
+    ];
     expect(() =>
-      render(<MyWorkSection projects={projects} stats={{ overdueReturns: 2, maintenanceDue: 1 }} />),
+      render(<MyWorkSection projects={projects} blockers={blockers} />),
     ).not.toThrow();
   });
 
@@ -29,10 +32,10 @@ describe("MyWorkSection smoke", () => {
       { id: "x", name: "No dates", projectNumber: "X", status: "ENQUIRY", client: null, rentalStartDate: null, rentalEndDate: null },
       { id: "y", name: "No count", projectNumber: "Y", status: "CHECKED_OUT", client: { name: "C" }, rentalStartDate: null, rentalEndDate: "2026-01-01T00:00:00.000Z" },
     ];
-    expect(() => render(<MyWorkSection projects={projects} stats={{}} />)).not.toThrow();
+    expect(() => render(<MyWorkSection projects={projects} blockers={[]} />)).not.toThrow();
   });
 
   it("renders empty + all-clear without throwing", () => {
-    expect(() => render(<MyWorkSection projects={[]} stats={{}} />)).not.toThrow();
+    expect(() => render(<MyWorkSection projects={[]} />)).not.toThrow();
   });
 });

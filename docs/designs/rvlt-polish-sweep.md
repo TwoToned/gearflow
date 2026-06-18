@@ -24,7 +24,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 1 | Dashboard | dashboard, my-work-section | ✅ |
 | 2 | Projects list + create | board, table, view-toggle, wizard, range-calendar | ✅ |
 | 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ✅ |
-| 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ◐ |
+| 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ✅ |
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ☐ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ☐ |
 | 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ☐ |
@@ -102,3 +102,32 @@ Skeleton loading replaced all spinners; CSV-import result → left-edge accent n
 FolderOpen (user icons kept). Forms aligned to swept asset-form container/select; links
 use text-link (blue, § links-never-red). tsc clean (0 assets errors), eslint clean
 (only pre-existing model-form unused Select-import + form.watch warnings).
+
+**Chunk 4 — review fixes applied (merged Claude + Codex):**
+- Auth gates (§8): wrapped registry/new (asset.create), registry/[id]/edit
+  (asset.update — EditLockGate isn't authz), models/new (model.create),
+  models/[id]/edit (model.update), categories list + [id] detail (model.read —
+  the resource getCategories/getCategory's mutations require; their reads are
+  org-scoped) in `RequirePermission`. Hoisted the existing model.read gate on
+  models/[id] above the loading / not-found branches (was below → unauthorised
+  users saw a misleading not-found).
+- Danger-button on-fill (§3.7/§1): asset Delete escalates to solid red
+  (`hover:bg-red hover:text-white`); Force return + Archive (model + asset)
+  stay tinted (`text-warn hover:bg-warn-soft` / `text-t-out hover:bg-out-soft`).
+  Removed the theme-fragile `hover:bg-t-out/warn hover:text-paper` introduced by
+  the polish.
+- Status colours from source (§3): asset-table status/condition/bulk filter dots
+  + Utilization inline text now read getStatusColor(...).dot/.text; model-table
+  TYPE_COLORS span replaced with `<Badge status>` + TYPE_STATUS map (mirrors
+  model-checks-tab); asset-checks-tab result-icon tint reads intentStyles.
+- Error state (§8): categories/[id] now renders a left-edge red error notice
+  (back + retry) distinct from not-found.
+- §5.2: "Pass / Fail" → "Pass / fail"; "Ad Hoc" → "Ad hoc". Minor: inherited-
+  accessory caption → text-badge text-muted; categories skeleton rounded-[8px] →
+  rounded-[var(--r)].
+- DEFERRED (cross-cutting, dedicated responsive-table pass): hand-built overflow
+  sub-tables on registry/[id], models/[id], categories/[id] lack mobile card
+  lists + left-edge red row hover. Not addressed here.
+tsc clean (0 new assets errors; pre-existing settings/assets `variant="outline"`
+errors are out of chunk-4 scope), eslint clean on touched files (only pre-existing
+registry/[id] unused-import + ternary-await warnings).

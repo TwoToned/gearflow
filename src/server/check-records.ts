@@ -1,5 +1,6 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -17,7 +18,8 @@ import {
 } from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
-import { mirrorMaintenanceCreate } from "@/lib/maintenance-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import {
   getMaintenanceAssetLinksByAssetIds,
   createMaintenanceAssetLinks,
@@ -162,22 +164,23 @@ async function checkPredictiveMaintenance(
       );
 
       if (!existingMaintenance) {
-        const maintenance = await prisma.maintenanceRecord.create({
-          data: {
-            organizationId,
-            type: "PREVENTATIVE",
-            status: "SCHEDULED",
-            title: `[Auto] ${checkItem.label} — ${asset.assetTag}`,
-            description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${modelName} (${asset.assetTag}).`,
-            reportedById: userId,
-            scheduledDate: new Date(),
-          },
+        const maintenanceId = createId();
+        const maintenanceTitle = `[Auto] ${checkItem.label} — ${asset.assetTag}`;
+        const now = Date.now();
+        const convex = await getConvexClient();
+        await convex.mutation(api.maintenanceRecords.createIfMissing, {
+          id: maintenanceId,
+          organizationId,
+          type: "PREVENTATIVE",
+          status: "SCHEDULED",
+          title: maintenanceTitle,
+          description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${modelName} (${asset.assetTag}).`,
+          reportedById: userId,
+          scheduledDate: now,
+          createdAt: now,
+          updatedAt: now,
         });
-
-        // Mirror the auto-created record to Convex so it shows in the
-        // Convex-sourced maintenance reads, then write the Convex-only join link.
-        await mirrorMaintenanceCreate(maintenance as unknown as Record<string, unknown>);
-        await createMaintenanceAssetLinks(maintenance.id, [assetId]);
+        await createMaintenanceAssetLinks(maintenanceId, [assetId]);
 
         await logActivity({
           organizationId,
@@ -185,8 +188,8 @@ async function checkPredictiveMaintenance(
           userName,
           action: "CREATE",
           entityType: "maintenance",
-          entityId: maintenance.id,
-          entityName: maintenance.title,
+          entityId: maintenanceId,
+          entityName: maintenanceTitle,
           summary: `Auto-created maintenance for repeated check failure`,
           assetId,
         });

@@ -117,7 +117,6 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   SupplierModelRate: { create: mirrorSupplierModelRateCreate, patch: patchSupplierModelRateInConvex, remove: removeSupplierModelRateFromConvex },
   ProjectService: generic(api.projectServices),
   // Additional Convex-backed tables read by the migrated server surfaces.
-  MaintenanceRecord: generic(api.maintenanceRecords),
   SubHire: generic(api.subHires),
   SubHireGroup: generic(api.subHireGroups),
   SubHireItem: generic(api.subHireItems),

@@ -1,8 +1,15 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import {
+  listDocumentTemplates,
+  getDocumentTemplateById,
+  listBrandTemplates,
+  getBrandTemplateById,
+  compareDocumentTemplatesForList,
+  compareDocumentTemplatesForDropdown,
+} from "@/lib/document-template-read";
 import {
   DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
@@ -17,11 +24,18 @@ import type { DocumentType } from "@/lib/pdfme/types";
 export async function getDocumentTemplates() {
   const { organizationId } = await getOrgContext();
 
-  const templates = await prisma.documentTemplate.findMany({
-    where: { organizationId },
-    orderBy: [{ type: "asc" }, { isDefault: "desc" }, { updatedAt: "desc" }],
-    include: { brandTemplate: { select: { id: true, name: true } } },
-  });
+  const [rows, brandRows] = await Promise.all([
+    listDocumentTemplates(organizationId),
+    listBrandTemplates(organizationId),
+  ]);
+  const brandMap = new Map(brandRows.map((b) => [b.id, { id: b.id, name: b.name }]));
+  const templates = rows
+    .slice()
+    .sort(compareDocumentTemplatesForList)
+    .map((t) => ({
+      ...t,
+      brandTemplate: t.brandTemplateId ? brandMap.get(t.brandTemplateId) ?? null : null,
+    }));
 
   // Build virtual system default entries for each doc type
   const systemDefaults = DOCUMENT_TYPES.map((type) => ({
@@ -85,19 +99,16 @@ export async function getDocumentTemplates() {
 export async function getPublishedTemplatesForDropdown() {
   const { organizationId } = await getOrgContext();
 
-  const templates = await prisma.documentTemplate.findMany({
-    where: {
-      organizationId,
-      isDraft: false,
-    },
-    select: {
-      id: true,
-      name: true,
-      type: true,
-      isDefault: true,
-    },
-    orderBy: [{ type: "asc" }, { isDefault: "desc" }, { name: "asc" }],
-  });
+  const rows = await listDocumentTemplates(organizationId);
+  const templates = rows
+    .filter((t) => t.isDraft === false)
+    .sort(compareDocumentTemplatesForDropdown)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type,
+      isDefault: t.isDefault,
+    }));
 
   return serialize(templates);
 }
@@ -134,14 +145,15 @@ export async function getDocumentTemplate(id: string) {
     });
   }
 
-  const template = await prisma.documentTemplate.findFirst({
-    where: { id, organizationId },
-    include: { brandTemplate: true },
-  });
-
-  if (!template) {
+  const row = await getDocumentTemplateById(id);
+  if (!row || row.organizationId !== organizationId) {
     throw new Error("Template not found");
   }
+
+  const brandTemplate = row.brandTemplateId
+    ? await getBrandTemplateById(row.brandTemplateId)
+    : null;
+  const template = { ...row, brandTemplate };
 
   return serialize(template);
 }

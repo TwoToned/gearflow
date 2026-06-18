@@ -69,6 +69,7 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 import { formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/motion";
@@ -300,11 +301,11 @@ export default function TimesheetsPage() {
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "DRAFT", label: "Draft" },
-        { value: "SUBMITTED", label: "Submitted" },
-        { value: "APPROVED", label: "Approved" },
-        { value: "DISPUTED", label: "Disputed" },
-        { value: "EXPORTED", label: "Exported" },
+        { value: "DRAFT", label: "Draft", color: getStatusColor("timeEntry", "DRAFT").dot },
+        { value: "SUBMITTED", label: "Submitted", color: getStatusColor("timeEntry", "SUBMITTED").dot },
+        { value: "APPROVED", label: "Approved", color: getStatusColor("timeEntry", "APPROVED").dot },
+        { value: "DISPUTED", label: "Disputed", color: getStatusColor("timeEntry", "DISPUTED").dot },
+        { value: "EXPORTED", label: "Exported", color: getStatusColor("timeEntry", "EXPORTED").dot },
       ],
       cell: (row: any) => (
         <StatusIndicator

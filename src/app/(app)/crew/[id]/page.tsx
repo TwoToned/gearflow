@@ -67,6 +67,7 @@ import {
   phaseLabels,
   availabilityTypeLabels,
   timeEntryStatusLabels,
+  projectStatusLabels,
   formatLabel,
 } from "@/lib/status-labels";
 import {
@@ -141,20 +142,6 @@ function availabilityPill(type: string): string {
   return getStatusColor("availabilityType", type).pill;
 }
 
-
-const projectStatusLabels: Record<string, string> = {
-  ENQUIRY: "Enquiry",
-  QUOTING: "Quoting",
-  QUOTED: "Quoted",
-  CONFIRMED: "Confirmed",
-  PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
-  ON_SITE: "On site",
-  RETURNED: "Returned",
-  COMPLETED: "Completed",
-  INVOICED: "Invoiced",
-  CANCELLED: "Cancelled",
-};
 
 export default function CrewMemberDetailPage({
   params,
@@ -1031,15 +1018,14 @@ export default function CrewMemberDetailPage({
                                               Dispute
                                             </DropdownMenuItem>
                                           )}
-                                          <DropdownMenuItem
-                                            className="text-t-out"
-                                            onClick={() =>
+                                          <ConfirmActionMenuItem
+                                            icon={<Trash2 className="mr-2 h-4 w-4" />}
+                                            onConfirm={() =>
                                               deleteTimeMutation.mutate(entry.id)
                                             }
                                           >
-                                            <Trash2 className="mr-2 h-4 w-4" />
                                             Delete
-                                          </DropdownMenuItem>
+                                          </ConfirmActionMenuItem>
                                         </DropdownMenuGroup>
                                       </DropdownMenuContent>
                                     </DropdownMenu>

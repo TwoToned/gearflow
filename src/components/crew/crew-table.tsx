@@ -12,6 +12,7 @@ import { useCrewMembers, useCrewRoles } from "@/hooks/use-crew";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { crewMemberStatusLabels, crewMemberTypeLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
@@ -114,7 +115,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
   },
   {
     id: "dayRate",
-    header: "Day Rate",
+    header: "Day rate",
     align: "right",
     responsiveHide: "lg",
     cell: (row) => (
@@ -133,10 +134,10 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterable: true,
     filterType: "enum",
     filterOptions: [
-      { value: "ACTIVE", label: "Active" },
-      { value: "INACTIVE", label: "Inactive" },
-      { value: "ON_LEAVE", label: "On leave" },
-      { value: "ARCHIVED", label: "Archived" },
+      { value: "ACTIVE", label: "Active", color: getStatusColor("crewMember", "ACTIVE").dot },
+      { value: "INACTIVE", label: "Inactive", color: getStatusColor("crewMember", "INACTIVE").dot },
+      { value: "ON_LEAVE", label: "On leave", color: getStatusColor("crewMember", "ON_LEAVE").dot },
+      { value: "ARCHIVED", label: "Archived", color: getStatusColor("crewMember", "ARCHIVED").dot },
     ],
     cell: (row) => (
       <StatusIndicator category="crewMember" value={row.status} label={crewMemberStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />

@@ -99,7 +99,7 @@ export default function CrewPlannerPage() {
   const startDate = days[0].toISOString().split("T")[0];
   const endDate = days[days.length - 1].toISOString().split("T")[0];
 
-  const { data: members, isLoading, refetch } = useServerQuery({
+  const { data: members, isLoading, error, refetch } = useServerQuery({
     queryKey: ["crew-planner", orgId, startDate, endDate],
     queryFn: () => getCrewPlannerData(startDate, endDate),
   });
@@ -151,6 +151,15 @@ export default function CrewPlannerPage() {
             </div>
           }
         />
+
+        {error && (
+          <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+            <p className="text-ui-text text-t-out">Couldn&apos;t load the planner. Check your connection and try again.</p>
+            <Button variant="line" size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-x-auto">
           <TooltipProvider>
@@ -220,19 +229,19 @@ export default function CrewPlannerPage() {
 
         <div className="flex flex-wrap gap-4 text-caption text-muted">
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-[4px] bg-red" />
+            <span className={`h-3 w-3 rounded-[4px] ${getStatusColor("assignment", "ACCEPTED").dot}`} />
             Assignment
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-[4px] bg-t-out" />
+            <span className={`h-3 w-3 rounded-[4px] ${getStatusColor("availabilityType", "UNAVAILABLE").dot}`} />
             Unavailable
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-[4px] bg-warn" />
+            <span className={`h-3 w-3 rounded-[4px] ${getStatusColor("availabilityType", "TENTATIVE").dot}`} />
             Tentative
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-[4px] bg-ok" />
+            <span className={`h-3 w-3 rounded-[4px] ${getStatusColor("availabilityType", "PREFERRED").dot}`} />
             Preferred
           </span>
         </div>

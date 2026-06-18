@@ -87,58 +87,47 @@ async function collectKitBulkAdjustments(
 
 /**
  * Asserts that none of the given assets are blocked by failed/overdue
- * Test & Tag status. Throws TestTagBlockError on block. Logs a SCAN_VERIFY
- * row for each blocked asset so the denied scan is auditable.
+ * Test & Tag status. Throws TestTagBlockError on block.
  *
+ * Must be called OUTSIDE a Prisma transaction (uses Convex HTTP queries).
  * Pass at least one of assetIds or bulkAssetIds. Empty input is a no-op.
  */
 async function assertTestTagAllowsCheckout(
-  tx: TxClient,
   organizationId: string,
   options: {
     assetIds?: string[];
     bulkAssetIds?: string[];
-    projectId?: string | null;
-    scannedById: string;
-    kitId?: string | null;
   },
 ): Promise<void> {
-  const assetIds = options.assetIds?.filter(Boolean) ?? [];
-  const bulkAssetIds = options.bulkAssetIds?.filter(Boolean) ?? [];
+  const assetIds = (options.assetIds ?? []).filter(Boolean);
+  const bulkAssetIds = (options.bulkAssetIds ?? []).filter(Boolean);
   if (assetIds.length === 0 && bulkAssetIds.length === 0) return;
 
-  const blocked = await tx.testTagAsset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: { in: ["FAILED", "OVERDUE"] },
-      OR: [
-        ...(assetIds.length > 0 ? [{ assetId: { in: assetIds } }] : []),
-        ...(bulkAssetIds.length > 0 ? [{ bulkAssetId: { in: bulkAssetIds } }] : []),
-      ],
-    },
-    select: {
-      testTagId: true,
-      status: true,
-      nextDueDate: true,
-      assetId: true,
-      bulkAssetId: true,
-      asset: { select: { assetTag: true } },
-      bulkAsset: { select: { assetTag: true } },
-    },
+  const convex = await getConvexClient();
+  const blocked = await convex.query(api.testTagAssets.listBlockedForCheckout, {
+    orgId: organizationId,
+    assetIds,
+    bulkAssetIds,
   });
 
   if (blocked.length === 0) return;
 
-  // Blocked scans are NOT logged — these rows would be rolled back by the
-  // TestTagBlockError throw below anyway, so they never persisted to Prisma
-  // either. The error itself surfaces the blocked tags to the caller.
+  // Attach asset tags from the Convex asset/bulkAsset mirrors for the error message.
+  const [allAssets, allBulkAssets] = await Promise.all([
+    assetIds.length > 0 ? getAssetsByOrg(organizationId) : Promise.resolve([]),
+    bulkAssetIds.length > 0 ? getBulkAssetsByOrg(organizationId) : Promise.resolve([]),
+  ]);
+  const assetTagMap = new Map(allAssets.map((a) => [a.id, a.assetTag]));
+  const bulkTagMap = new Map(allBulkAssets.map((b) => [b.id, b.assetTag]));
 
   throw new TestTagBlockError(
     blocked.map((b) => ({
-      assetTag: b.asset?.assetTag ?? b.bulkAsset?.assetTag ?? b.testTagId,
+      assetTag:
+        (b.assetId ? assetTagMap.get(b.assetId) : null) ??
+        (b.bulkAssetId ? bulkTagMap.get(b.bulkAssetId) : null) ??
+        b.testTagId,
       status: b.status as "FAILED" | "OVERDUE",
-      nextDueDate: b.nextDueDate,
+      nextDueDate: b.nextDueDate != null ? new Date(b.nextDueDate) : null,
     })),
   );
 }
@@ -255,18 +244,13 @@ export async function lookupAssetForScan(
 
   // Block checkout of T&T FAILED/OVERDUE assets (AS/NZS 3760:2022 compliance)
   if (mode === "checkout") {
-    const blockingTt = await prisma.testTagAsset.findFirst({
-      where: {
-        organizationId,
-        isActive: true,
-        status: { in: ["FAILED", "OVERDUE"] },
-        OR: [
-          ...(asset ? [{ assetId: asset.id }] : []),
-          ...(bulkAsset ? [{ bulkAssetId: bulkAsset.id }] : []),
-        ],
-      },
-      select: { status: true, nextDueDate: true, lastTestDate: true, testTagId: true },
+    const convexForTT = await getConvexClient();
+    const blockedRows = await convexForTT.query(api.testTagAssets.listBlockedForCheckout, {
+      orgId: organizationId,
+      assetIds: asset ? [asset.id] : [],
+      bulkAssetIds: bulkAsset ? [bulkAsset.id] : [],
     });
+    const blockingTt = blockedRows[0] ?? null;
     if (blockingTt) {
       return serialize({
         found: true as const,
@@ -276,8 +260,8 @@ export async function lookupAssetForScan(
         assetName,
         reason: "tt_blocked" as const,
         ttStatus: blockingTt.status,
-        ttNextDueDate: blockingTt.nextDueDate,
-        ttLastTestDate: blockingTt.lastTestDate,
+        ttNextDueDate: blockingTt.nextDueDate != null ? new Date(blockingTt.nextDueDate) : null,
+        ttLastTestDate: blockingTt.lastTestDate != null ? new Date(blockingTt.lastTestDate) : null,
         ttTestTagId: blockingTt.testTagId,
       });
     }
@@ -483,11 +467,9 @@ async function checkoutAccessoryChildren(
   // Scope to the units ACTUALLY flipping now (the deployed parent unit's share),
   // so an already-shipped sibling whose T&T lapsed can't block a later partial
   // deploy of the same multi-quantity parent line.
-  await assertTestTagAllowsCheckout(tx, organizationId, {
+  await assertTestTagAllowsCheckout(organizationId, {
     assetIds: units.map((u) => u.assetId).filter((x): x is string => !!x),
     bulkAssetIds: units.map((u) => u.bulkAssetId).filter((x): x is string => !!x),
-    projectId,
-    scannedById: userId,
   });
 
   const assetsTouched: string[] = [];
@@ -549,11 +531,9 @@ async function gatherTestTagAssetsAndAssert(
     ...(preflightLineItems.map((li) => li.bulkAssetId).filter(Boolean) as string[]),
     ...(preflightUnits.map((u) => u.bulkAssetId).filter(Boolean) as string[]),
   ];
-  await assertTestTagAllowsCheckout(tx, organizationId, {
+  await assertTestTagAllowsCheckout(organizationId, {
     assetIds: preflightAssetIds,
     bulkAssetIds: preflightBulkIds,
-    projectId,
-    scannedById: userId,
   });
   return preflightLineItems;
 }
@@ -1165,7 +1145,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
           select: { bulkAssetId: true },
         })
       : [];
-    await assertTestTagAllowsCheckout(tx, organizationId, {
+    await assertTestTagAllowsCheckout(organizationId, {
       assetIds: [
         ...kitSerializedItems.map((k) => k.assetId),
         ...nestedSerializedItems.map((k) => k.assetId),
@@ -1174,9 +1154,6 @@ export async function checkOutKit(projectId: string, kitId: string) {
         ...kitBulkItems.map((k) => k.bulkAssetId),
         ...nestedBulkItems.map((k) => k.bulkAssetId),
       ],
-      projectId,
-      scannedById: userId,
-      kitId,
     });
 
     // Accumulate every asset/bulk id whose row this checkout mutates, for the
@@ -1567,11 +1544,9 @@ export async function quickAddAndCheckOut(
   const result = await prisma.$transaction(async (tx) => {
     // T&T compliance block — refuse to add an asset to a project if its
     // electrical-safety test is failed or overdue.
-    await assertTestTagAllowsCheckout(tx, organizationId, {
+    await assertTestTagAllowsCheckout(organizationId, {
       assetIds: data.assetId ? [data.assetId] : [],
       bulkAssetIds: data.bulkAssetId ? [data.bulkAssetId] : [],
-      projectId,
-      scannedById: userId,
     });
 
     // Get next sort order

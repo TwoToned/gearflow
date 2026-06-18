@@ -27,7 +27,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ✅ |
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ✅ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ◐ |
-| 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ☐ |
+| 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ◐ |
 | 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ☐ |
 | 9 | Locations | list/detail/new/edit | ☐ |
 | 10 | Maintenance | list/detail/new/edit | ☐ |
@@ -131,6 +131,57 @@ use text-link (blue, § links-never-red). tsc clean (0 assets errors), eslint cl
 tsc clean (0 new assets errors; pre-existing settings/assets `variant="outline"`
 errors are out of chunk-4 scope), eslint clean on touched files (only pre-existing
 registry/[id] unused-import + ternary-await warnings).
+
+### Chunk 7 — Warehouse (polished, pending review)
+Swept all warehouse + check surfaces — the operator scan/check-out/check-in
+heart of the app. All files type-errored against the refreshed registry before
+(75 tsc errors in scope → 0). Functionality (scan logic, mutations, check
+queues, kit verification) untouched: markup/className/type-level swaps +
+additive auth gate + status-colors only.
+
+Surfaces: warehouse landing (`page.tsx`), per-project flow
+(`[projectId]/page.tsx`) + all five tabs (pick-prep / deploy / return /
+bulk-checkin / close-out) + shared `item-check-form`, `kit-child-rows`,
+`prep-status-badge`, `online-pick-list`; `pull-sheet/page.tsx`;
+`check/[assetTag]/page.tsx`.
+
+Registry API repairs: `Button variant="outline"/"destructive"/"secondary" +
+render=` → `"line"/"primary" + asChild`; `size="icon-sm"` → `"icon"`;
+`Badge variant=outline/secondary` + Tailwind-palette classes → status-only
+`Badge` (ok/warn/overbooked/neutral) — blue "info"/sub-hire/reduced-stock
+pills are a `bg-blue-soft text-blue` override on a neutral pill (Badge has no
+info status); `Checkbox indeterminate` boolean → `checked="indeterminate"`;
+`EmptyState` old `icon/heading` API → `title/description`; `TooltipTrigger
+render=` → `asChild`.
+
+RVLT polish: legacy `text-fg-*`/`bg-bg-surface`/`surface-ring`/`bg-bg-inset`/
+`bg-accent`/`destructive`/`green-500`/`amber-500`/`teal`/`cyan` → ink/muted/
+faint, `bg-card ring-1 ring-line shadow-[var(--sh-card)]`, bg-paper-2, bg-elev,
+status tokens (ok/warn/t-out/blue). `t-mono` on asset tags, `tabular-nums` on
+all counts/qty (high-speed scannable lists). §1 danger pattern: permanent
+close-out (single + batch) → `variant="line"` escalating to solid red;
+reversible deprep stays a neutral line. §9.1: `focusRing` + `aria-pressed` +
+`min-h-11` on every hand-built control (kit-verify toggles, pass/fail +
+return-condition buttons, container-clear, +Add notes, native condition
+`<select>`, pick-list rows, clear-all). §8: Skeleton loaders (no spinners),
+EmptyState empties, left-edge error notices for not-found, Button `loading`
+prop on submits. §9 personality: close-out / pending / fail-check notices kept
+plain (alert contexts). §5.2 sentence case across tab labels, doc menu,
+dialogs, badges, container headers (dropped uppercase), submit/context labels,
+exceptions status map. Added `RequirePermission resource="warehouse"
+action="read"` gate to pull-sheet (was ungated; hoisted above loading/
+not-found). StatusIndicator `pill` variant kept as-is (status-colors tokens
+correct); its `dot`-variant ring-glow is a pre-existing shared-component gap
+(33 consumers, out of scope) but unused here.
+
+DEFERRED (recurring, final consistency pass): the per-project tab tables are
+desktop data-tables without mobile card-list fallbacks — a cross-cutting
+responsive-table pass, not fixed per-chunk. The not-found notices are simple
+left-edge bars (matches the §8 recurring-DEFER guidance).
+
+tsc clean (0 warehouse+check errors), eslint clean on touched files
+(only pre-existing `Container` unused-import + `react-hooks/*` ref/exhaustive
+warnings in `[projectId]/page.tsx`). 21/21 warehouse unit tests pass.
 
 ## Learned standard patterns (from chunk reviews — apply to ALL remaining chunks)
 - **Auth-gate every page** (§8): create→`RequirePermission resource action="create"`, edit→`action="update"`,

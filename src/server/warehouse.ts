@@ -29,17 +29,9 @@ import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
-import {
-  buildLineItemAttachMaps,
-  attachLineItemTree,
-  attachModelCheckItemCounts,
-  attachKitTree,
-  attachAssetBulkAssetTree,
-  getModelCheckItemCountMap,
-  getKitCheckItemCountMap,
-} from "@/lib/line-item-tree-read";
-import { buildWarehouseLineItems } from "@/lib/project-line-item-read";
-import { getKitById, getKitByAssetTag, getKitMap } from "@/lib/kits-read";
+import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
+import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
+import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 
@@ -1887,73 +1879,22 @@ export async function getAvailableAssetsForModel(modelId: string) {
 export async function getProjectPullSheet(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  // model (+ equipment category) + supplier + kit are all dual-written to Convex
-  // and attached in JS below (Phase 6 decommission) — not joined here.
+  // The EQUIPMENT line-item tree (lineItems → childLineItems, model/supplier/kit/
+  // asset/bulkAsset + per-asset location graft, CANCELLED dropped, no units) is
+  // reconstructed from the dual-written Convex tables — see buildPullSheetLineItems
+  // (Phase A keystone consumer 3/4). Prisma supplies only the project scalars.
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
-    include: {
-      // project location + asset.location live in Convex — attached below.
-      lineItems: {
-        where: {
-          type: "EQUIPMENT",
-          status: { not: "CANCELLED" },
-        },
-        orderBy: { sortOrder: "asc" },
-        include: {
-          // asset/bulkAsset are dual-written to Convex — attached below via
-          // attachAssetBulkAssetTree; not joined here.
-          childLineItems: {
-            where: { status: { not: "CANCELLED" } },
-            orderBy: { sortOrder: "asc" },
-            include: {
-              childLineItems: {
-                where: { status: { not: "CANCELLED" } },
-                orderBy: { sortOrder: "asc" },
-              },
-            },
-          },
-        },
-      },
-    },
   });
 
   if (!project) {
     throw new Error("Project not found");
   }
 
-  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
-  // asset/bulkAsset are dual-written to Convex — attachAssetBulkAssetTree replaces
-  // the `asset: true` / `bulkAsset: true` Prisma joins. graftAssetLocation then
-  // adds the resolved location object onto each asset (shape-identical to the old
-  // nested `asset: { include: { location } }` join).
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets, locationMap] =
-    await Promise.all([
-      buildLineItemAttachMaps(organizationId),
-      getKitMap(organizationId),
-      getModelCheckItemCountMap(organizationId),
-      getKitCheckItemCountMap(organizationId),
-      getAssetsByOrg(organizationId),
-      getBulkAssetsByOrg(organizationId),
-      getLocationMap(organizationId),
-    ]);
-  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
-  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
-  const attachedTree = attachLineItemTree(project.lineItems, attachMaps);
-  const withModelCount = attachModelCheckItemCounts(attachedTree, modelCheckCounts);
-  const attachedKitTree = attachKitTree(withModelCount, kitMap, kitCheckCounts);
-  const withAssets = attachAssetBulkAssetTree(attachedKitTree, assetMap, bulkAssetMap);
-
-  // Graft the resolved location object onto each asset's `location` field.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const graftAssetLocation = (items: any[]): any[] =>
-    items.map((li) => ({
-      ...li,
-      asset: li.asset
-        ? { ...li.asset, location: li.asset.locationId ? locationMap.get(li.asset.locationId) ?? null : null }
-        : li.asset,
-      childLineItems: li.childLineItems ? graftAssetLocation(li.childLineItems) : li.childLineItems,
-    }));
-  const attachedLineItems = graftAssetLocation(withAssets);
+  const { lineItems: attachedLineItems, locationMap } = await buildPullSheetLineItems(
+    projectId,
+    organizationId,
+  );
 
   // Compute overbooked status
   const overbookedMap = await computeOverbookedStatus(

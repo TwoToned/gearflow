@@ -180,6 +180,12 @@ EQUIPMENT scope, full asset on units (`attachAssetBulkAssetTree`), model/kit
 line excluded, CANCELLED EQUIPMENT line included, CANCELLED unit excluded): id-set
 + per-node structure match.
 
+**Consumer 3/4 — `getProjectPullSheet` DONE** (PR `feat/convex-read-pull-sheet`,
+stacked on consumer 2). `buildPullSheetLineItems` — flat EQUIPMENT scope, drops
+CANCELLED (default), no units, full asset attach + per-asset `location` graft;
+returns `{ lineItems, locationMap }` so the caller resolves `project.location` too.
+Golden-diffed vs the old include + attach + graft.
+
 ### New read helpers needed (priority by MOVE-read frequency)
 
 1. `projectLineItem-read.ts` (+ `projectLineItemUnit`) — biggest

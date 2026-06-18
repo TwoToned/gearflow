@@ -5,11 +5,9 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useWarehouseCloses, fingerprintWarehouseCloses } from "@/hooks/use-back-office";
 import {
-  Loader2,
   PackageCheck,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
   Lock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +18,7 @@ import { useCanDo } from "@/lib/use-permissions";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -28,6 +27,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+// Sentence-case labels (§5.2) for the exceptions table — the raw enum values
+// (CHECKED_OUT, DAMAGED) must never render directly.
+const STATUS_LABELS: Record<string, string> = {
+  QUOTED: "Quoted",
+  CONFIRMED: "Confirmed",
+  PREPPED: "Prepped",
+  CHECKED_OUT: "Deployed",
+  RETURNED: "Returned",
+  CANCELLED: "Cancelled",
+};
+
+const CONDITION_LABELS: Record<string, string> = {
+  GOOD: "Good",
+  DAMAGED: "Damaged",
+  MISSING: "Missing",
+};
 
 export function CloseOutTab({
   projectId,
@@ -78,9 +94,9 @@ export function CloseOutTab({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-fg-3">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading...
+      <div className="space-y-6 pt-4" aria-busy="true">
+        <Skeleton className="h-20 rounded-[var(--r)]" />
+        <Skeleton className="h-40 rounded-[var(--r-lg)]" />
       </div>
     );
   }
@@ -110,11 +126,11 @@ export function CloseOutTab({
     <div className="space-y-6">
       {/* Already closed banner */}
       {alreadyClosed && (
-        <div className="flex items-center gap-3 rounded-lg border-l-[3px] border-l-green-500 bg-bg-surface p-4">
-          <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+        <div className="flex items-center gap-3 rounded-[var(--r)] border-l-[3px] border-l-ok bg-card p-4 ring-1 ring-line">
+          <CheckCircle2 className="h-5 w-5 text-ok shrink-0" />
           <div>
-            <p className="text-sm font-medium text-green-500">Project Closed Out</p>
-            <p className="text-xs text-fg-3">
+            <p className="text-ui-text font-medium text-ok">Project closed out</p>
+            <p className="text-caption text-muted">
               Closed{closedBy ? ` by ${closedBy}` : ""}{closedAt ? ` on ${new Date(closedAt).toLocaleDateString()}` : ""}
             </p>
           </div>
@@ -122,38 +138,38 @@ export function CloseOutTab({
       )}
 
       {/* Summary metrics strip */}
-      <div className="flex items-center rounded-lg bg-bg-surface surface-ring divide-x divide-border">
+      <div className="flex items-center rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] divide-x divide-line">
         <div className="flex-1 px-4 py-3">
-          <p className="t-title t-data">{totalItems}</p>
-          <p className="t-micro text-fg-3 mt-0.5">Total Items</p>
+          <p className="t-title t-data text-ink">{totalItems}</p>
+          <p className="t-micro text-muted mt-0.5">Total items</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className="t-title t-data text-green-500">{storedCount}</p>
-          <p className="t-micro text-fg-3 mt-0.5">Stored</p>
+          <p className="t-title t-data text-ok">{storedCount}</p>
+          <p className="t-micro text-muted mt-0.5">Stored</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className={`t-title t-data ${damagedCount > 0 ? "text-amber-500" : "text-fg-3"}`}>
+          <p className={`t-title t-data ${damagedCount > 0 ? "text-warn" : "text-muted"}`}>
             {damagedCount}
           </p>
-          <p className="t-micro text-fg-3 mt-0.5">Damaged</p>
+          <p className="t-micro text-muted mt-0.5">Damaged</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className={`t-title t-data ${lostCount > 0 ? "text-destructive" : "text-fg-3"}`}>
+          <p className={`t-title t-data ${lostCount > 0 ? "text-t-out" : "text-muted"}`}>
             {lostCount}
           </p>
-          <p className="t-micro text-fg-3 mt-0.5">Lost</p>
+          <p className="t-micro text-muted mt-0.5">Lost</p>
         </div>
       </div>
 
       {/* Pending items warning */}
       {pendingCount > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border-l-[3px] border-l-amber-500 bg-bg-surface p-4">
-          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+        <div className="flex items-center gap-3 rounded-[var(--r)] border-l-[3px] border-l-warn bg-card p-4 ring-1 ring-line">
+          <AlertTriangle className="h-5 w-5 text-warn shrink-0" />
           <div>
-            <p className="text-sm font-medium text-amber-500">
+            <p className="text-ui-text font-medium text-warn">
               {pendingCount} item{pendingCount !== 1 ? "s" : ""} still pending
             </p>
-            <p className="text-xs text-fg-3">
+            <p className="text-caption text-muted">
               All items must be returned before closing out.
             </p>
           </div>
@@ -163,13 +179,13 @@ export function CloseOutTab({
       {/* Exceptions table */}
       {exceptions.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium mb-2">Exceptions</h3>
-          <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+          <h3 className="text-heading font-bold text-ink mb-2">Exceptions</h3>
+          <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Item</TableHead>
-                  <TableHead>Asset Tag</TableHead>
+                  <TableHead>Asset tag</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Condition</TableHead>
                 </TableRow>
@@ -177,31 +193,30 @@ export function CloseOutTab({
               <TableBody>
                 {exceptions.map((exc) => (
                   <TableRow key={exc.lineItemId}>
-                    <TableCell className="font-medium text-sm">{exc.modelName}</TableCell>
-                    <TableCell className="font-mono text-sm text-fg-3">
+                    <TableCell className="font-medium text-table-cell text-ink">{exc.modelName}</TableCell>
+                    <TableCell className="t-mono text-muted">
                       {exc.assetTag || "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {exc.status}
+                      <Badge status="neutral">
+                        {STATUS_LABELS[exc.status] || exc.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {exc.returnCondition ? (
                         <Badge
-                          variant="outline"
-                          className={`text-xs ${
+                          status={
                             exc.returnCondition === "DAMAGED"
-                              ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                              ? "warn"
                               : exc.returnCondition === "MISSING"
-                                ? "bg-destructive/10 text-destructive border-destructive/20"
-                                : ""
-                          }`}
+                                ? "overbooked"
+                                : "neutral"
+                          }
                         >
-                          {exc.returnCondition}
+                          {CONDITION_LABELS[exc.returnCondition] || exc.returnCondition}
                         </Badge>
                       ) : (
-                        <span className="text-fg-3 text-sm">—</span>
+                        <span className="text-muted text-table-cell">—</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -214,41 +229,43 @@ export function CloseOutTab({
 
       {/* Close button */}
       {!alreadyClosed && canClose && (
-        <div className="border-t border-border pt-4">
+        <div className="border-t border-line pt-4">
           {!canCloseOut ? (
-            <div className="flex items-center gap-2 text-sm text-fg-3">
+            <div className="flex items-center gap-2 text-ui-text text-muted">
               <Lock className="h-4 w-4" />
               Close-out blocked until all items are returned.
             </div>
           ) : confirmStep === 0 ? (
             <Button
-              variant="destructive"
+              variant="line"
+              className="text-t-out hover:bg-red hover:text-white hover:border-red"
               onClick={() => setConfirmStep(1)}
               disabled={closeMutation.isPending}
             >
               <PackageCheck className="mr-2 h-4 w-4" />
-              Close Out Project
+              Close out project
             </Button>
           ) : (
             <div className="flex items-center gap-3">
-              <p className="text-sm text-fg-3">
+              <p className="text-ui-text text-muted">
                 Are you sure? This action cannot be undone.
               </p>
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => setConfirmStep(0)}
               >
                 Cancel
               </Button>
               <Button
-                variant="destructive"
+                variant="line"
                 size="sm"
+                className="text-t-out hover:bg-red hover:text-white hover:border-red"
                 onClick={() => closeMutation.mutate()}
                 disabled={closeMutation.isPending}
+                loading={closeMutation.isPending}
               >
-                {closeMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Confirm Close
+                Confirm close
               </Button>
             </div>
           )}

@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { focusRing } from "@/lib/utils";
 import {
   TabsContent,
 } from "@/components/ui/tabs";
@@ -114,7 +116,7 @@ export function DeployTab({
   return (
     <TabsContent value="check-out">
       <div className="space-y-4 pt-4">
-        <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
+        <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
             <AssetTagInput
               ref={deployScanInputRef}
               placeholder="Scan asset tag to deploy..."
@@ -123,11 +125,12 @@ export function DeployTab({
               onScan={(value) => deployScanMutationMutate(value)}
               onKeyDown={handleDeployScanKeyDown}
               disabled={deployScanMutationIsPending || checkOutIsPending}
+              className="h-11"
             />
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-fg-3">Items prepped and ready to deploy.</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-ui-text text-muted">Items prepped and ready to deploy.</p>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 text-sm text-fg-3 cursor-pointer">
+                <label className="flex items-center gap-1.5 text-ui-text text-muted cursor-pointer">
                   <Checkbox
                     checked={includeAccessories}
                     onCheckedChange={(c) => onIncludeAccessoriesChange(c === true)}
@@ -135,16 +138,18 @@ export function DeployTab({
                   Include accessories
                 </label>
                 <Button
-                  variant="outline"
+                  variant="line"
                   size="sm"
                   onClick={() => handleDeprep(selectedOut)}
                   disabled={selectedOutCount === 0 || deprepIsPending}
+                  loading={deprepIsPending}
                 >
                   Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
                 </Button>
                 <Button
                   onClick={handleCheckOutSelected}
                   disabled={selectedOutCount === 0 || checkOutIsPending}
+                  loading={checkOutIsPending}
                   className="shrink-0"
                 >
                   Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
@@ -154,25 +159,31 @@ export function DeployTab({
         </div>
 
         {checkOutItemsList.length === 0 ? (
-          <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
-              <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
-              <p>No prepped items ready to deploy.</p>
-              <p className="text-xs mt-1">Pick and prep items first in the Pick/Prep tab.</p>
-          </div>
+          <EmptyState
+            title="Nothing to deploy yet"
+            description="Pick and prep items in the Pick/Prep tab, then deploy them here."
+          />
         ) : (
-          <div className="rounded-md border">
+          <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
-                      checked={allOutKeys.length > 0 && (allOutKeys.every((k) => selectedOut.has(k)) || allOutKeys.some((k) => selectedOut.has(k)))}
-                      indeterminate={allOutKeys.length > 0 && allOutKeys.some((k) => selectedOut.has(k)) && !allOutKeys.every((k) => selectedOut.has(k))}
+                      checked={
+                        allOutKeys.length === 0
+                          ? false
+                          : allOutKeys.every((k) => selectedOut.has(k))
+                            ? true
+                            : allOutKeys.some((k) => selectedOut.has(k))
+                              ? "indeterminate"
+                              : false
+                      }
                       onCheckedChange={() => toggleAll(selectedOut, setSelectedOut, allOutKeys)}
                     />
                   </TableHead>
                   <TableHead>Item</TableHead>
-                  <TableHead>Asset Tag</TableHead>
+                  <TableHead>Asset tag</TableHead>
                   <TableHead className="text-center w-16">Qty</TableHead>
                   <TableHead className="w-28">Status</TableHead>
                 </TableRow>
@@ -181,10 +192,10 @@ export function DeployTab({
                 {deployContainerGroups.map(({ container, entries }) => (
                   <Fragment key={container || "__ungrouped"}>
                     {container ? (
-                      <TableRow className="bg-bg-inset/50">
+                      <TableRow className="bg-paper-2/60">
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
+                            <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-2">
                               <Package className="h-3.5 w-3.5" />
                               {container}
                             </div>
@@ -192,8 +203,9 @@ export function DeployTab({
                               type="button"
                               onClick={() => clearContainerMutate(container)}
                               disabled={clearContainerIsPending}
-                              className="rounded p-0.5 text-fg-3 hover:text-fg-1 hover:bg-bg-hover transition-colors"
+                              className={`rounded-[var(--r)] p-0.5 text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
                               title="Remove container"
+                              aria-label={`Remove container ${container}`}
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -201,11 +213,11 @@ export function DeployTab({
                         </TableCell>
                       </TableRow>
                     ) : deployContainerGroups.some((g) => g.container !== null) && (
-                      <TableRow className="bg-bg-inset/30">
+                      <TableRow className="bg-paper-2/40">
                         <TableCell colSpan={5} className="py-1.5">
-                          <div className="flex items-center gap-1.5 text-xs font-medium text-fg-4 uppercase tracking-wide">
+                          <div className="flex items-center gap-1.5 text-caption font-medium text-faint">
                             <Package className="h-3.5 w-3.5" />
-                            No Container
+                            No container
                           </div>
                         </TableCell>
                       </TableRow>
@@ -225,20 +237,20 @@ export function DeployTab({
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
                           <Fragment key={item.id}>
-                            <TableRow className="bg-bg-inset/30">
+                            <TableRow className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
                                   checked={selectedOut.has(item.id)}
                                   onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
                                 />
                               </TableCell>
-                              <TableCell className="pl-12 text-sm text-fg-3">
+                              <TableCell className="pl-12 text-table-cell text-muted">
                                 {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
                               </TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">
+                              <TableCell className="t-mono text-muted">
                                 {item.asset?.assetTag || "—"}
                               </TableCell>
-                              <TableCell className="text-center">1</TableCell>
+                              <TableCell className="text-center tabular-nums">1</TableCell>
                               <TableCell>
                                 <PrepStatusBadge item={item} />
                               </TableCell>
@@ -264,7 +276,7 @@ export function DeployTab({
                           entry, childKeys, selectedOut, setSelectedOut,
                           <TableCell>
                             {checkedCount > 0 ? (
-                              <Badge variant="outline" className="bg-teal-500/10 text-teal-500 border-teal-500/20">
+                              <Badge status="neutral" className="bg-blue-soft text-blue">
                                 {checkedCount} selected
                               </Badge>
                             ) : (
@@ -279,20 +291,20 @@ export function DeployTab({
                             ?? entry.item.bulkAsset?.assetTag
                             ?? "—";
                           return (
-                            <TableRow key={key} className="bg-bg-inset/30">
+                            <TableRow key={key} className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
                                   checked={selectedOut.has(key)}
                                   onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, key)}
                                 />
                               </TableCell>
-                              <TableCell className="pl-12 text-sm text-fg-3">
+                              <TableCell className="pl-12 text-table-cell text-muted">
                                 Unit {idx + 1}
                               </TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">
+                              <TableCell className="t-mono text-muted">
                                 {tag}
                               </TableCell>
-                              <TableCell className="text-center">1</TableCell>
+                              <TableCell className="text-center tabular-nums">1</TableCell>
                               <TableCell />
                             </TableRow>
                           );
@@ -313,7 +325,7 @@ export function DeployTab({
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
-                          className="cursor-pointer hover:bg-accent/50"
+                          className="cursor-pointer hover:bg-elev"
                           onClick={() => toggleExpanded(entry.groupKey)}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -324,34 +336,29 @@ export function DeployTab({
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
-                              <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                              <Container className="h-4 w-4 text-fg-3" />
-                              <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                              <ChevronRight className={`h-4 w-4 text-muted transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                              <Container className="h-4 w-4 text-muted" />
+                              <span className="font-medium text-ink">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
+                              <Badge status="neutral" className="ml-1">
                                 Kit
                               </Badge>
                               {allIds.length > 0 && (
                                 <Badge
-                                  variant="outline"
-                                  className={allVerified
-                                    ? "ml-1 text-[10px] px-1.5 py-0 bg-green-500/10 text-green-500 border-green-500/20"
-                                    : verifiedCount > 0
-                                      ? "ml-1 text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                      : "ml-1 text-[10px] px-1.5 py-0"
-                                  }
+                                  status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"}
+                                  className="ml-1 tabular-nums"
                                 >
                                   {verifiedCount}/{allIds.length} verified
                                 </Badge>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="font-mono text-sm text-fg-3">
+                          <TableCell className="t-mono text-muted">
                             {entry.item.kit?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center">{entry.children.length}</TableCell>
+                          <TableCell className="text-center tabular-nums">{entry.children.length}</TableCell>
                           <TableCell>
                             {isPartiallyDeployed ? (
-                              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                              <Badge status="warn">
                                 Partial
                               </Badge>
                             ) : (
@@ -392,21 +399,21 @@ export function DeployTab({
                         />
                       </TableCell>
                       <TableCell>
-                        <span className="font-medium">{modelDisplayName(item)}</span>
+                        <span className="font-medium text-ink">{modelDisplayName(item)}</span>
                         {item.subHireId != null && (
-                          <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
+                          <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">Subhire</Badge>
                         )}
                         {item.isCustomItem && (
-                          <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-muted text-fg-3 border-border/60">Custom</Badge>
+                          <Badge status="neutral" className="ml-1.5">Custom</Badge>
                         )}
                         {item.subHireId != null && item.supplier && (
-                          <p className="text-xs text-fg-3 mt-0.5">via {item.supplier.name}</p>
+                          <p className="text-caption text-muted mt-0.5">via {item.supplier.name}</p>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-sm text-fg-3">
+                      <TableCell className="t-mono text-muted">
                         {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
                       </TableCell>
-                      <TableCell className="text-center">{item.quantity}</TableCell>
+                      <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
                       <TableCell>
                         <PrepStatusBadge item={item} />
                       </TableCell>

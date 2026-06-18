@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2, Boxes, Cable, Layers } from "lucide-react";
+import { Boxes, Cable, Layers } from "lucide-react";
 import { toast } from "sonner";
 
 import { showError } from "@/lib/show-error";
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -47,19 +48,19 @@ const CONDITION_LABELS: Record<Condition, string> = {
 const ITEM_TYPE_LABELS: Record<CheckInItemType, string> = {
   OWNED_SERIALISED: "Asset",
   OWNED_BULK: "Bulk",
-  SUBHIRE: "Sub-Hire",
+  SUBHIRE: "Sub-hire",
   CUSTOM: "Custom",
   ACCESSORY: "Accessory",
 };
 
-const ITEM_TYPE_VARIANTS: Record<CheckInItemType, "default" | "secondary" | "outline" | "destructive"> = {
-  OWNED_SERIALISED: "default",
-  OWNED_BULK: "default",
-  // DESIGN.md has no cyan in its palette — sub-hire uses the standard
-  // "secondary" variant rather than a hardcoded cyan badge.
-  SUBHIRE: "secondary",
-  CUSTOM: "secondary",
-  ACCESSORY: "outline",
+// Categorical type pills are neutral (§3 — type, not status). Sub-hire reads as
+// info (blue) via a status-colors token override on the neutral pill.
+const ITEM_TYPE_CLASS: Record<CheckInItemType, string> = {
+  OWNED_SERIALISED: "",
+  OWNED_BULK: "",
+  SUBHIRE: "bg-blue-soft text-blue",
+  CUSTOM: "",
+  ACCESSORY: "",
 };
 
 export function BulkCheckInTab({
@@ -129,9 +130,9 @@ export function BulkCheckInTab({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-fg-3">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading...
+      <div className="space-y-4 pt-4" aria-busy="true">
+        <Skeleton className="h-20 rounded-[var(--r)]" />
+        <Skeleton className="h-40 rounded-[var(--r-lg)]" />
       </div>
     );
   }
@@ -140,8 +141,7 @@ export function BulkCheckInTab({
     return (
       <div className="pt-4">
         <EmptyState
-          icon={Boxes}
-          heading="No deployed items to check in"
+          title="No deployed items to check in"
           description="When gear is deployed, it shows here as project-wide totals you can check in all at once."
         />
       </div>
@@ -150,11 +150,11 @@ export function BulkCheckInTab({
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex items-start gap-3 rounded-lg bg-bg-surface surface-ring p-4">
-        <Layers className="h-5 w-5 text-fg-3 shrink-0 mt-0.5" />
+      <div className="flex items-start gap-3 rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] p-4">
+        <Layers className="h-5 w-5 text-muted shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm font-medium text-fg">Bulk check-in</p>
-          <p className="text-xs text-fg-3 mt-0.5">
+          <p className="text-ui-text font-medium text-ink">Bulk check-in</p>
+          <p className="text-caption text-muted mt-0.5">
             Counts are aggregated across the whole project. Enter how many you have
             in front of you and check them all in at once.
           </p>
@@ -174,13 +174,13 @@ export function BulkCheckInTab({
         </div>
       </div>
 
-      <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+      <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
-              <TableHead className="text-center">Due Back</TableHead>
-              <TableHead className="w-40 text-right">Check In Qty</TableHead>
+              <TableHead className="text-center">Due back</TableHead>
+              <TableHead className="w-40 text-right">Check-in qty</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -191,26 +191,23 @@ export function BulkCheckInTab({
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {row.kind === "BULK" ? (
-                        <Boxes className="h-4 w-4 text-fg-3" />
+                        <Boxes className="h-4 w-4 text-muted" />
                       ) : (
-                        <Cable className="h-4 w-4 text-fg-3" />
+                        <Cable className="h-4 w-4 text-muted" />
                       )}
-                      <span className="font-medium text-sm">{row.label}</span>
+                      <span className="font-medium text-table-cell text-ink">{row.label}</span>
                       {row.modelNumber && (
-                        <span className="font-mono text-xs text-fg-4">{row.modelNumber}</span>
+                        <span className="t-mono text-faint">{row.modelNumber}</span>
                       )}
-                      <Badge
-                        variant={ITEM_TYPE_VARIANTS[row.itemType]}
-                        className="text-[10px] px-1.5 py-0"
-                      >
+                      <Badge status="neutral" className={ITEM_TYPE_CLASS[row.itemType]}>
                         {ITEM_TYPE_LABELS[row.itemType]}
                       </Badge>
                       {row.childCount > 1 && (
-                        <span className="text-xs text-fg-4">across {row.childCount} lines</span>
+                        <span className="text-caption text-faint">across {row.childCount} lines</span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-center tabular-nums text-sm">{row.totalDue}</TableCell>
+                  <TableCell className="text-center tabular-nums text-table-cell">{row.totalDue}</TableCell>
                   <TableCell className="text-right">
                     <Input
                       type="number"
@@ -219,7 +216,7 @@ export function BulkCheckInTab({
                       max={row.totalDue}
                       aria-label={`Check-in quantity for ${row.label}`}
                       aria-invalid={over ? "true" : "false"}
-                      className={`h-9 w-24 ml-auto text-right tabular-nums ${over ? "border-destructive" : ""}`}
+                      className="h-11 w-24 ml-auto text-right tabular-nums"
                       value={counts[row.key] ?? String(row.totalDue)}
                       onChange={(e) =>
                         setCounts((c) => ({ ...c, [row.key]: e.target.value }))
@@ -234,21 +231,21 @@ export function BulkCheckInTab({
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-sm text-fg-3">
+        <p className="text-ui-text text-muted">
           {hasOverCount ? (
-            <span className="text-destructive">A quantity exceeds what&apos;s deployed.</span>
+            <span className="text-t-out">A quantity exceeds what&apos;s deployed.</span>
           ) : (
             <>
-              <span className="font-medium text-fg tabular-nums">{totalSelected}</span> to check in
+              <span className="font-medium text-ink tabular-nums">{totalSelected}</span> to check in
             </>
           )}
         </p>
         <Button
           onClick={submit}
           disabled={!canCheckIn || mutation.isPending || hasOverCount || totalSelected === 0}
+          loading={mutation.isPending}
         >
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Check In Totals
+          Check in totals
         </Button>
       </div>
     </div>

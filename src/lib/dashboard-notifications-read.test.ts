@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   countDueMaintenance,
   aggregateMaintenanceForProject,
-  type ConvexMaintenanceRecord,
+  type MaintenanceRecordRow,
 } from "@/lib/maintenance-read";
 import {
   countAssignmentsByStatus,
@@ -17,8 +17,15 @@ import {
 } from "@/lib/project-services-read";
 
 // Minimal builders — the pure functions only touch the scalar fields under test.
-function maint(p: Partial<ConvexMaintenanceRecord>): ConvexMaintenanceRecord {
-  return { id: "m", organizationId: "org" /* + Convex sys fields */, ...p } as ConvexMaintenanceRecord;
+function maint(p: Partial<MaintenanceRecordRow> & { scheduledDate?: number | null }): MaintenanceRecordRow {
+  const { scheduledDate, ...rest } = p;
+  return {
+    id: "m",
+    organizationId: "org",
+    status: "SCHEDULED",
+    scheduledDate: scheduledDate != null ? new Date(scheduledDate) : null,
+    ...rest,
+  } as MaintenanceRecordRow;
 }
 function asn(p: Partial<ConvexCrewAssignment>): ConvexCrewAssignment {
   return { id: "a", organizationId: "org", projectId: "p", crewMemberId: "c", ...p } as ConvexCrewAssignment;

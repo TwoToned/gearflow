@@ -219,7 +219,7 @@ interface SectionHeaderProps {
 export function SectionHeader({ label, className }: SectionHeaderProps) {
   return (
     <div className={cn("section-label", className)}>
-      <span className="t-overline shrink-0 rounded-sm bg-teal-subtle px-2 py-0.5 text-primary">
+      <span className="t-overline shrink-0 rounded-sm bg-red-soft px-2 py-0.5 text-red">
         {label}
       </span>
     </div>

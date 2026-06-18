@@ -25,7 +25,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="app-shell flex flex-col overflow-hidden md:relative md:inset-auto md:block md:min-h-svh md:overflow-visible">
-      <SidebarProvider className="min-h-0 flex-1 md:min-h-svh">
+      <SidebarProvider
+        className="min-h-0 flex-1 md:min-h-svh"
+        style={{ "--sidebar-width": "248px", "--sidebar-width-icon": "92px", "--sidebar-width-mobile": "248px" } as React.CSSProperties}
+      >
         <BrandingProvider>
           <MiraContextProvider>
             <OrgActivator />

@@ -13,7 +13,6 @@ import {
   Phone,
   Trash2,
   Plus,
-  Loader2,
   Briefcase,
   CalendarOff,
   CalendarSync,
@@ -28,7 +27,6 @@ import {
   Camera,
   X,
   LinkIcon,
-  ChevronRight,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -103,6 +101,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
   TableBody,
@@ -119,18 +118,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { getStatusColor } from "@/lib/status-colors";
+import { focusRing } from "@/lib/utils";
 import { formatDate } from "@/lib/formatters";
 
-const availabilityTypeColors: Record<string, string> = {
-  UNAVAILABLE: "bg-red-500/10 text-red-500 border-red-500/20",
-  TENTATIVE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  PREFERRED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
+// Availability-block pill styling via status-colors (§3): UNAVAILABLE = error,
+// TENTATIVE = warn, PREFERRED = ok.
+function availabilityPill(type: string): string {
+  return getStatusColor("availabilityType", type).pill;
+}
 
 
 const projectStatusLabels: Record<string, string> = {
@@ -140,7 +149,7 @@ const projectStatusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -358,7 +367,12 @@ export default function CrewMemberDetailPage({
   if (isLoading)
     return <DetailPageSkeleton />;
   if (!member)
-    return <div className="py-20 text-center text-fg-3">Crew member not found.</div>;
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Crew member not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+      </div>
+    );
 
   const isOwnProfile = !!(member as { isOwnProfile?: boolean }).isOwnProfile;
 
@@ -366,8 +380,8 @@ export default function CrewMemberDetailPage({
   if (!canReadCrew && !isOwnProfile) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <h2 className="t-title">Access Denied</h2>
-        <p className="mt-2 text-sm text-fg-3">
+        <h2 className="text-page-title font-display font-extrabold text-ink">Access denied</h2>
+        <p className="mt-2 text-ui-text text-muted">
           You don&apos;t have permission to access this page.
         </p>
       </div>
@@ -402,8 +416,8 @@ export default function CrewMemberDetailPage({
         <div className="space-y-6">
           {/* Own profile banner */}
           {isOwnProfile && (
-            <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 shrink-0" />
+            <div className="rounded-[var(--r)] border border-line border-l-2 border-l-blue bg-card px-4 py-3 text-ui-text text-ink-2 flex items-center gap-2">
+              <CheckCircle className="size-4 shrink-0 text-blue" />
               You are viewing your own crew profile.
             </div>
           )}
@@ -411,35 +425,37 @@ export default function CrewMemberDetailPage({
           {/* ── Header (full width) ────────────────────────────────── */}
           <div>
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/crew" className="hover:text-fg transition-colors">
-                Crew
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg font-medium truncate">{fullName}</span>
-            </nav>
+            <Breadcrumb className="mb-2">
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink render={<Link href="/crew" />}>Crew</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{fullName}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-4">
                 {/* Profile Picture */}
                 <div className="relative group shrink-0">
-                  <Avatar className="size-16 text-lg">
-                    {displayImage ? (
-                      <AvatarImage src={displayImage} alt={fullName} />
-                    ) : null}
-                    <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                      {member.firstName[0]}{member.lastName[0]}
-                    </AvatarFallback>
-                  </Avatar>
+                  <PersonAvatar
+                    name={fullName}
+                    src={displayImage || undefined}
+                    className="size-16 text-lg"
+                  />
                   {/* Only show upload controls for crew without a linked user (linked users sync from account) */}
                   {!member.user && (
                     <CanDo resource="crew" action="update">
                       <button
                         type="button"
-                        className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        aria-label="Change profile picture"
+                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-paper/70 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${focusRing}`}
                         onClick={() => avatarInputRef.current?.click()}
                       >
-                        <Camera className="h-5 w-5 text-white" />
+                        <Camera className="size-5 text-ink" />
                       </button>
                       <input
                         ref={avatarInputRef}
@@ -455,40 +471,41 @@ export default function CrewMemberDetailPage({
                       {member.image && (
                         <button
                           type="button"
-                          className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Remove profile picture"
+                          className={`absolute -top-1 -right-1 rounded-full bg-red text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${focusRing}`}
                           onClick={() => removeAvatarMutation.mutate()}
                           title="Remove photo"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="size-3" />
                         </button>
                       )}
                     </CanDo>
                   )}
                   {uploadAvatarMutation.isPending && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-paper/70">
+                      <span className="size-5 motion-safe:animate-spin rounded-full border-2 border-ink border-t-transparent" />
                     </div>
                   )}
                 </div>
 
                 <div>
                   <div className="flex items-center gap-2">
-                    <h1 className="t-title text-fg">{fullName}</h1>
+                    <h1 className="text-page-title font-display font-extrabold tracking-tight text-ink">{fullName}</h1>
                     <StatusIndicator
                       category="crewMember"
                       value={member.status}
                       label={crewMemberStatusLabels[member.status] || formatLabel(member.status)}
                     />
-                    <Badge variant="outline">
+                    <Badge status="neutral">
                       {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
                     </Badge>
                   </div>
-                  <p className="text-fg-3">
+                  <p className="text-ui-text text-muted">
                     {member.crewRole?.name || "No role assigned"}
                     {member.department && <> &middot; {member.department}</>}
                   </p>
                   {member.user && !isOwnProfile && (
-                    <p className="text-xs text-fg-3 mt-1 flex items-center gap-1">
+                    <p className="text-caption text-muted mt-1 flex items-center gap-1">
                       <LinkIcon className="h-3 w-3" />
                       Linked to {member.user.name || member.user.email}
                     </p>
@@ -497,20 +514,19 @@ export default function CrewMemberDetailPage({
               </div>
               <CanDo resource="crew" action="update">
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    render={<Link href={`/crew/${id}/edit`} />}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" asChild>
+                    <Link href={`/crew/${id}/edit`}>
+                      <Pencil className="size-5" />
+                      Edit
+                    </Link>
                   </Button>
                   <CanDo resource="crew" action="delete">
                     <Button
-                      variant="outline"
-                      className="text-destructive"
+                      variant="line"
+                      className="border-t-out/40 text-t-out hover:bg-red hover:text-white hover:border-red"
                       onClick={() => setDeleteCrewOpen(true)}
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
+                      <Trash2 className="size-5" />
                       Delete
                     </Button>
                   </CanDo>
@@ -539,14 +555,15 @@ export default function CrewMemberDetailPage({
 
                 {/* Assignments Tab */}
                 <TabsContent value="assignments" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <h3 className="t-heading text-fg mb-4">Project Assignments</h3>
+                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+                    <h3 className="text-card-title font-bold text-ink mb-4">Project assignments</h3>
                       {assignments.length === 0 ? (
-                        <p className="text-sm text-fg-3 text-center py-4">
-                          No project assignments yet.
-                        </p>
+                        <EmptyState
+                          title="No project assignments yet"
+                          description="Assign this crew member to a project from the planner or a project's crew tab."
+                        />
                       ) : (
-                        <div className="rounded-md border">
+                        <div className="rounded-[var(--r)] border border-line">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -560,7 +577,7 @@ export default function CrewMemberDetailPage({
                                 <TableHead>Dates</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="hidden md:table-cell">
-                                  Project Status
+                                  Project status
                                 </TableHead>
                                 <TableHead className="w-[50px]" />
                               </TableRow>
@@ -599,13 +616,13 @@ export default function CrewMemberDetailPage({
                                     <TableCell>
                                       <Link
                                         href={`/projects/${a.project.id}`}
-                                        className="font-medium hover:underline"
+                                        className={`font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
                                       >
                                         <div className="flex items-center gap-2">
-                                          <Briefcase className="h-3.5 w-3.5 text-fg-3" />
+                                          <Briefcase className="h-3.5 w-3.5 text-muted" />
                                           <div>
                                             <div>{a.project.name}</div>
-                                            <div className="text-xs text-fg-3 font-mono">
+                                            <div className="text-caption text-muted font-mono">
                                               {a.project.projectNumber}
                                             </div>
                                           </div>
@@ -615,13 +632,12 @@ export default function CrewMemberDetailPage({
                                     <TableCell className="hidden md:table-cell">
                                       {a.crewRole ? (
                                         <Badge
-                                          variant="outline"
+                                          status="neutral"
                                           style={
                                             a.crewRole.color
                                               ? {
-                                                  borderColor: a.crewRole.color,
                                                   color: a.crewRole.color,
-                                                  backgroundColor: `${a.crewRole.color}15`,
+                                                  backgroundColor: `${a.crewRole.color}26`,
                                                 }
                                               : undefined
                                           }
@@ -629,17 +645,17 @@ export default function CrewMemberDetailPage({
                                           {a.crewRole.name}
                                         </Badge>
                                       ) : (
-                                        <span className="text-fg-3">
+                                        <span className="text-muted">
                                           {"\u2014"}
                                         </span>
                                       )}
                                     </TableCell>
-                                    <TableCell className="hidden md:table-cell text-sm">
+                                    <TableCell className="hidden md:table-cell text-table-cell text-ink-2">
                                       {a.phase
                                         ? phaseLabels[a.phase] || a.phase
                                         : "\u2014"}
                                     </TableCell>
-                                    <TableCell className="text-sm">
+                                    <TableCell className="text-table-cell tabular-nums text-ink-2">
                                       {formatDate(a.startDate)}
                                       {a.endDate && a.endDate !== a.startDate
                                         ? ` \u2013 ${formatDate(a.endDate)}`
@@ -659,8 +675,10 @@ export default function CrewMemberDetailPage({
                                     <TableCell>
                                       <CanDo resource="crew" action="update">
                                         <DropdownMenu>
-                                          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-8 w-8 p-0" />}>
-                                            <MoreHorizontal className="h-4 w-4" />
+                                          <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="size-9" aria-label="Assignment actions">
+                                              <MoreHorizontal className="size-5" />
+                                            </Button>
                                           </DropdownMenuTrigger>
                                           <DropdownMenuContent align="end">
                                             <DropdownMenuGroup>
@@ -669,7 +687,7 @@ export default function CrewMemberDetailPage({
                                                   onClick={() => sendOfferMutation.mutate(a.id)}
                                                 >
                                                   <Send className="mr-2 h-4 w-4" />
-                                                  Send Offer
+                                                  Send offer
                                                 </DropdownMenuItem>
                                               )}
                                               {availableStatuses.map((s) => (
@@ -714,27 +732,27 @@ export default function CrewMemberDetailPage({
 
                 {/* Availability Tab */}
                 <TabsContent value="availability" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="t-heading text-fg">Availability Blocks</h3>
+                      <h3 className="text-card-title font-bold text-ink">Availability blocks</h3>
                       <CanDo resource="crew" action="update">
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="line"
                           onClick={() => setAddAvailOpen(true)}
                         >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Block
+                          <Plus className="size-5" />
+                          Add block
                         </Button>
                       </CanDo>
                     </div>
                       {!availabilityRecords || availabilityRecords.length === 0 ? (
-                        <p className="text-sm text-fg-3 text-center py-4">
-                          No availability blocks set. Add blocks to indicate when this
-                          crew member is unavailable, tentative, or preferred.
-                        </p>
+                        <EmptyState
+                          title="No availability blocks set"
+                          description="Add blocks to indicate when this crew member is unavailable, tentative, or preferred."
+                        />
                       ) : (
-                        <div className="rounded-md border">
+                        <div className="rounded-[var(--r)] border border-line">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -764,28 +782,26 @@ export default function CrewMemberDetailPage({
                                   <TableRow key={av.id}>
                                     <TableCell>
                                       <Badge
-                                        variant="outline"
-                                        className={
-                                          availabilityTypeColors[av.type] || ""
-                                        }
+                                        status="neutral"
+                                        className={availabilityPill(av.type)}
                                       >
                                         <CalendarOff className="mr-1 h-3 w-3" />
                                         {availabilityTypeLabels[av.type] ||
                                           formatLabel(av.type)}
                                       </Badge>
                                     </TableCell>
-                                    <TableCell className="text-sm">
+                                    <TableCell className="text-table-cell tabular-nums text-ink-2">
                                       {formatDate(av.startDate)}
                                       {av.endDate !== av.startDate
                                         ? ` \u2013 ${formatDate(av.endDate)}`
                                         : ""}
                                     </TableCell>
-                                    <TableCell className="text-sm text-fg-3 hidden md:table-cell">
+                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
                                       {av.isAllDay
-                                        ? "All Day"
+                                        ? "All day"
                                         : `${av.startTime || ""} \u2013 ${av.endTime || ""}`}
                                     </TableCell>
-                                    <TableCell className="text-sm text-fg-3 hidden md:table-cell">
+                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
                                       {av.reason || "\u2014"}
                                     </TableCell>
                                     <TableCell>
@@ -793,10 +809,11 @@ export default function CrewMemberDetailPage({
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-7 w-7 text-destructive"
+                                          className="size-9 text-t-out hover:bg-out-soft"
+                                          aria-label="Remove availability block"
                                           onClick={() => setRemoveAvailId(av.id)}
                                         >
-                                          <Trash2 className="h-3.5 w-3.5" />
+                                          <Trash2 className="size-5" />
                                         </Button>
                                       </CanDo>
                                     </TableCell>
@@ -812,26 +829,22 @@ export default function CrewMemberDetailPage({
 
                 {/* Time Entries Tab */}
                 <TabsContent value="time-entries" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="t-heading text-fg flex items-center gap-2">
+                      <h3 className="text-card-title font-bold text-ink flex items-center gap-2">
                         <Clock className="h-4 w-4" />
-                        Time Entries
+                        Time entries
                       </h3>
                       <div className="flex gap-2">
                         {timeEntries && timeEntries.length > 0 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            render={
-                              <a
-                                href={`/api/crew/timesheet?crewMemberId=${id}`}
-                                download
-                              />
-                            }
-                          >
-                            <Download className="mr-2 h-3.5 w-3.5" />
-                            Export CSV
+                          <Button variant="line" size="sm" asChild>
+                            <a
+                              href={`/api/crew/timesheet?crewMemberId=${id}`}
+                              download
+                            >
+                              <Download className="size-5" />
+                              Export CSV
+                            </a>
                           </Button>
                         )}
                         {/* Bulk submit all drafts */}
@@ -841,7 +854,7 @@ export default function CrewMemberDetailPage({
                           ).length > 0 && (
                             <CanDo resource="crew" action="update">
                               <Button
-                                variant="outline"
+                                variant="line"
                                 size="sm"
                                 onClick={() => {
                                   const draftIds = timeEntries
@@ -852,10 +865,10 @@ export default function CrewMemberDetailPage({
                                     .map((e: { id: string }) => e.id);
                                   submitTimeMutation.mutate(draftIds);
                                 }}
-                                disabled={submitTimeMutation.isPending}
+                                loading={submitTimeMutation.isPending}
                               >
-                                <Send className="mr-2 h-3.5 w-3.5" />
-                                Submit All Drafts
+                                <Send className="size-5" />
+                                Submit all drafts
                               </Button>
                             </CanDo>
                           )}
@@ -866,7 +879,7 @@ export default function CrewMemberDetailPage({
                           ).length > 0 && (
                             <CanDo resource="crew" action="update">
                               <Button
-                                variant="outline"
+                                variant="line"
                                 size="sm"
                                 onClick={() => {
                                   const submittedIds = timeEntries
@@ -877,10 +890,10 @@ export default function CrewMemberDetailPage({
                                     .map((e: { id: string }) => e.id);
                                   approveTimeMutation.mutate(submittedIds);
                                 }}
-                                disabled={approveTimeMutation.isPending}
+                                loading={approveTimeMutation.isPending}
                               >
-                                <CheckCircle className="mr-2 h-3.5 w-3.5" />
-                                Approve All
+                                <CheckCircle className="size-5" />
+                                Approve all
                               </Button>
                             </CanDo>
                           )}
@@ -892,16 +905,17 @@ export default function CrewMemberDetailPage({
                               setAddTimeOpen(true);
                             }}
                           >
-                            <Plus className="mr-2 h-3.5 w-3.5" />
-                            Log Time
+                            <Plus className="size-5" />
+                            Log time
                           </Button>
                         </CanDo>
                       </div>
                     </div>
                       {!timeEntries || timeEntries.length === 0 ? (
-                        <p className="text-sm text-fg-3 py-4 text-center">
-                          No time entries recorded yet.
-                        </p>
+                        <EmptyState
+                          title="No time entries recorded yet"
+                          description="Log time against a project assignment or a general shift."
+                        />
                       ) : (
                         <Table>
                           <TableHeader>
@@ -921,36 +935,36 @@ export default function CrewMemberDetailPage({
                             {/* eslint-disable @typescript-eslint/no-explicit-any */}
                             {timeEntries.map((entry: any) => (
                               <TableRow key={entry.id}>
-                                <TableCell className="text-sm">
+                                <TableCell className="text-table-cell tabular-nums text-ink-2">
                                   {formatDate(entry.date)}
                                 </TableCell>
-                                <TableCell className="text-sm">
+                                <TableCell className="text-table-cell text-ink-2">
                                   {entry.assignment ? (
                                     <>
                                       {entry.assignment.project?.projectNumber} —{" "}
                                       {entry.assignment.project?.name}
                                     </>
                                   ) : (
-                                    <span className="text-fg-3 italic">
+                                    <span className="text-muted italic">
                                       {entry.description || "General"}
                                     </span>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-sm">
+                                <TableCell className="text-table-cell text-muted">
                                   {entry.assignment?.crewRole?.name || "—"}
                                 </TableCell>
-                                <TableCell className="text-sm font-mono">
+                                <TableCell className="text-table-cell font-mono tabular-nums text-ink-2">
                                   {entry.startTime}
                                 </TableCell>
-                                <TableCell className="text-sm font-mono">
+                                <TableCell className="text-table-cell font-mono tabular-nums text-ink-2">
                                   {entry.endTime}
                                 </TableCell>
-                                <TableCell className="text-sm">
+                                <TableCell className="text-table-cell tabular-nums text-ink-2">
                                   {entry.breakMinutes > 0
                                     ? `${entry.breakMinutes}m`
                                     : "—"}
                                 </TableCell>
-                                <TableCell className="text-sm font-mono t-data">
+                                <TableCell className="text-table-cell font-mono tabular-nums text-ink">
                                   {entry.totalHours != null
                                     ? `${Number(entry.totalHours).toFixed(1)}h`
                                     : "—"}
@@ -967,12 +981,10 @@ export default function CrewMemberDetailPage({
                                 <TableCell>
                                   {entry.status !== "EXPORTED" && (
                                     <DropdownMenu>
-                                      <DropdownMenuTrigger
-                                        render={
-                                          <Button variant="ghost" size="icon" />
-                                        }
-                                      >
-                                        <MoreHorizontal className="h-4 w-4" />
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="size-9" aria-label="Time entry actions">
+                                          <MoreHorizontal className="size-5" />
+                                        </Button>
                                       </DropdownMenuTrigger>
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuGroup>
@@ -1020,7 +1032,7 @@ export default function CrewMemberDetailPage({
                                             </DropdownMenuItem>
                                           )}
                                           <DropdownMenuItem
-                                            className="text-destructive"
+                                            className="text-t-out"
                                             onClick={() =>
                                               deleteTimeMutation.mutate(entry.id)
                                             }
@@ -1043,13 +1055,13 @@ export default function CrewMemberDetailPage({
 
                 {/* Calendar Tab */}
                 <TabsContent value="calendar" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+                    <h3 className="text-card-title font-bold text-ink flex items-center gap-2 mb-4">
                       <CalendarSync className="h-4 w-4" />
-                      iCal Feed
+                      iCal feed
                     </h3>
                     <div className="space-y-4">
-                      <p className="text-sm text-fg-3">
+                      <p className="text-ui-text text-muted">
                         Enable an iCal feed URL that can be subscribed to from Google
                         Calendar, Apple Calendar, Outlook, or any calendar app. The
                         feed includes all confirmed assignments.
@@ -1058,18 +1070,19 @@ export default function CrewMemberDetailPage({
                       {icalSettings?.icalEnabled && icalSettings?.icalToken ? (
                         <div className="space-y-3">
                           <div className="space-y-1.5">
-                            <Label className="text-xs text-fg-3">
+                            <Label className="text-caption text-muted">
                               Feed URL
                             </Label>
                             <div className="flex gap-2">
                               <Input
                                 readOnly
                                 value={`${typeof window !== "undefined" ? window.location.origin : ""}/api/crew/calendar/${icalSettings.icalToken}`}
-                                className="font-mono text-xs"
+                                className="font-mono text-caption"
                               />
                               <Button
-                                variant="outline"
+                                variant="line"
                                 size="icon"
+                                aria-label="Copy feed URL"
                                 onClick={() => {
                                   navigator.clipboard.writeText(
                                     `${window.location.origin}/api/crew/calendar/${icalSettings.icalToken}`
@@ -1077,7 +1090,7 @@ export default function CrewMemberDetailPage({
                                   toast.success("Feed URL copied to clipboard");
                                 }}
                               >
-                                <Copy className="h-4 w-4" />
+                                <Copy className="size-5" />
                               </Button>
                             </div>
                           </div>
@@ -1085,22 +1098,22 @@ export default function CrewMemberDetailPage({
                           <CanDo resource="crew" action="update">
                             <div className="flex gap-2">
                               <Button
-                                variant="outline"
+                                variant="line"
                                 size="sm"
                                 onClick={() => setRegenerateTokenOpen(true)}
-                                disabled={regenerateTokenMutation.isPending}
+                                loading={regenerateTokenMutation.isPending}
                               >
-                                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                                <RefreshCw className="size-5" />
                                 Regenerate URL
                               </Button>
                               <Button
-                                variant="outline"
+                                variant="line"
                                 size="sm"
-                                className="text-destructive"
+                                className="text-warn hover:bg-warn-soft"
                                 onClick={() => disableIcalMutation.mutate()}
-                                disabled={disableIcalMutation.isPending}
+                                loading={disableIcalMutation.isPending}
                               >
-                                Disable Feed
+                                Disable feed
                               </Button>
                             </div>
                           </CanDo>
@@ -1108,15 +1121,12 @@ export default function CrewMemberDetailPage({
                       ) : (
                         <CanDo resource="crew" action="update">
                           <Button
-                            variant="outline"
+                            variant="line"
                             onClick={() => enableIcalMutation.mutate()}
-                            disabled={enableIcalMutation.isPending}
+                            loading={enableIcalMutation.isPending}
                           >
-                            {enableIcalMutation.isPending && (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            )}
-                            <CalendarSync className="mr-2 h-4 w-4" />
-                            Enable iCal Feed
+                            <CalendarSync className="size-5" />
+                            Enable iCal feed
                           </Button>
                         </CanDo>
                       )}
@@ -1130,65 +1140,65 @@ export default function CrewMemberDetailPage({
             <DetailSidebar>
                 {/* Contact */}
                 <SidebarSection title="Contact">
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-ui-text">
                     {displayEmail && (
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Mail className="h-3.5 w-3.5 shrink-0" />
                         <a
                           href={`mailto:${displayEmail}`}
-                          className="hover:underline truncate"
+                          className={`text-link hover:underline truncate rounded-[var(--r)] ${focusRing}`}
                         >
                           {displayEmail}
                         </a>
                       </div>
                     )}
                     {member.phone && (
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${member.phone}`} className="hover:underline">
+                        <a href={`tel:${member.phone}`} className={`text-link hover:underline rounded-[var(--r)] ${focusRing}`}>
                           {member.phone}
                         </a>
                       </div>
                     )}
                     {member.address && (
-                      <p className="text-sm text-fg-3 whitespace-pre-wrap">
+                      <p className="text-ui-text text-muted whitespace-pre-wrap">
                         {member.address}
                       </p>
                     )}
                     {!displayEmail && !member.phone && !member.address && (
-                      <p className="text-fg-3">No contact info</p>
+                      <p className="text-muted">No contact info</p>
                     )}
                   </div>
                 </SidebarSection>
 
                 {/* Role & Department */}
-                <SidebarSection title="Role & Department">
-                  <div className="space-y-1.5 text-sm">
+                <SidebarSection title="Role & department">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Role</span>
-                      <span className="font-medium">{member.crewRole?.name || "\u2014"}</span>
+                      <span className="text-muted">Role</span>
+                      <span className="font-medium text-ink">{member.crewRole?.name || "\u2014"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Department</span>
-                      <span className="font-medium">{member.department || "\u2014"}</span>
+                      <span className="text-muted">Department</span>
+                      <span className="font-medium text-ink">{member.department || "\u2014"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Type</span>
-                      <span className="font-medium">
+                      <span className="text-muted">Type</span>
+                      <span className="font-medium text-ink">
                         {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
                       </span>
                     </div>
                     {member.emergencyContactName && (
                       <>
-                        <div className="mt-2 pt-2 border-t border-border/50">
-                          <p className="text-xs text-fg-3 mb-1">Emergency Contact</p>
-                          <p className="font-medium">{member.emergencyContactName}</p>
+                        <div className="mt-2 pt-2 border-t border-line">
+                          <p className="text-caption text-muted mb-1">Emergency contact</p>
+                          <p className="font-medium text-ink">{member.emergencyContactName}</p>
                           {member.emergencyContactPhone && (
-                            <div className="flex items-center gap-2 text-fg-3 mt-0.5">
+                            <div className="flex items-center gap-2 text-muted mt-0.5">
                               <Phone className="h-3 w-3" />
                               <a
                                 href={`tel:${member.emergencyContactPhone}`}
-                                className="hover:underline text-xs"
+                                className={`text-link hover:underline text-caption rounded-[var(--r)] ${focusRing}`}
                               >
                                 {member.emergencyContactPhone}
                               </a>
@@ -1202,26 +1212,26 @@ export default function CrewMemberDetailPage({
 
                 {/* Rates */}
                 <SidebarSection title="Rates">
-                  <div className="space-y-1.5 text-sm">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Day Rate</span>
-                      <span className="font-medium t-data">
+                      <span className="text-muted">Day rate</span>
+                      <span className="font-medium font-mono tabular-nums text-ink">
                         {member.defaultDayRate != null
                           ? `$${Number(member.defaultDayRate).toFixed(2)}`
                           : "\u2014"}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Hourly Rate</span>
-                      <span className="font-medium t-data">
+                      <span className="text-muted">Hourly rate</span>
+                      <span className="font-medium font-mono tabular-nums text-ink">
                         {member.defaultHourlyRate != null
                           ? `$${Number(member.defaultHourlyRate).toFixed(2)}`
                           : "\u2014"}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">OT Multiplier</span>
-                      <span className="font-medium">
+                      <span className="text-muted">OT multiplier</span>
+                      <span className="font-medium font-mono tabular-nums text-ink">
                         {member.overtimeMultiplier != null
                           ? `${Number(member.overtimeMultiplier)}x`
                           : "\u2014"}
@@ -1239,7 +1249,7 @@ export default function CrewMemberDetailPage({
                           name: string;
                           category: string | null;
                         }) => (
-                          <Badge key={skill.id} variant="secondary">
+                          <Badge key={skill.id} status="neutral">
                             {skill.name}
                           </Badge>
                         )
@@ -1253,7 +1263,7 @@ export default function CrewMemberDetailPage({
                   <SidebarSection title="Tags">
                     <div className="flex flex-wrap gap-1">
                       {member.tags.map((tag: string) => (
-                        <Badge key={tag} variant="outline">
+                        <Badge key={tag} status="neutral">
                           {tag}
                         </Badge>
                       ))}
@@ -1263,20 +1273,20 @@ export default function CrewMemberDetailPage({
 
                 {/* Availability Status */}
                 <SidebarSection title="Availability">
-                  <div className="text-sm">
+                  <div className="text-ui-text">
                     {activeUnavailable ? (
-                      <div className="flex items-center gap-2 text-red-500">
+                      <div className="flex items-center gap-2 text-t-out">
                         <CalendarOff className="h-3.5 w-3.5" />
                         <span>Currently unavailable</span>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 text-green-500">
+                      <div className="flex items-center gap-2 text-ok">
                         <CheckCircle className="h-3.5 w-3.5" />
                         <span>Available</span>
                       </div>
                     )}
                     {availabilityRecords && availabilityRecords.length > 0 && (
-                      <p className="text-xs text-fg-3 mt-1">
+                      <p className="text-caption text-muted mt-1">
                         {availabilityRecords.length} block{availabilityRecords.length !== 1 ? "s" : ""} scheduled
                       </p>
                     )}
@@ -1286,7 +1296,7 @@ export default function CrewMemberDetailPage({
                 {/* Notes */}
                 {member.notes && (
                   <SidebarSection title="Notes">
-                    <p className="text-sm whitespace-pre-wrap text-fg-3">{member.notes}</p>
+                    <p className="text-ui-text whitespace-pre-wrap text-muted">{member.notes}</p>
                   </SidebarSection>
                 )}
 
@@ -1407,7 +1417,7 @@ function AddAvailabilityDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Availability Block</DialogTitle>
+          <DialogTitle>Add availability block</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={form.handleSubmit((data) => mutation.mutate(data))}
@@ -1434,19 +1444,19 @@ function AddAvailabilityDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Start Date *</Label>
-              <Input type="date" {...form.register("startDate")} />
+              <Label>Start date *</Label>
+              <Input type="date" {...form.register("startDate")} aria-invalid={!!form.formState.errors.startDate} />
               {form.formState.errors.startDate && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.startDate.message}
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label>End Date *</Label>
-              <Input type="date" {...form.register("endDate")} />
+              <Label>End date *</Label>
+              <Input type="date" {...form.register("endDate")} aria-invalid={!!form.formState.errors.endDate} />
               {form.formState.errors.endDate && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.endDate.message}
                 </p>
               )}
@@ -1460,18 +1470,18 @@ function AddAvailabilityDialog({
               onCheckedChange={(v) => form.setValue("isAllDay", v === true)}
             />
             <Label htmlFor="isAllDay" className="cursor-pointer">
-              All Day
+              All day
             </Label>
           </div>
 
           {!isAllDay && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start time</Label>
                 <Input type="time" {...form.register("startTime")} />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
+                <Label>End time</Label>
                 <Input type="time" {...form.register("endTime")} />
               </div>
             </div>
@@ -1488,16 +1498,13 @@ function AddAvailabilityDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Add Block
+            <Button type="submit" loading={mutation.isPending}>
+              Add block
             </Button>
           </DialogFooter>
         </form>
@@ -1611,7 +1618,7 @@ function AddTimeEntryDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? "Edit Time Entry" : "Log Time"}
+            {isEditing ? "Edit time entry" : "Log time"}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -1626,7 +1633,7 @@ function AddTimeEntryDialog({
           <div className="flex gap-2">
             <Button
               type="button"
-              variant={!isGeneral ? "default" : "outline"}
+              variant={!isGeneral ? "primary" : "line"}
               size="sm"
               className="flex-1"
               onClick={() => {
@@ -1634,12 +1641,12 @@ function AddTimeEntryDialog({
                 form.setValue("description", "");
               }}
             >
-              <Briefcase className="mr-2 h-3.5 w-3.5" />
+              <Briefcase className="size-5" />
               Project
             </Button>
             <Button
               type="button"
-              variant={isGeneral ? "default" : "outline"}
+              variant={isGeneral ? "primary" : "line"}
               size="sm"
               className="flex-1"
               onClick={() => {
@@ -1647,7 +1654,7 @@ function AddTimeEntryDialog({
                 form.setValue("assignmentId", "");
               }}
             >
-              <Clock className="mr-2 h-3.5 w-3.5" />
+              <Clock className="size-5" />
               General
             </Button>
           </div>
@@ -1694,9 +1701,9 @@ function AddTimeEntryDialog({
 
           <div className="space-y-1.5">
             <Label>Date</Label>
-            <Input type="date" {...form.register("date")} />
+            <Input type="date" {...form.register("date")} aria-invalid={!!form.formState.errors.date} />
             {form.formState.errors.date && (
-              <p className="text-xs text-destructive">
+              <p className="text-caption text-t-out">
                 {form.formState.errors.date.message}
               </p>
             )}
@@ -1704,19 +1711,19 @@ function AddTimeEntryDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Start Time</Label>
-              <Input type="time" {...form.register("startTime")} />
+              <Label>Start time</Label>
+              <Input type="time" {...form.register("startTime")} aria-invalid={!!form.formState.errors.startTime} />
               {form.formState.errors.startTime && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.startTime.message}
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label>End Time</Label>
-              <Input type="time" {...form.register("endTime")} />
+              <Label>End time</Label>
+              <Input type="time" {...form.register("endTime")} aria-invalid={!!form.formState.errors.endTime} />
               {form.formState.errors.endTime && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.endTime.message}
                 </p>
               )}
@@ -1744,16 +1751,13 @@ function AddTimeEntryDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              {isEditing ? "Update" : "Log Time"}
+            <Button type="submit" loading={mutation.isPending}>
+              {isEditing ? "Update" : "Log time"}
             </Button>
           </DialogFooter>
         </form>

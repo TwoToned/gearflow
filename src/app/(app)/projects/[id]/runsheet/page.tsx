@@ -37,8 +37,8 @@ const SERVICE_TYPE_ICONS: Record<string, typeof Truck> = {
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
+  BUMP_IN: "Bump in",
+  BUMP_OUT: "Bump out",
   LABOUR: "Labour",
   MISC: "Misc",
 };
@@ -143,7 +143,7 @@ export default function RunsheetPage({
                   <Skeleton className="inline-block h-4 w-36 max-w-full align-middle rounded" />
                 )}
               </h1>
-              <p className="text-xs text-muted">
+              <p className="text-caption text-muted">
                 {project ? (
                   <>
                     {project.projectNumber}
@@ -254,7 +254,7 @@ export default function RunsheetPage({
 
                           {/* Time */}
                           {(service.startTime || service.endTime) && (
-                            <div className="mt-2 flex items-center gap-1.5 text-sm text-ink-2">
+                            <div className="mt-2 flex items-center gap-1.5 text-ui-text text-ink-2">
                               <Clock className="h-3.5 w-3.5 text-muted" />
                               <span className="tabular-nums">
                                 {formatTime(service.startTime)}
@@ -266,7 +266,7 @@ export default function RunsheetPage({
 
                           {/* Address */}
                           {service.address && (
-                            <div className="mt-1.5 flex items-start gap-1.5 text-sm text-muted">
+                            <div className="mt-1.5 flex items-start gap-1.5 text-ui-text text-muted">
                               <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                               <span>{service.address}</span>
                             </div>
@@ -274,7 +274,7 @@ export default function RunsheetPage({
 
                           {/* Notes */}
                           {service.notes && (
-                            <p className="mt-2 text-xs text-muted leading-relaxed border-l-2 border-line pl-2">
+                            <p className="mt-2 text-caption text-muted leading-relaxed border-l-2 border-line pl-2">
                               {service.notes}
                             </p>
                           )}

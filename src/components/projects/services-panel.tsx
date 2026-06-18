@@ -297,7 +297,7 @@ export function ServicesPanel({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel>Service Type</DropdownMenuLabel>
+                    <DropdownMenuLabel>Service type</DropdownMenuLabel>
                   </DropdownMenuGroup>
                   {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
                     const Icon = SERVICE_TYPE_ICONS[type];
@@ -568,13 +568,13 @@ function ServiceCard({
 
           {/* Time info */}
           {isMultiDay && (
-            <div className="flex items-center gap-1 text-sm text-muted">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Clock className="h-3 w-3" />
               <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
             </div>
           )}
           {!isMultiDay && (service.startTime || service.endTime) && (
-            <div className="flex items-center gap-1 text-sm text-muted">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Clock className="h-3 w-3" />
               <span>
                 {service.startTime}
@@ -583,7 +583,7 @@ function ServiceCard({
             </div>
           )}
           {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
-            <div className="flex items-center gap-1 text-sm text-muted">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Truck className="h-3 w-3" />
               <span>
                 {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
@@ -593,7 +593,7 @@ function ServiceCard({
 
           {/* Address */}
           {service.address && (
-            <div className="flex items-center gap-1 text-sm text-muted">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <MapPin className="h-3 w-3 shrink-0" />
               <span className="truncate">{service.address}</span>
               {service.latitude != null && service.longitude != null && (
@@ -612,14 +612,14 @@ function ServiceCard({
 
           {/* Vehicle */}
           {service.vehicleDescription && (
-            <div className="text-sm text-muted">
+            <div className="text-ui-text text-muted">
               Vehicle: {service.vehicleDescription}
             </div>
           )}
 
           {/* Crew — avatar stack with 3 max + overflow (D14) */}
           {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
-            <div className="flex items-center gap-1.5 text-sm text-muted flex-wrap">
+            <div className="flex items-center gap-1.5 text-ui-text text-muted flex-wrap">
               <Users className="h-3 w-3 shrink-0" />
               {service.crewRole && (
                 <span
@@ -655,7 +655,7 @@ function ServiceCard({
                   </div>
                   {/* Crew cost subtotal (D12) */}
                   {crewCostTotal > 0 && (
-                    <span className="text-xs text-muted ml-1">
+                    <span className="text-caption text-muted ml-1">
                       {service.crewAssignments.length} crew · {formatCurrency(crewCostTotal)}
                     </span>
                   )}
@@ -666,7 +666,7 @@ function ServiceCard({
                 </span>
               ) : null}
               {service.crewCountRequired != null && service.crewCountRequired > 0 && service.crewAssignments?.length > 0 && service.crewAssignments.length < service.crewCountRequired && (
-                <span className="text-warn text-xs">
+                <span className="text-warn text-caption">
                   ({service.crewAssignments.length}/{service.crewCountRequired})
                 </span>
               )}
@@ -826,13 +826,13 @@ function CloneServicesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Import Services</DialogTitle>
+          <DialogTitle>Import services</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-ink-2">
+        <p className="text-ui-text text-ink-2">
           Clone services from a previous project. Dates will be automatically adjusted to match this project.
         </p>
         <div className="space-y-1.5">
-          <Label>Source Project</Label>
+          <Label>Source project</Label>
           <ComboboxPicker
             value={sourceProjectId}
             onChange={setSourceProjectId}
@@ -852,7 +852,7 @@ function CloneServicesDialog({
           >
             {cloneMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <ArrowRightLeft className="mr-2 h-4 w-4" />
-            Clone Services
+            Clone services
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -908,7 +908,7 @@ function CrewMessageDialog({
         ) : msg ? (
           <div className="space-y-3">
             {(msg.crewMemberPhone || msg.crewMemberEmail) && (
-              <div className="flex items-center gap-3 text-sm text-muted">
+              <div className="flex items-center gap-3 text-ui-text text-muted">
                 {msg.crewMemberPhone && (
                   <a href={`tel:${msg.crewMemberPhone}`} className={cn("text-link hover:underline rounded-sm", focusRing)}>
                     {msg.crewMemberPhone}
@@ -932,7 +932,7 @@ function CrewMessageDialog({
           </Button>
           <Button onClick={copyToClipboard} disabled={!msg?.message}>
             <Copy className="mr-2 h-4 w-4" />
-            Copy Message
+            Copy message
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -956,7 +956,7 @@ function CrewMemberSelect({
   return (
     <div className="space-y-1.5">
       <Label className="flex items-center gap-2">
-        Assign Crew Members
+        Assign crew members
         <CrewCountBadge needed={needed} assigned={values.length} />
       </Label>
       <MultiComboboxPicker
@@ -981,7 +981,7 @@ function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number
         ? "text-ok"
         : "text-warn";
   return (
-    <span className={`text-xs font-normal ${color}`}>
+    <span className={`text-caption font-normal ${color}`}>
       ({assigned}/{needed || "?"})
     </span>
   );
@@ -1215,8 +1215,8 @@ function ServiceDialog({
         <DialogHeader>
           <DialogTitle>
             {isEditing
-              ? `Edit ${SERVICE_TYPE_LABELS[form.watch("type") as ServiceType]} Service`
-              : `Add ${SERVICE_TYPE_LABELS[watchType]} Service`}
+              ? `Edit ${SERVICE_TYPE_LABELS[form.watch("type") as ServiceType]} service`
+              : `Add ${SERVICE_TYPE_LABELS[watchType]} service`}
           </DialogTitle>
         </DialogHeader>
 
@@ -1226,7 +1226,7 @@ function ServiceDialog({
             <Label>Title</Label>
             <Input {...form.register("title")} placeholder="Service title" />
             {form.formState.errors.title && (
-              <p className="text-xs text-t-out">
+              <p className="text-caption text-t-out">
                 {form.formState.errors.title.message}
               </p>
             )}
@@ -1246,7 +1246,7 @@ function ServiceDialog({
           {canBeMultiDay ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Date</Label>
+                <Label>Start date</Label>
                 <Input
                   type="date"
                   {...form.register("date")}
@@ -1260,7 +1260,7 @@ function ServiceDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>End Date</Label>
+                <Label>End date</Label>
                 <Input
                   type="date"
                   {...form.register("endDate")}
@@ -1275,11 +1275,11 @@ function ServiceDialog({
                 <Input type="date" {...form.register("date")} />
               </div>
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start time</Label>
                 <Input type="time" {...form.register("startTime")} />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
+                <Label>End time</Label>
                 <Input type="time" {...form.register("endTime")} />
               </div>
             </div>
@@ -1288,11 +1288,11 @@ function ServiceDialog({
           {canBeMultiDay && !isCurrentlyMultiDay && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start time</Label>
                 <Input type="time" {...form.register("startTime")} />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
+                <Label>End time</Label>
                 <Input type="time" {...form.register("endTime")} />
               </div>
             </div>
@@ -1300,9 +1300,9 @@ function ServiceDialog({
 
           {(watchType === "DELIVERY" || watchType === "PICKUP") && (
             <div className="space-y-1.5">
-              <Label>{watchType === "DELIVERY" ? "Delivery Time" : "Pickup Time"}</Label>
+              <Label>{watchType === "DELIVERY" ? "Delivery time" : "Pickup time"}</Label>
               <Input type="time" {...form.register("scheduledTime")} />
-              <p className="text-xs text-muted">
+              <p className="text-caption text-muted">
                 The actual {watchType === "DELIVERY" ? "delivery" : "pickup"} time (separate from crew work window)
               </p>
             </div>
@@ -1313,9 +1313,9 @@ function ServiceDialog({
             <div className="space-y-1.5">
               <Label>
                 {watchType === "DELIVERY"
-                  ? "Delivery To"
+                  ? "Delivery to"
                   : watchType === "PICKUP"
-                    ? "Pickup From"
+                    ? "Pickup from"
                     : "Address"}
               </Label>
               <AddressInput
@@ -1370,7 +1370,7 @@ function ServiceDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Crew Role</Label>
+                <Label>Crew role</Label>
                 <ComboboxPicker
                   value={form.watch("crewRoleId") || ""}
                   onChange={(v) => form.setValue("crewRoleId", v)}
@@ -1380,7 +1380,7 @@ function ServiceDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Crew Needed</Label>
+                <Label>Crew needed</Label>
                 <Input
                   type="number"
                   min={0}
@@ -1408,7 +1408,7 @@ function ServiceDialog({
                   onClick={() => crewStatusMutation.mutate({ status: "OFFERED" })}
                 >
                   <Send className="mr-1.5 h-3.5 w-3.5" />
-                  Send Offers
+                  Send offers
                 </Button>
                 <Button
                   type="button"
@@ -1419,13 +1419,13 @@ function ServiceDialog({
                   onClick={() => crewStatusMutation.mutate({ status: "CONFIRMED" })}
                 >
                   <UserCheck className="mr-1.5 h-3.5 w-3.5" />
-                  Confirm All
+                  Confirm all
                 </Button>
                 {crewStatusMutation.isPending && (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
                 )}
                 {!isEditing && (
-                  <span className="text-xs text-muted">Save first to send offers</span>
+                  <span className="text-caption text-muted">Save first to send offers</span>
                 )}
               </div>
             )}
@@ -1438,7 +1438,7 @@ function ServiceDialog({
             {/* Charge to Client */}
             <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
               <div className="t-overline text-muted">
-                Charge to Client
+                Charge to client
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -1468,7 +1468,7 @@ function ServiceDialog({
                     form.setValue("showOnDocuments", !!checked)
                   }
                 />
-                <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
+                <Label htmlFor="showOnDocuments" className="text-ui-text font-normal cursor-pointer">
                   Show on quote / invoice
                 </Label>
               </div>
@@ -1480,7 +1480,7 @@ function ServiceDialog({
                 Cost to Business
               </div>
               <div className="space-y-1.5">
-                <Label>Total Cost</Label>
+                <Label>Total cost</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1496,7 +1496,7 @@ function ServiceDialog({
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <Label>Internal Notes</Label>
+            <Label>Internal notes</Label>
             <Textarea
               {...form.register("notes")}
               placeholder="Internal notes (not on client docs)..."
@@ -1514,7 +1514,7 @@ function ServiceDialog({
             </Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Add Service"}
+              {isEditing ? "Update" : "Add service"}
             </Button>
           </DialogFooter>
         </form>

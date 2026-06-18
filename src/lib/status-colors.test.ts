@@ -29,9 +29,16 @@ describe("status-colors", () => {
 
     it("returns correct intent for maintenance statuses", () => {
       expect(getStatusIntent("maintenance", "COMPLETED")).toBe("success");
-      expect(getStatusIntent("maintenance", "IN_PROGRESS")).toBe("warning");
+      // DESIGN §1: active work-in-progress reads as live red (primary).
+      expect(getStatusIntent("maintenance", "IN_PROGRESS")).toBe("primary");
+      expect(getStatusIntent("maintenance", "AWAITING_PARTS")).toBe("warning");
+      expect(getStatusIntent("maintenance", "QA")).toBe("warning");
       expect(getStatusIntent("maintenance", "SCHEDULED")).toBe("info");
       expect(getStatusIntent("maintenance", "CANCELLED")).toBe("error");
+      // Work-order result category (added with the maintenance polish).
+      expect(getStatusIntent("maintenanceResult", "PASS")).toBe("success");
+      expect(getStatusIntent("maintenanceResult", "FAIL")).toBe("error");
+      expect(getStatusIntent("maintenanceResult", "CONDITIONAL")).toBe("warning");
     });
 
     it("returns 'neutral' for unknown status values", () => {

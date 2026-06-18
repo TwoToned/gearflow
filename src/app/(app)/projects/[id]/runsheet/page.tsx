@@ -20,6 +20,7 @@ import { useProjectDetail } from "@/hooks/use-project-detail";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PersonAvatar } from "@/components/ui/avatar";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { cn, focusRing } from "@/lib/utils";
@@ -123,10 +124,11 @@ export default function RunsheetPage({
   const today = new Date().toISOString().slice(0, 10);
 
   return (
+    <RequirePermission resource="project" action="read">
     <FadeIn>
       <div className="mx-auto max-w-lg px-4 pb-safe">
         {/* Header — compact, back arrow + project info */}
-        <div className="sticky top-0 z-10 -mx-4 bg-paper/95 backdrop-blur-sm px-4 pb-3 pt-4 border-b border-line">
+        <div className="sticky top-0 z-10 -mx-4 bg-paper px-4 pb-3 pt-4 border-b border-line">
           <div className="flex items-center gap-3">
             <Link
               href={`/projects/${id}`}
@@ -346,5 +348,6 @@ export default function RunsheetPage({
         <div className="h-8" />
       </div>
     </FadeIn>
+    </RequirePermission>
   );
 }

@@ -1136,7 +1136,7 @@ function AssignmentDialog({
           {(hardConflicts.length > 0 || softConflicts.length > 0) && (
             <div className="space-y-2">
               {hardConflicts.length > 0 && (
-                <div className="rounded-[var(--r)] border border-line border-l-2 border-l-t-out bg-out-soft/40 p-3">
+                <div className="rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
                   <div className="flex items-center gap-2 text-ui-text font-semibold text-t-out mb-1">
                     <AlertTriangle className="h-4 w-4" />
                     Conflicts
@@ -1149,7 +1149,7 @@ function AssignmentDialog({
                 </div>
               )}
               {softConflicts.length > 0 && (
-                <div className="rounded-[var(--r)] border border-line border-l-2 border-l-warn bg-warn-soft/40 p-3">
+                <div className="rounded-[var(--r)] border border-line border-l-[3px] border-l-warn bg-card p-3">
                   <div className="flex items-center gap-2 text-ui-text font-semibold text-warn mb-1">
                     <AlertTriangle className="h-4 w-4" />
                     Warnings

@@ -8,10 +8,15 @@
  * Color intents map to CSS custom properties from DESIGN.md:
  *   success → --success / --success-subtle
  *   warning → --warning / --warning-subtle
- *   error   → --error   / --error-subtle
+ *   error   → --error   / --error-subtle  (tinted red — problem state)
  *   info    → --info    / --info-subtle
  *   neutral → --fg-3    / --bg-inset
- *   primary → --primary / --teal-subtle
+ *   primary → --primary (solid red fill — live/active/in-use state)
+ *
+ * Red disambiguation (DESIGN.md §1):
+ *   primary pill = bg-primary text-primary-foreground (solid red = LIVE/ACTIVE)
+ *   error pill   = bg-error-subtle text-error          (tinted red = PROBLEM)
+ * These are visually distinct: filled vs tinted. Same hue, different weight.
  */
 
 export type ColorIntent = "success" | "warning" | "error" | "info" | "neutral" | "primary";
@@ -56,8 +61,8 @@ export const intentStyles: Record<ColorIntent, {
   primary: {
     dot: "bg-primary",
     text: "text-primary",
-    pill: "bg-teal-subtle text-primary",
-    bg: "bg-teal-subtle",
+    pill: "bg-primary text-primary-foreground",
+    bg: "bg-red-subtle",
   },
 };
 

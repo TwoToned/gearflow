@@ -5,7 +5,6 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ScanBarcode,
-  Loader2,
   AlertTriangle,
   ClipboardCheck,
   CheckCircle2,
@@ -16,11 +15,13 @@ import { useRouter } from "next/navigation";
 
 import { lookupAssetForAdHocCheck, saveAdHocCheck } from "@/server/check-records";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { focusRing } from "@/lib/utils";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 
 import { Button } from "@/components/ui/button";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageMeta } from "@/components/layout/page-meta";
 
 export default function AdHocCheckPage({
@@ -78,8 +79,8 @@ export default function AdHocCheckPage({
       <PageMeta title="Ad-Hoc Check" />
       <div className="mx-auto max-w-xl space-y-6">
         <div>
-          <h1 className="t-title text-fg">Ad-Hoc Check</h1>
-          <p className="text-sm text-fg-3 mt-1">
+          <h1 className="t-title text-ink">Ad-hoc check</h1>
+          <p className="text-ui-text text-muted mt-1">
             Perform a quality check on an asset outside of a project.
           </p>
         </div>
@@ -88,59 +89,61 @@ export default function AdHocCheckPage({
         <ScanNavInput currentTag={decodedTag} />
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-12 text-fg-3">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Looking up asset...
+          <div className="space-y-3" aria-busy="true">
+            <Skeleton className="h-16 rounded-[var(--r)]" />
+            <Skeleton className="h-40 rounded-[var(--r-lg)]" />
           </div>
         ) : !lookup?.found ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-fg-3">
-            <AlertTriangle className="mb-2 h-8 w-8 opacity-50" />
-            <p className="font-medium">Asset not found</p>
-            <p className="mt-1 text-xs">
+          <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-line py-12 text-muted">
+            <AlertTriangle className="mb-2 h-8 w-8 text-faint" />
+            <p className="font-medium text-ink">Asset not found</p>
+            <p className="mt-1 text-caption">
               No asset with tag <span className="font-mono">{decodedTag}</span> was found in your organization.
             </p>
           </div>
         ) : lookup.asset!.checkItemCount === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-fg-3">
-            <ClipboardCheck className="mb-2 h-8 w-8 opacity-50" />
-            <p className="font-medium">No check items assigned</p>
-            <p className="mt-1 text-xs">
-              The model <span className="font-medium">{lookup.asset!.modelName}</span> has no check items.{" "}
-              <Link href="/settings/check-items" className="text-primary hover:underline">
+          <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-line py-12 text-muted">
+            <ClipboardCheck className="mb-2 h-8 w-8 text-faint" />
+            <p className="font-medium text-ink">No check items assigned</p>
+            <p className="mt-1 text-caption text-center px-4">
+              The model <span className="font-medium text-ink-2">{lookup.asset!.modelName}</span> has no check items.{" "}
+              <Link href="/settings/check-items" className={`text-link hover:underline rounded-[var(--r)] ${focusRing}`}>
                 Add check items
               </Link>{" "}
               to enable quality checks.
             </p>
           </div>
         ) : completed ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-green-500/30 bg-green-500/5 py-12">
-            <CheckCircle2 className="mb-2 h-8 w-8 text-green-500" />
-            <p className="font-medium text-green-500">Check Complete</p>
-            <p className="mt-1 text-xs text-fg-3">
+          <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-l-[3px] border-l-ok bg-ok-soft/50 ring-1 ring-line py-12">
+            <CheckCircle2 className="mb-2 h-8 w-8 text-ok" />
+            <p className="font-medium text-ok">Check complete</p>
+            <p className="mt-1 text-caption text-muted">
               Results saved for {lookup.asset!.modelName} ({lookup.asset!.assetTag})
             </p>
             <div className="mt-4 flex gap-2">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => setCompleted(false)}
               >
-                Check Again
+                Check again
               </Button>
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
-                render={<Link href={`/assets/registry/${lookup.asset!.id}`} />}
+                asChild
               >
-                View Asset
+                <Link href={`/assets/registry/${lookup.asset!.id}`}>
+                  View asset
+                </Link>
               </Button>
             </div>
           </div>
         ) : (
-          <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
-            <div className="px-4 py-3 border-b border-border">
-              <p className="text-sm font-medium">{lookup.asset!.modelName}</p>
-              <p className="text-xs text-fg-3">
+          <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
+            <div className="px-4 py-3 border-b border-line">
+              <p className="text-ui-text font-medium text-ink">{lookup.asset!.modelName}</p>
+              <p className="text-caption text-muted">
                 {lookup.asset!.assetTag}
                 {lookup.asset!.serialNumber && ` · S/N: ${lookup.asset!.serialNumber}`}
               </p>
@@ -189,13 +192,13 @@ function ScanNavInput({ currentTag }: { currentTag: string }) {
   return (
     <form onSubmit={handleSubmit} className="max-w-md">
       <div className="relative">
-        <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4 w-4 text-fg-3" />
+        <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 z-10 h-4 w-4 text-muted" />
         <AssetTagInput
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Scan another asset tag..."
-          className="pl-10 text-sm"
+          className="pl-10"
         />
       </div>
     </form>

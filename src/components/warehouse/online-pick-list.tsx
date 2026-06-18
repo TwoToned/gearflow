@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { Container, Check, Loader2 } from "lucide-react";
+import { Container, Check } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { focusRing } from "@/lib/utils";
 import { pickListProgress } from "./pick-list-progress";
 
 function getStorageKey(projectId: string) {
@@ -104,9 +106,11 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8 text-fg-3">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading pick list...
+      <div className="space-y-2 py-2" aria-busy="true">
+        <Skeleton className="h-2 rounded-full" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-11 rounded-[var(--r)]" />
+        ))}
       </div>
     );
   }
@@ -124,28 +128,28 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
     <div className="space-y-4">
       {/* Progress bar */}
       <div className="flex items-center gap-3">
-        <div className="flex-1 h-2 rounded-full bg-bg-inset overflow-hidden">
+        <div className="flex-1 h-2 rounded-full bg-paper-2 overflow-hidden">
           <div
-            className="h-full rounded-full bg-primary transition-all duration-300"
+            className="h-full rounded-full bg-red transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-sm text-fg-3 shrink-0">
+        <span className="text-ui-text text-muted shrink-0 tabular-nums">
           {checkedItems}/{totalItems}
         </span>
         {progress === 100 && (
-          <Check className="h-4 w-4 text-green-500 shrink-0" />
+          <Check className="h-4 w-4 text-ok shrink-0" />
         )}
       </div>
 
       {allGroups.length === 0 ? (
-        <p className="text-fg-3 text-center py-8">
+        <p className="text-muted text-center py-8">
           No equipment items on this project.
         </p>
       ) : (
         allGroups.map((group) => (
           <div key={group.name}>
-            <h3 className="text-xs font-semibold text-fg-3 uppercase tracking-wider mb-2">
+            <h3 className="t-overline text-muted mb-2">
               {group.name}
             </h3>
             <div className="space-y-1">
@@ -174,14 +178,15 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                       return (
                         <button
                           onClick={() => toggleKit(item)}
-                          className={`flex w-full items-center gap-2 rounded-md bg-bg-inset/50 px-3 py-2.5 mt-2 text-left transition-colors hover:bg-accent/50 active:bg-accent ${
+                          aria-pressed={groupChecked}
+                          className={`flex min-h-11 w-full items-center gap-2 rounded-[var(--r)] bg-paper-2/60 px-3 py-2.5 mt-2 text-left transition-colors hover:bg-elev active:bg-elev ${focusRing} ${
                             groupChecked ? "opacity-60" : ""
                           }`}
                         >
                           <Checkbox checked={groupChecked} className="shrink-0 pointer-events-none" />
-                          <Container className="h-4 w-4 text-fg-3 shrink-0" />
-                          <span className={`font-semibold text-sm flex-1 ${groupChecked ? "line-through text-fg-3" : ""}`}>{itemName}</span>
-                          {isKit && <span className="font-mono text-xs text-fg-3">{kit?.assetTag}</span>}
+                          <Container className="h-4 w-4 text-muted shrink-0" />
+                          <span className={`font-semibold text-ui-text flex-1 ${groupChecked ? "line-through text-muted" : "text-ink"}`}>{itemName}</span>
+                          {isKit && <span className="t-mono text-muted">{kit?.assetTag}</span>}
                         </button>
                       );
                     })()}
@@ -262,7 +267,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
       {checkedItems > 0 && (
         <button
           onClick={() => setChecked(new Set())}
-          className="text-xs text-fg-3 hover:text-fg transition-colors"
+          className={`rounded-[var(--r)] text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
         >
           Clear all checks
         </button>
@@ -289,20 +294,21 @@ function PickListRow({
   return (
     <button
       onClick={onToggle}
-      className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50 active:bg-accent ${
+      aria-pressed={checked}
+      className={`flex min-h-11 w-full items-center gap-3 rounded-[var(--r)] px-3 py-2.5 text-left transition-colors hover:bg-elev active:bg-elev ${focusRing} ${
         checked ? "opacity-60" : ""
       }`}
       style={indent ? { paddingLeft: `${indent * 1.25 + 0.75}rem` } : undefined}
     >
       <Checkbox checked={checked} className="shrink-0 pointer-events-none" />
-      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : "font-medium"}`}>
+      <span className={`flex-1 text-ui-text ${checked ? "line-through text-muted" : "font-medium text-ink"}`}>
         {label}
       </span>
       {tag && (
-        <span className="font-mono text-xs text-fg-3 shrink-0">{tag}</span>
+        <span className="t-mono text-muted shrink-0">{tag}</span>
       )}
       {location && !tag && (
-        <span className="text-xs text-fg-3 shrink-0">{location}</span>
+        <span className="text-caption text-muted shrink-0">{location}</span>
       )}
     </button>
   );

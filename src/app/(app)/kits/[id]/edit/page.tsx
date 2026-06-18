@@ -6,11 +6,20 @@ import { ChevronRight } from "lucide-react";
 
 import { KitForm } from "@/components/kits/kit-form";
 import { useKit } from "@/hooks/use-kits";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import { cn, focusRing } from "@/lib/utils";
 
 export default function EditKitPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="kit" action="update">
+      <EditKitContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditKitContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   // Reactive kit straight from Convex — the edit form only needs kit scalar
@@ -45,6 +54,7 @@ export default function EditKitPage({ params }: { params: Promise<{ id: string }
             categoryId: kit.categoryId || undefined,
             status: kit.status as "AVAILABLE" | "CHECKED_OUT" | "IN_MAINTENANCE" | "RETIRED" | "INCOMPLETE",
             condition: kit.condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
+            checkMode: (kit.checkMode as "KIT_LEVEL" | "PER_ITEM") || "KIT_LEVEL",
             locationId: kit.locationId || undefined,
             weight: kit.weight ? Number(kit.weight) : undefined,
             caseType: kit.caseType || undefined,

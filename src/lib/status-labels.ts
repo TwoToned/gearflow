@@ -220,12 +220,12 @@ export const availabilityTypeLabels: Record<string, string> = {
 };
 
 /**
- * Generic fallback: converts ANY_ENUM_VALUE to "Any Enum Value".
- * Use the specific label maps above when possible.
+ * Generic fallback: converts ANY_ENUM_VALUE to sentence case "Any enum value"
+ * (§5.2 — capitalise the first word only). Use the specific label maps above
+ * when possible.
  */
 export function formatLabel(value: string): string {
-  return value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
+  const words = value.replace(/_/g, " ").toLowerCase().trim();
+  if (!words) return "";
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

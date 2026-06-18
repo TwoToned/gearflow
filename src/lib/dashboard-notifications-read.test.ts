@@ -1,0 +1,130 @@
+import { describe, it, expect } from "vitest";
+import {
+  countDueMaintenance,
+  aggregateMaintenanceForProject,
+  type ConvexMaintenanceRecord,
+} from "@/lib/maintenance-read";
+import {
+  countAssignmentsByStatus,
+  countTimeEntriesByStatus,
+  type ConvexCrewAssignment,
+  type ConvexCrewTimeEntry,
+} from "@/lib/crew-scheduling-read";
+import { countActiveCrew, type ConvexCrewMember } from "@/lib/crew-read";
+import {
+  sumProjectServiceRevenue,
+  type ConvexProjectService,
+} from "@/lib/project-services-read";
+
+// Minimal builders — the pure functions only touch the scalar fields under test.
+function maint(p: Partial<ConvexMaintenanceRecord>): ConvexMaintenanceRecord {
+  return { id: "m", organizationId: "org" /* + Convex sys fields */, ...p } as ConvexMaintenanceRecord;
+}
+function asn(p: Partial<ConvexCrewAssignment>): ConvexCrewAssignment {
+  return { id: "a", organizationId: "org", projectId: "p", crewMemberId: "c", ...p } as ConvexCrewAssignment;
+}
+function te(p: Partial<ConvexCrewTimeEntry>): ConvexCrewTimeEntry {
+  return { id: "t", organizationId: "org", crewMemberId: "c", ...p } as ConvexCrewTimeEntry;
+}
+function member(p: Partial<ConvexCrewMember>): ConvexCrewMember {
+  return { id: "cm", organizationId: "org", firstName: "A", lastName: "B", ...p } as ConvexCrewMember;
+}
+function svc(p: Partial<ConvexProjectService>): ConvexProjectService {
+  return { id: "s", organizationId: "org", projectId: "p", title: "T", ...p } as ConvexProjectService;
+}
+
+const NOW = 1_000_000;
+
+describe("countDueMaintenance", () => {
+  it("counts SCHEDULED/IN_PROGRESS with scheduledDate <= cutoff", () => {
+    const records = [
+      maint({ status: "SCHEDULED", scheduledDate: NOW - 1 }), // due
+      maint({ status: "IN_PROGRESS", scheduledDate: NOW }), // due (boundary inclusive)
+      maint({ status: "SCHEDULED", scheduledDate: NOW + 1 }), // not yet due
+      maint({ status: "COMPLETED", scheduledDate: NOW - 1 }), // wrong status
+      maint({ status: "CANCELLED", scheduledDate: NOW - 1 }), // wrong status
+      maint({ status: "SCHEDULED", scheduledDate: undefined }), // no date → excluded (Prisma lte skips NULL)
+      maint({ status: undefined, scheduledDate: NOW - 1 }), // no status → excluded
+    ];
+    expect(countDueMaintenance(records, NOW)).toBe(2);
+  });
+
+  it("returns 0 for empty input", () => {
+    expect(countDueMaintenance([], NOW)).toBe(0);
+  });
+});
+
+describe("aggregateMaintenanceForProject", () => {
+  it("sums cost and counts non-CANCELLED records for the project", () => {
+    const records = [
+      maint({ projectId: "p1", status: "COMPLETED", cost: 100 }),
+      maint({ projectId: "p1", status: "SCHEDULED", cost: 50 }),
+      maint({ projectId: "p1", status: "CANCELLED", cost: 999 }), // excluded
+      maint({ projectId: "p1", status: "SCHEDULED", cost: undefined }), // null cost → 0
+      maint({ projectId: "p2", status: "COMPLETED", cost: 7 }), // other project
+    ];
+    expect(aggregateMaintenanceForProject(records, "p1")).toEqual({ costTotal: 150, count: 3 });
+  });
+
+  it("returns zeroed aggregate when no records match", () => {
+    expect(aggregateMaintenanceForProject([], "p1")).toEqual({ costTotal: 0, count: 0 });
+  });
+});
+
+describe("countAssignmentsByStatus", () => {
+  it("counts assignments whose status is in the set", () => {
+    const rows = [
+      asn({ status: "OFFERED" }),
+      asn({ status: "PENDING" }),
+      asn({ status: "OFFERED" }),
+      asn({ status: "CONFIRMED" }),
+      asn({ status: undefined }),
+    ];
+    expect(countAssignmentsByStatus(rows, ["OFFERED", "PENDING"])).toBe(3);
+    expect(countAssignmentsByStatus(rows, ["OFFERED"])).toBe(2);
+  });
+});
+
+describe("countTimeEntriesByStatus", () => {
+  it("counts SUBMITTED time entries", () => {
+    const rows = [
+      te({ status: "SUBMITTED" }),
+      te({ status: "APPROVED" }),
+      te({ status: "SUBMITTED" }),
+      te({ status: undefined }),
+    ];
+    expect(countTimeEntriesByStatus(rows, ["SUBMITTED"])).toBe(2);
+  });
+});
+
+describe("countActiveCrew", () => {
+  it("counts only ACTIVE members", () => {
+    const rows = [
+      member({ status: "ACTIVE" }),
+      member({ status: "INACTIVE" }),
+      member({ status: "ACTIVE" }),
+      member({ status: "ARCHIVED" }),
+      member({ status: undefined }),
+    ];
+    expect(countActiveCrew(rows)).toBe(2);
+  });
+});
+
+describe("sumProjectServiceRevenue", () => {
+  it("sums lineTotal for non-CANCELLED, showOnDocuments services of the project", () => {
+    const rows = [
+      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: true, lineTotal: 100 }),
+      svc({ projectId: "p1", status: "PLANNED", showOnDocuments: true, lineTotal: 50 }),
+      svc({ projectId: "p1", status: "CANCELLED", showOnDocuments: true, lineTotal: 999 }), // excluded
+      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: false, lineTotal: 999 }), // excluded
+      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: undefined, lineTotal: 999 }), // absent → excluded
+      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: true, lineTotal: undefined }), // null total → 0
+      svc({ projectId: "p2", status: "CONFIRMED", showOnDocuments: true, lineTotal: 7 }), // other project
+    ];
+    expect(sumProjectServiceRevenue(rows, "p1")).toBe(150);
+  });
+
+  it("returns 0 when nothing matches", () => {
+    expect(sumProjectServiceRevenue([], "p1")).toBe(0);
+  });
+});

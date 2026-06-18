@@ -286,3 +286,53 @@ export async function getMaintenanceTagsByOrg(
   const docs = await client.query(api.maintenanceRecords.list, { orgId: organizationId });
   return docs.map((d) => ({ tags: d.tags ?? [] }));
 }
+
+// ─── Dashboard / project-cost aggregates (Phase A) ───────────────────────────
+
+/** Statuses that count as "open" maintenance work. */
+const OPEN_MAINTENANCE_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
+
+/**
+ * Count of open maintenance whose scheduled date has arrived (<= cutoffMs).
+ * Replicates Prisma `count({ status: { in: [SCHEDULED, IN_PROGRESS] },
+ * scheduledDate: { lte: now } })`. Operates on the mapped MaintenanceRecordRow
+ * (scheduledDate is a Date | null; a null date never matches, like Prisma `lte`).
+ */
+export function countDueMaintenance(
+  records: MaintenanceRecordRow[],
+  cutoffMs: number,
+): number {
+  return records.filter(
+    (m) =>
+      OPEN_MAINTENANCE_STATUSES.has(m.status) &&
+      m.scheduledDate != null &&
+      m.scheduledDate.getTime() <= cutoffMs,
+  ).length;
+}
+
+export interface MaintenanceProjectAggregate {
+  /** Sum of `cost` over non-CANCELLED records for the project (null cost = 0). */
+  costTotal: number;
+  /** Count of non-CANCELLED records for the project. */
+  count: number;
+}
+
+/**
+ * Per-project maintenance aggregate over the mapped rows. Replicates Prisma
+ * `aggregate({ where: { projectId, status: { notIn: [CANCELLED] } }, _sum: { cost },
+ * _count: true })` (Convex `list` is org-scoped → filter to the project here).
+ */
+export function aggregateMaintenanceForProject(
+  records: MaintenanceRecordRow[],
+  projectId: string,
+): MaintenanceProjectAggregate {
+  let costTotal = 0;
+  let count = 0;
+  for (const m of records) {
+    if (m.projectId !== projectId) continue;
+    if (m.status === "CANCELLED") continue;
+    count += 1;
+    costTotal += m.cost ?? 0;
+  }
+  return { costTotal, count };
+}

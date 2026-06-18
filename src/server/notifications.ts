@@ -5,6 +5,12 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getCrewAssignmentsByOrg,
+  countAssignmentsByStatus,
+  getCrewTimeEntriesByOrg,
+  countTimeEntriesByStatus,
+} from "@/lib/crew-scheduling-read";
 
 export interface AppNotification {
   id: string;
@@ -216,9 +222,11 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 6. Pending crew offers (assignments in OFFERED status)
-  const pendingOffers = await prisma.crewAssignment.count({
-    where: { organizationId, status: "OFFERED" },
-  });
+  // crewAssignment is dual-written — count from Convex.
+  const pendingOffers = countAssignmentsByStatus(
+    await getCrewAssignmentsByOrg(organizationId),
+    ["OFFERED"],
+  );
   if (pendingOffers > 0) {
     notifications.push({
       id: "crew-pending-offers",
@@ -232,9 +240,11 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 8. Submitted timesheets awaiting approval
-  const submittedTimesheets = await prisma.crewTimeEntry.count({
-    where: { organizationId, status: "SUBMITTED" },
-  });
+  // crewTimeEntry is dual-written — count from Convex.
+  const submittedTimesheets = countTimeEntriesByStatus(
+    await getCrewTimeEntriesByOrg(organizationId),
+    ["SUBMITTED"],
+  );
   if (submittedTimesheets > 0) {
     notifications.push({
       id: "crew-pending-timesheets",

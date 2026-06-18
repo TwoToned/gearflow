@@ -701,3 +701,37 @@ export function selectUnavailableMemberIds(
 }
 
 export { EXCLUDED_ASSIGNMENT_STATUSES };
+
+// ─── Raw-doc count helpers (dashboard / notifications, Phase A) ──────────────
+// Operate on the raw Convex docs (status scalar only), not the mapped rows,
+// backing the cheap dashboard/notification counters.
+
+export async function getCrewAssignmentsByOrg(orgId: string): Promise<ConvexCrewAssignment[]> {
+  return await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.crewAssignments.list, { orgId }),
+  );
+}
+
+export async function getCrewTimeEntriesByOrg(orgId: string): Promise<ConvexCrewTimeEntry[]> {
+  return await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.crewTimeEntries.list, { orgId }),
+  );
+}
+
+/** Count of crew assignments whose status is in `statuses` (Prisma `count({ status: { in } })`). */
+export function countAssignmentsByStatus(
+  assignments: ConvexCrewAssignment[],
+  statuses: readonly string[],
+): number {
+  const set = new Set(statuses);
+  return assignments.filter((a) => a.status != null && set.has(a.status)).length;
+}
+
+/** Count of crew time entries whose status is in `statuses` (Prisma `count({ status: { in } })`). */
+export function countTimeEntriesByStatus(
+  entries: ConvexCrewTimeEntry[],
+  statuses: readonly string[],
+): number {
+  const set = new Set(statuses);
+  return entries.filter((e) => e.status != null && set.has(e.status)).length;
+}

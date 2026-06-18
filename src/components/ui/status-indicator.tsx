@@ -69,13 +69,13 @@ export function StatusIndicator({
         className={cn(
           "size-[7px] shrink-0 rounded-full ring-2",
           styles.dot,
-          // Ring glow uses the same color at low opacity
-          styles.dot === "bg-success" && "ring-success/20",
-          styles.dot === "bg-warning" && "ring-warning/20",
-          styles.dot === "bg-error" && "ring-error/20",
-          styles.dot === "bg-info" && "ring-info/20",
-          styles.dot === "bg-fg-3" && "ring-fg-3/20",
-          styles.dot === "bg-primary" && "ring-primary/20",
+          // Ring glow uses the same RVLT color token at low opacity
+          styles.dot === "bg-ok" && "ring-ok/20",
+          styles.dot === "bg-warn" && "ring-warn/20",
+          styles.dot === "bg-t-out" && "ring-t-out/20",
+          styles.dot === "bg-blue" && "ring-blue/20",
+          styles.dot === "bg-rep" && "ring-rep/20",
+          styles.dot === "bg-red" && "ring-red/20",
         )}
       />
       <span className={cn("text-[13px] font-medium", styles.text)}>

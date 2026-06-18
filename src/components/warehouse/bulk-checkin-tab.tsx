@@ -174,7 +174,8 @@ export function BulkCheckInTab({
         </div>
       </div>
 
-      <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
+      {/* Desktop: data table */}
+      <div className="hidden md:block rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -228,6 +229,52 @@ export function BulkCheckInTab({
             })}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Mobile: card list (§15) — same rows + counts handler */}
+      <div className="md:hidden space-y-2">
+        {rows.map((row) => {
+          const over = intendedQty(row) > row.totalDue;
+          return (
+            <div key={row.key} className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] p-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {row.kind === "BULK" ? (
+                  <Boxes className="h-4 w-4 shrink-0 text-muted" />
+                ) : (
+                  <Cable className="h-4 w-4 shrink-0 text-muted" />
+                )}
+                <span className="font-medium text-ui-text text-ink">{row.label}</span>
+                {row.modelNumber && (
+                  <span className="t-mono text-caption text-faint">{row.modelNumber}</span>
+                )}
+                <Badge status="neutral" className={ITEM_TYPE_CLASS[row.itemType]}>
+                  {ITEM_TYPE_LABELS[row.itemType]}
+                </Badge>
+              </div>
+              {row.childCount > 1 && (
+                <p className="mt-0.5 text-caption text-faint">across {row.childCount} lines</p>
+              )}
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-caption text-muted tabular-nums">
+                  Due back <span className="font-medium text-ink">{row.totalDue}</span>
+                </span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={row.totalDue}
+                  aria-label={`Check-in quantity for ${row.label}`}
+                  aria-invalid={over ? "true" : "false"}
+                  className="h-11 w-24 text-right tabular-nums"
+                  value={counts[row.key] ?? String(row.totalDue)}
+                  onChange={(e) =>
+                    setCounts((c) => ({ ...c, [row.key]: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex items-center justify-between">

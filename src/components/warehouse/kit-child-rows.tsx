@@ -17,6 +17,7 @@ import { focusRing } from "@/lib/utils";
 
 import type { LineItem } from "./warehouse-types";
 import { PrepStatusBadge } from "./prep-status-badge";
+import { ScanVerifyCard, ScanGroupCard } from "./scan-card";
 
 export function KitChildRows({
   kitChildren,
@@ -139,6 +140,100 @@ export function KitChildRows({
               );
             })}
           </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Mobile (md:hidden) card-list rendering of kit children — same data, same
+ * verify/expand handlers as `KitChildRows`, just stacked cards instead of table
+ * rows (§15). Additive presentation only.
+ */
+export function MobileKitChildCards({
+  kitChildren,
+  verifiedKitItems,
+  expandedGroups,
+  toggleExpanded,
+  onToggleVerify,
+  mode,
+}: {
+  kitChildren: LineItem[];
+  verifiedKitItems: Set<string>;
+  expandedGroups: Set<string>;
+  toggleExpanded: (key: string) => void;
+  onToggleVerify: (assetId: string) => void;
+  mode: "deploy" | "return";
+}) {
+  return (
+    <>
+      {kitChildren.map((child) => {
+        const isVerified = verifiedKitItems.has(child.id);
+        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+        const nestedExpanded = expandedGroups.has(`nested-${child.id}`);
+
+        const allGrandchildren = isNestedKit ? (child.childLineItems as LineItem[]) : [];
+        const filteredGrandchildren = isNestedKit
+          ? mode === "deploy"
+            ? allGrandchildren.filter((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED")
+            : allGrandchildren.filter((gc) => gc.status === "CHECKED_OUT")
+          : [];
+
+        const nestedKitPartial = isNestedKit
+          && allGrandchildren.some((gc) => gc.status === "CHECKED_OUT")
+          && allGrandchildren.some((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED");
+
+        if (isNestedKit && filteredGrandchildren.length === 0) return null;
+
+        if (isNestedKit) {
+          return (
+            <ScanGroupCard
+              key={child.id}
+              selected={false}
+              onToggleSelect={() => {}}
+              expanded={nestedExpanded}
+              onToggleExpand={() => toggleExpanded(`nested-${child.id}`)}
+              showKitGlyph
+              name={child.model?.name || child.description || "Item"}
+              badges={
+                <>
+                  <Badge status="neutral">Kit</Badge>
+                  {nestedKitPartial && <Badge status="warn">Partial</Badge>}
+                </>
+              }
+              assetTag={child.kit?.assetTag || "—"}
+              qtyLabel={filteredGrandchildren.length}
+              status={nestedKitPartial ? <Badge status="warn">Partial</Badge> : <PrepStatusBadge item={child} />}
+            >
+              {filteredGrandchildren.map((nested) => {
+                const nestedVerified = verifiedKitItems.has(nested.id);
+                return (
+                  <ScanVerifyCard
+                    key={nested.id}
+                    verified={nestedVerified}
+                    onToggleVerify={() => onToggleVerify(nested.id)}
+                    name={nested.model?.name || nested.description || "Item"}
+                    assetTag={nested.asset?.assetTag || nested.bulkAsset?.assetTag || "—"}
+                    qtyLabel={nested.quantity}
+                    status={<PrepStatusBadge item={nested} />}
+                  />
+                );
+              })}
+            </ScanGroupCard>
+          );
+        }
+
+        return (
+          <ScanVerifyCard
+            key={child.id}
+            verified={isVerified}
+            onToggleVerify={() => onToggleVerify(child.id)}
+            name={child.model?.name || child.description || "Item"}
+            assetTag={child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
+            qtyLabel={child.quantity}
+            status={<PrepStatusBadge item={child} />}
+          />
         );
       })}
     </>

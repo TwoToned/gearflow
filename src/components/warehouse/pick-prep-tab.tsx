@@ -26,8 +26,9 @@ import {
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows } from "./kit-child-rows";
+import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
+import { ScanItemCard, ScanGroupCard } from "./scan-card";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
 
@@ -157,7 +158,9 @@ export function PickPrepTab({
             description="Nice — everything's packed. Head to the Deploy tab to send it out."
           />
         ) : (
-          <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+          <>
+          {/* Desktop: data table */}
+          <div className="hidden md:block rounded-[var(--r-lg)] border border-line overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -376,6 +379,168 @@ export function PickPrepTab({
               </TableBody>
             </Table>
           </div>
+
+          {/* Mobile: card list (§15) — same grouped data + handlers */}
+          <div className="md:hidden space-y-1.5">
+            {groupedPrep.map((entry) => {
+              if (entry.kind === "serialized-group") {
+                const childKeys = entry.items.map((i) => i.id);
+                const isExpanded = expandedGroups.has(entry.groupKey);
+                const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedPrep.has(k));
+                const someChecked = childKeys.some((k) => selectedPrep.has(k));
+                return (
+                  <ScanGroupCard
+                    key={entry.groupKey}
+                    selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                    onToggleSelect={() => toggleGroupSelection(selectedPrep, setSelectedPrep, childKeys)}
+                    expanded={isExpanded}
+                    onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                    name={entry.modelName}
+                    qtyLabel={entry.items.length}
+                    status={
+                      entry.items.every((i) => i.prepStatus === "PACKED")
+                        ? <Badge status="ok">Prepped</Badge>
+                        : entry.items.some((i) => i.prepStatus === "PACKED")
+                          ? <Badge status="neutral" className="bg-blue-soft text-blue">Partial</Badge>
+                          : <Badge status="warn">Needs prep</Badge>
+                    }
+                  >
+                    {entry.items.map((item, idx) => (
+                      <ScanItemCard
+                        key={item.id}
+                        indent
+                        selected={selectedPrep.has(item.id)}
+                        onToggleSelect={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
+                        name={item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                        assetTag={item.asset?.assetTag || "—"}
+                        qtyLabel={1}
+                        status={<PrepStatusBadge item={item} />}
+                      />
+                    ))}
+                  </ScanGroupCard>
+                );
+              }
+
+              if (entry.kind === "bulk-group") {
+                const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
+                const isExpanded = expandedGroups.has(entry.groupKey);
+                const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedPrep.has(k));
+                const someChecked = childKeys.some((k) => selectedPrep.has(k));
+                const checkedCount = childKeys.filter((k) => selectedPrep.has(k)).length;
+                const units = entry.item.units ?? [];
+                return (
+                  <ScanGroupCard
+                    key={entry.groupKey}
+                    selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                    onToggleSelect={() => toggleGroupSelection(selectedPrep, setSelectedPrep, childKeys)}
+                    expanded={isExpanded}
+                    onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                    name={modelDisplayName(entry.item)}
+                    assetTag={entry.item.bulkAsset?.assetTag || "—"}
+                    qtyLabel={entry.unitCount}
+                    status={checkedCount > 0 ? (
+                      <Badge status="neutral" className="bg-blue-soft text-blue">{checkedCount} selected</Badge>
+                    ) : (
+                      <PrepStatusBadge item={entry.item} />
+                    )}
+                  >
+                    {childKeys.map((key, idx) => {
+                      const unit = units[idx];
+                      const tag = unit?.asset?.assetTag
+                        ?? unit?.bulkAsset?.assetTag
+                        ?? entry.item.bulkAsset?.assetTag
+                        ?? "—";
+                      return (
+                        <ScanItemCard
+                          key={key}
+                          indent
+                          selected={selectedPrep.has(key)}
+                          onToggleSelect={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
+                          name={`Unit ${idx + 1}`}
+                          assetTag={tag}
+                          qtyLabel={1}
+                          status={null}
+                        />
+                      );
+                    })}
+                  </ScanGroupCard>
+                );
+              }
+
+              if (entry.kind === "kit-group") {
+                const isExpanded = expandedGroups.has(entry.groupKey);
+                const allIds = collectAllVerifiableIds(entry.children, "deploy");
+                const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                return (
+                  <ScanGroupCard
+                    key={entry.groupKey}
+                    selected={selectedPrep.has(entry.item.id)}
+                    onToggleSelect={() => toggleSelection(selectedPrep, setSelectedPrep, entry.item.id)}
+                    expanded={isExpanded}
+                    onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                    showKitGlyph
+                    name={entry.item.description || entry.item.kit?.name || "Kit"}
+                    badges={
+                      <>
+                        <Badge status="neutral">Kit</Badge>
+                        {allIds.length > 0 && (
+                          <Badge status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"} className="tabular-nums">
+                            {verifiedCount}/{allIds.length} verified
+                          </Badge>
+                        )}
+                      </>
+                    }
+                    assetTag={entry.item.kit?.assetTag || "—"}
+                    qtyLabel={entry.children.length}
+                    status={<PrepStatusBadge item={entry.item} />}
+                  >
+                    <MobileKitChildCards
+                      kitChildren={entry.children}
+                      verifiedKitItems={verifiedKitItems}
+                      expandedGroups={expandedGroups}
+                      toggleExpanded={toggleExpanded}
+                      mode="deploy"
+                      onToggleVerify={(assetId) => {
+                        setVerifiedKitItems((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(assetId)) next.delete(assetId);
+                          else next.add(assetId);
+                          return next;
+                        });
+                      }}
+                    />
+                  </ScanGroupCard>
+                );
+              }
+
+              // Single item
+              const item = entry.item;
+              return (
+                <ScanItemCard
+                  key={item.id}
+                  selected={selectedPrep.has(item.id)}
+                  onToggleSelect={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
+                  name={modelDisplayName(item)}
+                  badges={
+                    <>
+                      {item.subHireId != null && (
+                        <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
+                      )}
+                      {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+                    </>
+                  }
+                  subtext={item.subHireId != null && item.supplier ? (
+                    <p className="text-caption text-muted mt-0.5">via {item.supplier.name}</p>
+                  ) : undefined}
+                  assetTag={item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
+                  qtyLabel={item.quantity}
+                  status={<PrepStatusBadge item={item} />}
+                />
+              );
+            })}
+          </div>
+          </>
         )}
       </div>
     </TabsContent>

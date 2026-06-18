@@ -29,7 +29,9 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
+import { MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
+import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
 
 export interface DeployTabProps {
   // Scan state
@@ -164,7 +166,9 @@ export function DeployTab({
             description="Pick and prep items in the Pick/Prep tab, then deploy them here."
           />
         ) : (
-          <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+          <>
+          {/* Desktop: data table */}
+          <div className="hidden md:block rounded-[var(--r-lg)] border border-line overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -426,6 +430,187 @@ export function DeployTab({
               </TableBody>
             </Table>
           </div>
+
+          {/* Mobile: card list (§15) — same grouped data + handlers */}
+          <div className="md:hidden space-y-1.5">
+            {deployContainerGroups.map(({ container, entries }) => (
+              <Fragment key={container || "__ungrouped"}>
+                {container ? (
+                  <ScanContainerHeading
+                    label={container}
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => clearContainerMutate(container)}
+                        disabled={clearContainerIsPending}
+                        className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                        title="Remove container"
+                        aria-label={`Remove container ${container}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    }
+                  />
+                ) : deployContainerGroups.some((g) => g.container !== null) && (
+                  <ScanContainerHeading label="No container" muted />
+                )}
+                {entries.map((entry) => {
+                  if (entry.kind === "serialized-group") {
+                    const childKeys = entry.items.map((i) => i.id);
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedOut.has(k));
+                    const someChecked = childKeys.some((k) => selectedOut.has(k));
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                        onToggleSelect={() => toggleGroupSelection(selectedOut, setSelectedOut, childKeys)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        name={entry.modelName}
+                        qtyLabel={entry.items.length}
+                        status={<PrepStatusBadge item={entry.items[0]} />}
+                      >
+                        {entry.items.map((item, idx) => (
+                          <ScanItemCard
+                            key={item.id}
+                            indent
+                            selected={selectedOut.has(item.id)}
+                            onToggleSelect={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
+                            name={item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                            assetTag={item.asset?.assetTag || "—"}
+                            qtyLabel={1}
+                            status={<PrepStatusBadge item={item} />}
+                          />
+                        ))}
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  if (entry.kind === "bulk-group") {
+                    const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedOut.has(k));
+                    const someChecked = childKeys.some((k) => selectedOut.has(k));
+                    const checkedCount = childKeys.filter((k) => selectedOut.has(k)).length;
+                    const units = entry.item.units ?? [];
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                        onToggleSelect={() => toggleGroupSelection(selectedOut, setSelectedOut, childKeys)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        name={modelDisplayName(entry.item)}
+                        assetTag={entry.item.bulkAsset?.assetTag || "—"}
+                        qtyLabel={entry.unitCount}
+                        status={checkedCount > 0 ? (
+                          <Badge status="neutral" className="bg-blue-soft text-blue">{checkedCount} selected</Badge>
+                        ) : (
+                          <PrepStatusBadge item={entry.item} />
+                        )}
+                      >
+                        {childKeys.map((key, idx) => {
+                          const unit = units[idx];
+                          const tag = unit?.asset?.assetTag
+                            ?? unit?.bulkAsset?.assetTag
+                            ?? entry.item.bulkAsset?.assetTag
+                            ?? "—";
+                          return (
+                            <ScanItemCard
+                              key={key}
+                              indent
+                              selected={selectedOut.has(key)}
+                              onToggleSelect={() => toggleSelection(selectedOut, setSelectedOut, key)}
+                              name={`Unit ${idx + 1}`}
+                              assetTag={tag}
+                              qtyLabel={1}
+                              status={null}
+                            />
+                          );
+                        })}
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  if (entry.kind === "kit-group") {
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allIds = collectAllVerifiableIds(entry.children, "deploy");
+                    const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                    const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                    const allChildren = (entry.item.childLineItems || []) as LineItem[];
+                    const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && allChildren.some((c) => c.status === "CHECKED_OUT");
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selected={selectedOut.has(entry.item.id)}
+                        onToggleSelect={() => toggleSelection(selectedOut, setSelectedOut, entry.item.id)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        showKitGlyph
+                        name={entry.item.description || entry.item.kit?.name || "Kit"}
+                        badges={
+                          <>
+                            <Badge status="neutral">Kit</Badge>
+                            {allIds.length > 0 && (
+                              <Badge status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"} className="tabular-nums">
+                                {verifiedCount}/{allIds.length} verified
+                              </Badge>
+                            )}
+                          </>
+                        }
+                        assetTag={entry.item.kit?.assetTag || "—"}
+                        qtyLabel={entry.children.length}
+                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <PrepStatusBadge item={entry.item} />}
+                      >
+                        <MobileKitChildCards
+                          kitChildren={entry.children}
+                          verifiedKitItems={verifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                          mode="deploy"
+                          onToggleVerify={(assetId) => {
+                            setVerifiedKitItems((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(assetId)) next.delete(assetId);
+                              else next.add(assetId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  // Single item
+                  const item = entry.item;
+                  return (
+                    <ScanItemCard
+                      key={item.id}
+                      selected={selectedOut.has(item.id)}
+                      onToggleSelect={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
+                      name={modelDisplayName(item)}
+                      badges={
+                        <>
+                          {item.subHireId != null && (
+                            <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
+                          )}
+                          {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+                        </>
+                      }
+                      subtext={item.subHireId != null && item.supplier ? (
+                        <p className="text-caption text-muted mt-0.5">via {item.supplier.name}</p>
+                      ) : undefined}
+                      assetTag={item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
+                      qtyLabel={item.quantity}
+                      status={<PrepStatusBadge item={item} />}
+                    />
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
+          </>
         )}
       </div>
     </TabsContent>

@@ -31,7 +31,8 @@ import {
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows } from "./kit-child-rows";
+import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
+import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
 
 export interface ReturnTabProps {
   // Scan state
@@ -176,7 +177,9 @@ export function ReturnTab({
             description="Deployed gear shows here, ready to scan back in."
           />
         ) : (
-          <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+          <>
+          {/* Desktop: data table */}
+          <div className="hidden md:block rounded-[var(--r-lg)] border border-line overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -440,6 +443,180 @@ export function ReturnTab({
               </TableBody>
             </Table>
           </div>
+
+          {/* Mobile: card list (§15) — same grouped data + handlers */}
+          <div className="md:hidden space-y-1.5">
+            {returnContainerGroups.map(({ container, entries }) => (
+              <Fragment key={container || "__ungrouped"}>
+                {container ? (
+                  <ScanContainerHeading label={container} />
+                ) : returnContainerGroups.some((g) => g.container !== null) && (
+                  <ScanContainerHeading label="No container" muted />
+                )}
+                {entries.map((entry) => {
+                  if (entry.kind === "serialized-group") {
+                    const childKeys = entry.items.map((i) => i.id);
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedIn.has(k));
+                    const someChecked = childKeys.some((k) => selectedIn.has(k));
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                        onToggleSelect={() => toggleGroupSelection(selectedIn, setSelectedIn, childKeys)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        name={entry.modelName}
+                        qtyLabel={entry.items.length}
+                        status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                      >
+                        {entry.items.map((item, idx) => (
+                          <ScanItemCard
+                            key={item.id}
+                            indent
+                            selected={selectedIn.has(item.id)}
+                            onToggleSelect={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
+                            name={item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                            assetTag={item.asset?.assetTag || "—"}
+                            qtyLabel={1}
+                            status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                          />
+                        ))}
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  if (entry.kind === "bulk-group") {
+                    const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allChecked = childKeys.length > 0 && childKeys.every((k) => selectedIn.has(k));
+                    const someChecked = childKeys.some((k) => selectedIn.has(k));
+                    const checkedCount = childKeys.filter((k) => selectedIn.has(k)).length;
+                    const units = entry.item.units ?? [];
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selectedState={allChecked ? true : someChecked ? "indeterminate" : false}
+                        onToggleSelect={() => toggleGroupSelection(selectedIn, setSelectedIn, childKeys)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        name={modelDisplayName(entry.item)}
+                        assetTag={entry.item.bulkAsset?.assetTag || "—"}
+                        qtyLabel={entry.unitCount}
+                        status={checkedCount > 0 ? (
+                          <Badge status="neutral" className="bg-blue-soft text-blue">{checkedCount} selected</Badge>
+                        ) : (
+                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                        )}
+                      >
+                        {childKeys.map((key, idx) => {
+                          const unit = units[idx];
+                          const tag = unit?.asset?.assetTag
+                            ?? unit?.bulkAsset?.assetTag
+                            ?? entry.item.bulkAsset?.assetTag
+                            ?? "—";
+                          return (
+                            <ScanItemCard
+                              key={key}
+                              indent
+                              selected={selectedIn.has(key)}
+                              onToggleSelect={() => toggleSelection(selectedIn, setSelectedIn, key)}
+                              name={`Unit ${idx + 1}`}
+                              assetTag={tag}
+                              qtyLabel={1}
+                              status={null}
+                            />
+                          );
+                        })}
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  if (entry.kind === "kit-group") {
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allIds = collectAllVerifiableIds(entry.children, "return");
+                    const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                    const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                    const allChildren = (entry.item.childLineItems || []) as LineItem[];
+                    const isPartiallyDeployed = allChildren.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selected={selectedIn.has(entry.item.id)}
+                        onToggleSelect={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        showKitGlyph
+                        name={entry.item.description || entry.item.kit?.name || "Kit"}
+                        badges={
+                          <>
+                            <Badge status="neutral">Kit</Badge>
+                            {allIds.length > 0 && (
+                              <Badge status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"} className="tabular-nums">
+                                {verifiedCount}/{allIds.length} verified
+                              </Badge>
+                            )}
+                          </>
+                        }
+                        assetTag={entry.item.kit?.assetTag || "—"}
+                        qtyLabel={entry.children.length}
+                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                      >
+                        <MobileKitChildCards
+                          kitChildren={entry.children}
+                          verifiedKitItems={verifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                          mode="return"
+                          onToggleVerify={(assetId) => {
+                            setVerifiedKitItems((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(assetId)) next.delete(assetId);
+                              else next.add(assetId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  // Single item
+                  const item = entry.item;
+                  const isBulk = isBulkItem(item);
+                  const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
+                  return (
+                    <ScanItemCard
+                      key={item.id}
+                      selected={selectedIn.has(item.id)}
+                      onToggleSelect={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
+                      name={modelDisplayName(item)}
+                      badges={
+                        <>
+                          {item.subHireId != null && (
+                            <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
+                          )}
+                          {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+                        </>
+                      }
+                      subtext={item.subHireId != null && item.supplier ? (
+                        <p className="text-caption text-muted mt-0.5">via {item.supplier.name}</p>
+                      ) : undefined}
+                      assetTag={assetTag || "—"}
+                      qtyLabel={isBulk ? (
+                        <>
+                          <span className={item.returnedQuantity > 0 ? "font-semibold text-ok" : ""}>{item.returnedQuantity}</span>
+                          <span className="text-muted">/{item.checkedOutQuantity}</span>
+                        </>
+                      ) : 1}
+                      status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                    />
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
+          </>
         )}
       </div>
     </TabsContent>

@@ -6,9 +6,11 @@
 > (see [`FEATUREDOCS/54`](../../FEATUREDOCS/54-convex-data-layer.md) and
 > [`convex-hybrid-migration.md`](./convex-hybrid-migration.md)).
 
-> **Status: PAUSED before Phase A.** Everything below Phase 0 ("Done") is shipped
-> and stable. Phases A/B/C are not started. Tracked as tasks #4 (Phase A), #5
-> (Phase B), #6 (Phase C).
+> **Status: Phase A IN PROGRESS (2026-06-16).** Leaf surfaces converting one PR at
+> a time (test-tag reports, crew cluster, supplier orders done); the **keystone
+> line-item-tree reconstruction primitive is built + validated** (wiring its 4
+> consumers is the next step — see the Keystone section). Phases B/C not started.
+> Tracked as tasks #4 (Phase A), #5 (Phase B), #6 (Phase C).
 
 ---
 
@@ -117,6 +119,84 @@ risk — do it after the pattern is proven on leaf surfaces.**
 Cross-cutting reminder: the PDF pipeline has 5 independent `DocumentLineItem`
 consumers (see CLAUDE.md). Any data-shape change needs the full-pipeline
 integration test, not just plugin-level tests.
+
+#### Keystone progress — reconstruction primitive DONE (reader built, wiring next)
+
+`src/lib/project-line-item-tree-read.ts` is the pure tree-reconstruction core
+(`indexChildren` / `indexUnits` / `reconstructScope` / `reconstructCategories`),
+fixture-unit-tested (`*.test.ts`) and validated by a structural golden-diff vs
+Prisma `getProject` on the seeded project (grouped tree byte-matches). It takes
+flat Convex rows (caller maps Convex docs → rows) and rebuilds the exact nested
+shape; the existing attach helpers then decorate it. **Semantics nailed down
+(load-bearing for the wiring):**
+
+- **Dual projection.** A `lineItems` array is the *relation* for its scope, not
+  just parents: `project.lineItems` = ALL non-CANCELLED items (parents AND
+  children); `group.lineItems` = `groupId === g.id`; `category.lineItems` =
+  `categoryId === c.id AND groupId == null`. A child appears BOTH as a scope entry
+  and nested under its parent. Consumers split via `isKitChild`/`parentLineItemId`
+  (structureLineItems, build-document-data `topLevelItems`).
+- **Include depth is explicit.** getProject top-level nests `childLineItems` 2
+  deep, grouped 1 deep; build-document-data per its own include. Past the depth the
+  `childLineItems` key is ABSENT (not `[]`).
+- **Tie-order is non-deterministic.** `sortOrder` is per-scope sequential, so the
+  flat top-level `project.lineItems` has global ties → Postgres returns them in
+  physical order, unreplicable from Convex. The GROUPED tree (what the editor
+  renders) has distinct within-scope sortOrder and matches exactly. Wiring should
+  not depend on flat top-level tie-order (golden-diff the grouped tree exactly +
+  the flat list as a set).
+
+**Wiring follow-ups (each its own PR, golden-diffed on an enriched seed with
+kits/children/units/accessories/CANCELLED):** getProject → getProjectForWarehouse
+→ getProjectPullSheet → build-document-data (PDF, with the full-pipeline
+integration test). Each needs a full-row Convex→Prisma mapper (date fields →
+Date, Decimal → number across the ~50-field ProjectLineItem; units carry
+`asset`/`bulkAsset` as `{id,assetTag}` selects) + the existing attach passes
+(attachLineItemTree → attachKitTree → attachAssetBulkAssetTree [+ check-counts for
+warehouse]).
+
+**Consumer 1/4 — `getProject` DONE** (PR `feat/convex-read-get-project`, stacked
+on the primitive PR). The full-row mapper + fetch + attach live in
+`src/lib/project-line-item-read.ts` (`buildProjectEquipmentTree`); getProject now
+reconstructs categories/groups/lineItems/units from Convex and keeps Prisma only
+for the project scalars + location + projectManagers + media. New batch Convex
+query `projectLineItemUnits.listByLineItemIds`. Per-consumer shape pinned: units =
+`{id,assetTag}` selects, line item = plain `kit` (no `_count`), asset/bulkAsset/kit
+via a new `attachAssetBulkKitPlain` (raw docs, dates → Date). Validated by mapper
+unit tests + a live structural golden-diff vs the old Prisma include on an enriched
+project (kit→child→grandchild, accessory parent+children, units incl. CANCELLED, a
+CANCELLED top-level line): grouped tree byte-matches, flat list matches as a set,
+per-node structure (depth truncation, CANCELLED exclusion, resolved
+model/supplier/asset/kit ids) all match. **2/4–4/4 (warehouse → pull-sheet → PDF)
+reuse these fetchers + mappers; only the attach shape differs (warehouse needs
+`attachKitTree` `_count` + full asset on units).**
+
+**Consumer 2/4 — `getProjectForWarehouse` DONE** (PR `feat/convex-read-warehouse-tree`,
+stacked on consumer 1). `buildWarehouseLineItems` reuses the mappers; the
+reconstruction primitive gained a backward-compatible `keepCancelled` option
+(warehouse keeps every status, getProject drops CANCELLED tombstones). Flat
+EQUIPMENT scope, full asset on units (`attachAssetBulkAssetTree`), model/kit
+`_count` grafts. Golden-diffed vs the old Prisma include + attach pipeline (SERVICE
+line excluded, CANCELLED EQUIPMENT line included, CANCELLED unit excluded): id-set
++ per-node structure match.
+
+**Consumer 3/4 — `getProjectPullSheet` DONE** (PR `feat/convex-read-pull-sheet`,
+stacked on consumer 2). `buildPullSheetLineItems` — flat EQUIPMENT scope, drops
+CANCELLED (default), no units, full asset attach + per-asset `location` graft;
+returns `{ lineItems, locationMap }` so the caller resolves `project.location` too.
+Golden-diffed vs the old include + attach + graft.
+
+**Consumer 4/4 — `build-document-data` (PDF) DONE** (PR `feat/convex-read-pdf-data`,
+stacked on consumer 3). `buildDocumentLineItemData` — no type filter, drops
+CANCELLED, depth 2, per-line category/group selects, units in the PDF SELECT shape,
+model/supplier/kit/asset attach; returns `{ lineItems, categories }`. subHire
+supplier now via `getSupplierMap`. Validated by (1) a live full-pipeline golden-diff
+(reconstructed tree + categories + `structureLineItems` output match the old Prisma
+path) and (2) a new `document-data-reconstruction.test.ts` running flat Convex docs
+through the whole pipeline (reconstruction → structure → filter → height → render).
+**Keystone done — all four consumers reconstruct from Convex.** Remaining Phase A:
+stocktake, check-records, project-services, category-slots, warehouse-display,
+test-tag-assets, document-templates, crew availability, + a final sweep.
 
 ### New read helpers needed (priority by MOVE-read frequency)
 

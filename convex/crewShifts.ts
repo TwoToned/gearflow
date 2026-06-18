@@ -32,6 +32,28 @@ export const getById = query({
   },
 });
 
+/**
+ * Shifts for a set of assignments (read-rewiring for crew scheduling reads).
+ * crewShifts has no organizationId — the org scope is the assignment list the
+ * server already fetched (org-scoped via crewAssignments). Service-only, like
+ * the other shift reads. One indexed query per assignment id, flattened.
+ */
+export const listByAssignmentIds = query({
+  args: { assignmentIds: v.array(v.string()) },
+  handler: async (ctx, { assignmentIds }) => {
+    await requireService(ctx);
+    const groups = await Promise.all(
+      assignmentIds.map((assignmentId) =>
+        ctx.db
+          .query("crewShifts")
+          .withIndex("by_assignmentId", (q) => q.eq("assignmentId", assignmentId))
+          .collect(),
+      ),
+    );
+    return groups.flat();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

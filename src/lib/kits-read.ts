@@ -36,3 +36,96 @@ export async function getKitMap(orgId: string): Promise<Map<string, ConvexKit>> 
 export async function getKitByAssetTag(orgId: string, assetTag: string): Promise<ConvexKit | null> {
   return await (await getConvexClient()).query(api.kits.getByAssetTag, { organizationId: orgId, assetTag });
 }
+
+export type ConvexKitSerializedItem = Doc<"kitSerializedItems">;
+export type ConvexKitBulkItem = Doc<"kitBulkItems">;
+
+/** All of an org's kit serialized-member rows (kit_serialized_item), for counts. */
+export async function getKitSerializedItemsByOrg(orgId: string): Promise<ConvexKitSerializedItem[]> {
+  return await (await getConvexClient()).query(api.kitSerializedItems.list, { orgId });
+}
+
+/** All of an org's kit bulk-member rows (kit_bulk_item), for counts. */
+export async function getKitBulkItemsByOrg(orgId: string): Promise<ConvexKitBulkItem[]> {
+  return await (await getConvexClient()).query(api.kitBulkItems.list, { orgId });
+}
+
+/**
+ * Per-kit member counts (kitId -> { serializedItems, bulkItems }) computed in JS
+ * over the two member lists, replacing the two Prisma `groupBy({ by: ["kitId"] })`
+ * calls in `getKitCounts`. A `null`/absent `kitId` is skipped (matches the Prisma
+ * loop that only counts grouped rows carrying a kitId). Pure + unit-tested.
+ */
+export function countKitMembers(
+  serializedItems: Array<{ kitId?: string | null }>,
+  bulkItems: Array<{ kitId?: string | null }>,
+): Record<string, { serializedItems: number; bulkItems: number }> {
+  const out: Record<string, { serializedItems: number; bulkItems: number }> = {};
+  const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0 });
+  for (const s of serializedItems) if (s.kitId) ensure(s.kitId).serializedItems++;
+  for (const b of bulkItems) if (b.kitId) ensure(b.kitId).bulkItems++;
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// canDeleteKit predicate (Phase A read-rewiring)
+// ---------------------------------------------------------------------------
+/**
+ * The Convex `kits` doc declares `status`/`isActive` as `v.optional` (a row that
+ * predates the column, or one mirrored before the field was set, reads
+ * `undefined`). Prisma defaults them (`status @default(AVAILABLE)`,
+ * `isActive @default(true)`), so coerce to those defaults to match what the
+ * Prisma read returned.
+ */
+export type KitDeletabilityRow = {
+  id: string;
+  status: ConvexKit["status"];
+  isActive: boolean;
+};
+
+/** Coerce the Convex-optional status/isActive to their Prisma defaults. */
+export function coerceKitDeletabilityRow(kit: ConvexKit): KitDeletabilityRow {
+  return {
+    id: kit.id,
+    status: kit.status ?? "AVAILABLE",
+    isActive: kit.isActive ?? true,
+  };
+}
+
+export type KitDeletability = {
+  canArchive: boolean;
+  canHardDelete: boolean;
+  referencingLineItems: number;
+  reason?: string;
+};
+
+/**
+ * Pure replication of `canDeleteKit`'s decision logic. `referencingLineItems`
+ * is supplied by the caller — it comes from `prisma.projectLineItem.count`,
+ * which stays on Prisma until the keystone project-line-item tree migrates
+ * (see FEATUREDOCS/54). The kit row itself comes from Convex.
+ */
+export function computeKitDeletability(
+  kit: KitDeletabilityRow,
+  referencingLineItems: number,
+): KitDeletability {
+  // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
+  const canArchive = kit.status === "AVAILABLE" && kit.isActive;
+
+  // Hard delete adds two extra constraints: (a) no ProjectLineItem references,
+  // (b) AVAILABLE status. This prevents losing historical project data.
+  const canHardDelete =
+    kit.status === "AVAILABLE" && kit.isActive && referencingLineItems === 0;
+
+  let reason: string | undefined;
+  if (!canArchive) {
+    reason =
+      kit.status !== "AVAILABLE"
+        ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
+        : "Kit is already archived.";
+  } else if (!canHardDelete) {
+    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
+  }
+
+  return { canArchive, canHardDelete, referencingLineItems, reason };
+}

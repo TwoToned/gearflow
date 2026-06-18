@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import {
+  getBrandTemplateForOrg,
+  getBrandTemplateListForOrg,
+} from "@/lib/brand-templates-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -59,19 +63,7 @@ import type {
 export async function getBrandTemplates() {
   const { organizationId } = await getOrgContext();
 
-  const templates = await prisma.brandTemplate.findMany({
-    where: { organizationId },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      accentColor: true,
-      isDefault: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: { select: { documentTemplates: true } },
-    },
-  });
+  const templates = await getBrandTemplateListForOrg(organizationId);
 
   return serialize(templates);
 }
@@ -82,9 +74,7 @@ export async function getBrandTemplates() {
 export async function getBrandTemplate(id: string) {
   const { organizationId } = await getOrgContext();
 
-  const template = await prisma.brandTemplate.findFirst({
-    where: { id, organizationId },
-  });
+  const template = await getBrandTemplateForOrg(id, organizationId);
 
   if (!template) throw new Error("Brand template not found");
 

@@ -15,6 +15,10 @@
 import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import {
+  getActiveCustomFieldsForOrg,
+  getCustomFieldDefinitionsForOrg,
+} from "@/lib/custom-fields-read";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -56,10 +60,9 @@ async function patchCustomFieldInConvex(id: string, row: Record<string, unknown>
  *  inactive ones — the settings page needs to show + toggle them. */
 export async function getCustomFieldDefinitions(entityType: CustomFieldEntity = "ASSET") {
   const { organizationId } = await requirePermission("orgSettings", "read");
-  const defs = await prisma.customFieldDefinition.findMany({
-    where: { organizationId, entityType },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  // Convex-only read (Phase A): customFieldDefinition is dual-written + backfilled,
+  // so read the Convex copy and apply the entityType filter + display ordering in JS.
+  const defs = await getCustomFieldDefinitionsForOrg(organizationId, entityType);
   return serialize(defs);
 }
 
@@ -68,10 +71,9 @@ export async function getCustomFieldDefinitions(entityType: CustomFieldEntity = 
  *  who can edit an asset can see its custom-field inputs. */
 export async function getActiveCustomFields(entityType: CustomFieldEntity = "ASSET") {
   const { organizationId } = await getOrgContext();
-  const defs = await prisma.customFieldDefinition.findMany({
-    where: { organizationId, entityType, isActive: true },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  // Convex-only read (Phase A): active-only definitions, entityType-filtered +
+  // ordered in JS over the dual-written + backfilled Convex copy.
+  const defs = await getActiveCustomFieldsForOrg(organizationId, entityType);
   return serialize(defs);
 }
 

@@ -5,6 +5,7 @@ import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { getProjectById } from "@/lib/projects-read";
+import { getProjectMediaFromConvex } from "@/lib/media-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { ProjectMediaType } from "@/generated/prisma/client";
@@ -76,11 +77,12 @@ export async function removeProjectMedia(mediaId: string) {
 export async function getProjectMedia(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const media = await prisma.projectMedia.findMany({
-    where: { projectId, organizationId },
-    include: { file: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Read the gallery from the Convex mirror (dual-written, backfilled). The
+  // parent project is org-unique, but keep the org filter for parity with the
+  // old Prisma `where: { projectId, organizationId }`. See media-read.ts.
+  const media = (await getProjectMediaFromConvex(projectId)).filter(
+    (m) => m.organizationId === organizationId,
+  );
 
   return serialize(media);
 }

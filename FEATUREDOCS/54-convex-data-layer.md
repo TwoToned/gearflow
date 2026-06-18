@@ -440,6 +440,42 @@ this is **infra-only**.
 - Backfill `pnpm convex:backfill:templates` (0/0). Verified: tsc clean, 2185 tests,
   0 new lint errors, `pnpm build` exit 0.
 
+#### Phase A read-rewire — `server/document-templates.ts` (DONE, surface shrank to 3)
+
+**Surface shrank after the PDF template-builder removal (#227).** That feature
+removal gutted `server/document-templates.ts` from 826 → **147 lines**, deleting the
+entire write surface (the "all 15 write paths" inventory above is now historical —
+`create`/`duplicate*`/`import`/`save*`/section+block tx saves/`setDefaultTemplate`/
+`delete` are gone, along with `getTemplateForEditor` and `exportTemplate`). Only **3
+read functions survive**: `getDocumentTemplates`, `getPublishedTemplatesForDropdown`,
+`getDocumentTemplate`. Document templates are therefore now **read-only from the app's
+perspective** — but still **dual-written infra** (mirror helpers in
+`src/lib/template-mirror.ts`, the brand-delete unlink in `brand-templates.ts`, the
+Convex modules `documentTemplates`/`brandTemplates`, and the re-runnable backfill heal
+path `scripts/convex-backfill-templates.ts` all remain). Gate satisfied → safe to read
+from Convex.
+
+- New read-lib `src/lib/document-template-read.ts` (+ unit tests
+  `document-template-read.test.ts`): `mapDocumentTemplate`/`mapBrandTemplate`
+  (epoch-ms→Date, absent→null, Prisma-defaults coerced `isDefault/isDraft ?? false`,
+  `version ?? 1`, non-null Prisma columns→non-null Date, strip `_id`/`_creationTime`),
+  two pure sort comparators (`type` is a plain String column → lexicographic, NOT enum
+  rank), and four fetchers over `api.documentTemplates.list/getById` +
+  `api.brandTemplates.list/getById` (no new Convex queries needed).
+- `getDocumentTemplates` → `documentTemplates.list` + `brandTemplates.list` for the
+  `{id,name}` FK join + pure `[type ASC, isDefault DESC, updatedAt DESC]` sort; the
+  virtual `system-` synthesis is untouched and runs over the mapped rows.
+  `getPublishedTemplatesForDropdown` → same list, JS `isDraft===false` filter + `[type,
+  isDefault DESC, name ASC]` sort. `getDocumentTemplate` → `system-` branch unchanged;
+  real-read branch is `documentTemplates.getById` + JS org re-check (same "Template not
+  found" throw) + `brandTemplates.getById` for the full `brandTemplate` FK. No Prisma
+  fallback on a miss.
+- **Deploy gate:** templates backfill must have run against prod Convex before this
+  deploys, else existing rows read empty (re-runnable: `pnpm convex:backfill:templates`).
+- PR `feat/convex-read-document-templates` (reworked onto new main, force-pushed over
+  the stale #207 whose diff was mostly against now-deleted code). Verified: tsc clean,
+  `vitest run document-template-read.test.ts` green, eslint clean, `pnpm build` exit 0.
+
 ### Central graph — analysis & recommended sequencing (NOT yet migrated)
 
 The remaining domains (`asset`, `bulk_asset`, `kit`, `project`, `project_line_item`,
@@ -2323,6 +2359,48 @@ emails), `wooCommerceOrderLog` (2 reads = webhook idempotency → double-process
 `maintenanceRecordAsset` (export-only read; writer `damage-core.ts` must stay
 Convex-free). These stay Prisma.
 
+### Phase A read-rewiring — per-surface PRs (in progress)
+
+Each read-only domain surface is converted from Prisma reads to Convex reads in
+its own gated PR (merge gate = human validation on a Coolify preview; live
+golden-diff deferred to thorough unit tests + preview). Pattern: a thin
+`src/lib/<x>-read.ts` (Convex fetchers + mappers `toDate`/`orNull`/`req`, absent
+→ null, epoch-ms → Date) + pure, unit-tested filter/sort/aggregate functions +
+JS attach for joins. Auth-User joins (`performedBy`, `createdBy`, …) stay Prisma
+forever (a batched `prisma.user.findMany` → name Map), which is **not** a
+decommission violation.
+
+| Surface (server file) | Read-lib | New Convex queries | Notes |
+|------|------|------|------|
+| `test-tag-reports.ts` | `test-tag-read.ts` | `subTestRecords.listByRecordIds` | leaf; `testedBy` User stays Prisma |
+| `crew-dashboard.ts` / `crew-time.ts` / `crew-assignments.ts` | `crew-scheduling-read.ts`, `users-read.ts` | `crewShifts.listByOrg`, `crewCertifications.listByOrg` | crew cluster (stacked) |
+| `supplier-orders.ts` | `supplier-order-read.ts` | `supplierOrderItems.listByOrderIds` | independent off main |
+| `check-records.ts` (`getCheckHistory`, `getModelFailureAnalytics`) | `check-record-read.ts` | `checkRecords.listByOrgAndAsset`, `modelCheckItems.listByModel`, `projectLineItems.listByIds` | **this PR** |
+
+**`check-records.ts` surface details (2026-06-16).** Two read-only functions
+converted; ALL writes (prep/deprep/pull/pack/flag/store, `saveAdHocCheck`,
+`saveKitLevelChecks`, `saveChildItemChecks`, `checkPredictiveMaintenance`,
+`lookupAssetForAdHocCheck`) KEPT as-is.
+- `getCheckHistory(assetId, context?)` → `getCheckHistoryRows`. checkItem
+  `label`/`type` come from the **snapshot fields on the checkRecord row**
+  (`checkItemLabelSnapshot`/`checkItemTypeSnapshot`) — mirror-miss-proof, no
+  checkItem join (the UI only reads `label`; `category` was never read, returned
+  `null`). `performedBy.name` via Prisma user Map. `lineItem.project` resolved
+  `lineItemId → projectId` (`projectLineItems.listByIds`) then `projectId →
+  {id,name,projectNumber}` (`getProjectsByOrg`). `performedAt` falls back to
+  `_creationTime` so it is never null (UI groups sessions by date). Indexed query
+  `by_organizationId_assetId`; optional `context` filter + `performedAt` desc sort
+  done in a pure unit-tested fn.
+- `getModelFailureAnalytics(modelId)` → `getModelFailureAnalyticsRows`.
+  `modelCheckItems.listByModel` (index `by_organizationId_modelId`); checkItem
+  label/type from `checkItems.list` (the modelCheckItem row carries neither);
+  assetIds from `getAssetsByOrg` filtered by `modelId`; counts JS-aggregated over
+  one `checkRecords.list(orgId)` fetch (total = result ∈ {PASS,FAIL}, fail =
+  FAIL), `failRate = fail/total`. Pure aggregate fn unit-tested; early-return `[]`
+  when no assets or no modelCheckItems.
+- **DEPLOY GATE:** `checkRecord` / `projectLineItem` / `modelCheckItem` must be
+  backfilled in prod Convex before this merges, else history/analytics read empty.
+
 ### ⚠️ DEPLOY-ORDERING GATE for the read rewiring
 
 The dual-write keeps Convex fresh for NEW changes only; EXISTING rows live in
@@ -2333,6 +2411,37 @@ Safe sequence: (1) ship the dual-write commits, (2) run the backfills against pr
 Convex, (3) ship the read rewiring. The read rewiring could NOT be verified in the
 dev worktree (local DB lacks better-auth migrations → backfills can't run there;
 Convex tables are empty), so it is deliberately deferred to its own gated change.
+
+### Phase A read-rewiring surfaces (per-surface, preview-gated PRs)
+
+Each leaf surface moves its read-only domain Prisma queries to Convex behind a
+thin `src/lib/<x>-read.ts` (mappers: epoch-ms → Date, Decimal → number, absent →
+null) plus pure, unit-tested filter/sort/count predicates; no Prisma fallback on a
+Convex miss; human-gated on a Coolify preview before merge.
+
+- **`warehouse-display.ts` — PARTIAL (PR `feat/convex-read-warehouse-display`).**
+  Inside `getWarehouseDisplayData`, the 4 `projectService.findMany` reads and the 2
+  `projectLineItem.groupBy` count reads moved to Convex via
+  `src/lib/warehouse-display-read.ts`:
+  - Services: one `api.projectServices.list({orgId})` round trip, then 4 pure JS
+    filters (`filterDeliveryServices`/`filterPickupServices` over today + upcoming
+    millisecond windows; `status !== "CANCELLED"`). Mapper keeps `date` a real
+    `Date` — the upcoming-day bucketing calls `date.getFullYear()`.
+  - Line items: new narrow Convex query **`api.projectLineItems.listByProjectIds`**
+    ({orgId, projectIds} over `by_projectId`, `requireOrgRead`) — avoids a full-org
+    line-item scan on a public endpoint; then JS group-count via
+    `buildLineItemCountMaps`. GOTCHA replicated: Convex `isKitChild` is optional →
+    `!== true` (NOT `=== false`) so absent-flag rows still count, matching Prisma
+    `isKitChild: false`.
+  - **BLOCKED TERMINUS — stays Prisma:** `warehouseDashboardToken` is **NOT
+    dual-written to Convex** (no `api.warehouseDashboardTokens.*` exists anywhere in
+    `src/`; its Convex table is empty). So ALL token functions —
+    `getDisplayTokens` / `createDisplayToken` / `revokeDisplayToken` /
+    `updateDisplayToken` / `regenerateDisplayToken` / `validateDisplayToken` (incl.
+    its fire-and-forget `lastAccessedAt` write) — remain Prisma until Phase B adds a
+    dual-write + backfill for `warehouseDashboardToken`. The `organization` org-name
+    read also stays Prisma (Better Auth table, auth domain forever). The file still
+    imports `prisma` by design.
 
 **✅ Final non-document file sweep — DONE (2026-06-15/16).** The last 10 files with
 cross-domain Prisma reads on the non-document surface are now off the mirror. All
@@ -2370,6 +2479,48 @@ earlier decommission commits that shipped with errors):
 status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a leftover
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
+
+## Phase A read-rewiring — surfaces (per-surface gated PRs)
+
+Each leaf surface moves its read-only Prisma reads to the dual-written Convex copy
+behind a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date, absent→null, Prisma
+defaults coerced) + pure JS filter/sort/attach (unit-tested) + JS joins. No Prisma
+fallback on a Convex miss → null/empty. Writes + read-then-write paths stay Prisma.
+Merge gate = human preview validation (correctness can't be golden-diffed in the
+dev worktree). The deploy-ordering gate above applies: backfills must have run
+against prod Convex before each read-rewiring PR merges.
+
+### project-services.ts — read-rewired (PR `feat/convex-read-project-services`)
+
+New `src/lib/project-service-read.ts`. Converted the 4 read-only server actions:
+- `getProjectServices(projectId)` → `projectServices.listByProject` +
+  **new** `crewAssignments.listByServiceIds({serviceIds, orgId})` (loops the
+  `by_serviceId` index, `requireOrgRead`) + `getCrewRoleMap`/`getCrewMemberMap`
+  (crew-read.ts). Attaches crewRole + crewAssignments (grouped by serviceId; each
+  carries estimatedCost). Sorted by a pure null-aware comparator: date ASC NULLS
+  LAST, tie-break sortOrder ASC.
+- `getProjectServiceById(id)` → `projectServices.getById` (org-check in JS, throws
+  "Service not found" on null/org mismatch) + same crew attach, but assignments
+  carry **no** estimatedCost (mirrors the narrower Prisma select).
+- `getServiceTemplates()` → `serviceTemplates.list`, sorted sortOrder ASC.
+- `getProjectServicesSummary(projectId)` → `listByProject`, JS filter
+  `status !== "CANCELLED"`, sum lineTotal/costTotal + count.
+
+**KEPT Prisma** (this PR): all writes + read-then-write (create/update/delete
+service, status mutations, generate/clone/convert, template CRUD) and the
+cross-surface readers `getCrewSuggestionsForProject` + `generateCrewMessage` (they
+read crewMember/crewAssignment/projectLineItem belonging to other surfaces).
+**DEFERRED:** `getServiceCostHistory` (no UI consumer — left on Prisma).
+
+Pure functions unit-tested in `src/lib/project-service-read.test.ts` (date/sortOrder
+comparator incl. NULLS-LAST + tie-break, not-CANCELLED filter, mappers' default
+coercion, crew attach incl. role/member map-miss → null and the estimatedCost
+on/off projections). Three weakly-typed consumer casts
+(`as Record<string, unknown>[]`) widened to `as unknown as Record<…>` now that the
+helpers return precise row interfaces (runsheet page, settings/services page,
+services-panel) — behaviour unchanged. **GATE:** projectService + serviceTemplate
+already dual-written (`syncProjectServicesToConvex`, template-mirror); confirm both
+backfilled in prod before merge.
 
 ## Remaining work & session sizing (post-central-graph)
 
@@ -2634,6 +2785,206 @@ hidden — this only smooths the "random" single-shot failures. This does NOT
 re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshness
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
+
+## Phase A — read-rewiring (domain-only decommission)
+
+Moving every remaining Prisma **domain read** to Convex, one leaf surface per PR.
+Full plan + the per-surface progress log:
+[`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+Pattern: thin `lib/<x>-read.ts` (Convex fetchers + mappers: epoch-ms → `Date`,
+Decimal → `number`, absent → `null`) + the server action keeps its shape but does
+`where`/`orderBy`/`include` as JS filter/sort/attach; auth-owned `User` joins stay
+Prisma; validated by unit tests + a row-for-row golden-diff vs Prisma on seeded data.
+
+### Supplier orders — DONE
+
+`src/server/supplier-orders.ts` `getSupplierOrders` (list: filter/search/sort/
+paginate + project + item-count + supplier) and `getSupplierOrderById` (order +
+items + asset/model/project/supplier + `createdBy` User) → Convex via
+`src/lib/supplier-order-read.ts`. New `supplierOrderItems.listByOrderIds` (one
+round trip for per-order counts). Mixed-type column sort replicates Postgres null
+ordering. Writes stay Prisma-first + mirror. Dev data: `npm run seed:supplier-orders`.
+supplierOrder/supplierOrderItem were backfilled in prod with the sub-hire family.
+
+### Test & Tag assets — DONE (read surface, 2026-06-16)
+
+`src/server/test-tag-assets.ts` — the 4 read-only functions moved off Prisma
+(writes / read-then-write / mirrors stay Prisma, as does the re-export
+`peekNextTestTagIds`):
+
+- **`getTestTagAssets`** (paginated/filtered registry list). Convex
+  `getTestTagAssetsByOrg` + per-asset `_count.testRecords` counted in JS from
+  `getTestTagRecordsByOrg`; `asset`/`bulkAsset` joins from `assets-read`
+  (`getAssetsByOrg` / `getBulkAssetsByOrg`), `testProfile` from `getTestProfileMap`.
+  Filter + sort + slice are pure JS:
+  - `listAssetMatchesFilters` — list-specific predicate. **`isActive` is a
+    PARAMETER here** (can be `false` to list retired items), unlike the report
+    predicate which hardcodes `isActive === true`. status / equipmentClass /
+    applianceType are EXACT single matches (not IN).
+  - `compareTestTagAssets` — null-aware + enum-declared-order comparator
+    replicating `orderBy: { [sortBy]: sortOrder }`. Postgres NULL ordering
+    (ASC = NULLS LAST, DESC = NULLS FIRST) for nullable columns; **enum columns
+    (status / equipmentClass / applianceType) sort by Postgres DECLARED order,
+    not alphabetical**, via rank maps mirroring `prisma/schema.prisma`. Unknown
+    `sortBy` keys fall back to `testTagId`. Stable tiebreak on `testTagId` asc.
+- **`getTestTagAsset`** (detail). `getTestTagAssetById` + org guard in JS; recent
+  10 records (testDate desc) with sub-tests (`getSubTestRecordsByRecordIds`),
+  `testProfile {id,name}`, `testedBy {id,name}` (Prisma `getUserNameMap`); linked
+  asset/bulkAsset with `.model` attached via `getModelMap`.
+- **`lookupTestTagAsset`** (scan; returns `null` if absent, includes retired).
+  `getTestTagAssetByTestTagId` + 1 most-recent record + sub-tests + testedBy.
+  `testProfile` is the FULL profile (`getFullTestProfileById`, mapped
+  `mapTestProfile` with JSON passthrough) to preserve the old `testProfile: true`
+  shape — though the scan UI resolves its wizard profile via `resolveTestProfile`,
+  not this field.
+- **`getTestTagDashboardStats`**. Keeps the `prisma.organization.findUnique`
+  metadata read (Organization = auth table; the parsed `dueSoonDays` stays dead
+  code, behaviour preserved). 7 counts + `recentTests` (20) + `overdueItems` /
+  `dueSoonItems` (50, nextDueDate asc NULLS LAST) derived in JS from the Convex
+  org lists. `retired` counts `status === "RETIRED"` regardless of `isActive`.
+- **New Convex queries:** `testTagRecords.listByAssetId` (by `by_testTagAssetId`)
+  and `testTagAssets.getByTestTagId` (by `by_organizationId_testTagId`,
+  `.first()` — index is non-unique). Both service-only.
+- **DEPLOY GATE:** `testTagAsset` / `testTagRecord` / `subTestRecord` must be
+  backfilled in prod Convex before this merges, else existing rows read empty.
+- **Validation:** pure-function unit tests extended in
+  `src/lib/test-tag-read.test.ts` (list predicate + the null/enum-aware
+  comparator, both directions + unknown-key fallback). Golden-diff deferred to
+  preview validation.
+
+### Test & Tag records + auditor partial — DONE (stacked on the reports surface)
+
+`src/server/test-tag-records.ts` (per-asset test history + Quick Pass pre-fill)
+and the dual-written-table reads inside `src/server/test-tag-auditor.ts` moved
+off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
+
+- **Reads converted:**
+  - `getTestTagRecords(assetId, {page,pageSize})` — paginated test history.
+    Convex `testTagRecords.listByOrgAndAsset` → JS sort `testDate` desc →
+    JS slice for pagination (`total` from the full set). `testProfile`/
+    `subTestRecords` attached from Convex, `testedBy {id,name}` from Prisma.
+  - `getLatestTestRecord(assetId)` — same fetch, first row after the desc sort.
+  - `getAuditorScopeOptions()` — distinct `applianceType`/`equipmentClass`/
+    `location` facets + the sorted asset picker list, computed in JS over the
+    Convex `isActive` assets (replaces 4 Prisma `distinct`/`orderBy` queries).
+  - `getAuditorPortalData(orgId, scope)` — Convex asset list filtered by the new
+    pure `assetMatchesAuditorScope` predicate (org + `isActive` + scope facets);
+    the `groupBy status` stats are tallied in JS over the same scoped set.
+    `organization.name`/`metadata` stays Prisma (Better Auth table, not domain).
+- **testTagAuditorToken reads stay on Prisma — BLOCKED terminus.** That table is
+  **not dual-written** (no mirror write from `src/`, no backfill script; the
+  `convex/testTagAuditorTokens.ts` module is a generated stub only). So
+  `validateAuditorToken`, `getAuditorTokens`, and the token find/update/revoke
+  reads remain Prisma until the table is dual-written + backfilled.
+- **`testedBy` = Better Auth `User`** — permanent Prisma terminus (via
+  `getUserNameMap`), as in the reports surface; not a violation.
+- **New Convex query:** `testTagRecords.listByOrgAndAsset` (org-scoped per-asset
+  fetch via the `by_organizationId_testTagAssetId` composite index). Added a
+  `cmpStrAsc` codepoint comparator + `sortRecordsByTestDateDesc` /
+  `assetMatchesAuditorScope` to the helper (all pure, unit-tested).
+- **Validation:** pure-function unit tests in `src/lib/test-tag-read.test.ts`
+  (24 total). tsc + eslint + `pnpm run build` all green locally (this PR is
+  **stacked** on the reports branch — stacked PRs only get CI after retarget, so
+  the build was run locally). Convex data-correctness is human-gated on the
+  Coolify PR preview against prod Convex (per the deploy-ordering gate above:
+  testTagRecord/subTestRecord are already backfilled into prod).
+
+### Keystone consumer 1/4: `getProject` — DONE
+
+`server/projects.ts:getProject` (the equipment editor read) now reconstructs its
+whole `categories → groups → lineItems → childLineItems → units` composition from
+Convex via [`src/lib/project-line-item-read.ts`](../src/lib/project-line-item-read.ts)
+(`buildProjectEquipmentTree`). Prisma there now supplies **only** the project
+scalars + `location` + `projectManagers` + `media` (those stay Prisma reads for
+now). The line-item-tree Prisma `include` + `PROJECT_UNIT_INCLUDE` are deleted.
+
+- **Full-row mapper** (`mapLineItemDoc` / `mapUnitDoc` / `mapCategoryDoc` /
+  `mapGroupDoc`): every Prisma scalar present, date fields epoch-ms → `Date`,
+  nullable absent → `null`, Prisma scalar defaults applied, Convex `_id`/
+  `_creationTime` stripped. Money stays `number` (Convex stores `Decimal` as
+  `number`; `serialize()` collapses Prisma `Decimal` → `number` anyway).
+- **Per-consumer shape:** units carry `asset`/`bulkAsset` as `{ id, assetTag }`
+  selects (matching the old `PROJECT_UNIT_INCLUDE`); the line item gets a **plain**
+  `kit` (full doc, NO `_count` — that graft is warehouse-only). `model`/`supplier`
+  come off the existing `attachLineItemTree`; `asset`/`bulkAsset`/`kit` off a new
+  `attachAssetBulkKitPlain` (raw docs, dates → `Date`, meta stripped).
+- **Depth:** grouped tree nests `childLineItems` 1 deep; top-level list 2 deep
+  (`project.lineItems` = ALL non-CANCELLED items, parents AND children — the dual
+  projection).
+- New Convex query `projectLineItemUnits.listByLineItemIds` (batch, service-only).
+- **Validated:** mapper unit tests + a structural golden-diff vs the old Prisma
+  `include` on an enriched project (kit parent → kit child → accessory grandchild,
+  accessory parent + 2 children, a unit line with CONFIRMED + bulk + CANCELLED
+  units, a CANCELLED top-level line): grouped tree byte-matches, flat list matches
+  as a set, every per-node structure (units, depth truncation, CANCELLED
+  exclusion, resolved model/supplier/asset/kit ids) matches.
+
+### Keystone consumer 2/4: `getProjectForWarehouse` — DONE
+
+`server/warehouse.ts:getProjectForWarehouse` now reconstructs its EQUIPMENT
+line-item list from Convex via `buildWarehouseLineItems`. Prisma there supplies
+only the project scalars (even `location` is attached from Convex). It differs
+from getProject in three ways, all reproduced exactly:
+
+- **Flat list, no grouping** — scope is `type === "EQUIPMENT"` (children appear at
+  top level too, the dual projection), `childLineItems` 2 deep.
+- **Keeps every status** — no CANCELLED filter on line items / children (only
+  units are non-CANCELLED). The reconstruction primitive gained a backward-compatible
+  `keepCancelled` option on `indexChildren` + `reconstructScope` for this; getProject
+  keeps the default (drop CANCELLED tombstones).
+- **Full asset on units + check counts** — `attachAssetBulkAssetTree` (full
+  `asset`/`bulkAsset` on lines AND units), `model._count.modelCheckItems` +
+  `kit._count.kitCheckItems` grafted via `attachKitTree`. Same attach pipeline the
+  old inline code ran, just over the reconstructed tree.
+
+Validated by a structural golden-diff vs the old Prisma include + attach pipeline
+on an enriched project (incl. a SERVICE line correctly excluded, a CANCELLED
+EQUIPMENT line correctly included, a CANCELLED unit excluded): id-set + every
+per-node structure (units, resolved model/kit ids, check counts) match.
+
+### Keystone consumer 3/4: `getProjectPullSheet` — DONE
+
+`server/warehouse.ts:getProjectPullSheet` now reconstructs its line items from
+Convex via `buildPullSheetLineItems`. Like the warehouse read it's a flat
+`type === "EQUIPMENT"` list with the full attach pipeline, but (matching the
+pull-sheet Prisma include) it **drops CANCELLED** line items + children (default
+`keepCancelled`), fetches **no units** (the attach pipeline still yields
+`units: []`), and grafts each asset's resolved `location` object — shape-identical
+to the old `asset: { include: { location } }`. The helper returns the grafted line
+items + the `locationMap` so the caller resolves `project.location` from the same
+round-trip; the overbooked/filter/group logic stays in warehouse.ts. Golden-diffed
+vs the old Prisma include + attach + location graft (CANCELLED + SERVICE lines
+excluded, asset location grafted): id-set + per-node structure match.
+
+### Keystone consumer 4/4: `build-document-data` (PDF) — DONE
+
+`lib/pdfme/build-document-data.ts` now reconstructs its line-item tree + the
+categories-with-groups array from Convex via `buildDocumentLineItemData`. Prisma
+there keeps only the project scalars + `subHires` (with groups) + (call-sheet)
+`crewAssignments` + `projectManager` + `billableServices` + `org` — all separate
+surfaces/terminuses. The PDF reader differs from the others:
+- **No `type` filter** — scope is ALL non-CANCELLED line items (dual projection),
+  `childLineItems` 2 deep.
+- Each line item (top + first child level, matching the include depth) carries a
+  `category` `{id,name,sortOrder}` + `group` `{id,title,sortOrder,categoryId}` select.
+- Units in the PDF SELECT shape (`{id,status,parentUnitAssetId,assetId,bulkAssetId}`);
+  `attachAssetBulkAssetTree` adds full `asset`/`bulkAsset`.
+- Attach: model/supplier → kit (+ `_count`) → asset/bulkAsset (no model check-count).
+- subHire supplier now resolves from the Convex `getSupplierMap` (was
+  `resolveAttachedSupplier`).
+
+**Cross-cutting (the 5 DocumentLineItem consumers).** This is a source-swap, not a
+shape change — the reconstructed tree feeds the unchanged
+`structureLineItems → getFilteredParentItems → estimateSectionHeight → gearflowTable`
+pipeline. Validated two ways: (1) a **live full-pipeline golden-diff** — the
+reconstructed tree + categories match the old Prisma include + attach AND
+`structureLineItems` produces identical structured rows on an enriched project
+(kit→child→grandchild, units incl. CANCELLED, CANCELLED line excluded); (2) a new
+`document-data-reconstruction.test.ts` integration test running flat Convex docs →
+mappers → reconstruction → attach → structure → filter → height → render (kit depth,
+CANCELLED drop, unit/asset attach, no tail-drop, model names on the page).
+
+**Keystone complete — all four consumers reconstruct the line-item tree from Convex.**
 
 ## Conventions
 

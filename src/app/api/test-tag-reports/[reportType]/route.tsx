@@ -4,7 +4,7 @@ import { requireOrganization } from "@/lib/auth-server";
 import { getFileAsDataUri } from "@/lib/storage";
 import { generateTestTagReport } from "@/lib/pdfme/generate-pdf";
 import type { TestTagReportType } from "@/lib/pdfme/types";
-import type { ReportFilters } from "@/server/test-tag-reports";
+import type { ReportFilters } from "@/lib/test-tag-report-types";
 import {
   getRegisterReportData, exportRegisterCSV,
   getOverdueReportData, exportOverdueCSV,

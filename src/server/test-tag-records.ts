@@ -11,6 +11,44 @@ import {
   mirrorSubTestRecordCreate,
   patchTestTagAssetInConvex,
 } from "@/lib/test-tag-mirror";
+import {
+  getTestTagRecordsByAsset,
+  sortRecordsByTestDateDesc,
+  getSubTestRecordsByRecordIds,
+  getTestProfileMap,
+  getUserNameMap,
+  type TTRecord,
+} from "@/lib/test-tag-read";
+
+/**
+ * Re-shape Convex-sourced records into the Prisma `include` form the record-history
+ * consumers expect: `testedBy {id,name}` (Better Auth User — Prisma terminus),
+ * `testProfile {id,name}` (Convex), and `subTestRecords[]` sorted by `sortOrder`
+ * asc (Convex). All cross-domain joins are batched (one round trip each).
+ */
+async function attachRecordRelations(organizationId: string, records: TTRecord[]) {
+  if (records.length === 0) return [];
+
+  const [profileMap, userMap, subTests] = await Promise.all([
+    getTestProfileMap(organizationId),
+    getUserNameMap(records.map((r) => r.testedById)),
+    getSubTestRecordsByRecordIds(records.map((r) => r.id)),
+  ]);
+
+  const subsByRecord = new Map<string, typeof subTests>();
+  for (const s of subTests) {
+    const list = subsByRecord.get(s.testTagRecordId) ?? [];
+    list.push(s);
+    subsByRecord.set(s.testTagRecordId, list);
+  }
+
+  return records.map((r) => ({
+    ...r,
+    testedBy: { id: r.testedById, name: userMap.get(r.testedById) ?? null },
+    testProfile: r.testProfileId ? profileMap.get(r.testProfileId) ?? null : null,
+    subTestRecords: (subsByRecord.get(r.id) ?? []).sort((a, b) => a.sortOrder - b.sortOrder),
+  }));
+}
 
 /**
  * Recalculate and update a TestTagAsset's status based on its latest test record and dates.
@@ -315,22 +353,15 @@ export async function getTestTagRecords(testTagAssetId: string, params?: {
   const { organizationId } = await getOrgContext();
   const { page = 1, pageSize = 20 } = params || {};
 
-  const where = { organizationId, testTagAssetId };
+  // Convex read (testTagRecord is dual-written). Org scoping is enforced by the
+  // composite index; sort + paginate in JS to replicate the old Prisma query.
+  const all = sortRecordsByTestDateDesc(
+    await getTestTagRecordsByAsset(organizationId, testTagAssetId),
+  );
+  const total = all.length;
+  const pageRecords = all.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
 
-  const [records, total] = await Promise.all([
-    prisma.testTagRecord.findMany({
-      where,
-      orderBy: { testDate: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        testedBy: { select: { id: true, name: true } },
-        testProfile: { select: { id: true, name: true } },
-        subTestRecords: { orderBy: { sortOrder: "asc" } },
-      },
-    }),
-    prisma.testTagRecord.count({ where }),
-  ]);
+  const records = await attachRecordRelations(organizationId, pageRecords);
 
   return serialize({
     records,
@@ -347,15 +378,12 @@ export async function getTestTagRecords(testTagAssetId: string, params?: {
 export async function getLatestTestRecord(testTagAssetId: string) {
   const { organizationId } = await getOrgContext();
 
-  const record = await prisma.testTagRecord.findFirst({
-    where: { organizationId, testTagAssetId },
-    orderBy: { testDate: "desc" },
-    include: {
-      testedBy: { select: { id: true, name: true } },
-      testProfile: { select: { id: true, name: true } },
-      subTestRecords: { orderBy: { sortOrder: "asc" } },
-    },
-  });
+  const all = sortRecordsByTestDateDesc(
+    await getTestTagRecordsByAsset(organizationId, testTagAssetId),
+  );
+  const latest = all[0];
+  if (!latest) return null;
 
-  return record ? serialize(record) : null;
+  const [record] = await attachRecordRelations(organizationId, [latest]);
+  return serialize(record);
 }

@@ -12,6 +12,18 @@ import {
   mirrorCrewAvailabilityCreate,
   removeCrewAvailabilityFromConvex,
 } from "@/lib/crew-scheduling-mirror";
+import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getAvailabilityByCrewMemberIds,
+  getAssignmentsByOrg,
+  selectMemberAvailability,
+  selectPlannerAssignments,
+  selectPlannerAvailability,
+  computeAvailabilityStatus,
+  compareAscNullsLast,
+  type MappedCrewAssignment,
+} from "@/lib/crew-scheduling-read";
 
 // ─── Availability CRUD ──────────────────────────────────────────────────────
 
@@ -22,23 +34,14 @@ export async function getCrewAvailability(
 ) {
   const { organizationId } = await getOrgContext();
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const members = await getCrewMembersByOrg(organizationId);
+  if (!members.some((m) => m.id === crewMemberId)) throw new Error("Crew member not found");
 
-  const where: Record<string, unknown> = { crewMemberId };
-  if (startDate && endDate) {
-    // Overlapping range: availability.startDate <= endDate AND availability.endDate >= startDate
-    where.startDate = { lte: new Date(endDate) };
-    where.endDate = { gte: new Date(startDate) };
-  }
+  const rows = await getAvailabilityByCrewMemberIds([crewMemberId]);
+  const range =
+    startDate && endDate ? { start: new Date(startDate), end: new Date(endDate) } : null;
 
-  const records = await prisma.crewAvailability.findMany({
-    where,
-    orderBy: { startDate: "asc" },
-  });
+  const records = selectMemberAvailability(rows, crewMemberId, range);
 
   return serialize(records);
 }
@@ -189,47 +192,67 @@ export async function getCrewPlannerData(startDate: string, endDate: string) {
 
   const start = new Date(startDate);
   const end = new Date(endDate);
+  const range = { start, end };
 
-  // Get all active crew members with their assignments and availability in range
-  const members = await prisma.crewMember.findMany({
-    where: { organizationId, isActive: true, status: "ACTIVE" },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      department: true,
-      crewRole: { select: { id: true, name: true, color: true } },
-      assignments: {
-        where: {
-          status: { notIn: ["CANCELLED", "DECLINED"] },
-          OR: [
-            { startDate: { lte: end }, endDate: { gte: start } },
-            { startDate: null },
-          ],
-        },
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              projectNumber: true,
-              status: true,
-            },
-          },
-          crewRole: { select: { name: true, color: true } },
-        },
+  const [allMembers, allAssignments, roleMap, projects] = await Promise.all([
+    getCrewMembersByOrg(organizationId),
+    getAssignmentsByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+
+  const members = allMembers
+    .filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE")
+    .sort(
+      (a, b) =>
+        compareAscNullsLast(a.lastName, b.lastName) || compareAscNullsLast(a.firstName, b.firstName),
+    );
+
+  const assignmentsByMember = new Map<string, MappedCrewAssignment[]>();
+  for (const a of allAssignments) {
+    const list = assignmentsByMember.get(a.crewMemberId) ?? [];
+    list.push(a);
+    assignmentsByMember.set(a.crewMemberId, list);
+  }
+
+  // Availability for all displayed members, grouped.
+  const availabilityRows = await getAvailabilityByCrewMemberIds(members.map((m) => m.id));
+  const availabilityByMember = new Map<string, typeof availabilityRows>();
+  for (const r of availabilityRows) {
+    const list = availabilityByMember.get(r.crewMemberId) ?? [];
+    list.push(r);
+    availabilityByMember.set(r.crewMemberId, list);
+  }
+
+  const result = members.map((m) => {
+    const role = m.crewRoleId ? roleMap.get(m.crewRoleId) ?? null : null;
+    const assignments = selectPlannerAssignments(assignmentsByMember.get(m.id) ?? [], range).map(
+      (a) => {
+        const p = projectsById.get(a.projectId) ?? null;
+        const aRole = a.crewRoleId ? roleMap.get(a.crewRoleId) ?? null : null;
+        return {
+          ...a,
+          project: p
+            ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null }
+            : null,
+          crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null,
+        };
       },
-      availability: {
-        where: {
-          startDate: { lte: end },
-          endDate: { gte: start },
-        },
-      },
-    },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    );
+    const availability = selectPlannerAvailability(availabilityByMember.get(m.id) ?? [], range);
+    return {
+      id: m.id,
+      firstName: m.firstName,
+      lastName: m.lastName,
+      department: m.department ?? null,
+      crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null } : null,
+      assignments,
+      availability,
+    };
   });
 
-  return serialize(members);
+  return serialize(result);
 }
 
 // ─── Availability Status for Crew List ──────────────────────────────────────
@@ -243,58 +266,17 @@ export async function getCrewAvailabilityStatus(
 
   const start = new Date(startDate);
   const end = new Date(endDate);
+  const range = { start, end };
 
-  // Get availability blocks for all requested members
-  const blocks = await prisma.crewAvailability.findMany({
-    where: {
-      crewMemberId: { in: crewMemberIds },
-      startDate: { lte: end },
-      endDate: { gte: start },
-      crewMember: { organizationId },
-    },
-    select: { crewMemberId: true, type: true },
-  });
+  const [blocks, allAssignments, members] = await Promise.all([
+    getAvailabilityByCrewMemberIds(crewMemberIds),
+    getAssignmentsByOrg(organizationId),
+    getCrewMembersByOrg(organizationId),
+  ]);
 
-  // Get overlapping assignments
-  const assignments = await prisma.crewAssignment.findMany({
-    where: {
-      crewMemberId: { in: crewMemberIds },
-      organizationId,
-      status: { notIn: ["CANCELLED", "DECLINED"] },
-      startDate: { lte: end },
-      endDate: { gte: start },
-    },
-    select: { crewMemberId: true },
-  });
+  // Scope availability blocks to members in this org (crewMember.organizationId).
+  const orgMemberIds = new Set(members.map((m) => m.id));
+  const orgBlocks = blocks.filter((b) => orgMemberIds.has(b.crewMemberId));
 
-  // Build status map: "available" | "tentative" | "unavailable" | "busy"
-  const statusMap: Record<
-    string,
-    "available" | "tentative" | "unavailable" | "busy"
-  > = {};
-
-  for (const id of crewMemberIds) {
-    statusMap[id] = "available";
-  }
-
-  // Check blocks
-  for (const b of blocks) {
-    if (b.type === "UNAVAILABLE") {
-      statusMap[b.crewMemberId] = "unavailable";
-    } else if (
-      b.type === "TENTATIVE" &&
-      statusMap[b.crewMemberId] === "available"
-    ) {
-      statusMap[b.crewMemberId] = "tentative";
-    }
-  }
-
-  // Check assignments (don't override unavailable)
-  for (const a of assignments) {
-    if (statusMap[a.crewMemberId] === "available") {
-      statusMap[a.crewMemberId] = "busy";
-    }
-  }
-
-  return statusMap;
+  return computeAvailabilityStatus(crewMemberIds, orgBlocks, allAssignments, range);
 }

@@ -1,6 +1,5 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -38,10 +37,10 @@ export async function scanLookup(value: string): Promise<{ url: string | null; l
     return { url: `/assets/registry/${bulk.id}`, label: `Bulk Asset ${bulk.assetTag}` };
   }
 
-  // 4. Check test & tag items (stays Prisma — testTagAsset has no Convex mirror)
-  const ttAsset = await prisma.testTagAsset.findUnique({
-    where: { organizationId_testTagId: { organizationId, testTagId: tag } },
-    select: { id: true, testTagId: true },
+  // 4. Check test & tag items (testTagAsset is dual-written — read from Convex).
+  const ttAsset = await client.query(api.testTagAssets.getByOrgTestTagId, {
+    orgId: organizationId,
+    testTagId: tag,
   });
   if (ttAsset) {
     return { url: `/test-and-tag/${ttAsset.id}`, label: `T&T ${ttAsset.testTagId}` };

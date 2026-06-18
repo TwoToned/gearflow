@@ -5,7 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getModelMap, getModelsByOrg } from "@/lib/models-read";
+import { getModelMap } from "@/lib/models-read";
+import {
+  listCategoriesWithCounts,
+  getCategoryModelKitCounts,
+  listCategoryTree,
+  collectDescendantCategoryIds,
+  getMappedCategoriesByOrg,
+} from "@/lib/categories-read";
+import { getAssetsByOrg, filterContainerAssets, sortByAssetTagAsc } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
@@ -35,15 +43,12 @@ async function patchCategoryInConvex(id: string, row: Record<string, unknown>) {
   });
 }
 
+// Categories list — READ FROM CONVEX (Phase A). The parent/children hierarchy is
+// rebuilt client-side from the flat Convex list; model + kit counts aggregate
+// from the (dual-written) Convex model/kit lists. See src/lib/categories-read.ts.
 export async function getCategories() {
   const { organizationId } = await getOrgContext();
-  return serialize(
-    await prisma.category.findMany({
-      where: { organizationId },
-      include: { parent: true, _count: { select: { models: true, kits: true, children: true } } },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    })
-  );
+  return serialize(await listCategoriesWithCounts(organizationId));
 }
 
 export async function getCategory(id: string) {
@@ -91,42 +96,15 @@ export async function getCategory(id: string) {
  */
 export async function getCategoryCounts(): Promise<Record<string, { models: number; kits: number }>> {
   const { organizationId } = await getOrgContext();
-  // Models live in Convex — count by categoryId in JS instead of a Prisma groupBy.
-  const [allModels, kitGroups] = await Promise.all([
-    getModelsByOrg(organizationId),
-    prisma.kit.groupBy({ by: ["categoryId"], where: { organizationId, categoryId: { not: null } }, _count: { _all: true } }),
-  ]);
-  const counts: Record<string, { models: number; kits: number }> = {};
-  const ensure = (id: string) => (counts[id] ??= { models: 0, kits: 0 });
-  for (const m of allModels) if (m.categoryId) ensure(m.categoryId).models++;
-  for (const g of kitGroups) if (g.categoryId) ensure(g.categoryId).kits = g._count._all;
-  return serialize(counts);
+  // Models AND kits live in Convex — count by categoryId in JS from both lists.
+  return serialize(await getCategoryModelKitCounts(organizationId));
 }
 
+// Category tree — READ FROM CONVEX (Phase A). Tree rebuilt client-side from the
+// flat Convex list; `_count.models` from the Convex model list.
 export async function getCategoryTree() {
   const { organizationId } = await getOrgContext();
-  const categories = await prisma.category.findMany({
-    where: { organizationId },
-    include: { _count: { select: { models: true } } },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-  });
-
-  // Build tree structure
-  const map = new Map<string, typeof categories[0] & { children: typeof categories }>();
-  const roots: (typeof categories[0] & { children: typeof categories })[] = [];
-
-  for (const cat of categories) {
-    map.set(cat.id, { ...cat, children: [] });
-  }
-  for (const cat of categories) {
-    const node = map.get(cat.id)!;
-    if (cat.parentId && map.has(cat.parentId)) {
-      map.get(cat.parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return serialize(roots);
+  return serialize(await listCategoryTree(organizationId));
 }
 
 // Get category + all descendant IDs for container cases.
@@ -142,32 +120,11 @@ export async function getCaseCategoryIds(): Promise<string[]> {
   const rootCatId = settings.prepKitCategoryId;
   if (!rootCatId) return [];
 
-  // Fetch all categories and walk the tree
-  const allCats = await prisma.category.findMany({
-    where: { organizationId },
-    select: { id: true, parentId: true },
-  });
-
-  const childrenMap = new Map<string, string[]>();
-  for (const cat of allCats) {
-    if (cat.parentId) {
-      const list = childrenMap.get(cat.parentId) || [];
-      list.push(cat.id);
-      childrenMap.set(cat.parentId, list);
-    }
-  }
-
-  // BFS from root
-  const result: string[] = [];
-  const queue = [rootCatId];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    result.push(id);
-    const kids = childrenMap.get(id);
-    if (kids) queue.push(...kids);
-  }
-
-  return result;
+  // The category tree walk reads from Convex (categories are dual-written). The
+  // org.metadata read above stays Prisma: the `organization` table is owned by
+  // Better Auth, not part of the domain-data dual-write set.
+  const allCats = await getMappedCategoriesByOrg(organizationId);
+  return collectDescendantCategoryIds(allCats, rootCatId);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,34 +135,26 @@ export async function searchContainerAssets(query: string = "") {
   const categoryIds = await getCaseCategoryIds();
   if (categoryIds.length === 0) return serialize([]);
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      model: { categoryId: { in: categoryIds } },
-      ...(query
-        ? {
-            OR: [
-              { assetTag: { contains: query, mode: "insensitive" } },
-              { customName: { contains: query, mode: "insensitive" } },
-              { model: { name: { contains: query, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    },
-    select: {
-      id: true,
-      assetTag: true,
-      customName: true,
-      modelId: true,
-    },
-    orderBy: { assetTag: "asc" },
-    take: 20,
-  });
-
-  const modelMap = await getModelMap(organizationId);
+  // Assets come off the dual-written Convex `assets` list; the `model.categoryId`
+  // relational filter + OR text filter are replicated by filterContainerAssets,
+  // resolving the joined model fields from the Convex model map (Phase A).
+  const [allAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const categoryIdSet = new Set(categoryIds);
+  const matched = sortByAssetTagAsc(
+    filterContainerAssets(
+      allAssets,
+      categoryIdSet,
+      query,
+      (modelId) => (modelId ? modelMap.get(modelId)?.categoryId ?? null : null),
+      (modelId) => (modelId ? modelMap.get(modelId)?.name ?? null : null),
+    ),
+  ).slice(0, 20);
 
   return serialize(
-    assets.map((a) => ({
+    matched.map((a) => ({
       value: a.customName || a.assetTag,
       label: a.customName
         ? `${a.customName} (${a.assetTag})`

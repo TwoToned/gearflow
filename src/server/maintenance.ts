@@ -15,12 +15,20 @@ import {
   patchMaintenanceInConvex,
   removeMaintenanceFromConvex,
 } from "@/lib/maintenance-mirror";
-import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
+import {
+  getMaintenanceRecordsByOrg,
+  getMaintenanceRecordById,
+  filterMaintenanceRecords,
+  sortMaintenanceRecords,
+  type MaintenanceRecordRow,
+  type MaintenanceJoinData,
+} from "@/lib/maintenance-read";
 
-// asset.model lives in Convex — `asset: true` keeps the asset scalars (incl.
-// modelId); the model doc is grafted onto each record's assets[].asset below.
+// Write paths (create/update) build the record with its asset links so the
+// mirror payload carries fresh scalars. `asset: true` keeps the asset scalars
+// (incl. modelId) — reads source the record from Convex instead (see below).
 const assetInclude = {
   assets: {
     include: { asset: true },
@@ -28,20 +36,88 @@ const assetInclude = {
   },
 };
 
-/** Graft the Convex model doc onto every maintenance record's assets[].asset. */
-async function attachAssetModels<T>(organizationId: string, records: T[]): Promise<T[]> {
+/**
+ * Attach the cross-domain joins the maintenance reads need onto Convex-sourced
+ * record rows:
+ *
+ *   - `assets[]` — the `maintenanceRecordAssets` join table (the intentional
+ *     Prisma terminus — NOT mirrored to Convex), each carrying its `asset`
+ *     scalars + the Convex `model` doc grafted on, ordered by asset tag asc
+ *     (matches the old `orderBy: { asset: { assetTag: "asc" } }`).
+ *   - `reportedBy` / `assignedTo` — Auth `User` rows (stay Prisma forever),
+ *     batched in one findMany.
+ *
+ * Returns the records enriched in the same nested shape the old Prisma
+ * `include` produced, plus a per-record `MaintenanceJoinData` map the
+ * filter/sort predicates use (assetIds / tags / model names for the search).
+ */
+async function attachJoins(
+  organizationId: string,
+  records: MaintenanceRecordRow[],
+): Promise<{
+  enriched: Record<string, unknown>[];
+  joinByRecordId: Map<string, MaintenanceJoinData>;
+}> {
+  const recordIds = records.map((r) => r.id);
+
+  // The Prisma-only join table + the linked asset scalars.
+  const links = recordIds.length
+    ? await prisma.maintenanceRecordAsset.findMany({
+        where: { maintenanceRecordId: { in: recordIds } },
+        include: { asset: true },
+      })
+    : [];
+
   const modelMap = await getModelMap(organizationId);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return records.map((r: any) => ({
-    ...r,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    assets: r.assets?.map((ra: any) => ({
-      ...ra,
-      asset: ra.asset
-        ? { ...ra.asset, model: ra.asset.modelId ? modelMap.get(ra.asset.modelId) ?? null : null }
-        : ra.asset,
-    })),
-  }));
+
+  // Auth Users for reportedBy / assignedTo (Prisma terminus).
+  const userIds = Array.from(
+    new Set(
+      records
+        .flatMap((r) => [r.reportedById, r.assignedToId])
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const users = userIds.length
+    ? await prisma.user.findMany({ where: { id: { in: userIds } } })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  // Group links by record, graft the Convex model onto each asset, and sort by
+  // asset tag asc to mirror the old include orderBy.
+  const linksByRecord = new Map<string, Record<string, unknown>[]>();
+  const joinByRecordId = new Map<string, MaintenanceJoinData>();
+  for (const id of recordIds) {
+    linksByRecord.set(id, []);
+    joinByRecordId.set(id, { assetIds: [], assetTags: [], modelNames: [] });
+  }
+  for (const link of links) {
+    const model = link.asset?.modelId ? modelMap.get(link.asset.modelId) ?? null : null;
+    const graftedAsset = link.asset ? { ...link.asset, model } : link.asset;
+    linksByRecord.get(link.maintenanceRecordId)?.push({ ...link, asset: graftedAsset });
+    const join = joinByRecordId.get(link.maintenanceRecordId);
+    if (join) {
+      join.assetIds.push(link.assetId);
+      if (link.asset?.assetTag) join.assetTags.push(link.asset.assetTag);
+      if (model?.name) join.modelNames.push(model.name);
+    }
+  }
+
+  const enriched = records.map((r) => {
+    const recordLinks = (linksByRecord.get(r.id) ?? []).sort((a, b) => {
+      const ta = (a.asset as { assetTag?: string } | null)?.assetTag ?? "";
+      const tb = (b.asset as { assetTag?: string } | null)?.assetTag ?? "";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    return {
+      ...r,
+      assets: recordLinks,
+      reportedBy: r.reportedById ? userMap.get(r.reportedById) ?? null : null,
+      assignedTo: r.assignedToId ? userMap.get(r.assignedToId) ?? null : null,
+    };
+  });
+
+  return { enriched, joinByRecordId };
 }
 
 export async function getMaintenanceRecords(params?: {
@@ -57,40 +133,29 @@ export async function getMaintenanceRecords(params?: {
   const { organizationId } = await getOrgContext();
   const { search, status, type, assetId, page = 1, pageSize = 25, sortBy, sortOrder } = params || {};
 
-  const where: Prisma.MaintenanceRecordWhereInput = {
-    organizationId,
-    ...(status && { status: status as Prisma.EnumMaintenanceStatusFilter }),
-    ...(type && { type: type as Prisma.EnumMaintenanceTypeFilter }),
-    ...(assetId && { assets: { some: { assetId } } }),
-    ...(search && {
-      OR: [
-        { title: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-        { assets: { some: { asset: { assetTag: { contains: search, mode: "insensitive" } } } } },
-        { assets: { some: { asset: { model: { name: { contains: search, mode: "insensitive" } } } } } },
-      ],
-    }),
-  };
+  // Record rows from Convex (org-scoped); the assets/model + User joins stay
+  // Prisma. The search OR matches asset tags + model names, so the join data is
+  // needed to filter — attach for the whole org, then filter/sort/paginate in
+  // JS (mirrors the old Prisma where/orderBy/skip/take). No Prisma fallback.
+  const allRecords = await getMaintenanceRecordsByOrg(organizationId);
+  const { joinByRecordId } = await attachJoins(organizationId, allRecords);
 
-  const [records, total] = await Promise.all([
-    prisma.maintenanceRecord.findMany({
-      where,
-      include: {
-        ...assetInclude,
-        assignedTo: true,
-        reportedBy: true,
-      },
-      orderBy: sortBy
-        ? { [sortBy]: sortOrder || "asc" }
-        : [{ status: "asc" }, { scheduledDate: "asc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.maintenanceRecord.count({ where }),
-  ]);
+  const filtered = filterMaintenanceRecords(allRecords, joinByRecordId, {
+    search,
+    status,
+    type,
+    assetId,
+  });
+  const sorted = sortMaintenanceRecords(filtered, sortBy, sortOrder || "asc");
+  const total = sorted.length;
+  const pageRows = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+  // Re-attach joins for just the page slice (cheap; avoids serialising the
+  // whole org's asset/user graph when only a page is rendered).
+  const { enriched } = await attachJoins(organizationId, pageRows);
 
   return serialize({
-    records: await attachAssetModels(organizationId, records),
+    records: enriched,
     total,
     page,
     pageSize,
@@ -101,17 +166,13 @@ export async function getMaintenanceRecords(params?: {
 export async function getMaintenanceRecord(id: string) {
   const { organizationId } = await getOrgContext();
 
-  const record = await prisma.maintenanceRecord.findUnique({
-    where: { id, organizationId },
-    include: {
-      ...assetInclude,
-      assignedTo: true,
-      reportedBy: true,
-    },
-  });
-  if (!record) return serialize(null);
-  const [grafted] = await attachAssetModels(organizationId, [record]);
-  return serialize(grafted);
+  const record = await getMaintenanceRecordById(id);
+  // getById isn't org-scoped at the index level (lookup is by cuid), so enforce
+  // the org boundary here exactly as the old `where: { id, organizationId }` did.
+  if (!record || record.organizationId !== organizationId) return serialize(null);
+
+  const { enriched } = await attachJoins(organizationId, [record]);
+  return serialize(enriched[0]);
 }
 
 /**

@@ -44,6 +44,26 @@ export const listByProject = query({
   },
 });
 
+/**
+ * All crew assignments for a set of service ids (one round trip), org-scoped.
+ * Used to attach assignment summaries onto project services without N+1 reads.
+ */
+export const listByServiceIds = query({
+  args: { serviceIds: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { serviceIds, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const results = [];
+    for (const serviceId of serviceIds) {
+      const rows = await ctx.db
+        .query("crewAssignments")
+        .withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId))
+        .collect();
+      results.push(...rows);
+    }
+    return results;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

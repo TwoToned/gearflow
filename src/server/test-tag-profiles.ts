@@ -8,6 +8,10 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { SEED_PROFILES } from "@/lib/test-profiles/seed-data";
+import {
+  getTestProfilesFromConvex,
+  getTestProfileFromConvex,
+} from "@/lib/test-profiles-read";
 
 // Test profiles are DUAL-WRITTEN: every create/update/duplicate/seed/delete writes
 // the Prisma `test_profile` row (the durable FK anchor — model.defaultTestProfileId,
@@ -40,17 +44,10 @@ export async function getTestProfiles(params?: {
   applianceType?: string;
 }) {
   const { organizationId } = await getOrgContext();
-  const { isActive = true, equipmentClass, applianceType } = params || {};
 
-  const profiles = await prisma.testProfile.findMany({
-    where: {
-      organizationId,
-      ...(isActive !== undefined && { isActive }),
-      ...(equipmentClass && { equipmentClass: equipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY" }),
-      ...(applianceType && { applianceType: applianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "MICROWAVE" | "OTHER" }),
-    },
-    orderBy: { name: "asc" },
-  });
+  // Read-rewired to Convex (Phase A). testProfile is dual-written; filtering +
+  // orderBy replicated in src/lib/test-profiles-read.ts. See FEATUREDOCS/54.
+  const profiles = await getTestProfilesFromConvex(organizationId, params);
 
   return serialize(profiles);
 }
@@ -58,9 +55,9 @@ export async function getTestProfiles(params?: {
 export async function getTestProfile(id: string) {
   const { organizationId } = await getOrgContext();
 
-  const profile = await prisma.testProfile.findFirst({
-    where: { id, organizationId },
-  });
+  // Read-rewired to Convex (Phase A). getById is cuid-only; org-scope re-applied
+  // in JS to match the Prisma { id, organizationId } scoping. See FEATUREDOCS/54.
+  const profile = await getTestProfileFromConvex(id, organizationId);
   if (!profile) throw new Error("Test profile not found");
 
   return serialize(profile);

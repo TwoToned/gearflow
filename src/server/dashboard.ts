@@ -8,24 +8,23 @@ import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg, getProjectIdsForManager } from "@/lib/projects-read";
+import { getMaintenanceRecordsByOrg, countDueMaintenance } from "@/lib/maintenance-read";
+import { getCrewMembersByOrg, countActiveCrew } from "@/lib/crew-read";
+import { getCrewAssignmentsByOrg, countAssignmentsByStatus } from "@/lib/crew-scheduling-read";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
 
   const now = new Date();
 
-  const [allAssets, allBulkAssets, allProjects, maintenanceDue, overdueReturns, activeCrew, pendingCrewOffers] =
+  const [allAssets, allBulkAssets, allProjects, maintenanceRecords, overdueReturns, crewMembers, crewAssignments] =
     await Promise.all([
       getAssetsByOrg(organizationId),
       getBulkAssetsByOrg(organizationId),
       getProjectsByOrg(organizationId),
-      prisma.maintenanceRecord.count({
-        where: {
-          organizationId,
-          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-          scheduledDate: { lte: now },
-        },
-      }),
+      // Maintenance is dual-written — count due records (status + scheduledDate) from Convex.
+      getMaintenanceRecordsByOrg(organizationId),
+      // overdueReturns aggregates projectLineItem joined to a project filter → KEYSTONE-BLOCKED, stays Prisma.
       prisma.projectLineItem.count({
         where: {
           organizationId,
@@ -37,13 +36,14 @@ export async function getDashboardStats() {
           },
         },
       }),
-      prisma.crewMember.count({
-        where: { organizationId, status: "ACTIVE" },
-      }),
-      prisma.crewAssignment.count({
-        where: { organizationId, status: { in: ["OFFERED", "PENDING"] } },
-      }),
+      // Crew roster + assignments are dual-written — count from Convex.
+      getCrewMembersByOrg(organizationId),
+      getCrewAssignmentsByOrg(organizationId),
     ]);
+
+  const maintenanceDue = countDueMaintenance(maintenanceRecords, now.getTime());
+  const activeCrew = countActiveCrew(crewMembers);
+  const pendingCrewOffers = countAssignmentsByStatus(crewAssignments, ["OFFERED", "PENDING"]);
 
   const activeAssets = allAssets.filter((a) => a.isActive !== false);
   const activeBulkAssets = allBulkAssets.filter((ba) => ba.isActive !== false);

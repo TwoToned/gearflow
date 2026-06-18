@@ -4,10 +4,22 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { reserveTestTagIds, peekNextTestTagIds, getOrgTestTagSettings } from "@/server/settings";
-import type { Prisma, TestTagStatus } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
 import { getModelById, getModelMap } from "@/lib/models-read";
-import { getAssetById, getAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
+import { getAssetById, getAssetsByOrg, getBulkAssetById, getBulkAssetsByOrg } from "@/lib/assets-read";
+import {
+  getTestTagAssetsByOrg,
+  getTestTagAssetById,
+  getTestTagAssetByTestTagId,
+  getTestTagRecordsByOrg,
+  getTestTagRecordsByAssetId,
+  getSubTestRecordsByRecordIds,
+  getTestProfileMap,
+  getFullTestProfileById,
+  getUserNameMap,
+  listAssetMatchesFilters,
+  compareTestTagAssets,
+} from "@/lib/test-tag-read";
 import {
   mirrorTestTagAssetCreate,
   patchTestTagAssetInConvex,
@@ -34,41 +46,49 @@ export async function getTestTagAssets(params?: {
     sortBy = "testTagId", sortOrder = "asc",
   } = params || {};
 
-  const where: Prisma.TestTagAssetWhereInput = {
-    organizationId,
-    isActive,
-    ...(status && { status: status as TestTagStatus }),
-    ...(equipmentClass && { equipmentClass: equipmentClass as Prisma.EnumEquipmentClassFilter }),
-    ...(applianceType && { applianceType: applianceType as Prisma.EnumApplianceTypeFilter }),
-    ...(assetLinkType === "serialized" && { assetId: { not: null } }),
-    ...(assetLinkType === "bulk" && { bulkAssetId: { not: null }, assetId: null }),
-    ...(assetLinkType === "standalone" && { assetId: null, bulkAssetId: null }),
-    ...(search && {
-      OR: [
-        { testTagId: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-        { serialNumber: { contains: search, mode: "insensitive" } },
-        { make: { contains: search, mode: "insensitive" } },
-        { modelName: { contains: search, mode: "insensitive" } },
-      ],
-    }),
-  };
-
-  const [items, total] = await Promise.all([
-    prisma.testTagAsset.findMany({
-      where,
-      include: {
-        asset: { select: { id: true, assetTag: true, customName: true } },
-        bulkAsset: { select: { id: true, assetTag: true } },
-        testProfile: { select: { id: true, name: true } },
-        _count: { select: { testRecords: true } },
-      },
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.testTagAsset.count({ where }),
+  // Convex reads (org-scoped); compose joins + filter + sort + paginate in JS.
+  const [allAssets, allRecords, profileMap, orgAssets, orgBulkAssets] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+    getTestProfileMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
   ]);
+
+  // _count.testRecords per asset (counted in JS from the org record list).
+  const recordCounts = new Map<string, number>();
+  for (const r of allRecords) {
+    recordCounts.set(r.testTagAssetId, (recordCounts.get(r.testTagAssetId) ?? 0) + 1);
+  }
+
+  // Asset / bulkAsset join maps (serialized select shape).
+  const assetById = new Map(orgAssets.map((a) => [a.id, a]));
+  const bulkAssetById = new Map(orgBulkAssets.map((b) => [b.id, b]));
+
+  const filtered = allAssets
+    .filter((item) =>
+      listAssetMatchesFilters(item, { search, status, equipmentClass, applianceType, assetLinkType, isActive }),
+    )
+    .sort((a, b) => compareTestTagAssets(a, b, sortBy, sortOrder));
+
+  const total = filtered.length;
+  const pageSlice = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+
+  const items = pageSlice.map((item) => {
+    const linkedAsset = item.assetId ? assetById.get(item.assetId) : null;
+    const linkedBulk = item.bulkAssetId ? bulkAssetById.get(item.bulkAssetId) : null;
+    return {
+      ...item,
+      asset: linkedAsset
+        ? { id: linkedAsset.id, assetTag: linkedAsset.assetTag, customName: linkedAsset.customName ?? null }
+        : null,
+      bulkAsset: linkedBulk
+        ? { id: linkedBulk.id, assetTag: linkedBulk.assetTag }
+        : null,
+      testProfile: item.testProfileId ? profileMap.get(item.testProfileId) ?? null : null,
+      _count: { testRecords: recordCounts.get(item.id) ?? 0 },
+    };
+  });
 
   return serialize({
     items,
@@ -82,77 +102,118 @@ export async function getTestTagAssets(params?: {
 export async function getTestTagAsset(id: string) {
   const { organizationId } = await getOrgContext();
 
-  const item = await prisma.testTagAsset.findFirst({
-    where: { id, organizationId },
-    include: {
-      asset: {
-        select: {
-          id: true, assetTag: true, customName: true, serialNumber: true, modelId: true,
-        },
-      },
-      bulkAsset: {
-        select: {
-          id: true, assetTag: true, totalQuantity: true, modelId: true,
-        },
-      },
-      testProfile: { select: { id: true, name: true } },
-      testRecords: {
-        orderBy: { testDate: "desc" },
-        take: 10,
-        include: {
-          testedBy: { select: { id: true, name: true } },
-          testProfile: { select: { id: true, name: true } },
-          subTestRecords: { orderBy: { sortOrder: "asc" } },
-        },
-      },
-      _count: { select: { testRecords: true } },
-    },
-  });
+  const item = await getTestTagAssetById(id);
+  if (!item || item.organizationId !== organizationId) throw new Error("Test tag asset not found");
 
-  if (!item) throw new Error("Test tag asset not found");
+  // Recent test records (10 most recent by testDate desc) for this asset.
+  const allRecords = await getTestTagRecordsByAssetId(id);
+  const totalRecords = allRecords.length;
+  const recentRecords = [...allRecords]
+    .sort((a, b) => b.testDate.getTime() - a.testDate.getTime())
+    .slice(0, 10);
 
+  // Sub-test records for those records, grouped by testTagRecordId.
+  const subTests = await getSubTestRecordsByRecordIds(recentRecords.map((r) => r.id));
+  const subTestsByRecord = new Map<string, typeof subTests>();
+  for (const st of subTests) {
+    const arr = subTestsByRecord.get(st.testTagRecordId) ?? [];
+    arr.push(st);
+    subTestsByRecord.set(st.testTagRecordId, arr);
+  }
+
+  // testProfile {id,name} per record; testedBy {id,name} (Better Auth User).
+  const profileMap = await getTestProfileMap(organizationId);
+  const userNameMap = await getUserNameMap(recentRecords.map((r) => r.testedById));
+
+  const testRecords = recentRecords.map((r) => ({
+    ...r,
+    testProfile: r.testProfileId ? profileMap.get(r.testProfileId) ?? null : null,
+    testedBy: { id: r.testedById, name: userNameMap.get(r.testedById) ?? null },
+    subTestRecords: subTestsByRecord.get(r.id) ?? [],
+  }));
+
+  // Linked serialized / bulk asset, with model attached.
+  const [linkedAsset, linkedBulk] = await Promise.all([
+    item.assetId ? getAssetById(item.assetId) : Promise.resolve(null),
+    item.bulkAssetId ? getBulkAssetById(item.bulkAssetId) : Promise.resolve(null),
+  ]);
   const modelMap = await getModelMap(organizationId);
+
   return serialize({
     ...item,
-    asset: item.asset
-      ? { ...item.asset, model: item.asset.modelId ? modelMap.get(item.asset.modelId) ?? null : null }
+    asset: linkedAsset
+      ? {
+          id: linkedAsset.id,
+          assetTag: linkedAsset.assetTag,
+          customName: linkedAsset.customName ?? null,
+          serialNumber: linkedAsset.serialNumber ?? null,
+          modelId: linkedAsset.modelId,
+          model: modelMap.get(linkedAsset.modelId) ?? null,
+        }
       : null,
-    bulkAsset: item.bulkAsset
-      ? { ...item.bulkAsset, model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null }
+    bulkAsset: linkedBulk
+      ? {
+          id: linkedBulk.id,
+          assetTag: linkedBulk.assetTag,
+          totalQuantity: linkedBulk.totalQuantity ?? null,
+          modelId: linkedBulk.modelId,
+          model: modelMap.get(linkedBulk.modelId) ?? null,
+        }
       : null,
+    testProfile: item.testProfileId ? profileMap.get(item.testProfileId) ?? null : null,
+    testRecords,
+    _count: { testRecords: totalRecords },
   });
 }
 
 export async function lookupTestTagAsset(testTagId: string) {
   const { organizationId } = await getOrgContext();
 
-  // Also check retired items so we can block with reactivate option
-  const item = await prisma.testTagAsset.findFirst({
-    where: { organizationId, testTagId },
-    include: {
-      asset: {
-        select: {
-          id: true, assetTag: true, customName: true, modelId: true,
-        },
-      },
-      bulkAsset: { select: { id: true, assetTag: true } },
-      testProfile: true,
-      testRecords: {
-        orderBy: { testDate: "desc" },
-        take: 1,
-        include: {
-          testedBy: { select: { id: true, name: true } },
-          subTestRecords: { orderBy: { sortOrder: "asc" } },
-        },
-      },
-    },
-  });
-
+  // Also check retired items so we can block with reactivate option.
+  const item = await getTestTagAssetByTestTagId(organizationId, testTagId);
   if (!item) return null;
-  const assetModel = item.asset?.modelId ? await getModelById(item.asset.modelId) : null;
+
+  // Most-recent test record (1) + its sub-tests + testedBy.
+  const allRecords = await getTestTagRecordsByAssetId(item.id);
+  const latest = [...allRecords].sort((a, b) => b.testDate.getTime() - a.testDate.getTime()).slice(0, 1);
+  const subTests = await getSubTestRecordsByRecordIds(latest.map((r) => r.id));
+  const subTestsByRecord = new Map<string, typeof subTests>();
+  for (const st of subTests) {
+    const arr = subTestsByRecord.get(st.testTagRecordId) ?? [];
+    arr.push(st);
+    subTestsByRecord.set(st.testTagRecordId, arr);
+  }
+  const userNameMap = await getUserNameMap(latest.map((r) => r.testedById));
+  const testRecords = latest.map((r) => ({
+    ...r,
+    testedBy: { id: r.testedById, name: userNameMap.get(r.testedById) ?? null },
+    subTestRecords: subTestsByRecord.get(r.id) ?? [],
+  }));
+
+  // testProfile: full profile (Prisma had `testProfile: true`).
+  const testProfile = item.testProfileId ? await getFullTestProfileById(item.testProfileId) : null;
+
+  // Linked serialized asset (with model) + bulk asset.
+  const [linkedAsset, linkedBulk] = await Promise.all([
+    item.assetId ? getAssetById(item.assetId) : Promise.resolve(null),
+    item.bulkAssetId ? getBulkAssetById(item.bulkAssetId) : Promise.resolve(null),
+  ]);
+  const assetModel = linkedAsset?.modelId ? await getModelById(linkedAsset.modelId) : null;
+
   return serialize({
     ...item,
-    asset: item.asset ? { ...item.asset, model: assetModel } : null,
+    asset: linkedAsset
+      ? {
+          id: linkedAsset.id,
+          assetTag: linkedAsset.assetTag,
+          customName: linkedAsset.customName ?? null,
+          modelId: linkedAsset.modelId,
+          model: assetModel,
+        }
+      : null,
+    bulkAsset: linkedBulk ? { id: linkedBulk.id, assetTag: linkedBulk.assetTag } : null,
+    testProfile,
+    testRecords,
   });
 }
 
@@ -404,42 +465,67 @@ export async function getTestTagDashboardStats() {
   const dueSoonDate = new Date(now);
   dueSoonDate.setDate(dueSoonDate.getDate() + dueSoonDays);
 
-  const [total, overdue, dueSoon, current, failed, notYetTested, retired, recentTests, overdueItems, dueSoonItems] = await Promise.all([
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true } }),
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true, status: "OVERDUE" } }),
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true, status: "DUE_SOON" } }),
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true, status: "CURRENT" } }),
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true, status: "FAILED" } }),
-    prisma.testTagAsset.count({ where: { organizationId, isActive: true, status: "NOT_YET_TESTED" } }),
-    prisma.testTagAsset.count({ where: { organizationId, status: "RETIRED" } }),
-    prisma.testTagRecord.findMany({
-      where: { organizationId },
-      orderBy: { testDate: "desc" },
-      take: 20,
-      include: {
-        testTagAsset: { select: { testTagId: true, description: true } },
-        testedBy: { select: { id: true, name: true } },
-      },
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true, status: "OVERDUE" },
-      orderBy: { nextDueDate: "asc" },
-      take: 50,
-      include: {
-        asset: { select: { id: true, assetTag: true } },
-        bulkAsset: { select: { id: true, assetTag: true } },
-      },
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true, status: "DUE_SOON" },
-      orderBy: { nextDueDate: "asc" },
-      take: 50,
-      include: {
-        asset: { select: { id: true, assetTag: true } },
-        bulkAsset: { select: { id: true, assetTag: true } },
-      },
-    }),
+  // Convex reads (org-scoped); derive counts + lists in JS.
+  const [allAssets, allRecords, orgAssets, orgBulkAssets] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
   ]);
+
+  const active = allAssets.filter((a) => a.isActive === true);
+  const total = active.length;
+  const overdue = active.filter((a) => a.status === "OVERDUE").length;
+  const dueSoon = active.filter((a) => a.status === "DUE_SOON").length;
+  const current = active.filter((a) => a.status === "CURRENT").length;
+  const failed = active.filter((a) => a.status === "FAILED").length;
+  const notYetTested = active.filter((a) => a.status === "NOT_YET_TESTED").length;
+  // retired counts regardless of isActive (matches Prisma `where: { status: RETIRED }`).
+  const retired = allAssets.filter((a) => a.status === "RETIRED").length;
+
+  // Recent tests (20 most recent by testDate desc) + joins.
+  const assetByTT = new Map(allAssets.map((a) => [a.id, a]));
+  const recentRecords = [...allRecords]
+    .sort((a, b) => b.testDate.getTime() - a.testDate.getTime())
+    .slice(0, 20);
+  const userNameMap = await getUserNameMap(recentRecords.map((r) => r.testedById));
+  const recentTests = recentRecords.map((r) => {
+    const tt = assetByTT.get(r.testTagAssetId);
+    return {
+      ...r,
+      testTagAsset: tt ? { testTagId: tt.testTagId, description: tt.description } : null,
+      testedBy: { id: r.testedById, name: userNameMap.get(r.testedById) ?? null },
+    };
+  });
+
+  // overdue / due-soon item lists (active, sorted by nextDueDate asc NULLS LAST, take 50).
+  const assetById = new Map(orgAssets.map((a) => [a.id, a]));
+  const bulkAssetById = new Map(orgBulkAssets.map((b) => [b.id, b]));
+  const byNextDueAsc = (a: { nextDueDate: Date | null }, b: { nextDueDate: Date | null }) => {
+    if (a.nextDueDate === null && b.nextDueDate === null) return 0;
+    if (a.nextDueDate === null) return 1; // NULLS LAST
+    if (b.nextDueDate === null) return -1;
+    return a.nextDueDate.getTime() - b.nextDueDate.getTime();
+  };
+  const attachItemLinks = (item: (typeof active)[number]) => {
+    const a = item.assetId ? assetById.get(item.assetId) : null;
+    const b = item.bulkAssetId ? bulkAssetById.get(item.bulkAssetId) : null;
+    return {
+      ...item,
+      asset: a ? { id: a.id, assetTag: a.assetTag } : null,
+      bulkAsset: b ? { id: b.id, assetTag: b.assetTag } : null,
+    };
+  };
+  const overdueItems = active
+    .filter((a) => a.status === "OVERDUE")
+    .sort(byNextDueAsc)
+    .slice(0, 50)
+    .map(attachItemLinks);
+  const dueSoonItems = active
+    .filter((a) => a.status === "DUE_SOON")
+    .sort(byNextDueAsc)
+    .slice(0, 50)
+    .map(attachItemLinks);
 
   return serialize({
     total, overdue, dueSoon, current, failed, notYetTested, retired,

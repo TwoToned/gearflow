@@ -9,10 +9,18 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
 import { logActivity, buildChanges } from "@/lib/activity-log";
-import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
-import type { ColumnDef } from "@/components/ui/data-table";
+import { type FilterValue } from "@/lib/table-utils";
 import { attachModel } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
+import {
+  getSupplierOrdersByOrg,
+  countSupplierAssetsAndOrders,
+  getSupplierById as getConvexSupplierById,
+  getMappedSuppliersByOrg,
+  mapSupplier,
+  supplierMatchesSearch,
+  compareSuppliers,
+} from "@/lib/suppliers-read";
 
 // Suppliers are DUAL-WRITTEN: every create/update/delete writes the Prisma
 // `supplier` row (the durable FK anchor — asset/bulk_asset/project_line_item/
@@ -41,20 +49,57 @@ async function patchSupplierInConvex(id: string, row: Record<string, unknown>) {
   });
 }
 
-// Column defs for server-side filter building
-const filterColumnDefs: ColumnDef<unknown>[] = [
-  { id: "isActive", header: "Status", accessorKey: "isActive", filterable: true, filterType: "enum" },
-];
+/**
+ * Per-supplier `{ assets, orders }` counts for an org, both from Convex (assets via
+ * the asset read helper, orders via the supplierOrders list). `projectLineItem`
+ * stays in Prisma (keystone tree, not yet cut over), so `lineItems` is counted
+ * separately by `getLineItemCount` when a consumer needs it.
+ */
+async function getOrgSupplierCounts(
+  organizationId: string,
+): Promise<Map<string, { assets: number; orders: number }>> {
+  const [allAssets, allOrders] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    (await getConvexClient()).query(api.supplierOrders.list, { orgId: organizationId }),
+  ]);
+  const counts = new Map<string, { assets: number; orders: number }>();
+  const bump = (id: string) => {
+    let c = counts.get(id);
+    if (!c) counts.set(id, (c = { assets: 0, orders: 0 }));
+    return c;
+  };
+  for (const a of allAssets) if (a.supplierId) bump(a.supplierId).assets++;
+  for (const o of allOrders) if (o.supplierId) bump(o.supplierId).orders++;
+  return counts;
+}
+
+/**
+ * Count of sub-hire / supplier line items for a supplier. KEYSTONE-BLOCKED:
+ * `projectLineItem` is the project line-item tree, which is read-rewired as a
+ * single keystone unit later — until then this stays a Prisma count (a scalar
+ * cross-domain count, NOT a tree read). Same rationale as `getSupplierSubhires`.
+ */
+async function getLineItemCount(organizationId: string, supplierId: string): Promise<number> {
+  return prisma.projectLineItem.count({ where: { organizationId, supplierId } });
+}
 
 export async function getSuppliers() {
   const { organizationId } = await getOrgContext();
-  return serialize(
-    await prisma.supplier.findMany({
-      where: { organizationId, isActive: true },
-      include: { _count: { select: { assets: true, orders: true } } },
-      orderBy: { name: "asc" },
-    })
-  );
+  const [suppliers, counts] = await Promise.all([
+    getMappedSuppliersByOrg(organizationId),
+    getOrgSupplierCounts(organizationId),
+  ]);
+  const active = suppliers
+    .filter((s) => s.isActive)
+    .sort(compareSuppliers("name", "asc"))
+    .map((s) => ({
+      ...s,
+      _count: {
+        assets: counts.get(s.id)?.assets ?? 0,
+        orders: counts.get(s.id)?.orders ?? 0,
+      },
+    }));
+  return serialize(active);
 }
 
 export async function getSuppliersPaginated(params: {
@@ -68,84 +113,79 @@ export async function getSuppliersPaginated(params: {
   const { organizationId } = await getOrgContext();
   const { search, filters, page = 1, pageSize = 25, sortBy = "name", sortOrder = "asc" } = params;
 
-  const filterWhere = filters ? buildFilterWhere(filters, filterColumnDefs) : {};
-
-  const where = {
-    organizationId,
-    ...filterWhere,
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" as const } },
-            { contactName: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-            { accountNumber: { contains: search, mode: "insensitive" as const } },
-            { tags: { hasSome: [search.toLowerCase()] } },
-          ],
-        }
-      : {}),
-  };
-
-  const [suppliers, total] = await Promise.all([
-    prisma.supplier.findMany({
-      where,
-      include: {
-        _count: { select: { assets: true, orders: true, lineItems: true } },
-      },
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.supplier.count({ where }),
+  const [all, counts] = await Promise.all([
+    getMappedSuppliersByOrg(organizationId),
+    getOrgSupplierCounts(organizationId),
   ]);
+
+  // Replicates the old Prisma `where`: the `isActive` enum filter + the
+  // case-insensitive search OR across name/contact/email/account#/tags.
+  const activeFilter = filters?.isActive as string | undefined;
+  const filtered = all.filter((s) => {
+    if (activeFilter === "true" && s.isActive !== true) return false;
+    if (activeFilter === "false" && s.isActive !== false) return false;
+    return search ? supplierMatchesSearch(s, search) : true;
+  });
+
+  const total = filtered.length;
+  const sorted = filtered.sort(compareSuppliers(sortBy, sortOrder));
+  const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+  // lineItems count is keystone-blocked (projectLineItem), so it's a per-page
+  // Prisma count; assets/orders come from Convex.
+  const lineItemCounts = await Promise.all(
+    pageItems.map((s) => getLineItemCount(organizationId, s.id)),
+  );
+  const suppliers = pageItems.map((s, i) => ({
+    ...s,
+    _count: {
+      assets: counts.get(s.id)?.assets ?? 0,
+      orders: counts.get(s.id)?.orders ?? 0,
+      lineItems: lineItemCounts[i],
+    },
+  }));
 
   return serialize({ suppliers, total });
 }
 
 /**
  * Asset + order counts per supplier (supplierId -> { assets, orders }).
- * Cross-domain: assets and supplier orders still live in Prisma, so this can't
- * come from Convex. Used by the reactive supplier table, which subscribes to the
- * supplier list via Convex and merges these (non-reactive) counts.
+ * Both inputs now come off Convex — assets via getAssetsByOrg and supplier orders
+ * via getSupplierOrdersByOrg (both dual-written) — counted in JS by
+ * countSupplierAssetsAndOrders, replacing the Prisma `supplierOrder.groupBy`
+ * (Phase A). Used by the reactive supplier table, which subscribes to the supplier
+ * list via Convex and merges these (non-reactive) counts.
  */
 export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
   const { organizationId } = await getOrgContext();
-  const [allAssets, orderGroups] = await Promise.all([
+  const [allAssets, orders] = await Promise.all([
     getAssetsByOrg(organizationId),
-    prisma.supplierOrder.groupBy({
-      by: ["supplierId"],
-      where: { organizationId },
-      _count: { _all: true },
-    }),
+    getSupplierOrdersByOrg(organizationId),
   ]);
-  const counts: Record<string, { assets: number; orders: number }> = {};
-  for (const a of allAssets) {
-    if (a.supplierId) (counts[a.supplierId] ??= { assets: 0, orders: 0 }).assets++;
-  }
-  for (const g of orderGroups) {
-    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).orders = g._count._all;
-  }
-  return serialize(counts);
+  return serialize(countSupplierAssetsAndOrders(allAssets, orders));
 }
 
 export async function getSupplierById(id: string) {
   const { organizationId } = await getOrgContext();
-  const supplier = await prisma.supplier.findUnique({
-    where: { id, organizationId },
-    include: {
-      _count: { select: { assets: true, orders: true, lineItems: true } },
-      orders: {
-        orderBy: { createdAt: "desc" },
-        take: 10,
-        include: {
-          _count: { select: { items: true } },
-          project: { select: { id: true, name: true, projectNumber: true } },
-        },
-      },
+  const doc = await getConvexSupplierById(id);
+  if (!doc || doc.organizationId !== organizationId) throw new Error("Supplier not found");
+
+  // assets/orders counts from Convex; lineItems keystone-blocked (Prisma count).
+  // The embedded `orders` array the old shape carried is dropped — the detail page
+  // fetches its order list via getSupplierOrders, never reads `supplier.orders`.
+  const [counts, lineItems] = await Promise.all([
+    getOrgSupplierCounts(organizationId),
+    getLineItemCount(organizationId, id),
+  ]);
+
+  return serialize({
+    ...mapSupplier(doc),
+    _count: {
+      assets: counts.get(id)?.assets ?? 0,
+      orders: counts.get(id)?.orders ?? 0,
+      lineItems,
     },
   });
-  if (!supplier) throw new Error("Supplier not found");
-  return serialize(supplier);
 }
 
 export async function getSupplierAssets(supplierId: string, params: {

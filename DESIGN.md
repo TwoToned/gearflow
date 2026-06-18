@@ -25,12 +25,13 @@
 ## Typography
 
 ### Type Stack
-| Role | Font | Notes |
-|------|------|-------|
-| Display / Hero | BC Alphapipe | Commercial — see §11. Fallback: Hanken Grotesk 800 |
-| UI / Body | Hanken Grotesk | Google Fonts — loaded via `next/font/google` |
-| Annotations | Kalam | Google Fonts — **only** in empty states and annotation moments |
-| Data / Code | JetBrains Mono | Google Fonts — all numbers in tables, asset tags, IDs |
+| Role | Font | CSS var | Notes |
+|------|------|---------|-------|
+| Display / Hero | BC Alphapipe → Archivo | `--font-display` | Commercial — see §11. Registry fallback is Archivo. |
+| UI / Body | Hanken Grotesk | `--font-sans` | Google Fonts |
+| Wordmark | Baloo 2 | `--font-wordmark` | Google Fonts — RVLT wordmark/brand moments only |
+| Annotations | Kalam | `--font-hand` | Google Fonts — **only** in empty states and annotation moments |
+| Data / Code | Geist Mono | `--font-mono` | Google Fonts — numbers in tables, asset tags, IDs |
 
 ### Type Scale
 | Class | Size | Weight | Tracking | Line-height | Usage |
@@ -56,73 +57,57 @@
 ## Color
 
 ### Approach
-Dark espresso is the **only** app surface — no light mode. The app is always dark. The single accent is RVLT red.
+Dark espresso is the default app surface (`--paper: #141210`). Light "Paper" mode (`.light`) is opt-in. The single accent is RVLT red (`--red: #E0363D`).
 
-**CSS variable names:** `--red-*` is canonical. `--teal-*` aliases remain during the teal→red migration pass (44 legacy files); new code must use `--red-*` / `--primary`.
+**Token source of truth:** `globals.css` generated from the RVLT Flow registry (`https://rvlt-labs.github.io/rvlt-designlanguage/r/theme.json`). Do not edit by hand — reinstall via `npx shadcn@canary add .../theme.json` when tokens change.
 
-### Primary Red Ramp
-| Step | oklch | Usage |
-|------|-------|-------|
-| 50 | `oklch(0.18 0.04 25)` | Faintest red tint (espresso-adjusted) |
-| 100 | `oklch(0.24 0.07 25)` | |
-| 200 | `oklch(0.30 0.10 25)` | Red element borders |
-| 300 | `oklch(0.38 0.15 25)` | |
-| 400 | `oklch(0.46 0.20 25)` | |
-| 500 | `oklch(0.55 0.24 25)` | **RVLT Red — primary accent** |
-| 600 | `oklch(0.48 0.22 25)` | Hover state |
-| 700 | `oklch(0.40 0.18 25)` | Active/pressed |
-| 800 | `oklch(0.30 0.13 25)` | |
-| 900 | `oklch(0.20 0.07 25)` | Near-espresso tint |
-| subtle | `oklch(0.55 0.24 25 / 12%)` | Background tint for live/active pills |
-
-`--primary: oklch(0.55 0.24 25)` — the single RVLT red across all contexts.
+### Canonical Token Names (espresso dark `:root`)
+| Token | Value | Tailwind class | Usage |
+|-------|-------|----------------|-------|
+| `--paper` | `#141210` | `bg-paper` | Page background |
+| `--paper-2` | `#1A1613` | `bg-paper-2` | Secondary surface |
+| `--card` | `#211C17` | `bg-card` | Cards, panels |
+| `--elev` | `#2A241D` | `bg-elev` | Elevated, dropdowns |
+| `--ink` | `#F5EFE2` | `text-ink` | Primary text |
+| `--ink-2` | `#CDC4B2` | `text-ink-2` | Secondary text |
+| `--muted` | `#9E9483` | `text-muted` | Muted/labels |
+| `--faint` | `#6E665A` | `text-faint` | Disabled/placeholders |
+| `--line` | `#332C24` | `border-line` | Subtle dividers |
+| `--line-2` | `#473E32` | `border-line-2` | Default border (= `--border` on dark) |
+| `--red` | `#E0363D` | `bg-red` / `text-red` | RVLT primary red |
+| `--red-700` | `#B21F26` | `bg-red-700` | Red shadow/hover |
+| `--red-soft` | `rgba(224,54,61,.16)` | `bg-red-soft` | Red tint bg |
+| `--ok` | `#4FD888` | `text-ok` / `bg-ok` | Success/available |
+| `--ok-soft` | `rgba(62,207,122,.14)` | `bg-ok-soft` | Success bg tint |
+| `--warn` | `#EBA53A` | `text-warn` / `bg-warn` | Warning/amber |
+| `--warn-soft` | `rgba(235,165,58,.15)` | `bg-warn-soft` | Warning bg tint |
+| `--t-out` | `#F26F73` | `text-t-out` | Overdue/timed-out |
+| `--out-soft` | `rgba(224,54,61,.18)` | `bg-out-soft` | Overdue bg tint |
+| `--rep` | `#B6AC9A` | `text-rep` | Neutral/returned |
+| `--rep-soft` | `rgba(158,148,131,.14)` | `bg-rep-soft` | Neutral bg tint |
+| `--blue` | `#5B8DEF` | `text-blue` / `bg-blue` | Info |
+| `--blue-soft` | `rgba(91,141,239,.15)` | `bg-blue-soft` | Info bg tint |
+| `--sh-card` | `0 3px 0 #0C0A08` | `shadow-[var(--sh-card)]` | Default card shadow |
+| `--sh-hover` | `0 7px 0 #0C0A08` | `shadow-[var(--sh-hover)]` | Hover lift shadow |
+| `--sh-stk` | `2px 4px 0 rgba(0,0,0,.5)` | `shadow-[var(--sh-stk)]` | Hard stroke shadow |
+| `--scrim` | `rgba(14,12,10,.66)` | `bg-scrim` | Modal backdrop |
 
 ### §1 Red Disambiguation Rule
-**The same red value is used for both primary actions and error/overdue states. Disambiguation is visual treatment, never a separate colour.**
+**Two distinct red values for distinct meanings:**
 
-| Treatment | Meaning | Examples |
-|-----------|---------|---------|
-| **Solid red fill** (`bg-primary text-primary-foreground`) | Live / Active / In-use | CHECKED_OUT job, ON_SITE project, ACCEPTED assignment |
-| **Red text/stroke on espresso** (`text-primary`) | Status indicator, live signal | Active nav item, dot indicator for CHECKED_OUT |
-| **Red text + tinted bg** (`bg-error-subtle text-error`) | Problem / Error / Overdue | CANCELLED, T&T FAILED, overdue return, conflict badge |
-| **Solid red fill on button** | Destructive action on hover | Delete, archive, cancel |
+| Token | Value | Treatment | Meaning |
+|-------|-------|-----------|---------|
+| `--red` | `#E0363D` | Solid fill `bg-red text-white` | **LIVE / ACTIVE / IN-USE** — CHECKED_OUT, ON_SITE, ACCEPTED |
+| `--t-out` | `#F26F73` | Tinted `bg-out-soft text-t-out` | **PROBLEM / OVERDUE / FAILED** — CANCELLED, T&T FAILED, overdue returns |
 
-`--error` and `--primary` share the same oklch value. Do NOT attempt to distinguish them by hue. Trust the treatment.
+`--red` = the RVLT brand red (saturated, energetic). `--t-out` = the timed-out/overdue semantic (lighter, warmer — distinct at a glance). Do not mix them.
 
 **Personality and alerts:**
-- Personality copy (irreverent microcopy, mascot, Kalam) is **BANNED** in: alert notices, compliance warnings, overdue states, T&T failure states, conflict alerts, destructive action confirmations
-- It IS allowed in: empty states, onboarding moments, zero-state dashboard, positive completions
+- Personality copy, mascot (`FlowMascot`), and `--font-hand` (Kalam) are **BANNED** in: alert notices, compliance warnings, overdue states, T&T failure states, conflict alerts, destructive action confirmations
+- They ARE allowed in: empty states, onboarding moments, zero-state dashboard, positive completions
 
-### Espresso Surfaces (dark only)
-| Level | oklch | Usage |
-|-------|-------|-------|
-| Inset | `oklch(0.09 0.015 32)` | Deepest: code blocks, recessed inputs |
-| Base | `oklch(0.12 0.015 32)` | Page background — the espresso |
-| Surface | `oklch(0.16 0.015 32)` | Cards, table containers, list rows |
-| Elevated | `oklch(0.20 0.015 32)` | Dropdown panels, hover tints |
-| Popover | `oklch(0.24 0.012 32)` | Modals, menus, sheets, toasts |
-
-### Foreground Hierarchy (warm off-white)
-| Name | oklch | Usage |
-|------|-------|-------|
-| `fg` | `oklch(0.97 0.005 80)` | Primary text — warm bright off-white |
-| `fg-2` | `oklch(0.76 0.008 80)` | Body text, descriptions |
-| `fg-3` | `oklch(0.55 0.006 80)` | Labels, captions, metadata, mono |
-| `fg-4` | `oklch(0.36 0.004 80)` | Placeholders, disabled text |
-
-### Semantic Colors
-| Name | oklch | Subtle bg | Usage |
-|------|-------|-----------|-------|
-| Success/Green | `oklch(0.66 0.17 155)` | 10% opacity | Available, confirmed, returned, completed |
-| Warning/Amber | `oklch(0.78 0.15 70)` | 10% opacity | Reserved, in-progress, due soon, prepping |
-| Error/Red | `oklch(0.55 0.24 25)` | 8% opacity | **Same as `--primary`** — see §1 |
-| Info/Blue | `oklch(0.62 0.14 255)` | 8% opacity | Informational, kit pricing, quoting |
-
-### Borders
-| Name | Value |
-|------|-------|
-| default | `oklch(1 0 0 / 6%)` |
-| strong | `oklch(1 0 0 / 10%)` |
+### Light Mode ("Paper" — opt-in)
+Add `.light` class to `<html>` to switch. Paper uses `--border: var(--ink)` (full-ink 2px outlines — the RVLT outline aesthetic on light). Same semantic tokens, lighter surface primitives. The app ships dark by default; light mode is available via `ThemeProvider`.
 
 ## Spacing
 - **Base unit:** 4px
@@ -150,15 +135,17 @@ Dark espresso is the **only** app surface — no light mode. The app is always d
 | full | 9999px | Avatars, toggle pills |
 
 ## §2 Shadows — Hard Offset Style
-RVLT Flow uses **hard offset shadows** (no blur / minimal blur). This is the primary visual texture distinguishing it from generic SaaS dashboards.
+RVLT Flow uses **hard offset shadows** (no blur). This is the primary visual texture distinguishing it from generic SaaS dashboards.
 
-| Name | Value | Usage |
-|------|-------|-------|
-| xs | `2px 2px 0 oklch(0 0 0 / 60%)` | Cards, badges |
-| sm | `3px 3px 0 oklch(0 0 0 / 65%)` | Buttons, interactive surfaces |
-| md | `4px 4px 0 oklch(0 0 0 / 70%)` | Elevated panels, dropdowns |
-| focus | `0 0 0 2px var(--bg-base), 0 0 0 4px oklch(0.55 0.24 25 / 50%)` | Red double-ring focus |
-| outline | `inset 0 0 0 2px oklch(1 0 0 / 12%)` | Outline on interactive surfaces |
+Use the registry token names — do not hardcode shadow values:
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--sh-card` | `0 3px 0 #0C0A08` | Default card resting shadow |
+| `--sh-hover` | `0 7px 0 #0C0A08` | Card on hover (lifted) |
+| `--sh-stk` | `2px 4px 0 rgba(0,0,0,.5)` | Hard stroke shadow (buttons, small elements) |
+| `--sh-halo` | `0 3px 0 var(--red-700), 0 0 28px rgba(224,54,61,.5)` | Red halo (primary button active state) |
+| `--lit` | `inset 0 1px 0 rgba(255,253,248,.14)` | Inner top-edge highlight |
 
 ## Motion
 - **Easing:** `cubic-bezier(0.2, 0, 0, 1)` — fast start, gentle settle
@@ -277,20 +264,19 @@ RVLT red overline chip (`t-overline`, red text on red-subtle bg, 4px radius) + e
 
 All status → color intent mappings live in `src/lib/status-colors.ts`. **Never hardcode intent classes outside this file.**
 
-### Intent → Class Mapping
+### Intent → Class Mapping (RVLT registry token names)
 | Intent | Dot | Text | Pill | Background |
 |--------|-----|------|------|------------|
-| primary (live) | `bg-primary` | `text-primary` | `bg-primary text-primary-foreground` | `bg-red-subtle` |
-| success | `bg-success` | `text-success` | `bg-success-subtle text-success` | `bg-success-subtle` |
-| warning | `bg-warning` | `text-warning` | `bg-warning-subtle text-warning` | `bg-warning-subtle` |
-| error | `bg-error` | `text-error` | `bg-error-subtle text-error` | `bg-error-subtle` |
-| info | `bg-info` | `text-info` | `bg-info-subtle text-info` | `bg-info-subtle` |
-| neutral | `bg-fg-3` | `text-fg-3` | `bg-bg-inset text-fg-3` | `bg-bg-inset` |
+| primary (live) | `bg-red` | `text-red` | `bg-red text-white` | `bg-red-soft` |
+| success | `bg-ok` | `text-ok` | `bg-ok-soft text-ok` | `bg-ok-soft` |
+| warning | `bg-warn` | `text-warn` | `bg-warn-soft text-warn` | `bg-warn-soft` |
+| error | `bg-t-out` | `text-t-out` | `bg-out-soft text-t-out` | `bg-out-soft` |
+| info | `bg-blue` | `text-blue` | `bg-blue-soft text-blue` | `bg-blue-soft` |
+| neutral | `bg-rep` | `text-rep` | `bg-rep-soft text-rep` | `bg-rep-soft` |
 
 **Critical distinction:**
-- `primary` pill = SOLID red fill (live/active items, things running right now)
-- `error` pill = TINTED red background with red text (problems, cancellations, overdue)
-These look similar on close inspection; the filled vs tinted distinction is intentional and must be preserved.
+- `primary` pill = solid `--red` fill (`bg-red text-white`) — live/active
+- `error` pill = `--t-out` text on `--out-soft` tint — problem/overdue
 
 ## §4 Keyboard Shortcuts
 - Shortcut hints in button tooltips ("New Asset (N)")
@@ -358,12 +344,12 @@ Fallback references: Linear, Notion, Airtable, ServiceTitan, Jobber, Vercel, Sup
 ## §11 BC Alphapipe Font Licensing
 BC Alphapipe (Berton Hasebe) is a commercial typeface. **NOT on Google Fonts.**
 
-- Font files must be purchased and placed in `public/fonts/` before use
-- Load with `next/font/local` pointing to the woff2 files
-- **Until licensed:** use Hanken Grotesk at weight 800 as the display font fallback
-- The `--font-display` CSS variable switches automatically once BC Alphapipe is configured
+- The registry theme sets `--font-display: "bc-alphapipe", "Archivo", sans-serif` — Archivo is the fallback until licensed
+- Font files must be purchased and placed in `public/fonts/bc-alphapipe/` then loaded via `next/font/local`
+- **Until licensed:** Archivo (Google Fonts) renders as the display font fallback — acceptable for development
+- The registry will load Archivo automatically if bc-alphapipe is absent
 
-**Do not hardcode `font-family: 'BC Alphapipe'` anywhere.** Always use `var(--font-display)` or `t-display` class.
+**Do not hardcode `font-family: 'BC Alphapipe'` anywhere.** Always use `var(--font-display)` or `.t-display` class.
 
 ## §15 Mobile Rules — Touch, Density, Safe Areas
 

@@ -1,64 +1,84 @@
-"use client"
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
-
+/**
+ * RVLT Flow button — pill, tactile press (lifts 1px on hover, drops 2px on active),
+ * red = the one primary. See DESIGN.md §9 / §15.2.
+ */
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none active:scale-[0.97] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // states (§9.1): focus-visible ring on every variant; tactile press; disabled = greyed,
+  // not-allowed cursor, no lift/shadow (clicks blocked by the `disabled` attr).
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-sans font-semibold text-[14px] transition-[transform,box-shadow,background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:translate-y-0 disabled:hover:translate-y-0 [&_svg]:size-5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/12%)] hover:bg-primary/90 [a]:hover:bg-primary/90",
-        outline:
-          "shadow-[inset_0_0_0_1px_var(--border-strong)] bg-background hover:bg-bg-inset hover:text-fg aria-expanded:bg-bg-inset aria-expanded:text-fg dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
-        ghost:
-          "hover:text-fg aria-expanded:bg-bg-inset aria-expanded:text-fg [&:not(:active)]:hover:underline [&:not(:active)]:hover:underline-offset-4 [&:not(:active)]:hover:decoration-fg/40",
-        destructive:
-          "border-border text-destructive hover:bg-destructive hover:text-white hover:border-destructive focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:hover:bg-destructive/90",
-        link: "text-primary underline-offset-4 hover:underline",
+        // primary action — the one red
+        primary:
+          "bg-red text-white shadow-[0_3px_0_var(--red-700)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
+        // hero CTA only — primary + sanctioned red bloom (§8); bloom is the --sh-halo token
+        halo: "bg-red text-white shadow-[var(--sh-halo)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[0_1px_0_var(--red-700)]",
+        // outline — 2px outline (--line-2 dark / --ink light, §9); fills ink on hover
+        line: "border-2 border-border bg-transparent text-ink hover:bg-ink hover:text-paper active:translate-y-px",
+        // text only — hover to red
+        ghost: "bg-transparent text-ink hover:text-red active:opacity-80",
+        // cream — for use on the full-red CTA block (fixed cream tokens, §3.6)
+        cream:
+          "bg-[var(--cream)] text-[var(--cream-ink)] shadow-[var(--sh-cream)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[var(--sh-cream-press)]",
       },
       size: {
-        default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        icon: "size-8",
-        "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+        sm: "h-9 px-4",
+        default: "h-11 px-5",
+        lg: "h-12 px-7 text-[15px]",
+        icon: "size-11",
       },
     },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-)
+    defaultVariants: { variant: "primary", size: "default" },
+  },
+);
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  nativeButton,
-  render,
-  ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
-  return (
-    <ButtonPrimitive
-      data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
-      nativeButton={nativeButton ?? (render ? false : undefined)}
-      render={render}
-      {...props}
-    />
-  )
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+  /** Loading state (§9.1) — shows a spinner, keeps width, disables. */
+  loading?: boolean;
 }
 
-export { Button, buttonVariants }
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
+    const classes = cn(buttonVariants({ variant, size, className }));
+    // asChild defers rendering to a single child (Slot) — no spinner injection there.
+    if (asChild) {
+      return (
+        <Slot className={classes} ref={ref} {...props}>
+          {children}
+        </Slot>
+      );
+    }
+    return (
+      <button
+        className={classes}
+        ref={ref}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
+        {...props}
+      >
+        {/* loading: spinner replaces the label but the label keeps its width (no layout shift, §9.1) */}
+        {loading && (
+          <span aria-hidden className="absolute inset-0 grid place-items-center">
+            <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          </span>
+        )}
+        <span className={cn("inline-flex items-center gap-2", loading && "invisible")}>
+          {children}
+        </span>
+      </button>
+    );
+  },
+);
+Button.displayName = "Button";
+
+export { Button, buttonVariants };

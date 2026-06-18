@@ -11,12 +11,14 @@
  *   error   → --error   / --error-subtle  (tinted red — problem state)
  *   info    → --info    / --info-subtle
  *   neutral → --fg-3    / --bg-inset
- *   primary → --primary (solid red fill — live/active/in-use state)
+ *   primary → --red (solid fill — live/active/in-use state)
  *
- * Red disambiguation (DESIGN.md §1):
- *   primary pill = bg-primary text-primary-foreground (solid red = LIVE/ACTIVE)
- *   error pill   = bg-error-subtle text-error          (tinted red = PROBLEM)
- * These are visually distinct: filled vs tinted. Same hue, different weight.
+ * Red disambiguation (DESIGN.md §1) — RVLT token names:
+ *   primary pill = bg-red text-white                (solid red = LIVE/ACTIVE)
+ *   error pill   = bg-out-soft text-t-out            (tinted red = PROBLEM)
+ *   --red = #E0363D (primary accent)
+ *   --t-out = #F26F73 (overdue/timed-out semantic, lighter red)
+ *   --out-soft = rgba(224,54,61,.18) (subtle red tint for error bg)
  */
 
 export type ColorIntent = "success" | "warning" | "error" | "info" | "neutral" | "primary";
@@ -28,41 +30,43 @@ export const intentStyles: Record<ColorIntent, {
   pill: string;
   bg: string;
 }> = {
+  // RVLT token names: --ok (green), --warn (amber), --red/--t-out (red),
+  // --blue (info), --rep (neutral/muted), --red (primary/live)
   success: {
-    dot: "bg-success",
-    text: "text-success",
-    pill: "bg-success-subtle text-success",
-    bg: "bg-success-subtle",
+    dot: "bg-ok",
+    text: "text-ok",
+    pill: "bg-ok-soft text-ok",
+    bg: "bg-ok-soft",
   },
   warning: {
-    dot: "bg-warning",
-    text: "text-warning",
-    pill: "bg-warning-subtle text-warning",
-    bg: "bg-warning-subtle",
+    dot: "bg-warn",
+    text: "text-warn",
+    pill: "bg-warn-soft text-warn",
+    bg: "bg-warn-soft",
   },
   error: {
-    dot: "bg-error",
-    text: "text-error",
-    pill: "bg-error-subtle text-error",
-    bg: "bg-error-subtle",
+    dot: "bg-t-out",
+    text: "text-t-out",
+    pill: "bg-out-soft text-t-out",
+    bg: "bg-out-soft",
   },
   info: {
-    dot: "bg-info",
-    text: "text-info",
-    pill: "bg-info-subtle text-info",
-    bg: "bg-info-subtle",
+    dot: "bg-blue",
+    text: "text-blue",
+    pill: "bg-blue-soft text-blue",
+    bg: "bg-blue-soft",
   },
   neutral: {
-    dot: "bg-fg-3",
-    text: "text-fg-3",
-    pill: "bg-bg-inset text-fg-3",
-    bg: "bg-bg-inset",
+    dot: "bg-rep",
+    text: "text-rep",
+    pill: "bg-rep-soft text-rep",
+    bg: "bg-rep-soft",
   },
   primary: {
-    dot: "bg-primary",
-    text: "text-primary",
-    pill: "bg-primary text-primary-foreground",
-    bg: "bg-red-subtle",
+    dot: "bg-red",
+    text: "text-red",
+    pill: "bg-red text-white",
+    bg: "bg-red-soft",
   },
 };
 

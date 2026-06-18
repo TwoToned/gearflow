@@ -1,24 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 import { ModelForm } from "@/components/assets/model-form";
 import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 export default function NewModelPage() {
   return (
     <FadeIn>
       <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-          <Link href="/assets" className="hover:text-fg transition-colors">Assets</Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link href="/assets/models" className="hover:text-fg transition-colors">Models</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-fg">New Model</span>
-        </div>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/assets/models" />}>Models</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>New model</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">New Equipment Model</h1>
-          <p className="t-body text-fg-3">
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New equipment model</h1>
+          <p className="mt-1 text-ui-text text-muted">
             Create a model template that assets will be based on.
           </p>
         </div>

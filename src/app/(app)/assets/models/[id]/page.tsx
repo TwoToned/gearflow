@@ -48,6 +48,7 @@ import { ModelAccessoriesManager } from "@/components/assets/model-accessories-m
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing } from "@/lib/utils";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -128,7 +129,15 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   }
 
   if (!model) {
-    return <div className="text-fg-3 py-12 text-center">Model not found.</div>;
+    return (
+      <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Model not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/assets/models">Back to models</Link>
+        </Button>
+      </div>
+    );
   }
 
   const specs = (model.specifications as Record<string, string>) || {};
@@ -157,16 +166,16 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         {/* ── Header (full width) ────────────────────────────────── */}
         <div>
           {/* Breadcrumb */}
-          <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-            <Link href="/assets/registry" className="hover:text-fg transition-colors">
+          <nav className="mb-2 flex items-center gap-1 text-caption text-muted">
+            <Link href="/assets/registry" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
               Assets
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <Link href="/assets/models" className="hover:text-fg transition-colors">
+            <ChevronRight className="h-3 w-3" />
+            <Link href="/assets/models" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
               Models
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="text-fg-2">{model.name}</span>
+            <ChevronRight className="h-3 w-3" />
+            <span className="text-ink-2">{model.name}</span>
           </nav>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -179,13 +188,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-fg">{model.name}</h1>
-                  <Badge variant={model.assetType === "SERIALIZED" ? "default" : "outline"}>
-                    {model.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}
+                  <h1 className="t-title text-ink">{model.name}</h1>
+                  <Badge status="neutral">
+                    {model.assetType === "SERIALIZED" ? "Serialised" : "Bulk"}
                   </Badge>
-                  {!model.isActive && <Badge variant="destructive">Archived</Badge>}
+                  {!model.isActive && <Badge status="repair">Archived</Badge>}
                 </div>
-                <p className="text-fg-3 truncate">
+                <p className="text-caption text-muted truncate">
                   {[model.manufacturer, model.modelNumber, model.sku && `SKU: ${model.sku}`].filter(Boolean).join(" — ") || "No manufacturer info"}
                   {model.category && <> &middot; {model.category.name}</>}
                 </p>
@@ -193,22 +202,26 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
             </div>
             <CanDo resource="model" action="update">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" render={<Link href={`/assets/registry/new?modelId=${model.id}&type=${model.assetType === "SERIALIZED" ? "serialized" : "bulk"}`} />}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Asset
+                <Button variant="line" size="sm" asChild>
+                  <Link href={`/assets/registry/new?modelId=${model.id}&type=${model.assetType === "SERIALIZED" ? "serialized" : "bulk"}`}>
+                    <Plus className="h-4 w-4" />
+                    Create asset
+                  </Link>
                 </Button>
-                <Button variant="outline" size="sm" render={<Link href={`/assets/models/${id}/edit`} />}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
+                <Button variant="line" size="sm" asChild>
+                  <Link href={`/assets/models/${id}/edit`}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Link>
                 </Button>
                 {model.isActive && (
                   <Button
-                    variant="outline"
+                    variant="line"
                     size="sm"
-                    className="text-destructive"
+                    className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                     onClick={() => setArchiveModelOpen(true)}
                   >
-                    <Archive className="mr-2 h-4 w-4" />
+                    <Archive className="h-4 w-4" />
                     Archive
                   </Button>
                 )}
@@ -237,68 +250,68 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <TabsContent value="details" className="space-y-4 mt-4">
                 <BookingCalendar entityType="model" entityId={id} initialDate={initialDate} />
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Rate Card</p>
-                    <div className="space-y-1 text-sm">
+                  <div className="rounded-[var(--r)] border border-line bg-card p-4 shadow-[var(--sh-card)]">
+                    <p className="text-caption font-medium text-muted mb-3">Rate card</p>
+                    <div className="space-y-1 text-table-cell text-ink">
                       <div className="flex justify-between">
-                        <span>Daily</span>
+                        <span className="text-muted">Daily</span>
                         <span className="font-medium t-data">
                           {model.dailyRate ? `$${Number(model.dailyRate).toFixed(2)}` : "—"}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Weekly</span>
+                        <span className="text-muted">Weekly</span>
                         <span className="font-medium t-data">
                           {model.weeklyRate ? `$${Number(model.weeklyRate).toFixed(2)}` : "—"}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Monthly</span>
+                        <span className="text-muted">Monthly</span>
                         <span className="font-medium t-data">
                           {model.monthlyRate ? `$${Number(model.monthlyRate).toFixed(2)}` : "—"}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Cost & Valuation</p>
-                    <div className="space-y-1 text-sm">
+                  <div className="rounded-[var(--r)] border border-line bg-card p-4 shadow-[var(--sh-card)]">
+                    <p className="text-caption font-medium text-muted mb-3">Cost &amp; valuation</p>
+                    <div className="space-y-1 text-table-cell text-ink">
                       <div className="flex justify-between">
-                        <span>Purchase price</span>
+                        <span className="text-muted">Purchase price</span>
                         <span className="font-medium t-data">
                           {model.defaultPurchasePrice ? `$${Number(model.defaultPurchasePrice).toFixed(2)}` : "—"}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Replacement cost</span>
+                        <span className="text-muted">Replacement cost</span>
                         <span className="font-medium t-data">
                           {model.replacementCost ? `$${Number(model.replacementCost).toFixed(2)}` : "—"}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Technical</p>
-                    <div className="space-y-1 text-sm">
+                  <div className="rounded-[var(--r)] border border-line bg-card p-4 shadow-[var(--sh-card)]">
+                    <p className="text-caption font-medium text-muted mb-3">Technical</p>
+                    <div className="space-y-1 text-table-cell text-ink">
                       <div className="flex justify-between">
-                        <span>Weight</span>
+                        <span className="text-muted">Weight</span>
                         <span className="font-medium">{model.weight ? `${Number(model.weight)} kg` : "—"}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Power draw</span>
+                        <span className="text-muted">Power draw</span>
                         <span className="font-medium">{model.powerDraw ? `${model.powerDraw}W` : "—"}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Maintenance</p>
-                    <div className="space-y-1 text-sm">
+                  <div className="rounded-[var(--r)] border border-line bg-card p-4 shadow-[var(--sh-card)]">
+                    <p className="text-caption font-medium text-muted mb-3">Maintenance</p>
+                    <div className="space-y-1 text-table-cell text-ink">
                       <div className="flex justify-between">
-                        <span>Requires T&T</span>
+                        <span className="text-muted">Requires T&amp;T</span>
                         <span className="font-medium">{model.requiresTestAndTag ? "Yes" : "No"}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Maintenance interval</span>
+                        <span className="text-muted">Maintenance interval</span>
                         <span className="font-medium">
                           {model.maintenanceIntervalDays ? `${model.maintenanceIntervalDays} days` : "—"}
                         </span>
@@ -307,9 +320,9 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </div>
                 {model.description && (
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Description</p>
-                    <p className="text-sm whitespace-pre-wrap">{model.description}</p>
+                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                    <p className="text-caption font-medium text-muted mb-3">Description</p>
+                    <p className="text-table-cell text-ink-2 whitespace-pre-wrap">{model.description}</p>
                   </div>
                 )}
               </TabsContent>
@@ -318,17 +331,23 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 {model.assetType === "SERIALIZED" ? (
                   model.assets.length === 0 ? (
                     <EmptyState
-                      preset="assets"
-                      heading="No assets yet"
+                      title="No assets yet"
                       description="Create individual tracked assets from this model."
-                      action={{ label: "Create Asset", onClick: () => window.location.href = `/assets/registry/new?modelId=${model.id}&type=serialized` }}
+                      action={
+                        <Button size="sm" asChild>
+                          <Link href={`/assets/registry/new?modelId=${model.id}&type=serialized`}>
+                            <Plus className="h-4 w-4" />
+                            Create asset
+                          </Link>
+                        </Button>
+                      }
                     />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Asset Tag</TableHead>
+                            <TableHead>Asset tag</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Serial #</TableHead>
                             <TableHead>Status</TableHead>
@@ -340,24 +359,24 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           {model.assets.map((asset) => (
                             <TableRow key={asset.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${asset.id}`} className={cn("t-mono text-table-cell font-medium text-ink hover:underline rounded-sm", focusRing)}>
                                   {asset.assetTag}
                                 </Link>
                               </TableCell>
-                              <TableCell>{asset.customName || "—"}</TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">{asset.serialNumber || "—"}</TableCell>
+                              <TableCell className="text-ink">{asset.customName || "—"}</TableCell>
+                              <TableCell className="t-mono text-table-cell text-muted">{asset.serialNumber || "—"}</TableCell>
                               <TableCell>
                                 <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-fg-3">{asset.location?.name || "—"}</TableCell>
+                              <TableCell className="text-muted">{asset.location?.name || "—"}</TableCell>
                               <TableCell className="text-right">
                                 <CanDo resource="warehouse" action="check_in">
                                   {asset.status === "CHECKED_OUT" && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-amber-500"
-                                      title="Force Return"
+                                      className="h-7 w-7 text-warn"
+                                      title="Force return"
                                       onClick={() =>
                                         setForceReturnAssetId({
                                           id: asset.id,
@@ -379,17 +398,23 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 ) : (
                   model.bulkAssets.length === 0 ? (
                     <EmptyState
-                      preset="assets"
-                      heading="No bulk stock"
+                      title="No bulk stock"
                       description="Create bulk quantity entries for this model."
-                      action={{ label: "Create Bulk Asset", onClick: () => window.location.href = `/assets/registry/new?modelId=${model.id}&type=bulk` }}
+                      action={
+                        <Button size="sm" asChild>
+                          <Link href={`/assets/registry/new?modelId=${model.id}&type=bulk`}>
+                            <Plus className="h-4 w-4" />
+                            Create bulk asset
+                          </Link>
+                        </Button>
+                      }
                     />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Asset Tag</TableHead>
+                            <TableHead>Asset tag</TableHead>
                             <TableHead className="text-right">Available</TableHead>
                             <TableHead className="text-right">Total</TableHead>
                             <TableHead>Status</TableHead>
@@ -401,16 +426,16 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           {model.bulkAssets.map((ba) => (
                             <TableRow key={ba.id}>
                               <TableCell>
-                                <span className="font-mono text-sm font-medium">
+                                <span className="t-mono text-table-cell font-medium text-ink">
                                   {ba.assetTag}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-right font-medium t-data">{ba.availableQuantity}</TableCell>
-                              <TableCell className="text-right text-fg-3 t-data">{ba.totalQuantity}</TableCell>
+                              <TableCell className="text-right font-medium text-ink t-data">{ba.availableQuantity}</TableCell>
+                              <TableCell className="text-right text-muted t-data">{ba.totalQuantity}</TableCell>
                               <TableCell>
                                 <StatusIndicator category="asset" value={ba.status} label={bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-fg-3">{ba.location?.name || "—"}</TableCell>
+                              <TableCell className="text-muted">{ba.location?.name || "—"}</TableCell>
                               <TableCell className="text-right">
                                 <CanDo resource="asset" action="update">
                                   <div className="flex justify-end gap-1">
@@ -418,15 +443,19 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       variant="ghost"
                                       size="icon"
                                       className="h-7 w-7"
-                                      render={<Link href={`/assets/registry/${ba.id}/edit?type=bulk`} />}
+                                      title="Edit"
+                                      asChild
                                     >
-                                      <Pencil className="h-3.5 w-3.5" />
+                                      <Link href={`/assets/registry/${ba.id}/edit?type=bulk`}>
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Link>
                                     </Button>
                                     {ba.isActive ? (
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 text-destructive"
+                                        className="h-7 w-7 text-t-out"
+                                        title="Archive"
                                         onClick={() => setArchiveBulkId(ba.id)}
                                       >
                                         <Archive className="h-3.5 w-3.5" />
@@ -435,7 +464,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 text-destructive"
+                                        className="h-7 w-7 text-t-out"
+                                        title="Delete"
                                         onClick={() => setDeleteBulkId(ba.id)}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
@@ -454,8 +484,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="photos" className="mt-4">
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                  <h3 className="t-heading text-fg mb-4">Model Photos</h3>
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <h3 className="t-heading text-ink mb-4">Model photos</h3>
                     <MediaUploader
                       entityType="model"
                       entityId={id}
@@ -483,8 +513,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="documents" className="mt-4">
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                  <h3 className="t-heading text-fg mb-4">Manuals & Documents</h3>
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <h3 className="t-heading text-ink mb-4">Manuals &amp; documents</h3>
                     <MediaUploader
                       entityType="model"
                       entityId={id}
@@ -518,46 +548,46 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <DetailSidebar>
               {/* Photo */}
               {primaryPhotoUrl && (
-                <div className="border-b border-border pb-4">
+                <div className="border-b border-line pb-4">
                   <MediaThumbnail
                     url={primaryPhotoUrl}
                     alt={model.name}
                     size={340}
-                    className="w-full rounded-lg"
+                    className="w-full rounded-[var(--r)]"
                   />
                 </div>
               )}
 
               {/* Model Info */}
-              <SidebarSection title="Model Info">
-                <div className="space-y-1 text-sm">
+              <SidebarSection title="Model info">
+                <div className="space-y-1 text-table-cell">
                   {model.manufacturer && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Manufacturer</span>
-                      <span className="font-medium">{model.manufacturer}</span>
+                      <span className="text-muted">Manufacturer</span>
+                      <span className="font-medium text-ink">{model.manufacturer}</span>
                     </div>
                   )}
                   {model.modelNumber && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Model Number</span>
-                      <span className="font-mono font-medium t-data">{model.modelNumber}</span>
+                      <span className="text-muted">Model number</span>
+                      <span className="t-mono font-medium text-ink t-data">{model.modelNumber}</span>
                     </div>
                   )}
                   {model.sku && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">SKU</span>
-                      <span className="font-mono font-medium t-data">{model.sku}</span>
+                      <span className="text-muted">SKU</span>
+                      <span className="t-mono font-medium text-ink t-data">{model.sku}</span>
                     </div>
                   )}
                   {model.category && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Category</span>
-                      <span className="font-medium">{model.category.name}</span>
+                      <span className="text-muted">Category</span>
+                      <span className="font-medium text-ink">{model.category.name}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Asset Type</span>
-                    <span className="font-medium">{model.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}</span>
+                    <span className="text-muted">Asset type</span>
+                    <span className="font-medium text-ink">{model.assetType === "SERIALIZED" ? "Serialised" : "Bulk"}</span>
                   </div>
                 </div>
               </SidebarSection>
@@ -565,11 +595,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {/* Specifications */}
               {Object.keys(specs).length > 0 && (
                 <SidebarSection title="Specifications">
-                  <div className="space-y-1 text-sm">
+                  <div className="space-y-1 text-table-cell">
                     {Object.entries(specs).map(([key, val]) => (
                       <div key={key} className="flex justify-between">
-                        <span className="text-fg-3">{key}</span>
-                        <span className="font-medium t-data">{val}</span>
+                        <span className="text-muted">{key}</span>
+                        <span className="font-medium text-ink t-data">{val}</span>
                       </div>
                     ))}
                   </div>
@@ -577,25 +607,25 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               )}
 
               {/* Asset Summary */}
-              <SidebarSection title="Asset Summary">
-                <div className="space-y-1 text-sm">
+              <SidebarSection title="Asset summary">
+                <div className="space-y-1 text-table-cell">
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Total</span>
-                    <span className="font-medium t-data">{totalAssets}</span>
+                    <span className="text-muted">Total</span>
+                    <span className="font-medium text-ink t-data">{totalAssets}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Available</span>
-                    <span className="font-medium t-data text-emerald-500">{availableCount}</span>
+                    <span className="text-muted">Available</span>
+                    <span className="font-medium t-data text-ok">{availableCount}</span>
                   </div>
                   {model.assetType === "SERIALIZED" && (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-fg-3">Deployed</span>
-                        <span className="font-medium t-data">{deployedCount}</span>
+                        <span className="text-muted">Deployed</span>
+                        <span className="font-medium text-ink t-data">{deployedCount}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-fg-3">In Maintenance</span>
-                        <span className="font-medium t-data">{maintenanceCount}</span>
+                        <span className="text-muted">In maintenance</span>
+                        <span className="font-medium text-ink t-data">{maintenanceCount}</span>
                       </div>
                     </>
                   )}
@@ -604,8 +634,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Replacement Cost */}
               {model.replacementCost && (
-                <SidebarSection title="Replacement Cost">
-                  <p className="text-lg font-semibold t-data">
+                <SidebarSection title="Replacement cost">
+                  <p className="text-[18px] font-semibold text-ink t-data">
                     ${Number(model.replacementCost).toFixed(2)}
                   </p>
                 </SidebarSection>
@@ -618,18 +648,18 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   action="update"
                   fallback={
                     model.bulkAccessories && model.bulkAccessories.length > 0 ? (
-                      <ul className="space-y-1 text-sm">
+                      <ul className="space-y-1 text-table-cell">
                         {model.bulkAccessories.map((c) => (
                           <li key={c.id} className="flex items-center gap-2">
-                            <span className="text-fg-3 select-none">└─</span>
-                            <span className="font-medium">
+                            <span className="text-faint select-none">└─</span>
+                            <span className="font-medium text-ink">
                               {c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
                             </span>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm text-fg-3">No default accessories.</p>
+                      <p className="text-table-cell text-muted">No default accessories.</p>
                     )
                   }
                 >

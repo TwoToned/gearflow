@@ -2889,6 +2889,36 @@ off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
   Coolify PR preview against prod Convex (per the deploy-ordering gate above:
   testTagRecord/subTestRecord are already backfilled into prod).
 
+### Keystone consumer 1/4: `getProject` — DONE
+
+`server/projects.ts:getProject` (the equipment editor read) now reconstructs its
+whole `categories → groups → lineItems → childLineItems → units` composition from
+Convex via [`src/lib/project-line-item-read.ts`](../src/lib/project-line-item-read.ts)
+(`buildProjectEquipmentTree`). Prisma there now supplies **only** the project
+scalars + `location` + `projectManagers` + `media` (those stay Prisma reads for
+now). The line-item-tree Prisma `include` + `PROJECT_UNIT_INCLUDE` are deleted.
+
+- **Full-row mapper** (`mapLineItemDoc` / `mapUnitDoc` / `mapCategoryDoc` /
+  `mapGroupDoc`): every Prisma scalar present, date fields epoch-ms → `Date`,
+  nullable absent → `null`, Prisma scalar defaults applied, Convex `_id`/
+  `_creationTime` stripped. Money stays `number` (Convex stores `Decimal` as
+  `number`; `serialize()` collapses Prisma `Decimal` → `number` anyway).
+- **Per-consumer shape:** units carry `asset`/`bulkAsset` as `{ id, assetTag }`
+  selects (matching the old `PROJECT_UNIT_INCLUDE`); the line item gets a **plain**
+  `kit` (full doc, NO `_count` — that graft is warehouse-only). `model`/`supplier`
+  come off the existing `attachLineItemTree`; `asset`/`bulkAsset`/`kit` off a new
+  `attachAssetBulkKitPlain` (raw docs, dates → `Date`, meta stripped).
+- **Depth:** grouped tree nests `childLineItems` 1 deep; top-level list 2 deep
+  (`project.lineItems` = ALL non-CANCELLED items, parents AND children — the dual
+  projection).
+- New Convex query `projectLineItemUnits.listByLineItemIds` (batch, service-only).
+- **Validated:** mapper unit tests + a structural golden-diff vs the old Prisma
+  `include` on an enriched project (kit parent → kit child → accessory grandchild,
+  accessory parent + 2 children, a unit line with CONFIRMED + bulk + CANCELLED
+  units, a CANCELLED top-level line): grouped tree byte-matches, flat list matches
+  as a set, every per-node structure (units, depth truncation, CANCELLED
+  exclusion, resolved model/supplier/asset/kit ids) matches.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

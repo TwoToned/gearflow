@@ -43,6 +43,29 @@ export const listByLineItem = query({
   },
 });
 
+/**
+ * Batch variant of {@link listByLineItem}: collect units for many line items in
+ * one round-trip (N index scans, server-side). Feeds the Phase A line-item-tree
+ * reconstruction (`src/lib/project-line-item-read.ts`) — a project's units are
+ * fetched by its line-item ids rather than an org-wide collect. Service-only,
+ * matching the rest of this module's reads.
+ */
+export const listByLineItemIds = query({
+  args: { lineItemIds: v.array(v.string()) },
+  handler: async (ctx, { lineItemIds }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const lineItemId of lineItemIds) {
+      const rows = await ctx.db
+        .query("projectLineItemUnits")
+        .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

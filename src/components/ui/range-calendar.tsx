@@ -19,7 +19,7 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 
 export type DateRange = { start?: Date; end?: Date };
 
@@ -84,7 +84,7 @@ export function RangeCalendar({
         <button
           type="button"
           onClick={() => setViewMonth((m) => subMonths(m, 1))}
-          className="flex size-7 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:bg-paper-2 hover:text-ink"
+          className={cn("flex size-8 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:bg-paper-2 hover:text-ink", focusRing)}
           aria-label="Previous month"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -93,7 +93,7 @@ export function RangeCalendar({
         <button
           type="button"
           onClick={() => setViewMonth((m) => addMonths(m, 1))}
-          className="flex size-7 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:bg-paper-2 hover:text-ink"
+          className={cn("flex size-8 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:bg-paper-2 hover:text-ink", focusRing)}
           aria-label="Next month"
         >
           <ChevronRight className="h-4 w-4" />
@@ -121,7 +121,8 @@ export function RangeCalendar({
               onMouseEnter={() => setHover(day)}
               onMouseLeave={() => setHover(null)}
               className={cn(
-                "relative mx-auto flex size-9 items-center justify-center text-[13px] transition-colors",
+                "relative mx-auto flex size-9 items-center justify-center rounded-[var(--r)] text-table-cell transition-colors focus-visible:z-10",
+                focusRing,
                 // range fill underlay (square so segments join up)
                 inRange && !isEndpoint && "bg-red-soft text-ink",
                 inRange && isStart && !single && "rounded-l-[var(--r)] bg-red-soft",

@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO, isValid } from "date-fns";
 import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
   RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
 } from "@/components/ui/range-calendar";
@@ -141,7 +141,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                 type="button"
                 onClick={() => i <= step && setStep(i)}
                 disabled={i > step}
-                className={cn("flex items-center gap-2 rounded-[var(--r)] px-1 py-1 transition-colors", i <= step && "cursor-pointer")}
+                className={cn("flex items-center gap-2 rounded-[var(--r)] px-1 py-1 transition-colors", focusRing, disabledState, i <= step && "cursor-pointer")}
               >
                 <span className={cn(
                   "flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors",
@@ -149,7 +149,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                 )}>
                   {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                 </span>
-                <span className={cn("text-[13px] font-medium", active ? "text-ink" : done ? "text-ink-2" : "text-faint")}>{s.label}</span>
+                <span className={cn("text-table-cell font-medium", active ? "text-ink" : done ? "text-ink-2" : "text-faint")}>{s.label}</span>
               </button>
               {i < STEPS.length - 1 && <span className={cn("h-px flex-1", done ? "bg-red" : "bg-line")} />}
             </li>
@@ -187,7 +187,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                       return (
                         <span key={id} className="inline-flex items-center gap-1 rounded-full bg-paper-2 px-2 py-0.5 text-[12px] text-ink-2">
                           {m?.label ?? id}
-                          <button type="button" onClick={() => setManagerIds((p) => p.filter((x) => x !== id))} className="text-faint hover:text-ink"><X className="h-3 w-3" /></button>
+                          <button type="button" aria-label="Remove manager" onClick={() => setManagerIds((p) => p.filter((x) => x !== id))} className={cn("rounded-full text-faint transition-colors hover:text-ink", focusRing)}><X className="h-3 w-3" /></button>
                         </span>
                       );
                     })}
@@ -353,7 +353,8 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
               type="button"
               onClick={() => setRange(presetRange(p, range.start))}
               className={cn(
-                "rounded-full border-2 px-3 py-1 text-[13px] font-medium transition-colors",
+                "rounded-full border-2 px-3 py-1 text-table-cell font-medium transition-colors",
+                focusRing,
                 active
                   ? "border-red bg-red-soft text-ink"
                   : "border-line text-ink-2 hover:border-red/50 hover:text-ink",
@@ -367,7 +368,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
           <button
             type="button"
             onClick={() => setRange({ start: undefined, end: undefined })}
-            className="rounded-full px-3 py-1 text-[13px] font-medium text-faint transition-colors hover:text-t-out"
+            className={cn("rounded-full px-3 py-1 text-table-cell font-medium text-faint transition-colors hover:text-t-out", focusRing)}
           >
             Clear
           </button>
@@ -378,7 +379,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
         <RangeCalendar value={range} onChange={setRange} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-          <span className={cn("text-[13px] font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
+          <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
           {lenLabel && (
             <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{lenLabel}</span>
           )}
@@ -417,7 +418,7 @@ function MomentRow({
       <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
         <Icon className="h-4 w-4" />
       </span>
-      <span className="w-24 shrink-0 text-[13px] font-medium text-ink-2">{label}</span>
+      <span className="w-24 shrink-0 text-table-cell font-medium text-ink-2">{label}</span>
       <Input type="date" {...form.register(dateName)} className="flex-1" />
       <Input type="time" {...form.register(timeName)} className="w-28" />
     </div>
@@ -441,7 +442,7 @@ function ReviewRow({ label, value, mono }: { label: string; value?: string; mono
   return (
     <div className="flex flex-col gap-0.5 border-b border-line pb-2">
       <dt className="t-micro text-faint">{label}</dt>
-      <dd className={cn("text-[14px]", value ? "text-ink" : "text-faint", mono && "font-mono text-[13px]")}>{value || "Not set"}</dd>
+      <dd className={cn("text-ui-text", value ? "text-ink" : "text-faint", mono && "font-mono text-caption")}>{value || "Not set"}</dd>
     </div>
   );
 }

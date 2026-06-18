@@ -10,9 +10,10 @@ import {
   Package,
   type LucideIcon,
 } from "lucide-react";
+import { cn, focusRing } from "@/lib/utils";
 
 // DESIGN.md §16 — mobile bottom nav is the 5 daily-operator workflows:
-// Dashboard / Projects / Warehouse / Crew / Assets. Settings lives in the
+// Dashboard / Jobs / Warehouse / Crew / Assets. Settings lives in the
 // avatar menu; everything else (Test & Tag, Maintenance, Clients, Suppliers,
 // Locations, Activity) is sidebar-only on larger screens.
 //
@@ -29,7 +30,7 @@ interface MobileNavItem {
 
 const navItems: MobileNavItem[] = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/projects", icon: FolderOpen, label: "Projects" },
+  { href: "/projects", icon: FolderOpen, label: "Jobs" },
   { href: "/warehouse", icon: Warehouse, label: "Warehouse" },
   { href: "/crew", icon: HardHat, label: "Crew" },
   { href: "/assets/registry", icon: Package, label: "Assets", matchPrefix: "/assets" },
@@ -60,9 +61,11 @@ export function MobileNav() {
               key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`flex h-14 flex-1 flex-col items-center justify-center gap-1 transition-colors ${
-                isActive ? "text-red" : "text-faint hover:text-ink-2"
-              }`}
+              className={cn(
+                "flex h-14 flex-1 flex-col items-center justify-center gap-1 rounded-[var(--r)] transition-colors",
+                focusRing,
+                isActive ? "text-red" : "text-faint hover:text-ink-2",
+              )}
             >
               <item.icon className="size-[22px]" aria-hidden />
               <span className="text-[11px] font-medium leading-none">{item.label}</span>

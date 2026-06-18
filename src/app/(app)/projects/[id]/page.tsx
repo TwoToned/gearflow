@@ -53,8 +53,9 @@ import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { Badge } from "@/components/ui/badge";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
   Tabs,
   TabsList,
@@ -193,7 +194,19 @@ export default function ProjectDetailPage({
   }
 
   if (!project) {
-    return <div className="text-fg-3 py-12 text-center">Project not found.</div>;
+    return (
+      <RequirePermission resource="project" action="read">
+        <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Project not found.</p>
+          <p className="mt-1 text-caption text-muted">
+            It may have been deleted, or you don&apos;t have access to it.
+          </p>
+          <Button variant="line" size="sm" className="mt-4" asChild>
+            <Link href="/projects">Back to projects</Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
   }
 
   const currentStatus = project.status;
@@ -220,48 +233,40 @@ export default function ProjectDetailPage({
           {/* ── Header (full width) ────────────────────────────────── */}
           <div>
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/projects" className="hover:text-fg transition-colors">
+            <nav className="mb-2 flex items-center gap-1 text-caption text-muted">
+              <Link href="/projects" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
                 Projects
               </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="font-mono text-fg-2">{project.projectNumber}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="t-mono text-ink-2">{project.projectNumber}</span>
             </nav>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{project.name}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="t-title text-ink">{project.name}</h1>
                   <StatusIndicator
                     category="project"
                     value={project.status}
                     label={projectStatusLabels[project.status] || formatLabel(project.status)}
                   />
                   {project.isTemplate && (
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-                      <BookTemplate className="mr-1 h-3 w-3" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
+                      <BookTemplate className="h-3 w-3" />
                       Template
-                    </Badge>
+                    </span>
                   )}
                   {/* PM Avatars */}
                   {project.projectManagers && (project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).length > 0 && (
                     <div className="flex -space-x-1.5 ml-2">
                       {(project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).map((pm) => (
-                        <div
+                        <PersonAvatar
                           key={pm.user.id}
-                          className="h-6 w-6 rounded-full bg-bg-inset ring-2 ring-bg-surface flex items-center justify-center text-[10px] font-medium text-fg-3"
+                          name={pm.user.name ?? pm.user.email}
+                          src={pm.user.image ?? undefined}
+                          className="size-6 ring-2 ring-card"
                           title={pm.user.name ?? pm.user.email}
-                        >
-                          {pm.user.image ? (
-                            <img
-                              src={pm.user.image}
-                              alt={pm.user.name ?? ""}
-                              className="h-6 w-6 rounded-full object-cover"
-                            />
-                          ) : (
-                            (pm.user.name ?? pm.user.email).charAt(0).toUpperCase()
-                          )}
-                        </div>
+                        />
                       ))}
                     </div>
                   )}
@@ -276,11 +281,11 @@ export default function ProjectDetailPage({
                   )}
                 </div>
                 {(project.client || project.location) && (
-                  <p className="mt-1 text-sm text-fg-3">
+                  <p className="mt-1 text-caption text-muted">
                     {project.client && (
                       <Link
                         href={`/clients/${project.client.id}`}
-                        className="hover:underline"
+                        className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}
                       >
                         {project.client.name}
                       </Link>
@@ -297,25 +302,29 @@ export default function ProjectDetailPage({
                   <ProjectCommentsButton orgId={orgId} projectId={id} />
                 )}
                 {!project.isTemplate && (
-                  <Button variant="outline" size="sm" render={<Link href={`/warehouse/${id}`} />}>
-                    <Warehouse className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Warehouse</span>
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/warehouse/${id}`}>
+                      <Warehouse className="h-4 w-4" />
+                      <span className="hidden sm:inline">Warehouse</span>
+                    </Link>
                   </Button>
                 )}
                 {!project.isTemplate && (
-                  <Button variant="outline" size="sm" render={<Link href={`/projects/${id}/runsheet`} />}>
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Runsheet</span>
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/projects/${id}/runsheet`}>
+                      <ClipboardList className="h-4 w-4" />
+                      <span className="hidden sm:inline">Runsheet</span>
+                    </Link>
                   </Button>
                 )}
                 {!project.isTemplate && (
                   <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button variant="outline" size="sm" />}
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <span className="hidden sm:inline">Documents</span>
-                      <ChevronDown className="ml-1 h-3 w-3" />
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="line" size="sm">
+                        <FileText className="h-4 w-4" />
+                        <span className="hidden sm:inline">Documents</span>
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {([
@@ -369,34 +378,34 @@ export default function ProjectDetailPage({
                   </DropdownMenu>
                 )}
                 <CanDo resource="project" action="update">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    render={<Link href={`/projects/${id}/edit`} />}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/projects/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Link>
                   </Button>
                 </CanDo>
                 <CanDo resource="project" action="create">
                   {project.isTemplate ? (
-                    <Button variant="outline" size="sm" onClick={() => setDupMode("duplicate")}>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Use Template
+                    <Button variant="line" size="sm" onClick={() => setDupMode("duplicate")}>
+                      <Copy className="h-4 w-4" />
+                      Use template
                     </Button>
                   ) : (
                     <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                        <MoreHorizontal className="h-4 w-4" />
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="line" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
-                          Duplicate Project
+                          Duplicate project
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setDupMode("template")}>
                           <BookTemplate className="mr-2 h-4 w-4" />
-                          Save as Template
+                          Save as template
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -406,24 +415,24 @@ export default function ProjectDetailPage({
                   <CanDo resource="project" action="update">
                     {project.status === "CANCELLED" ? (
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
-                        className="text-destructive"
+                        className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                         onClick={() => setDeleteOpen(true)}
                         disabled={deleteMutation.isPending}
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
                         Delete
                       </Button>
                     ) : (
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
-                        className="text-destructive"
+                        className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                         onClick={() => setCancelOpen(true)}
                         disabled={archiveMutation.isPending}
                       >
-                        <Archive className="mr-2 h-4 w-4" />
+                        <Archive className="h-4 w-4" />
                         Cancel
                       </Button>
                     )}
@@ -478,7 +487,7 @@ export default function ProjectDetailPage({
                       projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
                       projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
                     />
-                    <div className="h-px bg-border" />
+                    <div className="h-px bg-line" />
                     <CrewPanel projectId={id} />
                   </div>
                 </TabsContent>
@@ -575,7 +584,11 @@ export default function ProjectDetailPage({
                         value={currentStatus}
                         onChange={(e) => statusMutation.mutate(e.target.value)}
                         disabled={statusMutation.isPending}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        className={cn(
+                          "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-ui-text text-ink transition-colors",
+                          focusRing,
+                          disabledState,
+                        )}
                       >
                         {allStatuses.map((s) => (
                           <option key={s} value={s}>
@@ -606,28 +619,28 @@ export default function ProjectDetailPage({
                 {/* Client */}
                 <SidebarSection title="Client">
                   {project.client ? (
-                    <div className="space-y-1 text-sm">
+                    <div className="space-y-1 text-ui-text">
                       <Link
                         href={`/clients/${project.client.id}`}
-                        className="font-medium text-fg hover:underline"
+                        className={cn("font-medium text-ink hover:text-link hover:underline rounded-sm", focusRing)}
                       >
                         {project.client.name}
                       </Link>
                       {project.client.contactEmail && (
-                        <div className="flex items-center gap-2 text-fg-3">
+                        <div className="flex items-center gap-2 text-muted">
                           <Mail className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{project.client.contactEmail}</span>
                         </div>
                       )}
                       {project.client.contactPhone && (
-                        <div className="flex items-center gap-2 text-fg-3">
+                        <div className="flex items-center gap-2 text-muted">
                           <Phone className="h-3.5 w-3.5 shrink-0" />
                           <span>{project.client.contactPhone}</span>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-fg-3">No client assigned</p>
+                    <p className="text-ui-text text-muted">No client assigned</p>
                   )}
                 </SidebarSection>
 
@@ -643,41 +656,41 @@ export default function ProjectDetailPage({
                         className="mb-2"
                       />
                     )}
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-fg-3 flex items-center gap-1">
+                    <div className="space-y-1 text-ui-text">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted flex items-center gap-1">
                           <CalendarDays className="h-3.5 w-3.5" />
                           Rental
                         </span>
-                        <span className="font-medium">
+                        <span className="font-medium text-ink-2 tabular-nums text-right">
                           {formatDate(project.rentalStartDate as string | null)} &ndash;{" "}
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Load In</span>
-                        <span className="font-medium">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted">Load in</span>
+                        <span className="font-medium text-ink-2 tabular-nums">
                           {formatDate(project.loadInDate as string | null)}
                           {project.loadInTime && ` ${project.loadInTime}`}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Load Out</span>
-                        <span className="font-medium">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted">Load out</span>
+                        <span className="font-medium text-ink-2 tabular-nums">
                           {formatDate(project.loadOutDate as string | null)}
                           {project.loadOutTime && ` ${project.loadOutTime}`}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Event Start</span>
-                        <span className="font-medium">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted">Event start</span>
+                        <span className="font-medium text-ink-2 tabular-nums">
                           {formatDate(project.eventStartDate as string | null)}
                           {project.eventStartTime && ` ${project.eventStartTime}`}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Event End</span>
-                        <span className="font-medium">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted">Event end</span>
+                        <span className="font-medium text-ink-2 tabular-nums">
                           {formatDate(project.eventEndDate as string | null)}
                           {project.eventEndTime && ` ${project.eventEndTime}`}
                         </span>
@@ -688,42 +701,42 @@ export default function ProjectDetailPage({
 
                 {/* Location & Site Contact */}
                 <SidebarSection title="Location">
-                  <div className="space-y-1 text-sm">
+                  <div className="space-y-1 text-ui-text">
                     {project.location ? (
                       <>
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                          <span className="font-medium">{project.location.name}</span>
+                          <MapPin className="h-3.5 w-3.5 text-muted shrink-0" />
+                          <span className="font-medium text-ink-2">{project.location.name}</span>
                         </div>
                         {project.location.address && (
-                          <p className="text-fg-3 pl-5.5">{project.location.address}</p>
+                          <p className="text-muted pl-5.5">{project.location.address}</p>
                         )}
                         {project.location.latitude != null && project.location.longitude != null && (
                           <a
                             href={`https://www.google.com/maps/dir/?api=1&destination=${project.location.latitude},${project.location.longitude}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-teal-500 hover:text-teal-400 pl-5.5"
+                            className={cn("inline-flex items-center gap-1.5 text-caption text-link hover:underline pl-5.5 rounded-sm", focusRing)}
                           >
                             <Navigation className="h-3 w-3" />
-                            Get Directions
+                            Get directions
                           </a>
                         )}
                       </>
                     ) : (
-                      <p className="text-fg-3">No location set</p>
+                      <p className="text-muted">No location set</p>
                     )}
                     {project.siteContactName && (
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <p className="font-medium">{project.siteContactName}</p>
+                      <div className="mt-2 pt-2 border-t border-line">
+                        <p className="font-medium text-ink-2">{project.siteContactName}</p>
                         {project.siteContactPhone && (
-                          <div className="flex items-center gap-2 text-fg-3">
+                          <div className="flex items-center gap-2 text-muted">
                             <Phone className="h-3.5 w-3.5 shrink-0" />
                             <span>{project.siteContactPhone}</span>
                           </div>
                         )}
                         {project.siteContactEmail && (
-                          <div className="flex items-center gap-2 text-fg-3">
+                          <div className="flex items-center gap-2 text-muted">
                             <Mail className="h-3.5 w-3.5 shrink-0" />
                             <span>{project.siteContactEmail}</span>
                           </div>
@@ -745,7 +758,7 @@ export default function ProjectDetailPage({
                     .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
 
                   return (
-                    <div className="border-b border-border pb-4">
+                    <div className="border-b border-line pb-4">
                       <FinancialSummary
                         equipmentRevenue={project.equipmentRevenue as number | null}
                         serviceChargeTotal={
@@ -776,32 +789,30 @@ export default function ProjectDetailPage({
                 {/* Operational P&L — costs roll-up beyond the financial summary.
                     Hides itself when project has no revenue yet. */}
                 {!project.isTemplate && (
-                  <div className="border-b border-border pb-4">
+                  <div className="border-b border-line pb-4">
                     <ProjectCostsPanel projectId={project.id} />
                   </div>
                 )}
 
                 {/* Quick Actions */}
                 {!project.isTemplate && (
-                  <SidebarSection title="Quick Actions">
+                  <SidebarSection title="Quick actions">
                     <div className="flex flex-wrap gap-2">
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
-                        className="text-xs"
                         onClick={() => window.open(`/api/documents/${id}?type=quote`, "_blank")}
                       >
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                        Generate Quote
+                        <FileText className="h-3.5 w-3.5" />
+                        Generate quote
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
-                        className="text-xs"
                         onClick={() => window.open(`/api/documents/${id}?type=invoice`, "_blank")}
                       >
-                        <DollarSign className="mr-1.5 h-3.5 w-3.5" />
-                        Send Invoice
+                        <DollarSign className="h-3.5 w-3.5" />
+                        Send invoice
                       </Button>
                     </div>
                   </SidebarSection>
@@ -809,21 +820,21 @@ export default function ProjectDetailPage({
 
                 {/* Project Info */}
                 <SidebarSection title="Details">
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Type</span>
-                      <span className="font-medium">{typeLabels[project.type] || project.type}</span>
+                  <div className="text-ui-text space-y-1">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted">Type</span>
+                      <span className="font-medium text-ink-2">{typeLabels[project.type] || project.type}</span>
                     </div>
                     {project.description && (
-                      <p className="text-sm text-fg-3 whitespace-pre-wrap pt-1">{project.description}</p>
+                      <p className="text-ui-text text-muted whitespace-pre-wrap pt-1">{project.description}</p>
                     )}
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Created</span>
-                      <span className="font-medium">{formatDate(project.createdAt as unknown as string)}</span>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted">Created</span>
+                      <span className="font-medium text-ink-2 tabular-nums">{formatDate(project.createdAt as unknown as string)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Updated</span>
-                      <span className="font-medium">{formatDate(project.updatedAt as unknown as string)}</span>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted">Updated</span>
+                      <span className="font-medium text-ink-2 tabular-nums">{formatDate(project.updatedAt as unknown as string)}</span>
                     </div>
                   </div>
                 </SidebarSection>
@@ -896,17 +907,6 @@ export default function ProjectDetailPage({
   );
 }
 
-function LabourCostDisplay({ projectId }: { projectId: string }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const { data } = useProjectLabourCost(projectId);
-  return (
-    <span className="t-data font-medium">
-      {data ? formatCurrency(Number(data.totalLabourCost)) : "\u2014"}
-    </span>
-  );
-}
-
 function ProjectSummaryStrip({
   projectId,
   equipmentRevenue,
@@ -916,9 +916,6 @@ function ProjectSummaryStrip({
   equipmentRevenue: number | null;
   total: number | null;
 }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
   const { data: labourData } = useProjectLabourCost(projectId);
 
   const { data: serviceData } = useProjectServicesSummary(projectId);
@@ -947,21 +944,22 @@ function ProjectSummaryStrip({
     },
   ];
 
+  // Inline metrics strip (single surface, vertical dividers) per DESIGN dashboard rule.
   return (
-    <div className="grid grid-cols-2 gap-px sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border rounded-md border border-border bg-border sm:bg-transparent">
+    <div className="grid grid-cols-2 gap-px rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
       {metrics.map((m) => (
         <div
           key={m.label}
-          className="bg-bg-surface px-4 py-3 sm:first:rounded-l-md sm:last:rounded-r-md"
+          className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]"
         >
-          <div className="t-overline text-fg-3">
+          <div className="t-overline text-muted">
             {m.label}
           </div>
           <div
             className={
               m.bold
-                ? "text-base font-bold tabular-nums tracking-tight text-fg"
-                : "text-sm font-semibold tabular-nums text-fg-2"
+                ? "text-card-title font-bold tabular-nums tracking-tight text-ink"
+                : "text-ui-text font-semibold tabular-nums text-ink-2"
             }
           >
             {m.value}

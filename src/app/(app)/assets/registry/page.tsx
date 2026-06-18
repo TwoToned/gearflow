@@ -15,7 +15,7 @@ export default function RegistryPage() {
     <FadeIn>
       <RequirePermission resource="asset" action="read">
         <ListPageLayout
-          title="Asset Registry"
+          title="Asset registry"
           description="Every piece of gear your organisation owns, tracked individually."
         >
           <AssetTable />

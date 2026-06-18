@@ -54,6 +54,7 @@ import { CustomFieldsDisplay } from "@/components/custom-fields/custom-fields-di
 
 import { assetStatusLabels, lineItemStatusLabels, maintenanceTypeLabels, maintenanceStatusLabels, mediaTypeLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
+import { cn, focusRing } from "@/lib/utils";
 
 export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -145,12 +146,32 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   if (isLoading) return <DetailPageSkeleton />;
 
   if (isBulk) {
-    if (!bulkAsset) return <div className="text-fg-3 py-12 text-center">Bulk asset not found.</div>;
-    return <div className="text-fg-3">Redirecting to model...</div>;
+    if (!bulkAsset) {
+      return (
+        <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Bulk asset not found.</p>
+          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+          <Button variant="line" size="sm" className="mt-4" asChild>
+            <Link href="/assets/registry">Back to registry</Link>
+          </Button>
+        </div>
+      );
+    }
+    return <div className="text-table-cell text-muted">Redirecting to model…</div>;
   }
 
   // ─── Serialized Asset Detail ─────────────────────────────────────────
-  if (!asset) return <div className="text-fg-3 py-12 text-center">Asset not found.</div>;
+  if (!asset) {
+    return (
+      <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Asset not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/assets/registry">Back to registry</Link>
+        </Button>
+      </div>
+    );
+  }
 
   const assetPhotos = ((asset.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const photoUrl = resolveAssetPhotoUrl({ ...asset, model: asset.model ?? undefined }, false);
@@ -166,16 +187,16 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         {/* ── Header (full width) ────────────────────────────────── */}
         <div>
           {/* Breadcrumb */}
-          <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-            <Link href="/assets/registry" className="hover:text-fg transition-colors">
+          <nav className="mb-2 flex items-center gap-1 text-caption text-muted">
+            <Link href="/assets/registry" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
               Assets
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <Link href="/assets/registry" className="hover:text-fg transition-colors">
+            <ChevronRight className="h-3 w-3" />
+            <Link href="/assets/registry" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
               Registry
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="font-mono text-fg-2">{asset.assetTag}</span>
+            <ChevronRight className="h-3 w-3" />
+            <span className="t-mono text-ink-2">{asset.assetTag}</span>
           </nav>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -188,17 +209,17 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-fg">
+                  <h1 className="t-title text-ink">
                     {asset.customName || asset.model?.name || "—"}
                   </h1>
                   <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />
                   <StatusIndicator category="condition" value={asset.condition} label={conditionLabels[asset.condition] || asset.condition} />
                 </div>
-                <p className="text-fg-3 truncate">
-                  <span className="font-mono">{asset.assetTag}</span>
+                <p className="text-caption text-muted truncate">
+                  <span className="t-mono text-ink-2">{asset.assetTag}</span>
                   {asset.customName && <> &middot; {asset.customName}</>}
                   {" "}&middot;{" "}
-                  <Link href={`/assets/models/${asset.modelId}`} className="hover:underline">
+                  <Link href={`/assets/models/${asset.modelId}`} className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}>
                     {asset.model?.name || "—"}
                   </Link>
                   {asset.model?.category && <> &middot; {asset.model.category.name}</>}
@@ -216,39 +237,41 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <div className="flex flex-wrap gap-2">
                   {asset.status === "CHECKED_OUT" && (
                     <Button
-                      variant="outline"
+                      variant="line"
                       size="sm"
-                      className="text-amber-600"
+                      className="border-warn/40 text-warn hover:bg-warn hover:text-paper hover:border-warn"
                       onClick={() => setForceReturnOpen(true)}
                       disabled={forceReturnMutation.isPending}
                     >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      Force Return
+                      <RotateCcw className="h-4 w-4" />
+                      Force return
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" render={<Link href={`/assets/registry/${id}/edit`} />}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/assets/registry/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Link>
                   </Button>
                   {asset.isActive && (
                     <Button
-                      variant="outline"
+                      variant="line"
                       size="sm"
-                      className="text-destructive"
+                      className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                       onClick={() => setArchiveOpen(true)}
                     >
-                      <Archive className="mr-2 h-4 w-4" />
+                      <Archive className="h-4 w-4" />
                       Archive
                     </Button>
                   )}
                   <Button
-                    variant="outline"
+                    variant="line"
                     size="sm"
-                    className="text-destructive"
+                    className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                     onClick={() => setDeleteOpen(true)}
                     disabled={deleteMutation.isPending}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
+                    <Trash2 className="h-4 w-4" />
                     Delete
                   </Button>
                 </div>
@@ -281,13 +304,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               <TabsContent value="history" className="mt-4">
                 {asset.lineItems.length === 0 ? (
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <p className="py-8 text-center text-sm text-fg-3">
-                      This asset hasn&apos;t been assigned to any projects yet.
+                  <div className="rounded-[var(--r-lg)] border-2 border-border p-7 text-center">
+                    <p className="text-ui-text text-ink-2">No project history yet</p>
+                    <p className="mt-1 text-caption text-muted">
+                      This asset hasn&apos;t been assigned to a project — it&apos;ll show up here once it&apos;s on a job.
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-md border overflow-x-auto">
+                  <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -301,16 +325,16 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         {asset.lineItems.map((li) => (
                           <TableRow key={li.id}>
                             <TableCell>
-                              <Link href={`/projects/${li.projectId}`} className="hover:underline">
+                              <Link href={`/projects/${li.projectId}`} className={cn("hover:text-ink hover:underline rounded-sm", focusRing)}>
                                 {li.project.name}
                               </Link>
-                              <p className="text-xs text-fg-3">{li.project.projectNumber}</p>
+                              <p className="t-mono text-caption text-muted">{li.project.projectNumber}</p>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">{lineItemStatusLabels[li.status] || formatLabel(li.status)}</Badge>
+                              <StatusIndicator category="lineItem" value={li.status} label={lineItemStatusLabels[li.status] || formatLabel(li.status)} variant="pill" />
                             </TableCell>
-                            <TableCell className="text-sm hidden sm:table-cell">{formatDate(li.checkedOutAt)}</TableCell>
-                            <TableCell className="text-sm hidden sm:table-cell">{formatDate(li.returnedAt)}</TableCell>
+                            <TableCell className="text-table-cell text-muted hidden sm:table-cell">{formatDate(li.checkedOutAt)}</TableCell>
+                            <TableCell className="text-table-cell text-muted hidden sm:table-cell">{formatDate(li.returnedAt)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -321,13 +345,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               <TabsContent value="maintenance" className="mt-4">
                 {asset.maintenanceLinks.length === 0 ? (
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <p className="py-8 text-center text-sm text-fg-3">
-                      No maintenance records for this asset.
+                  <div className="rounded-[var(--r-lg)] border-2 border-border p-7 text-center">
+                    <p className="text-ui-text text-ink-2">No maintenance records</p>
+                    <p className="mt-1 text-caption text-muted">
+                      Servicing, repairs, and test &amp; tag history for this asset land here.
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-md border overflow-x-auto">
+                  <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -343,20 +368,20 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           const mr = link.maintenanceRecord;
                           return (
                             <TableRow key={mr.id}>
-                              <TableCell className="font-medium">{mr.title}</TableCell>
+                              <TableCell className="font-medium text-ink">{mr.title}</TableCell>
                               <TableCell>
-                                <Badge variant="secondary">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
+                                <Badge status="neutral">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline">{maintenanceStatusLabels[mr.status] || formatLabel(mr.status)}</Badge>
+                                <StatusIndicator category="maintenance" value={mr.status} label={maintenanceStatusLabels[mr.status] || formatLabel(mr.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-sm hidden sm:table-cell">
+                              <TableCell className="text-table-cell text-muted hidden sm:table-cell">
                                 {formatDate(mr.completedDate || mr.scheduledDate)}
                               </TableCell>
                               <TableCell className="hidden sm:table-cell">
                                 {mr.result ? (
-                                  <Badge variant={mr.result === "PASS" ? "default" : "destructive"}>
-                                    {mr.result}
+                                  <Badge status={mr.result === "PASS" ? "ok" : "overbooked"}>
+                                    {mr.result === "PASS" ? "Pass" : formatLabel(mr.result)}
                                   </Badge>
                                 ) : "—"}
                               </TableCell>
@@ -379,16 +404,16 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="photos" className="mt-4">
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                  <h3 className="t-heading text-fg mb-4">
-                    Asset Photos
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <h3 className="t-heading text-ink mb-4">
+                    Asset photos
                     {!hasCustomPhoto && photoUrl && (
-                      <span className="ml-2 text-xs font-normal text-fg-3">
+                      <span className="ml-2 text-caption font-normal text-muted">
                         Showing model photo — upload a custom photo to override
                       </span>
                     )}
                     {hasCustomPhoto && (
-                      <span className="ml-2 text-xs font-normal text-fg-3">
+                      <span className="ml-2 text-caption font-normal text-muted">
                         Custom photo — remove to revert to model photo
                       </span>
                     )}
@@ -421,10 +446,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="documents" className="mt-4">
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                  <h3 className="t-heading text-fg mb-4">
-                    Model Documents
-                    <span className="ml-2 text-xs font-normal text-fg-3">
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <h3 className="t-heading text-ink mb-4">
+                    Model documents
+                    <span className="ml-2 text-caption font-normal text-muted">
                       From {asset.model?.name || "this model"} — manage on the model page
                     </span>
                   </h3>
@@ -432,7 +457,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     const modelDocs = (asset.model?.media || []).filter((m: MediaItem) => m.type !== "PHOTO");
                     if (modelDocs.length === 0) {
                       return (
-                        <p className="text-sm text-fg-3 py-4 text-center">
+                        <p className="text-table-cell text-muted py-4 text-center">
                           No documents attached to this model.
                         </p>
                       );
@@ -445,14 +470,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             href={doc.file.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors"
+                            className={cn("flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:border-line-2 hover:bg-paper-2 transition-colors", focusRing)}
                           >
-                            <FileText className="h-5 w-5 text-fg-3" />
+                            <FileText className="h-5 w-5 text-muted" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
+                              <p className="truncate text-table-cell font-medium text-ink">
                                 {doc.displayName || doc.file.fileName}
                               </p>
-                              <p className="text-xs text-fg-3">
+                              <p className="text-caption text-muted">
                                 {mediaTypeLabels[doc.type] || formatLabel(doc.type)} — {(doc.file.fileSize / 1024).toFixed(0)} KB
                               </p>
                             </div>
@@ -496,38 +521,38 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </SidebarSection>
 
               {/* Asset Info */}
-              <SidebarSection title="Asset Info">
-                <div className="space-y-1 text-sm">
+              <SidebarSection title="Asset info">
+                <div className="space-y-1 text-table-cell">
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Asset Tag</span>
-                    <span className="font-mono font-medium t-data">{asset.assetTag}</span>
+                    <span className="text-muted">Asset tag</span>
+                    <span className="t-mono font-medium text-ink t-data">{asset.assetTag}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Serial Number</span>
-                    <span className="font-mono font-medium t-data">{asset.serialNumber || "—"}</span>
+                    <span className="text-muted">Serial number</span>
+                    <span className="t-mono font-medium text-ink t-data">{asset.serialNumber || "—"}</span>
                   </div>
                   {asset.customName && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Custom Name</span>
-                      <span className="font-medium">{asset.customName}</span>
+                      <span className="text-muted">Custom name</span>
+                      <span className="font-medium text-ink">{asset.customName}</span>
                     </div>
                   )}
                   {asset.barcode && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Barcode</span>
-                      <span className="font-mono font-medium t-data">{asset.barcode}</span>
+                      <span className="text-muted">Barcode</span>
+                      <span className="t-mono font-medium text-ink t-data">{asset.barcode}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Model</span>
-                    <Link href={`/assets/models/${asset.modelId}`} className="font-medium hover:underline truncate ml-2 text-right">
+                    <span className="text-muted">Model</span>
+                    <Link href={`/assets/models/${asset.modelId}`} className={cn("font-medium text-ink hover:underline truncate ml-2 text-right rounded-sm", focusRing)}>
                       {asset.model?.name || "—"}
                     </Link>
                   </div>
                   {asset.model?.category && (
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Category</span>
-                      <span className="font-medium">{asset.model.category.name}</span>
+                      <span className="text-muted">Category</span>
+                      <span className="font-medium text-ink">{asset.model.category.name}</span>
                     </div>
                   )}
                 </div>
@@ -535,24 +560,24 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Purchase */}
               <SidebarSection title="Purchase">
-                <div className="space-y-1 text-sm">
+                <div className="space-y-1 text-table-cell">
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Date</span>
-                    <span className="font-medium">{formatDate(asset.purchaseDate)}</span>
+                    <span className="text-muted">Date</span>
+                    <span className="font-medium text-ink">{formatDate(asset.purchaseDate)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Price</span>
-                    <span className="font-medium t-data">
+                    <span className="text-muted">Price</span>
+                    <span className="font-medium text-ink t-data">
                       {asset.purchasePrice ? `$${Number(asset.purchasePrice).toFixed(2)}` : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Supplier</span>
-                    <span className="font-medium">{asset.supplier?.name || asset.purchaseSupplier || "—"}</span>
+                    <span className="text-muted">Supplier</span>
+                    <span className="font-medium text-ink">{asset.supplier?.name || asset.purchaseSupplier || "—"}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-fg-3">Warranty</span>
-                    <span className="font-medium">{formatDate(asset.warrantyExpiry)}</span>
+                    <span className="text-muted">Warranty</span>
+                    <span className="font-medium text-ink">{formatDate(asset.warrantyExpiry)}</span>
                   </div>
                 </div>
               </SidebarSection>
@@ -560,9 +585,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {/* Location */}
               {asset.location && (
                 <SidebarSection title="Location">
-                  <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                    <span className="font-medium">{asset.location.name}</span>
+                  <div className="flex items-center gap-2 text-table-cell">
+                    <MapPin className="h-3.5 w-3.5 text-muted shrink-0" />
+                    <span className="font-medium text-ink">{asset.location.name}</span>
                   </div>
                 </SidebarSection>
               )}
@@ -572,12 +597,12 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <SidebarSection title="Accessory of">
                   <Link
                     href={`/assets/registry/${asset.parentAsset.id}`}
-                    className="flex items-center gap-2 text-sm hover:underline"
+                    className={cn("flex items-center gap-2 text-table-cell text-ink hover:underline rounded-sm", focusRing)}
                   >
-                    <Cable className="h-3.5 w-3.5 text-fg-3 shrink-0" />
+                    <Cable className="h-3.5 w-3.5 text-muted shrink-0" />
                     <span className="font-medium">{asset.parentAsset.assetTag}</span>
                     {asset.parentAsset.customName && (
-                      <span className="text-fg-3">{asset.parentAsset.customName}</span>
+                      <span className="text-muted">{asset.parentAsset.customName}</span>
                     )}
                   </Link>
                 </SidebarSection>
@@ -594,27 +619,27 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       );
                       const total =
                         asset.childAssets.length + asset.childBulkItems.length + inherited.length;
-                      if (total === 0) return <p className="text-sm text-fg-3">No accessories attached.</p>;
+                      if (total === 0) return <p className="text-table-cell text-muted">No accessories attached.</p>;
                       return (
-                        <ul className="space-y-1 text-sm">
+                        <ul className="space-y-1 text-table-cell">
                           {asset.childAssets.map((c) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-fg-3 select-none">└─</span>
-                              <span className="font-medium">{c.assetTag}</span>
-                              <span className="text-fg-3">{c.model?.name ?? ""}</span>
+                              <span className="text-faint select-none">└─</span>
+                              <span className="font-medium text-ink">{c.assetTag}</span>
+                              <span className="text-muted">{c.model?.name ?? ""}</span>
                             </li>
                           ))}
                           {asset.childBulkItems.map((c) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-fg-3 select-none">└─</span>
-                              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+                              <span className="text-faint select-none">└─</span>
+                              <span className="font-medium text-ink">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
                             </li>
                           ))}
                           {inherited.map((c: { id: string; quantity: number; bulkAsset: { model: { name: string } | null; assetTag: string } | null }) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-fg-3 select-none">└─</span>
-                              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
-                              <span className="text-[10px] uppercase tracking-wide text-fg-3">from model</span>
+                              <span className="text-faint select-none">└─</span>
+                              <span className="font-medium text-ink">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+                              <span className="text-[11px] tracking-wide text-muted">from model</span>
                             </li>
                           ))}
                         </ul>
@@ -635,11 +660,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {/* Specifications */}
               {specs.length > 0 && (
                 <SidebarSection title="Specifications">
-                  <div className="space-y-1 text-sm">
+                  <div className="space-y-1 text-table-cell">
                     {specs.map((spec, i) => (
                       <div key={i} className="flex justify-between">
-                        <span className="text-fg-3">{spec.key}</span>
-                        <span className="font-medium t-data">{spec.value}</span>
+                        <span className="text-muted">{spec.key}</span>
+                        <span className="font-medium text-ink t-data">{spec.value}</span>
                       </div>
                     ))}
                   </div>
@@ -653,47 +678,37 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               />
 
               {/* Test & Tag / Maintenance */}
-              <SidebarSection title="Test & Tag">
+              <SidebarSection title="Test & tag">
                 {asset.testTagAsset ? (
-                  <div className="space-y-1 text-sm">
+                  <div className="space-y-1 text-table-cell">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Status</span>
-                      <span className="font-medium">{asset.testTagAsset.status?.replace(/_/g, " ") || "—"}</span>
+                      <span className="text-muted">Status</span>
+                      <span className="font-medium text-ink">{asset.testTagAsset.status?.replace(/_/g, " ") || "—"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3 flex items-center gap-1">
+                      <span className="text-muted flex items-center gap-1">
                         <CalendarClock className="h-3.5 w-3.5" />
                         Last tested
                       </span>
-                      <span className="font-medium">{formatDate(asset.testTagAsset.lastTestDate)}</span>
+                      <span className="font-medium text-ink">{formatDate(asset.testTagAsset.lastTestDate)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3 flex items-center gap-1">
+                      <span className="text-muted flex items-center gap-1">
                         <Wrench className="h-3.5 w-3.5" />
                         Next due
                       </span>
-                      <span className="font-medium">{formatDate(asset.testTagAsset.nextDueDate)}</span>
+                      <span className="font-medium text-ink">{formatDate(asset.testTagAsset.nextDueDate)}</span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-2"
-                      render={<Link href={`/test-and-tag/${asset.testTagAsset.id}`} />}
-                    >
-                      View T&T Details
+                    <Button variant="line" size="sm" className="w-full mt-2" asChild>
+                      <Link href={`/test-and-tag/${asset.testTagAsset.id}`}>View T&amp;T details</Link>
                     </Button>
                   </div>
                 ) : (
-                  <div className="text-sm">
-                    <p className="text-fg-3">Not registered</p>
+                  <div className="text-table-cell">
+                    <p className="text-muted">Not registered</p>
                     {asset.model?.requiresTestAndTag && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full mt-2"
-                        render={<Link href={`/test-and-tag/new?assetId=${asset.id}`} />}
-                      >
-                        Register for T&T
+                      <Button variant="line" size="sm" className="w-full mt-2" asChild>
+                        <Link href={`/test-and-tag/new?assetId=${asset.id}`}>Register for T&amp;T</Link>
                       </Button>
                     )}
                   </div>

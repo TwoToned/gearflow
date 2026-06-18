@@ -32,6 +32,33 @@ export const getById = query({
   },
 });
 
+/** Assignments for one model, org-scoped. Replaces a Prisma findMany by modelId. */
+export const listByModelId = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** Assignments for one check item, org-scoped. Replaces a Prisma findMany by
+ *  checkItemId (the `modelCheckItems` include on a single check item). */
+export const listByCheckItemId = query({
+  args: { orgId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_checkItemId", (q) => q.eq("checkItemId", checkItemId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

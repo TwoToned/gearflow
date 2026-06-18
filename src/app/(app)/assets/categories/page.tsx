@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Folder, FolderTree, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
@@ -38,6 +38,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
+import { cn, focusRing } from "@/lib/utils";
 
 export default function CategoriesPage() {
   const canCreate = useCanDo("model", "create");
@@ -177,8 +178,8 @@ export default function CategoriesPage() {
         description="Group gear by type — audio, lighting, video, staging."
         actions={canCreate ? (
           <Button onClick={() => openCreate()}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Category
+            <Plus className="h-4 w-4" />
+            Add category
           </Button>
         ) : undefined}
       />
@@ -186,18 +187,18 @@ export default function CategoriesPage() {
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
           <Input
-            placeholder="Search categories..."
+            placeholder="Search categories…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-10"
           />
         </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-[var(--r)] border border-line overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -214,19 +215,26 @@ export default function CategoriesPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-fg-3">Loading...</TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
+                  <TableCell colSpan={7}>
+                    <div className="h-5 w-full animate-pulse rounded-[8px] bg-elev" />
+                  </TableCell>
+                </TableRow>
+              ))
             ) : filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-fg-3 py-12">
-                  <div className="flex flex-col items-center gap-2">
-                    <FolderOpen className="h-10 w-10 text-fg-3/50" />
-                    <p>{search ? "No matching categories." : "No categories yet."}</p>
+                <TableCell colSpan={7} className="py-12">
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <FolderOpen className="h-10 w-10 text-faint" />
+                    <p className="text-ui-text text-ink-2">{search ? "No matching categories" : "No categories yet"}</p>
+                    <p className="text-caption text-muted">
+                      {search ? "Try a different search." : "Group your gear by type — audio, lighting, video, staging."}
+                    </p>
                     {!search && canCreate && (
                       <Button size="sm" className="mt-2" onClick={() => openCreate()}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create First Category
+                        <Plus className="h-4 w-4" />
+                        Create first category
                       </Button>
                     )}
                   </div>
@@ -237,45 +245,51 @@ export default function CategoriesPage() {
                 <TableRow key={cat.id}>
                   <TableCell>
                     <div className="flex items-center gap-2" style={{ paddingLeft: depth * 24 }}>
-                      <span className="text-base">{cat.icon || (depth === 0 ? "📁" : "📂")}</span>
+                      {cat.icon ? (
+                        <span className="text-base">{cat.icon}</span>
+                      ) : depth === 0 ? (
+                        <Folder className="h-4 w-4 text-muted" />
+                      ) : (
+                        <FolderTree className="h-4 w-4 text-muted" />
+                      )}
                       <Link
                         href={`/assets/categories/${cat.id}`}
-                        className="font-medium hover:text-primary transition-colors"
+                        className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
                       >
                         {cat.name}
                       </Link>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell text-fg-3 max-w-[200px] truncate">
+                  <TableCell className="hidden sm:table-cell text-muted max-w-[200px] truncate">
                     {cat.description || "\u2014"}
                   </TableCell>
                   <TableCell className="text-right t-data">
                     {cat._count.models > 0 ? (
-                      <Badge variant="secondary" className="gap-1">
+                      <Badge status="neutral" className="gap-1">
                         <Boxes className="h-3 w-3" />
                         {cat._count.models}
                       </Badge>
                     ) : (
-                      <span className="text-fg-3">0</span>
+                      <span className="text-faint">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right hidden sm:table-cell t-data">
                     {cat._count.kits > 0 ? (
-                      <Badge variant="secondary" className="gap-1">
+                      <Badge status="neutral" className="gap-1">
                         <Container className="h-3 w-3" />
                         {cat._count.kits}
                       </Badge>
                     ) : (
-                      <span className="text-fg-3">0</span>
+                      <span className="text-faint">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right hidden md:table-cell t-data">
+                  <TableCell className="text-right hidden md:table-cell t-data text-ink">
                     {cat._count.children > 0 ? cat._count.children : "\u2014"}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {cat.tags?.map((tag: string) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
+                        <Badge key={tag} status="neutral">
                           {tag}
                         </Badge>
                       ))}
@@ -298,7 +312,7 @@ export default function CategoriesPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-destructive"
+                            className="h-7 w-7 text-t-out"
                             title="Delete"
                             onClick={() => setDeleteId(cat.id)}
                           >
@@ -319,39 +333,41 @@ export default function CategoriesPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Category" : "New Category"}</DialogTitle>
+            <DialogTitle>{editingId ? "Edit category" : "New category"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="cat-name">Name</Label>
-              <Input id="cat-name" {...form.register("name")} placeholder="e.g. Audio" />
+              <Input id="cat-name" {...form.register("name")} placeholder="e.g. Audio" aria-invalid={!!form.formState.errors.name} />
               {form.formState.errors.name && (
-                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="cat-icon">Icon</Label>
-              <Input id="cat-icon" {...form.register("icon")} placeholder="e.g. 🎤" className="w-20" />
+              <Input id="cat-icon" {...form.register("icon")} placeholder="🎤" className="w-20" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="cat-desc">Description</Label>
               <Textarea id="cat-desc" {...form.register("description")} placeholder="Optional description" rows={2} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="cat-sort">Sort Order</Label>
+              <Label htmlFor="cat-sort">Sort order</Label>
               <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
             </div>
             {parentId && (
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 Subcategory of: {(categories as any[]).find((c) => c.id === parentId)?.name}
               </p>
             )}
             <DialogFooter>
-              <DialogClose render={<Button variant="outline" type="button" onClick={resetForm} />}>
-                Cancel
+              <DialogClose asChild>
+                <Button variant="line" type="button" onClick={resetForm}>
+                  Cancel
+                </Button>
               </DialogClose>
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+              <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                 {editingId ? "Update" : "Create"}
               </Button>
             </DialogFooter>

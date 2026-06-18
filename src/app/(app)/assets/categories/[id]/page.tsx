@@ -8,7 +8,9 @@ import {
   ChevronRight,
   Boxes,
   Container,
+  Folder,
   FolderOpen,
+  FolderTree,
   ArrowLeft,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,6 +20,7 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -51,7 +54,15 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (!category) {
-    return <div className="text-fg-3 py-12 text-center">Category not found.</div>;
+    return (
+      <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Category not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/assets/categories">Back to categories</Link>
+        </Button>
+      </div>
+    );
   }
 
   const parentHref = category.parent
@@ -67,8 +78,8 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
-              <Link href="/assets/categories" className="hover:text-fg transition-colors">
+            <nav className="flex items-center gap-1 text-caption text-muted mb-1">
+              <Link href="/assets/categories" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
                 Categories
               </Link>
               {category.parent && (
@@ -76,40 +87,44 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                   <ChevronRight className="h-3 w-3" />
                   <Link
                     href={`/assets/categories/${category.parent.id}`}
-                    className="hover:text-fg transition-colors"
+                    className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}
                   >
                     {category.parent.name}
                   </Link>
                 </>
               )}
               <ChevronRight className="h-3 w-3" />
-              <span className="text-fg">{category.name}</span>
-            </div>
+              <span className="text-ink-2">{category.name}</span>
+            </nav>
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{category.icon || "\uD83D\uDCC1"}</span>
-              <h1 className="t-title text-fg">{category.name}</h1>
+              {category.icon ? (
+                <span className="text-2xl">{category.icon}</span>
+              ) : (
+                <Folder className="h-6 w-6 text-muted" />
+              )}
+              <h1 className="t-title text-ink">{category.name}</h1>
             </div>
             {category.description && (
-              <p className="text-fg-3 mt-1">{category.description}</p>
+              <p className="text-caption text-muted mt-1">{category.description}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
             {category._count.models > 0 && (
-              <Badge variant="secondary" className="gap-1">
+              <Badge status="neutral" className="gap-1">
                 <Boxes className="h-3 w-3" />
                 {category._count.models} model{category._count.models !== 1 ? "s" : ""}
               </Badge>
             )}
             {category._count.kits > 0 && (
-              <Badge variant="secondary" className="gap-1">
+              <Badge status="neutral" className="gap-1">
                 <Container className="h-3 w-3" />
                 {category._count.kits} kit{category._count.kits !== 1 ? "s" : ""}
               </Badge>
             )}
             {category._count.children > 0 && (
-              <Badge variant="outline" className="gap-1">
+              <Badge status="neutral" className="gap-1">
                 <FolderOpen className="h-3 w-3" />
-                {category._count.children} subcategori{category._count.children !== 1 ? "es" : "y"}
+                {category._count.children} subcategor{category._count.children !== 1 ? "ies" : "y"}
               </Badge>
             )}
           </div>
@@ -126,23 +141,27 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
               <StaggerItem key={child.id}>
                 <Link
                   href={`/assets/categories/${child.id}`}
-                  className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors group"
+                  className={cn("flex items-center gap-3 rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)] hover:border-line-2 hover:bg-paper-2 transition-colors group", focusRing)}
                 >
-                  <span className="text-lg">{child.icon || "\uD83D\uDCC2"}</span>
+                  {child.icon ? (
+                    <span className="text-lg">{child.icon}</span>
+                  ) : (
+                    <FolderTree className="h-5 w-5 text-muted" />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium group-hover:text-primary transition-colors">
+                    <span className="text-table-cell font-medium text-ink group-hover:text-red transition-colors">
                       {child.name}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
                       {child._count.models > 0 && (
-                        <span className="text-xs text-fg-3">{child._count.models} models</span>
+                        <span className="text-caption text-muted t-data">{child._count.models} models</span>
                       )}
                       {child._count.kits > 0 && (
-                        <span className="text-xs text-fg-3">{child._count.kits} kits</span>
+                        <span className="text-caption text-muted t-data">{child._count.kits} kits</span>
                       )}
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-fg-3" />
+                  <ChevronRight className="h-4 w-4 text-muted" />
                 </Link>
               </StaggerItem>
             ))}
@@ -166,13 +185,14 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
             {category.models && category.models.length > 0 ? (
               <>
                 <SectionHeader label="Models" className="mb-3" />
+                <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12"></TableHead>
                       <TableHead>Model</TableHead>
                       <TableHead className="hidden sm:table-cell">Manufacturer</TableHead>
-                      <TableHead className="hidden md:table-cell">Model Number</TableHead>
+                      <TableHead className="hidden md:table-cell">Model number</TableHead>
                       <TableHead className="text-right">Assets</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -192,32 +212,36 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                           <TableCell>
                             <Link
                               href={`/assets/models/${model.id}`}
-                              className="font-medium hover:text-primary transition-colors"
+                              className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
                             >
                               {model.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-fg-3">
+                          <TableCell className="hidden sm:table-cell text-muted">
                             {model.manufacturer || "\u2014"}
                           </TableCell>
-                          <TableCell className="hidden md:table-cell text-fg-3">
+                          <TableCell className="hidden md:table-cell t-mono text-muted">
                             {model.modelNumber || "\u2014"}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Badge variant="secondary">{model._count.assets}</Badge>
+                            <Badge status="neutral">{model._count.assets}</Badge>
                           </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
+                </div>
               </>
             ) : (
               <EmptyState
-                preset="models"
-                heading="No models in this category"
+                title="No models in this category"
                 description="Models group identical assets — create one to start adding units."
-                action={{ label: "Add Model", onClick: () => window.location.href = "/assets/models/new" }}
+                action={
+                  <Button size="sm" asChild>
+                    <Link href="/assets/models/new">Add model</Link>
+                  </Button>
+                }
               />
             )}
           </TabsContent>
@@ -226,11 +250,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
             {category.kits && category.kits.length > 0 ? (
               <>
                 <SectionHeader label="Kits" className="mb-3" />
+                <div className="rounded-[var(--r)] border border-line overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Kit</TableHead>
-                      <TableHead className="hidden sm:table-cell">Asset Tag</TableHead>
+                      <TableHead className="hidden sm:table-cell">Asset tag</TableHead>
                       <TableHead className="hidden md:table-cell">Status</TableHead>
                       <TableHead className="text-right">Items</TableHead>
                     </TableRow>
@@ -244,12 +269,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                           <TableCell>
                             <Link
                               href={`/kits/${kit.id}`}
-                              className="font-medium hover:text-primary transition-colors"
+                              className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
                             >
                               {kit.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-fg-3">
+                          <TableCell className="hidden sm:table-cell t-mono text-muted">
                             {kit.assetTag || "\u2014"}
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
@@ -258,20 +283,24 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Badge variant="secondary">{itemCount}</Badge>
+                            <Badge status="neutral">{itemCount}</Badge>
                           </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
+                </div>
               </>
             ) : (
               <EmptyState
-                preset="kits"
-                heading="No kits in this category"
+                title="No kits in this category"
                 description="Kits bundle assets that always go together — build one to speed up checkout."
-                action={{ label: "Add Kit", onClick: () => window.location.href = "/kits/new" }}
+                action={
+                  <Button size="sm" asChild>
+                    <Link href="/kits/new">Add kit</Link>
+                  </Button>
+                }
               />
             )}
           </TabsContent>

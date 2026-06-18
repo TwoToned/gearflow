@@ -38,7 +38,7 @@ export function ProjectsView() {
               onClick={() => choose(m)}
               aria-pressed={mode === m}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-[calc(var(--r)-3px)] px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+                "inline-flex items-center gap-1.5 rounded-[calc(var(--r)-3px)] px-3 py-1.5 text-table-cell font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
                 mode === m ? "bg-elev text-ink shadow-[var(--sh-stk)]" : "text-muted hover:text-ink",
               )}
             >

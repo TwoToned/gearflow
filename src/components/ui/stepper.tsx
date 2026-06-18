@@ -68,7 +68,7 @@ function LifecycleStepper({
               >
                 {s.state === "done" ? <Check className="size-4" strokeWidth={3} /> : i + 1}
               </Ring>
-              <span className={cn("text-[13px] md:text-[12px]", labelCls[s.state])}>{s.label}</span>
+              <span className={cn("text-table-cell md:text-caption", labelCls[s.state])}>{s.label}</span>
             </li>
             {!last && (
               <span

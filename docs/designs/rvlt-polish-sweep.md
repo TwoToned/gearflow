@@ -131,3 +131,25 @@ use text-link (blue, § links-never-red). tsc clean (0 assets errors), eslint cl
 tsc clean (0 new assets errors; pre-existing settings/assets `variant="outline"`
 errors are out of chunk-4 scope), eslint clean on touched files (only pre-existing
 registry/[id] unused-import + ternary-await warnings).
+
+## Learned standard patterns (from chunk reviews — apply to ALL remaining chunks)
+- **Auth-gate every page** (§8): create→`RequirePermission resource action="create"`, edit→`action="update"`,
+  list & detail→`action="read"`. Resources: asset, bulkAsset, model, kit, project, client, crew, supplier,
+  location, maintenance, test/tag, etc. Categories gate under `model`. Hoist the gate ABOVE loading/not-found.
+- **Danger/warn button pattern** (§1/§3.7): destructive *permanent* (Delete) → `variant="line"` escalating to
+  SOLID red `hover:bg-red hover:text-white` (white-on-red is the one §1 exception). Warn/reversible (Archive,
+  Force return, Cancel) → stay TINTED: `text-warn hover:bg-warn-soft` or `text-t-out hover:bg-out-soft`.
+  NEVER a solid `bg-warn`/`bg-t-out` fill, and never light text on a warn/t-out fill. (`text-paper` is dark
+  espresso so it's not a contrast bug, but solid t-out/warn fills break §1's "t-out/warn = tinted" rule.)
+- **Loaders/motion** (§9.1): prefer the registry Button `loading` prop; otherwise `motion-safe:animate-spin`.
+  Use `<Skeleton>` (registry, already motion-safe) for loading states — never hand-built `animate-pulse` blocks.
+- **Status filter dots**: derive from `getStatusColor(category, value).dot` — never hardcode even semantic
+  tokens (bg-ok/bg-warn/…) in filterOptions; keep status-colors.ts the single source.
+- **Sentence case in label MAPS too** (§5.2): typeLabels/statusLabels/option arrays often hide title case
+  ("Asset Tag","Pass / Fail","Bump In","Purchase Date") and raw enum copy ("AVAILABLE") — sweep these.
+- **Forms**: a SINGLE outer card surface wrapping flat `FormSection`s is CORRECT (matches FormPageLayout).
+  "No card wrapping" means no card PER SECTION — do not strip the single outer surface.
+- **`text-[16px]`** on native selects is the on-ramp iOS-zoom idiom — acceptable (or use `text-reading-body`).
+- **Recurring DEFERs** (handle in a final consistency pass, note don't fix per-chunk): detail-page hand-built
+  overflow sub-tables → mobile card lists + left-edge hover; bare "not found" → §8 left-edge error notice;
+  DataTable ignores `emptyPreset` (shared component) so list empty states need explicit emptyTitle/description.

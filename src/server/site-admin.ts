@@ -3,10 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
 import { removeAssetScanLogFromConvex } from "@/lib/asset-scan-log-mirror";
-import {
-  removeTestTagRecordFromConvex,
-  removeSubTestRecordFromConvex,
-} from "@/lib/test-tag-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
@@ -544,8 +542,15 @@ export async function adminDeleteUser(userId: string) {
   for (const item of serializedItemsToRemove) await removeKitSerializedItemFromConvex(item.id);
   for (const item of bulkItemsToRemove) await removeKitBulkItemFromConvex(item.id);
   for (const item of scanLogsToRemove) await removeAssetScanLogFromConvex(item.id);
-  for (const item of subTestRecordsToRemove) await removeSubTestRecordFromConvex(item.id);
-  for (const item of testTagRecordsToRemove) await removeTestTagRecordFromConvex(item.id);
+  if (subTestRecordsToRemove.length || testTagRecordsToRemove.length) {
+    const convexForRemove = await getConvexClient();
+    for (const item of subTestRecordsToRemove) {
+      await convexForRemove.mutation(api.subTestRecords.remove, { id: item.id });
+    }
+    for (const item of testTagRecordsToRemove) {
+      await convexForRemove.mutation(api.testTagRecords.remove, { id: item.id });
+    }
+  }
 
   const theOrg = await getTheOrg();
   if (theOrg) {

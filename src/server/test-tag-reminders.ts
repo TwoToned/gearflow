@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { formatDate } from "@/lib/formatters";
 import type { OrgSettings } from "@/server/settings";
-import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 const EMAIL_BODY_FONT_SIZE = "14px";
 
@@ -12,41 +13,19 @@ const EMAIL_BODY_FONT_SIZE = "14px";
  * Recalculate statuses for all active test-tag assets across all orgs.
  * Transitions CURRENT → DUE_SOON → OVERDUE based on nextDueDate.
  * Should run daily before sending digest emails.
+ * Convex-only write (testTagAsset is Convex-only, Phase B).
  */
 export async function recalculateAllTestTagStatuses(): Promise<number> {
-  const now = new Date();
+  const now = Date.now();
 
-  // Move CURRENT/DUE_SOON assets past their due date to OVERDUE
-  const overdueWhere = {
-    isActive: true,
-    status: { in: ["CURRENT", "DUE_SOON"] as ("CURRENT" | "DUE_SOON")[] },
-    nextDueDate: { lt: now },
-  };
-  // Capture affected ids before the update — the where no longer matches once flipped to OVERDUE.
-  const overdueIds = (
-    await prisma.testTagAsset.findMany({ where: overdueWhere, select: { id: true } })
-  ).map((a) => a.id);
-  const overdue = await prisma.testTagAsset.updateMany({
-    where: overdueWhere,
-    data: { status: "OVERDUE" },
-  });
-  // Mirror the flipped rows to Convex after the updateMany commits.
-  if (overdueIds.length > 0) {
-    const overdueRows = await prisma.testTagAsset.findMany({
-      where: { id: { in: overdueIds } },
-    });
-    for (const row of overdueRows) {
-      await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
-    }
-  }
-
-  // For DUE_SOON: we need per-org threshold, so fetch all orgs with test-tag assets
+  // All orgs (org table stays Prisma) that have T&T assets.
   const orgs = await prisma.organization.findMany({
-    where: { testTagAssets: { some: { isActive: true, status: "CURRENT" } } },
     select: { id: true, metadata: true },
   });
 
-  let dueSoonCount = 0;
+  const convex = await getConvexClient();
+  let changed = 0;
+
   for (const org of orgs) {
     let dueSoonDays = 14;
     if (org.metadata) {
@@ -55,37 +34,35 @@ export async function recalculateAllTestTagStatuses(): Promise<number> {
         dueSoonDays = settings.testTag?.dueSoonThresholdDays || 14;
       } catch { /* ignore */ }
     }
+    const dueSoonMs = dueSoonDays * 24 * 60 * 60 * 1000;
 
-    const threshold = new Date(now);
-    threshold.setDate(threshold.getDate() + dueSoonDays);
+    const assets = await convex.query(api.testTagAssets.list, { orgId: org.id });
+    for (const asset of assets) {
+      if (asset.isActive === false) continue;
+      if (asset.status === "RETIRED" || asset.status === "FAILED") continue;
 
-    const dueSoonWhere = {
-      organizationId: org.id,
-      isActive: true,
-      status: "CURRENT" as const,
-      nextDueDate: { lte: threshold },
-    };
-    // Capture affected ids before the update — the where no longer matches once flipped to DUE_SOON.
-    const dueSoonIds = (
-      await prisma.testTagAsset.findMany({ where: dueSoonWhere, select: { id: true } })
-    ).map((a) => a.id);
-    const result = await prisma.testTagAsset.updateMany({
-      where: dueSoonWhere,
-      data: { status: "DUE_SOON" },
-    });
-    dueSoonCount += result.count;
-    // Mirror the flipped rows to Convex after the updateMany commits.
-    if (dueSoonIds.length > 0) {
-      const dueSoonRows = await prisma.testTagAsset.findMany({
-        where: { id: { in: dueSoonIds } },
-      });
-      for (const row of dueSoonRows) {
-        await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
+      const nextDue = asset.nextDueDate ?? null;
+      let newStatus: string | null = null;
+
+      if (!nextDue || nextDue < now) {
+        if (asset.status !== "OVERDUE") newStatus = "OVERDUE";
+      } else if (nextDue <= now + dueSoonMs) {
+        if (asset.status !== "DUE_SOON") newStatus = "DUE_SOON";
+      } else {
+        if (asset.status !== "CURRENT") newStatus = "CURRENT";
+      }
+
+      if (newStatus) {
+        await convex.mutation(api.testTagAssets.update, {
+          id: asset.id,
+          patch: { status: newStatus as "OVERDUE" | "DUE_SOON" | "CURRENT", updatedAt: now },
+        });
+        changed++;
       }
     }
   }
 
-  return overdue.count + dueSoonCount;
+  return changed;
 }
 
 /**
@@ -106,21 +83,11 @@ export async function sendTestTagReminderDigests(): Promise<{
   let orgsSent = 0;
   let emailsSent = 0;
 
-  // Get all organisations that have at least one active test-tag asset
+  const convex = await getConvexClient();
+
+  // Get all organisations (org table stays Prisma).
   const orgs = await prisma.organization.findMany({
-    where: {
-      testTagAssets: {
-        some: {
-          isActive: true,
-          status: { in: ["DUE_SOON", "OVERDUE"] },
-        },
-      },
-    },
-    select: {
-      id: true,
-      name: true,
-      metadata: true,
-    },
+    select: { id: true, name: true, metadata: true },
   });
 
   for (const org of orgs) {
@@ -137,35 +104,35 @@ export async function sendTestTagReminderDigests(): Promise<{
       }
       if (!remindersEnabled) continue;
 
-      // Fetch overdue and due-soon assets
-      const [overdueAssets, dueSoonAssets] = await Promise.all([
-        prisma.testTagAsset.findMany({
-          where: { organizationId: org.id, isActive: true, status: "OVERDUE" },
-          select: {
-            testTagId: true,
-            description: true,
-            nextDueDate: true,
-            location: true,
-          },
-          orderBy: { nextDueDate: "asc" },
-          take: 50, // Cap at 50 to keep email reasonable
-        }),
-        prisma.testTagAsset.findMany({
-          where: { organizationId: org.id, isActive: true, status: "DUE_SOON" },
-          select: {
-            testTagId: true,
-            description: true,
-            nextDueDate: true,
-            location: true,
-          },
-          orderBy: { nextDueDate: "asc" },
-          take: 50,
-        }),
-      ]);
+      // Fetch overdue and due-soon assets from Convex (testTagAsset is Convex-only).
+      const allAssets = await convex.query(api.testTagAssets.list, { orgId: org.id });
+      const activeAssets = allAssets.filter((a) => a.isActive !== false);
+
+      const overdueAssets = activeAssets
+        .filter((a) => a.status === "OVERDUE")
+        .sort((a, b) => (a.nextDueDate ?? Infinity) - (b.nextDueDate ?? Infinity))
+        .slice(0, 50)
+        .map((a) => ({
+          testTagId: a.testTagId,
+          description: a.description,
+          nextDueDate: a.nextDueDate ? new Date(a.nextDueDate) : null,
+          location: a.location ?? null,
+        }));
+
+      const dueSoonAssets = activeAssets
+        .filter((a) => a.status === "DUE_SOON")
+        .sort((a, b) => (a.nextDueDate ?? Infinity) - (b.nextDueDate ?? Infinity))
+        .slice(0, 50)
+        .map((a) => ({
+          testTagId: a.testTagId,
+          description: a.description,
+          nextDueDate: a.nextDueDate ? new Date(a.nextDueDate) : null,
+          location: a.location ?? null,
+        }));
 
       if (overdueAssets.length === 0 && dueSoonAssets.length === 0) continue;
 
-      // Get all admins/owners for this org
+      // Get all admins/owners for this org (auth tables stay Prisma).
       const recipients = await prisma.member.findMany({
         where: {
           organizationId: org.id,
@@ -265,32 +232,20 @@ function buildDigestEmail({
   }
 
   const html = `
-    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:20px;">
-      <div style="border-bottom:3px solid #0d9488;padding-bottom:12px;margin-bottom:20px;">
-        <h2 style="margin:0;color:#111827;">Test & Tag — Daily Digest</h2>
-        <p style="margin:4px 0 0;color:#6b7280;font-size:${EMAIL_BODY_FONT_SIZE};">${orgName} · ${formatDate(new Date())}</p>
-      </div>
-
-      <div style="display:flex;gap:16px;margin-bottom:20px;">
-        ${totalOverdue > 0 ? `<div style="flex:1;background:#fef2f2;border-radius:8px;padding:12px 16px;border-left:4px solid #ef4444;">
-          <div style="font-size:24px;font-weight:700;color:#991b1b;">${totalOverdue}</div>
-          <div style="font-size:13px;color:#991b1b;">Overdue</div>
-        </div>` : ""}
-        ${totalDueSoon > 0 ? `<div style="flex:1;background:#fffbeb;border-radius:8px;padding:12px 16px;border-left:4px solid #f59e0b;">
-          <div style="font-size:24px;font-weight:700;color:#92400e;">${totalDueSoon}</div>
-          <div style="font-size:13px;color:#92400e;">Due Soon</div>
-        </div>` : ""}
-      </div>
-
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:${EMAIL_BODY_FONT_SIZE};color:#111827;max-width:640px;margin:0 auto;padding:24px;">
+      <h2 style="font-size:20px;margin:0 0 16px;">${subject}</h2>
+      <p style="margin:0 0 20px;color:#4b5563;">
+        The following test &amp; tag items in <strong>${orgName}</strong> require your attention.
+      </p>
       ${overdueSection}
       ${dueSoonSection}
-
-      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:24px;">
-        <p style="color:#9ca3af;font-size:12px;margin:0;">
-          This is an automated daily digest from GearFlow. Log in to view full details and manage your test schedule.
-        </p>
-      </div>
-    </div>`;
+      <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">
+        This is an automated reminder from GearFlow. Manage your test &amp; tag schedule in the app.
+      </p>
+    </body>
+    </html>`;
 
   return { subject, html };
 }

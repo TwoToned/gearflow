@@ -31,7 +31,6 @@ import type { Model as PrismaModel } from "@/generated/prisma/client";
 
 type ParsedModel = z.output<typeof modelSchema>;
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
-import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import type { FilterValue } from "@/lib/table-utils";
@@ -380,23 +379,18 @@ export async function updateModel(id: string, data: ModelFormValues) {
     })).map((a) => a.id);
 
     if (assetIds.length > 0) {
-      const ttWhere = {
-        organizationId,
-        assetId: { in: assetIds },
-        isActive: true,
-      };
-      await prisma.testTagAsset.updateMany({
-        where: ttWhere,
-        data: {
-          equipmentClass,
-          applianceType,
-          testIntervalMonths: intervalMonths,
-        },
-      });
-      // Mirror the updated T&T assets to Convex after the updateMany commits.
-      const updatedTT = await prisma.testTagAsset.findMany({ where: ttWhere });
-      for (const tt of updatedTT) {
-        await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+      // Propagate T&T defaults to active Convex testTagAsset rows linked to these assets.
+      const convexForTT = await getConvexClient();
+      const ttNow = Date.now();
+      for (const assetId of assetIds) {
+        const ttRows = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId });
+        for (const tt of ttRows) {
+          if (tt.isActive === false) continue;
+          await convexForTT.mutation(api.testTagAssets.update, {
+            id: tt.id,
+            patch: { equipmentClass, applianceType, testIntervalMonths: intervalMonths, updatedAt: ttNow },
+          });
+        }
       }
     }
   }

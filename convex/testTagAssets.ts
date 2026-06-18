@@ -69,6 +69,17 @@ export const getByOrgTestTagId = query({
 });
 
 
+export const listByAssetId = query({
+  args: { assetId: v.string() },
+  handler: async (ctx, { assetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

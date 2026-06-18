@@ -167,6 +167,15 @@ const assignmentStatusIntent: Record<string, ColorIntent> = {
   COMPLETED: "success",
 };
 
+// Crew availability windows (CrewAvailabilityType enum). Used by the crew planner
+// board cells. UNAVAILABLE = a hard block (problem/error tint), TENTATIVE = soft
+// (warning), PREFERRED = good-to-book (success).
+const availabilityTypeIntent: Record<string, ColorIntent> = {
+  UNAVAILABLE: "error",
+  TENTATIVE: "warning",
+  PREFERRED: "success",
+};
+
 const serviceStatusIntent: Record<string, ColorIntent> = {
   PLANNED: "neutral",
   CONFIRMED: "info",
@@ -249,6 +258,7 @@ export type StatusCategory =
   | "condition"
   | "crewMember"
   | "assignment"
+  | "availabilityType"
   | "service"
   | "shift"
   | "timeEntry"
@@ -270,6 +280,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   condition: conditionIntent,
   crewMember: crewMemberStatusIntent,
   assignment: assignmentStatusIntent,
+  availabilityType: availabilityTypeIntent,
   service: serviceStatusIntent,
   shift: shiftStatusIntent,
   timeEntry: timeEntryStatusIntent,

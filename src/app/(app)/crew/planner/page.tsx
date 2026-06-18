@@ -6,17 +6,22 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ChevronLeft,
   ChevronRight,
-  CalendarRange,
 } from "lucide-react";
 
 import { getCrewPlannerData } from "@/server/crew-availability";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCrewAssignments, fingerprintCrewAssignments, useOrgAvailabilities, fingerprintAvailabilities } from "@/hooks/use-crew-scheduling";
+import { getStatusColor } from "@/lib/status-colors";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { FadeIn } from "@/components/ui/motion";
+import { PageHeader } from "@/components/layout/page-header";
+import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PersonAvatar } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import {
   Tooltip,
@@ -123,75 +128,79 @@ export default function CrewPlannerPage() {
 
   return (
     <RequirePermission resource="crew" action="read">
-      <PageMeta title="Crew Planner" />
+      <PageMeta title="Crew planner" />
       <FadeIn>
       <div className="space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="t-title text-fg">Crew Planner</h1>
-            <p className="text-fg-3">
-              Overview of crew assignments and availability.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={goBack}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={goToday}>
-              Today
-            </Button>
-            <Button variant="outline" size="icon" onClick={goForward}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <span className="text-sm text-fg-3 ml-2">
-              {formatDateShort(days[0])} &ndash; {formatDateShort(days[days.length - 1])}
-            </span>
-          </div>
-        </div>
+        <PageHeader
+          title="Crew planner"
+          description="Overview of crew assignments and availability."
+          actions={
+            <div className="flex items-center gap-2">
+              <Button variant="line" size="icon" onClick={goBack} aria-label="Previous fortnight">
+                <ChevronLeft className="size-5" />
+              </Button>
+              <Button variant="line" size="sm" onClick={goToday}>
+                Today
+              </Button>
+              <Button variant="line" size="icon" onClick={goForward} aria-label="Next fortnight">
+                <ChevronRight className="size-5" />
+              </Button>
+              <span className="text-caption tabular-nums text-muted ml-2">
+                {formatDateShort(days[0])} &ndash; {formatDateShort(days[days.length - 1])}
+              </span>
+            </div>
+          }
+        />
 
-        <div className="rounded-lg bg-bg-surface surface-ring overflow-x-auto">
+        <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-x-auto">
           <TooltipProvider>
             <table className="w-full border-collapse min-w-[800px]">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left text-xs font-medium text-fg-3 p-2 w-48 sticky left-0 bg-bg-surface z-10">
-                    Crew Member
+                <tr className="border-b border-line">
+                  <th className="text-left text-caption font-medium text-muted p-2 w-48 sticky left-0 bg-card z-10">
+                    Crew member
                   </th>
                   {days.map((day) => (
                     <th
                       key={dateToKey(day)}
-                      className={`text-center text-xs font-medium p-1 min-w-[60px] ${
+                      className={`text-center text-caption font-medium p-1 min-w-[60px] ${
                         isSameDay(day, today)
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-red-soft text-red"
                           : isWeekend(day)
-                            ? "text-fg-3/60 bg-bg-inset/30"
-                            : "text-fg-3"
+                            ? "text-faint bg-paper-2"
+                            : "text-muted"
                       }`}
                     >
                       <div>{formatDayOfWeek(day)}</div>
-                      <div className="font-normal">{day.getDate()}</div>
+                      <div className="font-normal tabular-nums">{day.getDate()}</div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td
-                      colSpan={DAYS_TO_SHOW + 1}
-                      className="text-center text-fg-3 py-12"
-                    >
-                      Loading...
-                    </td>
-                  </tr>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="border-b border-line">
+                      <td className="p-2 sticky left-0 bg-card z-10">
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="size-8 rounded-full" />
+                          <Skeleton className="h-4 w-28" />
+                        </div>
+                      </td>
+                      {days.map((day) => (
+                        <td key={dateToKey(day)} className="p-1 h-10">
+                          <Skeleton className="mx-auto h-2.5 w-2.5 rounded-full" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
                 ) : !members || members.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={DAYS_TO_SHOW + 1}
-                      className="text-center text-fg-3 py-12"
-                    >
-                      <CalendarRange className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                      <p>No active crew members found.</p>
+                    <td colSpan={DAYS_TO_SHOW + 1} className="p-6">
+                      <EmptyState
+                        title="No active crew members found"
+                        description="Add crew to your roster to start planning assignments."
+                      />
                     </td>
                   </tr>
                 ) : (
@@ -209,21 +218,21 @@ export default function CrewPlannerPage() {
           </TooltipProvider>
         </div>
 
-        <div className="flex flex-wrap gap-4 text-xs text-fg-3">
+        <div className="flex flex-wrap gap-4 text-caption text-muted">
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-primary/70" />
+            <span className="h-3 w-3 rounded-[4px] bg-red" />
             Assignment
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-red-500/70" />
+            <span className="h-3 w-3 rounded-[4px] bg-t-out" />
             Unavailable
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-amber-500/70" />
+            <span className="h-3 w-3 rounded-[4px] bg-warn" />
             Tentative
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-green-500/70" />
+            <span className="h-3 w-3 rounded-[4px] bg-ok" />
             Preferred
           </span>
         </div>
@@ -312,19 +321,24 @@ function PlannerRow({
   }, [member, days]);
 
   return (
-    <tr className="border-b hover:bg-bg-elevated/20">
-      <td className="p-2 sticky left-0 bg-bg-surface z-10">
-        <Link
-          href={`/crew/${member.id}`}
-          className="text-sm font-medium hover:underline block"
-        >
-          {member.firstName} {member.lastName}
-        </Link>
-        {member.crewRole && (
-          <span className="text-xs text-fg-3">
-            {member.crewRole.name}
-          </span>
-        )}
+    <tr className="border-b border-line hover:bg-elev">
+      <td className="p-2 sticky left-0 bg-card z-10">
+        <div className="flex items-center gap-2">
+          <PersonAvatar name={`${member.firstName ?? ""} ${member.lastName ?? ""}`.trim()} className="size-8" />
+          <div className="min-w-0">
+            <Link
+              href={`/crew/${member.id}`}
+              className={`block truncate text-table-cell font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+            >
+              {member.firstName} {member.lastName}
+            </Link>
+            {member.crewRole && (
+              <span className="text-caption text-muted">
+                {member.crewRole.name}
+              </span>
+            )}
+          </div>
+        </div>
       </td>
       {days.map((day) => {
         const key = dateToKey(day);
@@ -359,7 +373,8 @@ function DayCell({
   isToday: boolean;
   isWeekend: boolean;
 }) {
-  // Determine background color
+  // Background + dot colour via status-colors (§3): assignment = primary (red,
+  // live), unavailable = error (t-out), tentative = warn, preferred = ok.
   let bgClass = "";
   let dotColor = "";
 
@@ -368,24 +383,24 @@ function DayCell({
   const hasPreferred = availability.some((a) => a.type === "PREFERRED");
 
   if (hasUnavailable) {
-    bgClass = "bg-red-500/15";
-    dotColor = "bg-red-500";
+    bgClass = getStatusColor("availabilityType", "UNAVAILABLE").bg;
+    dotColor = getStatusColor("availabilityType", "UNAVAILABLE").dot;
   } else if (assignments.length > 0) {
-    bgClass = "bg-primary/15";
-    dotColor = "bg-primary";
+    bgClass = getStatusColor("assignment", "ACCEPTED").bg;
+    dotColor = getStatusColor("assignment", "ACCEPTED").dot;
   } else if (hasTentative) {
-    bgClass = "bg-amber-500/15";
-    dotColor = "bg-amber-500";
+    bgClass = getStatusColor("availabilityType", "TENTATIVE").bg;
+    dotColor = getStatusColor("availabilityType", "TENTATIVE").dot;
   } else if (hasPreferred) {
-    bgClass = "bg-green-500/15";
-    dotColor = "bg-green-500";
+    bgClass = getStatusColor("availabilityType", "PREFERRED").bg;
+    dotColor = getStatusColor("availabilityType", "PREFERRED").dot;
   }
 
   const hasContent = assignments.length > 0 || availability.length > 0;
 
   const cellClasses = [
     "p-1 text-center relative h-10",
-    isToday ? "bg-primary/5" : weekend ? "bg-bg-inset/30" : "",
+    isToday ? "bg-red-soft" : weekend ? "bg-paper-2" : "",
     bgClass,
   ]
     .filter(Boolean)
@@ -414,21 +429,21 @@ function DayCell({
   return (
     <td className={cellClasses}>
       <Tooltip>
-        <TooltipTrigger className="w-full h-full flex items-center justify-center">
+        <TooltipTrigger className={`w-full h-full flex items-center justify-center rounded-[var(--r)] ${focusRing}`}>
           {dotColor && (
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${dotColor}`} />
           )}
           {assignments.length > 1 && (
             <Badge
-              variant="secondary"
-              className="absolute top-0 right-0 text-[9px] h-3.5 min-w-[14px] px-0.5"
+              status="neutral"
+              className="absolute top-0 right-0 px-1 py-0"
             >
               {assignments.length}
             </Badge>
           )}
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
-          <div className="space-y-0.5 text-xs">
+          <div className="space-y-0.5 text-caption">
             {tooltipLines.map((line, i) => (
               <p key={i}>{line}</p>
             ))}

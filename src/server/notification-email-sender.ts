@@ -35,6 +35,7 @@ import {
   NOTIFICATION_TYPE_TO_PREFERENCE,
   type NotificationPreferenceValues,
 } from "@/lib/validations/notification-preferences";
+import { getUserNotificationPreferenceMap } from "@/lib/user-notification-preferences-read";
 
 interface OrgRecipient {
   userId: string;
@@ -67,22 +68,11 @@ export interface SendNotificationEmailsResult {
   errors: { recipient: string; key: string; message: string }[];
 }
 
-function resolvePreferences(
-  raw: Awaited<ReturnType<typeof prisma.userNotificationPreference.findUnique>>,
-): NotificationPreferenceValues {
-  if (!raw) return { ...NOTIFICATION_PREFERENCE_DEFAULTS };
-  return {
-    overdueMaintenance: raw.overdueMaintenance,
-    overdueReturn: raw.overdueReturn,
-    upcomingProject: raw.upcomingProject,
-    pendingInvitation: raw.pendingInvitation,
-    pendingOffers: raw.pendingOffers,
-    pendingTimesheets: raw.pendingTimesheets,
-    flaggedAsset: raw.flaggedAsset,
-  };
-}
-
 async function loadOrgRecipients(organizationId: string): Promise<OrgRecipient[]> {
+  // Member + User stay on Prisma (Better Auth); the per-user notification
+  // preferences are now CONVEX-ONLY (bucket-2 Phase B). Load the eligible members
+  // first, then resolve each user's preferences from the Convex copy in one batch
+  // (defaults applied for users with no row).
   const members = await prisma.member.findMany({
     where: { organizationId },
     include: {
@@ -92,20 +82,24 @@ async function loadOrgRecipients(organizationId: string): Promise<OrgRecipient[]
           name: true,
           email: true,
           banned: true,
-          notificationPreference: true,
         },
       },
     },
   });
 
-  return members
-    .filter((m) => m.user.email && !m.user.banned)
-    .map((m) => ({
-      userId: m.user.id,
-      email: m.user.email,
-      name: m.user.name || m.user.email,
-      preferences: resolvePreferences(m.user.notificationPreference),
-    }));
+  const eligible = members.filter((m) => m.user.email && !m.user.banned);
+  // getUserNotificationPreferenceMap returns an entry for every requested userId
+  // (defaults applied for users with no Convex row), so the get() never misses.
+  const prefMap = await getUserNotificationPreferenceMap(
+    eligible.map((m) => m.user.id),
+  );
+
+  return eligible.map((m) => ({
+    userId: m.user.id,
+    email: m.user.email,
+    name: m.user.name || m.user.email,
+    preferences: prefMap.get(m.user.id) ?? { ...NOTIFICATION_PREFERENCE_DEFAULTS },
+  }));
 }
 
 async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToSend[]> {

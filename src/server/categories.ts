@@ -1,47 +1,51 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getModelMap } from "@/lib/models-read";
+import { getModelMap, mapConvexModelToRow, getModelsByOrg } from "@/lib/models-read";
+import { getPrimaryPhotoMap } from "@/lib/media-read";
 import {
   listCategoriesWithCounts,
   getCategoryModelKitCounts,
   listCategoryTree,
   collectDescendantCategoryIds,
   getMappedCategoriesByOrg,
+  getCategoryById,
+  mapCategory,
+  buildModelKitCounts,
+  buildChildCountMap,
+  sortCategories,
+  type MappedCategory,
 } from "@/lib/categories-read";
+import { getKitsByOrg, getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers } from "@/lib/kits-read";
 import { getAssetsByOrg, filterContainerAssets, sortByAssetTagAsc } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
 
-// Categories are DUAL-WRITTEN: every create/update/delete writes the Prisma
-// `category` row (the durable FK anchor — model.categoryId + kit.categoryId carry
-// a live nullable FK, plus the self-referential parentId) AND the Convex
-// `categories` doc (the reactive read source). Prisma is written first; the Convex
-// payload is derived from the written row via toConvexDoc so the two can't drift.
-// Cross-domain joins + the category dropdowns in cross-domain-composing forms stay
-// on the always-fresh Prisma mirror and migrate at decommission. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma category row into Convex (create). */
-async function mirrorCategoryToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.categories.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.categories.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma category row into Convex (patch, id stripped). */
-async function patchCategoryInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.categories.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.categories.update>["patch"],
-  });
-}
+// Equipment Categories are CONVEX-ONLY (Phase B write inversion): every
+// create/update/delete writes the Convex `categories` doc as the sole source of
+// truth — no Prisma row, no mirror. The inbound Prisma FKs into `category`
+// (model.categoryId, kit.categoryId, and the self-ref category.parentId — ALL
+// SetNull) were dropped (migration 20260617131300_drop_category_fk_constraints),
+// so each is now a plain string holding the Convex cuid.
+//
+// Invariants re-implemented in app code (Convex has no constraints/cascades):
+//  - Delete guards: re-implemented from Convex counts — "Cannot delete category
+//    with subcategories" if children > 0; "Cannot delete category with models" if
+//    models > 0 (matches the old `_count` guard, exact messages preserved).
+//  - No cascade: all three inbound FKs were SetNull, so deleting a category just
+//    orphaned the referencing categoryId/parentId. Reads tolerate a missing
+//    category, so no cascade re-implementation is needed.
+//  - Org-guard: reads the target via getCategoryById and verifies organizationId
+//    before any update/remove (matches the old where:{id,organizationId}).
+//  - The self-ref parent tree is rebuilt client-side in categories-read.
+//
+// Reads (list, tree, counts, detail) already source from Convex via
+// categories-read. See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
 
 // Categories list — READ FROM CONVEX (Phase A). The parent/children hierarchy is
 // rebuilt client-side from the flat Convex list; model + kit counts aggregate
@@ -54,37 +58,78 @@ export async function getCategories() {
 export async function getCategory(id: string) {
   const { organizationId } = await getOrgContext();
 
-  const category = await prisma.category.findFirst({
-    where: { id, organizationId },
-    include: {
-      parent: true,
-      children: {
-        include: { _count: { select: { models: true, kits: true, children: true } } },
-        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      },
-      models: {
-        include: {
-          _count: { select: { assets: true } },
-          media: {
-            include: { file: true },
-            orderBy: { sortOrder: "asc" },
-            take: 1,
-          },
-        },
-        orderBy: { name: "asc" },
-      },
-      kits: {
-        include: {
-          _count: { select: { serializedItems: true, bulkItems: true } },
-        },
-        orderBy: { name: "asc" },
-      },
-      _count: { select: { models: true, kits: true, children: true } },
-    },
-  });
+  // Categories are CONVEX-ONLY (Phase B). The whole deep include
+  // (parent / children + their _count / kits + member _count / _count) is rebuilt
+  // from the Convex domain lists, since the inbound Category FKs were dropped.
+  const [allCats, allModels, allKits, allKitSerialized, allKitBulk] = await Promise.all([
+    getMappedCategoriesByOrg(organizationId),
+    getModelsByOrg(organizationId),
+    getKitsByOrg(organizationId),
+    getKitSerializedItemsByOrg(organizationId),
+    getKitBulkItemsByOrg(organizationId),
+  ]);
 
+  const category = allCats.find((c) => c.id === id);
   if (!category) throw new Error("Category not found");
-  return serialize(category);
+
+  const modelKitCounts = buildModelKitCounts(allModels, allKits);
+  const childCounts = buildChildCountMap(allCats);
+  const ownCounts = modelKitCounts.get(id) ?? { models: 0, kits: 0 };
+
+  // parent (full row, or null) — was `parent: true`.
+  const parent = category.parentId ? allCats.find((c) => c.id === category.parentId) ?? null : null;
+
+  // children + their _count {models, kits, children}, sortOrder then name — was
+  // `children: { include: { _count }, orderBy: [sortOrder, name] }`.
+  const children = sortCategories(allCats.filter((c) => c.parentId === id)).map((c) => ({
+    ...c,
+    _count: {
+      models: modelKitCounts.get(c.id)?.models ?? 0,
+      kits: modelKitCounts.get(c.id)?.kits ?? 0,
+      children: childCounts.get(c.id) ?? 0,
+    },
+  }));
+
+  // kits in this category + member counts, name ASC — was
+  // `kits: { include: { _count: { serializedItems, bulkItems } }, orderBy: name }`.
+  const kitMemberCounts = countKitMembers(allKitSerialized, allKitBulk);
+  const kits = allKits
+    .filter((k) => k.categoryId === id)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((k) => ({
+      ...k,
+      _count: kitMemberCounts[k.id] ?? { serializedItems: 0, bulkItems: 0 },
+    }));
+
+  // Models are CONVEX-ONLY — rebuild the per-model `{ _count.assets, media[primary] }`
+  // list (name ASC, active only — matching the old include) from the Convex mirror.
+  const [modelMap, allAssets, photoMap] = await Promise.all([
+    getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getPrimaryPhotoMap("model", organizationId),
+  ]);
+  const assetCount = new Map<string, number>();
+  for (const a of allAssets) if (a.isActive !== false) assetCount.set(a.modelId, (assetCount.get(a.modelId) ?? 0) + 1);
+  const models = [...modelMap.values()]
+    .filter((m) => m.categoryId === id && m.isActive !== false)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((m) => {
+      const photo = photoMap[m.id];
+      return {
+        ...mapConvexModelToRow(m),
+        _count: { assets: assetCount.get(m.id) ?? 0 },
+        media: photo ? [{ url: photo.url, thumbnailUrl: photo.thumbnailUrl }] : [],
+      };
+    });
+
+  return serialize({
+    ...category,
+    parent,
+    children,
+    kits,
+    _count: { models: ownCounts.models, kits: ownCounts.kits, children: childCounts.get(id) ?? 0 },
+    models,
+  });
 }
 
 /**
@@ -169,14 +214,37 @@ export async function searchContainerAssets(query: string = "") {
 export async function createCategory(data: CategoryFormValues) {
   const { organizationId, userId, userName } = await requirePermission("model", "create");
   const parsed = categorySchema.parse(data);
-  const result = await prisma.category.create({
-    data: {
-      ...parsed,
-      parentId: parsed.parentId || null,
-      organizationId,
-    },
+
+  // Explicit cuid so external references hold the same id Convex stores.
+  const id = createId();
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.categories.create, {
+    id,
+    organizationId,
+    name: parsed.name,
+    parentId: parsed.parentId || undefined,
+    description: parsed.description || undefined,
+    icon: parsed.icon || undefined,
+    sortOrder: parsed.sortOrder ?? 0,
+    tags: parsed.tags ?? [],
+    suggestedCrewRoles: [],
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorCategoryToConvex(result);
+
+  const result: MappedCategory = {
+    id,
+    organizationId,
+    name: parsed.name,
+    parentId: parsed.parentId || null,
+    description: parsed.description || null,
+    icon: parsed.icon || null,
+    sortOrder: parsed.sortOrder ?? 0,
+    tags: parsed.tags ?? [],
+    suggestedCrewRoles: [],
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  };
 
   await logActivity({
     organizationId,
@@ -195,14 +263,35 @@ export async function createCategory(data: CategoryFormValues) {
 export async function updateCategory(id: string, data: CategoryFormValues) {
   const { organizationId, userId, userName } = await requirePermission("model", "update");
   const parsed = categorySchema.parse(data);
-  const updated = await prisma.category.update({
-    where: { id, organizationId },
-    data: {
-      ...parsed,
-      parentId: parsed.parentId || null,
+
+  const existing = await getCategoryById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Category not found");
+
+  // Convex `db.patch` treats `undefined` as field removal, matching the old
+  // Prisma `parentId || null` / optional-field clears.
+  await (await getConvexClient()).mutation(api.categories.update, {
+    id,
+    patch: {
+      name: parsed.name,
+      parentId: parsed.parentId || undefined,
+      description: parsed.description || undefined,
+      icon: parsed.icon || undefined,
+      sortOrder: parsed.sortOrder ?? 0,
+      tags: parsed.tags ?? [],
+      updatedAt: Date.now(),
     },
   });
-  await patchCategoryInConvex(id, updated);
+
+  const updated: MappedCategory = {
+    ...mapCategory(existing),
+    name: parsed.name,
+    parentId: parsed.parentId || null,
+    description: parsed.description || null,
+    icon: parsed.icon || null,
+    sortOrder: parsed.sortOrder ?? 0,
+    tags: parsed.tags ?? [],
+    updatedAt: new Date(),
+  };
 
   await logActivity({
     organizationId,
@@ -220,16 +309,25 @@ export async function updateCategory(id: string, data: CategoryFormValues) {
 
 export async function deleteCategory(id: string) {
   const { organizationId, userId, userName } = await requirePermission("model", "delete");
-  // Check for children or models first
-  const category = await prisma.category.findUnique({
-    where: { id, organizationId },
-    include: { _count: { select: { children: true, models: true } } },
-  });
-  if (!category) throw new Error("Category not found");
-  if (category._count.children > 0) throw new Error("Cannot delete category with subcategories");
-  if (category._count.models > 0) throw new Error("Cannot delete category with models");
 
-  await prisma.category.delete({ where: { id, organizationId } });
+  const category = await getCategoryById(id);
+  if (!category || category.organizationId !== organizationId) throw new Error("Category not found");
+
+  // Delete guards re-implemented from Convex counts (replaces the old Prisma
+  // `_count: { children, models }`). Children = categories whose parentId is this
+  // id; models = Convex models whose categoryId is this id.
+  const [allCats, allModels, allKits] = await Promise.all([
+    getMappedCategoriesByOrg(organizationId),
+    getModelsByOrg(organizationId),
+    getKitsByOrg(organizationId),
+  ]);
+  const childCount = allCats.filter((c) => c.parentId === id).length;
+  if (childCount > 0) throw new Error("Cannot delete category with subcategories");
+  const modelCount = buildModelKitCounts(allModels, allKits).get(id)?.models ?? 0;
+  if (modelCount > 0) throw new Error("Cannot delete category with models");
+
+  // No cascade: the dropped inbound FKs were SetNull, so deleting a category just
+  // orphaned the referencing kit.categoryId — reads tolerate a missing category.
   await (await getConvexClient()).mutation(api.categories.remove, { id });
 
   await logActivity({

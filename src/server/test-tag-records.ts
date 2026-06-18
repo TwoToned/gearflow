@@ -1,16 +1,15 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import type { OrgSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
-import {
-  mirrorTestTagRecordCreate,
-  mirrorSubTestRecordCreate,
-  patchTestTagAssetInConvex,
-} from "@/lib/test-tag-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createMaintenanceAssetLinks } from "@/lib/maintenance-record-asset-read";
 import {
   getTestTagRecordsByAsset,
   sortRecordsByTestDateDesc,
@@ -51,47 +50,38 @@ async function attachRecordRelations(organizationId: string, records: TTRecord[]
 }
 
 /**
- * Recalculate and update a TestTagAsset's status based on its latest test record and dates.
+ * Recalculate and update a TestTagAsset's status in Convex based on its
+ * latest test record and dates. Reads from Convex (including newly-written
+ * records) — call AFTER all record/asset writes have completed.
  */
-async function recalculateStatus(
-  testTagAssetId: string,
-  organizationId: string,
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0] = prisma,
-) {
-  const asset = await tx.testTagAsset.findFirst({
-    where: { id: testTagAssetId, organizationId },
-    include: {
-      testRecords: { orderBy: { testDate: "desc" }, take: 1 },
-    },
-  });
+async function recalculateStatus(testTagAssetId: string, organizationId: string) {
+  const convex = await getConvexClient();
+  const asset = await convex.query(api.testTagAssets.getById, { id: testTagAssetId });
   if (!asset) return;
-
-  // Retired items stay retired
   if (asset.status === "RETIRED") return;
 
-  const latestRecord = asset.testRecords[0];
+  const allRecords = await convex.query(api.testTagRecords.listByAssetId, {
+    testTagAssetId,
+  });
+  const latestRecord = allRecords.sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0))[0];
 
   if (!latestRecord) {
-    await tx.testTagAsset.update({
-      where: { id: testTagAssetId },
-      data: { status: "NOT_YET_TESTED" },
+    await convex.mutation(api.testTagAssets.update, {
+      id: testTagAssetId,
+      patch: { status: "NOT_YET_TESTED" },
     });
     return;
   }
 
-  // If latest test failed, status is FAILED
   if (latestRecord.result === "FAIL") {
-    await tx.testTagAsset.update({
-      where: { id: testTagAssetId },
-      data: { status: "FAILED" },
+    await convex.mutation(api.testTagAssets.update, {
+      id: testTagAssetId,
+      patch: { status: "FAILED" },
     });
     return;
   }
 
-  // Determine due soon threshold
-  const org = await tx.organization.findUnique({
-    where: { id: organizationId },
-  });
+  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
   let dueSoonDays = 14;
   if (org?.metadata) {
     try {
@@ -100,21 +90,19 @@ async function recalculateStatus(
     } catch { /* ignore */ }
   }
 
-  const now = new Date();
-  const nextDue = asset.nextDueDate;
+  const now = Date.now();
+  const nextDue = asset.nextDueDate ?? null;
 
   if (!nextDue || nextDue < now) {
-    await tx.testTagAsset.update({
-      where: { id: testTagAssetId },
-      data: { status: "OVERDUE" },
+    await convex.mutation(api.testTagAssets.update, {
+      id: testTagAssetId,
+      patch: { status: "OVERDUE" },
     });
   } else {
-    const dueSoonDate = new Date(now);
-    dueSoonDate.setDate(dueSoonDate.getDate() + dueSoonDays);
-
-    await tx.testTagAsset.update({
-      where: { id: testTagAssetId },
-      data: { status: nextDue <= dueSoonDate ? "DUE_SOON" : "CURRENT" },
+    const dueSoonMs = dueSoonDays * 24 * 60 * 60 * 1000;
+    await convex.mutation(api.testTagAssets.update, {
+      id: testTagAssetId,
+      patch: { status: nextDue <= now + dueSoonMs ? "DUE_SOON" : "CURRENT" },
     });
   }
 }
@@ -173,16 +161,18 @@ export async function createTestTagRecord(data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  // Verify asset exists and belongs to org
-  const testTagAsset = await prisma.testTagAsset.findFirst({
-    where: { id: data.testTagAssetId, organizationId },
-  });
-  if (!testTagAsset) throw new Error("Test tag asset not found");
+  const convex = await getConvexClient();
+
+  // Verify asset exists and belongs to org (Convex-only now).
+  const testTagAsset = await convex.query(api.testTagAssets.getById, { id: data.testTagAssetId });
+  if (!testTagAsset || testTagAsset.organizationId !== organizationId) {
+    throw new Error("Test tag asset not found");
+  }
 
   // Use the provided tester ID or default to logged-in user
   const testedById = data.testedById || userId;
 
-  // Verify tester is a member of the org if different from logged-in user
+  // Verify tester is a member of the org if different from logged-in user (auth table stays Prisma).
   if (testedById !== userId) {
     const member = await prisma.member.findFirst({
       where: { userId: testedById, organizationId },
@@ -192,141 +182,123 @@ export async function createTestTagRecord(data: {
 
   const testDate = new Date(data.testDate);
   const nextDueDate = new Date(data.nextDueDate);
+  const now = Date.now();
+  const recordId = createId();
 
-  const record = await prisma.$transaction(async (tx) => {
-    const created = await tx.testTagRecord.create({
-      data: {
-        organizationId,
-        testTagAssetId: data.testTagAssetId,
-        testProfileId: data.testProfileId || null,
-        testDate,
-        testedById,
-        testerName: data.testerName,
-        result: data.result,
-        visualInspectionResult: data.visualInspectionResult || "PASS",
-        visualCordCondition: data.visualCordCondition ?? null,
-        visualPlugCondition: data.visualPlugCondition ?? null,
-        visualHousingCondition: data.visualHousingCondition ?? null,
-        visualSwitchCondition: data.visualSwitchCondition ?? null,
-        visualVentsUnobstructed: data.visualVentsUnobstructed ?? null,
-        visualCordGrip: data.visualCordGrip ?? null,
-        visualEarthPin: data.visualEarthPin ?? null,
-        visualMarkingsLegible: data.visualMarkingsLegible ?? null,
-        visualNoModifications: data.visualNoModifications ?? null,
-        visualNotes: data.visualNotes || null,
-        equipmentClassTested: data.equipmentClassTested || "CLASS_I",
-        testMethod: data.testMethod || "INSULATION_RESISTANCE",
-        earthContinuityResult: data.earthContinuityResult || "NOT_APPLICABLE",
-        earthContinuityReading: data.earthContinuityReading ?? null,
-        insulationResult: data.insulationResult || "NOT_APPLICABLE",
-        insulationReading: data.insulationReading ?? null,
-        insulationTestVoltage: data.insulationTestVoltage ?? null,
-        leakageCurrentResult: data.leakageCurrentResult || "NOT_APPLICABLE",
-        leakageCurrentReading: data.leakageCurrentReading ?? null,
-        polarityResult: data.polarityResult || "NOT_APPLICABLE",
-        rcdTripTimeResult: data.rcdTripTimeResult || "NOT_APPLICABLE",
-        rcdTripTimeReading: data.rcdTripTimeReading ?? null,
-        functionalTestResult: data.functionalTestResult || "NOT_APPLICABLE",
-        functionalTestNotes: data.functionalTestNotes || null,
-        failureAction: data.failureAction || "NONE",
-        failureNotes: data.failureNotes || null,
-        nextDueDate,
-      },
-    });
-
-    // Create sub-test records if provided
-    if (data.subTests && data.subTests.length > 0) {
-      await tx.subTestRecord.createMany({
-        data: data.subTests.map(st => ({
-          testTagRecordId: created.id,
-          label: st.label,
-          sortOrder: st.sortOrder,
-          result: st.result,
-          earthContinuityResult: st.earthContinuityResult || "NOT_APPLICABLE",
-          earthContinuityReading: st.earthContinuityReading ?? null,
-          insulationResult: st.insulationResult || "NOT_APPLICABLE",
-          insulationReading: st.insulationReading ?? null,
-          leakageCurrentResult: st.leakageCurrentResult || "NOT_APPLICABLE",
-          leakageCurrentReading: st.leakageCurrentReading ?? null,
-          polarityResult: st.polarityResult || "NOT_APPLICABLE",
-          notes: st.notes || null,
-        })),
-      });
-    }
-
-    // Update parent TestTagAsset
-    await tx.testTagAsset.update({
-      where: { id: data.testTagAssetId },
-      data: {
-        lastTestDate: testDate,
-        nextDueDate,
-        // Remember outlet count for next time
-        ...(data.outletCount && { outletCount: data.outletCount }),
-        // Assign profile to asset if not already set
-        ...(!testTagAsset.testProfileId && data.testProfileId && { testProfileId: data.testProfileId }),
-      },
-    });
-
-    // Handle failure actions: mark asset out of service, retired, or create maintenance record
-    if (data.result === "FAIL") {
-      if (data.failureAction === "REMOVED_FROM_SERVICE") {
-        await tx.testTagAsset.update({
-          where: { id: data.testTagAssetId },
-          data: { status: "FAILED" },
-        });
-      } else if (data.failureAction === "DISPOSED") {
-        await tx.testTagAsset.update({
-          where: { id: data.testTagAssetId },
-          data: { status: "RETIRED", isActive: false },
-        });
-      } else if (data.failureAction === "REFERRED_TO_ELECTRICIAN" && testTagAsset.assetId) {
-        // Create a maintenance record for the linked asset
-        await tx.maintenanceRecord.create({
-          data: {
-            organizationId,
-            type: "REPAIR",
-            status: "SCHEDULED",
-            title: `Electrician referral — ${testTagAsset.testTagId}`,
-            description: data.failureNotes
-              ? `Failed test & tag inspection. Notes: ${data.failureNotes}`
-              : `Failed test & tag inspection on ${testDate.toLocaleDateString()}. Referred to electrician for repair.`,
-            reportedById: userId,
-            assets: { create: [{ assetId: testTagAsset.assetId }] },
-          },
-        });
-        // Mark the linked asset as in maintenance
-        await tx.asset.update({
-          where: { id: testTagAsset.assetId },
-          data: { status: "IN_MAINTENANCE" },
-        });
-      }
-    }
-
-    // Recalculate status (handles PASS cases and FAIL without explicit action)
-    await recalculateStatus(data.testTagAssetId, organizationId, tx);
-
-    return created;
+  // Write the test record to Convex.
+  await convex.mutation(api.testTagRecords.createIfMissing, {
+    id: recordId,
+    organizationId,
+    testTagAssetId: data.testTagAssetId,
+    testProfileId: data.testProfileId || undefined,
+    testDate: testDate.getTime(),
+    testedById,
+    testerName: data.testerName,
+    result: data.result,
+    visualInspectionResult: data.visualInspectionResult || "PASS",
+    ...(data.visualCordCondition !== undefined && { visualCordCondition: data.visualCordCondition }),
+    ...(data.visualPlugCondition !== undefined && { visualPlugCondition: data.visualPlugCondition }),
+    ...(data.visualHousingCondition !== undefined && { visualHousingCondition: data.visualHousingCondition }),
+    ...(data.visualSwitchCondition !== undefined && { visualSwitchCondition: data.visualSwitchCondition }),
+    ...(data.visualVentsUnobstructed !== undefined && { visualVentsUnobstructed: data.visualVentsUnobstructed }),
+    ...(data.visualCordGrip !== undefined && { visualCordGrip: data.visualCordGrip }),
+    ...(data.visualEarthPin !== undefined && { visualEarthPin: data.visualEarthPin }),
+    ...(data.visualMarkingsLegible !== undefined && { visualMarkingsLegible: data.visualMarkingsLegible }),
+    ...(data.visualNoModifications !== undefined && { visualNoModifications: data.visualNoModifications }),
+    ...(data.visualNotes && { visualNotes: data.visualNotes }),
+    equipmentClassTested: data.equipmentClassTested || "CLASS_I",
+    testMethod: data.testMethod || "INSULATION_RESISTANCE",
+    earthContinuityResult: data.earthContinuityResult || "NOT_APPLICABLE",
+    ...(data.earthContinuityReading !== undefined && { earthContinuityReading: data.earthContinuityReading }),
+    insulationResult: data.insulationResult || "NOT_APPLICABLE",
+    ...(data.insulationReading !== undefined && { insulationReading: data.insulationReading }),
+    ...(data.insulationTestVoltage !== undefined && { insulationTestVoltage: data.insulationTestVoltage }),
+    leakageCurrentResult: data.leakageCurrentResult || "NOT_APPLICABLE",
+    ...(data.leakageCurrentReading !== undefined && { leakageCurrentReading: data.leakageCurrentReading }),
+    polarityResult: data.polarityResult || "NOT_APPLICABLE",
+    rcdTripTimeResult: data.rcdTripTimeResult || "NOT_APPLICABLE",
+    ...(data.rcdTripTimeReading !== undefined && { rcdTripTimeReading: data.rcdTripTimeReading }),
+    functionalTestResult: data.functionalTestResult || "NOT_APPLICABLE",
+    ...(data.functionalTestNotes && { functionalTestNotes: data.functionalTestNotes }),
+    failureAction: data.failureAction || "NONE",
+    ...(data.failureNotes && { failureNotes: data.failureNotes }),
+    nextDueDate: nextDueDate.getTime(),
+    createdAt: now,
+    updatedAt: now,
   });
 
-  // Mirror to Convex AFTER the tx commits (Convex calls cannot run inside a Prisma tx).
-  // Re-read the final state so the mirror reflects all in-tx mutations.
-  const [finalRecord, finalAsset, subRecords] = await Promise.all([
-    prisma.testTagRecord.findUnique({ where: { id: record.id } }),
-    prisma.testTagAsset.findUnique({ where: { id: data.testTagAssetId } }),
-    prisma.subTestRecord.findMany({ where: { testTagRecordId: record.id } }),
-  ]);
-  if (finalRecord) {
-    await mirrorTestTagRecordCreate(finalRecord as unknown as Record<string, unknown>);
+  // Write sub-test records to Convex.
+  if (data.subTests && data.subTests.length > 0) {
+    for (const st of data.subTests) {
+      await convex.mutation(api.subTestRecords.createIfMissing, {
+        id: createId(),
+        testTagRecordId: recordId,
+        label: st.label,
+        sortOrder: st.sortOrder,
+        result: st.result,
+        earthContinuityResult: st.earthContinuityResult || "NOT_APPLICABLE",
+        ...(st.earthContinuityReading !== undefined && { earthContinuityReading: st.earthContinuityReading ?? undefined }),
+        insulationResult: st.insulationResult || "NOT_APPLICABLE",
+        ...(st.insulationReading !== undefined && { insulationReading: st.insulationReading ?? undefined }),
+        leakageCurrentResult: st.leakageCurrentResult || "NOT_APPLICABLE",
+        ...(st.leakageCurrentReading !== undefined && { leakageCurrentReading: st.leakageCurrentReading ?? undefined }),
+        polarityResult: st.polarityResult || "NOT_APPLICABLE",
+        ...(st.notes && { notes: st.notes }),
+        createdAt: now,
+      });
+    }
   }
-  for (const st of subRecords) {
-    await mirrorSubTestRecordCreate(st as unknown as Record<string, unknown>);
+
+  // Update parent TestTagAsset scalars in Convex.
+  const assetPatch: Record<string, unknown> = {
+    lastTestDate: testDate.getTime(),
+    nextDueDate: nextDueDate.getTime(),
+    updatedAt: now,
+  };
+  if (data.outletCount) assetPatch.outletCount = data.outletCount;
+  if (!testTagAsset.testProfileId && data.testProfileId) assetPatch.testProfileId = data.testProfileId;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await convex.mutation(api.testTagAssets.update, { id: data.testTagAssetId, patch: assetPatch as any });
+
+  // Handle failure actions.
+  if (data.result === "FAIL") {
+    if (data.failureAction === "REMOVED_FROM_SERVICE") {
+      await convex.mutation(api.testTagAssets.update, {
+        id: data.testTagAssetId,
+        patch: { status: "FAILED" },
+      });
+    } else if (data.failureAction === "DISPOSED") {
+      await convex.mutation(api.testTagAssets.update, {
+        id: data.testTagAssetId,
+        patch: { status: "RETIRED", isActive: false },
+      });
+    } else if (data.failureAction === "REFERRED_TO_ELECTRICIAN" && testTagAsset.assetId) {
+      const maintenanceId = createId();
+      const description = data.failureNotes
+        ? `Failed test & tag inspection. Notes: ${data.failureNotes}`
+        : `Failed test & tag inspection on ${testDate.toLocaleDateString()}. Referred to electrician for repair.`;
+      await convex.mutation(api.maintenanceRecords.createIfMissing, {
+        id: maintenanceId,
+        organizationId,
+        type: "REPAIR",
+        status: "SCHEDULED",
+        title: `Electrician referral — ${testTagAsset.testTagId}`,
+        description,
+        reportedById: userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await createMaintenanceAssetLinks(maintenanceId, [testTagAsset.assetId]);
+      // Mark the linked asset as in maintenance (asset still dual-written via Prisma).
+      await prisma.asset.update({
+        where: { id: testTagAsset.assetId },
+        data: { status: "IN_MAINTENANCE" },
+      });
+    }
   }
-  if (finalAsset) {
-    await patchTestTagAssetInConvex(
-      finalAsset.id,
-      finalAsset as unknown as Record<string, unknown>,
-    );
-  }
+
+  // Recalculate status using the freshly-written Convex state.
+  await recalculateStatus(data.testTagAssetId, organizationId);
 
   // A FAIL referral may have flipped the linked asset to IN_MAINTENANCE — mirror it.
   if (testTagAsset.assetId) await syncAssetsToConvex([testTagAsset.assetId]);
@@ -337,13 +309,13 @@ export async function createTestTagRecord(data: {
     userName,
     action: "CREATE",
     entityType: "testTagRecord",
-    entityId: record.id,
-    entityName: testTagAsset.testTagId,
+    entityId: recordId,
+    entityName: testTagAsset.testTagId ?? "",
     summary: `Recorded ${data.result} test for ${testTagAsset.testTagId}`,
     details: { result: data.result, testerName: data.testerName, profileId: data.testProfileId },
   });
 
-  return serialize(record);
+  return serialize({ id: recordId });
 }
 
 export async function getTestTagRecords(testTagAssetId: string, params?: {
@@ -353,7 +325,7 @@ export async function getTestTagRecords(testTagAssetId: string, params?: {
   const { organizationId } = await getOrgContext();
   const { page = 1, pageSize = 20 } = params || {};
 
-  // Convex read (testTagRecord is dual-written). Org scoping is enforced by the
+  // Convex read (testTagRecord is Convex-only). Org scoping is enforced by the
   // composite index; sort + paginate in JS to replicate the old Prisma query.
   const all = sortRecordsByTestDateDesc(
     await getTestTagRecordsByAsset(organizationId, testTagAssetId),

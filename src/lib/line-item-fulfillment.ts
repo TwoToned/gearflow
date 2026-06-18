@@ -18,6 +18,8 @@ import {
   nextOrdinal,
 } from "@/lib/line-item-units";
 import { getModelMap } from "@/lib/models-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /** Columns the rollup needs off each unit row. */
 const UNIT_ROLLUP_SELECT = {
@@ -310,15 +312,21 @@ export async function returnLineUnits(
   // ── 2. Bulk line return ────────────────────────────────────────
   const targetBulkId = args.bulkAssetId || lineItem.bulkAssetId || null;
   if (targetBulkId) {
-    const returnQty = args.quantity || 1;
-    const unit = await tx.projectLineItemUnit.findFirst({
-      where: { lineItemId: lineItem.id, bulkAssetId: targetBulkId },
+    const returnQty = args.quantity ?? 1;
+    // A bulk accessory child may have multiple unit rows (one per parent
+    // unit, each qty=1). Distribute the return across all still-CHECKED_OUT
+    // unit rows in ordinal order to handle both single-aggregate and
+    // per-parent-unit layouts correctly.
+    const units = await tx.projectLineItemUnit.findMany({
+      where: { lineItemId: lineItem.id, bulkAssetId: targetBulkId, status: "CHECKED_OUT" },
+      orderBy: { ordinal: "asc" },
     });
-    if (unit) {
-      const newReturned = Math.min(
-        unit.quantity,
-        unit.returnedQuantity + returnQty,
-      );
+    let remaining = returnQty;
+    for (const unit of units) {
+      if (remaining <= 0) break;
+      const canReturn = Math.min(remaining, unit.quantity - unit.returnedQuantity);
+      if (canReturn <= 0) continue;
+      const newReturned = unit.returnedQuantity + canReturn;
       const fullyReturned = newReturned >= unit.quantity;
       await tx.projectLineItemUnit.update({
         where: { id: unit.id },
@@ -331,8 +339,9 @@ export async function returnLineUnits(
           returnNotes: args.notes || unit.returnNotes,
         },
       });
+      remaining -= canReturn;
     }
-    return { unitsFlipped: unit ? 1 : 0, assetsTouched: [] };
+    return { unitsFlipped: units.length, assetsTouched: [] };
   }
 
   // ── 3. Partial or whole-line return ────────────────────────────
@@ -497,11 +506,12 @@ export async function resolveAssetAccessories(
   if (!asset) return { serialised: [], bulks: [] };
 
   const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-  const modelBulks = await tx.modelBulkAccessory.findMany({
-    where: { modelId: asset.modelId, organizationId },
-    select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true } } },
-    orderBy: { sortOrder: "asc" },
-  });
+  const modelBulks = asset.modelId
+    ? await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
+        modelId: asset.modelId,
+        organizationId,
+      })
+    : [];
 
   // Resolve model names from Convex (pre-fetched map preferred; fallback to per-org fetch).
   const nameMap = modelMap ?? await getModelMap(organizationId);
@@ -510,7 +520,7 @@ export async function resolveAssetAccessories(
     ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId, modelName: nameMap.get(b.bulkAsset.modelId)?.name ?? null })),
     ...modelBulks
       .filter((m) => !assetBulkIds.has(m.bulkAssetId))
-      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAsset.modelId, modelName: nameMap.get(m.bulkAsset.modelId)?.name ?? null })),
+      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAssetModelId, modelName: nameMap.get(m.bulkAssetModelId ?? "")?.name ?? null })),
   ];
   const serialised = asset.childAssets.map((c) => ({ assetId: c.id, modelId: c.modelId, modelName: nameMap.get(c.modelId)?.name ?? null }));
   return { serialised, bulks };

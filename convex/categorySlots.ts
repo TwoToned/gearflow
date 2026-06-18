@@ -31,6 +31,28 @@ export const getById = query({
   },
 });
 
+export const listByProjectGroupId = query({
+  args: { projectGroupId: v.string() },
+  handler: async (ctx, { projectGroupId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
+      .collect();
+  },
+});
+
+export const listBySubHireGroupId = query({
+  args: { subHireGroupId: v.string() },
+  handler: async (ctx, { subHireGroupId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("categorySlots")
+      .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),
@@ -92,7 +114,155 @@ export const remove = mutation({
   handler: async (ctx, { id }) => {
     await requireService(ctx);
     const doc = await ctx.db.query("categorySlots").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new ConvexError("categorySlots not found: " + id);
+    // Tolerant: concurrent moves may have already removed this slot.
+    if (!doc) return;
     await ctx.db.delete(doc._id);
+  },
+});
+
+/**
+ * Atomic reorder: update sortOrder for each slot in a category, creating
+ * slots that don't exist yet. Single transaction = safe under concurrent calls
+ * (the second serialized call sees slots created by the first and updates them).
+ */
+export const reorderSlots = mutation({
+  args: {
+    categoryId: v.string(),
+    items: v.array(v.object({
+      kind: v.union(v.literal("projectGroup"), v.literal("subHireGroup")),
+      groupId: v.string(),
+      sortOrder: v.number(),
+      newSlotId: v.string(),
+    })),
+    now: v.number(),
+  },
+  handler: async (ctx, { categoryId, items, now }) => {
+    await requireService(ctx);
+    const catSlots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", categoryId))
+      .collect();
+    const slotByPgId = new Map(
+      catSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]),
+    );
+    const slotByShgId = new Map(
+      catSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]),
+    );
+    for (const item of items) {
+      if (item.kind === "projectGroup") {
+        const existing = slotByPgId.get(item.groupId);
+        if (existing) {
+          await ctx.db.patch(existing._id, { sortOrder: item.sortOrder, updatedAt: now });
+        } else {
+          await ctx.db.insert("categorySlots", {
+            id: item.newSlotId,
+            projectCategoryId: categoryId,
+            projectGroupId: item.groupId,
+            sortOrder: item.sortOrder,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } else {
+        const existing = slotByShgId.get(item.groupId);
+        if (existing) {
+          await ctx.db.patch(existing._id, { sortOrder: item.sortOrder, updatedAt: now });
+        } else {
+          await ctx.db.insert("categorySlots", {
+            id: item.newSlotId,
+            projectCategoryId: categoryId,
+            subHireGroupId: item.groupId,
+            sortOrder: item.sortOrder,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    }
+  },
+});
+
+/**
+ * Atomic move: delete all existing slots for a group, then create one in the
+ * destination (if provided). Safe under concurrent calls because the entire
+ * operation is a single Convex transaction — the second concurrent call sees
+ * the slot already in the destination and skips the create.
+ */
+export const upsertSlotForProjectGroup = mutation({
+  args: {
+    projectGroupId: v.string(),
+    destCategoryId: v.union(v.string(), v.null()),
+    newSlotId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectGroupId, destCategoryId, newSlotId, now }) => {
+    await requireService(ctx);
+    const existing = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
+      .collect();
+    for (const slot of existing) {
+      await ctx.db.delete(slot._id);
+    }
+    if (destCategoryId) {
+      // Guard: if a concurrent mutation already placed this group here, skip.
+      const alreadyInDest = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
+        .first();
+      if (alreadyInDest) return;
+      const catSlots = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
+        .collect();
+      const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+      await ctx.db.insert("categorySlots", {
+        id: newSlotId,
+        projectCategoryId: destCategoryId,
+        projectGroupId,
+        sortOrder: maxSort + 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+export const upsertSlotForSubHireGroup = mutation({
+  args: {
+    subHireGroupId: v.string(),
+    destCategoryId: v.union(v.string(), v.null()),
+    newSlotId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { subHireGroupId, destCategoryId, newSlotId, now }) => {
+    await requireService(ctx);
+    const existing = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
+      .collect();
+    for (const slot of existing) {
+      await ctx.db.delete(slot._id);
+    }
+    if (destCategoryId) {
+      const alreadyInDest = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
+        .first();
+      if (alreadyInDest) return;
+      const catSlots = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
+        .collect();
+      const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+      await ctx.db.insert("categorySlots", {
+        id: newSlotId,
+        projectCategoryId: destCategoryId,
+        subHireGroupId,
+        sortOrder: maxSort + 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   },
 });

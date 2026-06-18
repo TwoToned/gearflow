@@ -12,9 +12,8 @@
  * org-configuration task, same surface as Assets / Test & Tag settings.
  */
 
-import { type FunctionArgs } from "convex/server";
-import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "@/lib/convex-client";
 import {
   getActiveCustomFieldsForOrg,
   getCustomFieldDefinitionsForOrg,
@@ -30,31 +29,16 @@ import {
   type CustomFieldDefinitionUpdateInput,
   type CustomFieldEntity,
 } from "@/lib/validations/custom-field";
-import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { UserFacingError } from "@/lib/errors";
 
-// Custom field definitions are DUAL-WRITTEN: every create/update/delete/reorder
-// writes the Prisma `custom_field_definition` row AND the Convex
-// `customFieldDefinitions` doc (the reactive read source the settings page
-// subscribes to). The actual field VALUES live in each entity's customFieldValues
-// JSON column (unchanged, still Prisma). Prisma is written first; the Convex
-// payload is derived from the written row via toConvexDoc. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma custom-field row into Convex (create). */
-async function mirrorCustomFieldToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.customFieldDefinitions.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.customFieldDefinitions.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma custom-field row into Convex (patch, id stripped). */
-async function patchCustomFieldInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.customFieldDefinitions.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.customFieldDefinitions.update>["patch"],
-  });
-}
+// Custom field definitions are CONVEX-ONLY (Phase B write inversion): every
+// create/update/delete/reorder writes the Convex `customFieldDefinitions` doc as
+// the sole source of truth — no Prisma row, no mirror. The table has NO inbound
+// Prisma FK (field VALUES live in each entity's `customFieldValues` JSON), so no
+// FK-drop migration is needed; the Prisma `custom_field_definition` table is just
+// left unwritten until Phase C drops it. The `@@unique([organizationId,
+// entityType, fieldKey])` DB constraint is re-implemented in app code below
+// (Convex has no unique index). See FEATUREDOCS/54 + the decommission runbook.
 
 /** All definitions for an entity type, ordered for display. Includes
  *  inactive ones — the settings page needs to show + toggle them. */
@@ -84,40 +68,67 @@ export async function createCustomFieldDefinition(input: CustomFieldDefinitionIn
   );
   const parsed = customFieldDefinitionSchema.parse(input);
 
-  try {
-    const def = await prisma.customFieldDefinition.create({
-      data: {
-        organizationId,
-        entityType: parsed.entityType,
-        label: parsed.label,
-        fieldKey: parsed.fieldKey,
-        fieldType: parsed.fieldType,
-        options: parsed.fieldType === "SELECT" ? parsed.options : [],
-        required: parsed.required,
-        helpText: parsed.helpText || null,
-        sortOrder: parsed.sortOrder,
-        isActive: parsed.isActive,
-      },
+  // Re-implement the @@unique([organizationId, entityType, fieldKey]) DB guard
+  // (Convex has no unique index): reject a duplicate fieldKey for this org+entity.
+  const existingForEntity = await getCustomFieldDefinitionsForOrg(
+    organizationId,
+    parsed.entityType,
+  );
+  if (existingForEntity.some((d) => d.fieldKey === parsed.fieldKey)) {
+    throw new UserFacingError({
+      code: "CONFLICT",
+      title: "Duplicate field key",
+      message: `A custom field with key "${parsed.fieldKey}" already exists for ${parsed.entityType.toLowerCase()}s.`,
     });
-    await mirrorCustomFieldToConvex(def);
-
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "settings",
-      entityId: def.id,
-      entityName: def.label,
-      summary: `Added custom field "${def.label}" (${def.entityType.toLowerCase()})`,
-    });
-
-    return serialize(def);
-  } catch (e) {
-    const translated = translatePrismaError(e);
-    if (translated) throw translated;
-    throw e;
   }
+
+  const id = createId();
+  const now = Date.now();
+  const options = parsed.fieldType === "SELECT" ? parsed.options : [];
+
+  await (await getConvexClient()).mutation(api.customFieldDefinitions.create, {
+    id,
+    organizationId,
+    entityType: parsed.entityType,
+    label: parsed.label,
+    fieldKey: parsed.fieldKey,
+    fieldType: parsed.fieldType,
+    options,
+    required: parsed.required,
+    helpText: parsed.helpText || undefined,
+    sortOrder: parsed.sortOrder,
+    isActive: parsed.isActive,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "settings",
+    entityId: id,
+    entityName: parsed.label,
+    summary: `Added custom field "${parsed.label}" (${parsed.entityType.toLowerCase()})`,
+  });
+
+  // Return the same serialized shape the consumers expect (Date timestamps).
+  return serialize({
+    id,
+    organizationId,
+    entityType: parsed.entityType,
+    label: parsed.label,
+    fieldKey: parsed.fieldKey,
+    fieldType: parsed.fieldType,
+    options,
+    required: parsed.required,
+    helpText: parsed.helpText || null,
+    sortOrder: parsed.sortOrder,
+    isActive: parsed.isActive,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  });
 }
 
 export async function updateCustomFieldDefinition(
@@ -130,11 +141,9 @@ export async function updateCustomFieldDefinition(
   );
   const parsed = customFieldDefinitionUpdateSchema.parse(input);
 
-  const existing = await prisma.customFieldDefinition.findUnique({
-    where: { id, organizationId },
-    select: { label: true },
-  });
-  if (!existing) {
+  const convex = await getConvexClient();
+  const existing = await convex.query(api.customFieldDefinitions.getById, { id });
+  if (!existing || existing.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Custom field not found",
@@ -142,38 +151,50 @@ export async function updateCustomFieldDefinition(
     });
   }
 
-  try {
-    const def = await prisma.customFieldDefinition.update({
-      where: { id, organizationId },
-      data: {
-        label: parsed.label,
-        fieldType: parsed.fieldType,
-        options: parsed.fieldType === "SELECT" ? parsed.options : [],
-        required: parsed.required,
-        helpText: parsed.helpText || null,
-        sortOrder: parsed.sortOrder,
-        isActive: parsed.isActive,
-      },
-    });
-    await patchCustomFieldInConvex(id, def);
+  const options = parsed.fieldType === "SELECT" ? parsed.options : [];
+  const now = Date.now();
+  await convex.mutation(api.customFieldDefinitions.update, {
+    id,
+    patch: {
+      label: parsed.label,
+      fieldType: parsed.fieldType,
+      options,
+      required: parsed.required,
+      helpText: parsed.helpText || undefined,
+      sortOrder: parsed.sortOrder,
+      isActive: parsed.isActive,
+      updatedAt: now,
+    },
+  });
 
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "UPDATE",
-      entityType: "settings",
-      entityId: def.id,
-      entityName: def.label,
-      summary: `Updated custom field "${def.label}"`,
-    });
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "settings",
+    entityId: id,
+    entityName: parsed.label,
+    summary: `Updated custom field "${parsed.label}"`,
+  });
 
-    return serialize(def);
-  } catch (e) {
-    const translated = translatePrismaError(e);
-    if (translated) throw translated;
-    throw e;
-  }
+  // `fieldKey`/`entityType`/`createdAt` are immutable on update — carry them from
+  // the existing Convex doc so the returned shape matches the old Prisma row.
+  return serialize({
+    id,
+    organizationId,
+    entityType: (existing.entityType ?? "ASSET") as CustomFieldEntity,
+    label: parsed.label,
+    fieldKey: existing.fieldKey,
+    fieldType: parsed.fieldType,
+    options,
+    required: parsed.required,
+    helpText: parsed.helpText || null,
+    sortOrder: parsed.sortOrder,
+    isActive: parsed.isActive,
+    createdAt: existing.createdAt ? new Date(existing.createdAt) : new Date(now),
+    updatedAt: new Date(now),
+  });
 }
 
 /** Delete a definition. Values already stored in entity customFieldValues
@@ -185,11 +206,9 @@ export async function deleteCustomFieldDefinition(id: string) {
     "update",
   );
 
-  const existing = await prisma.customFieldDefinition.findUnique({
-    where: { id, organizationId },
-    select: { label: true },
-  });
-  if (!existing) {
+  const convex = await getConvexClient();
+  const existing = await convex.query(api.customFieldDefinitions.getById, { id });
+  if (!existing || existing.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Custom field not found",
@@ -197,8 +216,7 @@ export async function deleteCustomFieldDefinition(id: string) {
     });
   }
 
-  await prisma.customFieldDefinition.delete({ where: { id, organizationId } });
-  await (await getConvexClient()).mutation(api.customFieldDefinitions.remove, { id });
+  await convex.mutation(api.customFieldDefinitions.remove, { id });
 
   await logActivity({
     organizationId,
@@ -217,18 +235,20 @@ export async function deleteCustomFieldDefinition(id: string) {
 /** Persist a new sort order in one shot (drag-reorder on the settings page). */
 export async function reorderCustomFieldDefinitions(orderedIds: string[]) {
   const { organizationId } = await requirePermission("orgSettings", "update");
-  await prisma.$transaction(
-    orderedIds.map((id, idx) =>
-      prisma.customFieldDefinition.updateMany({
-        where: { id, organizationId },
-        data: { sortOrder: idx },
-      }),
-    ),
-  );
-  // Mirror the new sort order into Convex (the reactive read source).
-  const convex = (await getConvexClient());
+  const convex = await getConvexClient();
+  const now = Date.now();
+  // Convex-only: patch each definition's sortOrder. The old Prisma `updateMany`
+  // `where: { id, organizationId }` silently skipped foreign ids; replicate that
+  // org-guard by verifying ownership per id (the reorder list is small) so a
+  // stray/foreign id is a no-op rather than touching another org's row.
   for (let idx = 0; idx < orderedIds.length; idx++) {
-    await convex.mutation(api.customFieldDefinitions.update, { id: orderedIds[idx], patch: { sortOrder: idx } });
+    const id = orderedIds[idx];
+    const doc = await convex.query(api.customFieldDefinitions.getById, { id });
+    if (!doc || doc.organizationId !== organizationId) continue;
+    await convex.mutation(api.customFieldDefinitions.update, {
+      id,
+      patch: { sortOrder: idx, updatedAt: now },
+    });
   }
   return { ok: true };
 }

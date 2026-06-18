@@ -1,5 +1,6 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { assetSchema, type AssetFormValues } from "@/lib/validations/asset";
@@ -14,10 +15,6 @@ import {
   removeAssetFromConvex,
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
-import {
-  mirrorTestTagAssetCreate,
-  patchTestTagAssetInConvex,
-} from "@/lib/test-tag-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
@@ -31,6 +28,8 @@ import {
 } from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Validate + normalise asset custom-field values against the org's active
@@ -135,7 +134,6 @@ export async function getAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      location: true,
       media: {
         include: { file: true },
         orderBy: { sortOrder: "asc" },
@@ -178,7 +176,7 @@ export async function getAsset(id: string) {
   if (!asset) return serialize(asset);
 
   // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
-  // Model media + bulkAccessories are intra-domain Prisma queries (no cross-domain hop).
+  // Model media stays a Prisma read (gallery terminus); bulkAccessories now from Convex.
   const modelMediaPromise: Promise<Prisma.ModelMediaGetPayload<{ include: { file: true } }>[]> = asset.modelId
     ? prisma.modelMedia.findMany({
         where: { modelId: asset.modelId },
@@ -187,11 +185,11 @@ export async function getAsset(id: string) {
       })
     : Promise.resolve([]);
 
-  const modelBulkAccessoriesPromise: Promise<Prisma.ModelBulkAccessoryGetPayload<{ include: { bulkAsset: true } }>[]> = asset.modelId
-    ? prisma.modelBulkAccessory.findMany({
-        where: { modelId: asset.modelId },
-        include: { bulkAsset: true },
-        orderBy: { sortOrder: "asc" },
+  const convex = await getConvexClient();
+  const modelBulkAccessoriesPromise = asset.modelId
+    ? convex.query(api.modelBulkAccessories.listByModelId, {
+        modelId: asset.modelId,
+        organizationId,
       })
     : Promise.resolve([]);
 
@@ -200,8 +198,7 @@ export async function getAsset(id: string) {
     modelMediaPromise,
     asset.supplierId ? getSupplierById(asset.supplierId) : null,
   ]);
-  // Awaited separately to preserve explicit Prisma payload type for .map() inference.
-  const modelBulkAccessories = await modelBulkAccessoriesPromise;
+  const modelBulkAccessoriesRaw = await modelBulkAccessoriesPromise;
 
   const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
 
@@ -218,16 +215,32 @@ export async function getAsset(id: string) {
     },
   }));
 
-  const bulkAccessoriesWithModel = modelBulkAccessories.map((acc) => ({
-    ...acc,
+  const bulkAccessoriesWithModel = modelBulkAccessoriesRaw.map((ba) => ({
+    id: ba.id,
+    organizationId: ba.organizationId,
+    modelId: ba.modelId,
+    bulkAssetId: ba.bulkAssetId,
+    quantity: ba.quantity,
+    sortOrder: ba.sortOrder ?? null,
+    notes: ba.notes ?? null,
+    addedAt: ba.addedAt ? new Date(ba.addedAt) : null,
+    addedById: ba.addedById,
     bulkAsset: {
-      ...acc.bulkAsset,
-      model: acc.bulkAsset.modelId ? modelMap.get(acc.bulkAsset.modelId) ?? null : null,
+      id: ba.bulkAssetId,
+      assetTag: ba.bulkAssetAssetTag ?? "",
+      modelId: ba.bulkAssetModelId ?? null,
+      model: ba.bulkAssetModelId ? modelMap.get(ba.bulkAssetModelId) ?? null : null,
     },
   }));
 
+  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  const location = asset.locationId
+    ? (await getLocationMap(organizationId)).get(asset.locationId) ?? null
+    : null;
+
   return serialize({
     ...asset,
+    location,
     model: assetModel
       ? { ...assetModel, media: modelMediaRows, bulkAccessories: bulkAccessoriesWithModel }
       : null,
@@ -301,28 +314,31 @@ export async function createAsset(data: AssetFormValues) {
     await reserveAssetTags(1);
     await mirrorAssetCreate(result);
 
-    // Auto-register in T&T registry if model requires it
+    // Auto-register in T&T registry if model requires it (Convex-only write).
     if (model?.requiresTestAndTag) {
       const orgTT = await getOrgTestTagSettings();
       const intervalMonths = model.testAndTagIntervalDays
         ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
         : (orgTT.defaultIntervalMonths || 3);
-      const ttAsset = await prisma.testTagAsset.create({
-        data: {
-          organizationId,
-          testTagId: parsed.assetTag,
-          description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${parsed.assetTag})`,
-          equipmentClass: model.defaultEquipmentClass || "CLASS_I",
-          applianceType: model.defaultApplianceType || "APPLIANCE",
-          make: model.manufacturer || null,
-          modelName: model.modelNumber || null,
-          serialNumber: parsed.serialNumber || null,
-          testIntervalMonths: intervalMonths,
-          status: "NOT_YET_TESTED",
-          assetId: result.id,
-        },
+      const convexForTT = await getConvexClient();
+      const ttNow = Date.now();
+      await convexForTT.mutation(api.testTagAssets.createIfMissing, {
+        id: createId(),
+        organizationId,
+        testTagId: parsed.assetTag,
+        description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${parsed.assetTag})`,
+        equipmentClass: (model.defaultEquipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
+        applianceType: (model.defaultApplianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
+        ...(model.manufacturer && { make: model.manufacturer }),
+        ...(model.modelNumber && { modelName: model.modelNumber }),
+        ...(parsed.serialNumber && { serialNumber: parsed.serialNumber }),
+        testIntervalMonths: intervalMonths,
+        status: "NOT_YET_TESTED",
+        assetId: result.id,
+        isActive: true,
+        createdAt: ttNow,
+        updatedAt: ttNow,
       });
-      await mirrorTestTagAssetCreate(ttAsset as unknown as Record<string, unknown>);
     }
 
     await logActivity({
@@ -402,34 +418,32 @@ export async function createAssets(
   await reserveAssetTags(assets.length);
   for (const result of results) await mirrorAssetCreate(result);
 
-  // Auto-register in T&T registry if model requires it
+  // Auto-register in T&T registry if model requires it (Convex-only write).
   if (model?.requiresTestAndTag) {
     const orgTT = await getOrgTestTagSettings();
     const intervalMonths = model.testAndTagIntervalDays
       ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
       : (orgTT.defaultIntervalMonths || 3);
-    const ttAssets = await prisma.$transaction(
-      results.map((asset) =>
-        prisma.testTagAsset.create({
-          data: {
-            organizationId,
-            testTagId: asset.assetTag,
-            description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${asset.assetTag})`,
-            equipmentClass: model.defaultEquipmentClass || "CLASS_I",
-            applianceType: model.defaultApplianceType || "APPLIANCE",
-            make: model.manufacturer || null,
-            modelName: model.modelNumber || null,
-            serialNumber: asset.serialNumber || null,
-            testIntervalMonths: intervalMonths,
-            status: "NOT_YET_TESTED",
-            assetId: asset.id,
-          },
-        })
-      )
-    );
-    // Mirror created T&T assets AFTER the tx commits.
-    for (const tt of ttAssets) {
-      await mirrorTestTagAssetCreate(tt as unknown as Record<string, unknown>);
+    const convexForTT = await getConvexClient();
+    const ttNow = Date.now();
+    for (const asset of results) {
+      await convexForTT.mutation(api.testTagAssets.createIfMissing, {
+        id: createId(),
+        organizationId,
+        testTagId: asset.assetTag,
+        description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${asset.assetTag})`,
+        equipmentClass: (model.defaultEquipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
+        applianceType: (model.defaultApplianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
+        ...(model.manufacturer && { make: model.manufacturer }),
+        ...(model.modelNumber && { modelName: model.modelNumber }),
+        ...(asset.serialNumber && { serialNumber: asset.serialNumber }),
+        testIntervalMonths: intervalMonths,
+        status: "NOT_YET_TESTED",
+        assetId: asset.id,
+        isActive: true,
+        createdAt: ttNow,
+        updatedAt: ttNow,
+      });
     }
   }
 
@@ -601,15 +615,14 @@ export async function deleteAsset(id: string) {
   }
 
   // Retire linked T&T entry if one exists
-  const linkedTT = await prisma.testTagAsset.findFirst({
-    where: { assetId: id, organizationId },
-  });
-  if (linkedTT) {
-    const updatedTT = await prisma.testTagAsset.update({
-      where: { id: linkedTT.id },
-      data: { status: "RETIRED", isActive: false, assetId: null },
+  // Retire linked T&T entry if one exists (Convex-only write).
+  const convexForTT = await getConvexClient();
+  const linkedTTList = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId: id });
+  for (const linkedTT of linkedTTList) {
+    await convexForTT.mutation(api.testTagAssets.update, {
+      id: linkedTT.id,
+      patch: { status: "RETIRED", isActive: false, updatedAt: Date.now() },
     });
-    await patchTestTagAssetInConvex(updatedTT.id, updatedTT as unknown as Record<string, unknown>);
   }
 
   await prisma.asset.delete({ where: { id, organizationId } });
@@ -643,17 +656,15 @@ export async function updateAssetNotes(id: string, notes: string) {
 export async function archiveAsset(id: string) {
   const { organizationId } = await requirePermission("asset", "update");
 
-  // Retire linked T&T entry if one exists
-  await prisma.testTagAsset.updateMany({
-    where: { assetId: id, organizationId },
-    data: { status: "RETIRED", isActive: false },
-  });
-  // Mirror the retired T&T rows to Convex after the updateMany commits.
-  const retiredTT = await prisma.testTagAsset.findMany({
-    where: { assetId: id, organizationId },
-  });
-  for (const tt of retiredTT) {
-    await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+  // Retire linked T&T entries (Convex-only write).
+  const convexForTT = await getConvexClient();
+  const linkedTTList = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId: id });
+  const archiveNow = Date.now();
+  for (const tt of linkedTTList) {
+    await convexForTT.mutation(api.testTagAssets.update, {
+      id: tt.id,
+      patch: { status: "RETIRED", isActive: false, updatedAt: archiveNow },
+    });
   }
 
   const updated = await prisma.asset.update({

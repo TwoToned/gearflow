@@ -1,6 +1,12 @@
-import { prisma } from "@/lib/prisma";
 import { getModelMap } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getOrgLineItems,
+  indexProjectsById,
+  sumBookingsByModel,
+  type DateWindow,
+} from "@/lib/availability-read";
 
 /**
  * Canonical stock breakdown for a model.
@@ -91,50 +97,22 @@ export async function computeOverbookedStatus(
 
   const modelIds = [...new Set(relevantItems.map((li) => li.modelId!))];
   const hasDates = !!rentalStartDate && !!rentalEndDate;
+  const window: DateWindow | null = hasDates
+    ? { start: rentalStartDate!, end: rentalEndDate! }
+    : null;
 
-  // Batch query: all overlapping bookings for these models across all projects
+  // All overlapping bookings for these models across all projects come from the
+  // dual-written Convex line-item table now (was a nested-project Prisma query).
   // Include BOTH regular items AND kit children — they all consume stock.
   // Sub-hire items are third-party stock and are excluded.
-  // When no dates: only count THIS project's bookings (no date overlap possible)
-  const overlappingBookings = hasDates
-    ? await prisma.projectLineItem.findMany({
-        where: {
-          organizationId,
-          modelId: { in: modelIds },
-          status: { not: "CANCELLED" },
-          subHireId: null,
-          project: {
-            isTemplate: false,
-            status: {
-              notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"],
-            },
-            rentalStartDate: { lte: rentalEndDate },
-            rentalEndDate: { gte: rentalStartDate },
-          },
-        },
-        select: { modelId: true, quantity: true, projectId: true },
-      })
-    : await prisma.projectLineItem.findMany({
-        where: {
-          organizationId,
-          modelId: { in: modelIds },
-          status: { not: "CANCELLED" },
-          subHireId: null,
-          projectId,
-        },
-        select: { modelId: true, quantity: true, projectId: true },
-      });
-
-  // Sum booked per model (total across all projects, or just this project when dateless)
-  const totalBookedByModel = new Map<string, number>();
-  const thisProjectBookedByModel = new Map<string, number>();
-  for (const booking of overlappingBookings) {
-    const mid = booking.modelId!;
-    totalBookedByModel.set(mid, (totalBookedByModel.get(mid) || 0) + booking.quantity);
-    if (booking.projectId === projectId) {
-      thisProjectBookedByModel.set(mid, (thisProjectBookedByModel.get(mid) || 0) + booking.quantity);
-    }
-  }
+  // When no dates: only count THIS project's bookings (no date overlap possible).
+  const [orgLineItems, orgProjects] = await Promise.all([
+    getOrgLineItems(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const projectsById = indexProjectsById(orgProjects);
+  const { totalByModel: totalBookedByModel, thisProjectByModel: thisProjectBookedByModel } =
+    sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
 
   // Batch fetch model metadata + active assets/bulkAssets from Convex in parallel.
   const convexModelMap = await getModelMap(organizationId);

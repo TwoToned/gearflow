@@ -2788,106 +2788,22 @@ invariant preserved); only a *thrown* transient error is retried. Regression tes
 
 ## Phase A — read-rewiring (domain-only decommission)
 
-Moving every remaining Prisma **domain read** to Convex, one leaf surface per PR.
-Full plan + the per-surface progress log:
+Moving every remaining Prisma **domain read** to Convex, one surface per PR. Full
+plan + per-surface progress + the keystone semantics:
 [`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
-Pattern: thin `lib/<x>-read.ts` (Convex fetchers + mappers: epoch-ms → `Date`,
-Decimal → `number`, absent → `null`) + the server action keeps its shape but does
-`where`/`orderBy`/`include` as JS filter/sort/attach; auth-owned `User` joins stay
-Prisma; validated by unit tests + a row-for-row golden-diff vs Prisma on seeded data.
 
-### Supplier orders — DONE
+### Keystone line-item-tree reconstruction — primitive DONE
 
-`src/server/supplier-orders.ts` `getSupplierOrders` (list: filter/search/sort/
-paginate + project + item-count + supplier) and `getSupplierOrderById` (order +
-items + asset/model/project/supplier + `createdBy` User) → Convex via
-`src/lib/supplier-order-read.ts`. New `supplierOrderItems.listByOrderIds` (one
-round trip for per-order counts). Mixed-type column sort replicates Postgres null
-ordering. Writes stay Prisma-first + mirror. Dev data: `npm run seed:supplier-orders`.
-supplierOrder/supplierOrderItem were backfilled in prod with the sub-hire family.
-
-### Test & Tag assets — DONE (read surface, 2026-06-16)
-
-`src/server/test-tag-assets.ts` — the 4 read-only functions moved off Prisma
-(writes / read-then-write / mirrors stay Prisma, as does the re-export
-`peekNextTestTagIds`):
-
-- **`getTestTagAssets`** (paginated/filtered registry list). Convex
-  `getTestTagAssetsByOrg` + per-asset `_count.testRecords` counted in JS from
-  `getTestTagRecordsByOrg`; `asset`/`bulkAsset` joins from `assets-read`
-  (`getAssetsByOrg` / `getBulkAssetsByOrg`), `testProfile` from `getTestProfileMap`.
-  Filter + sort + slice are pure JS:
-  - `listAssetMatchesFilters` — list-specific predicate. **`isActive` is a
-    PARAMETER here** (can be `false` to list retired items), unlike the report
-    predicate which hardcodes `isActive === true`. status / equipmentClass /
-    applianceType are EXACT single matches (not IN).
-  - `compareTestTagAssets` — null-aware + enum-declared-order comparator
-    replicating `orderBy: { [sortBy]: sortOrder }`. Postgres NULL ordering
-    (ASC = NULLS LAST, DESC = NULLS FIRST) for nullable columns; **enum columns
-    (status / equipmentClass / applianceType) sort by Postgres DECLARED order,
-    not alphabetical**, via rank maps mirroring `prisma/schema.prisma`. Unknown
-    `sortBy` keys fall back to `testTagId`. Stable tiebreak on `testTagId` asc.
-- **`getTestTagAsset`** (detail). `getTestTagAssetById` + org guard in JS; recent
-  10 records (testDate desc) with sub-tests (`getSubTestRecordsByRecordIds`),
-  `testProfile {id,name}`, `testedBy {id,name}` (Prisma `getUserNameMap`); linked
-  asset/bulkAsset with `.model` attached via `getModelMap`.
-- **`lookupTestTagAsset`** (scan; returns `null` if absent, includes retired).
-  `getTestTagAssetByTestTagId` + 1 most-recent record + sub-tests + testedBy.
-  `testProfile` is the FULL profile (`getFullTestProfileById`, mapped
-  `mapTestProfile` with JSON passthrough) to preserve the old `testProfile: true`
-  shape — though the scan UI resolves its wizard profile via `resolveTestProfile`,
-  not this field.
-- **`getTestTagDashboardStats`**. Keeps the `prisma.organization.findUnique`
-  metadata read (Organization = auth table; the parsed `dueSoonDays` stays dead
-  code, behaviour preserved). 7 counts + `recentTests` (20) + `overdueItems` /
-  `dueSoonItems` (50, nextDueDate asc NULLS LAST) derived in JS from the Convex
-  org lists. `retired` counts `status === "RETIRED"` regardless of `isActive`.
-- **New Convex queries:** `testTagRecords.listByAssetId` (by `by_testTagAssetId`)
-  and `testTagAssets.getByTestTagId` (by `by_organizationId_testTagId`,
-  `.first()` — index is non-unique). Both service-only.
-- **DEPLOY GATE:** `testTagAsset` / `testTagRecord` / `subTestRecord` must be
-  backfilled in prod Convex before this merges, else existing rows read empty.
-- **Validation:** pure-function unit tests extended in
-  `src/lib/test-tag-read.test.ts` (list predicate + the null/enum-aware
-  comparator, both directions + unknown-key fallback). Golden-diff deferred to
-  preview validation.
-
-### Test & Tag records + auditor partial — DONE (stacked on the reports surface)
-
-`src/server/test-tag-records.ts` (per-asset test history + Quick Pass pre-fill)
-and the dual-written-table reads inside `src/server/test-tag-auditor.ts` moved
-off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
-
-- **Reads converted:**
-  - `getTestTagRecords(assetId, {page,pageSize})` — paginated test history.
-    Convex `testTagRecords.listByOrgAndAsset` → JS sort `testDate` desc →
-    JS slice for pagination (`total` from the full set). `testProfile`/
-    `subTestRecords` attached from Convex, `testedBy {id,name}` from Prisma.
-  - `getLatestTestRecord(assetId)` — same fetch, first row after the desc sort.
-  - `getAuditorScopeOptions()` — distinct `applianceType`/`equipmentClass`/
-    `location` facets + the sorted asset picker list, computed in JS over the
-    Convex `isActive` assets (replaces 4 Prisma `distinct`/`orderBy` queries).
-  - `getAuditorPortalData(orgId, scope)` — Convex asset list filtered by the new
-    pure `assetMatchesAuditorScope` predicate (org + `isActive` + scope facets);
-    the `groupBy status` stats are tallied in JS over the same scoped set.
-    `organization.name`/`metadata` stays Prisma (Better Auth table, not domain).
-- **testTagAuditorToken reads stay on Prisma — BLOCKED terminus.** That table is
-  **not dual-written** (no mirror write from `src/`, no backfill script; the
-  `convex/testTagAuditorTokens.ts` module is a generated stub only). So
-  `validateAuditorToken`, `getAuditorTokens`, and the token find/update/revoke
-  reads remain Prisma until the table is dual-written + backfilled.
-- **`testedBy` = Better Auth `User`** — permanent Prisma terminus (via
-  `getUserNameMap`), as in the reports surface; not a violation.
-- **New Convex query:** `testTagRecords.listByOrgAndAsset` (org-scoped per-asset
-  fetch via the `by_organizationId_testTagAssetId` composite index). Added a
-  `cmpStrAsc` codepoint comparator + `sortRecordsByTestDateDesc` /
-  `assetMatchesAuditorScope` to the helper (all pure, unit-tested).
-- **Validation:** pure-function unit tests in `src/lib/test-tag-read.test.ts`
-  (24 total). tsc + eslint + `pnpm run build` all green locally (this PR is
-  **stacked** on the reports branch — stacked PRs only get CI after retarget, so
-  the build was run locally). Convex data-correctness is human-gated on the
-  Coolify PR preview against prod Convex (per the deploy-ordering gate above:
-  testTagRecord/subTestRecord are already backfilled into prod).
+`src/lib/project-line-item-tree-read.ts` rebuilds the `project → category → group
+→ lineItem (parent/child) → units` tree from FLAT dual-written Convex rows — the
+exact nested shape the four consumers (getProject / getProjectForWarehouse /
+getProjectPullSheet / build-document-data) used to get from Prisma `include`s, so
+the existing attach helpers in `line-item-tree-read.ts` keep working. Pure (caller
+maps docs → rows) + fixture-unit-tested + structurally golden-diffed vs Prisma on
+the seeded project. Wiring the four consumers (each its own golden-diffed PR over
+an enriched seed; PDF gets the full-pipeline test) is the next step. See the
+design doc's Keystone section for the load-bearing semantics (dual projection,
+explicit include depth, non-deterministic flat tie-order).
 
 ### Keystone consumer 1/4: `getProject` — DONE
 
@@ -2985,6 +2901,43 @@ mappers → reconstruction → attach → structure → filter → height → re
 CANCELLED drop, unit/asset attach, no tail-drop, model names on the page).
 
 **Keystone complete — all four consumers reconstruct the line-item tree from Convex.**
+
+### Test & Tag records + auditor partial — DONE (stacked on the reports surface)
+
+`src/server/test-tag-records.ts` (per-asset test history + Quick Pass pre-fill)
+and the dual-written-table reads inside `src/server/test-tag-auditor.ts` moved
+off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
+
+- **Reads converted:**
+  - `getTestTagRecords(assetId, {page,pageSize})` — paginated test history.
+    Convex `testTagRecords.listByOrgAndAsset` → JS sort `testDate` desc →
+    JS slice for pagination (`total` from the full set). `testProfile`/
+    `subTestRecords` attached from Convex, `testedBy {id,name}` from Prisma.
+  - `getLatestTestRecord(assetId)` — same fetch, first row after the desc sort.
+  - `getAuditorScopeOptions()` — distinct `applianceType`/`equipmentClass`/
+    `location` facets + the sorted asset picker list, computed in JS over the
+    Convex `isActive` assets (replaces 4 Prisma `distinct`/`orderBy` queries).
+  - `getAuditorPortalData(orgId, scope)` — Convex asset list filtered by the new
+    pure `assetMatchesAuditorScope` predicate (org + `isActive` + scope facets);
+    the `groupBy status` stats are tallied in JS over the same scoped set.
+    `organization.name`/`metadata` stays Prisma (Better Auth table, not domain).
+- **testTagAuditorToken reads stay on Prisma — BLOCKED terminus.** That table is
+  **not dual-written** (no mirror write from `src/`, no backfill script; the
+  `convex/testTagAuditorTokens.ts` module is a generated stub only). So
+  `validateAuditorToken`, `getAuditorTokens`, and the token find/update/revoke
+  reads remain Prisma until the table is dual-written + backfilled.
+- **`testedBy` = Better Auth `User`** — permanent Prisma terminus (via
+  `getUserNameMap`), as in the reports surface; not a violation.
+- **New Convex query:** `testTagRecords.listByOrgAndAsset` (org-scoped per-asset
+  fetch via the `by_organizationId_testTagAssetId` composite index). Added a
+  `cmpStrAsc` codepoint comparator + `sortRecordsByTestDateDesc` /
+  `assetMatchesAuditorScope` to the helper (all pure, unit-tested).
+- **Validation:** pure-function unit tests in `src/lib/test-tag-read.test.ts`
+  (24 total). tsc + eslint + `pnpm run build` all green locally (this PR is
+  **stacked** on the reports branch — stacked PRs only get CI after retarget, so
+  the build was run locally). Convex data-correctness is human-gated on the
+  Coolify PR preview against prod Convex (per the deploy-ordering gate above:
+  testTagRecord/subTestRecord are already backfilled into prod).
 
 ## Conventions
 

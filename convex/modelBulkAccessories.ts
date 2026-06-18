@@ -104,3 +104,42 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * All accessories for a model + org, sorted by sortOrder, with the bulk asset's
+ * modelId and assetTag attached (N+1 but bounded — typically < 20 per model).
+ */
+export const listByModelId = query({
+  args: { modelId: v.string(), organizationId: v.string() },
+  handler: async (ctx, { modelId, organizationId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("modelBulkAccessories")
+      .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+      .filter((q) => q.eq(q.field("organizationId"), organizationId))
+      .collect();
+    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return await Promise.all(
+      rows.map(async (row) => {
+        const bulkAsset = await ctx.db
+          .query("bulkAssets")
+          .withIndex("by_cuid", (q) => q.eq("id", row.bulkAssetId))
+          .unique();
+        return { ...row, bulkAssetModelId: bulkAsset?.modelId ?? null, bulkAssetAssetTag: bulkAsset?.assetTag ?? null };
+      }),
+    );
+  },
+});
+
+/** Check for an existing (modelId, bulkAssetId) pair within an org. */
+export const getByModelAndBulkAsset = query({
+  args: { modelId: v.string(), bulkAssetId: v.string(), organizationId: v.string() },
+  handler: async (ctx, { modelId, bulkAssetId, organizationId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("modelBulkAccessories")
+      .withIndex("by_modelId_bulkAssetId", (q) => q.eq("modelId", modelId).eq("bulkAssetId", bulkAssetId))
+      .filter((q) => q.eq(q.field("organizationId"), organizationId))
+      .first();
+  },
+});

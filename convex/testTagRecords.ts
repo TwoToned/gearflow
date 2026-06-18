@@ -37,6 +37,18 @@ export const getById = query({
  * index. Used by the asset-detail / scan reads to attach the recent test
  * history. Service-only (not on the browser-readable allowlist).
  */
+/** All test records created by a given user (for user-delete cascade). */
+export const listByTestedById = query({
+  args: { testedById: v.string() },
+  handler: async (ctx, { testedById }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_testedById", (q) => q.eq("testedById", testedById))
+      .collect();
+  },
+});
+
 export const listByAssetId = query({
   args: { testTagAssetId: v.string() },
   handler: async (ctx, { testTagAssetId }) => {

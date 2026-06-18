@@ -17,15 +17,38 @@ import {
 } from "@/lib/project-services-read";
 
 // Minimal builders — the pure functions only touch the scalar fields under test.
-function maint(p: Omit<Partial<MaintenanceRecordRow>, "scheduledDate"> & { scheduledDate?: number | null }): MaintenanceRecordRow {
-  const { scheduledDate, ...rest } = p;
+// countDueMaintenance / aggregateMaintenanceForProject operate on the MAPPED
+// MaintenanceRecordRow (scheduledDate is a Date), matching how the dashboard /
+// project-cost server actions feed them via getMaintenanceRecordsByOrg.
+function maint(p: {
+  status?: string;
+  scheduledDate?: number;
+  projectId?: string;
+  cost?: number;
+}): MaintenanceRecordRow {
   return {
     id: "m",
     organizationId: "org",
-    status: "SCHEDULED",
-    scheduledDate: scheduledDate != null ? new Date(scheduledDate) : null,
-    ...rest,
-  } as MaintenanceRecordRow;
+    kitId: null,
+    projectId: p.projectId ?? null,
+    type: "REPAIR" as MaintenanceRecordRow["type"],
+    status: (p.status ?? "SCHEDULED") as MaintenanceRecordRow["status"],
+    title: "t",
+    description: null,
+    reportedById: null,
+    assignedToId: null,
+    scheduledDate: p.scheduledDate == null ? null : new Date(p.scheduledDate),
+    completedDate: null,
+    cost: p.cost ?? null,
+    partsUsed: null,
+    attachments: [],
+    photos: [],
+    result: null,
+    nextDueDate: null,
+    tags: [],
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
 }
 function asn(p: Partial<ConvexCrewAssignment>): ConvexCrewAssignment {
   return { id: "a", organizationId: "org", projectId: "p", crewMemberId: "c", ...p } as ConvexCrewAssignment;
@@ -51,7 +74,6 @@ describe("countDueMaintenance", () => {
       maint({ status: "COMPLETED", scheduledDate: NOW - 1 }), // wrong status
       maint({ status: "CANCELLED", scheduledDate: NOW - 1 }), // wrong status
       maint({ status: "SCHEDULED", scheduledDate: undefined }), // no date → excluded (Prisma lte skips NULL)
-      maint({ status: undefined, scheduledDate: NOW - 1 }), // no status → excluded
     ];
     expect(countDueMaintenance(records, NOW)).toBe(2);
   });

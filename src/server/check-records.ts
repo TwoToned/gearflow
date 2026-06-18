@@ -1,13 +1,12 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
-import { mirrorCheckRecordCreate } from "@/lib/check-record-mirror";
-import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
 import { getAssetById, getAssetByAssetTag } from "@/lib/assets-read";
@@ -16,6 +15,13 @@ import {
   getModelFailureAnalyticsRows,
 } from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import {
+  getMaintenanceAssetLinksByAssetIds,
+  createMaintenanceAssetLinks,
+} from "@/lib/maintenance-record-asset-read";
 import {
   prepUnit,
   syncLineItemRollup,
@@ -49,6 +55,26 @@ async function attachLineItemModels<T extends { modelId: string | null }>(
   return rows.map((r) => ({ ...r, model: r.modelId ? modelMap.get(r.modelId) ?? null : null }));
 }
 
+// Convex-ready check record shape (Phase B inversion: no Prisma write).
+type CheckRecordDoc = {
+  id: string;
+  organizationId: string;
+  context: "PREP" | "RETURN" | "AD_HOC";
+  lineItemId?: string;
+  assetId?: string;
+  bulkAssetId?: string;
+  kitId?: string;
+  checkItemId: string;
+  checkItemLabelSnapshot: string;
+  checkItemTypeSnapshot: string;
+  result: string;
+  value?: string;
+  notes?: string;
+  photos?: string[];
+  performedById: string;
+  performedAt: number;
+};
+
 async function saveCheckRecords(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -59,12 +85,10 @@ async function saveCheckRecords(
   context: "PREP" | "RETURN" | "AD_HOC",
   checks: CheckRecordFormValues[],
   kitId?: string | null,
-  // Optional sink: each created checkRecord row is pushed here so the caller can
-  // mirror it to Convex AFTER its $transaction commits (Convex calls cannot run
-  // inside a Prisma $transaction).
-  sink?: Record<string, unknown>[]
+  // Optional sink: Convex-ready docs are pushed here for post-tx write
+  sink?: CheckRecordDoc[]
 ) {
-  // Fetch check item details for snapshots
+  // Fetch check item details for snapshots (check_item stays Prisma)
   const checkItemIds = checks.map((c) => c.checkItemId);
   const checkItems = await tx.checkItem.findMany({
     where: { id: { in: checkItemIds }, organizationId },
@@ -72,36 +96,46 @@ async function saveCheckRecords(
   });
   const checkItemMap = new Map(checkItems.map((ci) => [ci.id, ci]));
 
-  const records = [];
+  const records: CheckRecordDoc[] = [];
+  const now = Date.now();
   for (const check of checks) {
     const ci = checkItemMap.get(check.checkItemId);
     if (!ci) {
       throw new Error(`Check item ${check.checkItemId} not found`);
     }
 
-    const created = await tx.checkRecord.create({
-      data: {
-        organization: { connect: { id: organizationId } },
-        context,
-        checkItem: { connect: { id: check.checkItemId } },
-        checkItemLabelSnapshot: ci.label,
-        checkItemTypeSnapshot: ci.type,
-        result: check.result,
-        value: check.value || null,
-        notes: check.notes || null,
-        photos: check.photos || [],
-        performedBy: { connect: { id: userId } },
-        ...(lineItemId ? { lineItem: { connect: { id: lineItemId } } } : {}),
-        ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
-        ...(bulkAssetId ? { bulkAsset: { connect: { id: bulkAssetId } } } : {}),
-        ...(kitId ? { kit: { connect: { id: kitId } } } : {}),
-      },
-    });
-    records.push(created);
-    sink?.push(created as unknown as Record<string, unknown>);
+    const doc: CheckRecordDoc = {
+      id: createId(),
+      organizationId,
+      context,
+      checkItemId: check.checkItemId,
+      checkItemLabelSnapshot: ci.label,
+      checkItemTypeSnapshot: ci.type,
+      result: check.result,
+      ...(check.value ? { value: check.value } : {}),
+      ...(check.notes ? { notes: check.notes } : {}),
+      ...(check.photos?.length ? { photos: check.photos } : {}),
+      performedById: userId,
+      performedAt: now,
+      ...(lineItemId ? { lineItemId } : {}),
+      ...(assetId ? { assetId } : {}),
+      ...(bulkAssetId ? { bulkAssetId } : {}),
+      ...(kitId ? { kitId } : {}),
+    };
+    records.push(doc);
+    sink?.push(doc);
   }
 
   return records;
+}
+
+/** Write Phase-B check records to Convex after the Prisma tx commits. */
+async function writeCheckRecordsToConvex(records: CheckRecordDoc[]) {
+  const convex = await getConvexClient();
+  for (const r of records) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await convex.mutation(api.checkRecords.createIfMissing, r as any);
+  }
 }
 
 /** After saving FAIL records, check if predictive maintenance should trigger */
@@ -112,13 +146,14 @@ async function checkPredictiveMaintenance(
   assetId: string,
   failedCheckItemIds: string[]
 ) {
+  const convexForPM = await getConvexClient();
   for (const checkItemId of failedCheckItemIds) {
-    // Get last 3 check records for this asset + check item
-    const recentRecords = await prisma.checkRecord.findMany({
-      where: { organizationId, assetId, checkItemId },
-      orderBy: { performedAt: "desc" },
+    // Get last 3 check records for this asset + check item from Convex (Phase B)
+    const recentRecords = await convexForPM.query(api.checkRecords.listRecentByAssetAndCheckItem, {
+      orgId: organizationId,
+      assetId,
+      checkItemId,
       take: 3,
-      select: { result: true },
     });
 
     const failCount = recentRecords.filter((r) => r.result === "FAIL").length;
@@ -138,35 +173,41 @@ async function checkPredictiveMaintenance(
       // model name lives in Convex — resolve for the maintenance description.
       const modelName = asset.modelId ? (await getModelById(asset.modelId))?.name ?? "" : "";
 
-      // Check if a maintenance record already exists for this pattern (avoid duplicates)
-      const existingMaintenance = await prisma.maintenanceRecord.findFirst({
-        where: {
-          organizationId,
-          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-          title: { contains: `[Auto] ${checkItem.label}` },
-          assets: { some: { assetId } },
-        },
-      });
+      // Check if a maintenance record already exists for this pattern (avoid
+      // duplicates). The record scalars (org/status/title) come from the Convex
+      // maintenance records; the `assets: { some: { assetId } }` join filter is
+      // resolved from the Convex-only maintenanceRecordAsset join (Phase B).
+      const titleNeedle = `[Auto] ${checkItem.label}`;
+      const [orgRecords, assetLinks] = await Promise.all([
+        getMaintenanceRecordsByOrg(organizationId),
+        getMaintenanceAssetLinksByAssetIds([assetId]),
+      ]);
+      const recordIdsForAsset = new Set(assetLinks.map((l) => l.maintenanceRecordId));
+      const existingMaintenance = orgRecords.find(
+        (m) =>
+          (m.status === "SCHEDULED" || m.status === "IN_PROGRESS") &&
+          m.title.includes(titleNeedle) &&
+          recordIdsForAsset.has(m.id),
+      );
 
       if (!existingMaintenance) {
-        const maintenance = await prisma.maintenanceRecord.create({
-          data: {
-            organizationId,
-            type: "PREVENTATIVE",
-            status: "SCHEDULED",
-            title: `[Auto] ${checkItem.label} — ${asset.assetTag}`,
-            description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${modelName} (${asset.assetTag}).`,
-            reportedById: userId,
-            scheduledDate: new Date(),
-          },
+        const maintenanceId = createId();
+        const maintenanceTitle = `[Auto] ${checkItem.label} — ${asset.assetTag}`;
+        const now = Date.now();
+        const convex = await getConvexClient();
+        await convex.mutation(api.maintenanceRecords.createIfMissing, {
+          id: maintenanceId,
+          organizationId,
+          type: "PREVENTATIVE",
+          status: "SCHEDULED",
+          title: maintenanceTitle,
+          description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${modelName} (${asset.assetTag}).`,
+          reportedById: userId,
+          scheduledDate: now,
+          createdAt: now,
+          updatedAt: now,
         });
-
-        await prisma.maintenanceRecordAsset.create({
-          data: {
-            maintenanceRecordId: maintenance.id,
-            assetId,
-          },
-        });
+        await createMaintenanceAssetLinks(maintenanceId, [assetId]);
 
         await logActivity({
           organizationId,
@@ -174,8 +215,8 @@ async function checkPredictiveMaintenance(
           userName,
           action: "CREATE",
           entityType: "maintenance",
-          entityId: maintenance.id,
-          entityName: maintenance.title,
+          entityId: maintenanceId,
+          entityName: maintenanceTitle,
           summary: `Auto-created maintenance for repeated check failure`,
           assetId,
         });
@@ -483,7 +524,7 @@ export async function completeCheckAndDeprep(data: {
     "check_out"
   );
 
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
       where: { id: data.lineItemId, projectId: data.projectId, organizationId },
@@ -574,7 +615,7 @@ export async function completeCheckAndDeprep(data: {
     return updated;
   });
   // Mirror created check records to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
+  await writeCheckRecordsToConvex(checkRecordSink);
   const [grafted] = await attachLineItemModels(organizationId, [result]);
 
   await logActivity({
@@ -811,7 +852,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     actionLabel: "complete the check & pack",
   });
 
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
   const result = await prisma.$transaction(async (tx) => {
     // 1. Verify line item
     const lineItem = await tx.projectLineItem.findFirst({
@@ -857,7 +898,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   });
 
   // Mirror created check records to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
+  await writeCheckRecordsToConvex(checkRecordSink);
 
   // Post-commit: predictive maintenance check
   const failedChecks = parsed.checks.filter((c) => c.result === "FAIL");
@@ -897,7 +938,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
   );
   const parsed = completeCheckAndFlagSchema.parse(data);
 
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
   const result = await prisma.$transaction(async (tx) => {
     // 1. Resolve assetId from line item if not provided
     const lineItem = await tx.projectLineItem.findFirst({
@@ -933,7 +974,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
   });
 
   // Mirror created check records to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
+  await writeCheckRecordsToConvex(checkRecordSink);
 
   // Post-commit: predictive maintenance
   const failedChecks = parsed.checks.filter((c) => c.result === "FAIL");
@@ -975,7 +1016,7 @@ export async function completeCheckAndStore(
   );
   const parsed = completeCheckAndStoreSchema.parse(data);
 
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
   const result = await prisma.$transaction(async (tx) => {
     // 1. Verify line item (needed to resolve assetId)
     const lineItem = await tx.projectLineItem.findFirst({
@@ -1060,20 +1101,18 @@ export async function completeCheckAndStore(
       touchedAssets.push(...acc.assetsTouched);
     }
 
-    // 6. Scan log
-    const scanLog = await tx.assetScanLog.create({
-      data: {
-        organizationId,
-        assetId: assetsTouched.length === 1 ? assetsTouched[0] : null,
-        bulkAssetId: lineItem.bulkAssetId || null,
-        projectId: parsed.projectId,
-        action: "CHECK_IN",
-        scannedById: userId,
-        notes:
-          parsed.notes ||
-          `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
-      },
-    });
+    // 6. Scan log (Phase B: build doc for post-tx Convex write)
+    const scanLog = {
+      id: createId(),
+      organizationId,
+      ...(assetsTouched.length === 1 ? { assetId: assetsTouched[0] } : {}),
+      ...(lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
+      projectId: parsed.projectId,
+      action: "CHECK_IN" as const,
+      scannedById: userId,
+      scannedAt: Date.now(),
+      notes: parsed.notes || `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
+    };
 
     const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
@@ -1083,9 +1122,10 @@ export async function completeCheckAndStore(
     return { updatedItem, resolvedAssetId, touchedAssets, scanLog };
   });
 
-  // Mirror created check records + the scan log to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
-  await mirrorAssetScanLogCreate(result.scanLog as unknown as Record<string, unknown>);
+  // Write check records + scan log to Convex post-commit (Phase B).
+  await writeCheckRecordsToConvex(checkRecordSink);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (await getConvexClient()).mutation(api.assetScanLogs.createIfMissing, result.scanLog as any);
 
   // Mirror the returned asset(s) status/location changes to Convex.
   await syncAssetsToConvex(result.touchedAssets);
@@ -1147,7 +1187,7 @@ export async function saveAdHocCheck(data: SubmitChecksFormValues) {
 
   // Mirror created check records to Convex post-commit (the tx return value IS
   // the created rows).
-  for (const r of records) await mirrorCheckRecordCreate(r as unknown as Record<string, unknown>);
+  await writeCheckRecordsToConvex(records);
 
   // Post-commit: predictive maintenance
   const failedChecks = parsed.checks.filter((c) => c.result === "FAIL");
@@ -1239,7 +1279,7 @@ export async function saveKitLevelChecks(
     context === "PREP" ? "check_out" : "check_in"
   );
 
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
   await prisma.$transaction(async (tx) => {
     await saveCheckRecords(
       tx,
@@ -1256,7 +1296,7 @@ export async function saveKitLevelChecks(
   });
 
   // Mirror created check records to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
+  await writeCheckRecordsToConvex(checkRecordSink);
 
   return serialize({ success: true });
 }
@@ -1279,7 +1319,7 @@ export async function saveChildItemChecks(
   );
 
   let resolvedAssetId = "";
-  const checkRecordSink: Record<string, unknown>[] = [];
+  const checkRecordSink: CheckRecordDoc[] = [];
 
   await prisma.$transaction(async (tx) => {
     // Verify line item exists
@@ -1305,7 +1345,7 @@ export async function saveChildItemChecks(
   });
 
   // Mirror created check records to Convex post-commit.
-  for (const r of checkRecordSink) await mirrorCheckRecordCreate(r);
+  await writeCheckRecordsToConvex(checkRecordSink);
 
   // Post-commit: predictive maintenance (uses prisma, not tx — must run after commit)
   if (resolvedAssetId) {

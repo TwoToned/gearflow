@@ -1,11 +1,14 @@
 "use server";
 
 import { randomBytes, createHash } from "crypto";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { getLocationById } from "@/lib/locations-read";
+import { getLocationById, getLocationMap } from "@/lib/locations-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
   getDisplayServices,
@@ -14,6 +17,11 @@ import {
   filterPickupServices,
   buildLineItemCountMaps,
 } from "@/lib/warehouse-display-read";
+import {
+  getWarehouseTokensByOrg,
+  getWarehouseTokenById,
+  getWarehouseTokenByHash,
+} from "@/lib/warehouse-display-token-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -21,19 +29,48 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/** Attach the `createdBy: { name }` Auth-User join (User stays Prisma) to tokens. */
+async function attachCreatedBy<T extends { createdById: string }>(
+  rows: T[],
+): Promise<(T & { createdBy: { name: string | null } | null })[]> {
+  const ids = Array.from(new Set(rows.map((r) => r.createdById)));
+  const users = ids.length
+    ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+  return rows.map((r) => ({
+    ...r,
+    createdBy: userMap.has(r.createdById) ? { name: userMap.get(r.createdById)!.name } : null,
+  }));
+}
+
 export async function getDisplayTokens() {
   const { organizationId } = await getOrgContext();
 
-  const tokens = await prisma.warehouseDashboardToken.findMany({
-    where: { organizationId },
-    include: {
-      location: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // Convex-only (Phase B): warehouseDashboardToken reads from Convex, newest first.
+  const tokens = await getWarehouseTokensByOrg(organizationId);
+  const withCreatedBy = await attachCreatedBy(tokens);
 
-  return serialize(tokens);
+  // Location FK was dropped (Phase B); attach `{ id, name }` from the Convex mirror.
+  const locationMap = await getLocationMap(organizationId);
+  const withLocation = withCreatedBy.map((t) => ({
+    ...t,
+    location: t.locationId
+      ? (() => {
+          const l = locationMap.get(t.locationId!);
+          return l ? { id: l.id, name: l.name } : null;
+        })()
+      : null,
+  }));
+
+  return serialize(withLocation);
+}
+
+/** Resolve a token's `{ id, name }` location from the Convex mirror (FK dropped Phase B). */
+async function tokenLocation(orgId: string, locationId: string | null) {
+  if (!locationId) return null;
+  const l = await getLocationById(locationId);
+  return l ? { id: l.id, name: l.name } : null;
 }
 
 export async function createDisplayToken(data: {
@@ -49,20 +86,22 @@ export async function createDisplayToken(data: {
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = hashToken(rawToken);
 
-  const token = await prisma.warehouseDashboardToken.create({
-    data: {
-      organizationId,
-      name: data.name,
-      token: rawToken,
-      tokenHash,
-      locationId: data.locationId || null,
-      layout: data.layout || "standard",
-      createdById: userId,
-    },
-    include: {
-      location: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
-    },
+  // Convex-only write (Phase B): create the warehouseDashboardTokens doc.
+  const id = createId();
+  const now = Date.now();
+  const layout = data.layout || "standard";
+  const locationId = data.locationId || null;
+  await (await getConvexClient()).mutation(api.warehouseDashboardTokens.create, {
+    id,
+    organizationId,
+    name: data.name,
+    token: rawToken,
+    tokenHash,
+    locationId: locationId || undefined,
+    isActive: true,
+    layout,
+    createdById: userId,
+    createdAt: now,
   });
 
   await logActivity({
@@ -71,12 +110,27 @@ export async function createDisplayToken(data: {
     userName,
     action: "create",
     entityType: "warehouseDashboardToken",
-    entityId: token.id,
-    entityName: token.name,
-    summary: `Created warehouse display token "${token.name}"`,
+    entityId: id,
+    entityName: data.name,
+    summary: `Created warehouse display token "${data.name}"`,
   });
 
-  return serialize({ token: rawToken, display: token });
+  const display = {
+    id,
+    organizationId,
+    name: data.name,
+    token: rawToken,
+    tokenHash,
+    locationId,
+    isActive: true,
+    layout,
+    createdById: userId,
+    lastAccessedAt: null,
+    createdAt: new Date(now),
+    createdBy: { name: userName },
+    location: await tokenLocation(organizationId, locationId),
+  };
+  return serialize({ token: rawToken, display });
 }
 
 export async function revokeDisplayToken(id: string) {
@@ -85,15 +139,14 @@ export async function revokeDisplayToken(id: string) {
     "update"
   );
 
-  const token = await prisma.warehouseDashboardToken.findFirst({
-    where: { id, organizationId },
-  });
+  // Org-guard via getById before delete (the old `where: { id, organizationId }`).
+  const token = await getWarehouseTokenById(id);
+  if (!token || token.organizationId !== organizationId) {
+    throw new Error("Display token not found");
+  }
 
-  if (!token) throw new Error("Display token not found");
-
-  await prisma.warehouseDashboardToken.delete({
-    where: { id },
-  });
+  // Convex-only delete (Phase B).
+  await (await getConvexClient()).mutation(api.warehouseDashboardTokens.remove, { id });
 
   await logActivity({
     organizationId,
@@ -118,25 +171,47 @@ export async function updateDisplayToken(
     "update"
   );
 
-  const existing = await prisma.warehouseDashboardToken.findFirst({
-    where: { id, organizationId },
-  });
-  if (!existing) throw new Error("Display token not found");
+  const existing = await getWarehouseTokenById(id);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Display token not found");
+  }
 
-  const token = await prisma.warehouseDashboardToken.update({
-    where: { id },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.layout !== undefined && { layout: data.layout }),
-      ...(data.locationId !== undefined && {
-        locationId: data.locationId || null,
-      }),
-    },
-    include: {
-      location: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
+  // Convex-only update (Phase B). Patch only the provided fields; carry the rest
+  // from the existing doc so the returned shape matches the old Prisma row.
+  const patch: {
+    name?: string;
+    layout?: string;
+    locationId?: string;
+  } = {};
+  if (data.name !== undefined) patch.name = data.name;
+  if (data.layout !== undefined) patch.layout = data.layout;
+  // locationId: undefined → leave untouched; null/"" → clear (Convex optional
+  // absent). The Convex `update` patch is a partial object, so omitting the key
+  // leaves it unchanged; passing `undefined` for an optional clears it.
+  const sendLocation = data.locationId !== undefined;
+  const newLocationId = sendLocation ? data.locationId || null : existing.locationId;
+  await (await getConvexClient()).mutation(api.warehouseDashboardTokens.update, {
+    id,
+    patch: {
+      ...patch,
+      ...(sendLocation && { locationId: data.locationId || undefined }),
     },
   });
+
+  const merged = {
+    id,
+    organizationId: existing.organizationId,
+    name: data.name ?? existing.name,
+    token: existing.token,
+    tokenHash: existing.tokenHash,
+    locationId: newLocationId,
+    isActive: existing.isActive,
+    layout: data.layout ?? existing.layout,
+    createdById: existing.createdById,
+    lastAccessedAt: existing.lastAccessedAt,
+    createdAt: existing.createdAt,
+  };
+  const [withCreatedBy] = await attachCreatedBy([merged]);
 
   await logActivity({
     organizationId,
@@ -144,12 +219,15 @@ export async function updateDisplayToken(
     userName,
     action: "update",
     entityType: "warehouseDashboardToken",
-    entityId: token.id,
-    entityName: token.name,
-    summary: `Updated warehouse display "${token.name}"`,
+    entityId: id,
+    entityName: merged.name,
+    summary: `Updated warehouse display "${merged.name}"`,
   });
 
-  return serialize(token);
+  return serialize({
+    ...withCreatedBy,
+    location: await tokenLocation(organizationId, newLocationId),
+  });
 }
 
 export async function regenerateDisplayToken(id: string) {
@@ -158,22 +236,34 @@ export async function regenerateDisplayToken(id: string) {
     "update"
   );
 
-  const existing = await prisma.warehouseDashboardToken.findFirst({
-    where: { id, organizationId },
-  });
-  if (!existing) throw new Error("Display token not found");
+  const existing = await getWarehouseTokenById(id);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Display token not found");
+  }
 
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = hashToken(rawToken);
 
-  const updated = await prisma.warehouseDashboardToken.update({
-    where: { id },
-    data: { token: rawToken, tokenHash },
-    include: {
-      location: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
-    },
+  // Convex-only update (Phase B): rotate token + tokenHash.
+  await (await getConvexClient()).mutation(api.warehouseDashboardTokens.update, {
+    id,
+    patch: { token: rawToken, tokenHash },
   });
+
+  const merged = {
+    id,
+    organizationId: existing.organizationId,
+    name: existing.name,
+    token: rawToken,
+    tokenHash,
+    locationId: existing.locationId,
+    isActive: existing.isActive,
+    layout: existing.layout,
+    createdById: existing.createdById,
+    lastAccessedAt: existing.lastAccessedAt,
+    createdAt: existing.createdAt,
+  };
+  const [withCreatedBy] = await attachCreatedBy([merged]);
 
   await logActivity({
     organizationId,
@@ -186,7 +276,11 @@ export async function regenerateDisplayToken(id: string) {
     summary: `Regenerated URL for warehouse display "${existing.name}"`,
   });
 
-  return serialize({ token: rawToken, display: updated });
+  const display = {
+    ...withCreatedBy,
+    location: await tokenLocation(organizationId, existing.locationId),
+  };
+  return serialize({ token: rawToken, display });
 }
 
 // ─── Display Data ────────────────────────────────────────────────────────────
@@ -531,27 +625,32 @@ export async function getWarehouseDisplayData(
 export async function validateDisplayToken(rawToken: string) {
   const tokenHash = hashToken(rawToken);
 
-  const record = await prisma.warehouseDashboardToken.findUnique({
-    where: { tokenHash },
-    select: {
-      id: true,
-      organizationId: true,
-      locationId: true,
-      isActive: true,
-      layout: true,
-      name: true,
-    },
-  });
+  // Convex-only (Phase B): secure lookup by tokenHash. Preserves the exact
+  // validation semantics of the old Prisma `findUnique({ where: { tokenHash } })`:
+  // a hash miss OR an inactive token → null (no access).
+  const record = await getWarehouseTokenByHash(tokenHash);
 
   if (!record || !record.isActive) return null;
 
-  // Update last accessed (fire and forget)
-  prisma.warehouseDashboardToken
-    .update({
-      where: { id: record.id },
-      data: { lastAccessedAt: new Date() },
-    })
-    .catch(() => {});
+  // Update last accessed (fire and forget) — Convex-only patch.
+  void (async () => {
+    try {
+      await (await getConvexClient()).mutation(api.warehouseDashboardTokens.update, {
+        id: record.id,
+        patch: { lastAccessedAt: Date.now() },
+      });
+    } catch {
+      /* fire-and-forget: a failed touch must not block the public display */
+    }
+  })();
 
-  return record;
+  // Return the same field shape the API route consumed.
+  return {
+    id: record.id,
+    organizationId: record.organizationId,
+    locationId: record.locationId,
+    isActive: record.isActive,
+    layout: record.layout,
+    name: record.name,
+  };
 }

@@ -1,11 +1,12 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import {
+  getModelById,
   getModelMap,
   getModelsByOrg,
   mapConvexModelToRow,
@@ -13,51 +14,105 @@ import {
   sortModels,
   paginateModels,
 } from "@/lib/models-read";
-import { getCategoryMap } from "@/lib/categories-read";
-import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getCategoryMap, type ConvexCategory } from "@/lib/categories-read";
+import {
+  getAssetsByOrg,
+  getBulkAssetsByOrg,
+  getActiveAssetsByModel,
+  getActiveBulkAssetsByModel,
+} from "@/lib/assets-read";
+import { attachLocation } from "@/lib/locations-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { z } from "zod";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Model as PrismaModel } from "@/generated/prisma/client";
+
+type ParsedModel = z.output<typeof modelSchema>;
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
-import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import type { FilterValue } from "@/lib/table-utils";
 
-// Models are DUAL-WRITTEN: every create/update/archive writes the Prisma `model`
-// row (the durable FK anchor — asset/bulk_asset hold a required + Restrict FK;
-// model_media/model_check_item/supplier_model_rate/model_bulk_accessory hold a
-// required + Cascade FK; project_line_item/supplier_order_item/group_template_item/
-// sub_hire_item hold nullable FKs) AND the Convex `models` doc (the reactive read
-// source). Prisma is written first; the Convex payload is derived from the written
-// row via toConvexDoc so the two can't drift. Cross-domain `model.*` joins stay on
-// the always-fresh Prisma mirror and migrate at decommission. See FEATUREDOCS/54.
+// Models are CONVEX-ONLY (Phase B write inversion): createModel / updateModel /
+// archiveModel / bulkUpdateRates write the Convex `models` doc as the sole source
+// of truth — no Prisma `model` row, no mirror. The inbound Prisma FKs into the
+// frozen `model` table (asset.modelId / bulk_asset.modelId [were required+Restrict];
+// project_line_item.modelId / supplier_order_item.modelId / sub_hire_item.modelId
+// [were SetNull]; model_media.modelId / model_check_item.modelId /
+// model_bulk_accessory.modelId / group_template_item.modelId / supplier_model_rate
+// .modelId [were Cascade]) were dropped (migration
+// 20260617131200_drop_model_fk_constraints), so each is now a plain string holding
+// the Convex cuid.
+//
+// Invariants re-implemented in app code (Convex has no constraints/cascades):
+//  - org-guard: reads the target via getModelById and verifies organizationId
+//    before any update / archive (matches the old where:{id,organizationId}).
+//  - No hard delete: models are only SOFT-archived (isActive=false), so the dropped
+//    Cascade FKs never fired via a model delete — no cascade re-impl is needed.
+//    archiveModel keeps its existing asset/bulk-asset deletion side-effects (those
+//    rows are dual-written; their removals are mirrored to Convex as before).
+//  - Decimal rate columns + Json (specifications/customFields) round-trip through
+//    Convex as numbers / v.any(); mapConvexModelToRow maps the doc back to the
+//    Prisma-row shape the callers (model-form `result.id`, activity log) expect.
+//
+// Reads (list, detail-composite assets/bulk/category, counts) already source from
+// Convex via models-read.ts. See FEATUREDOCS/54 + the decommission runbook.
 
-/** Mirror a freshly written Prisma model row into Convex (create). */
-async function mirrorModelToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.models.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.models.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma model row into Convex (patch, id stripped). */
-async function patchModelInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.models.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.models.update>["patch"],
-  });
-}
-
-export type ModelWithRelations = Prisma.ModelGetPayload<{
-  include: {
-    category: true;
-    _count: { select: { assets: true; bulkAssets: true } };
+/** Build the Convex `models` create/update payload from parsed form values.
+ *  Decimal columns are passed as plain numbers; `undefined` clears the field
+ *  (matching the old Prisma `|| null` / conditional clears). */
+function toConvexModelArgs(parsed: ParsedModel) {
+  return {
+    name: parsed.name,
+    manufacturer: parsed.manufacturer ?? undefined,
+    modelNumber: parsed.modelNumber ?? undefined,
+    sku: parsed.sku || undefined,
+    categoryId: parsed.categoryId || undefined,
+    description: parsed.description ?? undefined,
+    image: parsed.image ?? undefined,
+    images: parsed.images ?? [],
+    manuals: parsed.manuals ?? [],
+    specifications: parsed.specifications ?? undefined,
+    customFields: parsed.customFields ?? undefined,
+    defaultRentalPrice: parsed.dailyRate ?? parsed.defaultRentalPrice ?? undefined,
+    dailyRate: parsed.dailyRate ?? undefined,
+    weeklyRate: parsed.weeklyRate ?? undefined,
+    monthlyRate: parsed.monthlyRate ?? undefined,
+    defaultPurchasePrice: parsed.defaultPurchasePrice ?? undefined,
+    replacementCost: parsed.replacementCost ?? undefined,
+    weight: parsed.weight ?? undefined,
+    powerDraw: parsed.powerDraw ?? undefined,
+    requiresTestAndTag: parsed.requiresTestAndTag,
+    testAndTagIntervalDays: parsed.requiresTestAndTag
+      ? parsed.testAndTagIntervalDays ?? undefined
+      : undefined,
+    defaultTestProfileId: parsed.requiresTestAndTag
+      ? parsed.defaultTestProfileId || undefined
+      : undefined,
+    defaultEquipmentClass: parsed.requiresTestAndTag
+      ? (parsed.defaultEquipmentClass || "CLASS_I")
+      : undefined,
+    defaultApplianceType: parsed.requiresTestAndTag
+      ? (parsed.defaultApplianceType || "APPLIANCE")
+      : undefined,
+    maintenanceIntervalDays: parsed.maintenanceIntervalDays ?? undefined,
+    assetType: parsed.assetType,
+    barcodeLabelTemplate: parsed.barcodeLabelTemplate ?? undefined,
+    isActive: parsed.isActive,
+    tags: parsed.tags ?? [],
   };
-}>;
+}
+
+// The Model→Category FK was dropped in Phase B (categories are Convex-only), so
+// the `category` relation can no longer be expressed via `Prisma.ModelGetPayload`.
+// The attached `category` now comes off the Convex category map (a ConvexCategory
+// doc or null). The base Model row + the JS-computed `_count` are spelled out.
+export type ModelWithRelations = PrismaModel & {
+  category: ConvexCategory | null;
+  _count: { assets: number; bulkAssets: number };
+};
 
 /**
  * Paginated model list — read from the reactive Convex `models` mirror.
@@ -157,41 +212,81 @@ export async function getModelCounts(): Promise<
   return serialize(out);
 }
 
+// Detail-page composite. Models are Convex-only (Phase B), so the deep Prisma
+// `include` of the dropped back-relations (assets / bulkAssets) is rebuilt from
+// the Convex asset/bulk mirror (active only, assetTag ASC, location attached).
+// `media` and `bulkAccessories` stay Prisma reads — they're queried by the plain
+// `modelId` column (the dropped FK only removed the constraint, not the column)
+// and their own relations (file / bulkAsset) are intact; the media gallery is the
+// documented detail-page terminus. The model scalars are read from Convex via
+// getModelById; `category` (a Convex doc) is attached from the model map.
 export async function getModel(id: string) {
   const { organizationId } = await getOrgContext();
-  const model = await prisma.model.findUnique({
-    where: { id, organizationId },
-    include: {
-      category: true,
-      assets: {
-        where: { isActive: true },
-        include: { location: true },
-        orderBy: { assetTag: "asc" },
-      },
-      bulkAssets: {
-        where: { isActive: true },
-        include: { location: true },
-        orderBy: { assetTag: "asc" },
-      },
-      media: {
+  const doc = await getModelById(id);
+  if (!doc || doc.organizationId !== organizationId) return serialize(null);
+  const model = mapConvexModelToRow(doc);
+
+  const convex = await getConvexClient();
+  const [categoryMap, convexAssets, convexBulk, mediaRows, bulkAccessoriesRaw, modelMap] =
+    await Promise.all([
+      getCategoryMap(organizationId),
+      getActiveAssetsByModel(id, organizationId),
+      getActiveBulkAssetsByModel(id, organizationId),
+      prisma.modelMedia.findMany({
+        where: { modelId: id, organizationId },
         include: { file: true },
         orderBy: { sortOrder: "asc" },
-      },
-      bulkAccessories: {
-        include: { bulkAsset: true },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-  });
-  if (!model) return serialize(null);
-  const modelMap = await getModelMap(organizationId);
+      }),
+      convex.query(api.modelBulkAccessories.listByModelId, { modelId: id, organizationId }),
+      getModelMap(organizationId),
+    ]);
+
+  const byAssetTag = (a: { assetTag: string }, b: { assetTag: string }) =>
+    a.assetTag.localeCompare(b.assetTag);
+  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  // attachLocation needs `locationId: string | null` (Convex docs leave it
+  // `string | undefined`); also coerce the Prisma-defaulted columns the Convex
+  // doc leaves absent (status / availableQuantity / totalQuantity / isActive) so
+  // the rows match the non-null Prisma-row shape the detail page reads.
+  const assetRows = [...convexAssets].sort(byAssetTag).map((a) => ({
+    ...a,
+    locationId: a.locationId ?? null,
+    status: a.status ?? "AVAILABLE",
+  }));
+  const bulkRows = [...convexBulk].sort(byAssetTag).map((b) => ({
+    ...b,
+    locationId: b.locationId ?? null,
+    status: b.status ?? "ACTIVE",
+    availableQuantity: b.availableQuantity ?? 0,
+    totalQuantity: b.totalQuantity ?? 0,
+    isActive: b.isActive ?? true,
+  }));
+  const [assetsWithLoc, bulkWithLoc] = await Promise.all([
+    attachLocation(organizationId, assetRows),
+    attachLocation(organizationId, bulkRows),
+  ]);
+
   const enriched = {
     ...model,
-    bulkAccessories: model.bulkAccessories.map((ba) => ({
-      ...ba,
+    category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null,
+    assets: assetsWithLoc,
+    bulkAssets: bulkWithLoc,
+    media: mediaRows,
+    bulkAccessories: bulkAccessoriesRaw.map((ba) => ({
+      id: ba.id,
+      organizationId: ba.organizationId,
+      modelId: ba.modelId,
+      bulkAssetId: ba.bulkAssetId,
+      quantity: ba.quantity,
+      sortOrder: ba.sortOrder ?? null,
+      notes: ba.notes ?? null,
+      addedAt: ba.addedAt ? new Date(ba.addedAt) : null,
+      addedById: ba.addedById,
       bulkAsset: {
-        ...ba.bulkAsset,
-        model: ba.bulkAsset.modelId ? modelMap.get(ba.bulkAsset.modelId) ?? null : null,
+        id: ba.bulkAssetId,
+        assetTag: ba.bulkAssetAssetTag ?? "",
+        modelId: ba.bulkAssetModelId ?? null,
+        model: ba.bulkAssetModelId ? modelMap.get(ba.bulkAssetModelId) ?? null : null,
       },
     })),
   };
@@ -201,41 +296,31 @@ export async function getModel(id: string) {
 export async function createModel(data: ModelFormValues) {
   const { organizationId, userId, userName } = await requirePermission("model", "create");
   const parsed = modelSchema.parse(data);
-  const model = await prisma.model.create({
-    data: {
-      organizationId,
-      name: parsed.name,
-      manufacturer: parsed.manufacturer,
-      modelNumber: parsed.modelNumber,
-      sku: parsed.sku || null,
-      categoryId: parsed.categoryId || null,
-      description: parsed.description,
-      image: parsed.image,
-      images: parsed.images,
-      manuals: parsed.manuals,
-      specifications: parsed.specifications ?? undefined,
-      customFields: parsed.customFields ?? undefined,
-      defaultRentalPrice: parsed.dailyRate ?? parsed.defaultRentalPrice,
-      dailyRate: parsed.dailyRate,
-      weeklyRate: parsed.weeklyRate,
-      monthlyRate: parsed.monthlyRate,
-      defaultPurchasePrice: parsed.defaultPurchasePrice,
-      replacementCost: parsed.replacementCost,
-      weight: parsed.weight,
-      powerDraw: parsed.powerDraw,
-      requiresTestAndTag: parsed.requiresTestAndTag,
-      testAndTagIntervalDays: parsed.requiresTestAndTag ? parsed.testAndTagIntervalDays : null,
-      defaultTestProfileId: parsed.requiresTestAndTag ? (parsed.defaultTestProfileId || null) : null,
-      defaultEquipmentClass: parsed.requiresTestAndTag ? (parsed.defaultEquipmentClass || "CLASS_I") : null,
-      defaultApplianceType: parsed.requiresTestAndTag ? (parsed.defaultApplianceType || "APPLIANCE") : null,
-      maintenanceIntervalDays: parsed.maintenanceIntervalDays,
-      assetType: parsed.assetType,
-      barcodeLabelTemplate: parsed.barcodeLabelTemplate,
-      isActive: parsed.isActive,
-      tags: parsed.tags,
-    },
+
+  // Explicit cuid so external references (asset/bulk/line-item .modelId) hold the
+  // same id Convex stores. Models are Convex-only — write the doc directly.
+  const id = createId();
+  const now = Date.now();
+  const args = toConvexModelArgs(parsed);
+  await (await getConvexClient()).mutation(api.models.create, {
+    id,
+    organizationId,
+    ...args,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorModelToConvex(model);
+
+  // Map the written doc back to the Prisma-row shape callers expect (model-form
+  // reads `result.id`; activity log reads name/manufacturer).
+  const model = mapConvexModelToRow({
+    _id: "" as never,
+    _creationTime: now,
+    id,
+    organizationId,
+    ...args,
+    createdAt: now,
+    updatedAt: now,
+  } as unknown as Parameters<typeof mapConvexModelToRow>[0]);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -250,7 +335,7 @@ export async function createModel(data: ModelFormValues) {
     entityId: model.id,
     entityName: model.name,
     summary: `Created model ${model.name}`,
-    details: { created: { name: model.name, manufacturer: model.manufacturer } },
+    details: { created: { name: model.name, manufacturer: model.manufacturer ?? null } },
   });
 
   return serialize(model);
@@ -259,41 +344,23 @@ export async function createModel(data: ModelFormValues) {
 export async function updateModel(id: string, data: ModelFormValues) {
   const { organizationId, userId, userName } = await requirePermission("model", "update");
   const parsed = modelSchema.parse(data);
-  const model = await prisma.model.update({
-    where: { id, organizationId },
-    data: {
-      name: parsed.name,
-      manufacturer: parsed.manufacturer,
-      modelNumber: parsed.modelNumber,
-      sku: parsed.sku || null,
-      categoryId: parsed.categoryId || null,
-      description: parsed.description,
-      image: parsed.image,
-      images: parsed.images,
-      manuals: parsed.manuals,
-      specifications: parsed.specifications ?? undefined,
-      customFields: parsed.customFields ?? undefined,
-      defaultRentalPrice: parsed.dailyRate ?? parsed.defaultRentalPrice,
-      dailyRate: parsed.dailyRate,
-      weeklyRate: parsed.weeklyRate,
-      monthlyRate: parsed.monthlyRate,
-      defaultPurchasePrice: parsed.defaultPurchasePrice,
-      replacementCost: parsed.replacementCost,
-      weight: parsed.weight,
-      powerDraw: parsed.powerDraw,
-      requiresTestAndTag: parsed.requiresTestAndTag,
-      testAndTagIntervalDays: parsed.requiresTestAndTag ? parsed.testAndTagIntervalDays : null,
-      defaultTestProfileId: parsed.requiresTestAndTag ? (parsed.defaultTestProfileId || null) : null,
-      defaultEquipmentClass: parsed.requiresTestAndTag ? (parsed.defaultEquipmentClass || "CLASS_I") : null,
-      defaultApplianceType: parsed.requiresTestAndTag ? (parsed.defaultApplianceType || "APPLIANCE") : null,
-      maintenanceIntervalDays: parsed.maintenanceIntervalDays,
-      assetType: parsed.assetType,
-      barcodeLabelTemplate: parsed.barcodeLabelTemplate,
-      isActive: parsed.isActive,
-      tags: parsed.tags,
-    },
+
+  const existing = await getModelById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Model not found");
+
+  // Convex `db.patch` treats `undefined` as field removal, matching the old Prisma
+  // `|| null` / conditional T&T clears.
+  const args = toConvexModelArgs(parsed);
+  await (await getConvexClient()).mutation(api.models.update, {
+    id,
+    patch: { ...args, updatedAt: Date.now() },
   });
-  await patchModelInConvex(id, model);
+
+  const model = mapConvexModelToRow({
+    ...existing,
+    ...args,
+    updatedAt: Date.now(),
+  } as unknown as Parameters<typeof mapConvexModelToRow>[0]);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -312,23 +379,18 @@ export async function updateModel(id: string, data: ModelFormValues) {
     })).map((a) => a.id);
 
     if (assetIds.length > 0) {
-      const ttWhere = {
-        organizationId,
-        assetId: { in: assetIds },
-        isActive: true,
-      };
-      await prisma.testTagAsset.updateMany({
-        where: ttWhere,
-        data: {
-          equipmentClass,
-          applianceType,
-          testIntervalMonths: intervalMonths,
-        },
-      });
-      // Mirror the updated T&T assets to Convex after the updateMany commits.
-      const updatedTT = await prisma.testTagAsset.findMany({ where: ttWhere });
-      for (const tt of updatedTT) {
-        await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+      // Propagate T&T defaults to active Convex testTagAsset rows linked to these assets.
+      const convexForTT = await getConvexClient();
+      const ttNow = Date.now();
+      for (const assetId of assetIds) {
+        const ttRows = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId });
+        for (const tt of ttRows) {
+          if (tt.isActive === false) continue;
+          await convexForTT.mutation(api.testTagAssets.update, {
+            id: tt.id,
+            patch: { equipmentClass, applianceType, testIntervalMonths: intervalMonths, updatedAt: ttNow },
+          });
+        }
       }
     }
   }
@@ -363,11 +425,18 @@ export async function archiveModel(id: string) {
   for (const a of assetsToRemove) await removeAssetFromConvex(a.id);
   for (const b of bulkToRemove) await removeBulkAssetFromConvex(b.id);
 
-  const archived = await prisma.model.update({
-    where: { id, organizationId },
-    data: { isActive: false },
+  // Soft archive — models are Convex-only. Org-guard via the prior doc.
+  const existing = await getModelById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Model not found");
+  await (await getConvexClient()).mutation(api.models.update, {
+    id,
+    patch: { isActive: false, updatedAt: Date.now() },
   });
-  await patchModelInConvex(id, archived);
+  const archived = mapConvexModelToRow({
+    ...existing,
+    isActive: false,
+    updatedAt: Date.now(),
+  } as unknown as Parameters<typeof mapConvexModelToRow>[0]);
 
   await logActivity({
     organizationId,
@@ -395,13 +464,15 @@ export async function bulkUpdateRates(
   if (operation === "set" && value < 0) throw new Error("Rate cannot be negative");
   if (operation === "multiply" && value <= 0) throw new Error("Multiplier must be positive");
 
-  const models = await prisma.model.findMany({
-    where: { id: { in: modelIds }, organizationId },
-    select: { id: true, name: true, dailyRate: true, weeklyRate: true, monthlyRate: true },
-  });
+  // Models are Convex-only — read the org's models from Convex, scope to the
+  // selected ids (replaces the old `where:{id:{in},organizationId}`).
+  const selected = new Set(modelIds);
+  const models = (await getModelsByOrg(organizationId)).filter((m) => selected.has(m.id));
 
-  const updates = models.map((model) => {
-    const current = Number(model[rateType] ?? 0);
+  const convex = await getConvexClient();
+  const now = Date.now();
+  for (const model of models) {
+    const current = Number((model as Record<string, unknown>)[rateType] ?? 0);
     let newRate: number;
 
     switch (operation) {
@@ -418,22 +489,13 @@ export async function bulkUpdateRates(
 
     newRate = Math.round(newRate * 100) / 100;
 
-    const updateData: Prisma.ModelUpdateInput = { [rateType]: newRate };
+    const patch: Record<string, number> = { [rateType]: newRate, updatedAt: now };
     // Auto-sync defaultRentalPrice when dailyRate changes
     if (rateType === "dailyRate") {
-      updateData.defaultRentalPrice = newRate;
+      patch.defaultRentalPrice = newRate;
     }
 
-    return prisma.model.update({
-      where: { id: model.id, organizationId },
-      data: updateData,
-    });
-  });
-
-  const updatedRows = await prisma.$transaction(updates);
-  // Mirror each rate change into Convex (the reactive read source).
-  for (const row of updatedRows) {
-    await patchModelInConvex(row.id, row);
+    await convex.mutation(api.models.update, { id: model.id, patch });
   }
 
   await logActivity({

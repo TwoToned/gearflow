@@ -108,6 +108,27 @@ export async function getTestProfilesFromConvex(
 }
 
 /**
+ * Read EVERY test profile for an org (active + inactive), mapped to the Prisma-row
+ * shape, unsorted. Backs the app-level invariant checks that must see all rows
+ * regardless of `isActive`: the `@@unique([organizationId, name])` dedup
+ * (create/duplicate/rename) and the `resolveTestProfile` class+type fallbacks
+ * (which filter `isActive` explicitly). The org filter is applied by the Convex
+ * `list` query. `getTestProfilesFromConvex` cannot be reused here because its
+ * filter defaults `isActive` to `true` when the key is absent OR `undefined`.
+ */
+export async function getAllTestProfilesFromConvex(
+  orgId: string,
+): Promise<TestProfileRow[]> {
+  const rows = await withConvexReadRetry(
+    async () =>
+      (await (await getConvexClient()).query(api.testProfiles.list, {
+        orgId,
+      })) as RawProfile[],
+  );
+  return rows.map(mapTestProfile);
+}
+
+/**
  * Read one test profile by cuid, re-applying the Prisma `{ id, organizationId }`
  * org-scope in JS (Convex `getById` is cuid-only). Returns null when the row is
  * missing or belongs to another org — caller decides whether to throw.

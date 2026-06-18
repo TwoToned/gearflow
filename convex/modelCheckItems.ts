@@ -77,6 +77,19 @@ export const listByCheckItemId = query({
     return rows.filter((r) => r.organizationId === orgId);
   },
 });
+/** Get one model-check-item assignment by model + checkItem (first match, org-scoped). */
+export const getByModelAndCheckItem = query({
+  args: { orgId: v.string(), modelId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, modelId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_modelId_checkItemId", (q) => q.eq("modelId", modelId).eq("checkItemId", checkItemId))
+      .collect();
+    return rows.find((r) => r.organizationId === orgId) ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

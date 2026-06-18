@@ -53,14 +53,14 @@ async function main() {
   let modelMisses = 0;
   let supplierChecks = 0;
   for (const row of attached) {
+    // Category is Convex-only (Phase B) — the Prisma model.category join was
+    // dropped, so the category attach is no longer cross-checked against Prisma
+    // here (it has no Prisma source). Model name still cross-checks the Prisma row.
     const prismaModel = row.modelId
-      ? await prisma.model.findUnique({
-          where: { id: row.modelId },
-          include: { category: true },
-        })
+      ? await prisma.model.findUnique({ where: { id: row.modelId } })
       : null;
     const okName = (prismaModel?.name ?? null) === (row.model?.name ?? null);
-    const okCat = (prismaModel?.category?.name ?? null) === (row.model?.category?.name ?? null);
+    const okCat = true;
     if (row.model) modelMatches++;
     else modelMisses++;
     if (row.supplierId) {
@@ -73,9 +73,9 @@ async function main() {
       if (!okSup) throw new Error(`supplier mismatch on ${row.id}`);
     }
     console.log(
-      `  ${row.id}: model P="${prismaModel?.name}" C="${row.model?.name}" cat P="${prismaModel?.category?.name}" C="${row.model?.category?.name}" ${okName && okCat ? "OK" : "MISMATCH"}`,
+      `  ${row.id}: model P="${prismaModel?.name}" C="${row.model?.name}" cat C="${row.model?.category?.name}" (Convex-only) ${okName && okCat ? "OK" : "MISMATCH"}`,
     );
-    if (!okName || !okCat) throw new Error(`model/category mismatch on ${row.id}`);
+    if (!okName || !okCat) throw new Error(`model mismatch on ${row.id}`);
   }
 
   console.log(

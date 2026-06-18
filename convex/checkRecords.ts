@@ -50,6 +50,23 @@ export const listByOrgAndAsset = query({
   },
 });
 
+export const listRecentByAssetAndCheckItem = query({
+  args: { orgId: v.string(), assetId: v.string(), checkItemId: v.string(), take: v.number() },
+  handler: async (ctx, { orgId, assetId, checkItemId, take }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("checkRecords")
+      .withIndex("by_organizationId_assetId", (q) =>
+        q.eq("organizationId", orgId).eq("assetId", assetId),
+      )
+      .collect();
+    return rows
+      .filter((r) => r.checkItemId === checkItemId)
+      .sort((a, b) => (b.performedAt ?? 0) - (a.performedAt ?? 0))
+      .slice(0, take);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

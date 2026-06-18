@@ -19,6 +19,7 @@
  */
 
 import { prisma } from "../src/lib/prisma";
+import { getModelMap } from "../src/lib/models-read";
 import { runCollapse } from "../src/server/split-sibling-collapse";
 
 const args = process.argv.slice(2);
@@ -66,24 +67,29 @@ async function main() {
   const canonicalRows = canonicalIds.length
     ? await prisma.projectLineItem.findMany({
         where: { id: { in: canonicalIds } },
-        select: { id: true, modelId: true, project: { select: { projectNumber: true } } },
+        select: {
+          id: true,
+          organizationId: true,
+          modelId: true,
+          project: { select: { projectNumber: true } },
+        },
       })
     : [];
-  const modelIds = [...new Set(canonicalRows.map((c) => c.modelId).filter(Boolean))] as string[];
-  const modelNameMap = new Map(
-    modelIds.length
-      ? (await prisma.model.findMany({ where: { id: { in: modelIds } }, select: { id: true, name: true } })).map(
-          (m) => [m.id, m.name],
-        )
-      : [],
-  );
   const byId = new Map(canonicalRows.map((c) => [c.id, c]));
+
+  // Model FK was dropped (Phase B); resolve model names from the Convex mirror
+  // (replaces the old nested `model.select.name`). Build one map per org touched.
+  const orgIds = [...new Set(canonicalRows.map((c) => c.organizationId))];
+  const modelMaps = new Map(
+    await Promise.all(orgIds.map(async (oid) => [oid, await getModelMap(oid)] as const)),
+  );
+  const modelNameOf = (c: { organizationId: string; modelId: string | null } | undefined) =>
+    c?.modelId ? modelMaps.get(c.organizationId)?.get(c.modelId)?.name ?? null : null;
 
   for (const plan of mergeable) {
     const c = byId.get(plan.canonicalId);
-    const modelName = c?.modelId ? (modelNameMap.get(c.modelId) ?? "?") : "?";
     console.log(
-      `  ${apply ? "MERGE" : "PLAN "}  ${c?.project.projectNumber ?? "?"}  ${modelName}  canonical=${plan.canonicalId}  merging ${plan.moves.length}`,
+      `  ${apply ? "MERGE" : "PLAN "}  ${c?.project.projectNumber ?? "?"}  ${modelNameOf(c) ?? "?"}  canonical=${plan.canonicalId}  merging ${plan.moves.length}`,
     );
     for (const m of plan.moves) {
       console.log(

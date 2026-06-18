@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { createId } from "@paralleldrive/cuid2";
 import { requirePermission } from "@/lib/org-context";
 import { getModelById } from "@/lib/models-read";
 import { getBulkAssetById } from "@/lib/assets-read";
@@ -11,10 +11,8 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { UserFacingError } from "@/lib/errors";
-import {
-  mirrorModelBulkAccessoryCreate,
-  removeModelBulkAccessoryFromConvex,
-} from "@/lib/model-bulk-accessory-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Model-level bulk accessories — "every asset of this model ships with N of
@@ -58,43 +56,35 @@ export async function addModelBulkAccessory(
     });
   }
 
-  const maxSort = await prisma.modelBulkAccessory.aggregate({
-    where: { modelId, organizationId },
-    _max: { sortOrder: true },
+  const convex = await getConvexClient();
+
+  // Check for duplicate and compute next sortOrder from the current Convex list.
+  const existing = await convex.query(api.modelBulkAccessories.listByModelId, { modelId, organizationId });
+  const dup = existing.find((a) => a.bulkAssetId === parsed.bulkAssetId);
+  if (dup) {
+    throw new UserFacingError({
+      code: "ACCESSORY_DUPLICATE",
+      title: "Already attached",
+      message: `${bulkAsset.assetTag} is already a default accessory on this model. Edit the quantity instead.`,
+    });
+  }
+  const sortOrder = existing.reduce((max, a) => Math.max(max, a.sortOrder ?? -1), -1) + 1;
+
+  const id = createId();
+  const now = Date.now();
+  await convex.mutation(api.modelBulkAccessories.create, {
+    id,
+    organizationId,
+    modelId,
+    bulkAssetId: parsed.bulkAssetId,
+    quantity: parsed.quantity,
+    sortOrder,
+    notes: parsed.notes,
+    addedAt: now,
+    addedById: userId,
   });
 
-  // The (modelId, bulkAssetId) unique constraint enforces "one row per
-  // bulk-on-model" — surface a friendly error if the operator double-adds.
-  let row;
-  try {
-    row = await prisma.modelBulkAccessory.create({
-      data: {
-        organizationId,
-        modelId,
-        bulkAssetId: parsed.bulkAssetId,
-        quantity: parsed.quantity,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-        notes: parsed.notes,
-        addedById: userId,
-      },
-      include: { bulkAsset: true },
-    });
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      throw new UserFacingError({
-        code: "ACCESSORY_DUPLICATE",
-        title: "Already attached",
-        message: `${bulkAsset.assetTag} is already a default accessory on this model. Edit the quantity instead.`,
-      });
-    }
-    throw e;
-  }
-
-  // Mirror to Convex (infra-only dual-write). The create above is a single
-  // statement (no $transaction), so the row is committed by the time we get here.
-  await mirrorModelBulkAccessoryCreate(row as unknown as Record<string, unknown>);
-
-  const bulkAssetModel = row.bulkAsset.modelId ? await getModelById(row.bulkAsset.modelId) : null;
+  const bulkAssetModel = bulkAsset.modelId ? await getModelById(bulkAsset.modelId) : null;
 
   await logActivity({
     organizationId,
@@ -108,7 +98,18 @@ export async function addModelBulkAccessory(
     details: { accessory: { bulkAssetId: bulkAsset.id, quantity: parsed.quantity } },
   });
 
-  return serialize({ ...row, bulkAsset: { ...row.bulkAsset, model: bulkAssetModel } });
+  return serialize({
+    id,
+    organizationId,
+    modelId,
+    bulkAssetId: parsed.bulkAssetId,
+    quantity: parsed.quantity,
+    sortOrder,
+    notes: parsed.notes ?? null,
+    addedAt: new Date(now),
+    addedById: userId,
+    bulkAsset: { ...bulkAsset, model: bulkAssetModel },
+  });
 }
 
 /** Detach a model-level bulk accessory. Past project expansions are
@@ -122,21 +123,9 @@ export async function removeModelBulkAccessory(
     "update",
   );
 
-  const acc = await prisma.modelBulkAccessory.findUnique({
-    where: { id: accessoryId },
-    select: {
-      id: true,
-      organizationId: true,
-      modelId: true,
-      quantity: true,
-      bulkAsset: { select: { id: true, assetTag: true } },
-    },
-  });
-  if (
-    !acc ||
-    acc.organizationId !== organizationId ||
-    acc.modelId !== modelId
-  ) {
+  const convex = await getConvexClient();
+  const acc = await convex.query(api.modelBulkAccessories.getById, { id: accessoryId });
+  if (!acc || acc.organizationId !== organizationId || acc.modelId !== modelId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Accessory not found",
@@ -144,12 +133,12 @@ export async function removeModelBulkAccessory(
     });
   }
 
-  await prisma.modelBulkAccessory.delete({ where: { id: accessoryId } });
+  await convex.mutation(api.modelBulkAccessories.remove, { id: accessoryId });
 
-  // Mirror the delete to Convex AFTER the Prisma delete commits.
-  await removeModelBulkAccessoryFromConvex(accessoryId);
-
-  const parentModel = acc.modelId ? await getModelById(acc.modelId) : null;
+  const [parentModel, bulkAsset] = await Promise.all([
+    getModelById(acc.modelId),
+    getBulkAssetById(acc.bulkAssetId),
+  ]);
 
   await logActivity({
     organizationId,
@@ -159,8 +148,8 @@ export async function removeModelBulkAccessory(
     entityType: "model",
     entityId: modelId,
     entityName: parentModel?.name ?? modelId,
-    summary: `Removed default accessory: ${acc.quantity}× ${acc.bulkAsset.assetTag}`,
-    details: { accessory: { bulkAssetId: acc.bulkAsset.id, quantity: acc.quantity } },
+    summary: `Removed default accessory: ${acc.quantity}× ${bulkAsset?.assetTag ?? acc.bulkAssetId}`,
+    details: { accessory: { bulkAssetId: acc.bulkAssetId, quantity: acc.quantity } },
   });
 
   return serialize({ success: true });

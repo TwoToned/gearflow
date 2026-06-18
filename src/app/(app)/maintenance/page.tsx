@@ -7,10 +7,6 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useMaintenanceRecords, fingerprintMaintenanceRecords } from "@/hooks/use-maintenance";
 import {
   Plus,
-  Wrench,
-  CalendarClock,
-  CheckCircle2,
-  XCircle,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
@@ -25,65 +21,21 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
-
-const statusConfig: Record<
-  string,
-  { label: string; color: string; icon: React.ComponentType<{ className?: string }> }
-> = {
-  SCHEDULED: {
-    label: "Scheduled",
-    color: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    icon: CalendarClock,
-  },
-  AWAITING_PARTS: {
-    label: "Awaiting Parts",
-    color: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    icon: CalendarClock,
-  },
-  IN_PROGRESS: {
-    label: "In Progress",
-    color: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-    icon: Wrench,
-  },
-  QA: {
-    label: "QA",
-    color: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-    icon: Wrench,
-  },
-  COMPLETED: {
-    label: "Completed",
-    color: "bg-green-500/10 text-green-500 border-green-500/20",
-    icon: CheckCircle2,
-  },
-  CANCELLED: {
-    label: "Cancelled",
-    color: "bg-red-500/10 text-red-500 border-red-500/20",
-    icon: XCircle,
-  },
-};
-
-const typeLabels: Record<string, string> = {
-  REPAIR: "Repair",
-  PREVENTATIVE: "Preventative",
-  INSPECTION: "Inspection",
-  CLEANING: "Cleaning",
-  FIRMWARE_UPDATE: "Firmware Update",
-};
-
-const resultConfig: Record<string, { label: string; color: string }> = {
-  PASS: { label: "Pass", color: "bg-green-500/10 text-green-500 border-green-500/20" },
-  FAIL: { label: "Fail", color: "bg-red-500/10 text-red-500 border-red-500/20" },
-  CONDITIONAL: {
-    label: "Conditional",
-    color: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  },
-};
+import { getStatusColor } from "@/lib/status-colors";
+import {
+  maintenanceStatusLabels,
+  maintenanceTypeLabels,
+  maintenanceResultLabels,
+  formatLabel,
+} from "@/lib/status-labels";
+import { cn, focusRing } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>;
@@ -100,7 +52,7 @@ function useMaintenanceColumns(
       alwaysVisible: true,
       sortKey: "title",
       cell: (row) => (
-        <Link href={`/maintenance/${row.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+        <Link href={`/maintenance/${row.id}`} className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)} onClick={(e) => e.stopPropagation()}>
           {row.title}
         </Link>
       ),
@@ -116,12 +68,12 @@ function useMaintenanceColumns(
           <div className="space-y-0.5">
             {assets.slice(0, 2).map((link: AnyRecord) => (
               <div key={link.id}>
-                <span className="font-mono text-xs">{link.asset?.assetTag}</span>
-                <span className="text-fg-3 text-xs ml-2">{link.asset?.model?.name}</span>
+                <span className="t-mono">{link.asset?.assetTag}</span>
+                <span className="text-muted text-caption ml-2">{link.asset?.model?.name}</span>
               </div>
             ))}
             {assets.length > 2 && (
-              <span className="text-xs text-fg-3">+{assets.length - 2} more</span>
+              <span className="text-caption text-muted">+{assets.length - 2} more</span>
             )}
           </div>
         );
@@ -139,17 +91,17 @@ function useMaintenanceColumns(
         { value: "PREVENTATIVE", label: "Preventative" },
         { value: "INSPECTION", label: "Inspection" },
         { value: "CLEANING", label: "Cleaning" },
-        { value: "FIRMWARE_UPDATE", label: "Firmware Update" },
+        { value: "FIRMWARE_UPDATE", label: "Firmware update" },
       ],
-      cell: (row) => <span className="text-sm">{typeLabels[row.type] || row.type}</span>,
+      cell: (row) => <span className="text-ui-text">{maintenanceTypeLabels[row.type] || formatLabel(row.type)}</span>,
     },
     {
       id: "reportedBy",
-      header: "Reported By",
+      header: "Reported by",
       sortKey: "reportedBy",
       defaultVisible: false,
       responsiveHide: "md",
-      cell: (row) => <span className="text-sm text-fg-3">{row.reportedBy?.name || "—"}</span>,
+      cell: (row) => <span className="text-ui-text text-muted">{row.reportedBy?.name || "—"}</span>,
     },
     {
       id: "status",
@@ -159,26 +111,27 @@ function useMaintenanceColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "SCHEDULED", label: "Scheduled", color: "bg-blue-500" },
-        { value: "AWAITING_PARTS", label: "Awaiting Parts", color: "bg-blue-500" },
-        { value: "IN_PROGRESS", label: "In Progress", color: "bg-amber-500" },
-        { value: "QA", label: "QA", color: "bg-cyan-500" },
-        { value: "COMPLETED", label: "Completed", color: "bg-green-500" },
-        { value: "CANCELLED", label: "Cancelled", color: "bg-red-500" },
+        { value: "SCHEDULED", label: "Scheduled", color: getStatusColor("maintenance", "SCHEDULED").dot },
+        { value: "AWAITING_PARTS", label: "Awaiting parts", color: getStatusColor("maintenance", "AWAITING_PARTS").dot },
+        { value: "IN_PROGRESS", label: "In progress", color: getStatusColor("maintenance", "IN_PROGRESS").dot },
+        { value: "QA", label: "QA", color: getStatusColor("maintenance", "QA").dot },
+        { value: "COMPLETED", label: "Completed", color: getStatusColor("maintenance", "COMPLETED").dot },
+        { value: "CANCELLED", label: "Cancelled", color: getStatusColor("maintenance", "CANCELLED").dot },
       ],
       cell: (row) => {
-        const status = statusConfig[row.status];
         const isOverdue =
           (row.status === "SCHEDULED" || row.status === "IN_PROGRESS") &&
           row.scheduledDate && new Date(row.scheduledDate) < now;
         return (
-          <Badge
-            variant="outline"
-            className={`${status?.color || ""} ${isOverdue ? "ring-1 ring-destructive/50" : ""}`}
-          >
-            {status?.label || row.status}
-            {isOverdue ? " (Overdue)" : null}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <StatusIndicator
+              category="maintenance"
+              value={row.status}
+              label={maintenanceStatusLabels[row.status] || formatLabel(row.status)}
+              variant="pill"
+            />
+            {isOverdue ? <Badge status="overbooked">Overdue</Badge> : null}
+          </div>
         );
       },
     },
@@ -187,7 +140,7 @@ function useMaintenanceColumns(
       header: "Scheduled",
       sortKey: "scheduledDate",
       cell: (row) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-ui-text text-muted tabular-nums">
           {row.scheduledDate ? format(new Date(row.scheduledDate), "MMM d, yyyy") : "—"}
         </span>
       ),
@@ -198,7 +151,7 @@ function useMaintenanceColumns(
       sortKey: "completedDate",
       defaultVisible: false,
       cell: (row) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-ui-text text-muted tabular-nums">
           {row.completedDate ? format(new Date(row.completedDate), "MMM d, yyyy") : "—"}
         </span>
       ),
@@ -212,15 +165,18 @@ function useMaintenanceColumns(
       filterType: "enum",
       defaultVisible: false,
       filterOptions: [
-        { value: "PASS", label: "Pass", color: "bg-green-500" },
-        { value: "FAIL", label: "Fail", color: "bg-red-500" },
-        { value: "CONDITIONAL", label: "Conditional", color: "bg-amber-500" },
+        { value: "PASS", label: "Pass", color: getStatusColor("maintenanceResult", "PASS").dot },
+        { value: "FAIL", label: "Fail", color: getStatusColor("maintenanceResult", "FAIL").dot },
+        { value: "CONDITIONAL", label: "Conditional", color: getStatusColor("maintenanceResult", "CONDITIONAL").dot },
       ],
       cell: (row) =>
         row.result ? (
-          <Badge variant="outline" className={resultConfig[row.result]?.color || ""}>
-            {resultConfig[row.result]?.label || row.result}
-          </Badge>
+          <StatusIndicator
+            category="maintenanceResult"
+            value={row.result}
+            label={maintenanceResultLabels[row.result] || formatLabel(row.result)}
+            variant="pill"
+          />
         ) : (
           "—"
         ),
@@ -234,7 +190,7 @@ function useMaintenanceColumns(
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
+            <Badge key={tag} status="neutral">
               {tag}
             </Badge>
           ))}
@@ -250,13 +206,14 @@ function useMaintenanceColumns(
         <CanDo resource="maintenance" action="delete">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="text-muted hover:text-t-out"
             onClick={(e) => {
               e.stopPropagation();
               onDelete(row.id);
             }}
           >
-            <Trash2 className="h-4 w-4 text-fg-3 hover:text-destructive" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         </CanDo>
       ),
@@ -338,9 +295,9 @@ export default function MaintenancePage() {
         />
 
         {overdueMaintenance > 0 && (
-          <div className="rounded-lg bg-bg-surface surface-ring border-destructive/50 flex items-center gap-3 py-3 px-4">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            <span className="text-sm font-medium">
+          <div className="flex items-center gap-3 rounded-[var(--r)] border border-line border-l-2 border-l-t-out bg-card px-4 py-3 shadow-[var(--sh-card)]">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-t-out" />
+            <span className="text-ui-text font-medium text-ink">
               {overdueMaintenance} overdue maintenance{" "}
               {overdueMaintenance === 1 ? "record" : "records"}
             </span>
@@ -371,9 +328,11 @@ export default function MaintenancePage() {
           emptyPreset="maintenance"
           toolbarActions={
             <CanDo resource="maintenance" action="create">
-              <Button size="sm" className="h-8" render={<Link href="/maintenance/new" />}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Record
+              <Button size="sm" asChild>
+                <Link href="/maintenance/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New record
+                </Link>
               </Button>
             </CanDo>
           }

@@ -58,7 +58,9 @@ export const lineItemStatusLabels: Record<string, string> = {
 // --- Maintenance Status ---
 export const maintenanceStatusLabels: Record<string, string> = {
   SCHEDULED: "Scheduled",
-  IN_PROGRESS: "In Progress",
+  AWAITING_PARTS: "Awaiting parts",
+  IN_PROGRESS: "In progress",
+  QA: "QA",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -67,10 +69,17 @@ export const maintenanceStatusLabels: Record<string, string> = {
 export const maintenanceTypeLabels: Record<string, string> = {
   REPAIR: "Repair",
   PREVENTATIVE: "Preventative",
-  TEST_AND_TAG: "Test & Tag",
+  TEST_AND_TAG: "Test & tag",
   INSPECTION: "Inspection",
   CLEANING: "Cleaning",
-  FIRMWARE_UPDATE: "Firmware Update",
+  FIRMWARE_UPDATE: "Firmware update",
+};
+
+// --- Maintenance Result ---
+export const maintenanceResultLabels: Record<string, string> = {
+  PASS: "Pass",
+  FAIL: "Fail",
+  CONDITIONAL: "Conditional",
 };
 
 // --- Supplier Order Status ---

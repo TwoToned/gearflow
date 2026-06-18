@@ -121,9 +121,19 @@ const lineItemStatusIntent: Record<string, ColorIntent> = {
 
 const maintenanceStatusIntent: Record<string, ColorIntent> = {
   SCHEDULED: "info",
-  IN_PROGRESS: "warning",
+  AWAITING_PARTS: "warning",
+  IN_PROGRESS: "primary", // §1: active work = live red
+  QA: "warning",
   COMPLETED: "success",
   CANCELLED: "error",
+};
+
+// Maintenance work-order result (MaintenanceResult enum). §1: a FAIL is a
+// problem (t-out/error), a CONDITIONAL is a caution (warning), a PASS is good.
+const maintenanceResultIntent: Record<string, ColorIntent> = {
+  PASS: "success",
+  FAIL: "error",
+  CONDITIONAL: "warning",
 };
 
 const supplierOrderStatusIntent: Record<string, ColorIntent> = {
@@ -254,6 +264,7 @@ export type StatusCategory =
   | "project"
   | "lineItem"
   | "maintenance"
+  | "maintenanceResult"
   | "supplierOrder"
   | "condition"
   | "crewMember"
@@ -276,6 +287,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   project: projectStatusIntent,
   lineItem: lineItemStatusIntent,
   maintenance: maintenanceStatusIntent,
+  maintenanceResult: maintenanceResultIntent,
   supplierOrder: supplierOrderStatusIntent,
   condition: conditionIntent,
   crewMember: crewMemberStatusIntent,

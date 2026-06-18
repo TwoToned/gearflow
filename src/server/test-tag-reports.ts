@@ -1,88 +1,25 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelById } from "@/lib/models-read";
-import { getBulkAssetById } from "@/lib/assets-read";
-import type { Prisma } from "@/generated/prisma/client";
+import { getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
+import type { ReportFilters } from "@/lib/test-tag-report-types";
+import {
+  assetMatchesFilters,
+  recordMatchesFilters,
+  getTestTagAssetsByOrg,
+  getTestTagAssetById,
+  getTestTagRecordsByOrg,
+  getSubTestRecordsByRecordIds,
+  getTestProfileMap,
+  getUserNameMap,
+  type TTAsset,
+  type TTRecord,
+  type SubTestRecord,
+} from "@/lib/test-tag-read";
 
-// ─── TYPES ──────────────────────────────────────────────────────────────────
-
-export interface ReportFilters {
-  dateFrom?: string;
-  dateTo?: string;
-  statuses?: string[];
-  equipmentClasses?: string[];
-  applianceTypes?: string[];
-  results?: string[];
-  assetLinkType?: "all" | "serialized" | "bulk" | "standalone";
-  locations?: string[];
-  testedBy?: string[];
-  testTagIds?: string[];
-  bulkAssetId?: string;
-  searchQuery?: string;
-}
-
-// ─── HELPERS ────────────────────────────────────────────────────────────────
-
-function buildAssetWhere(filters: ReportFilters, organizationId: string): Prisma.TestTagAssetWhereInput {
-  const where: Prisma.TestTagAssetWhereInput = {
-    organizationId,
-    isActive: true,
-  };
-
-  if (filters.statuses?.length) {
-    where.status = { in: filters.statuses as Prisma.EnumTestTagStatusFilter["in"] };
-  }
-  if (filters.equipmentClasses?.length) {
-    where.equipmentClass = { in: filters.equipmentClasses as Prisma.EnumEquipmentClassFilter["in"] };
-  }
-  if (filters.applianceTypes?.length) {
-    where.applianceType = { in: filters.applianceTypes as Prisma.EnumApplianceTypeFilter["in"] };
-  }
-  if (filters.assetLinkType === "serialized") {
-    where.assetId = { not: null };
-  } else if (filters.assetLinkType === "bulk") {
-    where.bulkAssetId = { not: null };
-    where.assetId = null;
-  } else if (filters.assetLinkType === "standalone") {
-    where.assetId = null;
-    where.bulkAssetId = null;
-  }
-  if (filters.locations?.length) {
-    where.location = { in: filters.locations };
-  }
-  if (filters.searchQuery) {
-    where.OR = [
-      { testTagId: { contains: filters.searchQuery, mode: "insensitive" } },
-      { description: { contains: filters.searchQuery, mode: "insensitive" } },
-      { make: { contains: filters.searchQuery, mode: "insensitive" } },
-      { modelName: { contains: filters.searchQuery, mode: "insensitive" } },
-      { serialNumber: { contains: filters.searchQuery, mode: "insensitive" } },
-    ];
-  }
-
-  return where;
-}
-
-function buildRecordWhere(filters: ReportFilters, organizationId: string): Prisma.TestTagRecordWhereInput {
-  const where: Prisma.TestTagRecordWhereInput = { organizationId };
-
-  if (filters.dateFrom || filters.dateTo) {
-    where.testDate = {};
-    if (filters.dateFrom) where.testDate.gte = new Date(filters.dateFrom);
-    if (filters.dateTo) where.testDate.lte = new Date(filters.dateTo);
-  }
-  if (filters.results?.length) {
-    where.result = { in: filters.results as Prisma.EnumTestResultFilter["in"] };
-  }
-  if (filters.testedBy?.length) {
-    where.testedById = { in: filters.testedBy };
-  }
-
-  return where;
-}
+// ─── LABELS ───────────────────────────────────────────────────────────────────
 
 const equipmentClassLabels: Record<string, string> = {
   CLASS_I: "Class I",
@@ -117,20 +54,108 @@ function fmtDate(d: Date | string | null | undefined): string {
   return new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// ─── INTERNAL: Convex loaders + sort/attach helpers ───────────────────────────
+//
+// The reports moved off Prisma to Convex (Phase A read-rewiring). Org-scoped
+// reads come from Convex; tester names (Better Auth `User`) stay on Prisma. The
+// old Prisma `where`/`orderBy`/`include` become JS predicate + sort + attach.
+
+const ms = (d: Date | null) => (d ? d.getTime() : null);
+
+/** Postgres ASC default = NULLS LAST. */
+function cmpDateAsc(a: Date | null, b: Date | null): number {
+  const av = ms(a);
+  const bv = ms(b);
+  if (av === null && bv === null) return 0;
+  if (av === null) return 1;
+  if (bv === null) return -1;
+  return av - bv;
+}
+
+/** Postgres DESC default = NULLS FIRST. */
+function cmpDateDesc(a: Date | null, b: Date | null): number {
+  const av = ms(a);
+  const bv = ms(b);
+  if (av === null && bv === null) return 0;
+  if (av === null) return -1;
+  if (bv === null) return 1;
+  return bv - av;
+}
+
+const cmpStrAsc = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Org asset/bulk lookup maps for resolving `testTagAsset.asset` / `.bulkAsset`. */
+async function loadLinkMaps(orgId: string) {
+  const [assets, bulks] = await Promise.all([getAssetsByOrg(orgId), getBulkAssetsByOrg(orgId)]);
+  return {
+    asset: new Map(assets.map((a) => [a.id, a])),
+    bulk: new Map(bulks.map((b) => [b.id, b])),
+  };
+}
+
+/** Group org test records by their `testTagAssetId`, each list sorted testDate desc. */
+function recordsByAsset(records: TTRecord[]): Map<string, TTRecord[]> {
+  const map = new Map<string, TTRecord[]>();
+  for (const r of records) {
+    const arr = map.get(r.testTagAssetId);
+    if (arr) arr.push(r);
+    else map.set(r.testTagAssetId, [r]);
+  }
+  for (const arr of map.values()) arr.sort((a, b) => cmpDateDesc(a.testDate, b.testDate));
+  return map;
+}
+
+/** Sub-test records keyed by parent record id (already sorted by sortOrder). */
+async function loadSubTestsByRecord(recordIds: string[]): Promise<Map<string, SubTestRecord[]>> {
+  const subs = await getSubTestRecordsByRecordIds(recordIds);
+  const map = new Map<string, SubTestRecord[]>();
+  for (const s of subs) {
+    const arr = map.get(s.testTagRecordId);
+    if (arr) arr.push(s);
+    else map.set(s.testTagRecordId, [s]);
+  }
+  return map;
+}
+
+type AssetLink = { id: string; assetTag: string } | null;
+type AssetLinkTag = { assetTag: string } | null;
+
+function linkIdTag(item: TTAsset, maps: { asset: Map<string, { id: string; assetTag: string }>; bulk: Map<string, { id: string; assetTag: string }> }): {
+  asset: AssetLink;
+  bulkAsset: AssetLink;
+} {
+  const a = item.assetId ? maps.asset.get(item.assetId) : undefined;
+  const b = item.bulkAssetId ? maps.bulk.get(item.bulkAssetId) : undefined;
+  return {
+    asset: a ? { id: a.id, assetTag: a.assetTag } : null,
+    bulkAsset: b ? { id: b.id, assetTag: b.assetTag } : null,
+  };
+}
+
+function linkTag(item: TTAsset, maps: { asset: Map<string, { assetTag: string }>; bulk: Map<string, { assetTag: string }> }): {
+  asset: AssetLinkTag;
+  bulkAsset: AssetLinkTag;
+} {
+  const a = item.assetId ? maps.asset.get(item.assetId) : undefined;
+  const b = item.bulkAssetId ? maps.bulk.get(item.bulkAssetId) : undefined;
+  return {
+    asset: a ? { assetTag: a.assetTag } : null,
+    bulkAsset: b ? { assetTag: b.assetTag } : null,
+  };
+}
+
 // ─── 1. FULL REGISTER ───────────────────────────────────────────────────────
+
+async function loadRegisterItems(orgId: string, filters: ReportFilters) {
+  const all = await getTestTagAssetsByOrg(orgId);
+  const filtered = all.filter((i) => assetMatchesFilters(i, filters)).sort((a, b) => cmpStrAsc(a.testTagId, b.testTagId));
+  const maps = await loadLinkMaps(orgId);
+  return filtered.map((i) => ({ ...i, ...linkIdTag(i, maps) }));
+}
 
 export async function getRegisterReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const where = buildAssetWhere(filters, organizationId);
-
-  const items = await prisma.testTagAsset.findMany({
-    where,
-    include: {
-      asset: { select: { id: true, assetTag: true } },
-      bulkAsset: { select: { id: true, assetTag: true } },
-    },
-    orderBy: { testTagId: "asc" },
-  });
+  const items = await loadRegisterItems(organizationId, filters);
 
   const statusCounts: Record<string, number> = {};
   for (const item of items) {
@@ -145,16 +170,7 @@ export async function getRegisterReportData(filters: ReportFilters) {
 
 export async function exportRegisterCSV(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const where = buildAssetWhere(filters, organizationId);
-
-  const items = await prisma.testTagAsset.findMany({
-    where,
-    include: {
-      asset: { select: { assetTag: true } },
-      bulkAsset: { select: { assetTag: true } },
-    },
-    orderBy: { testTagId: "asc" },
-  });
+  const items = await loadRegisterItems(organizationId, filters);
 
   const headers = ["testTagId", "description", "equipmentClass", "applianceType", "make", "modelName", "serialNumber", "location", "testIntervalMonths", "lastTestDate", "nextDueDate", "status", "linkedAssetTag", "linkedBulkAsset"];
 
@@ -173,35 +189,30 @@ export async function exportRegisterCSV(filters: ReportFilters) {
 
 export async function getOverdueReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const baseWhere = buildAssetWhere({ ...filters, statuses: undefined }, organizationId);
+  const baseFilters = { ...filters, statuses: undefined };
 
-  const [overdueItems, failedItems, notTestedItems] = await Promise.all([
-    prisma.testTagAsset.findMany({
-      where: { ...baseWhere, status: "OVERDUE" },
-      include: {
-        asset: { select: { assetTag: true } },
-        bulkAsset: { select: { assetTag: true } },
-      },
-      orderBy: { nextDueDate: "asc" },
-    }),
-    prisma.testTagAsset.findMany({
-      where: { ...baseWhere, status: "FAILED" },
-      include: {
-        asset: { select: { assetTag: true } },
-        bulkAsset: { select: { assetTag: true } },
-        testRecords: { orderBy: { testDate: "desc" }, take: 1 },
-      },
-      orderBy: { lastTestDate: "desc" },
-    }),
-    prisma.testTagAsset.findMany({
-      where: { ...baseWhere, status: "NOT_YET_TESTED" },
-      include: {
-        asset: { select: { assetTag: true } },
-        bulkAsset: { select: { assetTag: true } },
-      },
-      orderBy: { testTagId: "asc" },
-    }),
+  const [all, records, maps] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+    loadLinkMaps(organizationId),
   ]);
+  const matches = all.filter((i) => assetMatchesFilters(i, baseFilters));
+  const byAsset = recordsByAsset(records);
+
+  const overdueItems = matches
+    .filter((i) => i.status === "OVERDUE")
+    .sort((a, b) => cmpDateAsc(a.nextDueDate, b.nextDueDate))
+    .map((i) => ({ ...i, ...linkTag(i, maps) }));
+
+  const failedItems = matches
+    .filter((i) => i.status === "FAILED")
+    .sort((a, b) => cmpDateDesc(a.lastTestDate, b.lastTestDate))
+    .map((i) => ({ ...i, ...linkTag(i, maps), testRecords: (byAsset.get(i.id) ?? []).slice(0, 1) }));
+
+  const notTestedItems = matches
+    .filter((i) => i.status === "NOT_YET_TESTED")
+    .sort((a, b) => cmpStrAsc(a.testTagId, b.testTagId))
+    .map((i) => ({ ...i, ...linkTag(i, maps) }));
 
   return serialize({ overdueItems, failedItems, notTestedItems });
 }
@@ -224,17 +235,34 @@ export async function exportOverdueCSV(filters: ReportFilters) {
 
 export async function getSessionReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const recordWhere = buildRecordWhere(filters, organizationId);
 
-  const records = await prisma.testTagRecord.findMany({
-    where: recordWhere,
-    include: {
-      testTagAsset: { select: { testTagId: true, description: true, equipmentClass: true } },
-      testedBy: { select: { name: true } },
-      testProfile: { select: { id: true, name: true } },
-      subTestRecords: { orderBy: { sortOrder: "asc" } },
-    },
-    orderBy: { testDate: "desc" },
+  const [allAssets, allRecords, profileMap] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+    getTestProfileMap(organizationId),
+  ]);
+  const assetById = new Map(allAssets.map((a) => [a.id, a]));
+
+  const filtered = allRecords
+    .filter((r) => recordMatchesFilters(r, filters))
+    .sort((a, b) => cmpDateDesc(a.testDate, b.testDate));
+
+  const [subMap, userMap] = await Promise.all([
+    loadSubTestsByRecord(filtered.map((r) => r.id)),
+    getUserNameMap(filtered.map((r) => r.testedById)),
+  ]);
+
+  const records = filtered.map((r) => {
+    const a = assetById.get(r.testTagAssetId);
+    return {
+      ...r,
+      testTagAsset: a
+        ? { testTagId: a.testTagId, description: a.description, equipmentClass: a.equipmentClass }
+        : null,
+      testedBy: { name: userMap.get(r.testedById) ?? r.testerName },
+      testProfile: r.testProfileId ? profileMap.get(r.testProfileId) ?? null : null,
+      subTestRecords: subMap.get(r.id) ?? [],
+    };
   });
 
   const passCount = records.filter((r) => r.result === "PASS").length;
@@ -247,7 +275,7 @@ export async function exportSessionCSV(filters: ReportFilters) {
   const data = await getSessionReportData(filters);
 
   const headers = ["testDate", "testTagId", "description", "equipmentClass", "visual", "earthContinuity", "insulation", "leakage", "polarity", "rcd", "result", "tester", "notes", "subTests"];
-  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string }; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; result: string; testerName: string; failureNotes: string | null; functionalTestNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
+  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string } | null; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; result: string; testerName: string; failureNotes: string | null; functionalTestNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
     const subTestSummary = r.subTestRecords && r.subTestRecords.length > 0
       ? r.subTestRecords.map((st) => {
           const parts = [st.label, st.result];
@@ -258,8 +286,8 @@ export async function exportSessionCSV(filters: ReportFilters) {
         }).join(" // ")
       : "";
     return [
-      fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description,
-      equipmentClassLabels[r.testTagAsset.equipmentClass] || r.testTagAsset.equipmentClass,
+      fmtDate(r.testDate), r.testTagAsset?.testTagId ?? "", r.testTagAsset?.description ?? "",
+      equipmentClassLabels[r.testTagAsset?.equipmentClass ?? ""] || (r.testTagAsset?.equipmentClass ?? ""),
       r.visualInspectionResult, r.earthContinuityResult, r.insulationResult,
       r.leakageCurrentResult, r.polarityResult, r.rcdTripTimeResult,
       r.result, r.testerName, r.failureNotes || r.functionalTestNotes || "", subTestSummary,
@@ -274,25 +302,41 @@ export async function exportSessionCSV(filters: ReportFilters) {
 export async function getItemHistoryReportData(testTagAssetId: string) {
   const { organizationId } = await getOrgContext();
 
-  const item = await prisma.testTagAsset.findFirst({
-    where: { id: testTagAssetId, organizationId },
-    include: {
-      asset: { select: { assetTag: true, customName: true } },
-      bulkAsset: { select: { assetTag: true } },
-      testProfile: { select: { id: true, name: true } },
-      testRecords: {
-        orderBy: { testDate: "desc" },
-        include: {
-          testedBy: { select: { name: true } },
-          testProfile: { select: { id: true, name: true } },
-          subTestRecords: { orderBy: { sortOrder: "asc" } },
-        },
-      },
-    },
-  });
+  const item = await getTestTagAssetById(testTagAssetId);
+  if (!item || item.organizationId !== organizationId) throw new Error("Test tag asset not found");
 
-  if (!item) throw new Error("Test tag asset not found");
-  return serialize(item);
+  const [allRecords, maps, profileMap] = await Promise.all([
+    getTestTagRecordsByOrg(organizationId),
+    loadLinkMaps(organizationId),
+    getTestProfileMap(organizationId),
+  ]);
+
+  const recs = allRecords
+    .filter((r) => r.testTagAssetId === testTagAssetId)
+    .sort((a, b) => cmpDateDesc(a.testDate, b.testDate));
+
+  const [subMap, userMap] = await Promise.all([
+    loadSubTestsByRecord(recs.map((r) => r.id)),
+    getUserNameMap(recs.map((r) => r.testedById)),
+  ]);
+
+  const a = item.assetId ? maps.asset.get(item.assetId) : undefined;
+  const b = item.bulkAssetId ? maps.bulk.get(item.bulkAssetId) : undefined;
+
+  const testRecords = recs.map((r) => ({
+    ...r,
+    testedBy: { name: userMap.get(r.testedById) ?? r.testerName },
+    testProfile: r.testProfileId ? profileMap.get(r.testProfileId) ?? null : null,
+    subTestRecords: subMap.get(r.id) ?? [],
+  }));
+
+  return serialize({
+    ...item,
+    asset: a ? { assetTag: a.assetTag, customName: a.customName ?? null } : null,
+    bulkAsset: b ? { assetTag: b.assetTag } : null,
+    testProfile: item.testProfileId ? profileMap.get(item.testProfileId) ?? null : null,
+    testRecords,
+  });
 }
 
 // ─── 5. DUE SCHEDULE ────────────────────────────────────────────────────────
@@ -303,25 +347,22 @@ export async function getDueScheduleReportData(filters: ReportFilters) {
   const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
   const dateTo = filters.dateTo ? new Date(filters.dateTo) : (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })();
 
-  const baseWhere = buildAssetWhere({ ...filters, statuses: undefined }, organizationId);
+  const all = await getTestTagAssetsByOrg(organizationId);
+  const matches = all.filter((i) => assetMatchesFilters(i, { ...filters, statuses: undefined }));
 
-  const items = await prisma.testTagAsset.findMany({
-    where: {
-      ...baseWhere,
-      nextDueDate: { gte: dateFrom, lte: dateTo },
-      status: { in: ["CURRENT", "DUE_SOON"] },
-    },
-    orderBy: { nextDueDate: "asc" },
-  });
+  const items = matches
+    .filter(
+      (i) =>
+        i.nextDueDate != null &&
+        i.nextDueDate.getTime() >= dateFrom.getTime() &&
+        i.nextDueDate.getTime() <= dateTo.getTime() &&
+        (i.status === "CURRENT" || i.status === "DUE_SOON"),
+    )
+    .sort((a, b) => cmpDateAsc(a.nextDueDate, b.nextDueDate));
 
-  // Also include overdue items
-  const overdueItems = await prisma.testTagAsset.findMany({
-    where: {
-      ...baseWhere,
-      status: "OVERDUE",
-    },
-    orderBy: { nextDueDate: "asc" },
-  });
+  const overdueItems = matches
+    .filter((i) => i.status === "OVERDUE")
+    .sort((a, b) => cmpDateAsc(a.nextDueDate, b.nextDueDate));
 
   return serialize({ items, overdueItems, dateFrom, dateTo });
 }
@@ -344,12 +385,10 @@ export async function exportDueScheduleCSV(filters: ReportFilters) {
 
 export async function getClassSummaryReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const baseWhere = buildAssetWhere({ ...filters, statuses: undefined, equipmentClasses: undefined, applianceTypes: undefined }, organizationId);
-
-  const items = await prisma.testTagAsset.findMany({
-    where: baseWhere,
-    select: { equipmentClass: true, applianceType: true, status: true },
-  });
+  const all = await getTestTagAssetsByOrg(organizationId);
+  const items = all.filter((i) =>
+    assetMatchesFilters(i, { ...filters, statuses: undefined, equipmentClasses: undefined, applianceTypes: undefined }),
+  );
 
   // Group by class -> applianceType
   const groups: Record<string, Record<string, Record<string, number>>> = {};
@@ -391,15 +430,26 @@ export async function exportClassSummaryCSV(filters: ReportFilters) {
 
 export async function getTesterActivityReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const recordWhere = buildRecordWhere(filters, organizationId);
 
-  const records = await prisma.testTagRecord.findMany({
-    where: recordWhere,
-    include: {
-      testTagAsset: { select: { testTagId: true, description: true } },
-      testedBy: { select: { id: true, name: true } },
-    },
-    orderBy: { testDate: "desc" },
+  const [allAssets, allRecords] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+  ]);
+  const assetById = new Map(allAssets.map((a) => [a.id, a]));
+
+  const filtered = allRecords
+    .filter((r) => recordMatchesFilters(r, filters))
+    .sort((a, b) => cmpDateDesc(a.testDate, b.testDate));
+
+  const userMap = await getUserNameMap(filtered.map((r) => r.testedById));
+
+  const records = filtered.map((r) => {
+    const a = assetById.get(r.testTagAssetId);
+    return {
+      ...r,
+      testTagAsset: a ? { testTagId: a.testTagId, description: a.description } : null,
+      testedBy: { id: r.testedById, name: userMap.get(r.testedById) ?? r.testerName },
+    };
   });
 
   // Group by tester
@@ -425,9 +475,9 @@ export async function exportTesterActivityCSV(filters: ReportFilters) {
   const headers = ["tester", "testDate", "testTagId", "description", "result"];
   const rows: string[][] = [];
 
-  for (const tester of Object.values(data.testers as Record<string, { name: string; records: { testDate: Date | string; testTagAsset: { testTagId: string; description: string }; result: string }[] }>)) {
+  for (const tester of Object.values(data.testers as Record<string, { name: string; records: { testDate: Date | string; testTagAsset: { testTagId: string; description: string } | null; result: string }[] }>)) {
     for (const r of tester.records) {
-      rows.push([tester.name, fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description, r.result]);
+      rows.push([tester.name, fmtDate(r.testDate), r.testTagAsset?.testTagId ?? "", r.testTagAsset?.description ?? "", r.result]);
     }
   }
 
@@ -438,23 +488,38 @@ export async function exportTesterActivityCSV(filters: ReportFilters) {
 
 export async function getFailedItemsReportData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const recordWhere = buildRecordWhere({ ...filters, results: ["FAIL"] }, organizationId);
 
-  // Also apply asset-level filters
-  const assetWhere = buildAssetWhere(filters, organizationId);
+  const [allAssets, allRecords, profileMap] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+    getTestProfileMap(organizationId),
+  ]);
+  const assetById = new Map(allAssets.map((a) => [a.id, a]));
+  // The old query used a relation filter `testTagAsset: assetWhere`, so a record
+  // only matches when its parent asset matches the asset-level filters.
+  const matchingAssetIds = new Set(allAssets.filter((a) => assetMatchesFilters(a, filters)).map((a) => a.id));
 
-  const records = await prisma.testTagRecord.findMany({
-    where: {
-      ...recordWhere,
-      testTagAsset: assetWhere,
-    },
-    include: {
-      testTagAsset: { select: { testTagId: true, description: true, equipmentClass: true, applianceType: true } },
-      testedBy: { select: { name: true } },
-      testProfile: { select: { id: true, name: true } },
-      subTestRecords: { orderBy: { sortOrder: "asc" } },
-    },
-    orderBy: { testDate: "desc" },
+  const filtered = allRecords
+    .filter((r) => recordMatchesFilters(r, { ...filters, results: ["FAIL"] }))
+    .filter((r) => matchingAssetIds.has(r.testTagAssetId))
+    .sort((a, b) => cmpDateDesc(a.testDate, b.testDate));
+
+  const [subMap, userMap] = await Promise.all([
+    loadSubTestsByRecord(filtered.map((r) => r.id)),
+    getUserNameMap(filtered.map((r) => r.testedById)),
+  ]);
+
+  const records = filtered.map((r) => {
+    const a = assetById.get(r.testTagAssetId);
+    return {
+      ...r,
+      testTagAsset: a
+        ? { testTagId: a.testTagId, description: a.description, equipmentClass: a.equipmentClass, applianceType: a.applianceType }
+        : null,
+      testedBy: { name: userMap.get(r.testedById) ?? r.testerName },
+      testProfile: r.testProfileId ? profileMap.get(r.testProfileId) ?? null : null,
+      subTestRecords: subMap.get(r.id) ?? [],
+    };
   });
 
   // Breakdown by failure type
@@ -475,7 +540,7 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
   const data = await getFailedItemsReportData(filters);
 
   const headers = ["testDate", "testTagId", "description", "equipmentClass", "applianceType", "tester", "failedTests", "failureAction", "failureNotes", "subTests"];
-  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string; applianceType: string }; testerName: string; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; failureAction: string; failureNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
+  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string; applianceType: string } | null; testerName: string; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; failureAction: string; failureNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
     const failed: string[] = [];
     if (r.visualInspectionResult === "FAIL") failed.push("Visual");
     if (r.earthContinuityResult === "FAIL") failed.push("Earth");
@@ -493,9 +558,9 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
         }).join(" // ")
       : "";
     return [
-      fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description,
-      equipmentClassLabels[r.testTagAsset.equipmentClass] || r.testTagAsset.equipmentClass,
-      applianceTypeLabels[r.testTagAsset.applianceType] || r.testTagAsset.applianceType,
+      fmtDate(r.testDate), r.testTagAsset?.testTagId ?? "", r.testTagAsset?.description ?? "",
+      equipmentClassLabels[r.testTagAsset?.equipmentClass ?? ""] || (r.testTagAsset?.equipmentClass ?? ""),
+      applianceTypeLabels[r.testTagAsset?.applianceType ?? ""] || (r.testTagAsset?.applianceType ?? ""),
       r.testerName, failed.join("; "), r.failureAction || "", r.failureNotes || "", subTestSummary,
     ];
   });
@@ -512,11 +577,10 @@ export async function getBulkSummaryReportData(bulkAssetId: string, filters: Rep
   if (!bulkAsset || bulkAsset.organizationId !== organizationId) throw new Error("Bulk asset not found");
   const bulkModel = await getModelById(bulkAsset.modelId);
 
-  const baseWhere = buildAssetWhere({ ...filters }, organizationId);
-  const items = await prisma.testTagAsset.findMany({
-    where: { ...baseWhere, bulkAssetId },
-    orderBy: { testTagId: "asc" },
-  });
+  const all = await getTestTagAssetsByOrg(organizationId);
+  const items = all
+    .filter((i) => assetMatchesFilters(i, filters) && i.bulkAssetId === bulkAssetId)
+    .sort((a, b) => cmpStrAsc(a.testTagId, b.testTagId));
 
   const statusCounts: Record<string, number> = {};
   for (const item of items) {
@@ -551,18 +615,26 @@ export async function exportBulkSummaryCSV(bulkAssetId: string, filters: ReportF
 
 export async function getComplianceCertificateData(filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
-  const baseWhere = buildAssetWhere({ ...filters, statuses: ["CURRENT"] }, organizationId);
 
-  const items = await prisma.testTagAsset.findMany({
-    where: baseWhere,
-    include: {
-      testRecords: {
-        orderBy: { testDate: "desc" },
-        take: 1,
-        include: { testedBy: { select: { name: true } } },
-      },
-    },
-    orderBy: { testTagId: "asc" },
+  const [all, records] = await Promise.all([
+    getTestTagAssetsByOrg(organizationId),
+    getTestTagRecordsByOrg(organizationId),
+  ]);
+  const byAsset = recordsByAsset(records);
+
+  const filtered = all
+    .filter((i) => assetMatchesFilters(i, { ...filters, statuses: ["CURRENT"] }))
+    .sort((a, b) => cmpStrAsc(a.testTagId, b.testTagId));
+
+  const latestIds = filtered.map((i) => byAsset.get(i.id)?.[0]?.testedById).filter((v): v is string => Boolean(v));
+  const userMap = await getUserNameMap(latestIds);
+
+  const items = filtered.map((i) => {
+    const latest = (byAsset.get(i.id) ?? []).slice(0, 1).map((r) => ({
+      ...r,
+      testedBy: { name: userMap.get(r.testedById) ?? r.testerName },
+    }));
+    return { ...i, testRecords: latest };
   });
 
   return serialize({ items, total: items.length, generatedDate: new Date().toISOString() });
@@ -574,44 +646,47 @@ export async function getReportPreviewCount(reportType: string, filters: ReportF
   const { organizationId } = await getOrgContext();
 
   if (reportType === "session" || reportType === "tester-activity" || reportType === "failed-items") {
-    const recordWhere = buildRecordWhere(
-      reportType === "failed-items" ? { ...filters, results: ["FAIL"] } : filters,
-      organizationId
-    );
+    const records = await getTestTagRecordsByOrg(organizationId);
     if (reportType === "failed-items") {
-      const assetWhere = buildAssetWhere(filters, organizationId);
-      return prisma.testTagRecord.count({ where: { ...recordWhere, testTagAsset: assetWhere } });
+      const assets = await getTestTagAssetsByOrg(organizationId);
+      const matchingAssetIds = new Set(assets.filter((a) => assetMatchesFilters(a, filters)).map((a) => a.id));
+      return records
+        .filter((r) => recordMatchesFilters(r, { ...filters, results: ["FAIL"] }))
+        .filter((r) => matchingAssetIds.has(r.testTagAssetId)).length;
     }
-    return prisma.testTagRecord.count({ where: recordWhere });
+    return records.filter((r) => recordMatchesFilters(r, filters)).length;
   }
 
+  const all = await getTestTagAssetsByOrg(organizationId);
+
   if (reportType === "overdue") {
-    const baseWhere = buildAssetWhere({ ...filters, statuses: undefined }, organizationId);
-    return prisma.testTagAsset.count({
-      where: { ...baseWhere, status: { in: ["OVERDUE", "FAILED", "NOT_YET_TESTED"] } },
-    });
+    return all.filter(
+      (i) =>
+        assetMatchesFilters(i, { ...filters, statuses: undefined }) &&
+        (i.status === "OVERDUE" || i.status === "FAILED" || i.status === "NOT_YET_TESTED"),
+    ).length;
   }
 
   if (reportType === "compliance-certificate") {
-    const where = buildAssetWhere({ ...filters, statuses: ["CURRENT"] }, organizationId);
-    return prisma.testTagAsset.count({ where });
+    return all.filter((i) => assetMatchesFilters(i, { ...filters, statuses: ["CURRENT"] })).length;
   }
 
   if (reportType === "due-schedule") {
     const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
     const dateTo = filters.dateTo ? new Date(filters.dateTo) : (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })();
-    const baseWhere = buildAssetWhere({ ...filters, statuses: undefined }, organizationId);
-    const [due, overdue] = await Promise.all([
-      prisma.testTagAsset.count({
-        where: { ...baseWhere, nextDueDate: { gte: dateFrom, lte: dateTo }, status: { in: ["CURRENT", "DUE_SOON"] } },
-      }),
-      prisma.testTagAsset.count({ where: { ...baseWhere, status: "OVERDUE" } }),
-    ]);
+    const matches = all.filter((i) => assetMatchesFilters(i, { ...filters, statuses: undefined }));
+    const due = matches.filter(
+      (i) =>
+        i.nextDueDate != null &&
+        i.nextDueDate.getTime() >= dateFrom.getTime() &&
+        i.nextDueDate.getTime() <= dateTo.getTime() &&
+        (i.status === "CURRENT" || i.status === "DUE_SOON"),
+    ).length;
+    const overdue = matches.filter((i) => i.status === "OVERDUE").length;
     return due + overdue;
   }
 
-  const where = buildAssetWhere(filters, organizationId);
-  return prisma.testTagAsset.count({ where });
+  return all.filter((i) => assetMatchesFilters(i, filters)).length;
 }
 
 // ─── CSV HELPER ─────────────────────────────────────────────────────────────

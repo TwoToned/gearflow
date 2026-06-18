@@ -27,8 +27,8 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ✅ |
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ✅ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ✅ |
-| 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ◐ |
-| 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ☐ |
+| 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ✅ |
+| 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ◐ |
 | 9 | Locations | list/detail/new/edit | ☐ |
 | 10 | Maintenance | list/detail/new/edit | ☐ |
 | 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ☐ |

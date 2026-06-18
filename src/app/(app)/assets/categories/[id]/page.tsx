@@ -19,6 +19,7 @@ import { getCategory } from "@/server/categories";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn, focusRing } from "@/lib/utils";
 import {
@@ -39,6 +40,14 @@ import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { kitStatusLabels, formatLabel } from "@/lib/status-labels";
 
 export default function CategoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="model" action="read">
+      <CategoryDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();

@@ -7,6 +7,7 @@ import { useAsset, useBulkAsset } from "@/hooks/use-assets";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
 import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import {
@@ -22,9 +23,11 @@ import type { BulkAssetFormValues } from "@/lib/validations/asset";
 
 export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
-      <EditAssetContent params={params} />
-    </Suspense>
+    <RequirePermission resource="asset" action="update">
+      <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
+        <EditAssetContent params={params} />
+      </Suspense>
+    </RequirePermission>
   );
 }
 

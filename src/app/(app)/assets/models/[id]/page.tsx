@@ -52,9 +52,11 @@ import { cn, focusRing } from "@/lib/utils";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<DetailPageSkeleton />}>
-      <ModelDetailContent params={params} />
-    </Suspense>
+    <RequirePermission resource="model" action="read">
+      <Suspense fallback={<DetailPageSkeleton />}>
+        <ModelDetailContent params={params} />
+      </Suspense>
+    </RequirePermission>
   );
 }
 
@@ -159,7 +161,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const maintenanceCount = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
 
   return (
-    <RequirePermission resource="model" action="read">
+    <>
     <FadeIn>
       <PageMeta title={model?.name} />
       <div className="space-y-6">
@@ -733,6 +735,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       }}
       pending={deleteBulkMutation.isPending}
     />
-    </RequirePermission>
+    </>
   );
 }

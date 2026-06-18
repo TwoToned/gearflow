@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import {
@@ -57,8 +58,10 @@ function NewAssetContent() {
 
 export default function NewAssetPage() {
   return (
-    <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
-      <NewAssetContent />
-    </Suspense>
+    <RequirePermission resource="asset" action="create">
+      <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
+        <NewAssetContent />
+      </Suspense>
+    </RequirePermission>
   );
 }

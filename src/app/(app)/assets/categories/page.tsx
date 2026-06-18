@@ -35,12 +35,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCanDo } from "@/lib/use-permissions";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 import { cn, focusRing } from "@/lib/utils";
 
 export default function CategoriesPage() {
+  return (
+    <RequirePermission resource="model" action="read">
+      <CategoriesContent />
+    </RequirePermission>
+  );
+}
+
+function CategoriesContent() {
   const canCreate = useCanDo("model", "create");
   const canUpdate = useCanDo("model", "update");
   const canDelete = useCanDo("model", "delete");

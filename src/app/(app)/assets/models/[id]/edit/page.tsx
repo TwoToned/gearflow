@@ -13,12 +13,21 @@ import {
 } from "@/components/ui/breadcrumb";
 import { getModel } from "@/server/models";
 import { ModelForm } from "@/components/assets/model-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import type { ModelFormValues } from "@/lib/validations/model";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="model" action="update">
+      <EditModelContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;

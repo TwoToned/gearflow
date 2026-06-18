@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ModelForm } from "@/components/assets/model-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import {
   Breadcrumb,
@@ -14,6 +15,7 @@ import {
 
 export default function NewModelPage() {
   return (
+    <RequirePermission resource="model" action="create">
     <FadeIn>
       <div className="mx-auto max-w-3xl space-y-4">
         <Breadcrumb>
@@ -36,5 +38,6 @@ export default function NewModelPage() {
         <ModelForm />
       </div>
     </FadeIn>
+    </RequirePermission>
   );
 }

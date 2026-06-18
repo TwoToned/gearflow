@@ -110,3 +110,135 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── CUSTOM (Phase C — core grouping inversion) — re-add on regen ─────────────
+// Purpose-built atomic mutations that replace multi-call server-action sequences.
+// A single Convex mutation is fully ACID + serializable across every doc it
+// touches (OCC retries the loser of a write-write race), so cascade + reorder +
+// create-at-end become race-free here instead of split across N network calls.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Atomic create-at-end: compute max(sortOrder)+1 within the project and insert
+ * in one transaction — no read-max-then-insert TOCTOU. Caller supplies the cuid.
+ */
+export const createAtEnd = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    name: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, projectId, name, now }) => {
+    await requireService(ctx);
+    const existing = await ctx.db
+      .query("projectCategories")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect();
+    const maxSort = existing.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
+    const sortOrder = maxSort + 1;
+    await ctx.db.insert("projectCategories", {
+      id,
+      organizationId,
+      projectId,
+      name,
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { id, sortOrder };
+  },
+});
+
+/**
+ * Atomic reorder: sortOrder = index for each id, in one transaction. Guarantees
+ * contiguous ordering even if two reorders race (the serialized loser re-runs
+ * against the winner's writes).
+ */
+export const reorder = mutation({
+  args: { orderedIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orderedIds, now }) => {
+    await requireService(ctx);
+    for (let i = 0; i < orderedIds.length; i++) {
+      const doc = await ctx.db
+        .query("projectCategories")
+        .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
+        .unique();
+      if (doc) await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
+    }
+  },
+});
+
+/**
+ * Atomic cascade delete of a category: every group in it (+ each group's slots),
+ * every category slot, then the category itself. Returns the deleted group ids
+ * so the caller can null out the (still-Prisma) line items that referenced them.
+ */
+export const deleteCascade = mutation({
+  args: { categoryId: v.string() },
+  handler: async (ctx, { categoryId }) => {
+    await requireService(ctx);
+    const groups = await ctx.db
+      .query("projectGroups")
+      .withIndex("by_categoryId", (q) => q.eq("categoryId", categoryId))
+      .collect();
+    for (const g of groups) {
+      const gslots = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
+        .collect();
+      for (const s of gslots) await ctx.db.delete(s._id);
+      await ctx.db.delete(g._id);
+    }
+    const catSlots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", categoryId))
+      .collect();
+    for (const s of catSlots) await ctx.db.delete(s._id);
+    const cat = await ctx.db
+      .query("projectCategories")
+      .withIndex("by_cuid", (q) => q.eq("id", categoryId))
+      .unique();
+    if (cat) await ctx.db.delete(cat._id);
+    return { groupIds: groups.map((g) => g.id) };
+  },
+});
+
+/**
+ * Atomic purge of ALL grouping rows (categories, groups, slots) for a project.
+ * Used on project delete now that the Prisma FK cascade is gone (Phase C #254).
+ * Read-your-writes within the mutation makes the overlapping slot deletes safe.
+ */
+export const deleteAllForProject = mutation({
+  args: { projectId: v.string() },
+  handler: async (ctx, { projectId }) => {
+    await requireService(ctx);
+    const cats = await ctx.db
+      .query("projectCategories")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect();
+    for (const c of cats) {
+      const catSlots = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id))
+        .collect();
+      for (const s of catSlots) await ctx.db.delete(s._id);
+    }
+    const groups = await ctx.db
+      .query("projectGroups")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect();
+    for (const g of groups) {
+      const gslots = await ctx.db
+        .query("categorySlots")
+        .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
+        .collect();
+      for (const s of gslots) await ctx.db.delete(s._id);
+      await ctx.db.delete(g._id);
+    }
+    for (const c of cats) await ctx.db.delete(c._id);
+    return { categories: cats.length, groups: groups.length };
+  },
+});

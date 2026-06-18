@@ -25,8 +25,8 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 2 | Projects list + create | board, table, view-toggle, wizard, range-calendar | ✅ |
 | 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ✅ |
 | 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ✅ |
-| 5 | Kits | list/detail/new/edit, kit-checks tab | ☐ |
-| 6 | Crew | list/detail/new/edit, planner, timesheets | ☐ |
+| 5 | Kits | list/detail/new/edit, kit-checks tab | ✅ |
+| 6 | Crew | list/detail/new/edit, planner, timesheets | ◐ |
 | 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ☐ |
 | 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ☐ |
 | 9 | Locations | list/detail/new/edit | ☐ |

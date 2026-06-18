@@ -220,7 +220,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <Button
                     variant="line"
                     size="sm"
-                    className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
+                    className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
                     onClick={() => setArchiveModelOpen(true)}
                   >
                     <Archive className="h-4 w-4" />

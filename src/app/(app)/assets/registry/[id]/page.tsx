@@ -239,7 +239,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <Button
                       variant="line"
                       size="sm"
-                      className="border-warn/40 text-warn hover:bg-warn hover:text-paper hover:border-warn"
+                      className="border-warn/40 text-warn hover:bg-warn-soft hover:border-warn"
                       onClick={() => setForceReturnOpen(true)}
                       disabled={forceReturnMutation.isPending}
                     >
@@ -257,7 +257,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <Button
                       variant="line"
                       size="sm"
-                      className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
+                      className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
                       onClick={() => setArchiveOpen(true)}
                     >
                       <Archive className="h-4 w-4" />
@@ -267,7 +267,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <Button
                     variant="line"
                     size="sm"
-                    className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
+                    className="border-red/40 text-red hover:bg-red hover:text-white hover:border-red"
                     onClick={() => setDeleteOpen(true)}
                     disabled={deleteMutation.isPending}
                   >

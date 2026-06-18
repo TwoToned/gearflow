@@ -6,6 +6,7 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, Archive, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn, focusRing, disabledState } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -77,13 +78,13 @@ export function DeleteKitDialog({
           <DialogTitle>Delete kit</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 text-sm">
-          <p className="text-fg-2">
-            What should happen to <span className="font-mono text-fg">{kitLabel}</span>?
+        <div className="space-y-4 text-ui-text">
+          <p className="text-ink-2">
+            What should happen to <span className="t-mono text-ink">{kitLabel}</span>?
           </p>
 
           {infoLoading && (
-            <div className="flex items-center gap-2 text-fg-3">
+            <div className="flex items-center gap-2 text-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Checking references…
             </div>
           )}
@@ -94,17 +95,20 @@ export function DeleteKitDialog({
                 type="button"
                 disabled={!canArchive || pending}
                 onClick={() => setMode("archive")}
-                className={`w-full rounded-md border p-3 text-left transition-colors ${
+                className={cn(
+                  "w-full rounded-[var(--r)] border-2 p-3 text-left transition-colors",
                   mode === "archive"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-border-strong"
-                } ${!canArchive ? "cursor-not-allowed opacity-50" : ""}`}
+                    ? "border-red bg-red-soft"
+                    : "border-line hover:border-line-2",
+                  focusRing,
+                  disabledState,
+                )}
               >
                 <div className="flex items-start gap-3">
-                  <Archive className="mt-0.5 h-4 w-4 flex-shrink-0 text-fg-2" />
+                  <Archive className="mt-0.5 h-4 w-4 flex-shrink-0 text-ink-2" />
                   <div className="space-y-1">
-                    <div className="font-medium text-fg">Archive (recommended)</div>
-                    <p className="text-xs text-fg-3">
+                    <div className="font-medium text-ink">Archive (recommended)</div>
+                    <p className="text-caption text-muted">
                       Releases all contents, hides the kit from lists. Preserves history on past
                       projects. Can be recovered later.
                     </p>
@@ -116,20 +120,23 @@ export function DeleteKitDialog({
                 type="button"
                 disabled={!canHardDelete || pending}
                 onClick={() => setMode("hard")}
-                className={`w-full rounded-md border p-3 text-left transition-colors ${
+                className={cn(
+                  "w-full rounded-[var(--r)] border-2 p-3 text-left transition-colors",
                   mode === "hard"
-                    ? "border-destructive bg-destructive/5"
-                    : "border-border hover:border-border-strong"
-                } ${!canHardDelete ? "cursor-not-allowed opacity-50" : ""}`}
+                    ? "border-t-out bg-out-soft"
+                    : "border-line hover:border-line-2",
+                  focusRing,
+                  disabledState,
+                )}
               >
                 <div className="flex items-start gap-3">
-                  <Trash2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
+                  <Trash2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-t-out" />
                   <div className="space-y-1">
-                    <div className="font-medium text-fg">Delete permanently</div>
-                    <p className="text-xs text-fg-3">
+                    <div className="font-medium text-ink">Delete permanently</div>
+                    <p className="text-caption text-muted">
                       Releases contents and removes the kit row entirely. Cannot be undone.
                       {!canHardDelete && info?.reason && (
-                        <span className="mt-1 block text-destructive">{info.reason}</span>
+                        <span className="mt-1 block text-t-out">{info.reason}</span>
                       )}
                     </p>
                   </div>
@@ -137,7 +144,7 @@ export function DeleteKitDialog({
               </button>
 
               {!canArchive && info?.reason && (
-                <p className="text-xs text-destructive">{info.reason}</p>
+                <p className="text-caption text-t-out">{info.reason}</p>
               )}
             </div>
           )}
@@ -145,23 +152,23 @@ export function DeleteKitDialog({
 
         <DialogFooter>
           <Button
-            variant="outline"
+            variant="line"
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
             Cancel
           </Button>
           <Button
-            variant={mode === "hard" ? "destructive" : "default"}
+            variant={mode === "hard" ? "line" : "primary"}
+            className={mode === "hard" ? "border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out" : undefined}
             onClick={handleConfirm}
+            loading={pending}
             disabled={
-              pending ||
               infoLoading ||
               (mode === "archive" && !canArchive) ||
               (mode === "hard" && !canHardDelete)
             }
           >
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {mode === "archive" ? "Archive kit" : "Delete permanently"}
           </Button>
         </DialogFooter>

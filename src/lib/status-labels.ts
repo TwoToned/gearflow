@@ -99,6 +99,44 @@ export const subHireStatusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+// --- Test & Tag Status (computed compliance status) ---
+export const testTagStatusLabels: Record<string, string> = {
+  CURRENT: "Current",
+  DUE_SOON: "Due soon",
+  OVERDUE: "Overdue",
+  FAILED: "Failed",
+  NOT_YET_TESTED: "Not tested",
+  RETIRED: "Retired",
+};
+
+// --- Test & Tag Result ---
+export const testTagResultLabels: Record<string, string> = {
+  PASS: "Pass",
+  FAIL: "Fail",
+  NOT_APPLICABLE: "N/A",
+};
+
+// --- Test & Tag Equipment Class ---
+export const equipmentClassLabels: Record<string, string> = {
+  CLASS_I: "Class I",
+  CLASS_II: "Class II",
+  CLASS_II_DOUBLE_INSULATED: "Class II (double insulated)",
+  LEAD_CORD_ASSEMBLY: "Lead / cord assembly",
+};
+
+// --- Test & Tag Appliance Type ---
+export const applianceTypeLabels: Record<string, string> = {
+  APPLIANCE: "Appliance",
+  CORD_SET: "Cord set",
+  EXTENSION_LEAD: "Extension lead",
+  POWER_BOARD: "Power board",
+  RCD_PORTABLE: "RCD (portable)",
+  RCD_FIXED: "RCD (fixed)",
+  THREE_PHASE: "Three phase",
+  MICROWAVE: "Microwave",
+  OTHER: "Other",
+};
+
 // --- Media Type ---
 export const mediaTypeLabels: Record<string, string> = {
   PHOTO: "Photo",

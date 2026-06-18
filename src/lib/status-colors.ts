@@ -186,6 +186,26 @@ const availabilityTypeIntent: Record<string, ColorIntent> = {
   PREFERRED: "success",
 };
 
+// Test & Tag compliance status (computed per-asset). §1: OVERDUE/FAILED are a
+// problem (t-out/error), DUE_SOON is a caution (warning), a CURRENT/valid test
+// is success (ok). NOT_YET_TESTED + RETIRED are neutral.
+const testTagStatusIntent: Record<string, ColorIntent> = {
+  CURRENT: "success",
+  DUE_SOON: "warning",
+  OVERDUE: "error",
+  FAILED: "error",
+  NOT_YET_TESTED: "neutral",
+  RETIRED: "neutral",
+};
+
+// Test & Tag test result (TestResult enum). §1: a FAIL is a problem (t-out/error),
+// a PASS is good (ok), NOT_APPLICABLE is neutral.
+const testTagResultIntent: Record<string, ColorIntent> = {
+  PASS: "success",
+  FAIL: "error",
+  NOT_APPLICABLE: "neutral",
+};
+
 const serviceStatusIntent: Record<string, ColorIntent> = {
   PLANNED: "neutral",
   CONFIRMED: "info",
@@ -278,7 +298,9 @@ export type StatusCategory =
   | "memberRole"
   | "activity"
   | "notification"
-  | "subHire";
+  | "subHire"
+  | "testTag"
+  | "testTagResult";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -302,6 +324,8 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   activity: activityActionIntent,
   notification: notificationSeverityIntent,
   subHire: subHireStatusIntent,
+  testTag: testTagStatusIntent,
+  testTagResult: testTagResultIntent,
 };
 
 /**

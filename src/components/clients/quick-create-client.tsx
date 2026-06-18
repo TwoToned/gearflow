@@ -15,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 
 interface QuickCreateClientProps {
   open: boolean;
@@ -47,7 +46,7 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>New Client</DialogTitle>
+          <DialogTitle>New client</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-2">
@@ -71,16 +70,16 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
               id="quick-client-type"
               value={type}
               onChange={(e) => setType(e.target.value as typeof type)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="COMPANY">Company</option>
               <option value="INDIVIDUAL">Individual</option>
               <option value="VENUE">Venue</option>
-              <option value="PRODUCTION_COMPANY">Production Company</option>
+              <option value="PRODUCTION_COMPANY">Production company</option>
             </select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="quick-client-contact">Contact Name</Label>
+            <Label htmlFor="quick-client-contact">Contact name</Label>
             <Input
               id="quick-client-contact"
               value={contactName}
@@ -89,7 +88,7 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="quick-client-email">Contact Email</Label>
+            <Label htmlFor="quick-client-email">Contact email</Label>
             <Input
               id="quick-client-email"
               type="email"
@@ -102,9 +101,9 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
         <DialogFooter>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!name.trim() || mutation.isPending}
+            disabled={!name.trim()}
+            loading={mutation.isPending}
           >
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create
           </Button>
         </DialogFooter>

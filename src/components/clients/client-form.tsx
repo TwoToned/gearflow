@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
@@ -68,15 +67,15 @@ export function ClientForm({ initialData }: ClientFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-8">
-          <SectionHeader label="Client Details" />
+          <SectionHeader label="Client details" />
           <FormSection>
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
-              <Input id="name" {...form.register("name")} placeholder="e.g. Acme Productions" />
+              <Input id="name" {...form.register("name")} placeholder="e.g. Acme Productions" aria-invalid={!!form.formState.errors.name} />
               {form.formState.errors.name && (
-                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -84,31 +83,31 @@ export function ClientForm({ initialData }: ClientFormProps) {
               <select
                 id="type"
                 {...form.register("type")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <option value="COMPANY">Company</option>
                 <option value="INDIVIDUAL">Individual</option>
                 <option value="VENUE">Venue</option>
-                <option value="PRODUCTION_COMPANY">Production Company</option>
+                <option value="PRODUCTION_COMPANY">Production company</option>
               </select>
             </div>
           </FormSection>
 
-          <SectionHeader label="Contact Information" />
+          <SectionHeader label="Contact information" />
           <FormSection>
             <div className="space-y-2">
-              <Label htmlFor="contactName">Contact Name</Label>
+              <Label htmlFor="contactName">Contact name</Label>
               <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="contactEmail">Contact Email</Label>
-              <Input id="contactEmail" type="email" {...form.register("contactEmail")} placeholder="email@example.com" />
+              <Label htmlFor="contactEmail">Contact email</Label>
+              <Input id="contactEmail" type="email" {...form.register("contactEmail")} placeholder="email@example.com" aria-invalid={!!form.formState.errors.contactEmail} />
               {form.formState.errors.contactEmail && (
-                <p className="text-xs text-destructive">{form.formState.errors.contactEmail.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.contactEmail.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="contactPhone">Contact Phone</Label>
+              <Label htmlFor="contactPhone">Contact phone</Label>
               <Input id="contactPhone" {...form.register("contactPhone")} placeholder="+61 400 000 000" />
             </div>
           </FormSection>
@@ -116,7 +115,7 @@ export function ClientForm({ initialData }: ClientFormProps) {
           <SectionHeader label="Billing" />
           <FormSection>
             <div className="space-y-2 sm:col-span-2">
-              <Label>Billing Address</Label>
+              <Label>Billing address</Label>
               <Controller
                 name="billingAddress"
                 control={form.control}
@@ -145,7 +144,7 @@ export function ClientForm({ initialData }: ClientFormProps) {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label>Shipping Address</Label>
+              <Label>Shipping address</Label>
               <Controller
                 name="shippingAddress"
                 control={form.control}
@@ -178,11 +177,11 @@ export function ClientForm({ initialData }: ClientFormProps) {
               <Input id="taxId" {...form.register("taxId")} placeholder="e.g. 12 345 678 901" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="paymentTerms">Payment Terms</Label>
+              <Label htmlFor="paymentTerms">Payment terms</Label>
               <Input id="paymentTerms" {...form.register("paymentTerms")} placeholder="e.g. Net 30" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="defaultDiscount">Default Discount (%)</Label>
+              <Label htmlFor="defaultDiscount">Default discount (%)</Label>
               <Input
                 id="defaultDiscount"
                 type="number"
@@ -219,13 +218,12 @@ export function ClientForm({ initialData }: ClientFormProps) {
           </FormSection>
         </div>
 
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Client" : "Create Client"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update client" : "Create client"}
           </Button>
         </div>
       </div>

@@ -14,12 +14,14 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { getStatusColor } from "@/lib/status-colors";
+import { cn, focusRing } from "@/lib/utils";
 
 const typeLabels: Record<string, string> = {
   COMPANY: "Company",
   INDIVIDUAL: "Individual",
   VENUE: "Venue",
-  PRODUCTION_COMPANY: "Production Co.",
+  PRODUCTION_COMPANY: "Production co.",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,7 +35,11 @@ const columns: ColumnDef<AnyClient>[] = [
     alwaysVisible: true,
     sortKey: "name",
     cell: (row) => (
-      <Link href={`/clients/${row.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+      <Link
+        href={`/clients/${row.id}`}
+        className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)}
+        onClick={(e) => e.stopPropagation()}
+      >
         {row.name}
       </Link>
     ),
@@ -46,10 +52,10 @@ const columns: ColumnDef<AnyClient>[] = [
     filterable: true,
     filterType: "enum",
     filterOptions: [
-      { value: "COMPANY", label: "Company", color: "bg-blue-500" },
-      { value: "INDIVIDUAL", label: "Individual", color: "bg-blue-500" },
-      { value: "VENUE", label: "Venue", color: "bg-amber-500" },
-      { value: "PRODUCTION_COMPANY", label: "Production Company", color: "bg-green-500" },
+      { value: "COMPANY", label: "Company", color: getStatusColor("clientType", "COMPANY").dot },
+      { value: "INDIVIDUAL", label: "Individual", color: getStatusColor("clientType", "INDIVIDUAL").dot },
+      { value: "VENUE", label: "Venue", color: getStatusColor("clientType", "VENUE").dot },
+      { value: "PRODUCTION_COMPANY", label: "Production company", color: getStatusColor("clientType", "PRODUCTION_COMPANY").dot },
     ],
     cell: (row) => (
       <StatusIndicator category="clientType" value={row.type} label={typeLabels[row.type] || row.type} variant="pill" />
@@ -62,7 +68,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactName",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">
+      <span className="text-muted">
         {row.contactName || "\u2014"}
       </span>
     ),
@@ -74,7 +80,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactEmail",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">
+      <span className="text-muted">
         {row.contactEmail || "\u2014"}
       </span>
     ),
@@ -84,14 +90,14 @@ const columns: ColumnDef<AnyClient>[] = [
     header: "Projects",
     sortKey: "name",
     align: "right",
-    cell: (row) => row._count?.projects ?? 0,
+    cell: (row) => <span className="t-data">{row._count?.projects ?? 0}</span>,
   },
   {
     id: "isActive",
     header: "Status",
     sortKey: "isActive",
     cell: (row) => (
-      <Badge variant={row.isActive ? "default" : "destructive"}>
+      <Badge status={row.isActive ? "ok" : "overbooked"}>
         {row.isActive ? "Active" : "Archived"}
       </Badge>
     ),
@@ -105,7 +111,7 @@ const columns: ColumnDef<AnyClient>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <Badge key={tag} status="neutral">
             {tag}
           </Badge>
         ))}
@@ -180,9 +186,11 @@ export function ClientTable() {
 
   const toolbarActions = (
     <CanDo resource="client" action="create">
-      <Button render={<Link href="/clients/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Client
+      <Button asChild>
+        <Link href="/clients/new">
+          <Plus className="mr-2 h-4 w-4" />
+          New client
+        </Link>
       </Button>
     </CanDo>
   );

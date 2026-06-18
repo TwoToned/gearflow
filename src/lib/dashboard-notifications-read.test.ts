@@ -17,7 +17,7 @@ import {
 } from "@/lib/project-services-read";
 
 // Minimal builders — the pure functions only touch the scalar fields under test.
-function maint(p: Partial<MaintenanceRecordRow> & { scheduledDate?: number | null }): MaintenanceRecordRow {
+function maint(p: Omit<Partial<MaintenanceRecordRow>, "scheduledDate"> & { scheduledDate?: number | null }): MaintenanceRecordRow {
   const { scheduledDate, ...rest } = p;
   return {
     id: "m",

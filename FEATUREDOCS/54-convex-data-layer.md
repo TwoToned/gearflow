@@ -2786,6 +2786,26 @@ re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshne
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
 
+## Phase A — read-rewiring (domain-only decommission)
+
+Moving every remaining Prisma **domain read** to Convex, one leaf surface per PR.
+Full plan + the per-surface progress log:
+[`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+Pattern: thin `lib/<x>-read.ts` (Convex fetchers + mappers: epoch-ms → `Date`,
+Decimal → `number`, absent → `null`) + the server action keeps its shape but does
+`where`/`orderBy`/`include` as JS filter/sort/attach; auth-owned `User` joins stay
+Prisma; validated by unit tests + a row-for-row golden-diff vs Prisma on seeded data.
+
+### Supplier orders — DONE
+
+`src/server/supplier-orders.ts` `getSupplierOrders` (list: filter/search/sort/
+paginate + project + item-count + supplier) and `getSupplierOrderById` (order +
+items + asset/model/project/supplier + `createdBy` User) → Convex via
+`src/lib/supplier-order-read.ts`. New `supplierOrderItems.listByOrderIds` (one
+round trip for per-order counts). Mixed-type column sort replicates Postgres null
+ordering. Writes stay Prisma-first + mirror. Dev data: `npm run seed:supplier-orders`.
+supplierOrder/supplierOrderItem were backfilled in prod with the sub-hire family.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

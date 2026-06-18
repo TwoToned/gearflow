@@ -31,6 +31,27 @@ export const getById = query({
   },
 });
 
+/**
+ * Items across many orders in one round trip — for the supplier-orders LIST view
+ * which needs an item count per order (no org column; items are order-scoped).
+ * HAND-ADDED for the Phase A supplier-orders read-rewiring.
+ */
+export const listByOrderIds = query({
+  args: { orderIds: v.array(v.string()) },
+  handler: async (ctx, { orderIds }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const orderId of orderIds) {
+      const rows = await ctx.db
+        .query("supplierOrderItems")
+        .withIndex("by_orderId", (q) => q.eq("orderId", orderId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

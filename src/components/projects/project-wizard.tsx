@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -84,6 +84,15 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
 
   const v = form.watch();
 
+  // Pre-fill the project code from the org's next sequence so the (now required)
+  // field is populated by default — the user accepts it or types their own.
+  useEffect(() => {
+    if (nextProjectNumber && !form.getValues("projectNumber")) {
+      form.setValue("projectNumber", nextProjectNumber);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextProjectNumber]);
+
   const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
       const result = await createProject({ ...data, isTemplate });
@@ -99,6 +108,11 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
 
   const next = async () => {
     const ok = await form.trigger(STEPS[step].fields);
+    // Project code is required (schema allows blank for auto-gen, so enforce here).
+    if (step === 0 && !isTemplate && !form.getValues("projectNumber")?.trim()) {
+      form.setError("projectNumber", { type: "manual", message: "Project code is required." });
+      return;
+    }
     if (ok) setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -145,7 +159,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                 <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
               </Field>
               {!isTemplate && (
-                <Field label="Project code" hint={nextProjectNumber ? `Leave blank to auto-generate (next: ${nextProjectNumber})` : undefined} error={form.formState.errors.projectNumber?.message}>
+                <Field label="Project code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
                   <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
                 </Field>
               )}

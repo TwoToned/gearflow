@@ -23,7 +23,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 0 | App shell & global | sidebar, mobile-nav, user-nav, layouts, top-bar | ✅ |
 | 1 | Dashboard | dashboard, my-work-section | ✅ |
 | 2 | Projects list + create | board, table, view-toggle, wizard, range-calendar | ✅ |
-| 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ☐ |
+| 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ◐ |
 | 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ☐ |
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ☐ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ☐ |

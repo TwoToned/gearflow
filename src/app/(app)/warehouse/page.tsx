@@ -14,7 +14,6 @@ import {
   CheckCircle,
   AlertTriangle,
   ScanBarcode,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -24,6 +23,10 @@ import { batchCloseOut } from "@/server/warehouse-close";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { focusRing } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,9 +127,9 @@ function getProjectUrgency(project: Project): UrgencyGroup {
 }
 
 const urgencyBorder: Record<UrgencyGroup, string> = {
-  overdue: "border-l-[3px] border-l-error",
-  today: "border-l-[3px] border-l-warning",
-  upcoming: "border-l-[3px] border-l-primary",
+  overdue: "border-l-[3px] border-l-t-out",
+  today: "border-l-[3px] border-l-warn",
+  upcoming: "border-l-[3px] border-l-red",
 };
 
 export default function WarehousePage() {
@@ -287,22 +290,22 @@ export default function WarehousePage() {
       <FadeIn>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
-            <h1 className="t-title text-fg">Warehouse</h1>
+            <h1 className="t-title text-ink">Warehouse</h1>
             {grouped.overdue.length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-sm bg-error-subtle px-2 py-0.5 text-[11px] font-semibold text-error">
+              <span className="inline-flex items-center gap-1 rounded-[var(--r)] bg-out-soft px-2 py-0.5 text-[11px] font-semibold text-t-out">
                 <AlertTriangle className="h-3 w-3" />
                 {grouped.overdue.length} overdue
               </span>
             )}
           </div>
-          <p className="t-body text-fg-3">
+          <p className="t-body text-muted">
             {todayFormatted}
             {!isLoading && (
               <>
                 {" — "}
                 {readyToPrep > 0 ? (
                   <>
-                    <span className="font-medium text-fg-2">
+                    <span className="font-medium text-ink-2 tabular-nums">
                       <AnimatedNumber value={readyToPrep} />
                     </span>
                     {" "}
@@ -314,7 +317,7 @@ export default function WarehousePage() {
                 {deployedCount > 0 && (
                   <>
                     {", "}
-                    <span className="font-medium text-fg-2">
+                    <span className="font-medium text-ink-2 tabular-nums">
                       <AnimatedNumber value={deployedCount} />
                     </span>
                     {" "}currently deployed
@@ -329,21 +332,21 @@ export default function WarehousePage() {
       {/* Prominent scanner input — text + camera scan for project lookup. */}
       <FadeIn delay={0.05}>
         <div className="relative max-w-lg">
-          <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4.5 w-4.5 text-fg-3" />
+          <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4.5 w-4.5 text-muted" />
           <AssetTagInput
             placeholder="Scan barcode or search by project name / number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onScan={(scanned) => setSearch(scanned)}
-            className="h-10 pl-10 text-[13.5px]"
+            className="h-11 pl-10 text-[13.5px]"
             autoFocus
           />
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-10 top-2.5 text-fg-4 hover:text-fg-2 transition-colors"
+              className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
             >
-              <span className="text-xs">Clear</span>
+              Clear
             </button>
           )}
         </div>
@@ -352,16 +355,17 @@ export default function WarehousePage() {
       {/* Batch close-out bar */}
       {returnedProjects.length > 0 && (
         <FadeIn delay={0.08}>
-          <div className="flex items-center gap-3 rounded-lg bg-bg-surface p-3 surface-ring">
-            <label className="flex items-center gap-2 text-sm text-fg-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={selectedForClose.size > 0 && selectedForClose.size === returnedProjects.length}
-                ref={(el) => {
-                  if (el) el.indeterminate = selectedForClose.size > 0 && selectedForClose.size < returnedProjects.length;
-                }}
-                onChange={toggleAllReturned}
-                className="rounded border-border"
+          <div className="flex items-center gap-3 rounded-[var(--r)] bg-card p-3 ring-1 ring-line shadow-[var(--sh-card)]">
+            <label className="flex items-center gap-2 text-ui-text text-muted cursor-pointer select-none">
+              <Checkbox
+                checked={
+                  selectedForClose.size === 0
+                    ? false
+                    : selectedForClose.size === returnedProjects.length
+                      ? true
+                      : "indeterminate"
+                }
+                onCheckedChange={toggleAllReturned}
               />
               {selectedForClose.size > 0
                 ? `${selectedForClose.size} of ${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} selected`
@@ -370,12 +374,13 @@ export default function WarehousePage() {
             {selectedForClose.size > 0 && (
               <Button
                 size="sm"
-                variant="destructive"
+                variant="line"
+                className="text-t-out hover:bg-red hover:text-white hover:border-red"
                 onClick={() => batchCloseMutation.mutate(Array.from(selectedForClose))}
                 disabled={batchCloseMutation.isPending}
+                loading={batchCloseMutation.isPending}
               >
-                {batchCloseMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                Close Out {selectedForClose.size} Project{selectedForClose.size !== 1 ? "s" : ""}
+                Close out {selectedForClose.size} project{selectedForClose.size !== 1 ? "s" : ""}
               </Button>
             )}
           </div>
@@ -384,18 +389,17 @@ export default function WarehousePage() {
 
       {/* Project lists grouped by urgency */}
       {isLoading ? (
-        <div className="text-fg-3 text-sm py-8">Loading projects...</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 rounded-[var(--r)]" />
+          ))}
+        </div>
       ) : projects.length === 0 ? (
         <FadeIn>
-          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-            <div className="py-8 text-center text-fg-3">
-              <WarehouseIcon className="mx-auto mb-2 h-8 w-8 opacity-50" />
-              <p>No projects ready for warehouse operations.</p>
-              <p className="text-xs mt-1">
-                Projects will appear here when they reach Confirmed status.
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            title="No projects waiting"
+            description="Projects show up here once they're confirmed and ready to prep."
+          />
         </FadeIn>
       ) : (
         <div className="space-y-8">
@@ -483,7 +487,7 @@ export default function WarehousePage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingAction(null)}>
+            <Button variant="line" onClick={() => setPendingAction(null)}>
               Cancel
             </Button>
             <Button
@@ -496,8 +500,9 @@ export default function WarehousePage() {
                 }
               }}
               disabled={statusMutation.isPending}
+              loading={statusMutation.isPending}
             >
-              {statusMutation.isPending ? "Updating..." : "Confirm"}
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -527,21 +532,19 @@ function ProjectCard({
 }) {
   return (
     <div
-      className={`rounded-lg bg-bg-surface p-4 surface-ring hover:bg-bg-elevated transition-colors ${urgencyBorder[urgency]}`}
+      className={`rounded-[var(--r)] bg-card p-4 ring-1 ring-line shadow-[var(--sh-card)] transition-[transform,box-shadow] motion-safe:hover:-translate-y-px hover:shadow-[var(--sh-hover)] ${urgencyBorder[urgency]}`}
     >
       <div className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {project.status === "RETURNED" && onToggleSelect && (
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={onToggleSelect}
-                className="rounded border-border"
+              <Checkbox
+                checked={!!isSelected}
+                onCheckedChange={onToggleSelect}
                 onClick={(e) => e.stopPropagation()}
               />
             )}
-            <span className="font-mono text-xs text-fg-3">
+            <span className="t-mono text-muted">
               {project.projectNumber}
             </span>
           </div>
@@ -552,22 +555,22 @@ function ProjectCard({
             variant="pill"
           />
         </div>
-        <h3 className="text-base font-semibold">
+        <h3 className="text-card-title font-semibold text-ink">
           <Link
             href={`/warehouse/${project.id}`}
-            className="hover:underline"
+            className={`rounded-[var(--r)] hover:text-red hover:underline ${focusRing}`}
           >
             {project.name}
           </Link>
         </h3>
         {project.client && (
-          <p className="text-sm text-fg-3">
+          <p className="text-ui-text text-muted">
             {project.client.name}
           </p>
         )}
       </div>
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-sm text-fg-3">
+        <div className="flex items-center gap-2 text-ui-text text-muted">
           <CalendarDays className="h-3.5 w-3.5" />
           <span>
             {formatDateRange(
@@ -578,19 +581,23 @@ function ProjectCard({
         </div>
         <div className="flex gap-2">
           <Button
-            variant="outline"
+            variant="line"
             size="sm"
             className="flex-1"
-            render={<Link href={`/warehouse/${project.id}`} />}
+            asChild
           >
-            <WarehouseIcon className="mr-2 h-4 w-4" />
-            Open
+            <Link href={`/warehouse/${project.id}`}>
+              <WarehouseIcon className="mr-2 h-4 w-4" />
+              Open
+            </Link>
           </Button>
           <CanDo resource="warehouse" action="check_out">
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                Actions
-                <ChevronDown className="ml-1 h-3 w-3" />
+              <DropdownMenuTrigger asChild>
+                <Button variant="line" size="sm">
+                  Actions
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {project.status !== "CHECKED_OUT" && project.status !== "ON_SITE" && project.status !== "RETURNED" && project.status !== "COMPLETED" && (
@@ -598,7 +605,7 @@ function ProjectCard({
                     onClick={() => onStatusAction(project, "CHECKED_OUT")}
                   >
                     <PackageOpen className="mr-2 h-4 w-4" />
-                    Mark Deployed
+                    Mark deployed
                   </DropdownMenuItem>
                 )}
                 {(project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
@@ -606,7 +613,7 @@ function ProjectCard({
                     onClick={() => onStatusAction(project, "RETURNED")}
                   >
                     <PackageCheck className="mr-2 h-4 w-4" />
-                    Mark Returned
+                    Mark returned
                   </DropdownMenuItem>
                 )}
                 {(project.status === "RETURNED" || project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
@@ -614,7 +621,7 @@ function ProjectCard({
                     onClick={() => onStatusAction(project, "COMPLETED")}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Mark Completed
+                    Mark completed
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>

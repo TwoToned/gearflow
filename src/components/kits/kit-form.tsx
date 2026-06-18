@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
@@ -29,6 +28,11 @@ import { useActiveOrganization } from "@/lib/auth-client";
 interface KitFormProps {
   initialData?: KitFormValues & { id: string };
 }
+
+// Native <select> styled to match the registry inputs (§9.1 red focus ring,
+// disabled treatment, 16px text to avoid iOS zoom).
+const selectClass =
+  "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45";
 
 export function KitForm({ initialData }: KitFormProps) {
   const router = useRouter();
@@ -97,21 +101,21 @@ export function KitForm({ initialData }: KitFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-6">
-          <FormSection title="Kit Details">
+          <FormSection title="Kit details">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
-              <Input id="name" {...form.register("name")} placeholder="e.g. Audio Kit A" />
+              <Input id="name" {...form.register("name")} aria-invalid={!!form.formState.errors.name} placeholder="e.g. Audio kit A" />
               {form.formState.errors.name && (
-                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="assetTag">Asset Tag *</Label>
-              <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. KIT-AUD-001" />
+              <Label htmlFor="assetTag">Asset tag *</Label>
+              <AssetTagInput id="assetTag" {...form.register("assetTag")} aria-invalid={!!form.formState.errors.assetTag} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. KIT-AUD-001" />
               {form.formState.errors.assetTag && (
-                <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.assetTag.message}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -150,11 +154,11 @@ export function KitForm({ initialData }: KitFormProps) {
               <select
                 id="status"
                 {...form.register("status")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={selectClass}
               >
                 <option value="AVAILABLE">Available</option>
                 <option value="CHECKED_OUT">Deployed</option>
-                <option value="IN_MAINTENANCE">In Maintenance</option>
+                <option value="IN_MAINTENANCE">In maintenance</option>
                 <option value="RETIRED">Retired</option>
                 <option value="INCOMPLETE">Incomplete</option>
               </select>
@@ -164,7 +168,7 @@ export function KitForm({ initialData }: KitFormProps) {
               <select
                 id="condition"
                 {...form.register("condition")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={selectClass}
               >
                 <option value="NEW">New</option>
                 <option value="GOOD">Good</option>
@@ -174,16 +178,16 @@ export function KitForm({ initialData }: KitFormProps) {
               </select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="checkMode">Check Mode</Label>
+              <Label htmlFor="checkMode">Check mode</Label>
               <select
                 id="checkMode"
                 {...form.register("checkMode")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={selectClass}
               >
-                <option value="KIT_LEVEL">Kit Level — check the kit once, contents inherit</option>
-                <option value="PER_ITEM">Per Item — each asset gets its own model checks</option>
+                <option value="KIT_LEVEL">Kit level — check the kit once, contents inherit</option>
+                <option value="PER_ITEM">Per item — each asset gets its own model checks</option>
               </select>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted">
                 {form.watch("checkMode") === "PER_ITEM"
                   ? "Each asset in the kit will go through its own model's check items during warehouse operations."
                   : "The kit is checked once during warehouse operations. All contents inherit the result."}
@@ -191,7 +195,7 @@ export function KitForm({ initialData }: KitFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Case Information">
+          <FormSection title="Case information">
             <div className="space-y-2">
               <Label htmlFor="caseType">Case Type</Label>
               <Input id="caseType" {...form.register("caseType")} placeholder="e.g. Pelican 1650" />
@@ -216,7 +220,7 @@ export function KitForm({ initialData }: KitFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Purchase Information">
+          <FormSection title="Purchase information">
             <div className="space-y-2">
               <Label htmlFor="purchaseDate">Purchase Date</Label>
               <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
@@ -232,7 +236,7 @@ export function KitForm({ initialData }: KitFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Notes & Tags">
+          <FormSection title="Notes & tags">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="description">Description</Label>
               <Textarea
@@ -269,13 +273,12 @@ export function KitForm({ initialData }: KitFormProps) {
           </FormSection>
         </div>
 
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Kit" : "Create Kit"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update kit" : "Create kit"}
           </Button>
         </div>
       </div>

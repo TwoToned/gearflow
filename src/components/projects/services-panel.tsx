@@ -1437,7 +1437,7 @@ function ServiceDialog({
             <h4 className="text-card-title font-semibold text-ink">Pricing</h4>
 
             {/* Charge to Client */}
-            <div className="space-y-3 rounded-md border border-border p-3">
+            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
               <div className="t-overline text-muted">
                 Charge to Client
               </div>
@@ -1476,7 +1476,7 @@ function ServiceDialog({
             </div>
 
             {/* Cost to Business */}
-            <div className="space-y-3 rounded-md border border-border p-3">
+            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
               <div className="t-overline text-muted">
                 Cost to Business
               </div>

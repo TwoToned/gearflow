@@ -130,7 +130,6 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   TestTagRecord: generic(api.testTagRecords),
   SubTestRecord: generic(api.subTestRecords),
   CheckRecord: generic(api.checkRecords),
-  AssetBulkChild: generic(api.assetBulkChildren),
   AssetScanLog: generic(api.assetScanLogs),
   CrewMember: generic(api.crewMembers),
   FileUpload: generic(api.fileUploads),

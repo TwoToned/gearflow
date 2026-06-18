@@ -508,15 +508,12 @@ export async function adminDeleteUser(userId: string) {
       prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
       prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
       convexForDelete.query(api.assetScanLogs.listByScannedById, { scannedById: userId }),
-      prisma.testTagRecord.findMany({ where: { testedById: userId }, select: { id: true } }),
+      convexForDelete.query(api.testTagRecords.listByTestedById, { testedById: userId }),
     ]);
   // SubTestRecords cascade-delete when their TestTagRecord is removed; capture
   // them so their Convex mirrors are removed too.
   const subTestRecordsToRemove = testTagRecordsToRemove.length
-    ? await prisma.subTestRecord.findMany({
-        where: { testTagRecordId: { in: testTagRecordsToRemove.map((r) => r.id) } },
-        select: { id: true },
-      })
+    ? await convexForDelete.query(api.subTestRecords.listByRecordIds, { recordIds: testTagRecordsToRemove.map((r) => r.id) })
     : [];
 
   await prisma.$transaction(async (tx) => {

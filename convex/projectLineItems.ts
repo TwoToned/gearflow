@@ -65,6 +65,30 @@ export const listByIds = query({
   },
 });
 
+/**
+ * Line items for a fixed set of project ids (single round trip). Used by the
+ * warehouse-display dashboard to count items per dispatch/return/prep project
+ * without scanning the whole org's line-item table on a public endpoint — only
+ * the handful of projects the dashboard renders are queried, each via the
+ * `by_projectId` index. Org-scoped: caller passes the org id so the service /
+ * user token is authorized, and every returned row is its own project's.
+ */
+export const listByProjectIds = query({
+  args: { orgId: v.string(), projectIds: v.array(v.string()) },
+  handler: async (ctx, { orgId, projectIds }) => {
+    await requireOrgRead(ctx, orgId);
+    const out = [];
+    for (const projectId of projectIds) {
+      const rows = await ctx.db
+        .query("projectLineItems")
+        .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+        .collect();
+      for (const r of rows) out.push(r);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

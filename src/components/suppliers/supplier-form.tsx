@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
@@ -65,32 +64,32 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-6">
-          <FormSection title="Supplier Details">
+          <FormSection title="Supplier details">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
-              <Input id="name" {...form.register("name")} placeholder="e.g. Sennheiser Australia" />
+              <Input id="name" {...form.register("name")} placeholder="e.g. Sennheiser Australia" aria-invalid={!!form.formState.errors.name} />
               {form.formState.errors.name && (
-                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="accountNumber">Account Number</Label>
+              <Label htmlFor="accountNumber">Account number</Label>
               <Input id="accountNumber" {...form.register("accountNumber")} placeholder="Your account # with this supplier" />
             </div>
           </FormSection>
 
-          <FormSection title="Contact Information">
+          <FormSection title="Contact information">
             <div className="space-y-2">
-              <Label htmlFor="contactName">Contact Name</Label>
+              <Label htmlFor="contactName">Contact name</Label>
               <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" />
+              <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" aria-invalid={!!form.formState.errors.email} />
               {form.formState.errors.email && (
-                <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
+                <p className="text-caption text-t-out">{form.formState.errors.email.message}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -132,13 +131,13 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Terms & Lead Time">
+          <FormSection title="Terms & lead time">
             <div className="space-y-2">
-              <Label htmlFor="paymentTerms">Payment Terms</Label>
+              <Label htmlFor="paymentTerms">Payment terms</Label>
               <Input id="paymentTerms" {...form.register("paymentTerms")} placeholder="e.g. Net 30, COD, Prepay" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="defaultLeadTime">Default Lead Time</Label>
+              <Label htmlFor="defaultLeadTime">Default lead time</Label>
               <Input id="defaultLeadTime" {...form.register("defaultLeadTime")} placeholder="e.g. 3-5 business days" />
             </div>
           </FormSection>
@@ -166,13 +165,12 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
           </FormSection>
         </div>
 
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Supplier" : "Create Supplier"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update supplier" : "Create supplier"}
           </Button>
         </div>
       </div>

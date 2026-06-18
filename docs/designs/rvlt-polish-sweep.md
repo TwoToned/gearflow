@@ -28,7 +28,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ✅ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ✅ |
 | 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ✅ |
-| 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ◐ |
+| 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ✅ |
 | 9 | Locations | list/detail/new/edit | ☐ |
 | 10 | Maintenance | list/detail/new/edit | ☐ |
 | 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ☐ |
@@ -218,6 +218,63 @@ operator scan surface:
 tsc clean (0 warehouse+check errors), eslint clean on touched files (only the
 pre-existing `Container` unused-import + `react-hooks/*` ref/exhaustive
 warnings). 21/21 warehouse unit tests pass.
+
+### Chunk 8 — Clients & Suppliers (polished, pending review)
+Swept all 11 surfaces (clients list/detail/new/edit, client-table/client-form/
+quick-create-client; suppliers list/detail/new/edit, orders/new, supplier-table/
+supplier-form). All scope files type-errored against the refreshed registry before
+(24 tsc errors in scope → 0). Functionality untouched: markup/className/label +
+type-level registry swaps + additive auth gates/error states only.
+
+Registry API repairs: `Badge variant=default/destructive/secondary` → status-only
+`Badge status="ok"/"overbooked"/"neutral"` (active→ok, archived→overbooked,
+tag/type pills→neutral); `Button variant="outline" + render=` → `variant="line" +
+asChild`; `EmptyState` old `preset/heading/description` API → `title/description`
+(old props were silently ignored → no empty-state copy rendered before).
+
+RVLT polish: legacy `text-fg*`/`bg-bg-surface`/`surface-ring`/`text-destructive`/
+`font-mono`/`text-sm`/`text-xs` → `ink`/`muted`/`ink-2`, `bg-card border border-line
+shadow-[var(--sh-card)]`, `t-mono`/`t-data` (mono on order #/PO #/asset tag/account #,
+tabular-nums on counts/qty/money/discount), `text-caption text-t-out` form errors +
+`aria-invalid`. Status filter dots (client-table type filter) derived from
+`getStatusColor("clientType", …).dot` (was hardcoded bg-blue-500/amber-500/green-500).
+Supplier-detail asset-status `Badge variant=outline` → `StatusIndicator category="asset"`
+pill (proper status-colors mapping). §9.1 `focusRing` on all hand-built links (table
+name links, breadcrumb links, contact mailto/tel/website, project links, recent-project
+rows); contact links → `text-link` (blue, links-never-red). Forms: single outer card
+preserved (FormPageLayout pattern); native selects → registry-style `min-h-11
+text-[16px]` red double-ring controls (iOS-zoom idiom); `Loader2` spinners → Button
+`loading` prop; footers right-aligned line→primary.
+
+§8 states: auth gates added — clients new (`client.create`), clients/[id]/edit
+(`client.update`, hoisted above loading/not-found), suppliers new + orders/new
+(`supplier.create` — verified `createSupplier`/`createSupplierOrder` both require
+`requirePermission("supplier","create")`), suppliers/[id]/edit (`supplier.update`,
+hoisted). List + read-detail pages were already gated (`client`/`supplier` `read`).
+Bare "not found" → §8 left-edge `border-l-t-out` error notices (clients + suppliers
+detail + both edit pages). Hand-built `ChevronRight` breadcrumbs on suppliers
+new/edit/orders-new → registry `Breadcrumb` component (matches clients).
+
+§5.2 sentence case across page titles, section/field labels, button labels, dialog
+titles, and the client-type label MAP ("Production Co./Production Company" →
+"Production company"; "New Client/Supplier/Order", "Purchase Orders", "Asset Tag",
+"Subhire Line Items", "Account Details", "Payment Terms", "Lead Time", "Contact
+Name/Email", "Billing/Shipping Address", "Default Discount", "Recent Projects/Orders").
+
+Danger buttons (§1/§3.7): client Archive = reversible → tinted (`text-t-out
+hover:bg-out-soft`); supplier Delete = permanent → escalates to solid red
+(`hover:bg-red hover:text-white`, the §1 white-on-red exception).
+
+No new status-colors category needed (clientType/supplierOrder/project/asset already
+existed). Pre-existing eslint warnings left as-is (unused `DollarSign`/`formatCurrency`
+in clients/[id], unused `MapPin` in suppliers/[id], react-hooks `form.watch`
+incompatible-library on both forms — all predate this chunk). DEFERRED (recurring
+final-pass items, not fixed per-chunk): detail-page hand-built sub-tables (projects/
+orders/assets/subhires) lack mobile card lists + left-edge red row hover; the §8
+not-found notices are simple left-edge bars.
+
+tsc clean (0 clients+suppliers errors), eslint clean on touched files (only the
+pre-existing warnings above).
 
 ## Learned standard patterns (from chunk reviews — apply to ALL remaining chunks)
 - **Auth-gate every page** (§8): create→`RequirePermission resource action="create"`, edit→`action="update"`,

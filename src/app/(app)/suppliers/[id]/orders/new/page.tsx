@@ -7,21 +7,37 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supplierOrderSchema, type SupplierOrderFormValues } from "@/lib/validations/supplier-order";
 import { createSupplierOrder } from "@/server/supplier-orders";
 import { getSupplierById } from "@/server/suppliers";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 export default function NewSupplierOrderPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="supplier" action="create">
+      <NewSupplierOrderContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: supplierId } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -57,16 +73,24 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
   return (
     <FadeIn>
       <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-          <Link href="/suppliers" className="hover:text-fg transition-colors">Suppliers</Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link href={`/suppliers/${supplierId}`} className="hover:text-fg transition-colors">{supplier?.name || "..."}</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-fg">New Order</span>
-        </div>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/suppliers" />}>Suppliers</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/suppliers/${supplierId}`} />}>{supplier?.name || "..."}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>New order</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">New Order</h1>
-          <p className="t-body text-fg-3">
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New order</h1>
+          <p className="mt-1 text-ui-text text-muted">
             Create a purchase order for {supplier?.name || "..."}
           </p>
         </div>
@@ -74,14 +98,14 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
         <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
           <input type="hidden" {...form.register("supplierId")} />
 
-          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
             <div className="space-y-6">
-              <FormSection title="Order Details">
+              <FormSection title="Order details">
                 <div className="space-y-2">
-                  <Label htmlFor="orderNumber">Order / PO Number *</Label>
-                  <Input id="orderNumber" {...form.register("orderNumber")} placeholder="e.g. PO-2024-001" />
+                  <Label htmlFor="orderNumber">Order / PO number *</Label>
+                  <Input id="orderNumber" {...form.register("orderNumber")} placeholder="e.g. PO-2024-001" aria-invalid={!!form.formState.errors.orderNumber} />
                   {form.formState.errors.orderNumber && (
-                    <p className="text-xs text-destructive">{form.formState.errors.orderNumber.message}</p>
+                    <p className="text-caption text-t-out">{form.formState.errors.orderNumber.message}</p>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -89,7 +113,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
                   <select
                     id="type"
                     {...form.register("type")}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <option value="PURCHASE">Purchase</option>
                     <option value="SUBHIRE">Subhire</option>
@@ -103,7 +127,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
                   <select
                     id="status"
                     {...form.register("status")}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <option value="DRAFT">Draft</option>
                     <option value="ORDERED">Ordered</option>
@@ -113,11 +137,11 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="orderDate">Order Date</Label>
+                  <Label htmlFor="orderDate">Order date</Label>
                   <Input id="orderDate" type="date" {...form.register("orderDate")} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expectedDate">Expected Date</Label>
+                  <Label htmlFor="expectedDate">Expected date</Label>
                   <Input id="expectedDate" type="date" {...form.register("expectedDate")} />
                 </div>
               </FormSection>
@@ -129,13 +153,12 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
               </FormSection>
             </div>
 
-            <div className="mt-6 flex gap-3 border-t border-border pt-4">
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Order
-              </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+            <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+              <Button type="button" variant="line" onClick={() => router.back()}>
                 Cancel
+              </Button>
+              <Button type="submit" loading={mutation.isPending}>
+                Create order
               </Button>
             </div>
           </div>

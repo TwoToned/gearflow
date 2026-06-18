@@ -13,8 +13,9 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { Badge } from "@/components/ui/badge";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeIn } from "@/components/ui/motion";
+import { cn, focusRing } from "@/lib/utils";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,22 +89,24 @@ export default function TemplatesPage() {
     <RequirePermission resource="project" action="read">
       <FadeIn>
       <div className="space-y-4">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="t-title text-fg">Templates</h1>
-            <p className="text-fg-3">
+            <h1 className="t-title text-ink">Templates</h1>
+            <p className="text-ui-text text-muted">
               Reusable project templates with pre-configured line items.
             </p>
           </div>
           <CanDo resource="project" action="create">
-            <Button render={<Link href="/projects/templates/new" />}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Template
+            <Button asChild>
+              <Link href="/projects/templates/new">
+                <Plus className="h-4 w-4" />
+                New template
+              </Link>
             </Button>
           </CanDo>
         </div>
 
-        <div className="rounded-lg bg-bg-surface surface-ring">
+        <div className="rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -117,16 +120,17 @@ export default function TemplatesPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-fg-3 py-8">
-                      Loading...
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={6} className="py-0">
+                      <TableSkeleton rows={4} cols={6} />
                     </TableCell>
                   </TableRow>
                 ) : !templates?.length ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-fg-3 py-8">
-                      <BookTemplate className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                      No templates yet. Save a project as a template or create one from scratch.
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={6} className="text-center py-10">
+                      <BookTemplate className="mx-auto h-8 w-8 mb-2 text-muted" />
+                      <p className="text-ui-text font-medium text-ink-2">No templates yet</p>
+                      <p className="mt-1 text-caption text-muted">Save a project as a template, or build one from scratch.</p>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -135,32 +139,32 @@ export default function TemplatesPage() {
                       <TableCell>
                         <Link
                           href={`/projects/${t.id}`}
-                          className="font-mono text-sm hover:underline"
+                          className={cn("t-mono text-muted hover:text-link hover:underline rounded-sm", focusRing)}
                         >
                           {t.projectNumber}
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Link href={`/projects/${t.id}`} className="font-medium hover:underline">
+                        <Link href={`/projects/${t.id}`} className={cn("font-medium text-ink-2 hover:text-link hover:underline rounded-sm", focusRing)}>
                           {t.name}
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
+                        <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">
                           {typeLabels[t.type] || t.type}
-                        </Badge>
+                        </span>
                       </TableCell>
-                      <TableCell className="text-fg-3">
+                      <TableCell className="text-muted">
                         {t.client?.name || "—"}
                       </TableCell>
-                      <TableCell className="text-center text-fg-3">
+                      <TableCell className="text-center text-muted tabular-nums">
                         {t._count?.lineItems ?? 0}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <CanDo resource="project" action="create">
                             <Button
-                              variant="outline"
+                              variant="line"
                               size="sm"
                               onClick={() => {
                                 setCreateFrom(t);
@@ -168,7 +172,7 @@ export default function TemplatesPage() {
                                 setProjectName(`${t.name}`);
                               }}
                             >
-                              <Copy className="mr-1 h-3.5 w-3.5" />
+                              <Copy className="h-3.5 w-3.5" />
                               Use
                             </Button>
                           </CanDo>
@@ -176,17 +180,21 @@ export default function TemplatesPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
-                              render={<Link href={`/projects/${t.id}/edit`} />}
+                              className="size-8"
+                              title="Edit template"
+                              asChild
                             >
-                              <BookTemplate className="h-3.5 w-3.5" />
+                              <Link href={`/projects/${t.id}/edit`}>
+                                <BookTemplate className="h-3.5 w-3.5" />
+                              </Link>
                             </Button>
                           </CanDo>
                           <CanDo resource="project" action="delete">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-destructive"
+                              className="size-8 text-t-out"
+                              title="Delete template"
                               onClick={() =>
                                 setDeleteTarget({ id: t.id, name: t.name })
                               }
@@ -209,7 +217,7 @@ export default function TemplatesPage() {
       <Dialog open={!!createFrom} onOpenChange={(open) => !open && setCreateFrom(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Project from Template</DialogTitle>
+            <DialogTitle>Create project from template</DialogTitle>
             <DialogDescription>
               Create a new project using &quot;{createFrom?.name}&quot; as a starting point.
               All line items will be copied. Dates will be cleared.
@@ -244,12 +252,12 @@ export default function TemplatesPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateFrom(null)}>
+              <Button type="button" variant="line" onClick={() => setCreateFrom(null)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={createMut.isPending}>
-                {createMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Project
+                {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create project
               </Button>
             </DialogFooter>
           </form>

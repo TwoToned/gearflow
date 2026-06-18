@@ -37,7 +37,11 @@ export default function EditProjectPage({
   if (isLoading)
     return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!project)
-    return <div className="text-fg-3">Project not found.</div>;
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Project not found.</p>
+      </div>
+    );
 
   const initialData: ProjectFormValues & { id: string } = {
     id: project.id,
@@ -89,7 +93,7 @@ export default function EditProjectPage({
 
   return (
     <RequirePermission resource="project" action="update">
-    <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
+    <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-ui-text text-muted">You don&apos;t have permission to perform this action.</div>}>
       <FadeIn>
         <div className="mx-auto max-w-3xl space-y-4">
           <Breadcrumb>
@@ -108,9 +112,9 @@ export default function EditProjectPage({
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-fg">Edit Project</h1>
-            <p className="t-body text-fg-3">
-              {project.projectNumber} &middot; {project.name}
+            <h1 className="t-title text-ink">Edit project</h1>
+            <p className="t-body text-muted">
+              <span className="t-mono">{project.projectNumber}</span> &middot; {project.name}
             </p>
           </div>
           <ProjectForm initialData={initialData} initialManagerIds={initialManagerIds} />

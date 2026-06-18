@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { getLocation, deleteLocation, updateLocationNotes } from "@/server/locations";
 import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatusLabels, locationTypeLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -76,7 +77,17 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (!location) {
-    return <div className="text-fg-3 py-12 text-center">Location not found.</div>;
+    return (
+      <RequirePermission resource="location" action="read">
+        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Location not found.</p>
+          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+          <Button variant="line" size="sm" className="mt-4" asChild>
+            <Link href="/locations">Back to locations</Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
@@ -89,45 +100,47 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
           {/* ── Header (full width) ────────────────────────────────── */}
           <div>
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/locations" className="hover:text-fg transition-colors">
+            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+              <Link href="/locations" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Locations
               </Link>
               {location.parent && (
                 <>
                   <ChevronRight className="h-3.5 w-3.5" />
-                  <Link href={`/locations/${location.parent.id}`} className="hover:text-fg transition-colors">
+                  <Link href={`/locations/${location.parent.id}`} className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                     {location.parent.name}
                   </Link>
                 </>
               )}
               <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg font-medium truncate">{location.name}</span>
+              <span className="truncate font-medium text-ink">{location.name}</span>
             </nav>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{location.name}</h1>
+                  <h1 className="t-title text-ink">{location.name}</h1>
                   <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
                   {location.isDefault && (
-                    <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                    <Star className="h-4 w-4 fill-warn text-warn" />
                   )}
                 </div>
-                <p className="t-body text-fg-3">
+                <p className="t-body text-muted">
                   {location.address || "No address"}
                   {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
                 </p>
               </div>
               <CanDo resource="location" action="update">
                 <div className="flex gap-2">
-                  <Button variant="outline" render={<Link href={`/locations/${id}/edit`} />}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" asChild>
+                    <Link href={`/locations/${id}/edit`}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Link>
                   </Button>
                   <Button
-                    variant="outline"
-                    className="text-destructive"
+                    variant="line"
+                    className="text-t-out hover:border-red hover:bg-red hover:text-white"
                     onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -168,14 +181,14 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
                 <TabsContent value="assets" className="mt-4">
                   {(location.assets?.length || 0) === 0 && (location.bulkAssets?.length || 0) === 0 && (location.kits?.length || 0) === 0 ? (
-                    <EmptyState preset="assets" heading="No assets here" description="Assets checked in to this location will appear here." />
+                    <EmptyState title="No assets here" description="Assets checked in to this location will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Asset Tag</TableHead>
-                            <TableHead>Name / Model</TableHead>
+                            <TableHead>Asset tag</TableHead>
+                            <TableHead>Name / model</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Status</TableHead>
                           </TableRow>
@@ -184,48 +197,48 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                           {location.assets?.map((asset: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => (
                             <TableRow key={asset.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${asset.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {asset.assetTag}
                                 </Link>
                               </TableCell>
                               <TableCell>{asset.model?.name || "\u2014"}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Serialized</Badge>
+                                <Badge status="neutral">Serialised</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{assetStatusLabels[asset.status] || formatLabel(asset.status)}</Badge>
+                                <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
                           {location.bulkAssets?.map((bulk: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => (
                             <TableRow key={bulk.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${bulk.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${bulk.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {bulk.assetTag}
                                 </Link>
                               </TableCell>
                               <TableCell>{bulk.model?.name || "\u2014"}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Bulk</Badge>
+                                <Badge status="neutral">Bulk</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{bulkAssetStatusLabels[bulk.status] || formatLabel(bulk.status)}</Badge>
+                                <StatusIndicator category="bulkAsset" value={bulk.status} label={bulkAssetStatusLabels[bulk.status] || formatLabel(bulk.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
                           {location.kits?.map((kit: { id: string; assetTag: string; name: string; status: string }) => (
                             <TableRow key={kit.id}>
                               <TableCell>
-                                <Link href={`/kits/${kit.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/kits/${kit.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {kit.assetTag}
                                 </Link>
                               </TableCell>
                               <TableCell>{kit.name}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Kit</Badge>
+                                <Badge status="neutral">Kit</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{kitStatusLabels[kit.status] || formatLabel(kit.status)}</Badge>
+                                <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
@@ -237,9 +250,9 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
                 <TabsContent value="projects" className="mt-4">
                   {(location.projects?.length || 0) === 0 ? (
-                    <EmptyState preset="projects" heading="No projects here" description="Projects using this as a venue or delivery address will appear here." />
+                    <EmptyState title="No projects here" description="Projects using this as a venue or delivery address will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -254,16 +267,16 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                           {location.projects?.map((project: { id: string; projectNumber: string; name: string; status: string; client?: { name?: string } | null; createdAt: string | Date }) => (
                             <TableRow key={project.id}>
                               <TableCell>
-                                <Link href={`/projects/${project.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/projects/${project.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {project.projectNumber}
                                 </Link>
                               </TableCell>
                               <TableCell>{project.name}</TableCell>
-                              <TableCell className="text-fg-3">{project.client?.name || "\u2014"}</TableCell>
+                              <TableCell className="text-muted">{project.client?.name || "\u2014"}</TableCell>
                               <TableCell>
                                 <StatusIndicator category="project" value={project.status} label={projectStatusLabels[project.status] || formatLabel(project.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-fg-3">
+                              <TableCell className="text-muted">
                                 {new Date(project.createdAt).toLocaleDateString()}
                               </TableCell>
                             </TableRow>
@@ -306,40 +319,40 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
             <DetailSidebar>
-                {/* Location Info */}
-                <SidebarSection title="Location Info">
-                  <div className="space-y-1.5 text-sm">
+                {/* Location info */}
+                <SidebarSection title="Location info">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Type</span>
+                      <span className="text-muted">Type</span>
                       <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
                     </div>
                     {location.isDefault && (
                       <div className="flex justify-between">
-                        <span className="text-fg-3">Default</span>
+                        <span className="text-muted">Default</span>
                         <div className="flex items-center gap-1">
-                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                          <span className="font-medium">Yes</span>
+                          <Star className="h-3.5 w-3.5 fill-warn text-warn" />
+                          <span className="font-medium text-ink">Yes</span>
                         </div>
                       </div>
                     )}
                     {location.address && (
                       <div className="flex justify-between">
-                        <span className="text-fg-3">Address</span>
-                        <span className="font-medium text-right max-w-[200px] truncate">{location.address}</span>
+                        <span className="text-muted">Address</span>
+                        <span className="max-w-[200px] truncate text-right font-medium text-ink">{location.address}</span>
                       </div>
                     )}
                   </div>
                 </SidebarSection>
 
-                {/* Parent Location */}
+                {/* Parent location */}
                 {location.parent && (
-                  <SidebarSection title="Parent Location">
+                  <SidebarSection title="Parent location">
                     <Link
                       href={`/locations/${location.parent.id}`}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
+                      className={cn("flex items-center gap-2 rounded-[var(--r)] px-2 py-1.5 text-ui-text transition-colors hover:bg-elev", focusRing)}
                     >
-                      <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                      <span className="font-medium">{location.parent.name}</span>
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-muted" />
+                      <span className="font-medium text-ink">{location.parent.name}</span>
                     </Link>
                   </SidebarSection>
                 )}
@@ -352,13 +365,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                         <Link
                           key={child.id}
                           href={`/locations/${child.id}`}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
+                          className={cn("flex items-center justify-between rounded-[var(--r)] px-2 py-1.5 text-ui-text transition-colors hover:bg-elev", focusRing)}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                            <span className="truncate">{child.name}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <MapPin className="h-3.5 w-3.5 shrink-0 text-muted" />
+                            <span className="truncate text-ink">{child.name}</span>
                           </div>
-                          <span className="text-xs text-fg-3 shrink-0">
+                          <span className="shrink-0 text-caption text-muted tabular-nums">
                             {(child._count?.assets || 0) + (child._count?.bulkAssets || 0)} assets
                           </span>
                         </Link>
@@ -367,36 +380,36 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   </SidebarSection>
                 )}
 
-                {/* Asset Counts */}
+                {/* Asset counts */}
                 <SidebarSection title="Inventory">
-                  <div className="space-y-1.5 text-sm">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Package className="h-3.5 w-3.5" />
-                        <span>Serialized</span>
+                        <span>Serialised</span>
                       </div>
-                      <span className="font-medium">{location._count?.assets || 0}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.assets || 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Boxes className="h-3.5 w-3.5" />
                         <span>Bulk</span>
                       </div>
-                      <span className="font-medium">{location._count?.bulkAssets || 0}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.bulkAssets || 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Container className="h-3.5 w-3.5" />
                         <span>Kits</span>
                       </div>
-                      <span className="font-medium">{location._count?.kits || 0}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.kits || 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <FolderOpen className="h-3.5 w-3.5" />
                         <span>Projects</span>
                       </div>
-                      <span className="font-medium">{location._count?.projects || 0}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.projects || 0}</span>
                     </div>
                   </div>
                 </SidebarSection>

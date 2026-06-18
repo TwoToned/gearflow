@@ -27,6 +27,13 @@ This instance runs in **single-org mode**: exactly one `Organization` row exists
 - Session stored in PostgreSQL `Session` table
 - Passkey RP ID configurable via `PASSKEY_RP_ID` env var (defaults to `localhost`)
 
+## Auth Client Base URL & CORS (`src/lib/auth-client.ts`)
+The browser auth client resolves its `baseURL` from `window.location.origin` — **never** from `NEXT_PUBLIC_APP_URL`. The `/api/auth` handler is co-located with the app, so auth calls are always same-origin; there is no CORS preflight and no `Access-Control-Allow-Origin` requirement.
+
+**Why not `NEXT_PUBLIC_APP_URL`?** `NEXT_PUBLIC_*` vars are *inlined into the client bundle at `next build`* (baked via the Dockerfile `ARG` + the `vars.NEXT_PUBLIC_APP_URL` GitHub Actions variable in `build-image.yml`). A baked URL keeps pointing at the *old* domain after a move, even after you update Coolify's runtime env — the compiled JS can't change. That caused a `get-session` CORS failure when the app moved to `flow.rvlt.app` while the bundle still called `gearflow.prod.rvlt.app`. Using `window.location.origin` means **moving domains never requires a rebuild**; only SSR (no `window`) falls back to `NEXT_PUBLIC_APP_URL`.
+
+Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/auth.ts` reads `env.NEXT_PUBLIC_APP_URL` + `env.SSO_TRUSTED_ORIGINS`), and these are read at *runtime*, so a Coolify env change is enough for the server. After any domain move, set runtime `BETTER_AUTH_URL` + `NEXT_PUBLIC_APP_URL` (Coolify) and `CONVEX_AUTH_ISSUER` + `CONVEX_AUTH_JWKS_URL` (Convex deployment) to the new origin.
+
 ## Middleware (`src/middleware.ts`)
 - Checks cookies: `better-auth.session_token` or `__Secure-better-auth.session_token` (HTTPS)
 - Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`

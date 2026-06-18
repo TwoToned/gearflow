@@ -23,7 +23,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 0 | App shell & global | sidebar, mobile-nav, user-nav, layouts, top-bar | ✅ |
 | 1 | Dashboard | dashboard, my-work-section | ✅ |
 | 2 | Projects list + create | board, table, view-toggle, wizard, range-calendar | ✅ |
-| 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ◐ |
+| 3 | Projects detail + tabs | projects/[id], equipment-tab, crew/services/costs/tasks/managers panels, runsheet, edit, templates | ✅ |
 | 4 | Assets | registry list/detail/new/edit, models (+[id]/new/edit), categories, asset/model-checks tabs | ◐ |
 | 5 | Kits | list/detail/new/edit, kit-checks tab | ☐ |
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ☐ |
@@ -40,6 +40,32 @@ independent Claude + Codex review per chunk; fix findings; commit.
 
 ## Review log
 (per-chunk: Claude verdict + Codex verdict + fixes applied)
+
+### Chunk 3 — Projects detail (review fixes applied)
+Applied the merged Claude + Codex design-review fix list for the detail chunk:
+- New `service` StatusCategory in `status-colors.ts` (ServiceStatus enum →
+  intents); services-panel + runsheet service indicators rewired to
+  `category="service"` with the raw uppercase value (stopped lowercasing),
+  SERVICE_STATUS_LABELS kept as the label source. Crew-assignment indicators
+  (ca.status) stay `category="assignment"` — that's AssignmentStatus, correct.
+- Hand-rolled crew avatars (services-panel crew stack + combobox icon, tasks-panel
+  assignee) replaced with `PersonAvatar`; removed sub-floor text-[8/9/10px] initials,
+  bumped the +N overflow chip off the 9px floor.
+- Crew-panel conflict/warning notices → surface bg + 3px left-edge bar (DESIGN
+  Notices/Alerts) instead of full soft tint.
+- Runsheet wrapped in `RequirePermission resource="project" action="read"`;
+  sticky header backdrop-blur → solid `bg-paper`.
+- §5.2 sentence-case sweep across page/templates/crew/equipment/services/runsheet/
+  managers literals; equipment-tab service-type chip mapped through SERVICE_TYPE_LABELS.
+- Type ramp: off-ramp text-sm/text-xs → text-ui-text/text-caption in services-panel,
+  tasks-panel, runsheet.
+- Task priority no longer colour-only (§3.3): dot aria-label/title + visible High/Low
+  caption (Normal = default, dot only).
+- Templates page: PageHeader component + left-edge red query-error notice w/ retry.
+- project-managers-panel remove button gains `disabledState`.
+Left as-is per review judgment: project-costs-panel MarginBar threshold colours
+(threshold viz), org role-color chips (data-driven accent, out of rubric).
+tsc + eslint clean on touched files (only pre-existing form.watch/unused-import warnings).
 
 ### Chunk 4 — Assets (polished, pending review)
 Swept all 14 surfaces (registry list/detail/new/edit, models list/detail/new/edit,

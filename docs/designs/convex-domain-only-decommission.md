@@ -6,10 +6,11 @@
 > (see [`FEATUREDOCS/54`](../../FEATUREDOCS/54-convex-data-layer.md) and
 > [`convex-hybrid-migration.md`](./convex-hybrid-migration.md)).
 
-> **Status: Phase A IN PROGRESS (2026-06-16).** Everything below Phase 0 ("Done")
-> is shipped and stable. Phase A read-rewiring underway — leaf surfaces converting
-> one PR at a time (test-tag reports, crew cluster, supplier orders, …). Phases
-> B/C not started. Tracked as tasks #4 (Phase A), #5 (Phase B), #6 (Phase C).
+> **Status: Phase A IN PROGRESS (2026-06-16).** Leaf surfaces converting one PR at
+> a time (test-tag reports, crew cluster, supplier orders done); the **keystone
+> line-item-tree reconstruction primitive is built + validated** (wiring its 4
+> consumers is the next step — see the Keystone section). Phases B/C not started.
+> Tracked as tasks #4 (Phase A), #5 (Phase B), #6 (Phase C).
 
 ---
 
@@ -119,6 +120,41 @@ Cross-cutting reminder: the PDF pipeline has 5 independent `DocumentLineItem`
 consumers (see CLAUDE.md). Any data-shape change needs the full-pipeline
 integration test, not just plugin-level tests.
 
+#### Keystone progress — reconstruction primitive DONE (reader built, wiring next)
+
+`src/lib/project-line-item-tree-read.ts` is the pure tree-reconstruction core
+(`indexChildren` / `indexUnits` / `reconstructScope` / `reconstructCategories`),
+fixture-unit-tested (`*.test.ts`) and validated by a structural golden-diff vs
+Prisma `getProject` on the seeded project (grouped tree byte-matches). It takes
+flat Convex rows (caller maps Convex docs → rows) and rebuilds the exact nested
+shape; the existing attach helpers then decorate it. **Semantics nailed down
+(load-bearing for the wiring):**
+
+- **Dual projection.** A `lineItems` array is the *relation* for its scope, not
+  just parents: `project.lineItems` = ALL non-CANCELLED items (parents AND
+  children); `group.lineItems` = `groupId === g.id`; `category.lineItems` =
+  `categoryId === c.id AND groupId == null`. A child appears BOTH as a scope entry
+  and nested under its parent. Consumers split via `isKitChild`/`parentLineItemId`
+  (structureLineItems, build-document-data `topLevelItems`).
+- **Include depth is explicit.** getProject top-level nests `childLineItems` 2
+  deep, grouped 1 deep; build-document-data per its own include. Past the depth the
+  `childLineItems` key is ABSENT (not `[]`).
+- **Tie-order is non-deterministic.** `sortOrder` is per-scope sequential, so the
+  flat top-level `project.lineItems` has global ties → Postgres returns them in
+  physical order, unreplicable from Convex. The GROUPED tree (what the editor
+  renders) has distinct within-scope sortOrder and matches exactly. Wiring should
+  not depend on flat top-level tie-order (golden-diff the grouped tree exactly +
+  the flat list as a set).
+
+**Wiring follow-ups (each its own PR, golden-diffed on an enriched seed with
+kits/children/units/accessories/CANCELLED):** getProject → getProjectForWarehouse
+→ getProjectPullSheet → build-document-data (PDF, with the full-pipeline
+integration test). Each needs a full-row Convex→Prisma mapper (date fields →
+Date, Decimal → number across the ~50-field ProjectLineItem; units carry
+`asset`/`bulkAsset` as `{id,assetTag}` selects) + the existing attach passes
+(attachLineItemTree → attachKitTree → attachAssetBulkAssetTree [+ check-counts for
+warehouse]).
+
 ### New read helpers needed (priority by MOVE-read frequency)
 
 1. `projectLineItem-read.ts` (+ `projectLineItemUnit`) — biggest
@@ -146,25 +182,6 @@ integration test, not just plugin-level tests.
    (`org-export`, `test-tag-reports`), `document-templates`, stocktake lists.
 2. Mid: crew cluster, test-tag cluster, sub-hire detail/list, supplier-orders.
 3. Keystone: line-item-tree reader → getProject → warehouse → pull-sheet → PDF.
-
-### Phase A progress log
-
-- **`test-tag-reports.ts` — DONE (PR #194).**
-- **Crew cluster — DONE (stacked PRs #195 dashboard → #196 time → #197 assignments).**
-  Helpers `crew-scheduling-read.ts` + `users-read.ts`; org-scoped `crewShifts.listByOrg`
-  / `crewCertifications.listByOrg`. Deferred: `getCrewMembersForAssignment`. Crew
-  deploy gate: backfill crew + crew-scheduling in prod before merge.
-- **`supplier-orders.ts` — DONE.** `getSupplierOrders` + `getSupplierOrderById` →
-  Convex via `supplier-order-read.ts`; new `supplierOrderItems.listByOrderIds`.
-  Independent PR off main. supplierOrder/item backfilled in prod with the sub-hire
-  family (gate already satisfied).
-
-**Env note for validators.** The dev worktree can run live Convex reads/backfills
-against the shared dev deployment by prefixing `BETTER_AUTH_URL="https://preview.lab.rvlt.app"`
-(issuer match; local secret matches the dev JWKS). Seed (`npm run seed` +
-`seed:test-tag` / `seed:crew` / `seed:supplier-orders`), then
-`BETTER_AUTH_URL=… npx tsx … scripts/convex-backfill-all.ts`, then parity. The
-shared dev backend is volatile — re-run the relevant backfill right before validating.
 
 ---
 

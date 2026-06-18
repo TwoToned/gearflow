@@ -250,14 +250,64 @@ and only then drop the mirror for that surface.
 
 ---
 
-## Phase C — Drop Prisma domain tables (task #6, blocked by B)
+## Phase C — Invert FK-anchor mirrors + drop Prisma domain tables (task #6)
 
-- Remove the domain models from `prisma/schema.prisma` (keep the auth/RBAC/audit
-  subset).
-- Delete the backfill scripts + parity check + dual-write infra.
-- Migrate the DB to drop the now-unused domain tables.
-- Result: a small Postgres for Better Auth + `customRole` + `activityLog`;
-  everything else lives in Convex.
+> **Scope reconciliation (2026-06-18).** The original Phase C above assumed Phase B
+> inverted *all* writes. It did not: Phase B inverted only the **safely-invertible**
+> (leaf / no-inbound-FK) tables. The **12 remaining mirror clusters still dual-write
+> Prisma-first** because they are **FK anchors** — other still-Prisma domain rows hold
+> FK constraints pointing into them, so their Prisma row must exist. Inverting them
+> (with the transactional-invariant re-implementation the Phase B section describes)
+> therefore belongs to Phase C, gated behind dropping those FK constraints first.
+>
+> Remaining mirrors: `asset` (+bulk, bulk-child, scan-log), `kit` (+items),
+> `project`, `line-item`, `line-item-unit`, `crew` (member/role/skill),
+> `crew-scheduling` (assignment/shift/availability/time-entry), `file-upload`,
+> `media` (7 `*_media`), `sub-hire` (+item/group, supplier-order),
+> `warehouse-close`, `project-subtable` (service/task/manager).
+
+**FK boundary is clean (verified):** no kept table (auth / `customRole` /
+`activityLog`) has an FK into any domain table — `activityLog.{projectId,assetId,
+kitId}` are plain soft-string columns, `customRole` references only `organization`.
+So dropping domain tables can never violate a constraint on a kept table; the only
+schema edits on kept models are deleting Prisma back-relation array fields.
+
+### Sequenced stages (one surface per PR, preview-validated)
+
+- **Stage 1 — drop domain↔domain FK constraints** *(IN PROGRESS — branch
+  `phase-c/stage-1-drop-domain-fk`, migration
+  `20260618110000_drop_domain_domain_fk_constraints`)*. One self-discovering
+  migration drops every FK where **both** endpoints are domain tables, preserving
+  domain→`user`/`organization` (those vanish with the table drop in Stage 4).
+  Unblocks order-independent write-inversion. Non-destructive (constraints, not
+  data). Validated locally in a rolled-back txn: matches the domain↔domain FK set,
+  preserves the domain→auth set.
+- **Stage 2 — invert the 12 mirrors to Convex-only** (~8–12 PRs, leaf→root). Each
+  PR builds the real Convex mutation with re-implemented invariants (cascade
+  deletes, `maxSort`-then-insert ordering races, kit composition, sub-hire
+  regeneration, warehouse checkout/checkin), removes the Prisma write + mirror
+  call, deletes the `*-mirror.ts` file, and is preview-validated before the mirror
+  is dropped. Order: **warehouse-close** → file-upload+media → crew → crew-scheduling
+  → project-subtable → asset → kit → sub-hire → **project+line-item (keystone, last;
+  full-pipeline PDF integration test)**.
+- **Stage 3 — schema removal** (1 PR): delete the 71 domain models + orphaned
+  `User`/`Organization` back-relation arrays from `schema.prisma`; `prisma validate`
+  + `generate` clean; grep-gate zero `prisma.<domainModel>.` remaining.
+- **Stage 4 — drop tables** (1 PR, irreversible): hand-authored migration via
+  `migrate deploy`, single `DROP TABLE IF EXISTS … CASCADE` over the 71 domain
+  tables + implicit `_CrewMemberToCrewSkill`. Pre-drop `pg_dump` is the only data
+  rollback.
+- **Stage 5 — infra cleanup** (1 PR): delete backfill scripts (44), parity-check,
+  resync/purge/roundtrip scripts + their `package.json` entries; **keep**
+  `convex-client.ts`, `convex-auth*.ts`, all `*-read.ts`. Update docs.
+
+**Also in Phase C (independent of the FK web):** migrate `SiteSettings`
+(`site_settings`) to Convex — the `siteSettings` Convex table/CRUD exists but the
+app still reads/writes `prisma.siteSettings` (`platform.ts`, `auth.ts`,
+`site-admin.ts`, two route handlers). Its own small PR (relation-isolated singleton).
+
+**Result:** a small Postgres for Better Auth + `customRole` + `activityLog`;
+everything else lives in Convex.
 
 ---
 

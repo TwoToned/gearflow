@@ -21,7 +21,6 @@ import {
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
-import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -49,16 +48,18 @@ const typeLabels: Record<string, string> = {
   OTHER: "Other",
 };
 
+// Type chip — RVLT soft module hues (no rainbow). Status carries the primary
+// signal; type is a calm secondary cue.
 const typeColors: Record<string, string> = {
-  DRY_HIRE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  WET_HIRE: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-  INSTALLATION: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  TOUR: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CORPORATE: "bg-slate-500/10 text-slate-500 border-slate-500/20",
-  THEATRE: "bg-rose-500/10 text-rose-500 border-rose-500/20",
-  FESTIVAL: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CONFERENCE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  OTHER: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  DRY_HIRE: "bg-blue-soft text-blue",
+  WET_HIRE: "bg-teal-soft text-teal",
+  INSTALLATION: "bg-coral-soft text-coral",
+  TOUR: "bg-purple-soft text-purple",
+  CORPORATE: "bg-rep-soft text-rep",
+  THEATRE: "bg-purple-soft text-purple",
+  FESTIVAL: "bg-amber-soft text-amber",
+  CONFERENCE: "bg-blue-soft text-blue",
+  OTHER: "bg-rep-soft text-rep",
 };
 
 function formatDateRange(
@@ -89,7 +90,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     cell: (row) => (
       <Link
         href={`/projects/${row.id}`}
-        className="font-mono text-xs text-fg-3 hover:underline"
+        className="font-mono text-xs text-muted hover:underline"
       >
         {row.projectNumber}
       </Link>
@@ -118,7 +119,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
           )}
         </div>
         {row.client?.name && (
-          <span className="text-xs text-fg-3">{row.client.name}</span>
+          <span className="text-xs text-muted">{row.client.name}</span>
         )}
       </div>
     ),
@@ -128,7 +129,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Client",
     sortKey: "client",
     cell: (row) => (
-      <span className="text-fg-3">
+      <span className="text-muted">
         {row.client?.name || "—"}
       </span>
     ),
@@ -152,9 +153,9 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "OTHER", label: "Other", color: "bg-gray-500" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={typeColors[row.type] || ""}>
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${typeColors[row.type] || "bg-rep-soft text-rep"}`}>
         {typeLabels[row.type] || row.type}
-      </Badge>
+      </span>
     ),
   },
   {
@@ -191,7 +192,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       const { rangeStart, rangeEnd } = getDateRangeWindow();
       return (
         <div className="flex flex-col gap-1 min-w-[120px]">
-          <span className="text-fg-3 text-sm">
+          <span className="text-muted text-sm">
             {formatDateRange(start, end)}
           </span>
           {start && end && (
@@ -228,9 +229,9 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <span key={tag} className="rounded-full bg-paper-2 px-2 py-0.5 text-[11px] text-muted">
             {tag}
-          </Badge>
+          </span>
         ))}
       </div>
     ),
@@ -354,9 +355,8 @@ export function ProjectTable() {
 
   const toolbarActions = (
     <CanDo resource="project" action="create">
-      <Button render={<Link href="/projects/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Project
+      <Button asChild>
+        <Link href="/projects/new"><Plus className="mr-2 h-4 w-4" /> New job</Link>
       </Button>
     </CanDo>
   );
@@ -393,7 +393,7 @@ function ProjectBlockingBadge({ count }: { count: number }) {
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[11px] font-medium text-red">
           <ShieldAlert className="h-3 w-3" />
           {count}
         </TooltipTrigger>
@@ -412,8 +412,8 @@ function ProjectIssueBadge({ issues }: { issues: { hasOverbooked: boolean; hasRe
   if (parts.length === 0) return null;
 
   const color = issues.hasOverbooked
-    ? "text-red-500"
-    : "text-blue-500";
+    ? "text-t-out"
+    : "text-blue";
 
   return (
     <TooltipProvider>

@@ -16,7 +16,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FadeIn } from "@/components/ui/motion";
 import {
@@ -210,7 +209,7 @@ function FilterPopover({
     <>
       <Button
         ref={triggerRef}
-        variant="outline"
+        variant="line"
         size="sm"
         className={cn(
           "h-8 gap-1.5 text-xs",
@@ -221,9 +220,9 @@ function FilterPopover({
         <ListFilter className="h-3.5 w-3.5" />
         {column.header}
         {hasFilter && (
-          <Badge variant="secondary" className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">
+          <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-medium text-white">
             {selectedValues.length}
-          </Badge>
+          </span>
         )}
       </Button>
       {open && typeof document !== "undefined" &&
@@ -245,14 +244,14 @@ function FilterPopover({
             <div className="flex items-center justify-between mb-1 px-1">
               <button
                 type="button"
-                className="text-[10px] text-fg-3 hover:text-fg"
+                className="text-[10px] text-muted hover:text-ink"
                 onClick={selectAll}
               >
                 Select all
               </button>
               <button
                 type="button"
-                className="text-[10px] text-fg-3 hover:text-fg"
+                className="text-[10px] text-muted hover:text-ink"
                 onClick={clearAll}
               >
                 Clear
@@ -265,7 +264,7 @@ function FilterPopover({
                   <button
                     key={opt.value}
                     type="button"
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev"
                     onClick={() => toggleOption(opt.value)}
                   >
                     <div className={cn(
@@ -282,7 +281,7 @@ function FilterPopover({
                 );
               })}
               {filteredOptions.length === 0 && (
-                <p className="text-xs text-fg-3 px-2 py-1">No options found</p>
+                <p className="text-xs text-muted px-2 py-1">No options found</p>
               )}
             </div>
           </div>,
@@ -344,7 +343,7 @@ function ColumnVisibilityPopover<TData>({
     <>
       <Button
         ref={triggerRef}
-        variant="outline"
+        variant="line"
         size="sm"
         className="h-8 gap-1.5 text-xs"
         onClick={() => setOpen(!open)}
@@ -359,14 +358,14 @@ function ColumnVisibilityPopover<TData>({
             className="fixed z-50 w-52 rounded-lg border bg-popover p-2 shadow-lg"
             style={{ top: pos.top, right: pos.right }}
           >
-            <p className="text-xs font-medium text-fg-3 mb-1.5 px-1">Toggle columns</p>
+            <p className="text-xs font-medium text-muted mb-1.5 px-1">Toggle columns</p>
             <div className="max-h-64 overflow-y-auto space-y-0.5">
               {columns.map((col) => (
                 <button
                   key={col.id}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent",
+                    "flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev",
                     col.alwaysVisible && "opacity-50 cursor-not-allowed"
                   )}
                   disabled={col.alwaysVisible}
@@ -387,7 +386,7 @@ function ColumnVisibilityPopover<TData>({
                 <div className="my-1.5 h-px bg-border" />
                 <button
                   type="button"
-                  className="w-full text-xs text-fg-3 hover:text-fg px-2 py-1 rounded hover:bg-accent text-left"
+                  className="w-full text-xs text-muted hover:text-ink px-2 py-1 rounded hover:bg-elev text-left"
                   onClick={() => {
                     onReset();
                     setOpen(false);
@@ -435,21 +434,21 @@ function FilterChips<TData>({
               .join(", ")
           : String(value);
         return (
-          <Badge key={key} variant="secondary" className="gap-1 text-xs pl-2 pr-1">
-            <span className="font-medium">{col.header}:</span> {labels}
+          <span key={key} className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pl-2 pr-1 text-xs text-muted">
+            <span className="font-medium text-ink">{col.header}:</span> {labels}
             <button
               type="button"
-              className="ml-0.5 rounded-sm hover:bg-fg-3/20 p-0.5"
+              className="ml-0.5 rounded-sm hover:bg-elev p-0.5"
               onClick={() => onFilterChange(key, undefined)}
             >
               <X className="h-3 w-3" />
             </button>
-          </Badge>
+          </span>
         );
       })}
       <button
         type="button"
-        className="text-xs text-fg-3 hover:text-fg"
+        className="text-xs text-muted hover:text-ink"
         onClick={onClearAll}
       >
         Clear all
@@ -570,7 +569,7 @@ export function DataTable<TData>({
         {toolbarPrefix}
         {enableSearch && onSearchChange && (
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted" />
             <Input
               placeholder={searchPlaceholder}
               value={searchValue ?? ""}
@@ -626,8 +625,7 @@ export function DataTable<TData>({
               {enableRowSelection && (
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={allSelected || false}
-                    indeterminate={someSelected || false}
+                    checked={someSelected ? "indeterminate" : (allSelected || false)}
                     onCheckedChange={toggleSelectAll}
                   />
                 </TableHead>
@@ -649,7 +647,7 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         onClick={() => handleSort(sortKey)}
-                        className="inline-flex items-center gap-1 hover:text-fg transition-colors -ml-1 px-1 py-0.5 rounded"
+                        className="inline-flex items-center gap-1 hover:text-ink transition-colors -ml-1 px-1 py-0.5 rounded"
                       >
                         {col.header}
                         {isActive ? (
@@ -685,8 +683,7 @@ export function DataTable<TData>({
               <TableRow>
                 <TableCell colSpan={colSpan} className="h-auto border-0">
                   <EmptyState
-                    preset={emptyPreset as "assets" | "models" | "projects" | "clients" | "kits" | "search" | undefined}
-                    heading={emptyTitle}
+                    title={emptyTitle ?? "Nothing here yet"}
                     description={emptyDescription}
                   />
                 </TableCell>
@@ -699,9 +696,11 @@ export function DataTable<TData>({
                   <TableRow
                     key={rowId}
                     className={cn(
-                      "group/row relative",
+                      // RVLT row: left-edge red bar reveals on hover (DESIGN.md tables)
+                      "group/row relative transition-colors",
+                      "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:rounded-full before:bg-red before:opacity-0 before:transition-opacity hover:before:opacity-100",
                       onRowClick && "cursor-pointer",
-                      isSelected && "bg-teal-subtle",
+                      isSelected && "bg-select",
                     )}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
@@ -744,7 +743,7 @@ export function DataTable<TData>({
           <div className="flex items-center gap-4">
             {onPageSizeChange && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-fg-3">Show</span>
+                <span className="text-sm text-muted">Show</span>
                 <select
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -755,19 +754,19 @@ export function DataTable<TData>({
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </select>
-                <span className="text-sm text-fg-3">per page</span>
+                <span className="text-sm text-muted">per page</span>
               </div>
             )}
-            <p className="text-sm text-fg-3">
+            <p className="text-sm text-muted">
               Page {page} of {totalPages} ({totalRows ?? data.length} total)
             </p>
           </div>
           {onPageChange && (
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+              <Button variant="line" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
                 Previous
               </Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+              <Button variant="line" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
                 Next
               </Button>
             </div>

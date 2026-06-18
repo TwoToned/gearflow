@@ -249,11 +249,7 @@ export async function applyGroupTemplate(
     model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
   }));
 
-  // Get next sort order for the group within category from Convex
   const client = await getConvexClient();
-  const allGroups = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
-  const inBucket = allGroups.filter((g) => (g.categoryId ?? null) === (parsed.categoryId ?? null));
-  const maxSortOrder = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
 
   // Get project defaults for rental period
   const project = await getProjectById(projectId);
@@ -265,11 +261,13 @@ export async function applyGroupTemplate(
   const kitItems = itemsWithModels.filter((i) => i.kitId && i.kit);
 
   // Create the group in Convex first so it has a stable ID for line items.
+  // Atomic create-at-end: sortOrder within the (project, category) bucket is
+  // computed inside the mutation (no read-max-then-insert TOCTOU).
   const groupId = createId();
   const now = Date.now();
   const rentalPeriod = project.defaultRentalPeriod ?? undefined;
   const rentalQuantity = project.defaultRentalQuantity ?? undefined;
-  await client.mutation(api.projectGroups.create, {
+  const { sortOrder: groupSortOrder } = await client.mutation(api.projectGroups.createAtEnd, {
     id: groupId,
     organizationId,
     projectId,
@@ -279,10 +277,8 @@ export async function applyGroupTemplate(
     quantity: 1,
     rentalPeriod,
     rentalQuantity,
-    sortOrder: maxSortOrder + 1,
     suggestedPrice: 0,
-    createdAt: now,
-    updatedAt: now,
+    now,
   });
 
   const group = {
@@ -297,7 +293,7 @@ export async function applyGroupTemplate(
     suggestedPrice: 0,
     rentalPeriod: project.defaultRentalPeriod ?? null,
     rentalQuantity: project.defaultRentalQuantity ?? null,
-    sortOrder: maxSortOrder + 1,
+    sortOrder: groupSortOrder,
     createdAt: new Date(now),
     updatedAt: new Date(now),
   };

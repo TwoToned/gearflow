@@ -10,7 +10,7 @@ import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useProjects } from "@/hooks/use-projects";
 import { useClients } from "@/hooks/use-clients";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -153,7 +153,7 @@ export function ProjectBoard() {
                 {/* column header */}
                 <div className="mb-2 flex items-center gap-2 px-1">
                   <span className={cn("size-2 rounded-full", hueDot[stage.hue])} aria-hidden />
-                  <span className="text-[13px] font-semibold text-ink">{stage.label}</span>
+                  <span className="text-table-cell font-semibold text-ink">{stage.label}</span>
                   <span className="t-micro text-muted">{items.length}</span>
                   {stage.live && items.length > 0 && (
                     <span className="relative ml-auto flex h-2 w-2" aria-hidden>
@@ -198,8 +198,9 @@ function ProjectCard({ project, hue, live, issues, blocking }: { project: AnyPro
     <Link
       href={`/projects/${project.id}`}
       className={cn(
-        "group block rounded-[var(--r-lg)] border bg-card p-3 shadow-[var(--sh-card)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]",
-        blocking > 0 ? "border-red/40" : "border-line",
+        "group block rounded-[var(--r-lg)] border bg-card p-3 shadow-[var(--sh-card)] transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]",
+        focusRing,
+        blocking > 0 ? "border-t-out/40" : "border-line",
         live && "shadow-[var(--sh-card),var(--lit)] bg-elev",
       )}
     >
@@ -208,12 +209,12 @@ function ProjectCard({ project, hue, live, issues, blocking }: { project: AnyPro
         <div className="flex shrink-0 items-center gap-1">
           {issues && (issues.hasOverbooked || issues.hasReducedStock) && (
             <TooltipProvider><Tooltip>
-              <TooltipTrigger className={issues.hasOverbooked ? "text-t-out" : "text-blue"}><AlertTriangle className="h-3.5 w-3.5" /></TooltipTrigger>
+              <TooltipTrigger className={cn("rounded-full", focusRing, issues.hasOverbooked ? "text-t-out" : "text-blue")}><AlertTriangle className="h-3.5 w-3.5" /></TooltipTrigger>
               <TooltipContent>{issues.hasOverbooked ? "Overbooked items" : "Reduced stock"}</TooltipContent>
             </Tooltip></TooltipProvider>
           )}
           {blocking > 0 && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[10px] font-medium text-red">
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] font-medium text-t-out">
               <ShieldAlert className="h-3 w-3" />{blocking}
             </span>
           )}
@@ -226,7 +227,7 @@ function ProjectCard({ project, hue, live, issues, blocking }: { project: AnyPro
       <div className="mt-2 flex items-center justify-between gap-2">
         {dl ? <span className={cn("text-[11px] font-medium", toneText[dl.tone])}>{dl.text}</span> : <span className="t-micro text-faint">No dates</span>}
         <div className="flex items-center gap-1.5">
-          {project.type && <span className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted">{typeLabels[project.type] || project.type}</span>}
+          {project.type && <span className="rounded-full border border-line px-1.5 py-0.5 text-[11px] text-muted">{typeLabels[project.type] || project.type}</span>}
           {total && <span className={cn("text-[11px] font-semibold tabular-nums", hueText[hue])}>{total}</span>}
         </div>
       </div>

@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FlowMascot } from "@/components/ui/flow-mascot";
 import { getStatusIntent } from "@/lib/status-colors";
+import { cn, focusRing } from "@/lib/utils";
 import {
   getDashboardStats,
   getUpcomingProjects,
@@ -51,7 +52,7 @@ const hueText: Record<Hue, string> = {
 };
 
 const TILE = "rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]";
-const TILE_LINK = `${TILE} block transition-all hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]`;
+const TILE_LINK = `${TILE} ${focusRing} block transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]`;
 
 export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
@@ -78,10 +79,13 @@ export default function DashboardPage() {
   const total = stats?.totalAssets ?? 0;
   const util = total > 0 ? Math.round((deployed / total) * 100) : 0;
 
+  // §9: overdue is an alert context — plain copy, no personality/Kalam. The
+  // calm and zero branches keep the handwritten voice.
+  const asideOverdue = !!stats && overdue > 0;
   const aside = !stats
     ? ""
-    : overdue > 0
-      ? `${overdue} overdue — chase ${overdue > 1 ? "them" : "it"} before the client does.`
+    : asideOverdue
+      ? `${overdue} overdue return${overdue > 1 ? "s" : ""} need review.`
       : liveJobs.length > 0
         ? `${liveJobs.length} out on the floor, nothing on fire.`
         : "Nothing needs you. Suspicious.";
@@ -96,7 +100,9 @@ export default function DashboardPage() {
               {greeting}{firstName ? `, ${firstName}` : ""}
             </h1>
             <p className="t-body text-muted">{format(now, "EEEE, d MMMM yyyy")}</p>
-            {aside && <p className="mt-1.5 font-hand text-[15px] text-t-out">{aside}</p>}
+            {aside && (asideOverdue
+              ? <p className="mt-1.5 text-ui-text font-medium text-t-out">{aside}</p>
+              : <p className="mt-1.5 font-hand text-[15px] text-t-out">{aside}</p>)}
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button asChild variant="halo"><Link href="/projects/new"><Plus className="h-4 w-4" /> New job</Link></Button>
@@ -153,7 +159,7 @@ export default function DashboardPage() {
           <div className={`${TILE} h-full p-5`}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="t-overline text-muted">Upcoming</h2>
-              <Link href="/projects" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-ink">All <ArrowRight className="h-3 w-3" /></Link>
+              <Link href="/projects" className={cn("inline-flex items-center gap-1 rounded-[var(--r)] text-[11px] text-muted hover:text-ink", focusRing)}>All <ArrowRight className="h-3 w-3" /></Link>
             </div>
             {!upcoming ? (
               <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
@@ -167,7 +173,7 @@ export default function DashboardPage() {
                   const intent = getStatusIntent("project", p.status as string);
                   return (
                     <StaggerItem key={p.id as string}>
-                      <Link href={`/projects/${p.id}`} className="group flex items-center justify-between gap-3 rounded-[var(--r)] px-2 py-2 transition-colors hover:bg-elev">
+                      <Link href={`/projects/${p.id}`} className={cn("group flex items-center justify-between gap-3 rounded-[var(--r)] px-2 py-2 transition-colors hover:bg-elev", focusRing)}>
                         <div className="min-w-0">
                           <p className="truncate text-[14px] font-medium text-ink">{p.name as string}</p>
                           <p className="t-micro truncate text-muted"><span className="font-mono">{p.projectNumber as string}</span>{client?.name ? <> · {client.name}</> : null}</p>
@@ -206,22 +212,22 @@ export default function DashboardPage() {
       {/* ── Blockers (alert context — plain, no personality) ── */}
       {myBlockers && myBlockers.length > 0 && (
         <FadeIn delay={0.14}>
-          <div className="rounded-[var(--r-lg)] border-2 border-red/30 bg-red-soft p-5 sm:p-6">
+          <div className="rounded-[var(--r-lg)] border border-line border-l-[3px] border-l-t-out bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
             <div className="mb-3 flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-red" />
+              <ShieldAlert className="h-4 w-4 text-t-out" />
               <h2 className="text-card-title font-semibold text-ink">Blockers needing you</h2>
-              <span className="rounded-full bg-red px-1.5 py-0.5 text-[11px] font-medium text-white">{myBlockers.length}</span>
+              <span className="rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] font-medium text-t-out">{myBlockers.length}</span>
             </div>
             <StaggerList className="space-y-1">
               {myBlockers.map((b: Record<string, unknown>) => (
                 <StaggerItem key={b.threadId as string}>
-                  <Link href={`/projects/${b.projectId}`} className="group block rounded-[var(--r)] px-3 py-2.5 transition-colors hover:bg-red/10">
+                  <Link href={`/projects/${b.projectId}`} className={cn("group block rounded-[var(--r)] px-3 py-2.5 transition-colors hover:bg-out-soft", focusRing)}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[11px] text-muted">{b.projectNumber as string}</span>
                           <span className="truncate text-[14px] font-medium text-ink">{b.projectName as string}</span>
-                          {b.reason === "mention" && (<span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[11px] text-red"><AtSign className="h-2.5 w-2.5" /> mentioned</span>)}
+                          {b.reason === "mention" && (<span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] text-t-out"><AtSign className="h-2.5 w-2.5" /> mentioned</span>)}
                         </div>
                         {b.snippet ? <p className="mt-0.5 truncate text-[12px] text-muted">&ldquo;{b.snippet as string}&rdquo;</p> : null}
                       </div>
@@ -291,7 +297,7 @@ function DeployTile({ deployed, total, util, loading }: { deployed: number; tota
 function NeedsAttention({ stats, loading, blockers, subHireOverdue }: { stats?: { overdueReturns?: number; maintenanceDue?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number }) {
   if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
   const chips = [
-    blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-red text-white", Icon: ShieldAlert },
+    blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
     (stats?.overdueReturns ?? 0) > 0 && { href: "/projects", label: `${stats?.overdueReturns} overdue return${(stats?.overdueReturns ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
     subHireOverdue > 0 && { href: "/suppliers", label: `${subHireOverdue} sub-hire overdue`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
     (stats?.maintenanceDue ?? 0) > 0 && { href: "/maintenance", label: `${stats?.maintenanceDue} maintenance due`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
@@ -312,7 +318,7 @@ function NeedsAttention({ stats, loading, blockers, subHireOverdue }: { stats?: 
   return (
     <div className="flex flex-wrap gap-2">
       {chips.map((c) => (
-        <Link key={c.label} href={c.href} className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium shadow-[var(--sh-stk)] transition-colors ${c.cls}`}>
+        <Link key={c.label} href={c.href} className={cn("inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-table-cell font-medium shadow-[var(--sh-stk)] transition-colors", focusRing, c.cls)}>
           <c.Icon className="h-4 w-4" /> {c.label}
         </Link>
       ))}
@@ -342,7 +348,7 @@ function LiveJobRow({ project, now }: { project: Record<string, unknown>; now: D
   }
   const overdue = back.includes("overdue");
   return (
-    <Link href={`/projects/${project.id}`} className="group block rounded-[var(--r)] border border-line bg-elev p-3 shadow-[var(--lit)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--sh-card),var(--lit)]">
+    <Link href={`/projects/${project.id}`} className={cn("group block rounded-[var(--r)] border border-line bg-elev p-3 shadow-[var(--lit)] transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-card),var(--lit)]", focusRing)}>
       <div className="flex items-center justify-between gap-2">
         <p className="truncate text-[14px] font-semibold text-ink">{project.name as string}</p>
         <span className={`shrink-0 text-[11px] font-medium ${overdue ? "text-t-out" : "text-muted"}`}>{back}</span>

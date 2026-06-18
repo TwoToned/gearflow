@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { ArrowRight, Boxes, CalendarClock, ShieldAlert, AtSign, CheckCircle2, FolderOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { StaggerList, StaggerItem } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { DateRangeBar } from "@/components/ui/sparkline";
@@ -102,8 +102,9 @@ export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]
                 <Link
                   href={`/projects/${p.id as string}`}
                   className={cn(
-                    "group flex h-full flex-col rounded-[var(--r-lg)] border bg-paper-2/40 p-4 shadow-[var(--sh-card)] transition-all hover:-translate-y-0.5 hover:bg-paper-2 hover:shadow-[var(--sh-hover)]",
-                    pBlockers.length > 0 ? "border-red/40" : "border-line",
+                    "group flex h-full flex-col rounded-[var(--r-lg)] border bg-paper-2/40 p-4 shadow-[var(--sh-card)] transition-all motion-safe:hover:-translate-y-0.5 hover:bg-paper-2 hover:shadow-[var(--sh-hover)]",
+                    focusRing,
+                    pBlockers.length > 0 ? "border-t-out/40" : "border-line",
                   )}
                 >
                   {/* status + urgency */}
@@ -136,7 +137,7 @@ export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]
                       <Boxes className="h-3.5 w-3.5" /> {equip} item{equip === 1 ? "" : "s"}
                     </span>
                     {pBlockers.length > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-medium text-red">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-out-soft px-2 py-0.5 text-[11px] font-medium text-t-out">
                         <ShieldAlert className="h-3 w-3" /> {pBlockers.length} blocker{pBlockers.length > 1 ? "s" : ""}
                       </span>
                     ) : (
@@ -148,8 +149,8 @@ export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]
 
                   {/* latest blocker snippet */}
                   {latest && (
-                    <div className="mt-2 rounded-[var(--r)] bg-red-soft px-2.5 py-1.5">
-                      <p className="flex items-center gap-1 truncate text-[11px] text-red">
+                    <div className="mt-2 rounded-[var(--r)] bg-out-soft px-2.5 py-1.5">
+                      <p className="flex items-center gap-1 truncate text-[11px] text-t-out">
                         {latest.reason === "mention" && <AtSign className="h-2.5 w-2.5 shrink-0" />}
                         <span className="truncate">{(latest.snippet as string) || "Needs a decision"}</span>
                       </p>

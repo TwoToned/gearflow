@@ -7,7 +7,7 @@
 export const assetStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
   CHECKED_OUT: "Deployed",
-  IN_MAINTENANCE: "In Maintenance",
+  IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   LOST: "Lost",
   RESERVED: "Reserved",
@@ -16,8 +16,8 @@ export const assetStatusLabels: Record<string, string> = {
 // --- Bulk Asset Status ---
 export const bulkAssetStatusLabels: Record<string, string> = {
   ACTIVE: "Active",
-  LOW_STOCK: "Low Stock",
-  OUT_OF_STOCK: "Out of Stock",
+  LOW_STOCK: "Low stock",
+  OUT_OF_STOCK: "Out of stock",
   RETIRED: "Retired",
 };
 
@@ -25,7 +25,7 @@ export const bulkAssetStatusLabels: Record<string, string> = {
 export const kitStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
   CHECKED_OUT: "Deployed",
-  IN_MAINTENANCE: "In Maintenance",
+  IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   INCOMPLETE: "Incomplete",
 };
@@ -94,7 +94,7 @@ export const supplierOrderStatusLabels: Record<string, string> = {
 export const subHireStatusLabels: Record<string, string> = {
   DRAFT: "Draft",
   CONFIRMED: "Confirmed",
-  ON_HIRE: "On Hire",
+  ON_HIRE: "On hire",
   RETURNED: "Returned",
   CANCELLED: "Cancelled",
 };
@@ -103,20 +103,20 @@ export const subHireStatusLabels: Record<string, string> = {
 export const mediaTypeLabels: Record<string, string> = {
   PHOTO: "Photo",
   MANUAL: "Manual",
-  SPEC_SHEET: "Spec Sheet",
-  WIRING_DIAGRAM: "Wiring Diagram",
+  SPEC_SHEET: "Spec sheet",
+  WIRING_DIAGRAM: "Wiring diagram",
   DOCUMENT: "Document",
   OTHER: "Other",
 };
 
 // --- Project Media Type ---
 export const projectMediaTypeLabels: Record<string, string> = {
-  FLOOR_PLAN: "Floor Plan",
+  FLOOR_PLAN: "Floor plan",
   QUOTE: "Quote",
   INVOICE: "Invoice",
-  SITE_MAP: "Site Map",
-  RISK_ASSESSMENT: "Risk Assessment",
-  CLIENT_BRIEF: "Client Brief",
+  SITE_MAP: "Site map",
+  RISK_ASSESSMENT: "Risk assessment",
+  CLIENT_BRIEF: "Client brief",
   CAD: "CAD",
   CONTRACT: "Contract",
   PHOTO: "Photo",
@@ -137,7 +137,7 @@ export const clientTypeLabels: Record<string, string> = {
   COMPANY: "Company",
   INDIVIDUAL: "Individual",
   VENUE: "Venue",
-  PRODUCTION_COMPANY: "Production Company",
+  PRODUCTION_COMPANY: "Production company",
 };
 
 // --- Location Type ---
@@ -184,14 +184,14 @@ export const assignmentStatusLabels: Record<string, string> = {
 
 // --- Project Phase ---
 export const phaseLabels: Record<string, string> = {
-  BUMP_IN: "Bump In",
+  BUMP_IN: "Bump in",
   EVENT: "Event",
-  BUMP_OUT: "Bump Out",
+  BUMP_OUT: "Bump out",
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
   SETUP: "Setup",
   REHEARSAL: "Rehearsal",
-  FULL_DURATION: "Full Duration",
+  FULL_DURATION: "Full duration",
 };
 
 // --- Shift Status ---

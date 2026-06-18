@@ -19,6 +19,14 @@ import {
 import type { LocationFormValues } from "@/lib/validations/asset";
 
 export default function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="location" action="update">
+      <EditLocationContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditLocationContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   // Reactive location (Convex) — the form only needs location fields.
@@ -28,15 +36,13 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
   if (location === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!location) {
     return (
-      <RequirePermission resource="location" action="update">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Location not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/locations">Back to locations</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Location not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/locations">Back to locations</Link>
+        </Button>
+      </div>
     );
   }
 
@@ -54,9 +60,8 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
   };
 
   return (
-    <RequirePermission resource="location" action="update">
-      <FadeIn>
-        <div className="mx-auto max-w-3xl space-y-4">
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-4">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -78,7 +83,6 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
           </div>
           <LocationForm initialData={initialData} />
         </div>
-      </FadeIn>
-    </RequirePermission>
+    </FadeIn>
   );
 }

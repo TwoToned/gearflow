@@ -31,6 +31,18 @@ export default function EditMaintenancePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <RequirePermission resource="maintenance" action="update">
+      <EditMaintenanceContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditMaintenanceContent({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -57,15 +69,13 @@ export default function EditMaintenancePage({
   if (isLoading) return <DetailPageSkeleton />;
   if (!record) {
     return (
-      <RequirePermission resource="maintenance" action="update">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Record not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/maintenance">Back to maintenance</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Record not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/maintenance">Back to maintenance</Link>
+        </Button>
+      </div>
     );
   }
 
@@ -96,7 +106,7 @@ export default function EditMaintenancePage({
   };
 
   return (
-    <RequirePermission resource="maintenance" action="update">
+    <>
       <FadeIn>
         <div className="mx-auto max-w-3xl space-y-4">
           <Breadcrumb>
@@ -147,6 +157,6 @@ export default function EditMaintenancePage({
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

@@ -11,6 +11,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { locationTypeLabels } from "@/lib/status-labels";
@@ -207,12 +208,14 @@ export function LocationTable() {
   const isLoading = allLocations === undefined;
 
   const actionButtons = (
-    <Button asChild>
-      <Link href="/locations/new">
-        <Plus className="mr-2 h-4 w-4" />
-        New location
-      </Link>
-    </Button>
+    <CanDo resource="location" action="create">
+      <Button asChild>
+        <Link href="/locations/new">
+          <Plus className="mr-2 h-4 w-4" />
+          New location
+        </Link>
+      </Button>
+    </CanDo>
   );
 
   return (
@@ -237,7 +240,8 @@ export function LocationTable() {
       onResetPreferences={resetPreferences}
       savedViews={{ tableId: "locations", currentConfig, applyConfig }}
       isLoading={isLoading}
-      emptyPreset="locations"
+      emptyTitle="No locations yet"
+      emptyDescription="Add warehouses, venues, vehicles, and offsite stores to track where your gear lives."
       toolbarActions={actionButtons}
     />
   );

@@ -44,6 +44,18 @@ export default function MaintenanceDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <RequirePermission resource="maintenance" action="read">
+      <MaintenanceDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function MaintenanceDetailContent({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -70,15 +82,13 @@ export default function MaintenanceDetailPage({
   if (isLoading) return <DetailPageSkeleton />;
   if (!record) {
     return (
-      <RequirePermission resource="maintenance" action="read">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Record not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/maintenance">Back to maintenance</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Record not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/maintenance">Back to maintenance</Link>
+        </Button>
+      </div>
     );
   }
 
@@ -100,7 +110,7 @@ export default function MaintenanceDetailPage({
   const createdAt = r.createdAt as string;
 
   return (
-    <RequirePermission resource="maintenance" action="read">
+    <>
       <FadeIn>
         <PageMeta title={title} />
         <div className="space-y-6">
@@ -389,6 +399,6 @@ export default function MaintenanceDetailPage({
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

@@ -51,6 +51,14 @@ import {
 
 
 export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="location" action="read">
+      <LocationDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -78,22 +86,20 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
   if (!location) {
     return (
-      <RequirePermission resource="location" action="read">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Location not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/locations">Back to locations</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Location not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/locations">Back to locations</Link>
+        </Button>
+      </div>
     );
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
 
   return (
-    <RequirePermission resource="location" action="read">
+    <>
       <PageMeta title={location.name} />
       <FadeIn>
         <div className="space-y-6">
@@ -130,14 +136,16 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
                 </p>
               </div>
-              <CanDo resource="location" action="update">
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                <CanDo resource="location" action="update">
                   <Button variant="line" asChild>
                     <Link href={`/locations/${id}/edit`}>
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
                     </Link>
                   </Button>
+                </CanDo>
+                <CanDo resource="location" action="delete">
                   <Button
                     variant="line"
                     className="text-t-out hover:border-red hover:bg-red hover:text-white"
@@ -146,8 +154,8 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete
                   </Button>
-                </div>
-              </CanDo>
+                </CanDo>
+              </div>
             </div>
           </div>
 
@@ -434,6 +442,6 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

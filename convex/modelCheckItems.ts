@@ -32,6 +32,25 @@ export const getById = query({
   },
 });
 
+/**
+ * Check items assigned to a single model within an org. Backs
+ * getModelFailureAnalytics's read-rewire to Convex (Phase A). Uses the composite
+ * by_organizationId_modelId index. Caller sorts by sortOrder asc and resolves
+ * checkItem label/type via checkItems.list.
+ */
+export const listByModel = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_organizationId_modelId", (q) =>
+        q.eq("organizationId", orgId).eq("modelId", modelId),
+      )
+      .collect();
+  },
+});
+
 /** Assignments for one model, org-scoped. Replaces a Prisma findMany by modelId. */
 export const listByModelId = query({
   args: { orgId: v.string(), modelId: v.string() },
@@ -58,7 +77,6 @@ export const listByCheckItemId = query({
     return rows.filter((r) => r.organizationId === orgId);
   },
 });
-
 export const create = mutation({
   args: {
     id: v.string(),

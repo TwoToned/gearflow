@@ -10,7 +10,11 @@ import { mirrorCheckRecordCreate } from "@/lib/check-record-mirror";
 import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
-import { getAssetById, getAssetByAssetTag, getAssetsByOrg } from "@/lib/assets-read";
+import { getAssetById, getAssetByAssetTag } from "@/lib/assets-read";
+import {
+  getCheckHistoryRows,
+  getModelFailureAnalyticsRows,
+} from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import {
   prepUnit,
@@ -1207,80 +1211,14 @@ export async function lookupAssetForAdHocCheck(assetTag: string) {
 
 export async function getCheckHistory(assetId: string, context?: string) {
   const { organizationId } = await getOrgContext();
-
-  return serialize(
-    await prisma.checkRecord.findMany({
-      where: {
-        organizationId,
-        assetId,
-        ...(context && { context: context as "PREP" | "RETURN" | "AD_HOC" }),
-      },
-      include: {
-        checkItem: { select: { label: true, type: true, category: true } },
-        performedBy: { select: { name: true } },
-        lineItem: {
-          select: {
-            project: { select: { id: true, name: true, projectNumber: true } },
-          },
-        },
-      },
-      orderBy: { performedAt: "desc" },
-    })
-  );
+  // Read-rewired to Convex (Phase A) — see src/lib/check-record-read.ts.
+  return serialize(await getCheckHistoryRows(organizationId, assetId, context));
 }
 
 export async function getModelFailureAnalytics(modelId: string) {
   const { organizationId } = await getOrgContext();
-
-  // Get all check items assigned to this model
-  const modelCheckItems = await prisma.modelCheckItem.findMany({
-    where: { modelId, organizationId },
-    include: { checkItem: { select: { id: true, label: true, type: true } } },
-    orderBy: { sortOrder: "asc" },
-  });
-
-  // Get all assets of this model — lives in Convex.
-  const allOrgAssets = await getAssetsByOrg(organizationId);
-  const assetIds = allOrgAssets.filter((a) => a.modelId === modelId).map((a) => a.id);
-
-  if (assetIds.length === 0 || modelCheckItems.length === 0) {
-    return serialize([]);
-  }
-
-  // Get aggregate counts per check item
-  const analytics = await Promise.all(
-    modelCheckItems.map(async (mci) => {
-      const [totalCount, failCount] = await Promise.all([
-        prisma.checkRecord.count({
-          where: {
-            organizationId,
-            checkItemId: mci.checkItemId,
-            assetId: { in: assetIds },
-            result: { in: ["PASS", "FAIL"] },
-          },
-        }),
-        prisma.checkRecord.count({
-          where: {
-            organizationId,
-            checkItemId: mci.checkItemId,
-            assetId: { in: assetIds },
-            result: "FAIL",
-          },
-        }),
-      ]);
-
-      return {
-        checkItemId: mci.checkItemId,
-        label: mci.checkItem.label,
-        type: mci.checkItem.type,
-        totalChecks: totalCount,
-        failCount,
-        failRate: totalCount > 0 ? failCount / totalCount : 0,
-      };
-    })
-  );
-
-  return serialize(analytics);
+  // Read-rewired to Convex (Phase A) — see src/lib/check-record-read.ts.
+  return serialize(await getModelFailureAnalyticsRows(organizationId, modelId));
 }
 
 // ─── Kit Check Actions ──────────────────────────────────────────────────────

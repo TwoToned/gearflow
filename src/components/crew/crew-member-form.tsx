@@ -5,13 +5,12 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
 import { createCrewMember, updateCrewMember, getOrgUsersForCrewLink } from "@/server/crew";
 import { useOrgTags } from "@/hooks/use-org-tags";
-import { UserAvatar } from "@/components/ui/user-avatar";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
 import { TagInput } from "@/components/ui/tag-input";
@@ -113,11 +112,11 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-6">
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-6">
-          <FormSection title="Platform Account">
+          <FormSection title="Platform account">
             <div className="space-y-3">
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 Link this crew member to a platform user to sync their name, email, and profile picture.
               </p>
               <Controller
@@ -139,13 +138,13 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                       allowClear
                     />
                     {linkedUser && (
-                      <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-2.5">
-                        <UserAvatar user={{ name: linkedUser.name, image: linkedUser.image }} size="md" />
-                        <div className="text-sm">
-                          <p className="font-medium">{linkedUser.name}</p>
-                          <p className="text-fg-3 text-xs">{linkedUser.email}</p>
+                      <div className="flex items-center gap-2 rounded-[var(--r)] border border-line bg-elev p-2.5">
+                        <PersonAvatar name={linkedUser.name || linkedUser.email} src={linkedUser.image || undefined} className="size-10" />
+                        <div className="text-ui-text">
+                          <p className="font-medium text-ink">{linkedUser.name}</p>
+                          <p className="text-caption text-muted">{linkedUser.email}</p>
                         </div>
-                        <p className="ml-auto text-xs text-fg-3">Name, email &amp; photo synced from account</p>
+                        <p className="ml-auto text-caption text-muted">Name, email &amp; photo synced from account</p>
                       </div>
                     )}
                   </div>
@@ -154,27 +153,27 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Personal Details">
+          <FormSection title="Personal details">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="firstName">First Name *</Label>
-                <Input id="firstName" {...form.register("firstName")} placeholder="e.g. John" />
+                <Label htmlFor="firstName">First name *</Label>
+                <Input id="firstName" {...form.register("firstName")} placeholder="e.g. John" aria-invalid={!!form.formState.errors.firstName} />
                 {form.formState.errors.firstName && (
-                  <p className="text-xs text-destructive">{form.formState.errors.firstName.message}</p>
+                  <p className="text-caption text-t-out">{form.formState.errors.firstName.message}</p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name *</Label>
-                <Input id="lastName" {...form.register("lastName")} placeholder="e.g. Smith" />
+                <Label htmlFor="lastName">Last name *</Label>
+                <Input id="lastName" {...form.register("lastName")} placeholder="e.g. Smith" aria-invalid={!!form.formState.errors.lastName} />
                 {form.formState.errors.lastName && (
-                  <p className="text-xs text-destructive">{form.formState.errors.lastName.message}</p>
+                  <p className="text-caption text-t-out">{form.formState.errors.lastName.message}</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" />
+                <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" aria-invalid={!!form.formState.errors.email} />
                 {form.formState.errors.email && (
-                  <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
+                  <p className="text-caption text-t-out">{form.formState.errors.email.message}</p>
                 )}
               </div>
               <div className="space-y-2">
@@ -182,7 +181,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                 <Input id="phone" {...form.register("phone")} placeholder="+61 400 000 000" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                <Label htmlFor="dateOfBirth">Date of birth</Label>
                 <Input id="dateOfBirth" type="date" {...form.register("dateOfBirth")} />
               </div>
               <div className="space-y-2">
@@ -221,13 +220,13 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select status">
-                      {({ ACTIVE: "Active", INACTIVE: "Inactive", ON_LEAVE: "On Leave", ARCHIVED: "Archived" } as Record<string, string>)[form.watch("status") || ""] || "Select status"}
+                      {({ ACTIVE: "Active", INACTIVE: "Inactive", ON_LEAVE: "On leave", ARCHIVED: "Archived" } as Record<string, string>)[form.watch("status") || ""] || "Select status"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ACTIVE">Active</SelectItem>
                     <SelectItem value="INACTIVE">Inactive</SelectItem>
-                    <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                    <SelectItem value="ON_LEAVE">On leave</SelectItem>
                     <SelectItem value="ARCHIVED">Archived</SelectItem>
                   </SelectContent>
                 </Select>
@@ -242,15 +241,15 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
           <FormSection title="Rates">
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label htmlFor="defaultDayRate">Day Rate ($)</Label>
+                <Label htmlFor="defaultDayRate">Day rate ($)</Label>
                 <Input id="defaultDayRate" type="number" step="0.01" {...form.register("defaultDayRate")} placeholder="0.00" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="defaultHourlyRate">Hourly Rate ($)</Label>
+                <Label htmlFor="defaultHourlyRate">Hourly rate ($)</Label>
                 <Input id="defaultHourlyRate" type="number" step="0.01" {...form.register("defaultHourlyRate")} placeholder="0.00" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="overtimeMultiplier">Overtime Multiplier</Label>
+                <Label htmlFor="overtimeMultiplier">Overtime multiplier</Label>
                 <Input id="overtimeMultiplier" type="number" step="0.1" {...form.register("overtimeMultiplier")} placeholder="1.5" />
               </div>
             </div>
@@ -285,14 +284,14 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
             />
           </FormSection>
 
-          <FormSection title="Emergency Contact">
+          <FormSection title="Emergency contact">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="emergencyContactName">Contact Name</Label>
+                <Label htmlFor="emergencyContactName">Contact name</Label>
                 <Input id="emergencyContactName" {...form.register("emergencyContactName")} placeholder="Emergency contact name" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="emergencyContactPhone">Contact Phone</Label>
+                <Label htmlFor="emergencyContactPhone">Contact phone</Label>
                 <Input id="emergencyContactPhone" {...form.register("emergencyContactPhone")} placeholder="+61 400 000 000" />
               </div>
             </div>
@@ -322,12 +321,11 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
             </div>
           </FormSection>
 
-          <div className="mt-6 flex gap-3 border-t border-border pt-4">
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update Crew Member" : "Create Crew Member"}
+          <div className="mt-6 flex gap-3 border-t border-line pt-4">
+            <Button type="submit" loading={mutation.isPending}>
+              {isEditing ? "Update crew member" : "Create crew member"}
             </Button>
-            <Button type="button" variant="outline" onClick={() => router.back()}>
+            <Button type="button" variant="line" onClick={() => router.back()}>
               Cancel
             </Button>
           </div>

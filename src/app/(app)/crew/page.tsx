@@ -19,10 +19,11 @@ import {
   CheckCircle,
   Plus,
   Download,
-  Loader2,
 } from "lucide-react";
 
+import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -186,26 +187,28 @@ function CrewDashboard() {
         description="Overview of crew, assignments, and timesheets."
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
-              <Download className="mr-2 h-3.5 w-3.5" />
-              Export Timesheets
+            <Button variant="line" size="sm" onClick={() => setExportOpen(true)}>
+              <Download className="size-5" />
+              Export timesheets
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
-              <Clock className="mr-2 h-3.5 w-3.5" />
-              Log Time
+            <Button variant="line" size="sm" onClick={() => setLogTimeOpen(true)}>
+              <Clock className="size-5" />
+              Log time
             </Button>
-            <Button size="sm" render={<Link href="/crew/new" />}>
-              <Plus className="mr-2 h-3.5 w-3.5" />
-              Add Crew
+            <Button size="sm" asChild>
+              <Link href="/crew/new">
+                <Plus className="size-5" />
+                Add crew
+              </Link>
             </Button>
           </div>
         }
       />
 
-      {/* Stat Cards */}
+      {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard
-          title="Active Crew"
+          title="Active crew"
           value={stats?.totalActive ?? "—"}
           icon={Users}
           href="/crew"
@@ -218,7 +221,7 @@ function CrewDashboard() {
           href="/crew/planner"
         />
         <StatCard
-          title="Pending Offers"
+          title="Pending offers"
           value={stats?.pendingOffers ?? "—"}
           description="Awaiting response"
           icon={Send}
@@ -241,27 +244,27 @@ function CrewDashboard() {
 
       {/* Two-column grid */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Pending Timesheets */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        {/* Pending timesheets */}
+        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Pending Timesheets</h3>
+            <h3 className="text-card-title font-bold text-ink">Pending timesheets</h3>
             {pendingTime && pendingTime.length > 0 && (
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => {
                   const ids = pendingTime.map((e: any) => e.id);
                   approveMutation.mutate(ids);
                 }}
-                disabled={approveMutation.isPending}
+                loading={approveMutation.isPending}
               >
-                <CheckCircle className="mr-2 h-3.5 w-3.5" />
-                Approve All
+                <CheckCircle className="size-5" />
+                Approve all
               </Button>
             )}
           </div>
           {!pendingTime || pendingTime.length === 0 ? (
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               No timesheets awaiting approval.
             </p>
           ) : (
@@ -269,14 +272,14 @@ function CrewDashboard() {
               {pendingTime.map((entry: any) => (
                 <div
                   key={entry.id}
-                  className="flex items-center justify-between rounded-md border p-3"
+                  className="flex items-center justify-between rounded-[var(--r)] border border-line p-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-ui-text font-medium text-ink">
                       {entry.crewMember?.firstName}{" "}
                       {entry.crewMember?.lastName}
                     </p>
-                    <p className="text-xs text-fg-3">
+                    <p className="text-caption text-muted">
                       {entry.assignment
                         ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
                         : entry.description || "General"}
@@ -291,21 +294,25 @@ function CrewDashboard() {
                   <div className="flex gap-1 ml-2">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-7 text-green-500 hover:text-green-600"
+                      size="icon"
+                      className="size-9 text-ok hover:bg-ok-soft"
+                      aria-label="Approve timesheet"
+                      title="Approve"
                       onClick={() => approveMutation.mutate([entry.id])}
                       disabled={approveMutation.isPending}
                     >
-                      <CheckCircle className="h-3.5 w-3.5" />
+                      <CheckCircle className="size-5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-7 text-amber-500 hover:text-amber-600"
+                      size="icon"
+                      className="size-9 text-warn hover:bg-warn-soft"
+                      aria-label="Dispute timesheet"
+                      title="Dispute"
                       onClick={() => disputeMutation.mutate(entry.id)}
                       disabled={disputeMutation.isPending}
                     >
-                      <AlertTriangle className="h-3.5 w-3.5" />
+                      <AlertTriangle className="size-5" />
                     </Button>
                   </div>
                 </div>
@@ -314,19 +321,19 @@ function CrewDashboard() {
           )}
         </div>
 
-        {/* Active Assignments */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        {/* Active assignments */}
+        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Active Assignments</h3>
+            <h3 className="text-card-title font-bold text-ink">Active assignments</h3>
             <Link
               href="/crew/planner"
-              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+              className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
           {!activeAssignments || activeAssignments.length === 0 ? (
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               No active assignments.
             </p>
           ) : (
@@ -335,19 +342,20 @@ function CrewDashboard() {
                 <Link
                   key={a.id}
                   href={`/projects/${a.project?.id}`}
-                  className="flex items-center justify-between rounded-md border p-3 hover:bg-bg-elevated/50 transition-colors"
+                  className={`flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:bg-elev transition-colors ${focusRing}`}
                 >
+                  <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-ui-text font-medium text-ink">
                       {a.crewMember?.firstName} {a.crewMember?.lastName}
                       {a.crewRole && (
-                        <span className="text-fg-3 font-normal">
+                        <span className="text-muted font-normal">
                           {" "}
                           — {a.crewRole.name}
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-fg-3">
+                    <p className="text-caption text-muted">
                       {a.project?.projectNumber} — {a.project?.name}
                       {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
                       {a.startDate && ` · ${formatDate(a.startDate)}`}
@@ -369,19 +377,19 @@ function CrewDashboard() {
 
       {/* Second row */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Upcoming Shifts */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        {/* Upcoming shifts */}
+        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Upcoming Shifts</h3>
+            <h3 className="text-card-title font-bold text-ink">Upcoming shifts</h3>
             <Link
               href="/crew/planner"
-              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+              className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
           {!upcomingShifts || upcomingShifts.length === 0 ? (
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               No upcoming shifts scheduled.
             </p>
           ) : (
@@ -389,29 +397,30 @@ function CrewDashboard() {
               {groupShiftsByAssignment(upcomingShifts).map((group: any) => (
                 <div
                   key={group.key}
-                  className="flex items-center justify-between rounded-md border p-3"
+                  className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
                 >
+                  <PersonAvatar name={group.crewMember || "?"} className="size-8" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-ui-text font-medium text-ink">
                       {group.crewMember}
                       {group.crewRole && (
-                        <span className="text-fg-3 font-normal">
+                        <span className="text-muted font-normal">
                           {" "}
                           — {group.crewRole}
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-fg-3">
+                    <p className="text-caption text-muted">
                       {group.projectNumber} — {group.projectName}
                     </p>
                   </div>
-                  <div className="text-right text-sm shrink-0 ml-2">
-                    <p className="font-mono text-xs">
+                  <div className="text-right shrink-0 ml-2">
+                    <p className="font-mono text-caption tabular-nums text-ink-2">
                       {group.startDate === group.endDate
                         ? formatDate(group.startDate)
                         : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
                     </p>
-                    <p className="text-xs text-fg-3 font-mono">
+                    <p className="text-caption text-muted font-mono tabular-nums">
                       {group.callTime || "—"}–{group.endTime || "—"}
                       {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
                     </p>
@@ -422,11 +431,11 @@ function CrewDashboard() {
           )}
         </div>
 
-        {/* Pending Offers */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Pending Offers</h3>
+        {/* Pending offers */}
+        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+          <h3 className="text-card-title font-bold text-ink mb-4">Pending offers</h3>
           {!pendingOffers || pendingOffers.length === 0 ? (
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               No pending offers.
             </p>
           ) : (
@@ -434,19 +443,20 @@ function CrewDashboard() {
               {pendingOffers.map((a: any) => (
                 <div
                   key={a.id}
-                  className="flex items-center justify-between rounded-md border p-3"
+                  className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
                 >
+                  <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-ui-text font-medium text-ink">
                       {a.crewMember?.firstName} {a.crewMember?.lastName}
                       {a.crewRole && (
-                        <span className="text-fg-3 font-normal">
+                        <span className="text-muted font-normal">
                           {" "}
                           — {a.crewRole.name}
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-fg-3">
+                    <p className="text-caption text-muted">
                       {a.project?.projectNumber} — {a.project?.name}
                     </p>
                   </div>
@@ -459,13 +469,12 @@ function CrewDashboard() {
                     />
                     {a.status === "PENDING" && a.crewMember?.email && (
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
-                        className="h-7"
                         onClick={() => sendOfferMutation.mutate(a.id)}
-                        disabled={sendOfferMutation.isPending}
+                        loading={sendOfferMutation.isPending}
                       >
-                        <Send className="mr-1 h-3 w-3" />
+                        <Send className="size-5" />
                         Send
                       </Button>
                     )}
@@ -477,15 +486,15 @@ function CrewDashboard() {
         </div>
       </div>
 
-      {/* Crew List */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      {/* Crew list */}
+      <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="t-heading text-fg">All Crew Members</h3>
+          <h3 className="text-card-title font-bold text-ink">All crew members</h3>
           <Link
             href="/crew/settings"
-            className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+            className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
           >
-            Roles & Skills <ArrowRight className="h-3 w-3" />
+            Roles &amp; skills <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
         <CrewTable />
@@ -575,7 +584,7 @@ function ExportTimesheetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Export Timesheets</DialogTitle>
+          <DialogTitle>Export timesheets</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -594,16 +603,16 @@ function ExportTimesheetDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-fg-3">
+          <p className="text-caption text-muted">
             Leave empty to export all time entries.
           </p>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleExport}>
-            <Download className="mr-2 h-3.5 w-3.5" />
+            <Download className="size-5" />
             Export CSV
           </Button>
         </DialogFooter>
@@ -726,25 +735,24 @@ function LogTimeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Log Time</DialogTitle>
+          <DialogTitle>Log time</DialogTitle>
         </DialogHeader>
 
         {/* Step 1: Pick crew members */}
         {step === "pick" ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>Select Crew Members</Label>
+              <Label>Select crew members</Label>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs"
                   onClick={selectedCrewIds.length === (filteredCrew?.length || 0) ? deselectAll : selectAll}
                 >
                   {selectedCrewIds.length === (filteredCrew?.length || 0) && filteredCrew?.length
-                    ? "Deselect All"
-                    : "Select All"}
+                    ? "Deselect all"
+                    : "Select all"}
                 </Button>
               </div>
             </div>
@@ -760,27 +768,29 @@ function LogTimeDialog({
                   <button
                     key={c.id}
                     type="button"
-                    className={`w-full flex items-center gap-3 rounded-md border p-3 text-left transition-colors ${
+                    aria-pressed={isSelected}
+                    className={`w-full flex items-center gap-3 rounded-[var(--r)] border p-3 text-left transition-colors ${focusRing} ${
                       isSelected
-                        ? "bg-primary/10 border-primary/30"
-                        : "hover:bg-accent/50"
+                        ? "bg-red-soft border-red/40"
+                        : "border-line hover:bg-elev"
                     }`}
                     onClick={() => toggleCrewMember(c.id)}
                   >
                     <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                      className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border ${
                         isSelected
-                          ? "bg-primary border-primary text-primary-foreground"
-                          : "border-muted-foreground/30"
+                          ? "bg-red border-red text-white"
+                          : "border-line-2"
                       }`}
                     >
-                      {isSelected && <CheckCircle className="h-3 w-3" />}
+                      {isSelected && <CheckCircle className="size-3" />}
                     </div>
+                    <PersonAvatar name={`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()} className="size-8" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
+                      <p className="text-ui-text font-medium text-ink">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-fg-3">
+                      <p className="text-caption text-muted">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -788,7 +798,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-fg-3 py-4 text-center">
+                <p className="text-ui-text text-muted py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -796,7 +806,7 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
@@ -821,7 +831,7 @@ function LogTimeDialog({
             className="space-y-4"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">
+              <p className="text-ui-text font-medium text-ink">
                 {selectedCrewIds.length === 1
                   ? `${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.firstName} ${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.lastName}`
                   : `${selectedCrewIds.length} crew members selected`}
@@ -840,7 +850,7 @@ function LogTimeDialog({
             <div className="flex gap-2">
               <Button
                 type="button"
-                variant={!isGeneral ? "default" : "outline"}
+                variant={!isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -848,12 +858,12 @@ function LogTimeDialog({
                   form.setValue("description", "");
                 }}
               >
-                <Briefcase className="mr-2 h-3.5 w-3.5" />
+                <Briefcase className="size-5" />
                 Project
               </Button>
               <Button
                 type="button"
-                variant={isGeneral ? "default" : "outline"}
+                variant={isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -861,7 +871,7 @@ function LogTimeDialog({
                   form.setValue("assignmentId", "");
                 }}
               >
-                <Clock className="mr-2 h-3.5 w-3.5" />
+                <Clock className="size-5" />
                 General
               </Button>
             </div>
@@ -906,7 +916,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-fg-3 rounded-md border p-3">
+                <p className="text-caption text-muted rounded-[var(--r)] border border-line p-3">
                   Project assignment selection is not available for multiple crew members. Each member&apos;s entry will be created without a linked assignment, or switch to General mode.
                 </p>
               )
@@ -922,9 +932,9 @@ function LogTimeDialog({
 
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Input type="date" {...form.register("date")} />
+              <Input type="date" {...form.register("date")} aria-invalid={!!form.formState.errors.date} />
               {form.formState.errors.date && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.date.message}
                 </p>
               )}
@@ -932,19 +942,19 @@ function LogTimeDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
-                <Input type="time" {...form.register("startTime")} />
+                <Label>Start time</Label>
+                <Input type="time" {...form.register("startTime")} aria-invalid={!!form.formState.errors.startTime} />
                 {form.formState.errors.startTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.startTime.message}
                   </p>
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
-                <Input type="time" {...form.register("endTime")} />
+                <Label>End time</Label>
+                <Input type="time" {...form.register("endTime")} aria-invalid={!!form.formState.errors.endTime} />
                 {form.formState.errors.endTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.endTime.message}
                   </p>
                 )}
@@ -972,16 +982,13 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Log Time{selectedCrewIds.length > 1 ? ` (${selectedCrewIds.length})` : ""}
+              <Button type="submit" loading={submitting}>
+                Log time{selectedCrewIds.length > 1 ? ` (${selectedCrewIds.length})` : ""}
               </Button>
             </DialogFooter>
           </form>
@@ -1010,27 +1017,31 @@ function StatCard({
 }) {
   const content = (
     <div
-      className={`rounded-lg bg-bg-surface p-4 surface-ring ${href ? "hover:bg-bg-elevated transition-colors" : ""} ${alert ? "ring-destructive/50" : ""}`}
+      className={`rounded-[var(--r-lg)] bg-card p-4 ring-1 shadow-[var(--sh-card)] ${href ? "hover:bg-elev transition-colors" : ""} ${alert ? "ring-t-out/50" : "ring-line"}`}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium">{title}</span>
+        <span className="text-ui-text font-medium text-ink-2">{title}</span>
         <Icon
-          className={`h-4 w-4 ${alert ? "text-destructive" : "text-fg-3"}`}
+          className={`size-4 ${alert ? "text-t-out" : "text-muted"}`}
         />
       </div>
       <div
-        className={`t-title t-data ${alert ? "text-destructive" : ""}`}
+        className={`text-section-header font-display font-extrabold tabular-nums ${alert ? "text-t-out" : "text-ink"}`}
       >
         {value}
       </div>
       {description && (
-        <p className="text-xs text-fg-3">{description}</p>
+        <p className="text-caption text-muted">{description}</p>
       )}
     </div>
   );
 
   if (href) {
-    return <Link href={href}>{content}</Link>;
+    return (
+      <Link href={href} className={`block rounded-[var(--r-lg)] ${focusRing}`}>
+        {content}
+      </Link>
+    );
   }
   return content;
 }

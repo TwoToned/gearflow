@@ -143,7 +143,7 @@ export const locationTypeLabels: Record<string, string> = {
 export const crewMemberStatusLabels: Record<string, string> = {
   ACTIVE: "Active",
   INACTIVE: "Inactive",
-  ON_LEAVE: "On Leave",
+  ON_LEAVE: "On leave",
   ARCHIVED: "Archived",
 };
 
@@ -188,10 +188,10 @@ export const phaseLabels: Record<string, string> = {
 // --- Shift Status ---
 export const shiftStatusLabels: Record<string, string> = {
   SCHEDULED: "Scheduled",
-  IN_PROGRESS: "In Progress",
+  IN_PROGRESS: "In progress",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
-  NO_SHOW: "No Show",
+  NO_SHOW: "No show",
 };
 
 // --- Time Entry Status ---

@@ -19,7 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
+import { locationTypeLabels } from "@/lib/status-labels";
 import {
   Select,
   SelectContent,
@@ -73,15 +74,16 @@ export function LocationForm({ initialData }: LocationFormProps) {
   });
 
   return (
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
       <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))}>
-        <FormSection title="Details">
-          <div className="space-y-4">
+        <SectionHeader label="Details" />
+        <FormSection className="mt-4">
+          <div className="space-y-3.5 sm:col-span-2">
           <div className="space-y-2">
             <Label>Name *</Label>
-            <Input {...form.register("name")} placeholder="Main Warehouse" />
+            <Input {...form.register("name")} placeholder="Main warehouse" aria-invalid={!!form.formState.errors.name} />
             {form.formState.errors.name && (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+              <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
             )}
           </div>
 
@@ -94,7 +96,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
               >
                 <SelectTrigger>
                   <SelectValue>
-                    {{ WAREHOUSE: "Warehouse", VENUE: "Venue", VEHICLE: "Vehicle", OFFSITE: "Offsite" }[form.watch("type") ?? "WAREHOUSE"]}
+                    {locationTypeLabels[form.watch("type") ?? "WAREHOUSE"]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -107,7 +109,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label>Parent Location</Label>
+              <Label>Parent location</Label>
               <Select
                 value={form.watch("parentId") || "__none__"}
                 onValueChange={(v) => form.setValue("parentId", v === "__none__" ? null : v)}
@@ -163,7 +165,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
               }}
             />
             {form.watch("parentId") && !form.watch("address") && (
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 Using parent location&apos;s address. Type to set a custom address.
               </p>
             )}
@@ -195,17 +197,17 @@ export function LocationForm({ initialData }: LocationFormProps) {
               checked={form.watch("isDefault")}
               onCheckedChange={(checked) => form.setValue("isDefault", !!checked)}
             />
-            <Label className="text-sm">Default location for new assets</Label>
+            <Label className="text-ui-text">Default location for new assets</Label>
           </div>
           </div>
         </FormSection>
 
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
           </Button>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? "Saving..." : isEditing ? "Update Location" : "Create Location"}
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update location" : "Create location"}
           </Button>
         </div>
       </form>

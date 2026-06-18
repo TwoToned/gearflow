@@ -5,7 +5,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import {
   CheckCircle2,
   XCircle,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sheet,
   SheetContent,
@@ -381,9 +381,13 @@ export function ItemCheckForm({
   const formContent = (
     <>
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted motion-safe:animate-pulse">
-          <Loader2 className="mr-2 h-5 w-5 motion-safe:animate-spin" />
-          Loading check items...
+        <div className={embedded ? "p-4 space-y-2" : "mt-4 space-y-2"} aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-[var(--r)] border-2 border-line p-3 space-y-2">
+              <Skeleton className="h-4 w-2/3 rounded-[var(--r)]" />
+              <Skeleton className="h-11 w-full rounded-[var(--r)]" />
+            </div>
+          ))}
         </div>
       ) : items.length === 0 ? (
         <div
@@ -656,7 +660,7 @@ function CheckItemRow({
               onChange={(e) => onUpdate({ notes: e.target.value })}
               placeholder="Add notes..."
               rows={2}
-              className="text-sm"
+              className="text-ui-text"
             />
           ) : (
             <button
@@ -727,7 +731,7 @@ function NotesInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder="Enter notes..."
       rows={2}
-      className="text-sm"
+      className="text-ui-text"
     />
   );
 }
@@ -763,7 +767,7 @@ function MeasurementInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter value"
-          className="flex-1 text-sm"
+          className="flex-1 text-ui-text"
         />
         {unit && <span className="text-ui-text text-muted shrink-0">{unit}</span>}
         {result && (
@@ -799,7 +803,7 @@ function DropdownInput({
         onChange(v, opt?.isFail ?? false);
       }}
     >
-      <SelectTrigger className="text-sm">
+      <SelectTrigger className="text-ui-text">
         <SelectValue placeholder="Select...">
           {selectedOption ? selectedOption.label : "Select..."}
         </SelectValue>

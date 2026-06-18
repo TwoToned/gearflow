@@ -329,8 +329,17 @@ export function ReturnTab({
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
-                          className="cursor-pointer hover:bg-elev"
+                          className={`cursor-pointer hover:bg-elev ${focusRing}`}
                           onClick={() => toggleExpanded(entry.groupKey)}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleExpanded(entry.groupKey);
+                            }
+                          }}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox

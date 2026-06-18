@@ -60,8 +60,17 @@ export function KitChildRows({
         return (
           <Fragment key={child.id}>
             <TableRow
-              className={`${isVerified ? "bg-ok-soft/50" : "bg-paper-2/40"} ${isNestedKit ? "cursor-pointer" : ""}`}
+              className={`${isVerified ? "bg-ok-soft/50" : "bg-paper-2/40"} ${isNestedKit ? `cursor-pointer ${focusRing}` : ""}`}
               onClick={isNestedKit ? () => toggleExpanded(`nested-${child.id}`) : undefined}
+              role={isNestedKit ? "button" : undefined}
+              tabIndex={isNestedKit ? 0 : undefined}
+              aria-expanded={isNestedKit ? nestedExpanded : undefined}
+              onKeyDown={isNestedKit ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleExpanded(`nested-${child.id}`);
+                }
+              } : undefined}
             >
               <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                 <button

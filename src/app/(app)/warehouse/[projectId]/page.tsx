@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
+import { focusRing } from "@/lib/utils";
 
 import {
   getProjectForWarehouse,
@@ -1948,8 +1949,17 @@ function WarehouseProjectPage({
 
     return (
       <TableRow
-        className="cursor-pointer hover:bg-accent/50"
+        className={`cursor-pointer hover:bg-elev ${focusRing}`}
         onClick={() => toggleExpanded(entry.groupKey)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleExpanded(entry.groupKey);
+          }
+        }}
       >
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox

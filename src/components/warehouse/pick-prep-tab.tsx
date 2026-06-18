@@ -12,6 +12,7 @@ import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { EmptyState } from "@/components/ui/empty-state";
+import { focusRing } from "@/lib/utils";
 import {
   TabsContent,
 } from "@/components/ui/tabs";
@@ -286,8 +287,17 @@ export function PickPrepTab({
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
-                          className="cursor-pointer hover:bg-elev"
+                          className={`cursor-pointer hover:bg-elev ${focusRing}`}
                           onClick={() => toggleExpanded(entry.groupKey)}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleExpanded(entry.groupKey);
+                            }
+                          }}
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox

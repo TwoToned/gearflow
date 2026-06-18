@@ -93,20 +93,24 @@ async function expandAccessoryChildren(
     if (!asset) return;
 
     const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-    const modelBulks = await tx.modelBulkAccessory.findMany({
-      where: { modelId: asset.modelId, organizationId },
-      select: {
-        bulkAssetId: true,
-        quantity: true,
-        bulkAsset: { select: { modelId: true } },
-      },
-      orderBy: { sortOrder: "asc" },
-    });
-    const inheritedBulks = modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId));
+    const modelBulksRaw = asset.modelId
+      ? await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
+          modelId: asset.modelId,
+          organizationId,
+        })
+      : [];
+    const inheritedBulks = modelBulksRaw.filter((m) => !assetBulkIds.has(m.bulkAssetId));
 
     if (asset.childAssets.length === 0 && asset.childBulkItems.length === 0 && inheritedBulks.length === 0) {
       return;
     }
+
+    // Normalise both sources to a common shape for the createLoop below.
+    type BulkItem = { bulkAssetId: string; quantity: number; modelId: string | null };
+    const allBulks: BulkItem[] = [
+      ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId })),
+      ...inheritedBulks.map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAssetModelId })),
+    ];
 
     let sort = 0;
     for (const child of asset.childAssets) {
@@ -114,12 +118,12 @@ async function expandAccessoryChildren(
         data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: modelMap.get(child.modelId)?.name ?? null, sortOrder: sort++ },
       });
     }
-    for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
-      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
+    for (const bi of allBulks) {
+      const modelName = modelMap.get(bi.modelId ?? "")?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
-          modelId: bi.bulkAsset.modelId,
+          modelId: bi.modelId,
           bulkAssetId: bi.bulkAssetId,
           quantity: bi.quantity,
           description: modelName ? `${bi.quantity}x ${modelName}` : null,
@@ -137,25 +141,20 @@ async function expandAccessoryChildren(
   // warehouse prep when a unit is assigned (expandAccessoriesForAsset, which
   // reconciles this row's quantity to the units actually assigned).
   if (parentLine.modelId) {
-    const modelBulks = await tx.modelBulkAccessory.findMany({
-      where: { modelId: parentLine.modelId, organizationId },
-      select: {
-        bulkAssetId: true,
-        quantity: true,
-        bulkAsset: { select: { modelId: true } },
-      },
-      orderBy: { sortOrder: "asc" },
+    const modelBulks = await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
+      modelId: parentLine.modelId,
+      organizationId,
     });
     if (modelBulks.length === 0) return;
 
     let sort = 0;
     for (const bi of modelBulks) {
       const qty = bi.quantity * Math.max(parentLine.quantity, 1);
-      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
+      const modelName = modelMap.get(bi.bulkAssetModelId ?? "")?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
-          modelId: bi.bulkAsset.modelId,
+          modelId: bi.bulkAssetModelId ?? null,
           bulkAssetId: bi.bulkAssetId,
           quantity: qty,
           description: modelName ? `${qty}x ${modelName}` : null,
@@ -1227,7 +1226,9 @@ export async function checkAvailability(
     0
   );
 
-  const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
+  const bulkAccessoryCount = (
+    await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, { modelId, organizationId })
+  ).length;
 
   if (modelForBreakdown.assetType === "SERIALIZED") {
     const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
@@ -1327,13 +1328,15 @@ export async function lookupAssetByTag(
 
   // Serialized children live in Convex — count from the org asset mirror by
   // parentAssetId (no dedicated by-parent index, so filter the org list).
-  // assetBulkChild / modelBulkAccessory are accessory join tables (not core
-  // domain) and stay on the fresh Prisma mirror.
-  const [orgAssetsForChildren, childBulkCount, modelBulksCount] = await Promise.all([
+  // assetBulkChild stays on Prisma; modelBulkAccessory is now Convex-only (Phase B).
+  const [orgAssetsForChildren, childBulkCount, modelBulksForCount] = await Promise.all([
     getAssetsByOrg(organizationId),
     prisma.assetBulkChild.count({ where: { parentAssetId: asset.id } }),
-    prisma.modelBulkAccessory.count({ where: { modelId: asset.modelId, organizationId } }),
+    asset.modelId
+      ? (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
+      : Promise.resolve([]),
   ]);
+  const modelBulksCount = modelBulksForCount.length;
   const childAssetCount = orgAssetsForChildren.filter((a) => a.parentAssetId === asset.id).length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 

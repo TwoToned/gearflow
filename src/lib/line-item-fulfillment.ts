@@ -18,6 +18,8 @@ import {
   nextOrdinal,
 } from "@/lib/line-item-units";
 import { getModelMap } from "@/lib/models-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /** Columns the rollup needs off each unit row. */
 const UNIT_ROLLUP_SELECT = {
@@ -504,11 +506,12 @@ export async function resolveAssetAccessories(
   if (!asset) return { serialised: [], bulks: [] };
 
   const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-  const modelBulks = await tx.modelBulkAccessory.findMany({
-    where: { modelId: asset.modelId, organizationId },
-    select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true } } },
-    orderBy: { sortOrder: "asc" },
-  });
+  const modelBulks = asset.modelId
+    ? await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
+        modelId: asset.modelId,
+        organizationId,
+      })
+    : [];
 
   // Resolve model names from Convex (pre-fetched map preferred; fallback to per-org fetch).
   const nameMap = modelMap ?? await getModelMap(organizationId);
@@ -517,7 +520,7 @@ export async function resolveAssetAccessories(
     ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId, modelName: nameMap.get(b.bulkAsset.modelId)?.name ?? null })),
     ...modelBulks
       .filter((m) => !assetBulkIds.has(m.bulkAssetId))
-      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAsset.modelId, modelName: nameMap.get(m.bulkAsset.modelId)?.name ?? null })),
+      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAssetModelId, modelName: nameMap.get(m.bulkAssetModelId ?? "")?.name ?? null })),
   ];
   const serialised = asset.childAssets.map((c) => ({ assetId: c.id, modelId: c.modelId, modelName: nameMap.get(c.modelId)?.name ?? null }));
   return { serialised, bulks };

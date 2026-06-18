@@ -31,6 +31,8 @@ import {
 } from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Validate + normalise asset custom-field values against the org's active
@@ -177,7 +179,7 @@ export async function getAsset(id: string) {
   if (!asset) return serialize(asset);
 
   // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
-  // Model media + bulkAccessories are intra-domain Prisma queries (no cross-domain hop).
+  // Model media stays a Prisma read (gallery terminus); bulkAccessories now from Convex.
   const modelMediaPromise: Promise<Prisma.ModelMediaGetPayload<{ include: { file: true } }>[]> = asset.modelId
     ? prisma.modelMedia.findMany({
         where: { modelId: asset.modelId },
@@ -186,11 +188,11 @@ export async function getAsset(id: string) {
       })
     : Promise.resolve([]);
 
-  const modelBulkAccessoriesPromise: Promise<Prisma.ModelBulkAccessoryGetPayload<{ include: { bulkAsset: true } }>[]> = asset.modelId
-    ? prisma.modelBulkAccessory.findMany({
-        where: { modelId: asset.modelId },
-        include: { bulkAsset: true },
-        orderBy: { sortOrder: "asc" },
+  const convex = await getConvexClient();
+  const modelBulkAccessoriesPromise = asset.modelId
+    ? convex.query(api.modelBulkAccessories.listByModelId, {
+        modelId: asset.modelId,
+        organizationId,
       })
     : Promise.resolve([]);
 
@@ -199,8 +201,7 @@ export async function getAsset(id: string) {
     modelMediaPromise,
     asset.supplierId ? getSupplierById(asset.supplierId) : null,
   ]);
-  // Awaited separately to preserve explicit Prisma payload type for .map() inference.
-  const modelBulkAccessories = await modelBulkAccessoriesPromise;
+  const modelBulkAccessoriesRaw = await modelBulkAccessoriesPromise;
 
   const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
 
@@ -217,11 +218,21 @@ export async function getAsset(id: string) {
     },
   }));
 
-  const bulkAccessoriesWithModel = modelBulkAccessories.map((acc) => ({
-    ...acc,
+  const bulkAccessoriesWithModel = modelBulkAccessoriesRaw.map((ba) => ({
+    id: ba.id,
+    organizationId: ba.organizationId,
+    modelId: ba.modelId,
+    bulkAssetId: ba.bulkAssetId,
+    quantity: ba.quantity,
+    sortOrder: ba.sortOrder ?? null,
+    notes: ba.notes ?? null,
+    addedAt: ba.addedAt ? new Date(ba.addedAt) : null,
+    addedById: ba.addedById,
     bulkAsset: {
-      ...acc.bulkAsset,
-      model: acc.bulkAsset.modelId ? modelMap.get(acc.bulkAsset.modelId) ?? null : null,
+      id: ba.bulkAssetId,
+      assetTag: ba.bulkAssetAssetTag ?? "",
+      modelId: ba.bulkAssetModelId ?? null,
+      model: ba.bulkAssetModelId ? modelMap.get(ba.bulkAssetModelId) ?? null : null,
     },
   }));
 

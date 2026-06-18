@@ -48,11 +48,6 @@ import {
   removeLineItemFromConvex,
 } from "@/lib/line-item-mirror";
 import {
-  mirrorModelBulkAccessoryCreate,
-  patchModelBulkAccessoryInConvex,
-  removeModelBulkAccessoryFromConvex,
-} from "@/lib/model-bulk-accessory-mirror";
-import {
   mirrorSupplierModelRateCreate,
   patchSupplierModelRateInConvex,
   removeSupplierModelRateFromConvex,
@@ -119,7 +114,6 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   Client: generic(api.clients),
   Supplier: generic(api.suppliers),
   Category: generic(api.categories),
-  ModelBulkAccessory: { create: mirrorModelBulkAccessoryCreate, patch: patchModelBulkAccessoryInConvex, remove: removeModelBulkAccessoryFromConvex },
   SupplierModelRate: { create: mirrorSupplierModelRateCreate, patch: patchSupplierModelRateInConvex, remove: removeSupplierModelRateFromConvex },
   ProjectService: generic(api.projectServices),
   ProjectTask: generic(api.projectTasks),

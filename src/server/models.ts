@@ -227,7 +227,8 @@ export async function getModel(id: string) {
   if (!doc || doc.organizationId !== organizationId) return serialize(null);
   const model = mapConvexModelToRow(doc);
 
-  const [categoryMap, convexAssets, convexBulk, mediaRows, bulkAccessories, modelMap] =
+  const convex = await getConvexClient();
+  const [categoryMap, convexAssets, convexBulk, mediaRows, bulkAccessoriesRaw, modelMap] =
     await Promise.all([
       getCategoryMap(organizationId),
       getActiveAssetsByModel(id, organizationId),
@@ -237,11 +238,7 @@ export async function getModel(id: string) {
         include: { file: true },
         orderBy: { sortOrder: "asc" },
       }),
-      prisma.modelBulkAccessory.findMany({
-        where: { modelId: id, organizationId },
-        include: { bulkAsset: true },
-        orderBy: { sortOrder: "asc" },
-      }),
+      convex.query(api.modelBulkAccessories.listByModelId, { modelId: id, organizationId }),
       getModelMap(organizationId),
     ]);
 
@@ -276,11 +273,21 @@ export async function getModel(id: string) {
     assets: assetsWithLoc,
     bulkAssets: bulkWithLoc,
     media: mediaRows,
-    bulkAccessories: bulkAccessories.map((ba) => ({
-      ...ba,
+    bulkAccessories: bulkAccessoriesRaw.map((ba) => ({
+      id: ba.id,
+      organizationId: ba.organizationId,
+      modelId: ba.modelId,
+      bulkAssetId: ba.bulkAssetId,
+      quantity: ba.quantity,
+      sortOrder: ba.sortOrder ?? null,
+      notes: ba.notes ?? null,
+      addedAt: ba.addedAt ? new Date(ba.addedAt) : null,
+      addedById: ba.addedById,
       bulkAsset: {
-        ...ba.bulkAsset,
-        model: ba.bulkAsset.modelId ? modelMap.get(ba.bulkAsset.modelId) ?? null : null,
+        id: ba.bulkAssetId,
+        assetTag: ba.bulkAssetAssetTag ?? "",
+        modelId: ba.bulkAssetModelId ?? null,
+        model: ba.bulkAssetModelId ? modelMap.get(ba.bulkAssetModelId) ?? null : null,
       },
     })),
   };

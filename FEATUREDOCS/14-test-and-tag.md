@@ -131,3 +131,21 @@ Models can set:
 - `defaultEquipmentClass` — equipment class for auto-registered assets
 - `defaultApplianceType` — appliance type for auto-registered assets
 - `defaultTestProfileId` — test profile inherited by assets
+
+## UI / Design System (RVLT polish, chunk 11)
+- Status colours come from `src/lib/status-colors.ts`: category `testTag` (CURRENT=
+  success, DUE_SOON=warning, OVERDUE/FAILED=error t-out, NOT_YET_TESTED/RETIRED=
+  neutral) and `testTagResult` (PASS=success, FAIL=error, NOT_APPLICABLE=neutral).
+  Per DESIGN.md §1 a FAIL/overdue is the t-out (problem) semantic, a current/valid
+  PASS is ok (success). **Never use teal for a PASS** — teal is the module hue, not
+  a status.
+- Human labels come from `src/lib/status-labels.ts`: `testTagStatusLabels`,
+  `testTagResultLabels`, `equipmentClassLabels`, `applianceTypeLabels` (all sentence
+  case). Reuse/extend these rather than hand-rolling per-file maps.
+- Auth: every page is gated with `RequirePermission resource="testTag"` (read for
+  list/detail/registry, create for new/quick-test). Reports uses `reports`/`view`.
+- The quick-test wizard is the inspector data-entry flow: 44px tap targets, focusRing
+  on every hand-built control, plain copy (no personality) in the fail dialog /
+  failure-details / retired-asset notice (alert contexts, §9).
+- `label-template.tsx` is a print template — intentionally left on its own print-CSS
+  styling, not migrated to app tokens (mirrors the pull-sheet print exception).

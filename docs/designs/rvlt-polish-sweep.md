@@ -31,7 +31,7 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ✅ |
 | 9 | Locations | list/detail/new/edit | ✅ |
 | 10 | Maintenance | list/detail/new/edit | ✅ |
-| 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ☐ |
+| 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ◐ |
 | 12 | Availability + Activity + Changelog + Notifications | those 4 + account, account/notifications | ☐ |
 | 13 | Settings | settings + ~17 sub-pages + layout | ☐ |
 | 14 | Admin | admin, organizations(+[id]), settings, users, layout | ☐ |
@@ -275,6 +275,66 @@ not-found notices are simple left-edge bars.
 
 tsc clean (0 clients+suppliers errors), eslint clean on touched files (only the
 pre-existing warnings above).
+
+### Chunk 11 — Test & Tag (polished, pending review)
+Swept all 6 pages + the 4 quick-test step components + 2 t&t components
+(`components/test-tag/test-tag-table`, `batch-create-dialog`). All scope files
+type-errored against the refreshed registry before (28 tsc errors in the rubric
+grep `src/app/(app)/test-and-tag/|src/components/test-tag/` → 0; note components
+live under `test-tag/` not `test-and-tag/`). Functionality untouched: markup/
+className/label + type-level registry swaps + additive status-colors/states only.
+
+**New status-colors categories (§3):** `testTag` (CURRENT=success, DUE_SOON=warning,
+OVERDUE/FAILED=error t-out, NOT_YET_TESTED/RETIRED=neutral — §1 overdue/failed is the
+problem semantic) and `testTagResult` (PASS=success, FAIL=error, NOT_APPLICABLE=
+neutral). Added sentence-case label maps to status-labels.ts: `testTagStatusLabels`,
+`testTagResultLabels`, `equipmentClassLabels`, `applianceTypeLabels` — every hand-
+rolled status/class/type map across the 5 t&t files now reads from these (was
+title-case "Due Soon"/"Not Tested"/"Class II (Double Insulated)"/"Cord Set", and
+PASS rendered **teal** — a module hue, not a status — corrected to ok green).
+
+Registry API repairs: `Button variant="outline" + render=` → `"line" + asChild`;
+`Badge variant="outline"/default/destructive` → status-only `Badge status` (profile
+pill→neutral, boolean OK/Fail check→ok/overbooked) or `StatusIndicator category=`;
+`EmptyState` old preset/heading API → title/description; Button `render=` → `asChild`.
+
+RVLT polish: legacy `text-fg*`/`bg-bg-surface`/`surface-ring`/`bg-bg-inset`/
+`surface-hover`/`destructive`/`teal-*`/`green-500`/`amber-*`/`red-*` → `bg-card
+ring-1 ring-line shadow-[var(--sh-card)]` + ink/muted/line + status tokens. `t-mono`
+on tag IDs/serials, `t-data` (tabular-nums) on readings/dates/counts. Skeleton
+loaders replace every Loader2/teal border spinner (landing metrics+tables, registry
+table, new+quick-test Suspense fallbacks). Button `loading` prop on all submits/
+syncs. §1 danger: detail Retire (reversible) tinted t-out, Delete (permanent)
+escalates to solid red. §9.1: focusRing on every hand-built control (row/asset/
+breadcrumb links, report cards as keyboard `<button>`, search/bulk-asset rows, step
+tabs, mobile session-log toggle), aria-pressed on Pass-all toggle, aria-label on
+N/A result dots + icon buttons. §15: outlet +/- counter + audio/back → size="icon"
+(size-11), report/search rows min-h-11, mobile session bar safe-area-inset-bottom.
+§8: detail not-found/error → left-edge t-out notice with retry+back; explicit
+emptyDescription on the registry DataTable (it ignores emptyPreset). §9 personality:
+quick-test fail dialog + failure-details + retired-asset notice kept plain (alert
+contexts) — left-edge accent bars, no Kalam/mascot. §5.2 sentence case across all
+titles/labels/option maps/report configs ("Test & tag", "Quick test", "Record test",
+"Full register", "Overdue / non-compliant", step "Sub-tests", etc.).
+
+**Auth resource:** `testTag` (read for list/detail/registry, create for new/quick-
+test, update on detail actions — all verified against test-tag-assets/records/
+profiles requirePermission calls). All page gates already present + hoisted above
+loading/not-found (detail wraps Suspense; landing/registry/new/quick-test wrap the
+whole tree). Reports keeps its existing `reports`/`view` gate (the report server
+actions use getOrgContext; the page reads getTestTagAssets which is testTag-scoped —
+left as-is, semantically correct + pre-existing).
+
+DEFERRED (recurring final-pass items): detail Test-history sub-table + landing
+overdue/due-soon/recent tables lack mobile card lists (overflow-x-auto only); the
+not-found notice is a simple left-edge bar. label-template.tsx (print label) left
+untouched — print-template constraint, mirrors the pull-sheet print exception.
+
+tsc clean (0 errors in `src/app/(app)/test-and-tag/|src/components/test-tag/`),
+eslint clean on touched files (only pre-existing unused `useCallback`/
+`updateTestTagAsset` imports in quick-test/page, `thresholds` in electrical-step,
+and form.watch/setState-in-effect react-hooks warnings — all predate this chunk).
+status-colors + status-labels unit tests green (11/11).
 
 ## Learned standard patterns (from chunk reviews — apply to ALL remaining chunks)
 - **Auth-gate every page** (§8): create→`RequirePermission resource action="create"`, edit→`action="update"`,

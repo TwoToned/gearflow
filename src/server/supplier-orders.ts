@@ -1,17 +1,13 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { supplierOrderSchema, type SupplierOrderFormValues, supplierOrderItemSchema, type SupplierOrderItemFormValues } from "@/lib/validations/supplier-order";
 import { logActivity, buildChanges } from "@/lib/activity-log";
-import {
-  mirrorSupplierOrderCreate,
-  patchSupplierOrderInConvex,
-  removeSupplierOrderFromConvex,
-  removeSupplierOrderItemFromConvex,
-  syncSupplierOrderToConvex,
-} from "@/lib/sub-hire-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import {
   attachSupplier,
   getMatchingSupplierIds,
@@ -142,22 +138,27 @@ export async function createSupplierOrder(data: SupplierOrderFormValues) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "create");
   const parsed = supplierOrderSchema.parse(data);
 
-  const order = await prisma.supplierOrder.create({
-    data: {
-      organizationId,
-      supplierId: parsed.supplierId,
-      orderNumber: parsed.orderNumber,
-      type: parsed.type,
-      status: parsed.status,
-      orderDate: parsed.orderDate ? new Date(parsed.orderDate as unknown as string) : null,
-      expectedDate: parsed.expectedDate ? new Date(parsed.expectedDate as unknown as string) : null,
-      receivedDate: parsed.receivedDate ? new Date(parsed.receivedDate as unknown as string) : null,
-      projectId: parsed.projectId || null,
-      notes: parsed.notes || null,
-      createdById: userId,
-    },
+  const id = createId();
+  const now = Date.now();
+  const convex = await getConvexClient();
+  await convex.mutation(api.supplierOrders.create, {
+    id,
+    organizationId,
+    supplierId: parsed.supplierId,
+    orderNumber: parsed.orderNumber,
+    type: parsed.type,
+    status: parsed.status ?? undefined,
+    orderDate: parsed.orderDate ? new Date(parsed.orderDate as unknown as string).getTime() : undefined,
+    expectedDate: parsed.expectedDate ? new Date(parsed.expectedDate as unknown as string).getTime() : undefined,
+    receivedDate: parsed.receivedDate ? new Date(parsed.receivedDate as unknown as string).getTime() : undefined,
+    projectId: parsed.projectId || undefined,
+    notes: parsed.notes || undefined,
+    createdById: userId,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorSupplierOrderCreate(order);
+
+  const order = await fetchSupplierOrderById(id);
 
   await logActivity({
     organizationId,
@@ -165,9 +166,9 @@ export async function createSupplierOrder(data: SupplierOrderFormValues) {
     userName,
     action: "CREATE",
     entityType: "supplierOrder",
-    entityId: order.id,
-    entityName: order.orderNumber,
-    summary: `Created order ${order.orderNumber}`,
+    entityId: id,
+    entityName: parsed.orderNumber,
+    summary: `Created order ${parsed.orderNumber}`,
   });
 
   return serialize(order);
@@ -176,29 +177,30 @@ export async function createSupplierOrder(data: SupplierOrderFormValues) {
 export async function updateSupplierOrder(id: string, data: Partial<SupplierOrderFormValues>) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "update");
 
-  const before = await prisma.supplierOrder.findUnique({ where: { id, organizationId } });
-  if (!before) throw new Error("Order not found");
+  const convex = await getConvexClient();
+  const before = await fetchSupplierOrderById(id);
+  if (!before || before.organizationId !== organizationId) throw new Error("Order not found");
 
-  const updateData: Record<string, unknown> = {};
-  if (data.orderNumber !== undefined) updateData.orderNumber = data.orderNumber;
-  if (data.type !== undefined) updateData.type = data.type;
-  if (data.status !== undefined) updateData.status = data.status;
-  if (data.orderDate !== undefined) updateData.orderDate = data.orderDate ? new Date(data.orderDate as unknown as string) : null;
-  if (data.expectedDate !== undefined) updateData.expectedDate = data.expectedDate ? new Date(data.expectedDate as unknown as string) : null;
-  if (data.receivedDate !== undefined) updateData.receivedDate = data.receivedDate ? new Date(data.receivedDate as unknown as string) : null;
-  if (data.projectId !== undefined) updateData.projectId = data.projectId || null;
-  if (data.notes !== undefined) updateData.notes = data.notes || null;
+  const patch: Record<string, unknown> = {};
+  if (data.orderNumber !== undefined) patch.orderNumber = data.orderNumber;
+  if (data.type !== undefined) patch.type = data.type;
+  if (data.status !== undefined) patch.status = data.status;
+  if (data.orderDate !== undefined) patch.orderDate = data.orderDate ? new Date(data.orderDate as unknown as string).getTime() : null;
+  if (data.expectedDate !== undefined) patch.expectedDate = data.expectedDate ? new Date(data.expectedDate as unknown as string).getTime() : null;
+  if (data.receivedDate !== undefined) patch.receivedDate = data.receivedDate ? new Date(data.receivedDate as unknown as string).getTime() : null;
+  if (data.projectId !== undefined) patch.projectId = data.projectId || null;
+  if (data.notes !== undefined) patch.notes = data.notes || null;
+  patch.updatedAt = Date.now();
 
-  const updated = await prisma.supplierOrder.update({
-    where: { id, organizationId },
-    data: updateData,
-  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await convex.mutation(api.supplierOrders.update, { id, patch: patch as any });
+  const updated = await fetchSupplierOrderById(id);
 
-  await patchSupplierOrderInConvex(updated.id, updated);
-
-  const changes = buildChanges(before, updated, [
-    "orderNumber", "type", "status", "notes",
-  ]);
+  const changes = buildChanges(
+    before as unknown as Record<string, unknown>,
+    (updated ?? {}) as unknown as Record<string, unknown>,
+    ["orderNumber", "type", "status", "notes"],
+  );
 
   await logActivity({
     organizationId,
@@ -206,9 +208,9 @@ export async function updateSupplierOrder(id: string, data: Partial<SupplierOrde
     userName,
     action: "UPDATE",
     entityType: "supplierOrder",
-    entityId: updated.id,
-    entityName: updated.orderNumber,
-    summary: `Updated order ${updated.orderNumber}`,
+    entityId: id,
+    entityName: before.orderNumber,
+    summary: `Updated order ${before.orderNumber}`,
     details: changes.length > 0 ? { changes } : undefined,
   });
 
@@ -218,19 +220,18 @@ export async function updateSupplierOrder(id: string, data: Partial<SupplierOrde
 export async function updateSupplierOrderStatus(id: string, status: string) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "update");
 
-  const before = await prisma.supplierOrder.findUnique({ where: { id, organizationId } });
-  if (!before) throw new Error("Order not found");
+  const convex = await getConvexClient();
+  const before = await fetchSupplierOrderById(id);
+  if (!before || before.organizationId !== organizationId) throw new Error("Order not found");
 
-  const updateData: Record<string, unknown> = { status };
+  const patch: Record<string, unknown> = { status, updatedAt: Date.now() };
   if (status === "RECEIVED" && !before.receivedDate) {
-    updateData.receivedDate = new Date();
+    patch.receivedDate = Date.now();
   }
 
-  const updated = await prisma.supplierOrder.update({
-    where: { id, organizationId },
-    data: updateData,
-  });
-  await patchSupplierOrderInConvex(updated.id, updated);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await convex.mutation(api.supplierOrders.update, { id, patch: patch as any });
+  const updated = await fetchSupplierOrderById(id);
 
   await logActivity({
     organizationId,
@@ -238,9 +239,9 @@ export async function updateSupplierOrderStatus(id: string, status: string) {
     userName,
     action: "UPDATE",
     entityType: "supplierOrder",
-    entityId: updated.id,
-    entityName: updated.orderNumber,
-    summary: `Changed order ${updated.orderNumber} status to ${status}`,
+    entityId: id,
+    entityName: before.orderNumber,
+    summary: `Changed order ${before.orderNumber} status to ${status}`,
     details: { changes: [{ field: "status", from: before.status, to: status }] },
   });
 
@@ -250,14 +251,13 @@ export async function updateSupplierOrderStatus(id: string, status: string) {
 export async function deleteSupplierOrder(id: string) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "delete");
 
-  const order = await prisma.supplierOrder.findUnique({ where: { id, organizationId } });
-  if (!order) throw new Error("Order not found");
+  const order = await fetchSupplierOrderById(id);
+  if (!order || order.organizationId !== organizationId) throw new Error("Order not found");
 
-  // Capture the cascade-deleted items so we can mirror their removal.
-  const itemsToRemove = await prisma.supplierOrderItem.findMany({ where: { orderId: id }, select: { id: true } });
-  await prisma.supplierOrder.delete({ where: { id, organizationId } });
-  for (const it of itemsToRemove) await removeSupplierOrderItemFromConvex(it.id);
-  await removeSupplierOrderFromConvex(id);
+  const convex = await getConvexClient();
+  const items = await getSupplierOrderItems(id);
+  for (const it of items) await convex.mutation(api.supplierOrderItems.remove, { id: it.id });
+  await convex.mutation(api.supplierOrders.remove, { id });
 
   await logActivity({
     organizationId,
@@ -276,33 +276,33 @@ export async function deleteSupplierOrder(id: string) {
 export async function addOrderItem(orderId: string, data: SupplierOrderItemFormValues) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "update");
 
-  const order = await prisma.supplierOrder.findUnique({ where: { id: orderId, organizationId } });
-  if (!order) throw new Error("Order not found");
+  const order = await fetchSupplierOrderById(orderId);
+  if (!order || order.organizationId !== organizationId) throw new Error("Order not found");
 
   const parsed = supplierOrderItemSchema.parse(data);
   const lineTotal = parsed.unitPrice != null ? parsed.unitPrice * parsed.quantity : null;
 
-  const maxSort = await prisma.supplierOrderItem.aggregate({
-    where: { orderId },
-    _max: { sortOrder: true },
+  const convex = await getConvexClient();
+  const existing = await getSupplierOrderItems(orderId);
+  const sortOrder = existing.reduce((max, it) => Math.max(max, it.sortOrder ?? -1), -1) + 1;
+
+  const itemId = createId();
+  await convex.mutation(api.supplierOrderItems.create, {
+    id: itemId,
+    orderId,
+    description: parsed.description,
+    quantity: parsed.quantity,
+    unitPrice: parsed.unitPrice ?? undefined,
+    lineTotal: lineTotal ?? undefined,
+    modelId: parsed.modelId || undefined,
+    assetId: parsed.assetId || undefined,
+    notes: parsed.notes || undefined,
+    sortOrder,
   });
 
-  const item = await prisma.supplierOrderItem.create({
-    data: {
-      orderId,
-      description: parsed.description,
-      quantity: parsed.quantity,
-      unitPrice: parsed.unitPrice ?? null,
-      lineTotal,
-      modelId: parsed.modelId || null,
-      assetId: parsed.assetId || null,
-      notes: parsed.notes || null,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
-  });
+  await recalculateOrderTotals(orderId, convex);
 
-  await recalculateOrderTotals(orderId);
-  await syncSupplierOrderToConvex(orderId);
+  const item = { id: itemId, orderId, description: parsed.description, quantity: parsed.quantity, unitPrice: parsed.unitPrice ?? null, lineTotal, modelId: parsed.modelId ?? null, assetId: parsed.assetId ?? null, notes: parsed.notes ?? null, sortOrder };
 
   await logActivity({
     organizationId,
@@ -310,7 +310,7 @@ export async function addOrderItem(orderId: string, data: SupplierOrderItemFormV
     userName,
     action: "CREATE",
     entityType: "supplierOrderItem",
-    entityId: item.id,
+    entityId: itemId,
     entityName: parsed.description,
     summary: `Added item "${parsed.description}" to order ${order.orderNumber}`,
   });
@@ -321,60 +321,54 @@ export async function addOrderItem(orderId: string, data: SupplierOrderItemFormV
 export async function updateOrderItem(itemId: string, data: Partial<SupplierOrderItemFormValues>) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "update");
 
-  const item = await prisma.supplierOrderItem.findUnique({
-    where: { id: itemId },
-    include: { order: { select: { organizationId: true, orderNumber: true } } },
-  });
-  if (!item || item.order.organizationId !== organizationId) throw new Error("Item not found");
+  const convex = await getConvexClient();
+  const item = await convex.query(api.supplierOrderItems.getById, { id: itemId });
+  if (!item) throw new Error("Item not found");
+  const order = await fetchSupplierOrderById(item.orderId);
+  if (!order || order.organizationId !== organizationId) throw new Error("Item not found");
 
-  const updateData: Record<string, unknown> = {};
-  if (data.description !== undefined) updateData.description = data.description;
-  if (data.quantity !== undefined) updateData.quantity = data.quantity;
-  if (data.unitPrice !== undefined) updateData.unitPrice = data.unitPrice ?? null;
-  if (data.modelId !== undefined) updateData.modelId = data.modelId || null;
-  if (data.assetId !== undefined) updateData.assetId = data.assetId || null;
-  if (data.notes !== undefined) updateData.notes = data.notes || null;
+  const patch: Record<string, unknown> = {};
+  if (data.description !== undefined) patch.description = data.description;
+  if (data.quantity !== undefined) patch.quantity = data.quantity;
+  if (data.unitPrice !== undefined) patch.unitPrice = data.unitPrice ?? null;
+  if (data.modelId !== undefined) patch.modelId = data.modelId || null;
+  if (data.assetId !== undefined) patch.assetId = data.assetId || null;
+  if (data.notes !== undefined) patch.notes = data.notes || null;
 
-  // Recalculate line total
   const qty = Number(data.quantity ?? item.quantity);
   const price = data.unitPrice !== undefined ? (data.unitPrice ?? null) : (item.unitPrice != null ? Number(item.unitPrice) : null);
-  updateData.lineTotal = price != null ? Number(price) * qty : null;
+  patch.lineTotal = price != null ? Number(price) * qty : null;
 
-  const updated = await prisma.supplierOrderItem.update({
-    where: { id: itemId },
-    data: updateData,
-  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await convex.mutation(api.supplierOrderItems.update, { id: itemId, patch: patch as any });
+  await recalculateOrderTotals(item.orderId, convex);
 
-  await recalculateOrderTotals(item.orderId);
-  await syncSupplierOrderToConvex(item.orderId);
-
+  const updatedDescription = (data.description ?? item.description) as string;
   await logActivity({
     organizationId,
     userId,
     userName,
     action: "UPDATE",
     entityType: "supplierOrderItem",
-    entityId: updated.id,
-    entityName: updated.description,
-    summary: `Updated item "${updated.description}" on order ${item.order.orderNumber}`,
+    entityId: itemId,
+    entityName: updatedDescription,
+    summary: `Updated item "${updatedDescription}" on order ${order.orderNumber}`,
   });
 
-  return serialize(updated);
+  return serialize({ ...item, ...patch, id: itemId });
 }
 
 export async function removeOrderItem(itemId: string) {
   const { organizationId, userId, userName } = await requirePermission("supplier", "update");
 
-  const item = await prisma.supplierOrderItem.findUnique({
-    where: { id: itemId },
-    include: { order: { select: { organizationId: true, orderNumber: true } } },
-  });
-  if (!item || item.order.organizationId !== organizationId) throw new Error("Item not found");
+  const convex = await getConvexClient();
+  const item = await convex.query(api.supplierOrderItems.getById, { id: itemId });
+  if (!item) throw new Error("Item not found");
+  const order = await fetchSupplierOrderById(item.orderId);
+  if (!order || order.organizationId !== organizationId) throw new Error("Item not found");
 
-  await prisma.supplierOrderItem.delete({ where: { id: itemId } });
-  await recalculateOrderTotals(item.orderId);
-  await removeSupplierOrderItemFromConvex(itemId);
-  await syncSupplierOrderToConvex(item.orderId);
+  await convex.mutation(api.supplierOrderItems.remove, { id: itemId });
+  await recalculateOrderTotals(item.orderId, convex);
 
   await logActivity({
     organizationId,
@@ -384,24 +378,20 @@ export async function removeOrderItem(itemId: string) {
     entityType: "supplierOrderItem",
     entityId: itemId,
     entityName: item.description,
-    summary: `Removed item "${item.description}" from order ${item.order.orderNumber}`,
+    summary: `Removed item "${item.description}" from order ${order.orderNumber}`,
   });
 
   return { success: true };
 }
 
-async function recalculateOrderTotals(orderId: string) {
-  const agg = await prisma.supplierOrderItem.aggregate({
-    where: { orderId },
-    _sum: { lineTotal: true },
-  });
-
-  const subtotal = agg._sum.lineTotal ? Number(agg._sum.lineTotal) : 0;
+async function recalculateOrderTotals(orderId: string, convex: Awaited<ReturnType<typeof getConvexClient>>) {
+  const items = await getSupplierOrderItems(orderId);
+  const subtotal = Math.round(items.reduce((sum, it) => sum + (it.lineTotal ?? 0), 0) * 100) / 100;
   const taxAmount = Math.round(subtotal * 0.1 * 100) / 100; // 10% GST
   const total = Math.round((subtotal + taxAmount) * 100) / 100;
 
-  await prisma.supplierOrder.update({
-    where: { id: orderId },
-    data: { subtotal, taxAmount, total },
+  await convex.mutation(api.supplierOrders.update, {
+    id: orderId,
+    patch: { subtotal, taxAmount, total, updatedAt: Date.now() },
   });
 }

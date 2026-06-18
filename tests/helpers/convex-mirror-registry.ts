@@ -134,7 +134,5 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   AssetScanLog: generic(api.assetScanLogs),
   CrewMember: generic(api.crewMembers),
   FileUpload: generic(api.fileUploads),
-  SupplierOrder: generic(api.supplierOrders),
-  SupplierOrderItem: generic(api.supplierOrderItems),
   KitSerializedItem: generic(api.kitSerializedItems),
 };

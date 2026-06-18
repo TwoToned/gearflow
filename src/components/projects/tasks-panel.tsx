@@ -312,7 +312,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                                   <PersonAvatar
                                     name={assigneeName}
                                     src={task.assigneeUser?.image ?? undefined}
-                                    className="size-4 border-0 [&_span]:text-[8px]"
+                                    className="size-5 border-0"
                                   />
                                   {assigneeName}
                                 </span>

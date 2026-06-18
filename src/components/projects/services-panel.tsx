@@ -58,6 +58,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
 import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
@@ -636,20 +637,18 @@ function ServiceCard({
                       <button
                         key={a.id}
                         onClick={() => onCrewMessage(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`)}
-                        className={cn("relative h-6 w-6 rounded-full border-2 border-card", focusRing)}
+                        className={cn("relative rounded-full", focusRing)}
                         title={`${a.crewMember.firstName} ${a.crewMember.lastName} — click to generate message`}
                       >
-                        {a.crewMember.image ? (
-                          <img src={a.crewMember.image} alt="" className="h-full w-full rounded-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center rounded-full bg-paper-2 text-[9px] font-medium text-ink-2">
-                            {a.crewMember.firstName[0]}{a.crewMember.lastName[0]}
-                          </span>
-                        )}
+                        <PersonAvatar
+                          name={`${a.crewMember.firstName} ${a.crewMember.lastName}`}
+                          src={a.crewMember.image ?? undefined}
+                          className="size-6 border-2 border-card"
+                        />
                       </button>
                     ))}
                     {service.crewAssignments.length > 3 && (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-paper-2 text-[9px] font-medium">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-paper-2 text-badge font-medium">
                         +{service.crewAssignments.length - 3}
                       </span>
                     )}
@@ -1143,12 +1142,12 @@ function ServiceDialog({
     (crewMembers as { id: string; firstName: string; lastName: string; image: string | null }[]).map((m) => ({
       value: m.id,
       label: `${m.firstName} ${m.lastName}`,
-      icon: m.image ? (
-        <img src={m.image} alt="" className="h-5 w-5 rounded-full object-cover" />
-      ) : (
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-paper-2 text-[10px] font-medium text-ink-2">
-          {m.firstName[0]}{m.lastName[0]}
-        </span>
+      icon: (
+        <PersonAvatar
+          name={`${m.firstName} ${m.lastName}`}
+          src={m.image ?? undefined}
+          className="size-6"
+        />
       ),
     }));
 

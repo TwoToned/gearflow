@@ -53,11 +53,12 @@ import {
 } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
+import { cn, focusRing } from "@/lib/utils";
 import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -201,55 +202,60 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     : null;
 
   if (isLoading) {
-    return <div className="text-fg-3 py-8 text-center">Loading crew...</div>;
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-9 w-48" />
+        <TableSkeleton rows={4} cols={6} />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm text-fg-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-4 text-ui-text text-muted">
           <span className="flex items-center gap-1">
             <Users className="h-4 w-4" />
             {assignments?.length || 0} crew
           </span>
           {labourCost && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 tabular-nums">
               <DollarSign className="h-4 w-4" />
-              Est. Labour: {formatCurrency(Number(labourCost.totalLabourCost))}
+              Est. labour: {formatCurrency(Number(labourCost.totalLabourCost))}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <CanDo resource="crew" action="update">
             {pendingCount > 0 && (
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => setOfferAllOpen(true)}
                 disabled={offerAllMutation.isPending}
               >
-                <Send className="mr-2 h-4 w-4" />
-                Offer All ({pendingCount})
+                <Send className="h-4 w-4" />
+                Offer all ({pendingCount})
               </Button>
             )}
             <Button
-              variant="outline"
+              variant="line"
               size="sm"
               onClick={() => setMessageOpen(true)}
               disabled={!assignments || assignments.length === 0}
             >
-              <MessageSquare className="mr-2 h-4 w-4" />
+              <MessageSquare className="h-4 w-4" />
               Message
             </Button>
           </CanDo>
           <Button
-            variant="outline"
+            variant="line"
             size="sm"
             onClick={() => setCallSheetOpen(true)}
           >
-            <FileText className="mr-2 h-4 w-4" />
-            Call Sheet
+            <FileText className="h-4 w-4" />
+            Call sheet
           </Button>
           <CallSheetDialog
             projectId={projectId}
@@ -258,8 +264,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
           />
           <CanDo resource="crew" action="create">
             <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Crew
+              <Plus className="h-4 w-4" />
+              Add crew
             </Button>
           </CanDo>
         </div>
@@ -267,25 +273,27 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="py-12 text-center text-fg-3">
-            <Users className="mx-auto h-8 w-8 mb-2 opacity-50" />
-            <p>No crew assigned to this project yet.</p>
+        <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 p-7">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Users className="h-8 w-8 text-muted" />
+            <div className="space-y-1">
+              <p className="text-ui-text font-medium text-ink-2">No crew booked yet</p>
+              <p className="text-caption text-muted">Add the hands you need for bump-in, the show, and bump-out.</p>
+            </div>
             <CanDo resource="crew" action="create">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
-                className="mt-3"
                 onClick={() => setAddOpen(true)}
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Crew Member
+                <Plus className="h-4 w-4" />
+                Add crew member
               </Button>
             </CanDo>
           </div>
         </div>
       ) : (
-        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+        <div className="rounded-[var(--r)] border border-line overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -294,7 +302,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                 <TableHead>Phase</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>Rate</TableHead>
-                <TableHead>Est. Cost</TableHead>
+                <TableHead className="text-right">Est. cost</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -428,9 +436,9 @@ function PhaseGroup({
   if (assignments.length === 0) return null;
   return (
     <>
-      <TableRow className="bg-bg-inset/30 hover:bg-bg-inset/30">
+      <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
         <TableCell colSpan={8} className="py-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-fg-3">
+          <span className="t-overline text-muted">
             {phaseLabels[phase] || phase}
           </span>
         </TableCell>
@@ -479,11 +487,11 @@ function AssignmentRow({
       <TableCell>
         <div className="flex items-center gap-2">
           {a.isProjectManager && (
-            <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+            <Star className="h-3.5 w-3.5 text-amber fill-amber" />
           )}
           <Link
             href={`/crew/${member.id}`}
-            className="font-medium hover:underline"
+            className={cn("font-medium text-ink-2 hover:text-link hover:underline rounded-sm", focusRing)}
           >
             {member.firstName} {member.lastName}
           </Link>
@@ -491,8 +499,8 @@ function AssignmentRow({
       </TableCell>
       <TableCell>
         {role ? (
-          <Badge
-            variant="outline"
+          <span
+            className="inline-flex items-center rounded-full border px-2 py-0.5 text-badge font-medium"
             style={
               role.color
                 ? {
@@ -504,45 +512,45 @@ function AssignmentRow({
             }
           >
             {role.name}
-          </Badge>
+          </span>
         ) : (
-          <span className="text-fg-3">—</span>
+          <span className="text-muted">—</span>
         )}
       </TableCell>
-      <TableCell className="text-sm">
+      <TableCell className="text-table-cell text-ink-2">
         {a.phase
           ? phaseLabels[a.phase as string] || (a.phase as string)
           : "—"}
       </TableCell>
-      <TableCell className="text-sm">
-        <div className="flex items-center gap-1">
-          <Calendar className="h-3 w-3 text-fg-3" />
+      <TableCell className="text-table-cell">
+        <div className="flex items-center gap-1 text-ink-2 tabular-nums">
+          <Calendar className="h-3 w-3 text-muted" />
           {formatDate(a.startDate as string | null)}
           {a.endDate && a.endDate !== a.startDate
             ? ` – ${formatDate(a.endDate as string | null)}`
             : ""}
         </div>
         {a.startTime && (
-          <div className="flex items-center gap-1 text-xs text-fg-3">
+          <div className="flex items-center gap-1 text-caption text-muted tabular-nums">
             <Clock className="h-3 w-3" />
             {a.startTime as string}
             {a.endTime ? ` – ${a.endTime as string}` : ""}
           </div>
         )}
       </TableCell>
-      <TableCell className="text-sm t-data">
+      <TableCell className="text-table-cell tabular-nums">
         {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
           <>
-            {formatCurrency(a.rateOverride as number)}{" "}
-            <span className="text-fg-3 text-xs">
+            <span className="text-ink-2">{formatCurrency(a.rateOverride as number)}</span>{" "}
+            <span className="text-muted text-caption">
               {crewRateTypeLabels[(a.rateType as string) || "DAILY"] || ""}
             </span>
           </>
         ) : (
-          <span className="text-fg-3">Default</span>
+          <span className="text-muted">Default</span>
         )}
       </TableCell>
-      <TableCell className="text-sm font-medium t-data">
+      <TableCell className="text-right text-table-cell font-medium tabular-nums text-ink">
         {formatCurrency(a.estimatedCost as number | null)}
       </TableCell>
       <TableCell>
@@ -554,11 +562,14 @@ function AssignmentRow({
           }
         >
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-auto px-2 py-0.5" />}>
-              <span className="pointer-events-none inline-flex items-center">
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn("inline-flex items-center gap-1 rounded-full px-1 py-0.5", focusRing)}
+              >
                 <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
-                <ChevronDown className="ml-1 h-3 w-3" />
-              </span>
+                <ChevronDown className="h-3 w-3 text-muted" />
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {allStatuses.map((s) => (
@@ -577,22 +588,20 @@ function AssignmentRow({
       <TableCell>
         <CanDo resource="crew" action="update">
           <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon" className="h-8 w-8" />
-              }
-            >
-              <Pencil className="h-3.5 w-3.5" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="mr-2 h-3.5 w-3.5" />
-                Edit Assignment
+                Edit assignment
               </DropdownMenuItem>
               {onSendOffer && a.status === "PENDING" && (
                 <DropdownMenuItem onClick={onSendOffer}>
                   <Send className="mr-2 h-3.5 w-3.5" />
-                  Send Offer
+                  Send offer
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
@@ -607,7 +616,7 @@ function AssignmentRow({
                 Download .ics
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="text-destructive"
+                className="text-t-out"
                 onClick={onDelete}
               >
                 <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -859,7 +868,7 @@ function AssignmentDialog({
                 emptyMessage="No crew members found"
               />
               {form.formState.errors.crewMemberId && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.crewMemberId.message}
                 </p>
               )}
@@ -1127,26 +1136,26 @@ function AssignmentDialog({
           {(hardConflicts.length > 0 || softConflicts.length > 0) && (
             <div className="space-y-2">
               {hardConflicts.length > 0 && (
-                <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-red-500 mb-1">
+                <div className="rounded-[var(--r)] border border-line border-l-2 border-l-t-out bg-out-soft/40 p-3">
+                  <div className="flex items-center gap-2 text-ui-text font-semibold text-t-out mb-1">
                     <AlertTriangle className="h-4 w-4" />
                     Conflicts
                   </div>
                   {hardConflicts.map((c: CrewConflict, i: number) => (
-                    <p key={i} className="text-xs text-red-400">
+                    <p key={i} className="text-caption text-t-out">
                       {c.label}
                     </p>
                   ))}
                 </div>
               )}
               {softConflicts.length > 0 && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-amber-500 mb-1">
+                <div className="rounded-[var(--r)] border border-line border-l-2 border-l-warn bg-warn-soft/40 p-3">
+                  <div className="flex items-center gap-2 text-ui-text font-semibold text-warn mb-1">
                     <AlertTriangle className="h-4 w-4" />
                     Warnings
                   </div>
                   {softConflicts.map((c: CrewConflict, i: number) => (
-                    <p key={i} className="text-xs text-amber-400">
+                    <p key={i} className="text-caption text-warn">
                       {c.label}
                     </p>
                   ))}
@@ -1158,7 +1167,7 @@ function AssignmentDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
@@ -1207,7 +1216,7 @@ function BulkMessageDialog({
           <DialogTitle>Message Project Crew</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <p className="text-sm text-fg-3">
+          <p className="text-ui-text text-muted">
             Send an email to all active crew members on this project.
           </p>
           <div className="space-y-1.5">
@@ -1222,7 +1231,7 @@ function BulkMessageDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel

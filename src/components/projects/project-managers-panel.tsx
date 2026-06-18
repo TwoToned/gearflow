@@ -14,9 +14,11 @@ import {
   removeProjectManager,
 } from "@/server/project-managers";
 import { Button } from "@/components/ui/button";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { SectionHeader } from "@/components/layout/page-layouts";
+import { cn, focusRing } from "@/lib/utils";
 
 interface PM {
   userId: string;
@@ -79,13 +81,14 @@ export function ProjectManagersPanel({
   });
 
   return (
-    <div className="border-b border-border pb-4 space-y-2">
+    <div className="border-b border-line pb-4 space-y-2">
       <div className="flex items-center justify-between">
-        <SectionHeader label="Project Managers" />
+        <SectionHeader label="Project managers" />
         <Button
           variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0 text-fg-4 hover:text-fg-2"
+          size="icon"
+          className="size-7 text-muted hover:text-ink-2"
+          title="Add project manager"
           onClick={() => setShowPicker(!showPicker)}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -93,7 +96,7 @@ export function ProjectManagersPanel({
       </div>
 
       {managers.length === 0 && !showPicker && (
-        <p className="text-sm text-fg-3">No PMs assigned</p>
+        <p className="text-ui-text text-muted">No PMs assigned</p>
       )}
 
       {managers.length > 0 && (
@@ -101,26 +104,24 @@ export function ProjectManagersPanel({
           {managers.map((pm) => (
             <div
               key={pm.user.id}
-              className="flex items-center gap-2 rounded-md px-1 py-0.5 group"
+              className="flex items-center gap-2 rounded-[var(--r)] px-1 py-0.5 group"
             >
-              <div className="h-6 w-6 shrink-0 rounded-full bg-bg-inset flex items-center justify-center text-[10px] font-medium text-fg-3">
-                {pm.user.image ? (
-                  <img
-                    src={pm.user.image}
-                    alt={pm.user.name ?? ""}
-                    className="h-6 w-6 rounded-full object-cover"
-                  />
-                ) : (
-                  (pm.user.name ?? pm.user.email).charAt(0).toUpperCase()
-                )}
-              </div>
-              <span className="flex-1 truncate text-sm text-fg-2">
+              <PersonAvatar
+                name={pm.user.name ?? pm.user.email}
+                src={pm.user.image ?? undefined}
+                className="size-6 border-0"
+              />
+              <span className="flex-1 truncate text-ui-text text-ink-2">
                 {pm.user.name ?? pm.user.email}
               </span>
               <button
                 onClick={() => removeMutation.mutate(pm.user.id)}
                 disabled={removeMutation.isPending}
-                className="opacity-0 group-hover:opacity-100 text-fg-4 hover:text-destructive transition-opacity"
+                className={cn(
+                  "rounded-sm text-faint opacity-0 transition-opacity hover:text-t-out group-hover:opacity-100",
+                  focusRing,
+                )}
+                title="Remove project manager"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

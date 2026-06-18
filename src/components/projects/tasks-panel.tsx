@@ -18,14 +18,14 @@ import {
   X,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   Select,
@@ -79,15 +79,13 @@ type Task = {
 
 const STATUS_ORDER: ProjectTaskStatus[] = ["TODO", "IN_PROGRESS", "DONE"];
 
+// Priority dots: low = faint, normal = info blue, high = the --t-out threshold
+// signal (reserved red, §1). Encoded by colour AND the priority label in the dialog.
 const PRIORITY_DOT: Record<ProjectTaskPriority, string> = {
-  LOW: "bg-fg-4",
-  NORMAL: "bg-blue-500",
-  HIGH: "bg-red-500",
+  LOW: "bg-faint",
+  NORMAL: "bg-blue",
+  HIGH: "bg-t-out",
 };
-
-function initials(name: string) {
-  return name.split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-}
 
 function dueState(due: string | null): { label: string; overdue: boolean } | null {
   if (!due) return null;
@@ -220,14 +218,20 @@ export function TasksPanel({ projectId }: { projectId: string }) {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center gap-2 py-8 text-sm text-fg-3">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading tasks…
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 rounded-[var(--r)] border border-line px-3 py-2.5">
+              <Skeleton className="size-4 rounded-full" />
+              <Skeleton className="h-3.5 flex-1" />
+              <Skeleton className="h-4 w-12" />
+            </div>
+          ))}
         </div>
       ) : tasks.length === 0 ? (
-        <div className="rounded-lg border border-dashed py-10 text-center">
-          <ListChecks className="mx-auto h-8 w-8 text-fg-4" />
-          <p className="mt-2 text-sm font-medium">No tasks yet</p>
-          <p className="text-xs text-fg-3">Add the first thing this project needs done.</p>
+        <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 py-10 text-center">
+          <ListChecks className="mx-auto h-8 w-8 text-muted" />
+          <p className="mt-2 text-ui-text font-medium text-ink-2">No tasks yet</p>
+          <p className="text-caption text-muted">Add the first thing this project needs done.</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -236,11 +240,11 @@ export function TasksPanel({ projectId }: { projectId: string }) {
             if (list.length === 0) return null;
             return (
               <section key={status} className="space-y-1.5">
-                <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-3">
+                <h4 className="flex items-center gap-2 t-overline text-muted">
                   {TASK_STATUS_LABELS[status]}
-                  <span className="text-fg-4">{list.length}</span>
+                  <span className="text-faint">{list.length}</span>
                 </h4>
-                <div className="divide-y rounded-lg border">
+                <div className="divide-y divide-line rounded-[var(--r)] border border-line">
                   {list.map((task) => {
                     const due = dueState(task.dueDate);
                     const checklist = task.checklist ?? [];
@@ -256,14 +260,14 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                           type="button"
                           title="Toggle done"
                           onClick={() => toggleDone(task)}
-                          className="mt-0.5 shrink-0 text-fg-3 hover:text-primary"
+                          className={cn("mt-0.5 shrink-0 rounded-full text-muted hover:text-primary", focusRing)}
                         >
                           {isDone ? (
-                            <CheckCircle2 className="h-4.5 w-4.5 text-primary" />
+                            <CheckCircle2 className="h-[18px] w-[18px] text-primary" />
                           ) : task.status === "IN_PROGRESS" ? (
-                            <CircleDot className="h-4.5 w-4.5 text-blue-500" />
+                            <CircleDot className="h-[18px] w-[18px] text-blue" />
                           ) : (
-                            <Circle className="h-4.5 w-4.5" />
+                            <Circle className="h-[18px] w-[18px]" />
                           )}
                         </button>
 
@@ -274,8 +278,9 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                               type="button"
                               onClick={() => setEditing(task)}
                               className={cn(
-                                "truncate text-left text-sm hover:underline",
-                                isDone && "text-fg-3 line-through",
+                                "truncate rounded-sm text-left text-table-cell text-ink-2 hover:underline",
+                                focusRing,
+                                isDone && "text-muted line-through",
                               )}
                             >
                               {task.title}
@@ -284,30 +289,31 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                           {(due || assigneeName || checklist.length > 0) && (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               {due && (
-                                <Badge
-                                  variant={due.overdue && !isDone ? "destructive" : "secondary"}
-                                  className="gap-1 text-[10px]"
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-badge font-medium",
+                                    due.overdue && !isDone
+                                      ? "bg-out-soft text-t-out"
+                                      : "bg-paper-2 text-muted",
+                                  )}
                                 >
                                   <CalendarClock className="h-3 w-3" />
                                   {due.label}
-                                </Badge>
+                                </span>
                               )}
                               {checklist.length > 0 && (
-                                <Badge variant="secondary" className="gap-1 text-[10px]">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">
                                   <ListChecks className="h-3 w-3" />
                                   {checklistDone}/{checklist.length}
-                                </Badge>
+                                </span>
                               )}
                               {assigneeName && (
-                                <span className="flex items-center gap-1 text-[11px] text-fg-3">
-                                  <Avatar className="size-4">
-                                    {task.assigneeUser?.image ? (
-                                      <AvatarImage src={task.assigneeUser.image} alt={assigneeName} />
-                                    ) : null}
-                                    <AvatarFallback className="bg-primary/10 text-[8px] text-primary">
-                                      {initials(assigneeName)}
-                                    </AvatarFallback>
-                                  </Avatar>
+                                <span className="flex items-center gap-1 text-caption text-muted">
+                                  <PersonAvatar
+                                    name={assigneeName}
+                                    src={task.assigneeUser?.image ?? undefined}
+                                    className="size-4 border-0 [&_span]:text-[8px]"
+                                  />
                                   {assigneeName}
                                 </span>
                               )}
@@ -316,14 +322,15 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                         </div>
 
                         <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            }
-                          >
-                            Actions
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 opacity-0 group-hover:opacity-100"
+                              title="Task actions"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => setEditing(task)}>Edit…</DropdownMenuItem>
@@ -331,7 +338,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                               Move to next status
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              className="text-destructive"
+                              className="text-t-out"
                               onClick={() => deleteMut.mutate(task.id)}
                             >
                               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
@@ -349,7 +356,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
       )}
 
       {tasks.length > 0 && (
-        <p className="text-xs text-fg-3">
+        <p className="text-xs text-muted">
           {openCount} open · {grouped.DONE.length} done
         </p>
       )}
@@ -446,7 +453,7 @@ function TaskEditDialog({
           />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-fg-3">Status</label>
+              <label className="mb-1 block text-xs text-muted">Status</label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectTaskStatus)}>
                 <SelectTrigger>
                   <SelectValue>{TASK_STATUS_LABELS[status]}</SelectValue>
@@ -461,7 +468,7 @@ function TaskEditDialog({
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-fg-3">Priority</label>
+              <label className="mb-1 block text-xs text-muted">Priority</label>
               <Select value={priority} onValueChange={(v) => setPriority(v as ProjectTaskPriority)}>
                 <SelectTrigger>
                   <SelectValue>{TASK_PRIORITY_LABELS[priority]}</SelectValue>
@@ -478,11 +485,11 @@ function TaskEditDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-fg-3">Due date</label>
+              <label className="mb-1 block text-xs text-muted">Due date</label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-fg-3">Assignee</label>
+              <label className="mb-1 block text-xs text-muted">Assignee</label>
               <ComboboxPicker
                 value={assignee}
                 onChange={setAssignee}
@@ -495,7 +502,7 @@ function TaskEditDialog({
 
           {/* Checklist */}
           <div>
-            <label className="mb-1 block text-xs text-fg-3">Checklist</label>
+            <label className="mb-1 block text-xs text-muted">Checklist</label>
             <div className="space-y-1">
               {checklist.map((item) => (
                 <div key={item.id} className="flex items-center gap-2">
@@ -506,7 +513,7 @@ function TaskEditDialog({
                         prev.map((c) => (c.id === item.id ? { ...c, done: !c.done } : c)),
                       )
                     }
-                    className="shrink-0 text-fg-3 hover:text-primary"
+                    className={cn("shrink-0 rounded-full text-muted hover:text-primary", focusRing)}
                   >
                     {item.done ? (
                       <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -514,13 +521,13 @@ function TaskEditDialog({
                       <Circle className="h-4 w-4" />
                     )}
                   </button>
-                  <span className={cn("flex-1 text-sm", item.done && "text-fg-3 line-through")}>
+                  <span className={cn("flex-1 text-ui-text text-ink-2", item.done && "text-muted line-through")}>
                     {item.text}
                   </span>
                   <button
                     type="button"
                     onClick={() => setChecklist((prev) => prev.filter((c) => c.id !== item.id))}
-                    className="text-fg-4 hover:text-destructive"
+                    className={cn("rounded-sm text-faint hover:text-t-out", focusRing)}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -539,7 +546,7 @@ function TaskEditDialog({
                   placeholder="Add sub-step…"
                   className="h-8 text-sm"
                 />
-                <Button type="button" variant="outline" size="sm" onClick={addChecklistItem}>
+                <Button type="button" variant="line" size="sm" onClick={addChecklistItem}>
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -547,7 +554,7 @@ function TaskEditDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="line" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={save} disabled={!title.trim()}>

@@ -32,6 +32,29 @@ export const getById = query({
   },
 });
 
+/**
+ * Look up a single test tag asset by its human-facing `testTagId` within an org
+ * (the scan / lookup flow). Uses the non-unique `by_organizationId_testTagId`
+ * index, so return `.first()` — duplicates are possible across the dual-write
+ * boundary and `.unique()` would throw.
+ */
+export const getByTestTagId = query({
+  args: { orgId: v.string(), testTagId: v.string() },
+  handler: async (ctx, { orgId, testTagId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_testTagId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagId", testTagId),
+      )
+      .first();
+  },
+});
+
+/**
+ * Alias of {@link getByTestTagId} kept for the scan-lookup consumer (Phase A).
+ * Same `.first()`-not-`.unique()` safety on the non-unique dual-write index.
+ */
 export const getByOrgTestTagId = query({
   args: { orgId: v.string(), testTagId: v.string() },
   handler: async (ctx, { orgId, testTagId }) => {
@@ -41,9 +64,10 @@ export const getByOrgTestTagId = query({
       .withIndex("by_organizationId_testTagId", (q) =>
         q.eq("organizationId", orgId).eq("testTagId", testTagId),
       )
-      .unique();
+      .first();
   },
 });
+
 
 export const create = mutation({
   args: {

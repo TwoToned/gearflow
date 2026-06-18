@@ -53,13 +53,30 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: category, isLoading } = useServerQuery({
+  const { data: category, isLoading, error, refetch } = useServerQuery({
     queryKey: ["category", orgId, id],
     queryFn: () => getCategory(id),
   });
 
   if (isLoading) {
     return <DetailPageSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Couldn&apos;t load this category.</p>
+        <p className="mt-1 text-caption text-muted">{error.message}</p>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button variant="line" size="sm" asChild>
+            <Link href="/assets/categories">Back to categories</Link>
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   if (!category) {

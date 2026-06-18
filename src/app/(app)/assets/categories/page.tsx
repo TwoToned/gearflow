@@ -227,7 +227,7 @@ function CategoriesContent() {
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={`skeleton-${i}`}>
                   <TableCell colSpan={7}>
-                    <div className="h-5 w-full animate-pulse rounded-[8px] bg-elev" />
+                    <div className="h-5 w-full animate-pulse rounded-[var(--r)] bg-elev" />
                   </TableCell>
                 </TableRow>
               ))

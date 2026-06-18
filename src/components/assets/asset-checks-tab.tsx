@@ -16,6 +16,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { intentStyles, type ColorIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 
 type ContextFilter = "ALL" | "PREP" | "RETURN" | "AD_HOC";
@@ -23,13 +24,15 @@ type ContextFilter = "ALL" | "PREP" | "RETURN" | "AD_HOC";
 const CONTEXT_LABELS: Record<string, string> = {
   PREP: "Prep",
   RETURN: "Return",
-  AD_HOC: "Ad Hoc",
+  AD_HOC: "Ad hoc",
 };
 
-const RESULT_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string; status: "ok" | "overbooked" | "neutral"; label: string }> = {
-  PASS: { icon: CheckCircle2, color: "text-ok", status: "ok", label: "Pass" },
-  FAIL: { icon: XCircle, color: "text-t-out", status: "overbooked", label: "Fail" },
-  NOTES_ONLY: { icon: FileText, color: "text-blue", status: "neutral", label: "Notes" },
+// Result icon tint derives from the shared intent map (status-colors.ts) — the
+// single source of truth — rather than hardcoded text-ok/text-t-out/text-blue.
+const RESULT_CONFIG: Record<string, { icon: typeof CheckCircle2; intent: ColorIntent; status: "ok" | "overbooked" | "neutral"; label: string }> = {
+  PASS: { icon: CheckCircle2, intent: "success", status: "ok", label: "Pass" },
+  FAIL: { icon: XCircle, intent: "error", status: "overbooked", label: "Fail" },
+  NOTES_ONLY: { icon: FileText, intent: "info", status: "neutral", label: "Notes" },
 };
 
 export function AssetChecksTab({ assetId }: { assetId: string }) {
@@ -116,7 +119,7 @@ export function AssetChecksTab({ assetId }: { assetId: string }) {
                   const ResultIcon = result.icon;
                   return (
                     <div key={record.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <ResultIcon className={cn("h-4 w-4 shrink-0", result.color)} />
+                      <ResultIcon className={cn("h-4 w-4 shrink-0", intentStyles[result.intent].text)} />
                       <div className="min-w-0 flex-1">
                         <span className="text-table-cell font-medium text-ink">{record.label}</span>
                         {record.value && (

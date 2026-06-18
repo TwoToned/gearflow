@@ -639,7 +639,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             <li key={c.id} className="flex items-center gap-2">
                               <span className="text-faint select-none">└─</span>
                               <span className="font-medium text-ink">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
-                              <span className="text-[11px] tracking-wide text-muted">from model</span>
+                              <span className="text-badge text-muted">from model</span>
                             </li>
                           ))}
                         </ul>

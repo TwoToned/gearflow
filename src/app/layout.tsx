@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, Geist_Mono, Kalam, Baloo_2 } from "next/font/google";
+import { Hanken_Grotesk, Geist_Mono, Kalam, Baloo_2, Archivo } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
@@ -40,6 +40,12 @@ const baloo2 = Baloo_2({
   weight: ["400", "500", "700"],
 });
 
+const archivo = Archivo({
+  variable: "--font-archivo",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+
 const kalam = Kalam({
   variable: "--font-kalam",
   subsets: ["latin"],
@@ -76,7 +82,7 @@ export default function RootLayout({
         <DomPatch />
       </head>
       <body
-        className={`${hankenGrotesk.variable} ${geistMono.variable} ${kalam.variable} ${baloo2.variable} antialiased`}
+        className={`${hankenGrotesk.variable} ${geistMono.variable} ${kalam.variable} ${baloo2.variable} ${archivo.variable} antialiased`}
         suppressHydrationWarning
       >
         <GlobalErrorBoundary>

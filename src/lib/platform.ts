@@ -1,32 +1,15 @@
-import { prisma } from "./prisma";
+import { env } from "@/env";
 
-let cachedName: string | null = null;
-let cacheTime = 0;
-const CACHE_TTL = 60_000; // 1 minute
-
-/** Get the platform name from SiteSettings (server-side, cached). */
+/**
+ * Platform display name (server-side: metadata titles, emails, page <title>).
+ *
+ * OVERRIDE: returns env.PLATFORM_NAME (default "RVLT Flow") and intentionally
+ * ignores the DB `SiteSettings.platformName` row — the product brand is RVLT
+ * Flow, set via env, not per-row DB data. Mirrors /api/platform-name.
+ */
 export async function getPlatformName(): Promise<string> {
-  const now = Date.now();
-  if (cachedName && now - cacheTime < CACHE_TTL) {
-    return cachedName;
-  }
-
-  try {
-    const settings = await prisma.siteSettings.findFirst({
-      select: { platformName: true },
-    });
-
-    cachedName = settings?.platformName || "GearFlow";
-    cacheTime = now;
-    return cachedName;
-  } catch {
-    // DB unavailable at build time — fall back to default
-    return "GearFlow";
-  }
+  return env.PLATFORM_NAME;
 }
 
-/** Invalidate the cached platform name (call after settings update). */
-export function invalidatePlatformNameCache() {
-  cachedName = null;
-  cacheTime = 0;
-}
+/** No-op retained for existing callers — the brand name is env-driven now. */
+export function invalidatePlatformNameCache() {}

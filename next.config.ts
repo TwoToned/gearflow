@@ -14,6 +14,10 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   // Turbopack config (Next.js 16 default bundler)
   turbopack: {},
+  // Dev-only: allow HMR / dev-resource access when the app is reached via the
+  // box hostname (not just localhost). Next 16 blocks cross-origin dev requests
+  // by default. Has no effect on production builds.
+  allowedDevOrigins: ["roger"],
   // Keep the Postgres driver as require()-at-runtime on the server so Next never
   // traces it into client bundles.
   serverExternalPackages: [

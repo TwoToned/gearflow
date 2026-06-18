@@ -28,6 +28,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -103,7 +104,19 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!supplier) return <div className="text-fg-3 py-12 text-center">Supplier not found.</div>;
+  if (!supplier) {
+    return (
+      <RequirePermission resource="supplier" action="read">
+        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Supplier not found.</p>
+          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+          <Button variant="line" size="sm" className="mt-4" asChild>
+            <Link href="/suppliers">Back to suppliers</Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
+  }
 
   const orders = ordersData?.orders || [];
   const assets = assetsData?.assets || [];
@@ -117,21 +130,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           {/* ── Header (full width) ────────────────────────────────── */}
           <div>
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/suppliers" className="hover:text-fg transition-colors">
+            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+              <Link href="/suppliers" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Suppliers
               </Link>
               <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg font-medium truncate">{supplier.name}</span>
+              <span className="truncate font-medium text-ink">{supplier.name}</span>
             </nav>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{supplier.name}</h1>
-                  {!supplier.isActive && <Badge variant="destructive">Archived</Badge>}
+                  <h1 className="t-title text-ink">{supplier.name}</h1>
+                  {!supplier.isActive && <Badge status="overbooked">Archived</Badge>}
                 </div>
-                <p className="t-body text-fg-3">
+                <p className="t-body text-muted">
                   {supplier.contactName || "No primary contact"}
                   {supplier.accountNumber && <> &middot; Acct: {supplier.accountNumber}</>}
                 </p>
@@ -145,14 +158,16 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 )}
                 <CanDo resource="supplier" action="update">
                   <div className="flex gap-2">
-                    <Button variant="outline" render={<Link href={`/suppliers/${id}/edit`} />}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
+                    <Button variant="line" asChild>
+                      <Link href={`/suppliers/${id}/edit`}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </Link>
                     </Button>
                     <CanDo resource="supplier" action="delete">
                       <Button
-                        variant="outline"
-                        className="text-destructive"
+                        variant="line"
+                        className="text-t-out hover:border-red hover:bg-red hover:text-white"
                         onClick={() => setDeleteOpen(true)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -171,9 +186,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             <DetailMain>
               {/* Tags */}
               {supplier.tags?.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-6">
+                <div className="mb-6 flex flex-wrap gap-1">
                   {supplier.tags.map((tag: string) => (
-                    <Badge key={tag} variant="secondary">{tag}</Badge>
+                    <Badge key={tag} status="neutral">{tag}</Badge>
                   ))}
                 </div>
               )}
@@ -181,7 +196,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               {/* Notes */}
               {supplier.notes && (
                 <div className="mb-6">
-                  <p className="text-sm whitespace-pre-wrap text-fg-3">{supplier.notes}</p>
+                  <p className="whitespace-pre-wrap text-ui-text text-muted">{supplier.notes}</p>
                 </div>
               )}
 
@@ -193,19 +208,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </TabsList>
 
                 <TabsContent value="orders" className="mt-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="t-heading text-fg">Purchase Orders</h3>
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="t-heading text-ink">Purchase orders</h3>
                     <CanDo resource="supplier" action="create">
-                      <Button size="sm" render={<Link href={`/suppliers/${id}/orders/new`} />}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        New Order
+                      <Button size="sm" asChild>
+                        <Link href={`/suppliers/${id}/orders/new`}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          New order
+                        </Link>
                       </Button>
                     </CanDo>
                   </div>
                   {orders.length === 0 ? (
-                    <EmptyState preset="suppliers" heading="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
+                    <EmptyState title="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -214,7 +231,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                             <TableHead>Status</TableHead>
                             <TableHead className="hidden md:table-cell">Project</TableHead>
                             <TableHead className="hidden md:table-cell">Items</TableHead>
-                            <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
+                            <TableHead className="hidden text-right sm:table-cell">Total</TableHead>
                             <TableHead className="hidden md:table-cell">Date</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -222,28 +239,28 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           {orders.map((order) => (
                             <TableRow key={order.id}>
                               <TableCell>
-                                <span className="font-mono text-sm font-medium">{order.orderNumber}</span>
+                                <span className="t-mono font-medium text-ink">{order.orderNumber}</span>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline">{orderTypeLabels[order.type] || order.type}</Badge>
+                                <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>
                               </TableCell>
                               <TableCell>
                                 <StatusIndicator category="supplierOrder" value={order.status} label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)} />
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 {order.project ? (
-                                  <Link href={`/projects/${order.project.id}`} className="hover:underline text-sm">
+                                  <Link href={`/projects/${order.project.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
                                     {order.project.projectNumber}
                                   </Link>
                                 ) : "\u2014"}
                               </TableCell>
-                              <TableCell className="hidden md:table-cell text-fg-3">
+                              <TableCell className="hidden text-muted md:table-cell t-data">
                                 {order._count?.items ?? 0}
                               </TableCell>
-                              <TableCell className="text-right hidden sm:table-cell t-data">
+                              <TableCell className="hidden text-right sm:table-cell t-data">
                                 {order.total != null ? `$${Number(order.total).toFixed(2)}` : "\u2014"}
                               </TableCell>
-                              <TableCell className="text-fg-3 hidden md:table-cell">
+                              <TableCell className="hidden text-muted md:table-cell">
                                 {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "\u2014"}
                               </TableCell>
                             </TableRow>
@@ -255,15 +272,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </TabsContent>
 
                 <TabsContent value="assets" className="mt-4">
-                  <h3 className="t-heading text-fg mb-4">Purchased Assets</h3>
+                  <h3 className="t-heading mb-4 text-ink">Purchased assets</h3>
                   {assets.length === 0 ? (
-                    <EmptyState preset="assets" heading="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
+                    <EmptyState title="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Asset Tag</TableHead>
+                            <TableHead>Asset tag</TableHead>
                             <TableHead>Model</TableHead>
                             <TableHead className="hidden md:table-cell">Manufacturer</TableHead>
                             <TableHead className="hidden md:table-cell">PO #</TableHead>
@@ -274,19 +291,19 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           {assets.map((asset) => (
                             <TableRow key={asset.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${asset.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {asset.assetTag}
                                 </Link>
                               </TableCell>
                               <TableCell>{asset.model?.name}</TableCell>
-                              <TableCell className="text-fg-3 hidden md:table-cell">
+                              <TableCell className="hidden text-muted md:table-cell">
                                 {asset.model?.manufacturer || "\u2014"}
                               </TableCell>
-                              <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
+                              <TableCell className="hidden text-muted md:table-cell t-mono">
                                 {asset.purchaseOrderNumber || "\u2014"}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline">{assetStatusLabels[asset.status ?? ""] || formatLabel(asset.status ?? "")}</Badge>
+                                <StatusIndicator category="asset" value={asset.status ?? ""} label={assetStatusLabels[asset.status ?? ""] || formatLabel(asset.status ?? "")} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
@@ -297,11 +314,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </TabsContent>
 
                 <TabsContent value="subhires" className="mt-4">
-                  <h3 className="t-heading text-fg mb-4">Subhire Line Items</h3>
+                  <h3 className="t-heading mb-4 text-ink">Subhire line items</h3>
                   {subhires.length === 0 ? (
-                    <EmptyState preset="suppliers" heading="No subhire items" description="Subhire line items from this supplier will appear here." />
+                    <EmptyState title="No subhire items" description="Subhire line items from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -316,13 +333,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           {subhires.map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>
-                                <Link href={`/projects/${item.project?.id}`} className="hover:underline text-sm">
+                                <Link href={`/projects/${item.project?.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
                                   {item.project?.projectNumber} - {item.project?.name}
                                 </Link>
                               </TableCell>
                               <TableCell>{item.model?.name || item.description}</TableCell>
                               <TableCell className="text-right t-data">{item.quantity}</TableCell>
-                              <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
+                              <TableCell className="hidden text-muted md:table-cell t-mono">
                                 {item.subhireOrderNumber || "\u2014"}
                               </TableCell>
                               <TableCell>
@@ -344,32 +361,32 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             <DetailSidebar>
                 {/* Contact Info */}
                 <SidebarSection title="Contact">
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-ui-text">
                     {supplier.contactName && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{supplier.contactName}</span>
+                        <span className="font-medium text-ink">{supplier.contactName}</span>
                       </div>
                     )}
                     {supplier.email && (
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Mail className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`mailto:${supplier.email}`} className="hover:underline truncate">{supplier.email}</a>
+                        <a href={`mailto:${supplier.email}`} className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.email}</a>
                       </div>
                     )}
                     {supplier.phone && (
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${supplier.phone}`} className="hover:underline">{supplier.phone}</a>
+                        <a href={`tel:${supplier.phone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>{supplier.phone}</a>
                       </div>
                     )}
                     {supplier.website && (
-                      <div className="flex items-center gap-2 text-fg-3">
+                      <div className="flex items-center gap-2 text-muted">
                         <Globe className="h-3.5 w-3.5 shrink-0" />
-                        <a href={supplier.website} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{supplier.website}</a>
+                        <a href={supplier.website} target="_blank" rel="noopener noreferrer" className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.website}</a>
                       </div>
                     )}
                     {!supplier.contactName && !supplier.email && !supplier.phone && (
-                      <p className="text-fg-3">No contact info</p>
+                      <p className="text-muted">No contact info</p>
                     )}
                   </div>
                 </SidebarSection>
@@ -377,7 +394,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 {/* Address */}
                 {supplier.address && (
                   <SidebarSection title="Address">
-                    <div className="text-sm">
+                    <div className="text-ui-text">
                       <AddressDisplay
                         address={supplier.address}
                         latitude={supplier.latitude}
@@ -390,55 +407,55 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 )}
 
                 {/* Account Details */}
-                <SidebarSection title="Account Details">
-                  <div className="space-y-1.5 text-sm">
+                <SidebarSection title="Account details">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Account #</span>
-                      <span className="font-medium">{supplier.accountNumber || "\u2014"}</span>
+                      <span className="text-muted">Account #</span>
+                      <span className="font-medium text-ink">{supplier.accountNumber || "\u2014"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Payment Terms</span>
-                      <span className="font-medium">{supplier.paymentTerms || "\u2014"}</span>
+                      <span className="text-muted">Payment terms</span>
+                      <span className="font-medium text-ink">{supplier.paymentTerms || "\u2014"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Lead Time</span>
-                      <span className="font-medium">{supplier.defaultLeadTime || "\u2014"}</span>
+                      <span className="text-muted">Lead time</span>
+                      <span className="font-medium text-ink">{supplier.defaultLeadTime || "\u2014"}</span>
                     </div>
                   </div>
                 </SidebarSection>
 
                 {/* Summary */}
                 <SidebarSection title="Summary">
-                  <div className="space-y-1.5 text-sm">
+                  <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Orders</span>
-                      <span className="font-medium">{supplier._count?.orders ?? 0}</span>
+                      <span className="text-muted">Orders</span>
+                      <span className="font-medium text-ink t-data">{supplier._count?.orders ?? 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Assets</span>
-                      <span className="font-medium">{supplier._count?.assets ?? 0}</span>
+                      <span className="text-muted">Assets</span>
+                      <span className="font-medium text-ink t-data">{supplier._count?.assets ?? 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3">Subhire Items</span>
-                      <span className="font-medium">{supplier._count?.lineItems ?? 0}</span>
+                      <span className="text-muted">Subhire items</span>
+                      <span className="font-medium text-ink t-data">{supplier._count?.lineItems ?? 0}</span>
                     </div>
                   </div>
                 </SidebarSection>
 
                 {/* Recent Orders (compact) */}
                 {orders.length > 0 && (
-                  <SidebarSection title="Recent Orders">
+                  <SidebarSection title="Recent orders">
                     <div className="space-y-1">
                       {orders.slice(0, 5).map((order) => (
                         <div
                           key={order.id}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm"
+                          className="flex items-center justify-between rounded-[var(--r)] px-2 py-1.5 text-ui-text"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono text-xs text-fg-3 shrink-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 t-mono text-muted">
                               {order.orderNumber}
                             </span>
-                            <Badge variant="outline" className="text-xs">{orderTypeLabels[order.type] || order.type}</Badge>
+                            <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>
                           </div>
                           <StatusIndicator
                             category="supplierOrder"

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { cn, focusRing } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupplier = Record<string, any>;
@@ -25,7 +26,11 @@ const columns: ColumnDef<AnySupplier>[] = [
     alwaysVisible: true,
     sortKey: "name",
     cell: (row) => (
-      <Link href={`/suppliers/${row.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+      <Link
+        href={`/suppliers/${row.id}`}
+        className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)}
+        onClick={(e) => e.stopPropagation()}
+      >
         {row.name}
       </Link>
     ),
@@ -37,7 +42,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortKey: "contactName",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">{row.contactName || "\u2014"}</span>
+      <span className="text-muted">{row.contactName || "\u2014"}</span>
     ),
   },
   {
@@ -47,7 +52,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortKey: "email",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">{row.email || "\u2014"}</span>
+      <span className="text-muted">{row.email || "\u2014"}</span>
     ),
   },
   {
@@ -56,7 +61,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "phone",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-fg-3">{row.phone || "\u2014"}</span>
+      <span className="text-muted">{row.phone || "\u2014"}</span>
     ),
   },
   {
@@ -65,7 +70,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "accountNumber",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="font-mono text-sm text-fg-3">{row.accountNumber || "\u2014"}</span>
+      <span className="t-mono text-muted">{row.accountNumber || "\u2014"}</span>
     ),
   },
   {
@@ -73,14 +78,14 @@ const columns: ColumnDef<AnySupplier>[] = [
     header: "Orders",
     align: "right",
     responsiveHide: "md",
-    cell: (row) => row._count?.orders ?? 0,
+    cell: (row) => <span className="t-data">{row._count?.orders ?? 0}</span>,
   },
   {
     id: "assets",
     header: "Assets",
     align: "right",
     responsiveHide: "md",
-    cell: (row) => row._count?.assets ?? 0,
+    cell: (row) => <span className="t-data">{row._count?.assets ?? 0}</span>,
   },
   {
     id: "isActive",
@@ -93,7 +98,7 @@ const columns: ColumnDef<AnySupplier>[] = [
       { value: "false", label: "Archived" },
     ],
     cell: (row) => (
-      <Badge variant={row.isActive ? "default" : "destructive"}>
+      <Badge status={row.isActive ? "ok" : "overbooked"}>
         {row.isActive ? "Active" : "Archived"}
       </Badge>
     ),
@@ -107,7 +112,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <Badge key={tag} status="neutral">
             {tag}
           </Badge>
         ))}
@@ -190,9 +195,11 @@ export function SupplierTable() {
 
   const toolbarActions = (
     <CanDo resource="supplier" action="create">
-      <Button render={<Link href="/suppliers/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Supplier
+      <Button asChild>
+        <Link href="/suppliers/new">
+          <Plus className="mr-2 h-4 w-4" />
+          New supplier
+        </Link>
       </Button>
     </CanDo>
   );

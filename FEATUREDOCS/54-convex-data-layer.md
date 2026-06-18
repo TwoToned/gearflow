@@ -2956,6 +2956,36 @@ round-trip; the overbooked/filter/group logic stays in warehouse.ts. Golden-diff
 vs the old Prisma include + attach + location graft (CANCELLED + SERVICE lines
 excluded, asset location grafted): id-set + per-node structure match.
 
+### Keystone consumer 4/4: `build-document-data` (PDF) — DONE
+
+`lib/pdfme/build-document-data.ts` now reconstructs its line-item tree + the
+categories-with-groups array from Convex via `buildDocumentLineItemData`. Prisma
+there keeps only the project scalars + `subHires` (with groups) + (call-sheet)
+`crewAssignments` + `projectManager` + `billableServices` + `org` — all separate
+surfaces/terminuses. The PDF reader differs from the others:
+- **No `type` filter** — scope is ALL non-CANCELLED line items (dual projection),
+  `childLineItems` 2 deep.
+- Each line item (top + first child level, matching the include depth) carries a
+  `category` `{id,name,sortOrder}` + `group` `{id,title,sortOrder,categoryId}` select.
+- Units in the PDF SELECT shape (`{id,status,parentUnitAssetId,assetId,bulkAssetId}`);
+  `attachAssetBulkAssetTree` adds full `asset`/`bulkAsset`.
+- Attach: model/supplier → kit (+ `_count`) → asset/bulkAsset (no model check-count).
+- subHire supplier now resolves from the Convex `getSupplierMap` (was
+  `resolveAttachedSupplier`).
+
+**Cross-cutting (the 5 DocumentLineItem consumers).** This is a source-swap, not a
+shape change — the reconstructed tree feeds the unchanged
+`structureLineItems → getFilteredParentItems → estimateSectionHeight → gearflowTable`
+pipeline. Validated two ways: (1) a **live full-pipeline golden-diff** — the
+reconstructed tree + categories match the old Prisma include + attach AND
+`structureLineItems` produces identical structured rows on an enriched project
+(kit→child→grandchild, units incl. CANCELLED, CANCELLED line excluded); (2) a new
+`document-data-reconstruction.test.ts` integration test running flat Convex docs →
+mappers → reconstruction → attach → structure → filter → height → render (kit depth,
+CANCELLED drop, unit/asset attach, no tail-drop, model names on the page).
+
+**Keystone complete — all four consumers reconstruct the line-item tree from Convex.**
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

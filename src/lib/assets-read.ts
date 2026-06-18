@@ -50,6 +50,80 @@ export async function getActiveBulkAssetsByModel(modelId: string, orgId: string)
   return all.filter((ba) => ba.isActive !== false);
 }
 
+// ---------------------------------------------------------------------------
+// Pure filter/sort predicates (unit-tested) replicating the Prisma `where` /
+// `orderBy` clauses of the kit-availability and container-search reads now that
+// the asset rows come off Convex. Prisma defaults are coerced because the Convex
+// doc leaves defaulted columns absent: `status` (Asset default AVAILABLE /
+// BulkAsset default ACTIVE), `isActive` (default true), `availableQuantity`
+// (default 0). `assetTag` is a required non-null column, so the ASC sort never
+// hits NULLS-LAST.
+// ---------------------------------------------------------------------------
+
+/** Stable ASC sort by `assetTag` (Prisma `orderBy: { assetTag: "asc" }`). */
+export function sortByAssetTagAsc<T extends { assetTag: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0));
+}
+
+/**
+ * Serialized assets eligible to be added to a kit: active, AVAILABLE, not already
+ * in a kit, optionally filtered to one model. Replicates
+ * `where: { isActive: true, status: "AVAILABLE", kitId: null, ...(modelId && { modelId }) }`.
+ */
+export function filterAvailableAssetsForKit(assets: ConvexAsset[], modelId?: string): ConvexAsset[] {
+  return assets.filter(
+    (a) =>
+      a.isActive !== false &&
+      (a.status ?? "AVAILABLE") === "AVAILABLE" &&
+      (a.kitId ?? null) === null &&
+      (!modelId || a.modelId === modelId),
+  );
+}
+
+/**
+ * Bulk assets eligible to be added to a kit: active, ACTIVE status, with spare
+ * quantity. Replicates
+ * `where: { isActive: true, status: "ACTIVE", availableQuantity: { gt: 0 } }`.
+ */
+export function filterAvailableBulkAssetsForKit(bulkAssets: ConvexBulkAsset[]): ConvexBulkAsset[] {
+  return bulkAssets.filter(
+    (b) =>
+      b.isActive !== false &&
+      (b.status ?? "ACTIVE") === "ACTIVE" &&
+      (b.availableQuantity ?? 0) > 0,
+  );
+}
+
+/**
+ * Container-search match predicate: assets whose model's category is in
+ * `categoryIds`, optionally matching `query` (case-insensitive substring)
+ * against `assetTag`, `customName`, or the model name. Replicates the
+ * `searchContainerAssets` Prisma `where` — the `model: { categoryId: { in } }`
+ * relational filter plus the OR text filter. `modelCategoryId` / `modelName`
+ * resolve the joined model fields from the Convex model map; an asset whose model
+ * can't be resolved fails the category gate (a join against a deleted/absent row,
+ * same as Prisma's inner relational filter).
+ */
+export function filterContainerAssets(
+  assets: ConvexAsset[],
+  categoryIds: Set<string>,
+  query: string,
+  modelCategoryId: (modelId: string | null | undefined) => string | null,
+  modelName: (modelId: string | null | undefined) => string | null,
+): ConvexAsset[] {
+  const needle = query.toLowerCase();
+  return assets.filter((a) => {
+    const catId = modelCategoryId(a.modelId);
+    if (!catId || !categoryIds.has(catId)) return false;
+    if (!needle) return true;
+    return (
+      a.assetTag.toLowerCase().includes(needle) ||
+      (a.customName?.toLowerCase().includes(needle) ?? false) ||
+      (modelName(a.modelId)?.toLowerCase().includes(needle) ?? false)
+    );
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * Primary list reads (server/assets.ts:getAssets, server/bulk-assets.ts:
  * getBulkAssets) — Convex-backed replacements for the paginated

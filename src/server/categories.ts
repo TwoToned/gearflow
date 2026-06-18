@@ -13,6 +13,7 @@ import {
   collectDescendantCategoryIds,
   getMappedCategoriesByOrg,
 } from "@/lib/categories-read";
+import { getAssetsByOrg, filterContainerAssets, sortByAssetTagAsc } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
@@ -134,34 +135,26 @@ export async function searchContainerAssets(query: string = "") {
   const categoryIds = await getCaseCategoryIds();
   if (categoryIds.length === 0) return serialize([]);
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      model: { categoryId: { in: categoryIds } },
-      ...(query
-        ? {
-            OR: [
-              { assetTag: { contains: query, mode: "insensitive" } },
-              { customName: { contains: query, mode: "insensitive" } },
-              { model: { name: { contains: query, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    },
-    select: {
-      id: true,
-      assetTag: true,
-      customName: true,
-      modelId: true,
-    },
-    orderBy: { assetTag: "asc" },
-    take: 20,
-  });
-
-  const modelMap = await getModelMap(organizationId);
+  // Assets come off the dual-written Convex `assets` list; the `model.categoryId`
+  // relational filter + OR text filter are replicated by filterContainerAssets,
+  // resolving the joined model fields from the Convex model map (Phase A).
+  const [allAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const categoryIdSet = new Set(categoryIds);
+  const matched = sortByAssetTagAsc(
+    filterContainerAssets(
+      allAssets,
+      categoryIdSet,
+      query,
+      (modelId) => (modelId ? modelMap.get(modelId)?.categoryId ?? null : null),
+      (modelId) => (modelId ? modelMap.get(modelId)?.name ?? null : null),
+    ),
+  ).slice(0, 20);
 
   return serialize(
-    assets.map((a) => ({
+    matched.map((a) => ({
       value: a.customName || a.assetTag,
       label: a.customName
         ? `${a.customName} (${a.assetTag})`

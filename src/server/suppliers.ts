@@ -13,6 +13,8 @@ import { type FilterValue } from "@/lib/table-utils";
 import { attachModel } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
 import {
+  getSupplierOrdersByOrg,
+  countSupplierAssetsAndOrders,
   getSupplierById as getConvexSupplierById,
   getMappedSuppliersByOrg,
   mapSupplier,
@@ -148,28 +150,19 @@ export async function getSuppliersPaginated(params: {
 
 /**
  * Asset + order counts per supplier (supplierId -> { assets, orders }).
- * Cross-domain: assets and supplier orders still live in Prisma, so this can't
- * come from Convex. Used by the reactive supplier table, which subscribes to the
- * supplier list via Convex and merges these (non-reactive) counts.
+ * Both inputs now come off Convex — assets via getAssetsByOrg and supplier orders
+ * via getSupplierOrdersByOrg (both dual-written) — counted in JS by
+ * countSupplierAssetsAndOrders, replacing the Prisma `supplierOrder.groupBy`
+ * (Phase A). Used by the reactive supplier table, which subscribes to the supplier
+ * list via Convex and merges these (non-reactive) counts.
  */
 export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
   const { organizationId } = await getOrgContext();
-  const [allAssets, orderGroups] = await Promise.all([
+  const [allAssets, orders] = await Promise.all([
     getAssetsByOrg(organizationId),
-    prisma.supplierOrder.groupBy({
-      by: ["supplierId"],
-      where: { organizationId },
-      _count: { _all: true },
-    }),
+    getSupplierOrdersByOrg(organizationId),
   ]);
-  const counts: Record<string, { assets: number; orders: number }> = {};
-  for (const a of allAssets) {
-    if (a.supplierId) (counts[a.supplierId] ??= { assets: 0, orders: 0 }).assets++;
-  }
-  for (const g of orderGroups) {
-    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).orders = g._count._all;
-  }
-  return serialize(counts);
+  return serialize(countSupplierAssetsAndOrders(allAssets, orders));
 }
 
 export async function getSupplierById(id: string) {

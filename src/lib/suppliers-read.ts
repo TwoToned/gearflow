@@ -177,3 +177,28 @@ export async function getMatchingSupplierIds(orgId: string, term: string): Promi
   const all = await getSuppliersByOrg(orgId);
   return all.filter((s) => s.name.toLowerCase().includes(needle)).map((s) => s.id);
 }
+
+export type ConvexSupplierOrder = Doc<"supplierOrders">;
+
+/** All of an org's supplier orders (supplier_order), for per-supplier counts. */
+export async function getSupplierOrdersByOrg(orgId: string): Promise<ConvexSupplierOrder[]> {
+  return await (await getConvexClient()).query(api.supplierOrders.list, { orgId });
+}
+
+/**
+ * Per-supplier asset + order counts (supplierId -> { assets, orders }) computed in
+ * JS over the org's assets + supplier orders, replacing the Prisma
+ * `supplierOrder.groupBy({ by: ["supplierId"] })` in `getSupplierCounts`. A
+ * `null`/absent `supplierId` is skipped (matches the Prisma loops, which only
+ * count rows carrying a supplierId). Pure + unit-tested.
+ */
+export function countSupplierAssetsAndOrders(
+  assets: Array<{ supplierId?: string | null }>,
+  orders: Array<{ supplierId?: string | null }>,
+): Record<string, { assets: number; orders: number }> {
+  const counts: Record<string, { assets: number; orders: number }> = {};
+  const ensure = (id: string) => (counts[id] ??= { assets: 0, orders: 0 });
+  for (const a of assets) if (a.supplierId) ensure(a.supplierId).assets++;
+  for (const o of orders) if (o.supplierId) ensure(o.supplierId).orders++;
+  return counts;
+}

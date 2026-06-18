@@ -206,15 +206,15 @@ export function FormPageLayout({
 // ─── Section Header ─────────────────────────────────────────────
 
 interface SectionHeaderProps {
-  /** Label text (overline style, uppercase) */
+  /** Label text (overline style, sentence case — never uppercase, §5.2) */
   label: string;
   className?: string;
 }
 
 /**
- * Section header with teal label chip + extending line.
- * Per DESIGN.md: 10px/700/uppercase teal text on teal-subtle bg, with a
- * flex:1 line extending to the right.
+ * Section header with a red label chip.
+ * Per DESIGN.md §5.2: t-overline (11px/600) sentence-case red text on
+ * red-soft bg. Sentence case only — uppercase is the rejected misfire.
  */
 export function SectionHeader({ label, className }: SectionHeaderProps) {
   return (

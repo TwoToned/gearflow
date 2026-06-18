@@ -4,17 +4,17 @@ import { cn } from "@/lib/utils";
 
 /**
  * SectionHeader — overline chip + extending rule line for separating content zones.
- * The "EQUIPMENT ————" pattern from DESIGN.md; sits above a content group in a page.
+ * The "Equipment ————" pattern from DESIGN.md; sits above a content group in a page.
  *
- * variant="default"   — 11px bold mono ALL-CAPS label + --line-2 rule (calm, data sections)
- * variant="prominent" — 15px Kalam red label + --line-2 rule (eyebrow/section kicker)
+ * variant="default"   — 11px bold sentence-case label (§5.2, never uppercase) + rule (calm, data sections)
+ * variant="prominent" — 16px Kalam red label + rule (eyebrow/section kicker)
  *
- * DESIGN.md §5.5 (caption/meta 12px · badge 11px floor) · §7 (--line-2 hairline).
+ * DESIGN.md §5.2 (sentence case) · §7 (hairline rule).
  */
 
 export interface SectionHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   label: string;
-  /** "default" = muted mono ALL-CAPS (data sections); "prominent" = Kalam red (eyebrow kicker). */
+  /** "default" = muted sentence-case label (data sections); "prominent" = Kalam red (eyebrow kicker). */
   variant?: "default" | "prominent";
 }
 

@@ -322,10 +322,17 @@ Use the registry `SectionHeader` component. Two variants:
 (Legacy `.section-label` CSS utility remains for non-migrated pages; new work uses `SectionHeader`.)
 
 ### Navigation
-- **Sidebar items:** `t-small` (12px/500), `fg-2`. Active: red text + `bg-red-subtle` + 2px left-edge red bar.
+- **Sidebar items:** module-hue wayfinding (decision 2026-06-18, below). Each top-level
+  item carries its module hue (`hueText`/`hueSoftBg`/`hueHoverText` maps in
+  `app-sidebar.tsx`). Active: the item's hue text + hue-soft bg + `--sh-card`; hover:
+  hue text + hue-soft bg. Sub-rows: hue text on `bg-elev` when active. This is an
+  intentional override of the original "red-only active" nav rule — the sidebar is the
+  one place module hues do double duty as the active treatment, so the nav reads as a
+  coloured map of the app. **Red is still never a module hue.** The mobile bottom nav
+  keeps the simpler red-active rule (§16).
 - **Org avatar:** 26px, 6px radius, solid espresso background with red monogram
-- **Section labels:** `t-overline`, `fg-4`
-- **NavLink:** Always use `NavLink` wrapper from `app-sidebar.tsx`. Never plain `<Link>` for sidebar items (DOM crash risk on Next.js navigation).
+- **Section labels:** `t-overline`, `muted` (sentence case, §5.2)
+- **NavLink:** Always use `NavLink` wrapper from `app-sidebar.tsx`. Never plain `<Link>` for sidebar items (DOM crash risk on Next.js navigation). (The mobile bottom nav in `mobile-nav.tsx` is a separate, non-sidebar render path and uses a plain focus-ringed `<Link>`.)
 
 ## §3 Status System
 
@@ -539,3 +546,4 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 | 2026-06-18 | --teal-* aliases kept during migration | 44 legacy files; aliases removed in per-page PRs via grep pass |
 | 2026-06-18 | Keep BrandingProvider, default to RVLT red | Org theming stays; default accent switches from teal to red |
 | 2026-06-18 | NavLink wrapper required in all nav PRs | Next.js/Base UI DOM crash risk if replaced with standard Link |
+| 2026-06-18 | Sidebar nav uses module-hue active/hover (not red-only) | Per-module colour makes the sidebar a wayfinding map; user-directed. Red stays non-module; mobile bottom nav keeps red-active (§16) |

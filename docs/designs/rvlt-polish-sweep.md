@@ -29,8 +29,8 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ✅ |
 | 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ✅ |
 | 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ✅ |
-| 9 | Locations | list/detail/new/edit | ☐ |
-| 10 | Maintenance | list/detail/new/edit | ☐ |
+| 9 | Locations | list/detail/new/edit | ◐ polished+reviewed, fixes pending |
+| 10 | Maintenance | list/detail/new/edit | ◐ polished+reviewed, fixes pending |
 | 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ☐ |
 | 12 | Availability + Activity + Changelog + Notifications | those 4 + account, account/notifications | ☐ |
 | 13 | Settings | settings + ~17 sub-pages + layout | ☐ |
@@ -297,3 +297,47 @@ pre-existing warnings above).
 - **Recurring DEFERs** (handle in a final consistency pass, note don't fix per-chunk): detail-page hand-built
   overflow sub-tables → mobile card lists + left-edge hover; bare "not found" → §8 left-edge error notice;
   DataTable ignores `emptyPreset` (shared component) so list empty states need explicit emptyTitle/description.
+
+## ⛔ PAUSED — weekly usage limit hit (resets 2026-06-20 18:00 Australia/Sydney)
+Subagents fail with the weekly-limit error, so the sweep is paused. Working tree is CLEAN;
+chunks 0–8 are fully done+reviewed+fixed and committed. Resume from the outstanding list below.
+
+## Outstanding work (resume point)
+### Chunks 9 + 10 — polished + reviewed (Claude + Codex), FIXES NOT YET APPLIED
+Apply these (both reviews agreed; label-map findings already fixed in commit 50e1d088):
+- **Auth-gate hoist (HIGH ×4):** wrap content ABOVE the loading/not-found branches in
+  locations/[id]/page.tsx (location.read), locations/[id]/edit/page.tsx (location.update),
+  maintenance/[id]/page.tsx (maintenance.read), maintenance/[id]/edit/page.tsx (maintenance.update).
+  Mirror the assets/registry/[id] inner-content-component pattern. (Low real risk — data is already
+  server-permission-checked; this just stops an unauthorized user seeing the loading skeleton.)
+- **locations/[id] delete gating (MED):** Delete button is under `CanDo location.update`; move it to
+  its own `CanDo resource="location" action="delete"`.
+- **location-table New-location toolbar (MED):** wrap in `CanDo resource="location" action="create"`.
+- **maintenance-form (HIGH, pre-existing):** status Select omits AWAITING_PARTS + QA; type Select omits
+  TEST_AND_TAG — add them (use maintenanceStatusLabels / maintenanceTypeLabels). The form is the only
+  status editor; these states are otherwise unreachable.
+- **maintenance list type filter (LOW):** add TEST_AND_TAG to filterOptions.
+- **Empty states (LOW):** location-table + maintenance list pass only emptyPreset (DataTable ignores it)
+  → add explicit emptyTitle/emptyDescription.
+- **formatLabel fallback (status-labels.ts, MED):** the generic fallback produces Title Case for unmapped
+  enums → make it sentence-case (only first word capitalised).
+
+### Chunks 11–16 — NOT STARTED
+- 11 Test & Tag (t&t list/[id]/new/quick-test/registry/reports + settings/test-and-tag)
+- 12 Availability + Activity + Changelog + Notifications + account + account/notifications
+- 13 Settings (settings + ~17 sub-pages + layout)
+- 14 Admin (admin, organizations(+[id]), settings, users, layout)
+- 15 Auth (login, register(+admin), onboarding, invite, no-org, pending-approval, two-factor, layout) — §17 marketing aesthetic
+- 16 Edge/standalone (offline, auditor/[token], warehouse/display/[token], root marketing page)
+
+### Cross-cutting follow-ups (final consistency pass)
+- **status-indicator.tsx dot-variant glow is broken:** its ring-glow conditionals still test legacy class
+  names (bg-success/bg-warning/bg-error/bg-info/bg-primary) that the registry refresh renamed to
+  bg-ok/bg-warn/bg-t-out/bg-blue/bg-red → the 2px glow never renders on dot-variant indicators. Shared
+  component (33 consumers); fix once. Label+dot still render (cosmetic, not colour-only-status failure).
+- **status-colors.test.ts pre-existing failures:** asserts legacy bg-success/text-success token names that
+  intentStyles migrated off — update the test to the new token names (deploy runs `npm test`).
+- **Recurring DEFER:** detail-page hand-built overflow sub-tables → mobile card lists + left-edge red row
+  hover (clients/suppliers/locations/assets detail). DataTable `emptyPreset` is ignored (shared) — list
+  pages need explicit emptyTitle/description.
+- **Run full `npm test` + `npm run build` before shipping** — several agents updated/added tests; confirm green.

@@ -42,8 +42,8 @@ describe("mapLineItemDoc", () => {
     expect(r.modelId).toBe("m1");
     expect(r.quantity).toBe(3);
     // Convex meta must not leak through.
-    expect((r as Record<string, unknown>)._id).toBeUndefined();
-    expect((r as Record<string, unknown>)._creationTime).toBeUndefined();
+    expect((r as unknown as Record<string, unknown>)._id).toBeUndefined();
+    expect((r as unknown as Record<string, unknown>)._creationTime).toBeUndefined();
   });
 
   it("defaults absent nullable fields to null and absent scalars to Prisma defaults", () => {

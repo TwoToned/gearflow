@@ -61,10 +61,13 @@ const byOrdinal = (a: { ordinal?: number | null }, b: { ordinal?: number | null 
  * Index non-CANCELLED line items by `parentLineItemId`, each bucket pre-sorted by
  * `sortOrder asc`. Built once per project; drives `childLineItems` reconstruction.
  */
-export function indexChildren<T extends FlatLineItem>(rows: T[]): Map<string, T[]> {
+export function indexChildren<T extends FlatLineItem>(
+  rows: T[],
+  keepCancelled = false,
+): Map<string, T[]> {
   const byParent = new Map<string, T[]>();
   for (const r of rows) {
-    if (!notCancelled(r)) continue;
+    if (!keepCancelled && !notCancelled(r)) continue;
     if (!r.parentLineItemId) continue;
     const arr = byParent.get(r.parentLineItemId);
     if (arr) arr.push(r);
@@ -93,6 +96,11 @@ export interface NestExtras<U> {
   unitsByLineItem: Map<string, U[]>;
   /** Max `childLineItems` recursion depth (Prisma include depth). Past it the key is omitted. */
   depth: number;
+  /** Keep CANCELLED scope rows instead of dropping them. The getProject editor
+   *  hides CANCELLED merge tombstones (default `false`); the warehouse reads
+   *  include every status, so they pass `true`. Must match the `keepCancelled`
+   *  passed to {@link indexChildren} so nested children behave the same. */
+  keepCancelled?: boolean;
 }
 
 /**
@@ -120,8 +128,9 @@ function expand<T extends FlatLineItem, U>(
 
 /**
  * Reconstruct the `lineItems` array for a scope: take the flat rows that belong to
- * the scope (already scope-filtered by the caller), drop CANCELLED, sort by
- * `sortOrder asc`, and expand each with units + nested `childLineItems` to `depth`.
+ * the scope (already scope-filtered by the caller), drop CANCELLED (unless
+ * `extras.keepCancelled`), sort by `sortOrder asc`, and expand each with units +
+ * nested `childLineItems` to `depth`.
  * `childLineItems` are matched globally by `parentLineItemId` (via `byParent`),
  * NOT by scope — exactly like the Prisma relation include.
  */
@@ -131,7 +140,7 @@ export function reconstructScope<T extends FlatLineItem, U>(
   extras: NestExtras<U>,
 ): Array<T & { units: U[]; childLineItems?: unknown }> {
   return scopeRows
-    .filter(notCancelled)
+    .filter((r) => (extras.keepCancelled ? true : notCancelled(r)))
     .sort(bySortOrder)
     .map((r) => expand(r, byParent, extras, extras.depth));
 }

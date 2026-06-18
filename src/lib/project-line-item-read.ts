@@ -7,10 +7,15 @@ import {
   getAssetsByOrg,
   getBulkAssetsByOrg,
 } from "@/lib/assets-read";
-import { type ConvexKit, getKitsByOrg } from "@/lib/kits-read";
+import { type ConvexKit, getKitsByOrg, getKitMap } from "@/lib/kits-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
+  attachModelCheckItemCounts,
+  attachKitTree,
+  attachAssetBulkAssetTree,
+  getModelCheckItemCountMap,
+  getKitCheckItemCountMap,
   type LineItemAttachMaps,
 } from "@/lib/line-item-tree-read";
 import {
@@ -462,6 +467,58 @@ export async function buildProjectEquipmentTree(
   const lineItemsOut = attach(rawTop);
 
   return { categories, lineItems: lineItemsOut };
+}
+
+/**
+ * Reconstruct getProjectForWarehouse's line-item list from Convex. Unlike
+ * getProject this is a FLAT list (no category/group grouping), scoped to
+ * `type === "EQUIPMENT"`, and **keeps every status** (no CANCELLED filter on line
+ * items / children — matching the warehouse Prisma include). Each line item AND
+ * each unit gets the FULL `asset`/`bulkAsset` doc (`attachAssetBulkAssetTree`),
+ * `model._count.modelCheckItems` + `kit._count.kitCheckItems` are grafted off the
+ * Convex mirror, and `childLineItems` nest 2 deep. Units are non-CANCELLED only.
+ */
+export async function buildWarehouseLineItems(projectId: string, organizationId: string) {
+  const convex = await getConvexClient();
+  const liDocs = await convex.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
+  });
+  const lineItems = liDocs.map(mapLineItemDoc);
+  const lineItemIds = lineItems.map((li) => li.id);
+
+  const [unitDocs, attachMaps, kitMap, modelCheckCounts, kitCheckCounts, assetArr, bulkArr] =
+    await Promise.all([
+      lineItemIds.length
+        ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
+        : Promise.resolve([] as UnitDoc[]),
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+    ]);
+
+  const assetMap = new Map(assetArr.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));
+
+  const units = unitDocs.map(mapUnitDoc);
+  const unitsByLineItem = indexUnits(units);
+  const byParent = indexChildren(lineItems, true); // keep CANCELLED children
+  const scope = lineItems.filter((li) => li.type === "EQUIPMENT");
+  const tree = reconstructScope(scope, byParent, {
+    unitsByLineItem,
+    depth: 2,
+    keepCancelled: true,
+  });
+
+  // Same attach pipeline getProjectForWarehouse used inline: model/supplier →
+  // model check-item count → kit (+ count) → asset/bulkAsset (full, on lines AND units).
+  const withModelSupplier = attachLineItemTree(tree, attachMaps);
+  const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
+  const withKits = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  return attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
 }
 
 export type { LineItemAttachMaps };

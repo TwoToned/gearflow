@@ -22,8 +22,9 @@ import {
   mirrorKitBulkItemCreate,
   removeKitBulkItemFromConvex,
 } from "@/lib/kit-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
-import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror";
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
@@ -368,12 +369,9 @@ export async function deleteKit(id: string) {
   const tagForLog = kit.assetTag;
   const nameForLog = kit.name;
 
-  // Capture kit_check_item ids before the cascade delete so we can mirror the
-  // removals to Convex (the table is dual-written; Convex has no FK cascade).
-  const kitCheckItemRows = await prisma.kitCheckItem.findMany({
-    where: { kitId: id },
-    select: { id: true },
-  });
+  // Capture kit_check_item ids before the cascade delete (Convex has no FK cascade).
+  const convexKits = await getConvexClient();
+  const kitCheckItemRows = await convexKits.query(api.kitCheckItems.listByKitId, { orgId: organizationId, kitId: id });
 
   await prisma.$transaction(async (tx) => {
     // Release serialized assets back to inventory.
@@ -411,7 +409,7 @@ export async function deleteKit(id: string) {
   // released assets / restored bulk quantities are reactive too.
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
-  for (const row of kitCheckItemRows) await removeKitCheckItemFromConvex(row.id);
+  for (const row of kitCheckItemRows) await convexKits.mutation(api.kitCheckItems.remove, { id: row.id });
   await syncMediaForParent("kit", organizationId, id);
   await removeKitFromConvex(id);
   await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));

@@ -16,14 +16,7 @@ import {
 } from "@/lib/check-items-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorModelCheckItemCreate,
-  removeModelCheckItemFromConvex,
-  syncModelCheckItemsForModels,
-  mirrorKitCheckItemCreate,
-  removeKitCheckItemFromConvex,
-  syncKitCheckItemsForKit,
-} from "@/lib/check-item-assignment-mirror";
+import { createId } from "@paralleldrive/cuid2";
 import {
   checkItemSchema,
   type CheckItemFormValues,
@@ -182,15 +175,14 @@ export async function deleteCheckItem(id: string) {
     "delete"
   );
 
-  // Block delete if in use by any model or kit
-  const [modelUsage, kitUsage] = await Promise.all([
-    prisma.modelCheckItem.count({
-      where: { checkItemId: id, organizationId },
-    }),
-    prisma.kitCheckItem.count({
-      where: { checkItemId: id, organizationId },
-    }),
+  // Block delete if in use by any model or kit (Convex-only reads)
+  const convexForGuard = await getConvexClient();
+  const [modelRows, kitRows] = await Promise.all([
+    convexForGuard.query(api.modelCheckItems.listByCheckItemId, { orgId: organizationId, checkItemId: id }),
+    convexForGuard.query(api.kitCheckItems.listByCheckItemId, { orgId: organizationId, checkItemId: id }),
   ]);
+  const modelUsage = modelRows.length;
+  const kitUsage = kitRows.length;
 
   if (modelUsage > 0 || kitUsage > 0) {
     const parts: string[] = [];
@@ -237,25 +229,24 @@ export async function addCheckItemToModel(
     "update"
   );
 
-  // Get next sort order
-  const maxSort = await prisma.modelCheckItem.aggregate({
-    where: { modelId, organizationId },
-    _max: { sortOrder: true },
+  const convex = await getConvexClient();
+  const existing = await convex.query(api.modelCheckItems.listByModelId, { orgId: organizationId, modelId });
+  const maxSortOrder = existing.reduce((max, r) => Math.max(max, r.sortOrder ?? -1), -1);
+  const newId = createId();
+  const now = Date.now();
+  await convex.mutation(api.modelCheckItems.createIfMissing, {
+    id: newId,
+    organizationId,
+    modelId,
+    checkItemId,
+    sortOrder: maxSortOrder + 1,
+    createdAt: now,
   });
-
-  const result = await prisma.modelCheckItem.create({
-    data: {
-      organizationId,
-      modelId,
-      checkItemId,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
-    include: { checkItem: true },
-  });
-  const [, model] = await Promise.all([
-    mirrorModelCheckItemCreate(result),
+  const [checkItem, model] = await Promise.all([
+    getCheckItemById(organizationId, checkItemId),
     getModelById(modelId),
   ]);
+  const result = { id: newId, organizationId, modelId, checkItemId, sortOrder: maxSortOrder + 1, createdAt: new Date(now), checkItem };
   const modelName = model?.name ?? modelId;
 
   await logActivity({
@@ -266,7 +257,7 @@ export async function addCheckItemToModel(
     entityType: "model",
     entityId: modelId,
     entityName: modelName,
-    summary: `Added check item "${result.checkItem.label}" to model "${modelName}"`,
+    summary: `Added check item "${checkItem?.label ?? checkItemId}" to model "${modelName}"`,
   });
 
   return serialize(result);
@@ -281,18 +272,17 @@ export async function removeCheckItemFromModel(
     "update"
   );
 
-  const record = await prisma.modelCheckItem.findFirst({
-    where: { modelId, checkItemId, organizationId },
-    include: { checkItem: true },
-  });
+  const convex = await getConvexClient();
+  const record = await convex.query(api.modelCheckItems.getByModelAndCheckItem, { orgId: organizationId, modelId, checkItemId });
 
   if (!record) {
     throw new Error("Check item not assigned to this model");
   }
 
-  const [, model] = await Promise.all([
-    prisma.modelCheckItem.delete({ where: { id: record.id } }).then(() => removeModelCheckItemFromConvex(record.id)),
+  const [, model, checkItem] = await Promise.all([
+    convex.mutation(api.modelCheckItems.remove, { id: record.id }),
     getModelById(modelId),
+    getCheckItemById(organizationId, checkItemId),
   ]);
   const modelName = model?.name ?? modelId;
 
@@ -304,7 +294,7 @@ export async function removeCheckItemFromModel(
     entityType: "model",
     entityId: modelId,
     entityName: modelName,
-    summary: `Removed check item "${record.checkItem.label}" from model "${modelName}"`,
+    summary: `Removed check item "${checkItem?.label ?? checkItemId}" from model "${modelName}"`,
   });
 
   return { success: true };
@@ -316,15 +306,12 @@ export async function reorderModelCheckItems(
   const { organizationId } = await requirePermission("checkItem", "update");
   const parsed = reorderModelCheckItemsSchema.parse(data);
 
-  await prisma.$transaction(
-    parsed.orderedCheckItemIds.map((checkItemId, index) =>
-      prisma.modelCheckItem.updateMany({
-        where: { modelId: parsed.modelId, checkItemId, organizationId },
-        data: { sortOrder: index },
-      })
-    )
-  );
-  await syncModelCheckItemsForModels([parsed.modelId]);
+  const convex = await getConvexClient();
+  for (let index = 0; index < parsed.orderedCheckItemIds.length; index++) {
+    const checkItemId = parsed.orderedCheckItemIds[index];
+    const row = await convex.query(api.modelCheckItems.getByModelAndCheckItem, { orgId: organizationId, modelId: parsed.modelId, checkItemId });
+    if (row) await convex.mutation(api.modelCheckItems.update, { id: row.id, patch: { sortOrder: index } });
+  }
 
   return { success: true };
 }
@@ -344,47 +331,37 @@ export async function bulkAddCheckItemsToModels(
     throw new Error("No models or check items selected");
   }
 
-  // Find existing assignments + max sortOrder per model so we skip duplicates
-  // and assign correct sequential sortOrder only for truly new items
-  const [maxSorts, existing] = await Promise.all([
-    prisma.modelCheckItem.groupBy({
-      by: ["modelId"],
-      where: { modelId: { in: modelIds }, organizationId },
-      _max: { sortOrder: true },
-    }),
-    prisma.modelCheckItem.findMany({
-      where: { modelId: { in: modelIds }, checkItemId: { in: checkItemIds }, organizationId },
-      select: { modelId: true, checkItemId: true },
-    }),
-  ]);
-  const sortMap = new Map(
-    maxSorts.map((m) => [m.modelId, (m._max.sortOrder ?? -1) + 1])
+  // Fetch existing assignments per model from Convex to compute maxSort + dedup
+  const convex = await getConvexClient();
+  const existingByModel = await Promise.all(
+    modelIds.map((modelId) => convex.query(api.modelCheckItems.listByModelId, { orgId: organizationId, modelId }))
   );
-  const existingSet = new Set(
-    existing.map((e) => `${e.modelId}:${e.checkItemId}`)
-  );
+  const sortMap = new Map<string, number>();
+  const existingSet = new Set<string>();
+  for (let i = 0; i < modelIds.length; i++) {
+    const modelId = modelIds[i];
+    const rows = existingByModel[i];
+    sortMap.set(modelId, (rows.reduce((max, r) => Math.max(max, r.sortOrder ?? -1), -1)) + 1);
+    for (const r of rows) existingSet.add(`${r.modelId}:${r.checkItemId}`);
+  }
 
-  // Build rows only for items not already assigned — sequential sortOrder with no gaps
-  const rows = modelIds.flatMap((modelId) => {
-    const startSort = sortMap.get(modelId) ?? 0;
-    let offset = 0;
-    return checkItemIds
-      .filter((checkItemId) => !existingSet.has(`${modelId}:${checkItemId}`))
-      .map((checkItemId) => ({
+  let createdCount = 0;
+  for (const modelId of modelIds) {
+    let offset = sortMap.get(modelId) ?? 0;
+    for (const checkItemId of checkItemIds) {
+      if (existingSet.has(`${modelId}:${checkItemId}`)) continue;
+      await convex.mutation(api.modelCheckItems.createIfMissing, {
+        id: createId(),
         organizationId,
         modelId,
         checkItemId,
-        sortOrder: startSort + offset++,
-      }));
-  });
-
-  const result = await prisma.modelCheckItem.createMany({
-    data: rows,
-    skipDuplicates: true,
-  });
-  // createMany returns no ids, so re-read + upsert every assignment for the
-  // affected models into Convex.
-  await syncModelCheckItemsForModels(modelIds);
+        sortOrder: offset++,
+        createdAt: Date.now(),
+      });
+      createdCount++;
+    }
+  }
+  const result = { count: createdCount };
 
   // Model lives in Convex — fetch names for audit log via map.
   const convexModelMap = await getModelMap(organizationId);
@@ -430,21 +407,24 @@ export async function addCheckItemToKit(
     "update"
   );
 
-  const maxSort = await prisma.kitCheckItem.aggregate({
-    where: { kitId, organizationId },
-    _max: { sortOrder: true },
+  const convex = await getConvexClient();
+  const existingKitItems = await convex.query(api.kitCheckItems.listByKitId, { orgId: organizationId, kitId });
+  const maxSortOrder = existingKitItems.reduce((max, r) => Math.max(max, r.sortOrder ?? -1), -1);
+  const newId = createId();
+  const now = Date.now();
+  await convex.mutation(api.kitCheckItems.createIfMissing, {
+    id: newId,
+    organizationId,
+    kitId,
+    checkItemId,
+    sortOrder: maxSortOrder + 1,
+    createdAt: now,
   });
-
-  const result = await prisma.kitCheckItem.create({
-    data: {
-      organizationId,
-      kitId,
-      checkItemId,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
-    include: { checkItem: true, kit: { select: { name: true } } },
-  });
-  await mirrorKitCheckItemCreate(result);
+  const [checkItem, kit] = await Promise.all([
+    getCheckItemById(organizationId, checkItemId),
+    (await getConvexClient()).query(api.kits.getById, { id: kitId }),
+  ]);
+  const result = { id: newId, organizationId, kitId, checkItemId, sortOrder: maxSortOrder + 1, createdAt: new Date(now), checkItem, kit };
 
   await logActivity({
     organizationId,
@@ -453,8 +433,8 @@ export async function addCheckItemToKit(
     action: "UPDATE",
     entityType: "kit",
     entityId: kitId,
-    entityName: result.kit.name,
-    summary: `Added check item "${result.checkItem.label}" to kit "${result.kit.name}"`,
+    entityName: kit?.name ?? kitId,
+    summary: `Added check item "${checkItem?.label ?? checkItemId}" to kit "${kit?.name ?? kitId}"`,
   });
 
   return serialize(result);
@@ -469,19 +449,18 @@ export async function removeCheckItemFromKit(
     "update"
   );
 
-  const record = await prisma.kitCheckItem.findFirst({
-    where: { kitId, checkItemId, organizationId },
-    include: { checkItem: true, kit: { select: { name: true } } },
-  });
+  const convex = await getConvexClient();
+  const record = await convex.query(api.kitCheckItems.getByKitAndCheckItem, { orgId: organizationId, kitId, checkItemId });
 
   if (!record) {
     throw new Error("Check item not assigned to this kit");
   }
 
-  await prisma.kitCheckItem.delete({
-    where: { id: record.id },
-  });
-  await removeKitCheckItemFromConvex(record.id);
+  const [, checkItem, kit] = await Promise.all([
+    convex.mutation(api.kitCheckItems.remove, { id: record.id }),
+    getCheckItemById(organizationId, checkItemId),
+    convex.query(api.kits.getById, { id: kitId }),
+  ]);
 
   await logActivity({
     organizationId,
@@ -490,8 +469,8 @@ export async function removeCheckItemFromKit(
     action: "UPDATE",
     entityType: "kit",
     entityId: kitId,
-    entityName: record.kit.name,
-    summary: `Removed check item "${record.checkItem.label}" from kit "${record.kit.name}"`,
+    entityName: kit?.name ?? kitId,
+    summary: `Removed check item "${checkItem?.label ?? checkItemId}" from kit "${kit?.name ?? kitId}"`,
   });
 
   return { success: true };
@@ -503,15 +482,12 @@ export async function reorderKitCheckItems(
 ) {
   const { organizationId } = await requirePermission("checkItem", "update");
 
-  await prisma.$transaction(
-    orderedCheckItemIds.map((checkItemId, index) =>
-      prisma.kitCheckItem.updateMany({
-        where: { kitId, checkItemId, organizationId },
-        data: { sortOrder: index },
-      })
-    )
-  );
-  await syncKitCheckItemsForKit(kitId);
+  const convex = await getConvexClient();
+  for (let index = 0; index < orderedCheckItemIds.length; index++) {
+    const checkItemId = orderedCheckItemIds[index];
+    const row = await convex.query(api.kitCheckItems.getByKitAndCheckItem, { orgId: organizationId, kitId, checkItemId });
+    if (row) await convex.mutation(api.kitCheckItems.update, { id: row.id, patch: { sortOrder: index } });
+  }
 
   return { success: true };
 }

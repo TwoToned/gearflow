@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
-import { Loader2, Plus, X, Cable } from "lucide-react";
+import { Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -75,16 +75,16 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="t-overline text-muted">
           Default accessories
         </p>
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Button size="sm" variant="line" onClick={() => setOpen(true)}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Add
         </Button>
       </div>
 
       {!hasAny ? (
-        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+        <div className="rounded-[var(--r)] border-2 border-dashed border-line-2 p-4 text-center text-ui-text text-muted">
           <Cable className="mx-auto mb-1 h-5 w-5 opacity-60" />
           No defaults yet. Bulk accessories added here travel with every asset of this
           model onto projects.
@@ -92,18 +92,18 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
       ) : (
         <ul className="space-y-1.5">
           {bulkAccessories.map((c) => (
-            <li key={c.id} className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground/60 select-none">└─</span>
-              <span className="font-medium">
-                {c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
+            <li key={c.id} className="flex items-center gap-2 text-ui-text">
+              <span className="text-faint select-none">└─</span>
+              <span className="font-medium text-ink">
+                <span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
               </span>
-              <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="ml-auto text-badge text-muted">
                 default
               </span>
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-6 w-6"
+                className="size-7"
                 onClick={() => remove.mutate(c.id)}
               >
                 <X className="h-3.5 w-3.5" />
@@ -118,7 +118,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
           <DialogHeader>
             <DialogTitle>Add default accessory</DialogTitle>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted">
             Every asset of this model will inherit this. A specific asset can override
             the quantity with its own attachment.
           </p>
@@ -148,8 +148,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
               />
             </div>
             <DialogFooter>
-              <Button disabled={!bulkId || add.isPending} onClick={() => add.mutate()}>
-                {add.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button disabled={!bulkId} loading={add.isPending} onClick={() => add.mutate()}>
                 Add
               </Button>
             </DialogFooter>

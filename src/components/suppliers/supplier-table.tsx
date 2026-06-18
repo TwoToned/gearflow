@@ -227,6 +227,8 @@ export function SupplierTable() {
       savedViews={{ tableId: "suppliers", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="suppliers"
+      emptyTitle="No suppliers yet"
+      emptyDescription="Add a supplier to track purchase orders, subhires, and lead times."
       toolbarActions={toolbarActions}
     />
   );

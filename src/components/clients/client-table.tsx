@@ -218,6 +218,8 @@ export function ClientTable() {
       savedViews={{ tableId: "clients", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="clients"
+      emptyTitle="No clients yet"
+      emptyDescription="Add a client to start quoting and tracking their projects."
       toolbarActions={toolbarActions}
     />
   );

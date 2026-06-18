@@ -22,7 +22,6 @@ import { toast } from "sonner";
 
 import { getClient, archiveClient, updateClientNotes } from "@/server/clients";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
-import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
@@ -52,6 +51,14 @@ import {
 } from "@/components/ui/table";
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="client" action="read">
+      <ClientDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -78,15 +85,13 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
   if (!client) {
     return (
-      <RequirePermission resource="client" action="read">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Client not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been archived, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/clients">Back to clients</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Client not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been archived, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/clients">Back to clients</Link>
+        </Button>
+      </div>
     );
   }
 
@@ -97,7 +102,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   );
 
   return (
-    <RequirePermission resource="client" action="read">
+    <>
       <PageMeta title={client?.name} />
       <FadeIn>
         <div className="space-y-6">
@@ -428,6 +433,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }}
         pending={archiveMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

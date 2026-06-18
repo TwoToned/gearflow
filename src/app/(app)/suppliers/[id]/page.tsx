@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { getSupplierById, getSupplierAssets, getSupplierSubhires, deleteSupplier } from "@/server/suppliers";
 import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
+import { formatCurrency } from "@/lib/formatters";
 import { getSupplierOrders } from "@/server/supplier-orders";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -51,6 +52,14 @@ const orderTypeLabels: Record<string, string> = {
 
 
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="supplier" action="read">
+      <SupplierDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -106,15 +115,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   if (isLoading) return <DetailPageSkeleton />;
   if (!supplier) {
     return (
-      <RequirePermission resource="supplier" action="read">
-        <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Supplier not found.</p>
-          <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
-          <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/suppliers">Back to suppliers</Link>
-          </Button>
-        </div>
-      </RequirePermission>
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Supplier not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/suppliers">Back to suppliers</Link>
+        </Button>
+      </div>
     );
   }
 
@@ -123,7 +130,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const subhires = subhiresData?.lineItems || [];
 
   return (
-    <RequirePermission resource="supplier" action="read">
+    <>
       <PageMeta title={supplier.name} />
       <FadeIn>
         <div className="space-y-6">
@@ -258,7 +265,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 {order._count?.items ?? 0}
                               </TableCell>
                               <TableCell className="hidden text-right sm:table-cell t-data">
-                                {order.total != null ? `$${Number(order.total).toFixed(2)}` : "\u2014"}
+                                {order.total != null ? formatCurrency(Number(order.total)) : "\u2014"}
                               </TableCell>
                               <TableCell className="hidden text-muted md:table-cell">
                                 {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "\u2014"}
@@ -449,7 +456,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       {orders.slice(0, 5).map((order) => (
                         <div
                           key={order.id}
-                          className="flex items-center justify-between rounded-[var(--r)] px-2 py-1.5 text-ui-text"
+                          className="flex items-center justify-between py-1.5 text-ui-text"
                         >
                           <div className="flex min-w-0 items-center gap-2">
                             <span className="shrink-0 t-mono text-muted">
@@ -488,6 +495,6 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

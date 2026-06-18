@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -43,7 +44,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: supplier } = useServerQuery({
+  const { data: supplier, isLoading, error } = useServerQuery({
     queryKey: ["supplier", orgId, supplierId],
     queryFn: () => getSupplierById(supplierId),
   });
@@ -70,6 +71,26 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
     onError: (e) => toast.error(e.message),
   });
 
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <FormSkeleton />
+      </div>
+    );
+  }
+
+  if (error || !supplier) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Supplier not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/suppliers">Back to suppliers</Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <FadeIn>
       <div className="mx-auto max-w-3xl space-y-4">
@@ -80,7 +101,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href={`/suppliers/${supplierId}`} />}>{supplier?.name || "..."}</BreadcrumbLink>
+              <BreadcrumbLink render={<Link href={`/suppliers/${supplierId}`} />}>{supplier.name}</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -91,7 +112,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
         <div>
           <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New order</h1>
           <p className="mt-1 text-ui-text text-muted">
-            Create a purchase order for {supplier?.name || "..."}
+            Create a purchase order for {supplier.name}
           </p>
         </div>
 

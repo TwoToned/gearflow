@@ -32,7 +32,7 @@ export default function NewCrewMemberPage() {
           <div>
             <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New crew member</h1>
             <p className="mt-1 text-ui-text text-muted">
-              Add a new crew member to your directory.
+              Add a freelancer, employee, or contractor to your roster.
             </p>
           </div>
           <CrewMemberForm />

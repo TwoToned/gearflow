@@ -38,7 +38,7 @@ export const projectStatusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",

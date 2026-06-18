@@ -29,8 +29,8 @@ independent Claude + Codex review per chunk; fix findings; commit.
 | 6 | Crew | list/detail/new/edit, planner, timesheets | ✅ |
 | 7 | Warehouse | list, [projectId] (deploy/pick-prep/return/close-out/bulk-checkin tabs), pull-sheet, check/[assetTag] | ✅ |
 | 8 | Clients & Suppliers | clients list/detail/new/edit, suppliers (+orders/new) | ✅ |
-| 9 | Locations | list/detail/new/edit | ◐ polished+reviewed, fixes pending |
-| 10 | Maintenance | list/detail/new/edit | ◐ polished+reviewed, fixes pending |
+| 9 | Locations | list/detail/new/edit | ✅ |
+| 10 | Maintenance | list/detail/new/edit | ✅ |
 | 11 | Test & Tag | t&t list/[id]/new/quick-test/registry/reports | ☐ |
 | 12 | Availability + Activity + Changelog + Notifications | those 4 + account, account/notifications | ☐ |
 | 13 | Settings | settings + ~17 sub-pages + layout | ☐ |
@@ -303,8 +303,19 @@ Subagents fail with the weekly-limit error, so the sweep is paused. Working tree
 chunks 0–8 are fully done+reviewed+fixed and committed. Resume from the outstanding list below.
 
 ## Outstanding work (resume point)
-### Chunks 9 + 10 — polished + reviewed (Claude + Codex), FIXES NOT YET APPLIED
-Apply these (both reviews agreed; label-map findings already fixed in commit 50e1d088):
+### Chunks 9 + 10 — polished + reviewed (Claude + Codex), FIXES APPLIED ✅
+All the items below shipped (commits 188c3ec0 / 49301e06 / 082d905e): the four
+RequirePermission hoists (split into outer-gate + inner-content components
+mirroring assets/registry/[id]), the locations/[id] Delete → CanDo
+location.delete split, the location-table New-location CanDo location.create
+gate, the maintenance-form AWAITING_PARTS/QA status + TEST_AND_TAG type
+SelectItems (sourced from the label maps), the maintenance list TEST_AND_TAG
+type filter, the location-table + maintenance-list explicit
+emptyTitle/emptyDescription, and the status-labels formatLabel sentence-case
+fallback. tsc + eslint clean on touched files; maintenance/location/status-*
+unit tests green.
+
+Original fix list (both reviews agreed; label-map findings already fixed in commit 50e1d088):
 - **Auth-gate hoist (HIGH ×4):** wrap content ABOVE the loading/not-found branches in
   locations/[id]/page.tsx (location.read), locations/[id]/edit/page.tsx (location.update),
   maintenance/[id]/page.tsx (maintenance.read), maintenance/[id]/edit/page.tsx (maintenance.update).
@@ -331,12 +342,13 @@ Apply these (both reviews agreed; label-map findings already fixed in commit 50e
 - 16 Edge/standalone (offline, auditor/[token], warehouse/display/[token], root marketing page)
 
 ### Cross-cutting follow-ups (final consistency pass)
-- **status-indicator.tsx dot-variant glow is broken:** its ring-glow conditionals still test legacy class
-  names (bg-success/bg-warning/bg-error/bg-info/bg-primary) that the registry refresh renamed to
-  bg-ok/bg-warn/bg-t-out/bg-blue/bg-red → the 2px glow never renders on dot-variant indicators. Shared
-  component (33 consumers); fix once. Label+dot still render (cosmetic, not colour-only-status failure).
-- **status-colors.test.ts pre-existing failures:** asserts legacy bg-success/text-success token names that
-  intentStyles migrated off — update the test to the new token names (deploy runs `npm test`).
+- ✅ **status-indicator.tsx dot-variant glow** (commit b8cb97e0): remapped the ring-glow conditionals from
+  the legacy class names to the current intentStyles dot tokens (bg-ok/bg-warn/bg-t-out/bg-blue/bg-rep/bg-red)
+  and paired each ring colour to match. The 2px glow renders again on every dot-variant indicator
+  (~33 consumers). `ring-<token>/20` resolves via the registered `--color-*` tokens.
+- ✅ **status-colors.test.ts** (commit d7280a7c): updated the getStatusColor assertions off the legacy
+  bg-success/text-success scheme to the current values (bg-ok/text-ok/bg-ok-soft, text-red, text-t-out,
+  text-warn, text-blue). `npm test -- status-colors` green.
 - **Recurring DEFER:** detail-page hand-built overflow sub-tables → mobile card lists + left-edge red row
   hover (clients/suppliers/locations/assets detail). DataTable `emptyPreset` is ignored (shared) — list
   pages need explicit emptyTitle/description.

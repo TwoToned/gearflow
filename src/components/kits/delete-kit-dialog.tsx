@@ -85,7 +85,7 @@ export function DeleteKitDialog({
 
           {infoLoading && (
             <div className="flex items-center gap-2 text-muted">
-              <Loader2 className="h-4 w-4 animate-spin" /> Checking references…
+              <Loader2 className="h-4 w-4 motion-safe:animate-spin" /> Checking references…
             </div>
           )}
 
@@ -160,7 +160,7 @@ export function DeleteKitDialog({
           </Button>
           <Button
             variant={mode === "hard" ? "line" : "primary"}
-            className={mode === "hard" ? "border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out" : undefined}
+            className={mode === "hard" ? "border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out" : undefined}
             onClick={handleConfirm}
             loading={pending}
             disabled={

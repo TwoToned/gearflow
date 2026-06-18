@@ -277,7 +277,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <Button
                   variant="line"
                   size="sm"
-                  className="border-warn/40 text-warn hover:bg-warn hover:text-paper hover:border-warn"
+                  className="border-warn/40 text-warn hover:bg-warn-soft hover:border-warn"
                   onClick={() => setForceReturnOpen(true)}
                   disabled={forceReturnMutation.isPending}
                 >
@@ -295,7 +295,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <Button
                   variant="line"
                   size="sm"
-                  className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
+                  className="border-red/40 text-red hover:bg-red hover:text-white hover:border-red"
                   onClick={() => setShowDeleteDialog(true)}
                 >
                   <Trash2 className="h-4 w-4" />

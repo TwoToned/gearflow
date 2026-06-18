@@ -28,6 +28,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -146,7 +147,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
     return (
       <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-12 w-full animate-pulse rounded-[var(--r)] bg-elev" />
+          <Skeleton key={i} className="h-12 w-full rounded-[var(--r)]" />
         ))}
       </div>
     );
@@ -338,7 +339,7 @@ function KitCheckItemPicker({
         {isLoading ? (
           <div className="space-y-2 py-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-12 w-full animate-pulse rounded-[var(--r)] bg-elev" />
+              <Skeleton key={i} className="h-12 w-full rounded-[var(--r)]" />
             ))}
           </div>
         ) : available.length === 0 ? (

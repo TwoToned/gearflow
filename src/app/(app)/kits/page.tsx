@@ -315,7 +315,7 @@ export default function KitsPage() {
               <Button
                 size="sm"
                 variant="line"
-                className="border-warn/40 text-warn hover:bg-warn hover:text-paper hover:border-warn"
+                className="border-warn/40 text-warn hover:bg-warn-soft hover:border-warn"
                 loading={forceReturnMutation.isPending}
                 onClick={() => setBulkForceReturnOpen(true)}
               >

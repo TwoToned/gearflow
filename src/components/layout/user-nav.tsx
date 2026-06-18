@@ -91,18 +91,18 @@ export function UserNav() {
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => router.push("/account")}>
             <User className="mr-2 h-4 w-4" />
-            Account Settings
+            Account settings
           </DropdownMenuItem>
           {myCrewId && (
             <DropdownMenuItem onClick={() => router.push(`/crew/${myCrewId}`)}>
               <HardHat className="mr-2 h-4 w-4" />
-              My Crew Profile
+              My crew profile
             </DropdownMenuItem>
           )}
           {isSiteAdmin && (
             <DropdownMenuItem onClick={() => router.push("/admin")}>
               <Shield className="mr-2 h-4 w-4" />
-              Admin Panel
+              Admin panel
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>

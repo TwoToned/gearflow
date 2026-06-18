@@ -25,6 +25,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 /** 60-day window for the date range bar: today -7d to today +53d */
 function getDateRangeWindow() {
@@ -37,8 +38,8 @@ function getDateRangeWindow() {
 }
 
 const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry Hire",
-  WET_HIRE: "Wet Hire",
+  DRY_HIRE: "Dry hire",
+  WET_HIRE: "Wet hire",
   INSTALLATION: "Installation",
   TOUR: "Tour",
   CORPORATE: "Corporate",
@@ -141,16 +142,18 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "type",
     filterable: true,
     filterType: "enum",
+    // Filter-legend dots mirror the type chip module hues (RVLT tokens, no
+    // raw Tailwind palette / non-red accents).
     filterOptions: [
-      { value: "DRY_HIRE", label: "Dry Hire", color: "bg-blue-500" },
-      { value: "WET_HIRE", label: "Wet Hire", color: "bg-cyan-500" },
-      { value: "INSTALLATION", label: "Installation", color: "bg-orange-500" },
-      { value: "TOUR", label: "Tour", color: "bg-teal-500" },
-      { value: "CORPORATE", label: "Corporate", color: "bg-slate-500" },
-      { value: "THEATRE", label: "Theatre", color: "bg-rose-500" },
-      { value: "FESTIVAL", label: "Festival", color: "bg-amber-500" },
-      { value: "CONFERENCE", label: "Conference", color: "bg-blue-500" },
-      { value: "OTHER", label: "Other", color: "bg-gray-500" },
+      { value: "DRY_HIRE", label: "Dry hire", color: "bg-blue" },
+      { value: "WET_HIRE", label: "Wet hire", color: "bg-teal" },
+      { value: "INSTALLATION", label: "Installation", color: "bg-coral" },
+      { value: "TOUR", label: "Tour", color: "bg-purple" },
+      { value: "CORPORATE", label: "Corporate", color: "bg-rep" },
+      { value: "THEATRE", label: "Theatre", color: "bg-purple" },
+      { value: "FESTIVAL", label: "Festival", color: "bg-amber" },
+      { value: "CONFERENCE", label: "Conference", color: "bg-blue" },
+      { value: "OTHER", label: "Other", color: "bg-rep" },
     ],
     cell: (row) => (
       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${typeColors[row.type] || "bg-rep-soft text-rep"}`}>
@@ -165,18 +168,20 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "status",
     filterable: true,
     filterType: "enum",
+    // Dots derive from the status intent map (status-colors.ts) — the single
+    // source of truth — instead of hardcoded palette swatches.
     filterOptions: [
-      { value: "ENQUIRY", label: "Enquiry", color: "bg-gray-500" },
-      { value: "QUOTING", label: "Quoting", color: "bg-blue-500" },
-      { value: "QUOTED", label: "Quoted", color: "bg-blue-500" },
-      { value: "CONFIRMED", label: "Confirmed", color: "bg-green-500" },
-      { value: "PREPPING", label: "Prepping", color: "bg-amber-500" },
-      { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
-      { value: "ON_SITE", label: "On Site", color: "bg-teal-500" },
-      { value: "RETURNED", label: "Returned", color: "bg-teal-500" },
-      { value: "COMPLETED", label: "Completed", color: "bg-green-500" },
-      { value: "INVOICED", label: "Invoiced", color: "bg-green-500" },
-      { value: "CANCELLED", label: "Cancelled", color: "bg-red-500" },
+      { value: "ENQUIRY", label: "Enquiry", color: getStatusColor("project", "ENQUIRY").dot },
+      { value: "QUOTING", label: "Quoting", color: getStatusColor("project", "QUOTING").dot },
+      { value: "QUOTED", label: "Quoted", color: getStatusColor("project", "QUOTED").dot },
+      { value: "CONFIRMED", label: "Confirmed", color: getStatusColor("project", "CONFIRMED").dot },
+      { value: "PREPPING", label: "Prepping", color: getStatusColor("project", "PREPPING").dot },
+      { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("project", "CHECKED_OUT").dot },
+      { value: "ON_SITE", label: "On site", color: getStatusColor("project", "ON_SITE").dot },
+      { value: "RETURNED", label: "Returned", color: getStatusColor("project", "RETURNED").dot },
+      { value: "COMPLETED", label: "Completed", color: getStatusColor("project", "COMPLETED").dot },
+      { value: "INVOICED", label: "Invoiced", color: getStatusColor("project", "INVOICED").dot },
+      { value: "CANCELLED", label: "Cancelled", color: getStatusColor("project", "CANCELLED").dot },
     ],
     cell: (row) => (
       <StatusIndicator category="project" value={row.status} label={projectStatusLabels[row.status] || row.status} variant="pill" />

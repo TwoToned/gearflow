@@ -2,11 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, Controller, type Path } from "react-hook-form";
+import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { format, parseISO, isValid } from "date-fns";
+import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
+} from "@/components/ui/range-calendar";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
@@ -206,16 +213,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
             </div>
           )}
 
-          {step === 1 && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Rental start"><Input type="date" {...form.register("rentalStartDate")} /></Field>
-              <Field label="Rental end"><Input type="date" {...form.register("rentalEndDate")} /></Field>
-              <DateTime label="Load in" dateName="loadInDate" timeName="loadInTime" form={form} />
-              <DateTime label="Load out" dateName="loadOutDate" timeName="loadOutTime" form={form} />
-              <DateTime label="Event start" dateName="eventStartDate" timeName="eventStartTime" form={form} />
-              <DateTime label="Event end" dateName="eventEndDate" timeName="eventEndTime" form={form} />
-            </div>
-          )}
+          {step === 1 && <ScheduleStep form={form} />}
 
           {step === 2 && (
             <div className="grid gap-5 sm:grid-cols-2">
@@ -295,6 +293,137 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
   );
 }
 
+// ─── Schedule step ─────────────────────────────────────────────
+
+const toDateStr = (d?: Date) => (d ? format(d, "yyyy-MM-dd") : "");
+function fromDateStr(s?: unknown): Date | undefined {
+  if (!s) return undefined;
+  const d = typeof s === "string" ? parseISO(s) : new Date(String(s));
+  return isValid(d) ? d : undefined;
+}
+
+/**
+ * One calendar to rule the schedule. The hire window (a date range) is the
+ * spine — pick it with a preset or the range calendar, and load-in / show /
+ * load-out dates derive from it. The granular per-moment times live in an
+ * optional disclosure so the common case is "tap a preset, done".
+ */
+function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
+  const v = form.watch();
+  const range: DateRange = {
+    start: fromDateStr(v.rentalStartDate),
+    end: fromDateStr(v.rentalEndDate),
+  };
+
+  const setRange = (r: DateRange) => {
+    form.setValue("rentalStartDate", toDateStr(r.start), { shouldDirty: true });
+    form.setValue("rentalEndDate", toDateStr(r.end), { shouldDirty: true });
+    // Derive the per-moment dates into any field the user hasn't filled yet —
+    // never clobber an explicit edit made in the fine-tune section.
+    const fill = (name: Path<ProjectFormValues>, d?: Date) => {
+      if (d && !form.getValues(name)) form.setValue(name, toDateStr(d), { shouldDirty: true });
+    };
+    fill("loadInDate", r.start);
+    fill("eventStartDate", r.start);
+    fill("eventEndDate", r.end ?? r.start);
+    fill("loadOutDate", r.end ?? r.start);
+  };
+
+  const lenLabel = rangeLengthLabel(range);
+  const summary = range.start
+    ? range.end
+      ? `${format(range.start, "EEE d MMM")} → ${format(range.end, "EEE d MMM")}`
+      : `${format(range.start, "EEE d MMM")} — pick an end date`
+    : "No dates yet";
+
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <Label>Hire window</Label>
+        <p className="t-micro text-muted">When does the gear leave and come back? Everything else fills in from this.</p>
+      </div>
+
+      {/* Duration presets */}
+      <div className="flex flex-wrap gap-2">
+        {DURATION_PRESETS.map((p) => {
+          const active = lenLabel === (p.days === 0 ? "1 day" : `${p.days + 1} days`);
+          return (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => setRange(presetRange(p, range.start))}
+              className={cn(
+                "rounded-full border-2 px-3 py-1 text-[13px] font-medium transition-colors",
+                active
+                  ? "border-red bg-red-soft text-ink"
+                  : "border-line text-ink-2 hover:border-red/50 hover:text-ink",
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        {range.start && (
+          <button
+            type="button"
+            onClick={() => setRange({ start: undefined, end: undefined })}
+            className="rounded-full px-3 py-1 text-[13px] font-medium text-faint transition-colors hover:text-t-out"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Calendar + live summary */}
+      <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
+        <RangeCalendar value={range} onChange={setRange} />
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+          <span className={cn("text-[13px] font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
+          {lenLabel && (
+            <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{lenLabel}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Fine-tune: per-moment dates + times, derived from the window */}
+      <Accordion type="single" collapsible>
+        <AccordionItem value="times" className="border-line">
+          <AccordionTrigger>Load-in, show & load-out times</AccordionTrigger>
+          <AccordionContent>
+            <div className="space-y-4 pt-1">
+              <MomentRow icon={Truck} label="Load in" dateName="loadInDate" timeName="loadInTime" form={form} />
+              <MomentRow icon={PartyPopper} label="Show starts" dateName="eventStartDate" timeName="eventStartTime" form={form} />
+              <MomentRow icon={PartyPopper} label="Show ends" dateName="eventEndDate" timeName="eventEndTime" form={form} />
+              <MomentRow icon={Truck} label="Load out" dateName="loadOutDate" timeName="loadOutTime" form={form} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </div>
+  );
+}
+
+function MomentRow({
+  icon: Icon, label, dateName, timeName, form,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  dateName: Path<ProjectFormValues>;
+  timeName: Path<ProjectFormValues>;
+  form: UseFormReturn<ProjectFormValues>;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="w-24 shrink-0 text-[13px] font-medium text-ink-2">{label}</span>
+      <Input type="date" {...form.register(dateName)} className="flex-1" />
+      <Input type="time" {...form.register(timeName)} className="w-28" />
+    </div>
+  );
+}
+
 // ─── Field helpers ─────────────────────────────────────────────
 
 function Field({ label, required, hint, error, children }: { label: string; required?: boolean; hint?: string; error?: string; children: React.ReactNode }) {
@@ -305,17 +434,6 @@ function Field({ label, required, hint, error, children }: { label: string; requ
       {hint && !error && <p className="t-micro text-muted">{hint}</p>}
       {error && <p className="t-micro text-t-out">{error}</p>}
     </div>
-  );
-}
-
-function DateTime({ label, dateName, timeName, form }: { label: string; dateName: Path<ProjectFormValues>; timeName: Path<ProjectFormValues>; form: ReturnType<typeof useForm<ProjectFormValues>> }) {
-  return (
-    <Field label={label}>
-      <div className="flex gap-2">
-        <Input type="date" {...form.register(dateName)} className="flex-1" />
-        <Input type="time" {...form.register(timeName)} className="w-28" />
-      </div>
-    </Field>
   );
 }
 

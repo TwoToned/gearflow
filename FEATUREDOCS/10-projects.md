@@ -20,6 +20,26 @@ Project
   → ProjectManager (multi-PM via join table)
 ```
 
+## New Job Wizard (`src/components/projects/project-wizard.tsx`)
+
+Creation flow is a 4-step wizard (Basics → Schedule → Site → Review), rendered by
+`/projects/new`. `ProjectWizard` is also reused for templates (`isTemplate` prop
+skips the project-code step). The flat `project-form.tsx` is kept only for the
+**edit** page.
+
+- **Project code is required.** Pre-filled from `peekNextProjectNumber()`; the
+  user accepts or overrides. `next()` blocks step 0 if blank (the Zod schema
+  still allows blank for auto-gen, so the requirement is enforced in the wizard).
+- **Schedule step — one calendar, not six pickers.** The hire window is a single
+  date range chosen via `RangeCalendar` (`src/components/ui/range-calendar.tsx`,
+  a custom date-fns range calendar — no external calendar dep) plus duration
+  preset chips (1 day / 2 days / Weekend / 1 week). The range writes
+  `rentalStartDate`/`rentalEndDate`; load-in, show-start, show-end and load-out
+  **dates derive from the window** (fill-if-empty, never clobbering an explicit
+  edit). Per-moment dates + times live in an optional "Load-in, show & load-out
+  times" accordion so the common case is "tap a preset, done". All ten underlying
+  fields are preserved for `createProject()`.
+
 ## Project Managers
 - Multi-PM support via `ProjectManager` join table (replaces old single `projectManagerId`)
 - Managed on the project detail page sidebar via `ProjectManagersPanel`

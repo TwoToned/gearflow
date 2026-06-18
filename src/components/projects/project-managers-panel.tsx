@@ -18,7 +18,7 @@ import { PersonAvatar } from "@/components/ui/avatar";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { SectionHeader } from "@/components/layout/page-layouts";
-import { cn, focusRing } from "@/lib/utils";
+import { cn, focusRing, disabledState } from "@/lib/utils";
 
 interface PM {
   userId: string;
@@ -96,7 +96,7 @@ export function ProjectManagersPanel({
       </div>
 
       {managers.length === 0 && !showPicker && (
-        <p className="text-ui-text text-muted">No PMs assigned</p>
+        <p className="text-ui-text text-muted">No project managers assigned</p>
       )}
 
       {managers.length > 0 && (
@@ -120,6 +120,7 @@ export function ProjectManagersPanel({
                 className={cn(
                   "rounded-sm text-faint opacity-0 transition-opacity hover:text-t-out group-hover:opacity-100",
                   focusRing,
+                  disabledState,
                 )}
                 title="Remove project manager"
               >
@@ -137,7 +138,7 @@ export function ProjectManagersPanel({
             if (userId) addMutation.mutate(userId);
           }}
           options={memberOptions}
-          placeholder="Add a PM..."
+          placeholder="Add a project manager..."
           searchPlaceholder="Search members..."
           emptyMessage="No available members."
         />

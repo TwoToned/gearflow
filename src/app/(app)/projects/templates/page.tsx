@@ -12,6 +12,7 @@ import { getTemplates, deleteTemplate, duplicateProject } from "@/server/project
 import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeIn } from "@/components/ui/motion";
@@ -38,8 +39,8 @@ import {
 } from "@/components/ui/table";
 
 const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry Hire",
-  WET_HIRE: "Wet Hire",
+  DRY_HIRE: "Dry hire",
+  WET_HIRE: "Wet hire",
   INSTALLATION: "Installation",
   TOUR: "Tour",
   CORPORATE: "Corporate",
@@ -60,7 +61,7 @@ export default function TemplatesPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: templates, isLoading, refetch: refetchTemplates } = useServerQuery({
+  const { data: templates, isLoading, error, refetch: refetchTemplates } = useServerQuery({
     queryKey: ["templates", orgId],
     queryFn: getTemplates,
   });
@@ -89,22 +90,29 @@ export default function TemplatesPage() {
     <RequirePermission resource="project" action="read">
       <FadeIn>
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="t-title text-ink">Templates</h1>
-            <p className="text-ui-text text-muted">
-              Reusable project templates with pre-configured line items.
-            </p>
-          </div>
-          <CanDo resource="project" action="create">
-            <Button asChild>
-              <Link href="/projects/templates/new">
-                <Plus className="h-4 w-4" />
-                New template
-              </Link>
+        <PageHeader
+          title="Templates"
+          description="Reusable project templates with pre-configured line items."
+          actions={
+            <CanDo resource="project" action="create">
+              <Button asChild>
+                <Link href="/projects/templates/new">
+                  <Plus className="h-4 w-4" />
+                  New template
+                </Link>
+              </Button>
+            </CanDo>
+          }
+        />
+
+        {error && (
+          <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+            <p className="text-ui-text text-t-out">Couldn&apos;t load templates. Check your connection and try again.</p>
+            <Button variant="line" size="sm" onClick={() => refetchTemplates()}>
+              Retry
             </Button>
-          </CanDo>
-        </div>
+          </div>
+        )}
 
         <div className="rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
             <Table>
@@ -231,7 +239,7 @@ export default function TemplatesPage() {
           >
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="tpl-number">Project Code *</Label>
+                <Label htmlFor="tpl-number">Project code *</Label>
                 <Input
                   id="tpl-number"
                   value={projectNumber}

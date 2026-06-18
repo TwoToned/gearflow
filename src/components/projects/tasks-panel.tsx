@@ -273,7 +273,21 @@ export function TasksPanel({ projectId }: { projectId: string }) {
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", PRIORITY_DOT[task.priority])} />
+                            <span
+                              className={cn("h-1.5 w-1.5 shrink-0 rounded-full", PRIORITY_DOT[task.priority])}
+                              aria-label={`${TASK_PRIORITY_LABELS[task.priority]} priority`}
+                              title={`${TASK_PRIORITY_LABELS[task.priority]} priority`}
+                            />
+                            {task.priority !== "NORMAL" && (
+                              <span
+                                className={cn(
+                                  "shrink-0 text-caption font-medium",
+                                  task.priority === "HIGH" ? "text-t-out" : "text-faint",
+                                )}
+                              >
+                                {TASK_PRIORITY_LABELS[task.priority]}
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => setEditing(task)}
@@ -356,7 +370,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
       )}
 
       {tasks.length > 0 && (
-        <p className="text-xs text-muted">
+        <p className="text-caption text-muted">
           {openCount} open · {grouped.DONE.length} done
         </p>
       )}
@@ -453,7 +467,7 @@ function TaskEditDialog({
           />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-muted">Status</label>
+              <label className="mb-1 block text-caption text-muted">Status</label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectTaskStatus)}>
                 <SelectTrigger>
                   <SelectValue>{TASK_STATUS_LABELS[status]}</SelectValue>
@@ -468,7 +482,7 @@ function TaskEditDialog({
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted">Priority</label>
+              <label className="mb-1 block text-caption text-muted">Priority</label>
               <Select value={priority} onValueChange={(v) => setPriority(v as ProjectTaskPriority)}>
                 <SelectTrigger>
                   <SelectValue>{TASK_PRIORITY_LABELS[priority]}</SelectValue>
@@ -485,11 +499,11 @@ function TaskEditDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-muted">Due date</label>
+              <label className="mb-1 block text-caption text-muted">Due date</label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted">Assignee</label>
+              <label className="mb-1 block text-caption text-muted">Assignee</label>
               <ComboboxPicker
                 value={assignee}
                 onChange={setAssignee}
@@ -502,7 +516,7 @@ function TaskEditDialog({
 
           {/* Checklist */}
           <div>
-            <label className="mb-1 block text-xs text-muted">Checklist</label>
+            <label className="mb-1 block text-caption text-muted">Checklist</label>
             <div className="space-y-1">
               {checklist.map((item) => (
                 <div key={item.id} className="flex items-center gap-2">
@@ -544,7 +558,7 @@ function TaskEditDialog({
                     }
                   }}
                   placeholder="Add sub-step…"
-                  className="h-8 text-sm"
+                  className="h-8 text-ui-text"
                 />
                 <Button type="button" variant="line" size="sm" onClick={addChecklistItem}>
                   <Plus className="h-3.5 w-3.5" />

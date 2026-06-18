@@ -32,6 +32,19 @@ export const getById = query({
   },
 });
 
+export const getByOrgTestTagId = query({
+  args: { orgId: v.string(), testTagId: v.string() },
+  handler: async (ctx, { orgId, testTagId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_testTagId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagId", testTagId),
+      )
+      .unique();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

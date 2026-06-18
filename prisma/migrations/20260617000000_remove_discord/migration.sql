@@ -17,4 +17,9 @@ DROP TYPE IF EXISTS "DiscordBotDesiredState";
 -- Drop the Discord columns on retained tables. Dropping the column also drops
 -- its unique index (project_discordChannelId_key / damage_event_discordIdempotencyKey_key).
 ALTER TABLE "project" DROP COLUMN IF EXISTS "discordChannelId";
-ALTER TABLE "damage_event" DROP COLUMN IF EXISTS "discordIdempotencyKey";
+-- damage_event may already be gone (removed by chore/remove-damage-capture); guard the table existence.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'damage_event') THEN
+    ALTER TABLE "damage_event" DROP COLUMN IF EXISTS "discordIdempotencyKey";
+  END IF;
+END $$;

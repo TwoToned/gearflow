@@ -219,11 +219,12 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="REPAIR">Repair</SelectItem>
-                  <SelectItem value="PREVENTATIVE">Preventative</SelectItem>
-                  <SelectItem value="INSPECTION">Inspection</SelectItem>
-                  <SelectItem value="CLEANING">Cleaning</SelectItem>
-                  <SelectItem value="FIRMWARE_UPDATE">Firmware update</SelectItem>
+                  <SelectItem value="REPAIR">{maintenanceTypeLabels.REPAIR}</SelectItem>
+                  <SelectItem value="PREVENTATIVE">{maintenanceTypeLabels.PREVENTATIVE}</SelectItem>
+                  <SelectItem value="TEST_AND_TAG">{maintenanceTypeLabels.TEST_AND_TAG}</SelectItem>
+                  <SelectItem value="INSPECTION">{maintenanceTypeLabels.INSPECTION}</SelectItem>
+                  <SelectItem value="CLEANING">{maintenanceTypeLabels.CLEANING}</SelectItem>
+                  <SelectItem value="FIRMWARE_UPDATE">{maintenanceTypeLabels.FIRMWARE_UPDATE}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -241,10 +242,12 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-                  <SelectItem value="IN_PROGRESS">In progress</SelectItem>
-                  <SelectItem value="COMPLETED">Completed</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  <SelectItem value="SCHEDULED">{maintenanceStatusLabels.SCHEDULED}</SelectItem>
+                  <SelectItem value="AWAITING_PARTS">{maintenanceStatusLabels.AWAITING_PARTS}</SelectItem>
+                  <SelectItem value="IN_PROGRESS">{maintenanceStatusLabels.IN_PROGRESS}</SelectItem>
+                  <SelectItem value="QA">{maintenanceStatusLabels.QA}</SelectItem>
+                  <SelectItem value="COMPLETED">{maintenanceStatusLabels.COMPLETED}</SelectItem>
+                  <SelectItem value="CANCELLED">{maintenanceStatusLabels.CANCELLED}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

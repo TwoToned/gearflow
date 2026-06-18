@@ -87,11 +87,12 @@ function useMaintenanceColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "REPAIR", label: "Repair" },
-        { value: "PREVENTATIVE", label: "Preventative" },
-        { value: "INSPECTION", label: "Inspection" },
-        { value: "CLEANING", label: "Cleaning" },
-        { value: "FIRMWARE_UPDATE", label: "Firmware update" },
+        { value: "REPAIR", label: maintenanceTypeLabels.REPAIR },
+        { value: "PREVENTATIVE", label: maintenanceTypeLabels.PREVENTATIVE },
+        { value: "TEST_AND_TAG", label: maintenanceTypeLabels.TEST_AND_TAG },
+        { value: "INSPECTION", label: maintenanceTypeLabels.INSPECTION },
+        { value: "CLEANING", label: maintenanceTypeLabels.CLEANING },
+        { value: "FIRMWARE_UPDATE", label: maintenanceTypeLabels.FIRMWARE_UPDATE },
       ],
       cell: (row) => <span className="text-ui-text">{maintenanceTypeLabels[row.type] || formatLabel(row.type)}</span>,
     },
@@ -325,7 +326,8 @@ export default function MaintenancePage() {
           onResetPreferences={resetPreferences}
           savedViews={{ tableId: "maintenance", currentConfig, applyConfig }}
           isLoading={isLoading}
-          emptyPreset="maintenance"
+          emptyTitle="No maintenance records"
+          emptyDescription="Repairs, inspections, and scheduled servicing will appear here once you log them."
           toolbarActions={
             <CanDo resource="maintenance" action="create">
               <Button size="sm" asChild>

@@ -174,14 +174,50 @@ not-found). StatusIndicator `pill` variant kept as-is (status-colors tokens
 correct); its `dot`-variant ring-glow is a pre-existing shared-component gap
 (33 consumers, out of scope) but unused here.
 
-DEFERRED (recurring, final consistency pass): the per-project tab tables are
-desktop data-tables without mobile card-list fallbacks — a cross-cutting
-responsive-table pass, not fixed per-chunk. The not-found notices are simple
+DEFERRED (recurring, final consistency pass): the not-found notices are simple
 left-edge bars (matches the §8 recurring-DEFER guidance).
 
 tsc clean (0 warehouse+check errors), eslint clean on touched files
 (only pre-existing `Container` unused-import + `react-hooks/*` ref/exhaustive
 warnings in `[projectId]/page.tsx`). 21/21 warehouse unit tests pass.
+
+### Chunk 7 — Warehouse (review fixes applied: mobile + a11y + §5.2)
+Applied the merged Claude + Codex chunk-7 fix list — the mobile-critical
+operator scan surface:
+- **§15 44px touch targets** on hand-built scan controls: kit-verify toggles
+  (kit-child-rows), deploy container-remove icon button, item-check-form
+  "+ Add notes" link, online pick-list "Clear all checks" — icon buttons get
+  `min-h-11 min-w-11 inline-flex` centering, text buttons `min-h-11 px-3`;
+  focusRing preserved.
+- **§15 mobile card lists** (the big one): deploy / pick-prep / return /
+  bulk-checkin tab tables are now `hidden md:block`, with an ADDITIVE
+  `md:hidden` card list rendering the SAME grouped data + SAME selection /
+  expand / verify / count handlers and mutations. New shared `scan-card.tsx`
+  primitives (ScanItemCard / ScanGroupCard / ScanVerifyCard /
+  ScanContainerHeading) stack item name, mono asset tag, qty and status badge
+  at ≥44px; `MobileKitChildCards` (kit-child-rows) mirrors `KitChildRows`. No
+  data/logic/handler/prop changes.
+- **§9.1 a11y row expander**: the per-project `renderGroupHeader` row + the
+  kit-group rows in all three tabs + the nested-kit row in kit-child-rows are
+  keyboard-operable (`role="button"`, `tabIndex={0}`, `aria-expanded`,
+  Enter/Space, focusRing); `hover:bg-accent/50` → `hover:bg-elev`.
+- **§8 skeleton**: item-check-form loading `Loader2` spinner → registry
+  `Skeleton` rows shaped like the check-item cards.
+- **type ramp**: item-check-form `text-sm` → `text-ui-text` on notes /
+  measurement inputs + dropdown trigger.
+- **§5.2 sentence case**: ON_SITE "On Site" → "On site" (landing / per-project
+  / pull-sheet); "Pick List" → "Pick list"; pull-sheet "Asset Tag" → "Asset
+  tag"; landing "Mark as Deployed?/Returned?/Completed?" → sentence case.
+- **§5 print exception (LEFT, documented)**: the pull-sheet `print:*-red-*` /
+  `print:*-blue-*` overbooked/subhire literals are NOT swapped to theme tokens.
+  Default theme is dark espresso with no `@media print` theme override, so
+  `print:text-t-out` / `print:border-line` would resolve to the active theme's
+  pale-coral / near-invisible-cream values on white paper. The literal mid-red/
+  -blue are theme-independent and chosen for B/W print fidelity. Added an
+  in-file comment.
+tsc clean (0 warehouse+check errors), eslint clean on touched files (only the
+pre-existing `Container` unused-import + `react-hooks/*` ref/exhaustive
+warnings). 21/21 warehouse unit tests pass.
 
 ## Learned standard patterns (from chunk reviews — apply to ALL remaining chunks)
 - **Auth-gate every page** (§8): create→`RequirePermission resource action="create"`, edit→`action="update"`,

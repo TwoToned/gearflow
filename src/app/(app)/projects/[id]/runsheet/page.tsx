@@ -244,7 +244,7 @@ export default function RunsheetPage({
                               </div>
                             </div>
                             <StatusIndicator
-                              category="assignment"
+                              category="service"
                               value={service.status}
                               label={SERVICE_STATUS_LABELS[service.status] || service.status}
                             />

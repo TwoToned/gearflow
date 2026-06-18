@@ -167,6 +167,14 @@ const assignmentStatusIntent: Record<string, ColorIntent> = {
   COMPLETED: "success",
 };
 
+const serviceStatusIntent: Record<string, ColorIntent> = {
+  PLANNED: "neutral",
+  CONFIRMED: "info",
+  IN_PROGRESS: "primary",
+  COMPLETED: "success",
+  CANCELLED: "error",
+};
+
 const shiftStatusIntent: Record<string, ColorIntent> = {
   SCHEDULED: "info",
   IN_PROGRESS: "warning",
@@ -241,6 +249,7 @@ export type StatusCategory =
   | "condition"
   | "crewMember"
   | "assignment"
+  | "service"
   | "shift"
   | "timeEntry"
   | "clientType"
@@ -261,6 +270,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   condition: conditionIntent,
   crewMember: crewMemberStatusIntent,
   assignment: assignmentStatusIntent,
+  service: serviceStatusIntent,
   shift: shiftStatusIntent,
   timeEntry: timeEntryStatusIntent,
   clientType: clientTypeIntent,

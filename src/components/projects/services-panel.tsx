@@ -558,8 +558,8 @@ function ServiceCard({
             </span>
             {/* Status pill using StatusIndicator (D2) */}
             <StatusIndicator
-              category="assignment"
-              value={service.status.toLowerCase()}
+              category="service"
+              value={service.status}
               label={SERVICE_STATUS_LABELS[service.status]}
               variant="pill"
             />

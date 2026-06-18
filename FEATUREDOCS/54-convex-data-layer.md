@@ -2449,32 +2449,47 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
-## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+## Phase A read-rewiring — surfaces (per-surface gated PRs)
 
-The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
-**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
-Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
-follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
-Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
-columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
-Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
-a Convex map miss** (a miss reads null, like a join against a deleted row — falling
-back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
-above: the table must be backfilled into prod Convex before the read deploys.
+Each leaf surface moves its read-only Prisma reads to the dual-written Convex copy
+behind a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date, absent→null, Prisma
+defaults coerced) + pure JS filter/sort/attach (unit-tested) + JS joins. No Prisma
+fallback on a Convex miss → null/empty. Writes + read-then-write paths stay Prisma.
+Merge gate = human preview validation (correctness can't be golden-diffed in the
+dev worktree). The deploy-ordering gate above applies: backfills must have run
+against prod Convex before each read-rewiring PR merges.
 
-- **brand templates** (`server/brand-templates.ts` → `src/lib/brand-templates-read.ts`).
-  `getBrandTemplates` (org list + `_count.documentTemplates`, `[{ isDefault desc },
-  { name asc }]`) and `getBrandTemplate` (cuid + org re-scope) now read the Convex
-  `brandTemplates` table (dual-written + `convex-backfill-brand-templates.ts`). The
-  `_count.documentTemplates` is recomputed in JS by counting the org's
-  `documentTemplates` by `brandTemplateId` (one extra org-scoped query). `getById` is
-  cuid-only in Convex → the Prisma `{ id, organizationId }` org-scope is re-applied in
-  JS (mismatch → null → the action throws "Brand template not found" as before).
-  `headerSettings`/`footerSettings` JSON-string columns pass straight through (the
-  caller `JSON.parse`s them). All writes + the delete-unlink
-  `documentTemplate.updateMany` stay on Prisma. `mapBrandTemplate` /
-  `compareBrandTemplatesForList` / `matchesOrg` are pure + unit-tested. Deploy gate:
-  `brandTemplate` backfilled into prod Convex before this lands.
+### project-services.ts — read-rewired (PR `feat/convex-read-project-services`)
+
+New `src/lib/project-service-read.ts`. Converted the 4 read-only server actions:
+- `getProjectServices(projectId)` → `projectServices.listByProject` +
+  **new** `crewAssignments.listByServiceIds({serviceIds, orgId})` (loops the
+  `by_serviceId` index, `requireOrgRead`) + `getCrewRoleMap`/`getCrewMemberMap`
+  (crew-read.ts). Attaches crewRole + crewAssignments (grouped by serviceId; each
+  carries estimatedCost). Sorted by a pure null-aware comparator: date ASC NULLS
+  LAST, tie-break sortOrder ASC.
+- `getProjectServiceById(id)` → `projectServices.getById` (org-check in JS, throws
+  "Service not found" on null/org mismatch) + same crew attach, but assignments
+  carry **no** estimatedCost (mirrors the narrower Prisma select).
+- `getServiceTemplates()` → `serviceTemplates.list`, sorted sortOrder ASC.
+- `getProjectServicesSummary(projectId)` → `listByProject`, JS filter
+  `status !== "CANCELLED"`, sum lineTotal/costTotal + count.
+
+**KEPT Prisma** (this PR): all writes + read-then-write (create/update/delete
+service, status mutations, generate/clone/convert, template CRUD) and the
+cross-surface readers `getCrewSuggestionsForProject` + `generateCrewMessage` (they
+read crewMember/crewAssignment/projectLineItem belonging to other surfaces).
+**DEFERRED:** `getServiceCostHistory` (no UI consumer — left on Prisma).
+
+Pure functions unit-tested in `src/lib/project-service-read.test.ts` (date/sortOrder
+comparator incl. NULLS-LAST + tie-break, not-CANCELLED filter, mappers' default
+coercion, crew attach incl. role/member map-miss → null and the estimatedCost
+on/off projections). Three weakly-typed consumer casts
+(`as Record<string, unknown>[]`) widened to `as unknown as Record<…>` now that the
+helpers return precise row interfaces (runsheet page, settings/services page,
+services-panel) — behaviour unchanged. **GATE:** projectService + serviceTemplate
+already dual-written (`syncProjectServicesToConvex`, template-mirror); confirm both
+backfilled in prod before merge.
 
 ## Remaining work & session sizing (post-central-graph)
 

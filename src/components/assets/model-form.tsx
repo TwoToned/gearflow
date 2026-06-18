@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
+import { cn, focusRing } from "@/lib/utils";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
@@ -105,16 +105,16 @@ export function ModelForm({ initialData }: ModelFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-6">
-      {/* Basic Info */}
-      <FormSection title="Basic Information">
+      {/* Basic info */}
+      <FormSection title="Basic information">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="name">Name *</Label>
-            <Input id="name" {...form.register("name")} placeholder="e.g. Shure SM58" />
+            <Input id="name" {...form.register("name")} placeholder="e.g. Shure SM58" aria-invalid={form.formState.errors.name ? true : undefined} />
             {form.formState.errors.name && (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+              <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -122,7 +122,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
             <Input id="manufacturer" {...form.register("manufacturer")} placeholder="e.g. Shure" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="modelNumber">Model Number</Label>
+            <Label htmlFor="modelNumber">Model number</Label>
             <Input id="modelNumber" {...form.register("modelNumber")} placeholder="e.g. SM58-LC" />
           </div>
           <div className="space-y-2">
@@ -145,11 +145,11 @@ export function ModelForm({ initialData }: ModelFormProps) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="assetType">Asset Type</Label>
+            <Label htmlFor="assetType">Asset type</Label>
             <select
               id="assetType"
               {...form.register("assetType")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="SERIALIZED">Serialized (tracked individually)</option>
               <option value="BULK">Bulk (tracked by quantity)</option>
@@ -177,15 +177,15 @@ export function ModelForm({ initialData }: ModelFormProps) {
         </div>
       </FormSection>
 
-      {/* Rate Card */}
-      <FormSection title="Rate Card">
+      {/* Rate card */}
+      <FormSection title="Rate card">
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="dailyRate" aria-label="Daily rate">Daily Rate ($)</Label>
+            <Label htmlFor="dailyRate" aria-label="Daily rate">Daily rate ($)</Label>
             <Input id="dailyRate" type="number" step="0.01" min="0" {...form.register("dailyRate")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="weeklyRate" aria-label="Weekly rate">Weekly Rate ($)</Label>
+            <Label htmlFor="weeklyRate" aria-label="Weekly rate">Weekly rate ($)</Label>
             <Input
               id="weeklyRate"
               type="number"
@@ -201,7 +201,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
             {Number(form.watch("dailyRate")) > 0 && !form.watch("weeklyRate") && (
               <button
                 type="button"
-                className="text-xs text-primary hover:underline"
+                className={cn("text-caption text-link hover:underline rounded-[var(--r)]", focusRing)}
                 aria-describedby="weeklyRate"
                 onClick={() => form.setValue("weeklyRate", Number(form.watch("dailyRate")) * 4)}
               >
@@ -210,7 +210,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="monthlyRate" aria-label="Monthly rate">Monthly Rate ($)</Label>
+            <Label htmlFor="monthlyRate" aria-label="Monthly rate">Monthly rate ($)</Label>
             <Input
               id="monthlyRate"
               type="number"
@@ -226,7 +226,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
             {Number(form.watch("dailyRate")) > 0 && !form.watch("monthlyRate") && (
               <button
                 type="button"
-                className="text-xs text-primary hover:underline"
+                className={cn("text-caption text-link hover:underline rounded-[var(--r)]", focusRing)}
                 aria-describedby="monthlyRate"
                 onClick={() => form.setValue("monthlyRate", Number(form.watch("dailyRate")) * 12)}
               >
@@ -237,33 +237,33 @@ export function ModelForm({ initialData }: ModelFormProps) {
         </div>
       </FormSection>
 
-      {/* Cost & Valuation */}
-      <FormSection title="Cost & Valuation">
+      {/* Cost & valuation */}
+      <FormSection title="Cost & valuation">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="defaultPurchasePrice">Purchase Price ($)</Label>
+            <Label htmlFor="defaultPurchasePrice">Purchase price ($)</Label>
             <Input id="defaultPurchasePrice" type="number" step="0.01" {...form.register("defaultPurchasePrice")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="replacementCost">Replacement Cost ($)</Label>
+            <Label htmlFor="replacementCost">Replacement cost ($)</Label>
             <Input id="replacementCost" type="number" step="0.01" {...form.register("replacementCost")} />
           </div>
         </div>
       </FormSection>
 
       {/* Technical */}
-      <FormSection title="Technical Details">
+      <FormSection title="Technical details">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="weight">Weight (kg)</Label>
             <Input id="weight" type="number" step="0.01" {...form.register("weight")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="powerDraw">Power Draw (watts)</Label>
+            <Label htmlFor="powerDraw">Power draw (watts)</Label>
             <Input id="powerDraw" type="number" {...form.register("powerDraw")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="maintenanceIntervalDays">Maintenance Interval (days)</Label>
+            <Label htmlFor="maintenanceIntervalDays">Maintenance interval (days)</Label>
             <Input id="maintenanceIntervalDays" type="number" {...form.register("maintenanceIntervalDays")} placeholder="e.g. 365" />
           </div>
           <div className="sm:col-span-2 space-y-4">
@@ -273,12 +273,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
                 checked={!!form.watch("requiresTestAndTag")}
                 onCheckedChange={(v) => form.setValue("requiresTestAndTag", !!v)}
               />
-              <Label htmlFor="requiresTestAndTag">Requires Test & Tag</Label>
+              <Label htmlFor="requiresTestAndTag">Requires test & tag</Label>
             </div>
             {form.watch("requiresTestAndTag") && (
-              <div className="grid gap-4 sm:grid-cols-2 pl-6 border-l-2 border-primary/20">
+              <div className="grid gap-4 sm:grid-cols-2 pl-6 border-l-2 border-line-2">
                 <div className="space-y-2">
-                  <Label>Test Profile</Label>
+                  <Label>Test profile</Label>
                   {activeProfiles.length > 0 ? (
                     <ComboboxPicker
                       value={form.watch("defaultTestProfileId") || ""}
@@ -295,14 +295,14 @@ export function ModelForm({ initialData }: ModelFormProps) {
                       searchPlaceholder="Search profiles..."
                     />
                   ) : (
-                    <p className="text-sm text-fg-3 py-2">No test profiles configured. <a href="/settings/test-and-tag/profiles" className="text-primary hover:underline">Set up profiles</a></p>
+                    <p className="text-ui-text text-muted py-2">No test profiles configured. <a href="/settings/test-and-tag/profiles" className={cn("text-link hover:underline rounded-[var(--r)]", focusRing)}>Set up profiles</a></p>
                   )}
-                  <p className="text-xs text-fg-3">Determines equipment class, type, and required tests</p>
+                  <p className="text-caption text-muted">Determines equipment class, type, and required tests</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="testAndTagIntervalDays">Test Validity (days)</Label>
+                  <Label htmlFor="testAndTagIntervalDays">Test validity (days)</Label>
                   <Input id="testAndTagIntervalDays" type="number" min={1} {...form.register("testAndTagIntervalDays")} placeholder="Use org default" />
-                  <p className="text-xs text-fg-3">Leave blank to use org T&T settings</p>
+                  <p className="text-caption text-muted">Leave blank to use org T&T settings</p>
                 </div>
               </div>
             )}
@@ -323,7 +323,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
         <div className="flex items-center justify-between">
           <div>
             <Label htmlFor="isActive">Active</Label>
-            <p className="text-xs text-fg-3">Inactive models are hidden from asset creation</p>
+            <p className="text-caption text-muted">Inactive models are hidden from asset creation</p>
           </div>
           <Switch
             id="isActive"
@@ -335,13 +335,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
 
         </div>
         {/* Submit */}
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Model" : "Create Model"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
+          </Button>
+          <Button type="submit" loading={mutation.isPending}>
+            {isEditing ? "Update model" : "Create model"}
           </Button>
         </div>
       </div>

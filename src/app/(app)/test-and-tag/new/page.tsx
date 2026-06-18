@@ -8,7 +8,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { cn, focusRing } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validations/test-tag";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -178,32 +180,32 @@ function NewTestTagAssetInner() {
   });
 
   return (
-    <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
+    <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-muted">You don&apos;t have permission to perform this action.</div>}>
     <FadeIn>
     <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-        <Link href="/test-and-tag" className="hover:text-fg transition-colors">Test & Tag</Link>
+      <div className="flex items-center gap-2 text-ui-text text-muted mb-4">
+        <Link href="/test-and-tag" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>Test & tag</Link>
         <ChevronRight className="h-3 w-3" />
-        <span className="text-fg">New Item</span>
+        <span className="text-ink">New item</span>
       </div>
       <div>
-        <h1 className="t-title text-fg">New Test & Tag Item</h1>
-        <p className="text-fg-3">
-          Register a new item in the Test & Tag registry.
+        <h1 className="t-title text-ink">New test & tag item</h1>
+        <p className="text-muted">
+          Register a new item in the test & tag registry.
         </p>
       </div>
 
       <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-6">
         {/* Asset Link — first section so user chooses the source before filling details */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Link to Asset</h3>
+        <div className="rounded-[var(--r)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+          <h3 className="t-heading text-ink mb-4">Link to asset</h3>
           <div className="space-y-4">
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               Optionally link this T&T item to an existing asset. Fields will be auto-populated from the linked asset&apos;s model.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Bulk Asset</Label>
+                <Label>Bulk asset</Label>
                 <ComboboxPicker
                   value={watchBulkAssetId || ""}
                   onChange={(v) => {
@@ -222,12 +224,12 @@ function NewTestTagAssetInner() {
                   searchPlaceholder="Search bulk assets..."
                   allowClear
                 />
-                <p className="text-xs text-fg-3">
+                <p className="text-caption text-muted">
                   For items like extension leads or power boards from a bulk pool
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>Serialized Asset</Label>
+                <Label>Serialized asset</Label>
                 <ComboboxPicker
                   value={watchAssetId || ""}
                   onChange={(v) => {
@@ -273,7 +275,7 @@ function NewTestTagAssetInner() {
                   searchPlaceholder="Search assets..."
                   allowClear
                 />
-                <p className="text-xs text-fg-3">
+                <p className="text-caption text-muted">
                   For individually tracked serialized assets
                 </p>
               </div>
@@ -282,30 +284,31 @@ function NewTestTagAssetInner() {
         </div>
 
         {/* Identification */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Identification</h3>
+        <div className="rounded-[var(--r)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+          <h3 className="t-heading text-ink mb-4">Identification</h3>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="testTagId">Test Tag ID *</Label>
+                <Label htmlFor="testTagId">Test tag ID *</Label>
                 <AssetTagInput
                   id="testTagId"
                   {...form.register("testTagId")}
                   placeholder={peekQuery.data?.[0] || "TT-0001"}
                   readOnly={!!watchAssetId}
-                  className={watchAssetId ? "bg-bg-inset" : ""}
+                  className={watchAssetId ? "bg-paper-2" : ""}
+                  aria-invalid={!!form.formState.errors.testTagId}
                 />
                 {watchAssetId && (
-                  <p className="text-xs text-fg-3">Uses the linked asset&apos;s tag</p>
+                  <p className="text-caption text-muted">Uses the linked asset&apos;s tag</p>
                 )}
                 {form.formState.errors.testTagId && (
-                  <p className="text-sm text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.testTagId.message}
                   </p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="serialNumber">Serial Number</Label>
+                <Label htmlFor="serialNumber">Serial number</Label>
                 <Input
                   id="serialNumber"
                   {...form.register("serialNumber")}
@@ -320,9 +323,10 @@ function NewTestTagAssetInner() {
                 id="description"
                 {...form.register("description")}
                 placeholder="e.g. Black IEC power cable 2m"
+                aria-invalid={!!form.formState.errors.description}
               />
               {form.formState.errors.description && (
-                <p className="text-sm text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.description.message}
                 </p>
               )}
@@ -342,11 +346,11 @@ function NewTestTagAssetInner() {
         </div>
 
         {/* Classification */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Classification</h3>
+        <div className="rounded-[var(--r)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+          <h3 className="t-heading text-ink mb-4">Classification</h3>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Test Profile *</Label>
+              <Label>Test profile *</Label>
               {activeProfiles.length > 0 ? (
                 <ComboboxPicker
                   value={watchProfileId || ""}
@@ -363,25 +367,26 @@ function NewTestTagAssetInner() {
                   searchPlaceholder="Search profiles..."
                 />
               ) : (
-                <p className="text-sm text-fg-3 py-2">No test profiles configured. <a href="/settings/test-and-tag/profiles" className="text-primary hover:underline">Set up profiles</a></p>
+                <p className="text-ui-text text-muted py-2">No test profiles configured. <Link href="/settings/test-and-tag/profiles" className={cn("text-link hover:underline rounded-sm", focusRing)}>Set up profiles</Link></p>
               )}
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 Determines equipment class, appliance type, and which tests are required.
               </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="testIntervalMonths">Test Interval (months)</Label>
+                <Label htmlFor="testIntervalMonths">Test interval (months)</Label>
                 <Input
                   id="testIntervalMonths"
                   type="number"
                   min={1}
                   max={120}
                   {...form.register("testIntervalMonths")}
+                  aria-invalid={!!form.formState.errors.testIntervalMonths}
                 />
                 {form.formState.errors.testIntervalMonths && (
-                  <p className="text-sm text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.testIntervalMonths.message}
                   </p>
                 )}
@@ -399,8 +404,8 @@ function NewTestTagAssetInner() {
         </div>
 
         {/* Notes */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Notes</h3>
+        <div className="rounded-[var(--r)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+          <h3 className="t-heading text-ink mb-4">Notes</h3>
             <Textarea
               {...form.register("notes")}
               placeholder="Optional notes about this item..."
@@ -411,14 +416,13 @@ function NewTestTagAssetInner() {
         <div className="flex justify-end gap-3">
           <Button
             type="button"
-            variant="outline"
+            variant="line"
             onClick={() => router.back()}
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Item
+          <Button type="submit" loading={mutation.isPending}>
+            Create item
           </Button>
         </div>
       </form>
@@ -431,7 +435,13 @@ function NewTestTagAssetInner() {
 export default function NewTestTagAssetPage() {
   return (
     <RequirePermission resource="testTag" action="create">
-    <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-fg-3" /></div>}>
+    <Suspense fallback={
+      <div className="space-y-6 max-w-2xl">
+        <Skeleton className="h-5 w-48 rounded-[var(--r)]" />
+        <Skeleton className="h-40 rounded-[var(--r)]" />
+        <Skeleton className="h-56 rounded-[var(--r)]" />
+      </div>
+    }>
       <NewTestTagAssetInner />
     </Suspense>
     </RequirePermission>

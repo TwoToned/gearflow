@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 
 import { batchCreateTestTagSchema, type BatchCreateTestTagFormValues } from "@/lib/validations/test-tag";
 import { createTestTagAssetsFromBulk } from "@/server/test-tag-assets";
@@ -31,18 +30,18 @@ import {
 const equipmentClassOptions = [
   { value: "CLASS_I", label: "Class I" },
   { value: "CLASS_II", label: "Class II" },
-  { value: "CLASS_II_DOUBLE_INSULATED", label: "Class II (Double Insulated)" },
-  { value: "LEAD_CORD_ASSEMBLY", label: "Lead / Cord Assembly" },
+  { value: "CLASS_II_DOUBLE_INSULATED", label: "Class II (double insulated)" },
+  { value: "LEAD_CORD_ASSEMBLY", label: "Lead / cord assembly" },
 ];
 
 const applianceTypeOptions = [
   { value: "APPLIANCE", label: "Appliance" },
-  { value: "CORD_SET", label: "Cord Set" },
-  { value: "EXTENSION_LEAD", label: "Extension Lead" },
-  { value: "POWER_BOARD", label: "Power Board" },
-  { value: "RCD_PORTABLE", label: "RCD (Portable)" },
-  { value: "RCD_FIXED", label: "RCD (Fixed)" },
-  { value: "THREE_PHASE", label: "Three Phase" },
+  { value: "CORD_SET", label: "Cord set" },
+  { value: "EXTENSION_LEAD", label: "Extension lead" },
+  { value: "POWER_BOARD", label: "Power board" },
+  { value: "RCD_PORTABLE", label: "RCD (portable)" },
+  { value: "RCD_FIXED", label: "RCD (fixed)" },
+  { value: "THREE_PHASE", label: "Three phase" },
   { value: "OTHER", label: "Other" },
 ];
 
@@ -120,7 +119,7 @@ export function BatchCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Batch Create Test & Tag Items</DialogTitle>
+          <DialogTitle>Batch create test & tag items</DialogTitle>
           <DialogDescription>
             Create multiple test & tag items linked to {bulkAssetName}.
           </DialogDescription>
@@ -139,15 +138,16 @@ export function BatchCreateDialog({
                 min={1}
                 max={500}
                 {...form.register("count")}
+              aria-invalid={!!form.formState.errors.count}
               />
               {form.formState.errors.count && (
-                <p className="text-sm text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.count.message}
                 </p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="testIntervalMonths">Test Interval (months)</Label>
+              <Label htmlFor="testIntervalMonths">Test interval (months)</Label>
               <Input
                 id="testIntervalMonths"
                 type="number"
@@ -164,9 +164,10 @@ export function BatchCreateDialog({
               id="batch-description"
               {...form.register("description")}
               placeholder="Description for each item"
+              aria-invalid={!!form.formState.errors.description}
             />
             {form.formState.errors.description && (
-              <p className="text-sm text-destructive">
+              <p className="text-caption text-t-out">
                 {form.formState.errors.description.message}
               </p>
             )}
@@ -174,7 +175,7 @@ export function BatchCreateDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Equipment Class</Label>
+              <Label>Equipment class</Label>
               <Select
                 value={form.watch("equipmentClass")}
                 onValueChange={(v) => v && form.setValue("equipmentClass", v as BatchCreateTestTagFormValues["equipmentClass"])}
@@ -194,7 +195,7 @@ export function BatchCreateDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Appliance Type</Label>
+              <Label>Appliance type</Label>
               <Select
                 value={form.watch("applianceType")}
                 onValueChange={(v) => v && form.setValue("applianceType", v as BatchCreateTestTagFormValues["applianceType"])}
@@ -238,14 +239,13 @@ export function BatchCreateDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create {Number(form.watch("count")) || 0} Items
+            <Button type="submit" loading={mutation.isPending}>
+              Create {Number(form.watch("count")) || 0} items
             </Button>
           </DialogFooter>
         </form>

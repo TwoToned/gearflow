@@ -6,6 +6,13 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { patchCrewMemberInConvex } from "@/lib/crew-mirror";
+import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
+import { getProjectById } from "@/lib/projects-read";
+import { getLocationById } from "@/lib/locations-read";
+import {
+  getAssignmentById,
+  getShiftsByAssignmentIds,
+} from "@/lib/crew-scheduling-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -118,13 +125,13 @@ export async function regenerateIcalToken(crewMemberId: string) {
 export async function getIcalSettings(crewMemberId: string) {
   const { organizationId } = await getOrgContext();
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { icalEnabled: true, icalToken: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const member = await getCrewMemberById(crewMemberId);
+  if (!member || member.organizationId !== organizationId) throw new Error("Crew member not found");
 
-  return serialize(member);
+  return serialize({
+    icalEnabled: member.icalEnabled ?? false,
+    icalToken: member.icalToken ?? null,
+  });
 }
 
 // ─── Assignment .ics Download ────────────────────────────────────────────────
@@ -132,27 +139,40 @@ export async function getIcalSettings(crewMemberId: string) {
 export async function getAssignmentIcsData(assignmentId: string) {
   const { organizationId } = await getOrgContext();
 
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { id: assignmentId, organizationId },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true, email: true } },
-      crewRole: { select: { name: true } },
-      project: {
-        select: {
-          name: true,
-          projectNumber: true,
-          location: { select: { name: true, address: true } },
-          siteContactName: true,
-          siteContactPhone: true,
-        },
-      },
-      shifts: {
-        where: { status: { not: "CANCELLED" } },
-        orderBy: { date: "asc" },
-      },
-    },
-  });
+  const assignment = await getAssignmentById(assignmentId);
+  if (!assignment || assignment.organizationId !== organizationId) {
+    throw new Error("Assignment not found");
+  }
 
-  if (!assignment) throw new Error("Assignment not found");
-  return serialize(assignment);
+  const [member, roleMap, project, shifts] = await Promise.all([
+    getCrewMemberById(assignment.crewMemberId),
+    getCrewRoleMap(organizationId),
+    getProjectById(assignment.projectId),
+    getShiftsByAssignmentIds([assignmentId]),
+  ]);
+
+  const role = assignment.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
+  const location = project?.locationId ? await getLocationById(project.locationId) : null;
+
+  const filteredShifts = shifts
+    .filter((s) => s.status !== "CANCELLED")
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  return serialize({
+    ...assignment,
+    crewMember: member
+      ? { firstName: member.firstName, lastName: member.lastName, email: member.email ?? null }
+      : null,
+    crewRole: role ? { name: role.name } : null,
+    project: project
+      ? {
+          name: project.name,
+          projectNumber: project.projectNumber,
+          location: location ? { name: location.name, address: location.address ?? null } : null,
+          siteContactName: project.siteContactName ?? null,
+          siteContactPhone: project.siteContactPhone ?? null,
+        }
+      : null,
+    shifts: filteredShifts,
+  });
 }

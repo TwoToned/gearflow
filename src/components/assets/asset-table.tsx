@@ -36,6 +36,7 @@ import {
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyAsset = Record<string, any>;
@@ -104,13 +105,15 @@ function useAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      // Dots derive from the status intent map (status-colors.ts) — the single
+      // source of truth — instead of hardcoded palette swatches.
       filterOptions: [
-        { value: "AVAILABLE", label: "Available", color: "bg-ok" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-red" },
-        { value: "IN_MAINTENANCE", label: "In maintenance", color: "bg-warn" },
-        { value: "RESERVED", label: "Reserved", color: "bg-blue" },
-        { value: "RETIRED", label: "Retired", color: "bg-rep" },
-        { value: "LOST", label: "Lost", color: "bg-t-out" },
+        { value: "AVAILABLE", label: "Available", color: getStatusColor("asset", "AVAILABLE").dot },
+        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("asset", "CHECKED_OUT").dot },
+        { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("asset", "IN_MAINTENANCE").dot },
+        { value: "RESERVED", label: "Reserved", color: getStatusColor("asset", "RESERVED").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("asset", "RETIRED").dot },
+        { value: "LOST", label: "Lost", color: getStatusColor("asset", "LOST").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status]} variant="pill" />
@@ -123,14 +126,15 @@ function useAssetColumns(
       defaultVisible: true,
       responsiveHide: "md",
       cell: (row) => {
+        // Text colour derives from the status intent map (status-colors.ts).
         if (row.status === "CHECKED_OUT") {
-          return <span className="text-caption font-medium text-red">Deployed</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "CHECKED_OUT").text)}>Deployed</span>;
         }
         if (row.status === "RESERVED") {
-          return <span className="text-caption font-medium text-blue">Reserved</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "RESERVED").text)}>Reserved</span>;
         }
         if (row.status === "IN_MAINTENANCE") {
-          return <span className="text-caption font-medium text-warn">Maintenance</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "IN_MAINTENANCE").text)}>Maintenance</span>;
         }
         if (row.status === "RETIRED" || row.status === "LOST") {
           return <span className="text-caption text-faint">&mdash;</span>;
@@ -146,12 +150,13 @@ function useAssetColumns(
       filterable: true,
       filterType: "enum",
       defaultVisible: false,
+      // Dots derive from the condition intent map (status-colors.ts).
       filterOptions: [
-        { value: "NEW", label: "New", color: "bg-ok" },
-        { value: "GOOD", label: "Good", color: "bg-blue" },
-        { value: "FAIR", label: "Fair", color: "bg-warn" },
-        { value: "POOR", label: "Poor", color: "bg-t-out" },
-        { value: "DAMAGED", label: "Damaged", color: "bg-t-out" },
+        { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
+        { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
+        { value: "FAIR", label: "Fair", color: getStatusColor("condition", "FAIR").dot },
+        { value: "POOR", label: "Poor", color: getStatusColor("condition", "POOR").dot },
+        { value: "DAMAGED", label: "Damaged", color: getStatusColor("condition", "DAMAGED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition]} variant="pill" />
@@ -279,11 +284,12 @@ function useBulkAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      // Dots derive from the bulk-asset intent map (status-colors.ts).
       filterOptions: [
-        { value: "ACTIVE", label: "Active", color: "bg-ok" },
-        { value: "LOW_STOCK", label: "Low stock", color: "bg-warn" },
-        { value: "OUT_OF_STOCK", label: "Out of stock", color: "bg-t-out" },
-        { value: "RETIRED", label: "Retired", color: "bg-rep" },
+        { value: "ACTIVE", label: "Active", color: getStatusColor("bulkAsset", "ACTIVE").dot },
+        { value: "LOW_STOCK", label: "Low stock", color: getStatusColor("bulkAsset", "LOW_STOCK").dot },
+        { value: "OUT_OF_STOCK", label: "Out of stock", color: getStatusColor("bulkAsset", "OUT_OF_STOCK").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("bulkAsset", "RETIRED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="bulkAsset" value={row.status} label={bulkAssetStatusLabels[row.status]} variant="pill" />

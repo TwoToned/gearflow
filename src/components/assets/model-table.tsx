@@ -57,7 +57,7 @@ type AnyModel = Record<string, any>;
 type CheckItemType = "PASS_FAIL" | "NOTES" | "MEASUREMENT" | "DROPDOWN";
 
 const TYPE_LABELS: Record<CheckItemType, string> = {
-  PASS_FAIL: "Pass / Fail",
+  PASS_FAIL: "Pass / fail",
   NOTES: "Notes",
   MEASUREMENT: "Measurement",
   DROPDOWN: "Dropdown",
@@ -70,11 +70,13 @@ const TYPE_ICONS: Record<CheckItemType, typeof CheckCircle2> = {
   DROPDOWN: ListChecks,
 };
 
-const TYPE_COLORS: Record<CheckItemType, string> = {
-  PASS_FAIL: "bg-ok-soft text-ok",
-  NOTES: "bg-blue-soft text-blue",
-  MEASUREMENT: "bg-warn-soft text-warn",
-  DROPDOWN: "bg-blue-soft text-blue",
+// Badge status intent per check-item type — mirrors model-checks-tab.tsx so the
+// chip colours come from the registry Badge, not a hand-rolled palette map.
+const TYPE_STATUS: Record<CheckItemType, "ok" | "warn" | "neutral"> = {
+  PASS_FAIL: "ok",
+  NOTES: "neutral",
+  MEASUREMENT: "warn",
+  DROPDOWN: "neutral",
 };
 
 function useModelColumns(
@@ -612,14 +614,9 @@ function BulkAssignChecksDialog({
                           {item.label as string}
                         </p>
                       </div>
-                      <span
-                        className={cn(
-                          "shrink-0 inline-flex items-center rounded-full px-2.5 py-1 text-badge font-bold",
-                          TYPE_COLORS[type],
-                        )}
-                      >
+                      <Badge status={TYPE_STATUS[type]} className="shrink-0">
                         {TYPE_LABELS[type]}
-                      </span>
+                      </Badge>
                     </button>
                   );
                 })}

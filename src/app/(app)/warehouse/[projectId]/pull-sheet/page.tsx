@@ -32,12 +32,19 @@ const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
 };
 
 function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStock: number; effectiveStock?: number; totalBooked: number; inherited?: boolean; unavailableAssets?: number; reducedOnly?: boolean; hasOverbookedChildren?: boolean; hasReducedChildren?: boolean } | null }) {
   if (!info) return null;
+  // NOTE (RVLT polish §5 print exception): the `print:*-red-*` / `print:*-blue-*`
+  // literals below are deliberately NOT swapped to theme tokens. The app default
+  // theme is dark espresso and there is no @media-print theme override, so
+  // print:text-t-out / print:border-line would resolve to the *active* theme's
+  // values — pale coral / near-invisible cream lines on white paper. The literal
+  // mid-red/-blue print colours are theme-independent and chosen for B/W print
+  // fidelity on the physical pull sheet. Leave as-is.
   const effective = info.effectiveStock ?? info.totalStock;
   const unavail = info.unavailableAssets || 0;
 
@@ -243,7 +250,7 @@ export default function PullSheetPage({
                     <TableHead className="w-10 print:w-8" />
                     <TableHead>Item</TableHead>
                     <TableHead className="text-center w-16">Qty</TableHead>
-                    <TableHead>Asset Tag</TableHead>
+                    <TableHead>Asset tag</TableHead>
                     <TableHead>Location</TableHead>
                   </TableRow>
                 </TableHeader>

@@ -64,7 +64,7 @@ const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
 };
 
@@ -477,10 +477,10 @@ export default function WarehousePage() {
           <DialogHeader>
             <DialogTitle>
               {pendingAction?.targetStatus === "CHECKED_OUT"
-                ? "Mark as Deployed?"
+                ? "Mark as deployed?"
                 : pendingAction?.targetStatus === "RETURNED"
-                ? "Mark as Returned?"
-                : "Mark as Completed?"}
+                ? "Mark as returned?"
+                : "Mark as completed?"}
             </DialogTitle>
             <DialogDescription>
               {pendingAction?.warningMessage}

@@ -121,7 +121,7 @@ const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -2104,7 +2104,7 @@ function WarehouseProjectPage({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
-              Pick List
+              Pick list
             </DialogTitle>
           </DialogHeader>
           <div className={`overflow-y-auto ${isMobile ? "flex-1" : "max-h-[70vh]"}`}>

@@ -1395,6 +1395,9 @@ export default defineSchema({
     icalEnabled: v.optional(v.boolean()),
     icalToken: v.optional(v.string()),
     crewRoleId: v.optional(v.string()),
+    // Phase C: the member↔skill m2m (_CrewMemberToCrewSkill, never mutated in-app)
+    // is represented as a skillId array on the member doc (backfilled from Prisma).
+    skillIds: v.optional(v.array(v.string())),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     isActive: v.optional(v.boolean()),

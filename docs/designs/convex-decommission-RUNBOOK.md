@@ -46,7 +46,7 @@
       maintenance join), `validateDisplayToken`/`validateAuditorToken` (security-
       sensitive token reads preserved exactly), the woo log viewer, dismissals/prefs.
       Dev: 6 backfills run + live round-trips pass (incl. revoked-token→inactive).
-- [~] **Phase B — write inversion:** IN PROGRESS. **6 domains DONE + dev-validated
+- [~] **Phase B — write inversion:** IN PROGRESS. **17 surfaces Convex-only + dev-validated
       (each: tsc + full vitest + build, FK-drop migration applied to dev +
       pg_constraint-verified, live CRUD/guard/cascade round-trips):** `custom-fields`
       (no FK), `test-profiles` (3 FKs), `brand-templates` (1 FK + PDF-pipeline reader),
@@ -55,16 +55,17 @@
       "Cascade to category_slot" was a misattribution; category_slot belongs to
       ProjectCategory, not the equipment Category), `group-templates` (1 Cascade FK,
       cross-store cascade: Convex parent remove + Prisma child `groupTemplateItem`
-      deleteMany) — plus the 6 bucket-2 tables above. **= 14 surfaces Convex-only,
-      all dev-validated.**
-      **REMAINING — only the MULTI-TABLE CORE (highest risk, do last, per-surface preview-gate):**
+      deleteMany) — plus the 6 bucket-2 tables above, plus `project-categories`/
+      `project-groups`/`category-slots` (cross-type unification cluster, 2026-06-18;
+      atomic upsertSlotForProjectGroup/SubHireGroup + reorderSlots mutations).
+      **= 17 surfaces Convex-only, all dev-validated.**
+      **REMAINING — only the WRITE-HEAVY CORE (highest risk):**
       line-items, warehouse checkout/checkin, kit composition, sub-hire regeneration,
-      accessory expand/collapse, project-categories/groups, bulk-checkin,
-      split-sibling-collapse — these have real cross-table `$transaction` invariants +
-      `maxSort`-then-insert ordering races + cascade deletes that must be redesigned as
-      Convex single-document-atomic mutations (idempotency/ordering deliberate). This
-      is where the ~19 `src/lib/*-mirror.ts` get deleted. Keep auth/RBAC/activityLog
-      on Prisma.
+      accessory expand/collapse, bulk-checkin, split-sibling-collapse — these have real
+      cross-table `$transaction` invariants + `maxSort`-then-insert ordering races +
+      cascade deletes that must be redesigned as Convex single-document-atomic mutations
+      (idempotency/ordering deliberate). This is where the ~19 `src/lib/*-mirror.ts`
+      get deleted. Keep auth/RBAC/activityLog on Prisma.
 - [ ] **Phase C — drop Prisma domain tables:** NOT STARTED. Remove domain models
       from `prisma/schema.prisma` (keep Better Auth + `customRole` + `activityLog`),
       delete backfills/parity/mirrors, migrate the DB to drop the tables.

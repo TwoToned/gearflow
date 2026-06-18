@@ -10,7 +10,9 @@ import {
   removeSubHireGroupFromConvex,
 } from "@/lib/sub-hire-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
-import { mirrorSupplierModelRateUpsert } from "@/lib/supplier-model-rate-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import {
   attachSupplier,
   getMatchingSupplierIds,
@@ -1557,58 +1559,73 @@ async function upsertSupplierModelRate(
   unitCost: number,
   pricingType: PricingType,
 ) {
-  const rate = await prisma.supplierModelRate.upsert({
-    where: {
-      organizationId_supplierId_modelId: {
-        organizationId,
-        supplierId,
-        modelId,
-      },
-    },
-    create: {
+  const convex = await getConvexClient();
+  const now = Date.now();
+  const existing = await convex.query(api.supplierModelRates.getByComposite, {
+    organizationId,
+    supplierId,
+    modelId,
+  });
+  if (existing) {
+    await convex.mutation(api.supplierModelRates.update, {
+      id: existing.id,
+      patch: { lastUnitCost: unitCost, pricingType: pricingType as "FLAT" | "PER_DAY" | "PER_WEEK" | "PER_HOUR" | "OPTIMIZED", lastUsedAt: now, updatedAt: now },
+    });
+  } else {
+    await convex.mutation(api.supplierModelRates.createIfMissing, {
+      id: createId(),
       organizationId,
       supplierId,
       modelId,
       lastUnitCost: unitCost,
-      pricingType,
-    },
-    update: {
-      lastUnitCost: unitCost,
-      pricingType,
-      lastUsedAt: new Date(),
-    },
-  });
-  // Dual-write to Convex AFTER the upsert commits (captures the authoritative
-  // row + id whether it inserted or updated). Idempotent create-then-patch.
-  await mirrorSupplierModelRateUpsert(rate as unknown as Record<string, unknown>);
+      pricingType: pricingType as "FLAT" | "PER_DAY" | "PER_WEEK" | "PER_HOUR" | "OPTIMIZED",
+      lastUsedAt: now,
+      updatedAt: now,
+    });
+  }
 }
 
 export async function getSupplierModelRate(supplierId: string, modelId: string) {
   const { organizationId } = await getOrgContext();
-
-  const rate = await prisma.supplierModelRate.findUnique({
-    where: {
-      organizationId_supplierId_modelId: {
-        organizationId,
-        supplierId,
-        modelId,
-      },
-    },
+  const convex = await getConvexClient();
+  const rate = await convex.query(api.supplierModelRates.getByComposite, {
+    organizationId,
+    supplierId,
+    modelId,
   });
-
-  return rate ? serialize(rate) : null;
+  if (!rate) return null;
+  return serialize({
+    id: rate.id,
+    organizationId: rate.organizationId,
+    supplierId: rate.supplierId,
+    modelId: rate.modelId,
+    lastUnitCost: rate.lastUnitCost,
+    pricingType: rate.pricingType ?? "FLAT",
+    lastUsedAt: rate.lastUsedAt ? new Date(rate.lastUsedAt) : new Date(),
+    updatedAt: rate.updatedAt ? new Date(rate.updatedAt) : new Date(),
+  });
 }
 
 export async function getSupplierRateHistory(modelId: string) {
   const { organizationId } = await getOrgContext();
-
-  const rates = await prisma.supplierModelRate.findMany({
-    where: { organizationId, modelId },
-    orderBy: { lastUnitCost: "asc" },
+  const convex = await getConvexClient();
+  const rates = await convex.query(api.supplierModelRates.listByModel, {
+    organizationId,
+    modelId,
   });
-
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const ratesWithSupplier = await attachSupplier(organizationId, rates);
+  const mapped = rates
+    .sort((a, b) => a.lastUnitCost - b.lastUnitCost)
+    .map((r) => ({
+      id: r.id,
+      organizationId: r.organizationId,
+      supplierId: r.supplierId,
+      modelId: r.modelId,
+      lastUnitCost: r.lastUnitCost,
+      pricingType: r.pricingType ?? "FLAT",
+      lastUsedAt: r.lastUsedAt ? new Date(r.lastUsedAt) : new Date(),
+      updatedAt: r.updatedAt ? new Date(r.updatedAt) : new Date(),
+    }));
+  const ratesWithSupplier = await attachSupplier(organizationId, mapped);
   return serialize(ratesWithSupplier);
 }
 

@@ -11,8 +11,6 @@ import { type FilterValue } from "@/lib/table-utils";
 import { attachModel } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
-import { removeSupplierModelRateFromConvex } from "@/lib/supplier-model-rate-mirror";
-import { prisma } from "@/lib/prisma";
 import {
   getLineItemsByOrg,
   countLineItemsBySupplierMap,
@@ -405,19 +403,12 @@ export async function deleteSupplier(id: string) {
     throw new Error("Cannot delete supplier with existing orders. Archive it instead.");
   }
 
-  // supplier_model_rate is NOT covered by the guard, so a supplier with only
-  // rates can reach here — those rows used to cascade-delete. supplier_model_rate
-  // is still dual-written (Prisma + Convex), so delete from BOTH stores.
+  // supplier_model_rate is Convex-only (Phase B). Delete from Convex directly.
   const convex = await getConvexClient();
   const orgRates = await convex.query(api.supplierModelRates.list, { orgId: organizationId });
   const supplierRateIds = orgRates.filter((r) => r.supplierId === id).map((r) => r.id);
-  if (supplierRateIds.length > 0) {
-    await prisma.supplierModelRate.deleteMany({
-      where: { id: { in: supplierRateIds }, organizationId },
-    });
-    for (const rateId of supplierRateIds) {
-      await removeSupplierModelRateFromConvex(rateId);
-    }
+  for (const rateId of supplierRateIds) {
+    await convex.mutation(api.supplierModelRates.remove, { id: rateId });
   }
 
   await convex.mutation(api.suppliers.remove, { id });

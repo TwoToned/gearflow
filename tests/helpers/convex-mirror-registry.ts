@@ -47,11 +47,6 @@ import {
   patchLineItemInConvex,
   removeLineItemFromConvex,
 } from "@/lib/line-item-mirror";
-import {
-  mirrorSupplierModelRateCreate,
-  patchSupplierModelRateInConvex,
-  removeSupplierModelRateFromConvex,
-} from "@/lib/supplier-model-rate-mirror";
 
 type Row = Record<string, unknown>;
 
@@ -114,7 +109,7 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   Client: generic(api.clients),
   Supplier: generic(api.suppliers),
   Category: generic(api.categories),
-  SupplierModelRate: { create: mirrorSupplierModelRateCreate, patch: patchSupplierModelRateInConvex, remove: removeSupplierModelRateFromConvex },
+  SupplierModelRate: generic(api.supplierModelRates),
   ProjectService: generic(api.projectServices),
   // Additional Convex-backed tables read by the migrated server surfaces.
   SubHire: generic(api.subHires),

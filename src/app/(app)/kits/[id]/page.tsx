@@ -699,7 +699,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={forceReturnOpen}
       onOpenChange={setForceReturnOpen}
       title="Force return this kit?"
-      description="All project assignments for the kit and its contents will be marked as returned. The kit moves back to AVAILABLE. Use when scanning isn't possible."
+      description="All project assignments for the kit and its contents will be marked as returned. The kit moves back to available. Use when scanning isn't possible."
       confirmLabel="Force return kit"
       onConfirm={() => {
         forceReturnMutation.mutate();
@@ -804,7 +804,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-2">
-            <Label>Bulk Asset</Label>
+            <Label>Bulk asset</Label>
             <ComboboxPicker
               value={addBulkAssetId}
               onChange={setAddBulkAssetId}
@@ -961,7 +961,7 @@ function ScanInput({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleSelect(asset)}
-                  className={cn("flex w-full items-center gap-2 px-3 py-2 text-ui-text hover:bg-paper-2 text-left rounded-sm", focusRing)}
+                  className={cn("flex w-full items-center gap-2 px-3 py-2 text-ui-text hover:bg-paper-2 text-left rounded-sm", focusRing, disabledState)}
                 >
                   <span className="t-mono font-medium text-ink">{asset.assetTag}</span>
                   <span className="text-muted">{asset.model?.name || "—"}</span>

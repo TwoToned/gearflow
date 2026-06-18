@@ -27,6 +27,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 
 import { kitStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyKit = Record<string, any>;
@@ -38,7 +39,7 @@ function useKitColumns(
   return [
     {
       id: "assetTag",
-      header: "Asset Tag",
+      header: "Asset tag",
       accessorKey: "assetTag",
       alwaysVisible: true,
       sortKey: "assetTag",
@@ -80,11 +81,11 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "AVAILABLE", label: "Available", color: "bg-ok" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-red" },
-        { value: "IN_MAINTENANCE", label: "In maintenance", color: "bg-warn" },
-        { value: "RETIRED", label: "Retired", color: "bg-rep" },
-        { value: "INCOMPLETE", label: "Incomplete", color: "bg-t-out" },
+        { value: "AVAILABLE", label: "Available", color: getStatusColor("kit", "AVAILABLE").dot },
+        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("kit", "CHECKED_OUT").dot },
+        { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("kit", "IN_MAINTENANCE").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("kit", "RETIRED").dot },
+        { value: "INCOMPLETE", label: "Incomplete", color: getStatusColor("kit", "INCOMPLETE").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="kit" value={row.status} label={kitStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
@@ -99,11 +100,11 @@ function useKitColumns(
       filterType: "enum",
       defaultVisible: false,
       filterOptions: [
-        { value: "NEW", label: "New", color: "bg-ok" },
-        { value: "GOOD", label: "Good", color: "bg-blue" },
-        { value: "FAIR", label: "Fair", color: "bg-warn" },
-        { value: "POOR", label: "Poor", color: "bg-t-out" },
-        { value: "DAMAGED", label: "Damaged", color: "bg-t-out" },
+        { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
+        { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
+        { value: "FAIR", label: "Fair", color: getStatusColor("condition", "FAIR").dot },
+        { value: "POOR", label: "Poor", color: getStatusColor("condition", "POOR").dot },
+        { value: "DAMAGED", label: "Damaged", color: getStatusColor("condition", "DAMAGED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition] || formatLabel(row.condition)} variant="pill" />
@@ -350,7 +351,8 @@ export default function KitsPage() {
           onResetPreferences={resetPreferences}
           savedViews={{ tableId: "kits", currentConfig, applyConfig }}
           isLoading={isLoading}
-          emptyPreset="kits"
+          emptyTitle="No kits yet"
+          emptyDescription="Bundle gear that always travels together. Create your first kit with New kit."
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}

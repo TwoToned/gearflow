@@ -48,7 +48,7 @@ import { cn, focusRing, disabledState } from "@/lib/utils";
 type CheckItemType = "PASS_FAIL" | "NOTES" | "MEASUREMENT" | "DROPDOWN";
 
 const TYPE_LABELS: Record<CheckItemType, string> = {
-  PASS_FAIL: "Pass / Fail",
+  PASS_FAIL: "Pass / fail",
   NOTES: "Notes",
   MEASUREMENT: "Measurement",
   DROPDOWN: "Dropdown",
@@ -355,7 +355,7 @@ function KitCheckItemPicker({
                 href="/settings/check-items"
                 className={cn("mt-2 text-caption text-link hover:underline rounded-sm", focusRing)}
               >
-                Create check items in Settings
+                Create check items in settings
               </Link>
             )}
           </div>

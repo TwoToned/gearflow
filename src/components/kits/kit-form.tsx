@@ -197,11 +197,11 @@ export function KitForm({ initialData }: KitFormProps) {
 
           <FormSection title="Case information">
             <div className="space-y-2">
-              <Label htmlFor="caseType">Case Type</Label>
+              <Label htmlFor="caseType">Case type</Label>
               <Input id="caseType" {...form.register("caseType")} placeholder="e.g. Pelican 1650" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="caseDimensions">Case Dimensions</Label>
+              <Label htmlFor="caseDimensions">Case dimensions</Label>
               <Input
                 id="caseDimensions"
                 {...form.register("caseDimensions")}
@@ -222,11 +222,11 @@ export function KitForm({ initialData }: KitFormProps) {
 
           <FormSection title="Purchase information">
             <div className="space-y-2">
-              <Label htmlFor="purchaseDate">Purchase Date</Label>
+              <Label htmlFor="purchaseDate">Purchase date</Label>
               <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="purchasePrice">Purchase Price ($)</Label>
+              <Label htmlFor="purchasePrice">Purchase price ($)</Label>
               <Input
                 id="purchasePrice"
                 type="number"

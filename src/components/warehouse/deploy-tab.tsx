@@ -203,7 +203,7 @@ export function DeployTab({
                               type="button"
                               onClick={() => clearContainerMutate(container)}
                               disabled={clearContainerIsPending}
-                              className={`rounded-[var(--r)] p-0.5 text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
                               title="Remove container"
                               aria-label={`Remove container ${container}`}
                             >

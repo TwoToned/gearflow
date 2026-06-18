@@ -267,7 +267,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
       {checkedItems > 0 && (
         <button
           onClick={() => setChecked(new Set())}
-          className={`rounded-[var(--r)] text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
+          className={`inline-flex min-h-11 items-center rounded-[var(--r)] px-3 text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
         >
           Clear all checks
         </button>

@@ -662,7 +662,7 @@ function CheckItemRow({
             <button
               type="button"
               onClick={() => setShowNotes(true)}
-              className={`rounded-[var(--r)] text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
+              className={`inline-flex min-h-11 items-center rounded-[var(--r)] px-3 text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
             >
               + Add notes
             </button>

@@ -68,7 +68,7 @@ export function KitChildRows({
                   onClick={() => onToggleVerify(child.id)}
                   aria-pressed={isVerified}
                   aria-label={isVerified ? "Verified — tap to clear" : "Tap to verify present"}
-                  className={`mx-auto block rounded-[var(--r)] ${focusRing}`}
+                  className={`mx-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] ${focusRing}`}
                 >
                   {isVerified
                     ? <CircleCheck className="h-4 w-4 text-ok" />
@@ -114,7 +114,7 @@ export function KitChildRows({
                       onClick={() => onToggleVerify(nested.id)}
                       aria-pressed={nestedVerified}
                       aria-label={nestedVerified ? "Verified — tap to clear" : "Tap to verify present"}
-                      className={`mx-auto block rounded-[var(--r)] ${focusRing}`}
+                      className={`mx-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] ${focusRing}`}
                     >
                       {nestedVerified
                         ? <CircleCheck className="h-4 w-4 text-ok" />

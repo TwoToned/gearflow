@@ -116,3 +116,31 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
+// Is this file referenced by ANY media row across the 7 *_media tables? Replaces
+// the raw-SQL UNION ref-count in removeSubHireMedia (each table has a by_fileId
+// index). Used to decide whether deleting a media row should also delete its file.
+export const isReferencedByMedia = query({
+  args: { fileId: v.string() },
+  handler: async (ctx, { fileId }) => {
+    await requireService(ctx);
+    const tables = [
+      "modelMedia",
+      "assetMedia",
+      "kitMedia",
+      "projectMedia",
+      "clientMedia",
+      "locationMedia",
+      "subHireMedia",
+    ] as const;
+    for (const t of tables) {
+      const hit = await ctx.db
+        .query(t)
+        .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+        .first();
+      if (hit) return true;
+    }
+    return false;
+  },
+});

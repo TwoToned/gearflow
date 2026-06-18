@@ -116,3 +116,23 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
+// Atomic single-primary-photo invariant (replaces the Prisma updateMany+update tx).
+export const setPrimary = mutation({
+  args: { parentId: v.string(), mediaId: v.string() },
+  handler: async (ctx, { parentId, mediaId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("kitMedia")
+      .withIndex("by_kitId", (q) => q.eq("kitId", parentId))
+      .collect();
+    for (const r of rows) {
+      if (r.id === mediaId) {
+        if (!r.isPrimary) await ctx.db.patch(r._id, { isPrimary: true });
+      } else if (r.type === "PHOTO" && r.isPrimary) {
+        await ctx.db.patch(r._id, { isPrimary: false });
+      }
+    }
+  },
+});

@@ -70,8 +70,7 @@ const ORDER: string[] = [
   "warehouse-dashboard-tokens",
   "test-tag-auditor-tokens",
   "maintenance-record-assets",
-  // media + denormalized stamps last
-  "media",
+  // denormalized stamps last (media is Convex-only since Phase C — no backfill)
   "crew-availability-org",
 ];
 

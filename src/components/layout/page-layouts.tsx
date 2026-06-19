@@ -212,16 +212,15 @@ interface SectionHeaderProps {
 }
 
 /**
- * Section header with a red label chip.
- * Per DESIGN.md §5.2: t-overline (11px/600) sentence-case red text on
- * red-soft bg. Sentence case only — uppercase is the rejected misfire.
+ * Section header — calm muted overline (the DESIGN §5.2 *default* treatment,
+ * Linear/Plane-style grey labels). Reserve the red/Kalam "prominent" label for
+ * the `ui/section-header.tsx` prominent variant — routine section dividers stay
+ * quiet so a sidebar of them reads calm, not loud.
  */
 export function SectionHeader({ label, className }: SectionHeaderProps) {
   return (
-    <div className={cn("section-label", className)}>
-      <span className="t-overline shrink-0 rounded-sm bg-red-soft px-2 py-0.5 text-red">
-        {label}
-      </span>
+    <div className={className}>
+      <span className="t-overline text-muted">{label}</span>
     </div>
   );
 }

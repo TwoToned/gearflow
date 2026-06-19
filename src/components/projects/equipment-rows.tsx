@@ -514,11 +514,13 @@ export function GroupRow({
         {priceVal != null ? formatCurrency(priceVal * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap">
           {/* Hover/focus-reveal action cluster (declutter): hidden by default
               on desktop, shown on row hover or keyboard focus. Stays visible
-              on touch (no hover) via the `md:` gate. */}
-          <div className="flex items-center gap-1 transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+              on touch (no hover) via the `md:` gate. Constrained to the w-32
+              actions cell (justify-end + flex-nowrap) so the icons stay
+              right-aligned and never overflow onto the Total column. */}
+          <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
             {orgId && projectId && (
               <CommentThreadPanel
                 orgId={orgId}
@@ -713,7 +715,11 @@ export function SubHireGroupRow({
         {charge != null ? formatCurrency(charge * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
-        <div className="flex items-center justify-end gap-1 transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+        {/* Constrained to the w-32 actions cell (justify-end + flex-nowrap) so
+            the icons stay right-aligned and never overflow onto the Total
+            column. Sub-hire groups carry no orgId/projectId, so they
+            legitimately have no comment affordance — edit + more only. */}
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
           <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -1135,8 +1141,10 @@ export function LineItemRow({
       <TableCell>
         {/* Hover/focus-reveal action cluster (declutter): hidden by default on
             desktop, shown on row hover or keyboard focus. Stays visible on touch
-            (no hover) via the `md:` gate. */}
-        <div className="flex items-center justify-end gap-1 transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+            (no hover) via the `md:` gate. Constrained to the w-32 actions cell
+            (justify-end + flex-nowrap) so the comment/edit/more icons stay
+            right-aligned and never overflow onto the Total column. */}
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
           {orgId && projectId && (
             <CommentThreadPanel
               orgId={orgId}

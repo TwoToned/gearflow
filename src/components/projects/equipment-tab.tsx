@@ -654,7 +654,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <col className="w-28 hidden md:table-column" />
               {showCostColumn && <col className="w-24 hidden md:table-column" />}
               <col className="w-28 hidden sm:table-column" />
-              <col className="w-20" />
+              <col className="w-32" />
             </colgroup>
             <TableHeader>
             <TableRow>

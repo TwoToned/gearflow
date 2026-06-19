@@ -17,7 +17,6 @@ import {
   Phone,
   MapPin,
   CalendarDays,
-  DollarSign,
   FileText,
   ChevronDown,
   Copy,
@@ -55,7 +54,7 @@ import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { cn, focusRing, disabledState } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import {
   Tabs,
   TabsList,
@@ -84,7 +83,6 @@ import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
-import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 
@@ -213,8 +211,6 @@ export default function ProjectDetailPage({
       </RequirePermission>
     );
   }
-
-  const currentStatus = project.status;
 
   // Compute date range bar reference window (1 week before start to 1 week after end)
   const rentalStart = project.rentalStartDate
@@ -485,6 +481,9 @@ export default function ProjectDetailPage({
                 <TabsList>
                   <TabsTrigger value="equipment">Equipment</TabsTrigger>
                   <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
+                  {!project.isTemplate && (
+                    <TabsTrigger value="financials">Financials</TabsTrigger>
+                  )}
                   <TabsTrigger value="tasks">Tasks</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
@@ -514,6 +513,52 @@ export default function ProjectDetailPage({
                     <CrewPanel projectId={id} />
                   </div>
                 </TabsContent>
+
+                {/* Financials Tab — financial summary + operational P&L */}
+                {!project.isTemplate && (
+                  <TabsContent value="financials">
+                    <div className="space-y-6 pt-4">
+                      {(() => {
+                        // Compute group pricing stats from categories
+                        const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
+                          ?.flatMap((c) => c.groups) ?? [];
+                        const totalGroupCount = allGroups.length;
+                        const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
+                        const groupBreakdown = allGroups
+                          .filter((g) => g.price != null && Number(g.price) > 0)
+                          .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
+
+                        return (
+                          <FinancialSummary
+                            equipmentRevenue={project.equipmentRevenue as number | null}
+                            serviceChargeTotal={
+                              project.subtotal != null && project.equipmentRevenue != null
+                                ? Number(project.subtotal) - Number(project.equipmentRevenue)
+                                : null
+                            }
+                            serviceCostTotal={project.serviceCostTotal as number | null}
+                            labourCostTotal={project.labourCostTotal as number | null}
+                            subHireCostTotal={project.subHireCostTotal as number | null}
+                            subtotal={project.subtotal as number | null}
+                            discountPercent={project.discountPercent as number | null}
+                            discountAmount={project.discountAmount as number | null}
+                            taxRate={project.taxRate as number | null}
+                            taxAmount={project.taxAmount as number | null}
+                            total={project.total as number | null}
+                            margin={project.margin as number | null}
+                            depositPercent={project.depositPercent as number | null}
+                            depositPaid={project.depositPaid as number | null}
+                            pricedGroupCount={pricedGroupCount}
+                            totalGroupCount={totalGroupCount}
+                            groupBreakdown={groupBreakdown}
+                          />
+                        );
+                      })()}
+                      <div className="h-px bg-line" />
+                      <ProjectCostsPanel projectId={project.id} />
+                    </div>
+                  </TabsContent>
+                )}
 
                 {/* Tasks Tab */}
                 <TabsContent value="tasks">
@@ -585,91 +630,11 @@ export default function ProjectDetailPage({
               </Tabs>
             </DetailMain>
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
+            {/* ── Sidebar (lean: Schedule · Location · Team · Activity) ─ */}
             <DetailSidebar>
-                {/* Status */}
+                {/* Schedule */}
                 {!project.isTemplate && (
-                  <SidebarSection title="Status">
-                    <CanDo
-                      resource="project"
-                      action="update"
-                      fallback={
-                        <div className="flex items-center gap-2">
-                          <StatusIndicator
-                            category="project"
-                            value={currentStatus}
-                            label={projectStatusLabels[currentStatus] || formatLabel(currentStatus)}
-                          />
-                        </div>
-                      }
-                    >
-                      <select
-                        value={currentStatus}
-                        onChange={(e) => statusMutation.mutate(e.target.value)}
-                        disabled={statusMutation.isPending}
-                        className={cn(
-                          "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-ui-text text-ink transition-colors",
-                          focusRing,
-                          disabledState,
-                        )}
-                      >
-                        {allStatuses.map((s) => (
-                          <option key={s} value={s}>
-                            {projectStatusLabels[s] || s}
-                          </option>
-                        ))}
-                      </select>
-                    </CanDo>
-                  </SidebarSection>
-                )}
-
-                {/* Project Managers */}
-                <ProjectManagersPanel
-                  projectId={id}
-                  managers={
-                    (project.projectManagers as {
-                      userId: string;
-                      user: {
-                        id: string;
-                        name: string | null;
-                        email: string;
-                        image: string | null;
-                      };
-                    }[]) ?? []
-                  }
-                />
-
-                {/* Client */}
-                <SidebarSection title="Client">
-                  {project.client ? (
-                    <div className="space-y-1 text-ui-text">
-                      <Link
-                        href={`/clients/${project.client.id}`}
-                        className={cn("font-medium text-ink hover:text-link hover:underline rounded-sm", focusRing)}
-                      >
-                        {project.client.name}
-                      </Link>
-                      {project.client.contactEmail && (
-                        <div className="flex items-center gap-2 text-muted">
-                          <Mail className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{project.client.contactEmail}</span>
-                        </div>
-                      )}
-                      {project.client.contactPhone && (
-                        <div className="flex items-center gap-2 text-muted">
-                          <Phone className="h-3.5 w-3.5 shrink-0" />
-                          <span>{project.client.contactPhone}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-ui-text text-muted">No client assigned</p>
-                  )}
-                </SidebarSection>
-
-                {/* Dates */}
-                {!project.isTemplate && (
-                  <SidebarSection title="Dates">
+                  <SidebarSection title="Schedule">
                     {rentalStart && rentalEnd && rangeStart && rangeEnd && (
                       <DateRangeBar
                         start={rentalStart}
@@ -769,102 +734,38 @@ export default function ProjectDetailPage({
                   </div>
                 </SidebarSection>
 
-                {/* Financial Summary */}
-                {!project.isTemplate && (() => {
-                  // Compute group pricing stats from categories
-                  const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
-                    ?.flatMap((c) => c.groups) ?? [];
-                  const totalGroupCount = allGroups.length;
-                  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
-                  const groupBreakdown = allGroups
-                    .filter((g) => g.price != null && Number(g.price) > 0)
-                    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
-
-                  return (
-                    <div className="border-b border-line pb-4">
-                      <FinancialSummary
-                        equipmentRevenue={project.equipmentRevenue as number | null}
-                        serviceChargeTotal={
-                          project.subtotal != null && project.equipmentRevenue != null
-                            ? Number(project.subtotal) - Number(project.equipmentRevenue)
-                            : null
-                        }
-                        serviceCostTotal={project.serviceCostTotal as number | null}
-                        labourCostTotal={project.labourCostTotal as number | null}
-                        subHireCostTotal={project.subHireCostTotal as number | null}
-                        subtotal={project.subtotal as number | null}
-                        discountPercent={project.discountPercent as number | null}
-                        discountAmount={project.discountAmount as number | null}
-                        taxRate={project.taxRate as number | null}
-                        taxAmount={project.taxAmount as number | null}
-                        total={project.total as number | null}
-                        margin={project.margin as number | null}
-                        depositPercent={project.depositPercent as number | null}
-                        depositPaid={project.depositPaid as number | null}
-                        pricedGroupCount={pricedGroupCount}
-                        totalGroupCount={totalGroupCount}
-                        groupBreakdown={groupBreakdown}
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Operational P&L — costs roll-up beyond the financial summary.
-                    Hides itself when project has no revenue yet. */}
-                {!project.isTemplate && (
-                  <div className="border-b border-line pb-4">
-                    <ProjectCostsPanel projectId={project.id} />
-                  </div>
-                )}
-
-                {/* Quick Actions */}
-                {!project.isTemplate && (
-                  <SidebarSection title="Quick actions">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="line"
-                        size="sm"
-                        onClick={() => window.open(`/api/documents/${id}?type=quote`, "_blank")}
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        Generate quote
-                      </Button>
-                      <Button
-                        variant="line"
-                        size="sm"
-                        onClick={() => window.open(`/api/documents/${id}?type=invoice`, "_blank")}
-                      >
-                        <DollarSign className="h-3.5 w-3.5" />
-                        Send invoice
-                      </Button>
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Project Info */}
-                <SidebarSection title="Details">
-                  <div className="text-ui-text space-y-1">
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted">Type</span>
-                      <span className="font-medium text-ink-2">{typeLabels[project.type] || project.type}</span>
-                    </div>
-                    {project.description && (
-                      <p className="text-ui-text text-muted whitespace-pre-wrap pt-1">{project.description}</p>
-                    )}
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted">Created</span>
-                      <span className="font-medium text-ink-2 tabular-nums">{formatDate(project.createdAt as unknown as string)}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted">Updated</span>
-                      <span className="font-medium text-ink-2 tabular-nums">{formatDate(project.updatedAt as unknown as string)}</span>
-                    </div>
-                  </div>
+                {/* Team — client + project managers (drop the nested PM panel's
+                    own divider so only the section rule shows) */}
+                <SidebarSection title="Team" className="[&_>div:last-child]:border-b-0 [&_>div:last-child]:pb-0">
+                  {project.client ? (
+                    <Link
+                      href={`/clients/${project.client.id}`}
+                      className={cn("font-medium text-ink hover:text-link hover:underline rounded-sm text-ui-text", focusRing)}
+                    >
+                      {project.client.name}
+                    </Link>
+                  ) : (
+                    <p className="text-ui-text text-muted">No client assigned</p>
+                  )}
+                  <ProjectManagersPanel
+                    projectId={id}
+                    managers={
+                      (project.projectManagers as {
+                        userId: string;
+                        user: {
+                          id: string;
+                          name: string | null;
+                          email: string;
+                          image: string | null;
+                        };
+                      }[]) ?? []
+                    }
+                  />
                 </SidebarSection>
 
-                {/* Realtime collaboration feed (comments, blocking, reviews) */}
+                {/* Activity — realtime collaboration feed */}
                 {orgId && !project.isTemplate && (
-                  <SidebarSection title="Collaboration" divider={false}>
+                  <SidebarSection title="Activity" divider={false}>
                     <ProjectActivityFeed
                       orgId={orgId}
                       entityType="project"
@@ -874,11 +775,6 @@ export default function ProjectDetailPage({
                     />
                   </SidebarSection>
                 )}
-
-                {/* Legacy audit timeline */}
-                <SidebarSection title="Activity" divider={false}>
-                  <ActivityTimeline entityType="project" entityId={id} />
-                </SidebarSection>
             </DetailSidebar>
           </DetailLayout>
         </div>

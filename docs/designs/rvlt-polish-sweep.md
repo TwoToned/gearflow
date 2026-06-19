@@ -413,3 +413,18 @@ Original fix list (both reviews agreed; label-map findings already fixed in comm
   hover (clients/suppliers/locations/assets detail). DataTable `emptyPreset` is ignored (shared) — list
   pages need explicit emptyTitle/description.
 - **Run full `npm test` + `npm run build` before shipping** — several agents updated/added tests; confirm green.
+
+## Reinvention pass (post-"bar") — apply the approved project-detail patterns to deep surfaces
+The project detail page is the approved bar (see memory project-detail-page-patterns + commits
+801779df/0893bf11/7d5376da/3c433c2d/b03f9f79/7c6d2d3a/equipment table fixes). Carry the SAME
+language (hero with identity, status/where-is-it surfaced, most-used actions + ⋯ overflow, lean
+~4-section sidebar w/ calm muted labels, calm-by-default + hover-reveal controls, no "—" noise,
+consistent table grids, density-good) to:
+- ◐ Asset record (assets/registry/[id]) — hero w/ status + where-is-it-now + QR action; consolidate
+  8 tabs → ~5 (merge Photos+Documents→Files, QR→hero action); unified history timeline; lean sidebar.
+- ☐ Model detail (assets/models/[id]) — product/spec record.
+- ☐ Warehouse per-project flow — focused scan mode.
+- ☐ Crew roster + crew detail — availability board.
+- ☐ Equipment registry list — visual gear library (cards, not rows).
+- ☐ Kit / Client / Supplier / Location / Maintenance detail pages — detail-page bar.
+- ☐ Remaining conformance chunks 11(done?)–16 (settings, admin, auth, edge) — still need the calm-by-default pass.

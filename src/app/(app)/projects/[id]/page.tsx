@@ -455,12 +455,6 @@ export default function ProjectDetailPage({
               advancing={statusMutation.isPending}
               canAdvance={canUpdate}
               onAdvance={(next) => statusMutation.mutate(next)}
-              dateByStage={{
-                confirmed: project.rentalStartDate ? new Date(project.rentalStartDate as unknown as string) : null,
-                prep: project.loadInDate ? new Date(project.loadInDate as unknown as string) : null,
-                onsite: project.eventStartDate ? new Date(project.eventStartDate as unknown as string) : null,
-                return: (project.loadOutDate ?? project.rentalEndDate) ? new Date((project.loadOutDate ?? project.rentalEndDate) as unknown as string) : null,
-              }}
             />
           )}
 

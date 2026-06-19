@@ -1249,10 +1249,13 @@ export function LineItemRow({
         <TableCell className="text-right hidden md:table-cell t-data text-ink-2">
           {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
         </TableCell>
-        {showCostColumn && <TableCell className="hidden md:table-cell" />}
+        {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
         <TableCell className="text-right hidden sm:table-cell t-data text-ink-2">
           {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
         </TableCell>
+        {/* Child rows can't be price-edited or reordered independently, so the
+            actions cell renders empty — but the w-32 column is still reserved
+            so every row's columns align with the colgroup. */}
         <TableCell />
       </TableRow>
     ))}

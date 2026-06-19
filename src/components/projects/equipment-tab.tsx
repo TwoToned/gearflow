@@ -19,7 +19,13 @@ import {
   useProjectSubHires,
   useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
-import { Plus, FolderPlus, Pencil } from "lucide-react";
+import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 import { useProjectServices } from "@/hooks/use-project-services";
@@ -582,46 +588,44 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   return (
     <div className="space-y-3" data-shortcut-scope="equipment">
-      {/* Toolbar */}
+      {/* Toolbar — one primary "Add ▾" menu (item / group / category) on the
+          left, a quiet margin toggle on the right. The three add actions reuse
+          the exact handlers the old three buttons triggered (UnifiedAddDialog,
+          AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. */}
       <div className="flex items-center gap-2">
-        {/* Single Add entry — opens UnifiedAddDialog. Tabs inside the
-            dialog (own-stock / kit / sub-hire / custom) replace the four
-            old toolbar buttons. Defaults to whichever kind was used last,
-            falling back to "own-stock". */}
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Button>
-        <Button
-          variant="line"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddGroupFromToolbar(true)}
-        >
-          <FolderPlus className="h-3.5 w-3.5" />
-          Add group
-        </Button>
-        <Button
-          variant="line"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddCategory(true)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add category
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              Add
+              <ChevronDownIcon className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem
+              onClick={() => {
+                setUnifiedAddTarget({});
+                setShowUnifiedAdd(true);
+              }}
+            >
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              Add item
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
+              <FolderPlus className="mr-2 h-3.5 w-3.5" />
+              Add group
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
+              <FolderTree className="mr-2 h-3.5 w-3.5" />
+              Add category
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex-1" />
         <Button
-          variant={showCostColumn ? "primary" : "line"}
+          variant="ghost"
           size="sm"
-          className="gap-1.5"
+          aria-pressed={showCostColumn}
           onClick={toggleShowCostColumn}
           title="Toggle the supplier-cost column so margin is visible at a glance"
         >
@@ -648,7 +652,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <col />
               <col className="w-16" />
               <col className="w-28 hidden md:table-column" />
-              <col className="w-20 hidden lg:table-column" />
               {showCostColumn && <col className="w-24 hidden md:table-column" />}
               <col className="w-28 hidden sm:table-column" />
               <col className="w-20" />

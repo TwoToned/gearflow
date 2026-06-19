@@ -834,26 +834,44 @@ function ProjectSummaryStrip({
 
   const { data: serviceData } = useProjectServicesSummary(projectId);
 
-  const metrics = [
+  // A faint em-dash for an empty/placeholder metric — calm, not loud.
+  const emptyValue = <span className="text-faint">{"\u2014"}</span>;
+
+  const metrics: {
+    label: string;
+    value: React.ReactNode;
+    bold?: boolean;
+  }[] = [
     {
       label: "Equipment",
-      value: formatCurrency(equipmentRevenue),
+      value: equipmentRevenue != null ? formatCurrency(equipmentRevenue) : emptyValue,
     },
     {
+      // Lead with the charge; the cost rides along as a quiet muted sub-part.
       label: "Services",
-      value: serviceData
-        ? `${formatCurrency(serviceData.chargeTotal)} charge · ${formatCurrency(serviceData.costTotal)} cost`
-        : "\u2014",
+      value: serviceData ? (
+        <span>
+          {formatCurrency(serviceData.chargeTotal)}
+          <span className="font-normal text-muted"> · {formatCurrency(serviceData.costTotal)} cost</span>
+        </span>
+      ) : (
+        emptyValue
+      ),
     },
     {
       label: "Crew",
-      value: labourData
-        ? `${formatCurrency(Number(labourData.totalLabourCost))} · ${labourData.assignmentCount}`
-        : "\u2014",
+      value: labourData ? (
+        <span>
+          {formatCurrency(Number(labourData.totalLabourCost))}
+          <span className="font-normal text-muted"> · {labourData.assignmentCount}</span>
+        </span>
+      ) : (
+        emptyValue
+      ),
     },
     {
       label: "Total",
-      value: formatCurrency(total),
+      value: total != null ? formatCurrency(total) : emptyValue,
       bold: true,
     },
   ];

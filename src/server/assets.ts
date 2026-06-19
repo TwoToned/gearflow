@@ -28,6 +28,7 @@ import {
 } from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
+import { getActiveCustomFieldsForOrg } from "@/lib/custom-fields-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -40,10 +41,9 @@ async function resolveAssetCustomFields(
   organizationId: string,
   raw: Record<string, string> | null | undefined,
 ): Promise<Record<string, string>> {
-  const defs = await prisma.customFieldDefinition.findMany({
-    where: { organizationId, entityType: "ASSET", isActive: true },
-    select: { fieldKey: true, label: true, fieldType: true, options: true, required: true },
-  });
+  // Custom field definitions are Convex-only (custom-fields.ts writes Convex);
+  // the Prisma table is frozen, so read the active ASSET defs from Convex.
+  const defs = await getActiveCustomFieldsForOrg(organizationId, "ASSET");
   if (defs.length === 0) return {};
   try {
     return validateCustomFieldValues(defs, raw);

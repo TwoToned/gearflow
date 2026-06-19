@@ -8,7 +8,22 @@ import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useAssetDetailVersion } from "@/hooks/use-assets";
-import { Archive, ChevronRight, Pencil, Trash2, FileText, RotateCcw, MapPin, Wrench, CalendarClock, Cable } from "lucide-react";
+import {
+  Archive,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  FileText,
+  RotateCcw,
+  MapPin,
+  Wrench,
+  CalendarClock,
+  Cable,
+  QrCode,
+  MoreHorizontal,
+  Briefcase,
+  PackageCheck,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -17,7 +32,7 @@ import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { forceReturnAsset } from "@/server/warehouse";
-import { getBulkAsset, archiveBulkAsset, deleteBulkAsset, updateBulkAssetNotes } from "@/server/bulk-assets";
+import { getBulkAsset, archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
 import {
   addAssetMedia,
   removeAssetMedia,
@@ -37,6 +52,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AssetQRCode } from "@/components/assets/asset-qr-code";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { NotesEditor } from "@/components/ui/notes-editor";
@@ -180,14 +203,73 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // Gather specs from model
   const specs = (asset.model?.specifications || []) as Array<{ key: string; value: string }>;
 
+  // ── "Where is it now?" — the #1 question for a physical unit ──────────
+  // CHECKED_OUT → the active (not-yet-returned) project assignment.
+  const activeLineItem =
+    asset.status === "CHECKED_OUT"
+      ? asset.lineItems.find((li) => li.status === "CHECKED_OUT" && !li.returnedAt) ??
+        asset.lineItems.find((li) => li.status === "CHECKED_OUT")
+      : null;
+  const homeLocationName = asset.location?.name ?? null;
+  const whereIsIt: { icon: typeof Briefcase; node: React.ReactNode } = (() => {
+    if (asset.status === "CHECKED_OUT" && activeLineItem) {
+      return {
+        icon: Briefcase,
+        node: (
+          <span>
+            Deployed on{" "}
+            <Link
+              href={`/projects/${activeLineItem.projectId}`}
+              className={cn("font-semibold text-ink hover:text-link hover:underline rounded-sm", focusRing)}
+            >
+              {activeLineItem.project.name}
+            </Link>
+            <span className="t-mono text-muted"> · {activeLineItem.project.projectNumber}</span>
+          </span>
+        ),
+      };
+    }
+    if (asset.status === "IN_MAINTENANCE") {
+      return {
+        icon: Wrench,
+        node: (
+          <span className="text-ink-2">
+            In maintenance{homeLocationName ? <span className="text-muted"> · home: {homeLocationName}</span> : null}
+          </span>
+        ),
+      };
+    }
+    if (asset.status === "AVAILABLE") {
+      return {
+        icon: PackageCheck,
+        node: (
+          <span className="text-ink-2">
+            Available{homeLocationName ? <> · <span className="font-semibold text-ink">{homeLocationName}</span></> : <span className="text-muted"> · no home location set</span>}
+          </span>
+        ),
+      };
+    }
+    // RESERVED / RETIRED / LOST and any other state — surface status + home location.
+    return {
+      icon: MapPin,
+      node: (
+        <span className="text-ink-2">
+          {assetStatusLabels[asset.status] || formatLabel(asset.status)}
+          {homeLocationName ? <span className="text-muted"> · {homeLocationName}</span> : null}
+        </span>
+      ),
+    };
+  })();
+  const WhereIcon = whereIsIt.icon;
+
   return (
     <FadeIn>
       <PageMeta title={asset ? `${asset.assetTag}${asset.customName ? ` — ${asset.customName}` : ""}` : undefined} />
       <div className="space-y-6">
-        {/* ── Header (full width) ────────────────────────────────── */}
-        <div>
+        {/* ── Hero card (breadcrumb + identity/where-is-it + actions) ── */}
+        <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
           {/* Breadcrumb */}
-          <nav className="mb-2 flex items-center gap-1 text-caption text-muted">
+          <nav className="flex items-center gap-1 text-caption text-muted">
             <Link href="/assets/registry" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
               Assets
             </Link>
@@ -199,82 +281,115 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <span className="t-mono text-ink-2">{asset.assetTag}</span>
           </nav>
 
+          {/* Identity + actions */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex gap-4 min-w-0">
+            <div className="flex min-w-0 gap-4">
               <MediaThumbnail
                 url={photoUrl}
                 alt={asset.assetTag}
-                size={64}
+                size={72}
                 className="flex-shrink-0"
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-ink">
-                    {asset.customName || asset.model?.name || "—"}
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">
+                    {asset.customName || asset.model?.name || "Untitled asset"}
                   </h1>
                   <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />
                   <StatusIndicator category="condition" value={asset.condition} label={conditionLabels[asset.condition] || asset.condition} />
                 </div>
-                <p className="text-caption text-muted truncate">
+                {/* Meta line: tag · category · brand/model */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
                   <span className="t-mono text-ink-2">{asset.assetTag}</span>
-                  {asset.customName && <> &middot; {asset.customName}</>}
-                  {" "}&middot;{" "}
+                  {asset.model?.category && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <span>{asset.model.category.name}</span>
+                    </>
+                  )}
+                  <span aria-hidden>&middot;</span>
                   <Link href={`/assets/models/${asset.modelId}`} className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}>
-                    {asset.model?.name || "—"}
+                    {asset.model?.name || "Model"}
                   </Link>
-                  {asset.model?.category && <> &middot; {asset.model.category.name}</>}
-                </p>
+                  {orgId && (
+                    <PresenceAvatarStack entityType="asset" entityId={id} size="sm" />
+                  )}
+                </div>
+                {/* "Where is it now?" — the prominent locator line */}
+                <div className="mt-3 inline-flex items-center gap-2 rounded-[var(--r)] border border-line bg-paper-2 px-3 py-1.5 text-ui-text">
+                  <WhereIcon className="h-4 w-4 text-muted shrink-0" aria-hidden />
+                  {whereIsIt.node}
+                </div>
               </div>
             </div>
+
+            {/* Action buttons (compact) */}
             <div className="flex flex-wrap items-center gap-2">
-              {orgId && (
-                <PresenceAvatarStack entityType="asset" entityId={id} size="sm" />
-              )}
               {orgId && (
                 <EntityCommentsButton orgId={orgId} entityType="asset" entityId={id} />
               )}
+              {/* QR — moved out of the tabs into a hero popover action */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="line" size="sm" aria-label="Show QR code">
+                    <QrCode className="h-4 w-4" />
+                    <span className="hidden sm:inline">QR</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-auto p-3">
+                  <div className="max-w-xs">
+                    <AssetQRCode
+                      assetTag={asset.assetTag}
+                      label={`${asset.assetTag}${asset.customName ? ` — ${asset.customName}` : ""}`}
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
               <CanDo resource="asset" action="update">
-                <div className="flex flex-wrap gap-2">
-                  {asset.status === "CHECKED_OUT" && (
-                    <Button
-                      variant="line"
-                      size="sm"
-                      className="border-warn/40 text-warn hover:bg-warn-soft hover:border-warn"
-                      onClick={() => setForceReturnOpen(true)}
-                      disabled={forceReturnMutation.isPending}
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      Force return
+                <Button variant="line" size="sm" asChild>
+                  <Link href={`/assets/registry/${id}/edit`}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Link>
+                </Button>
+                {/* Overflow ⋯ — force-return / archive / delete */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="line" size="sm" aria-label="More actions">
+                      <MoreHorizontal className="h-4 w-4" />
                     </Button>
-                  )}
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/assets/registry/${id}/edit`}>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Link>
-                  </Button>
-                  {asset.isActive && (
-                    <Button
-                      variant="line"
-                      size="sm"
-                      className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
-                      onClick={() => setArchiveOpen(true)}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {asset.status === "CHECKED_OUT" && (
+                      <DropdownMenuItem
+                        onClick={() => setForceReturnOpen(true)}
+                        disabled={forceReturnMutation.isPending}
+                        className="text-warn data-[highlighted]:bg-warn-soft data-[highlighted]:text-warn"
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Force return
+                      </DropdownMenuItem>
+                    )}
+                    {asset.isActive && (
+                      <DropdownMenuItem
+                        onClick={() => setArchiveOpen(true)}
+                        className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                      >
+                        <Archive className="mr-2 h-4 w-4" />
+                        Archive
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setDeleteOpen(true)}
+                      disabled={deleteMutation.isPending}
+                      className="text-red data-[highlighted]:bg-red data-[highlighted]:text-white"
                     >
-                      <Archive className="h-4 w-4" />
-                      Archive
-                    </Button>
-                  )}
-                  <Button
-                    variant="line"
-                    size="sm"
-                    className="border-red/40 text-red hover:bg-red hover:text-white hover:border-red"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
-                </div>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </CanDo>
             </div>
           </div>
@@ -294,7 +409,6 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <TabsTrigger value="photos">Photos</TabsTrigger>
                   <TabsTrigger value="checks">Checks</TabsTrigger>
                   <TabsTrigger value="documents">Documents</TabsTrigger>
-                  <TabsTrigger value="qr">QR</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -486,15 +600,6 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </div>
                     );
                   })()}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="qr" className="mt-4">
-                <div className="max-w-xs">
-                  <AssetQRCode
-                    assetTag={asset.assetTag}
-                    label={`${asset.assetTag}${asset.customName ? ` — ${asset.customName}` : ""}`}
-                  />
                 </div>
               </TabsContent>
             </Tabs>

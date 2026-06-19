@@ -1,8 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Check, ArrowRight, Loader2, Ban } from "lucide-react";
+import { Check, ArrowRight, Loader2, MoreHorizontal } from "lucide-react";
 import { cn, focusRing, disabledState } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 /**
  * ProjectLifecycle — the RVLT job lifecycle as a hero stepper.
@@ -14,8 +20,10 @@ import { cn, focusRing, disabledState } from "@/lib/utils";
  *   - upcoming stages: outlined (--line) node + muted number
  *   - connectors: ink before the current node, red on the active edge (current→next),
  *     muted --line after
- * A green "now" pill (top-right) names the live sub-status; an "Advance" affordance
- * moves to the next stage via the existing status mutation.
+ *
+ * Chrome-free: the page places this block inside the hero card. Controls sit at the
+ * right end of the row — an "Advance to {next}" button plus a `⋯` menu that is the
+ * full status picker (also the reactivate affordance when cancelled).
  */
 
 export type LifecycleStageKey =
@@ -35,12 +43,6 @@ const STAGE_ENTRY_STATUS: Record<LifecycleStageKey, string> = {
   prep: "PREPPING", onsite: "CHECKED_OUT", return: "RETURNED",
 };
 
-const SUB_STATUS_LABEL: Record<string, string> = {
-  ENQUIRY: "Enquiry", QUOTING: "Quoting", QUOTED: "Quoted", CONFIRMED: "Confirmed",
-  PREPPING: "Prepping", CHECKED_OUT: "Deployed", ON_SITE: "On site",
-  RETURNED: "Returned", COMPLETED: "Completed", INVOICED: "Invoiced", CANCELLED: "Cancelled",
-};
-
 function stageIndexForStatus(status: string): number {
   return STAGES.findIndex((s) => s.statuses.includes(status));
 }
@@ -57,65 +59,92 @@ export function ProjectLifecycle({
   onAdvance,
   advancing = false,
   canAdvance = true,
+  statuses,
+  onStatusChange,
   className,
 }: {
   status: string;
   onAdvance?: (nextStatus: string) => void;
   advancing?: boolean;
   canAdvance?: boolean;
+  /** Full status list for the `⋯` picker — value + human label. */
+  statuses?: { value: string; label: string }[];
+  /** Called when a status is chosen from the `⋯` picker. */
+  onStatusChange?: (value: string) => void;
   className?: string;
 }) {
   const cancelled = status === "CANCELLED";
   const currentIdx = cancelled ? -1 : stageIndexForStatus(status);
   const nextStage = currentIdx >= 0 && currentIdx < STAGES.length - 1 ? STAGES[currentIdx + 1] : null;
-  const subStatus = SUB_STATUS_LABEL[status] ?? status;
-  const live = status === "ON_SITE" || status === "CHECKED_OUT";
+
+  const showAdvance = !cancelled && nextStage && onAdvance && canAdvance;
+  const showMenu = !!onStatusChange && !!statuses;
+
+  const controls = (showAdvance || showMenu) && (
+    <div className="flex shrink-0 items-center gap-2">
+      {showAdvance && (
+        <button
+          type="button"
+          onClick={() => onAdvance!(STAGE_ENTRY_STATUS[nextStage!.key])}
+          disabled={advancing}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-[var(--r)] border-2 border-line bg-paper-2 px-3 py-1.5 text-caption font-semibold text-ink-2 transition-colors hover:border-red hover:text-ink",
+            focusRing, disabledState,
+          )}
+        >
+          {advancing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Advance to {nextStage!.label}
+          {!advancing && <ArrowRight className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {showMenu && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Set status"
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-[var(--r)] border-2 border-line bg-paper-2 text-ink-2 transition-colors hover:border-red hover:text-ink",
+                focusRing, disabledState,
+              )}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <div className="px-2.5 py-1 text-caption font-semibold text-muted">
+              Set status
+            </div>
+            {statuses!.map((s) => (
+              <DropdownMenuItem key={s.value} onClick={() => onStatusChange!(s.value)}>
+                <Check
+                  className={cn("h-4 w-4 text-red", s.value !== status && "opacity-0")}
+                  strokeWidth={3}
+                  aria-hidden
+                />
+                {s.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
 
   return (
-    <section
+    <div
       className={cn(
-        "rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] sm:px-6 sm:py-5",
+        "flex flex-col gap-3 lg:flex-row lg:items-center",
         className,
       )}
       aria-label="Project lifecycle"
     >
-      {/* Top row: position pill + advance */}
-      <div className="mb-4 flex items-center justify-between gap-3 border-b border-line pb-3">
-        <p className="t-overline text-faint">Lifecycle</p>
-        <div className="flex items-center gap-2">
-          {!cancelled ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-soft px-2.5 py-0.5 text-caption font-semibold text-ok">
-              <span className={cn("size-1.5 rounded-full bg-ok", live && "motion-safe:animate-pulse")} aria-hidden />
-              {subStatus}{live ? " now" : ""}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-out-soft px-2.5 py-0.5 text-caption font-semibold text-t-out">
-              <Ban className="h-3 w-3" /> Cancelled
-            </span>
-          )}
-          {!cancelled && nextStage && onAdvance && canAdvance && (
-            <button
-              type="button"
-              onClick={() => onAdvance(STAGE_ENTRY_STATUS[nextStage.key])}
-              disabled={advancing}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-[var(--r)] border-2 border-line bg-paper-2 px-3 py-1 text-caption font-semibold text-ink-2 transition-colors hover:border-red hover:text-ink",
-                focusRing, disabledState,
-              )}
-            >
-              {advancing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
-              Advance
-            </button>
-          )}
-        </div>
-      </div>
-
       {cancelled ? (
-        <p className="px-1 pb-1 t-micro text-muted">
+        <p className="min-w-0 flex-1 t-micro text-t-out">
           This job is off the pipeline. Reactivate it from the status menu to resume.
         </p>
       ) : (
-        <ol className="flex items-start" role="list">
+        <ol className="flex min-w-0 flex-1 items-start" role="list">
           {STAGES.map((s, i) => {
             const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "upcoming";
             const isFirst = i === 0;
@@ -152,6 +181,7 @@ export function ProjectLifecycle({
           })}
         </ol>
       )}
-    </section>
+      {controls}
+    </div>
   );
 }

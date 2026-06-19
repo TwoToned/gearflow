@@ -165,22 +165,46 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
 ## Project Detail Page Layout
+Restructured (v0.x) to a clean hero card + lean sidebar — the old big header,
+standalone lifecycle band, and nine-section sidebar were "far too much info".
 ```
-HEADER (full width):
-  [Status●] Project Name — Client          [Warehouse] [Docs▾] [Edit] [⋯]
-  PMs: [Avatar][Avatar]  |  Type: Wet Hire  |  Rental: 3 days daily
+HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
+  Projects › PROJ-123                                    (breadcrumb)
+  Project Name [Template?]            [💬][Warehouse][Docs▾][Edit][⋯]
+  PROJ-123 · Wet hire · Client · [PM avatars] [presence]   (meta line)
+  ◉──◉──◉──○──○──○   Enquiry…Return     [Advance to {next} →] [⋯ status]
+                                          (chrome-free ProjectLifecycle)
+
+[Summary strip] [Conflicts banner]
 
 ┌─── LEFT (~63%) ──────────────────────┐ ┌─── RIGHT (~37%, 340px sticky) ───┐
-│                                       │ │                                   │
-│  TABS: [Equipment] [Labour &          │ │  ── FINANCIALS ──                 │
-│   Logistics] [Notes] [Files]          │ │  Equipment revenue, costs,        │
-│                                       │ │  discount, tax, total, margin bar │
-│  (tab content below)                  │ │  Pricing progress: "3/8 groups"   │
-│                                       │ │  ▸ Breakdown (expandable)         │
-│                                       │ │                                   │
-│                                       │ │  ── Status / Client / Dates ──    │
+│  TABS: [Equipment] [Labour &          │ │  ── Schedule ──                   │
+│   logistics] [Financials] [Tasks]     │ │  DateRangeBar + date rows         │
+│   [Notes] [Files]                     │ │  ── Location ──                   │
+│                                       │ │  venue + site contact             │
+│  Financials tab = FinancialSummary    │ │  ── Team ──                       │
+│   + ProjectCostsPanel (non-template)  │ │  client link + PM panel           │
+│  (other tab content below)            │ │  ── Activity ──                   │
+│                                       │ │  ProjectActivityFeed (realtime)   │
 └───────────────────────────────────────┘ └───────────────────────────────────┘
 ```
+
+- **Hero card** (`projects/[id]/page.tsx`): breadcrumb + identity/actions row +
+  the chrome-free `ProjectLifecycle`. The non-template status pill is gone from the
+  title row — status now lives in the lifecycle `⋯` menu. Templates keep a status
+  pill in the hero. The `⋯` overflow action menu holds Runsheet, Duplicate project,
+  Save as template, and the destructive Cancel/Delete (CANCELLED-vs-active logic).
+- **`ProjectLifecycle`** (`components/projects/project-lifecycle.tsx`): the circular
+  stepper is unchanged (done = filled --ink node + check, current = --card node + 2px
+  red ring + red number, upcoming = outlined muted). It has NO card chrome of its own
+  — the page places it in the hero card. Controls at the row's right end: an
+  `Advance to {next} →` button plus a `⋯` dropdown that is the full status picker
+  (props `statuses` + `onStatusChange`); for CANCELLED the off-pipeline t-out line
+  renders but the `⋯` stays so the user can reactivate.
+- **Lean sidebar** — only four sections: Schedule, Location, Team (client name link
+  + `ProjectManagersPanel`), Activity (`ProjectActivityFeed`). Status/Quick-actions/
+  Details/legacy-ActivityTimeline removed; FinancialSummary + ProjectCostsPanel moved
+  into the Financials tab.
 
 ### Equipment Tab
 - Flat table layout (`table-layout: fixed` with `<colgroup>`) — no card chrome
@@ -196,7 +220,11 @@ HEADER (full width):
 - Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
-### Financial Summary Sidebar
+### Financials Tab
+Moved out of the sidebar into its own non-template main-content tab (after
+"Labour & logistics") to declutter the right rail. Contains `FinancialSummary`
++ `ProjectCostsPanel`. The allGroups/pricing computation that feeds
+`FinancialSummary` lives in the tab now (same logic as before).
 - Total with margin bar (green > 40%, amber 20-40%, red < 20%)
 - Equipment revenue, discount, tax breakdown
 - Services + Labour costs section
@@ -360,7 +388,7 @@ Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)
 
 ## Operational P&L Panel
-The project detail page has a right-rail costs panel (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
 
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`) re-checks free-in-window and reassigns inside one transaction, so a stale candidate can't push through a fresh double-booking. See `src/lib/reservation-conflicts.ts`.

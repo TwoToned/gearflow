@@ -14,6 +14,36 @@ Stored in `Organization.metadata` JSON:
 - `reserveAssetTags(count)` — Atomic increment, called ONLY after successful creation
 - Users can override suggested tags. Adding/removing form rows doesn't burn numbers
 
+## Asset Record Page (`/assets/registry/[id]`)
+The serialized-asset detail page mirrors the approved project-detail "bar"
+(`projects/[id]` + `project-lifecycle.tsx`). Layout/composition only — all data,
+mutations, handlers and permission gates are unchanged.
+
+- **Hero card** — breadcrumb, photo (`MediaThumbnail`, `resolveAssetPhotoUrl`),
+  big `font-display text-page-title` identity, meta line (tag `t-mono` · category ·
+  model link), asset + condition status pills, and a prominent **"where is it
+  now?"** locator line derived from `status` + the active (`CHECKED_OUT`,
+  not-yet-returned) `lineItem` + home `location`: "Deployed on {project}" /
+  "Available · {home location}" / "In maintenance" / status + location fallback.
+  Actions: comments, **QR** (Popover holding `AssetQRCode`, moved out of the
+  tabs), **Edit**, and a single `⋯` overflow `DropdownMenu` for Force-return
+  (CHECKED_OUT only) / Archive (isActive only) / Delete — all behind
+  `CanDo resource="asset" action="update"`.
+- **Tabs (6, down from 8)** — History (default; project check-out **timeline**,
+  not a table) · Availability (real `BookingCalendar`) · Maintenance (table-fixed
+  grid) · Checks (`AssetChecksTab`) · **Files** (merged Photos + Model documents)
+  · Notes. The old standalone QR tab is gone (QR → hero); Photos + Documents
+  merged into Files.
+- **Sidebar (4 calm `SidebarSection`s)** — Details (tag/serial/barcode/category/
+  model/condition/purchase/cost/supplier/warranty, plus folded Test & tag) ·
+  Location (home location + parent-of / accessories manager) · Specs (model
+  specifications + operator custom fields, hidden when empty) · Activity
+  (`ActivityTimeline`). Unset rows are omitted or show one faint "Not set" —
+  no stacks of em-dashes. `KvRow` helper renders the compact key·value rows.
+
+Bulk assets still redirect to the model page; the not-found / loading states are
+unchanged.
+
 ## Asset Status Lifecycle
 ```
 AVAILABLE → CHECKED_OUT (via warehouse checkout)

@@ -203,6 +203,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // Gather specs from model
   const specs = (asset.model?.specifications || []) as Array<{ key: string; value: string }>;
 
+  // Model documents (used in the merged Files tab; the count rides the tab label)
+  const modelDocs = ((asset.model?.media || []) as MediaItem[]).filter((m) => m.type !== "PHOTO");
+
   // ── "Where is it now?" — the #1 question for a physical unit ──────────
   // CHECKED_OUT → the active (not-yet-returned) project assignment.
   const activeLineItem =
@@ -399,23 +402,19 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <DetailLayout>
           {/* Main content */}
           <DetailMain>
-            <Tabs defaultValue="availability">
+            <Tabs defaultValue="history">
               <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="w-max sm:w-auto">
-                  <TabsTrigger value="availability">Availability</TabsTrigger>
                   <TabsTrigger value="history">History ({asset.lineItems.length})</TabsTrigger>
+                  <TabsTrigger value="availability">Availability</TabsTrigger>
                   <TabsTrigger value="maintenance">Maintenance ({asset.maintenanceLinks.length})</TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
-                  <TabsTrigger value="photos">Photos</TabsTrigger>
                   <TabsTrigger value="checks">Checks</TabsTrigger>
-                  <TabsTrigger value="documents">Documents</TabsTrigger>
+                  <TabsTrigger value="files">Files ({assetPhotos.length + modelDocs.length})</TabsTrigger>
+                  <TabsTrigger value="notes">Notes</TabsTrigger>
                 </TabsList>
               </div>
 
-              <TabsContent value="availability" className="mt-4">
-                <BookingCalendar entityType="asset" entityId={id} modelId={asset.modelId} initialDate={initialDate} />
-              </TabsContent>
-
+              {/* History — project check-out feed (timeline, not a dense table) */}
               <TabsContent value="history" className="mt-4">
                 {asset.lineItems.length === 0 ? (
                   <div className="rounded-[var(--r-lg)] border-2 border-border p-7 text-center">
@@ -425,36 +424,58 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-[var(--r)] border border-line overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="hidden sm:table-cell">Deployed</TableHead>
-                          <TableHead className="hidden sm:table-cell">Returned</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {asset.lineItems.map((li) => (
-                          <TableRow key={li.id}>
-                            <TableCell>
-                              <Link href={`/projects/${li.projectId}`} className={cn("hover:text-ink hover:underline rounded-sm", focusRing)}>
+                  <ol className="relative space-y-0">
+                    {asset.lineItems.map((li, i) => {
+                      const isLast = i === asset.lineItems.length - 1;
+                      return (
+                        <li key={li.id} className="group/row relative flex gap-3 pb-5 last:pb-0">
+                          {/* timeline rail + node */}
+                          <div className="relative flex w-4 shrink-0 flex-col items-center">
+                            <span
+                              className={cn(
+                                "mt-1.5 size-2.5 shrink-0 rounded-full ring-4 ring-paper",
+                                li.status === "CHECKED_OUT" && !li.returnedAt ? "bg-blue" : "bg-line-2",
+                              )}
+                              aria-hidden
+                            />
+                            {!isLast && <span className="w-px flex-1 bg-line" aria-hidden />}
+                          </div>
+                          {/* content */}
+                          <div className="-mt-0.5 min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <Link
+                                href={`/projects/${li.projectId}`}
+                                className={cn("font-semibold text-ink hover:text-link hover:underline rounded-sm", focusRing)}
+                              >
                                 {li.project.name}
                               </Link>
-                              <p className="t-mono text-caption text-muted">{li.project.projectNumber}</p>
-                            </TableCell>
-                            <TableCell>
-                              <StatusIndicator category="lineItem" value={li.status} label={lineItemStatusLabels[li.status] || formatLabel(li.status)} variant="pill" />
-                            </TableCell>
-                            <TableCell className="text-table-cell text-muted hidden sm:table-cell">{formatDate(li.checkedOutAt)}</TableCell>
-                            <TableCell className="text-table-cell text-muted hidden sm:table-cell">{formatDate(li.returnedAt)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                              <span className="t-mono text-caption text-muted">{li.project.projectNumber}</span>
+                              <StatusIndicator
+                                category="lineItem"
+                                value={li.status}
+                                label={lineItemStatusLabels[li.status] || formatLabel(li.status)}
+                                variant="pill"
+                              />
+                            </div>
+                            <p className="mt-0.5 text-caption text-muted tabular-nums">
+                              {li.checkedOutAt ? (
+                                <>Deployed {formatDate(li.checkedOutAt)}</>
+                              ) : (
+                                <>Assigned</>
+                              )}
+                              {li.returnedAt ? <> · returned {formatDate(li.returnedAt)}</> : li.checkedOutAt ? <> · still out</> : null}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
                 )}
+              </TabsContent>
+
+              {/* Availability — real booking calendar */}
+              <TabsContent value="availability" className="mt-4">
+                <BookingCalendar entityType="asset" entityId={id} modelId={asset.modelId} initialDate={initialDate} />
               </TabsContent>
 
               <TabsContent value="maintenance" className="mt-4">
@@ -467,14 +488,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 ) : (
                   <div className="rounded-[var(--r)] border border-line overflow-x-auto">
-                    <Table>
+                    <Table className="table-fixed">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Title</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="hidden sm:table-cell">Date</TableHead>
-                          <TableHead className="hidden sm:table-cell">Result</TableHead>
+                          <TableHead className="w-[40%]">Title</TableHead>
+                          <TableHead className="w-[18%]">Type</TableHead>
+                          <TableHead className="w-[18%]">Status</TableHead>
+                          <TableHead className="hidden w-[12%] sm:table-cell">Date</TableHead>
+                          <TableHead className="hidden w-[12%] sm:table-cell">Result</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -482,14 +503,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           const mr = link.maintenanceRecord;
                           return (
                             <TableRow key={mr.id}>
-                              <TableCell className="font-medium text-ink">{mr.title}</TableCell>
+                              <TableCell className="truncate font-medium text-ink">{mr.title}</TableCell>
                               <TableCell>
                                 <Badge status="neutral">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
                               </TableCell>
                               <TableCell>
                                 <StatusIndicator category="maintenance" value={mr.status} label={maintenanceStatusLabels[mr.status] || formatLabel(mr.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-table-cell text-muted hidden sm:table-cell">
+                              <TableCell className="text-table-cell text-muted tabular-nums hidden sm:table-cell">
                                 {formatDate(mr.completedDate || mr.scheduledDate)}
                               </TableCell>
                               <TableCell className="hidden sm:table-cell">
@@ -497,7 +518,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                   <Badge status={mr.result === "PASS" ? "ok" : "overbooked"}>
                                     {mr.result === "PASS" ? "Pass" : formatLabel(mr.result)}
                                   </Badge>
-                                ) : "—"}
+                                ) : (
+                                  <span className="text-faint">{"—"}</span>
+                                )}
                               </TableCell>
                             </TableRow>
                           );
@@ -508,16 +531,13 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 )}
               </TabsContent>
 
-              <TabsContent value="notes" className="mt-4">
-                <NotesEditor
-                  initialNotes={asset.notes || ""}
-                  onChanged={() => refetchAsset()}
-                  onSave={(notes) => updateAssetNotes(id, notes)}
-                  placeholder="Add notes about this asset..."
-                />
+              {/* Checks */}
+              <TabsContent value="checks" className="mt-4">
+                <AssetChecksTab assetId={id} />
               </TabsContent>
 
-              <TabsContent value="photos" className="mt-4">
+              {/* Files — merged Photos + Model documents */}
+              <TabsContent value="files" className="mt-4 space-y-6">
                 <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
                   <h3 className="t-heading text-ink mb-4">
                     Asset photos
@@ -553,13 +573,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     }}
                   />
                 </div>
-              </TabsContent>
 
-              <TabsContent value="checks" className="mt-4">
-                <AssetChecksTab assetId={id} />
-              </TabsContent>
-
-              <TabsContent value="documents" className="mt-4">
                 <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
                   <h3 className="t-heading text-ink mb-4">
                     Model documents
@@ -567,40 +581,44 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       From {asset.model?.name || "this model"} — manage on the model page
                     </span>
                   </h3>
-                  {(() => {
-                    const modelDocs = (asset.model?.media || []).filter((m: MediaItem) => m.type !== "PHOTO");
-                    if (modelDocs.length === 0) {
-                      return (
-                        <p className="text-table-cell text-muted py-4 text-center">
-                          No documents attached to this model.
-                        </p>
-                      );
-                    }
-                    return (
-                      <div className="space-y-2">
-                        {modelDocs.map((doc: MediaItem) => (
-                          <a
-                            key={doc.id}
-                            href={doc.file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn("flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:border-line-2 hover:bg-paper-2 transition-colors", focusRing)}
-                          >
-                            <FileText className="h-5 w-5 text-muted" />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-table-cell font-medium text-ink">
-                                {doc.displayName || doc.file.fileName}
-                              </p>
-                              <p className="text-caption text-muted">
-                                {mediaTypeLabels[doc.type] || formatLabel(doc.type)} — {(doc.file.fileSize / 1024).toFixed(0)} KB
-                              </p>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  {modelDocs.length === 0 ? (
+                    <p className="text-table-cell text-muted py-4 text-center">
+                      No documents attached to this model.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {modelDocs.map((doc) => (
+                        <a
+                          key={doc.id}
+                          href={doc.file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn("flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:border-line-2 hover:bg-paper-2 transition-colors", focusRing)}
+                        >
+                          <FileText className="h-5 w-5 text-muted" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-table-cell font-medium text-ink">
+                              {doc.displayName || doc.file.fileName}
+                            </p>
+                            <p className="text-caption text-muted">
+                              {mediaTypeLabels[doc.type] || formatLabel(doc.type)} — {(doc.file.fileSize / 1024).toFixed(0)} KB
+                            </p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
+              </TabsContent>
+
+              {/* Notes */}
+              <TabsContent value="notes" className="mt-4">
+                <NotesEditor
+                  initialNotes={asset.notes || ""}
+                  onChanged={() => refetchAsset()}
+                  onSave={(notes) => updateAssetNotes(id, notes)}
+                  placeholder="Add notes about this asset..."
+                />
               </TabsContent>
             </Tabs>
           </DetailMain>

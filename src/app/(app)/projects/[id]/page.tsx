@@ -70,6 +70,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { addProjectMedia, removeProjectMedia } from "@/server/project-media";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
@@ -234,10 +235,10 @@ export default function ProjectDetailPage({
       <PageMeta title={project ? `${project.projectNumber} ${project.name}` : undefined} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}
+          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-caption text-muted">
+            <nav className="flex items-center gap-1 text-caption text-muted">
               <Link href="/projects" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
                 Projects
               </Link>
@@ -245,10 +246,20 @@ export default function ProjectDetailPage({
               <span className="t-mono text-ink-2">{project.projectNumber}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-ink">{project.name}</h1>
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">
+                    {project.name}
+                  </h1>
+                  {project.isTemplate && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
+                      <BookTemplate className="h-3 w-3" />
+                      Template
+                    </span>
+                  )}
+                  {/* Templates keep the status pill here (non-templates use the lifecycle ⋯) */}
                   {project.isTemplate && (
                     <StatusIndicator
                       category="project"
@@ -256,15 +267,26 @@ export default function ProjectDetailPage({
                       label={projectStatusLabels[project.status] || formatLabel(project.status)}
                     />
                   )}
-                  {project.isTemplate && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
-                      <BookTemplate className="h-3 w-3" />
-                      Template
-                    </span>
+                </div>
+                {/* Meta line */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  <span className="t-mono text-ink-2">{project.projectNumber}</span>
+                  <span aria-hidden>&middot;</span>
+                  <span>{typeLabels[project.type] || formatLabel(project.type)}</span>
+                  {project.client && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <Link
+                        href={`/clients/${project.client.id}`}
+                        className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}
+                      >
+                        {project.client.name}
+                      </Link>
+                    </>
                   )}
-                  {/* PM Avatars */}
+                  {/* PM avatars */}
                   {project.projectManagers && (project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).length > 0 && (
-                    <div className="flex -space-x-1.5 ml-2">
+                    <div className="flex -space-x-1.5">
                       {(project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).map((pm) => (
                         <PersonAvatar
                           key={pm.user.id}
@@ -282,28 +304,13 @@ export default function ProjectDetailPage({
                       entityType="project"
                       entityId={id}
                       size="sm"
-                      className="ml-1"
                     />
                   )}
                 </div>
-                {(project.client || project.location) && (
-                  <p className="mt-1 text-caption text-muted">
-                    {project.client && (
-                      <Link
-                        href={`/clients/${project.client.id}`}
-                        className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}
-                      >
-                        {project.client.name}
-                      </Link>
-                    )}
-                    {project.client && project.location && <> &middot; </>}
-                    {project.location && project.location.name}
-                  </p>
-                )}
               </div>
 
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-2">
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
                 {orgId && !project.isTemplate && (
                   <ProjectCommentsButton orgId={orgId} projectId={id} />
                 )}
@@ -312,14 +319,6 @@ export default function ProjectDetailPage({
                     <Link href={`/warehouse/${id}`}>
                       <Warehouse className="h-4 w-4" />
                       <span className="hidden sm:inline">Warehouse</span>
-                    </Link>
-                  </Button>
-                )}
-                {!project.isTemplate && (
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/projects/${id}/runsheet`}>
-                      <ClipboardList className="h-4 w-4" />
-                      <span className="hidden sm:inline">Runsheet</span>
                     </Link>
                   </Button>
                 )}
@@ -391,20 +390,28 @@ export default function ProjectDetailPage({
                     </Link>
                   </Button>
                 </CanDo>
-                <CanDo resource="project" action="create">
-                  {project.isTemplate ? (
+                {project.isTemplate ? (
+                  <CanDo resource="project" action="create">
                     <Button variant="line" size="sm" onClick={() => setDupMode("duplicate")}>
                       <Copy className="h-4 w-4" />
                       Use template
                     </Button>
-                  ) : (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="line" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                  </CanDo>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="line" size="sm" aria-label="More actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/projects/${id}/runsheet`}>
+                          <ClipboardList className="mr-2 h-4 w-4" />
+                          Runsheet
+                        </Link>
+                      </DropdownMenuItem>
+                      <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
                           Duplicate project
@@ -413,50 +420,50 @@ export default function ProjectDetailPage({
                           <BookTemplate className="mr-2 h-4 w-4" />
                           Save as template
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </CanDo>
-                {!project.isTemplate && (
-                  <CanDo resource="project" action="update">
-                    {project.status === "CANCELLED" ? (
-                      <Button
-                        variant="line"
-                        size="sm"
-                        className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
-                        onClick={() => setDeleteOpen(true)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="line"
-                        size="sm"
-                        className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
-                        onClick={() => setCancelOpen(true)}
-                        disabled={archiveMutation.isPending}
-                      >
-                        <Archive className="h-4 w-4" />
-                        Cancel
-                      </Button>
-                    )}
-                  </CanDo>
+                      </CanDo>
+                      <CanDo resource="project" action="update">
+                        <DropdownMenuSeparator />
+                        {project.status === "CANCELLED" ? (
+                          <DropdownMenuItem
+                            onClick={() => setDeleteOpen(true)}
+                            disabled={deleteMutation.isPending}
+                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete project
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => setCancelOpen(true)}
+                            disabled={archiveMutation.isPending}
+                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                          >
+                            <Archive className="mr-2 h-4 w-4" />
+                            Cancel project
+                          </DropdownMenuItem>
+                        )}
+                      </CanDo>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* ── Lifecycle hero ─────────────────────────────────────── */}
-          {!project.isTemplate && (
-            <ProjectLifecycle
-              status={project.status}
-              advancing={statusMutation.isPending}
-              canAdvance={canUpdate}
-              onAdvance={(next) => statusMutation.mutate(next)}
-            />
-          )}
+            {/* Lifecycle stepper + controls */}
+            {!project.isTemplate && (
+              <ProjectLifecycle
+                status={project.status}
+                advancing={statusMutation.isPending}
+                canAdvance={canUpdate}
+                onAdvance={(next) => statusMutation.mutate(next)}
+                statuses={allStatuses.map((s) => ({
+                  value: s,
+                  label: projectStatusLabels[s] || formatLabel(s),
+                }))}
+                onStatusChange={(s) => statusMutation.mutate(s)}
+              />
+            )}
+          </div>
 
           {/* ── Summary Strip ──────────────────────────────────────── */}
           {!project.isTemplate && (

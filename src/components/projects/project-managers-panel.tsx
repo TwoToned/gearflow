@@ -96,7 +96,13 @@ export function ProjectManagersPanel({
       </div>
 
       {managers.length === 0 && !showPicker && (
-        <p className="text-ui-text text-muted">No project managers assigned</p>
+        <button
+          type="button"
+          onClick={() => setShowPicker(true)}
+          className={cn("rounded-sm text-caption text-faint hover:text-muted transition-colors", focusRing)}
+        >
+          Add project managers
+        </button>
       )}
 
       {managers.length > 0 && (

@@ -655,34 +655,29 @@ export default function ProjectDetailPage({
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted">Load in</span>
-                        <span className="font-medium text-ink-2 tabular-nums">
-                          {formatDate(project.loadInDate as string | null)}
-                          {project.loadInTime && ` ${project.loadInTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted">Load out</span>
-                        <span className="font-medium text-ink-2 tabular-nums">
-                          {formatDate(project.loadOutDate as string | null)}
-                          {project.loadOutTime && ` ${project.loadOutTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted">Event start</span>
-                        <span className="font-medium text-ink-2 tabular-nums">
-                          {formatDate(project.eventStartDate as string | null)}
-                          {project.eventStartTime && ` ${project.eventStartTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted">Event end</span>
-                        <span className="font-medium text-ink-2 tabular-nums">
-                          {formatDate(project.eventEndDate as string | null)}
-                          {project.eventEndTime && ` ${project.eventEndTime}`}
-                        </span>
-                      </div>
+                      {/* Load in/out + event rows render only when set — no stack
+                          of "—" placeholders. If all four are unset, show one
+                          faint line instead. */}
+                      {(() => {
+                        const scheduleRows = [
+                          { label: "Load in", date: project.loadInDate, time: project.loadInTime },
+                          { label: "Load out", date: project.loadOutDate, time: project.loadOutTime },
+                          { label: "Event start", date: project.eventStartDate, time: project.eventStartTime },
+                          { label: "Event end", date: project.eventEndDate, time: project.eventEndTime },
+                        ].filter((r) => r.date != null);
+                        if (scheduleRows.length === 0) {
+                          return <p className="text-caption text-faint">No load-in/out times set</p>;
+                        }
+                        return scheduleRows.map((r) => (
+                          <div key={r.label} className="flex justify-between gap-2">
+                            <span className="text-muted">{r.label}</span>
+                            <span className="font-medium text-ink-2 tabular-nums text-right">
+                              {formatDate(r.date as string | null)}
+                              {r.time ? ` ${r.time as string}` : ""}
+                            </span>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   </SidebarSection>
                 )}
@@ -712,7 +707,7 @@ export default function ProjectDetailPage({
                         )}
                       </>
                     ) : (
-                      <p className="text-muted">No location set</p>
+                      <p className="text-caption text-faint">No location set</p>
                     )}
                     {project.siteContactName && (
                       <div className="mt-2 pt-2 border-t border-line">
@@ -745,7 +740,7 @@ export default function ProjectDetailPage({
                       {project.client.name}
                     </Link>
                   ) : (
-                    <p className="text-ui-text text-muted">No client assigned</p>
+                    <p className="text-caption text-faint">No client</p>
                   )}
                   <ProjectManagersPanel
                     projectId={id}

@@ -420,11 +420,11 @@ The project detail page is the approved bar (see memory project-detail-page-patt
 language (hero with identity, status/where-is-it surfaced, most-used actions + ⋯ overflow, lean
 ~4-section sidebar w/ calm muted labels, calm-by-default + hover-reveal controls, no "—" noise,
 consistent table grids, density-good) to:
-- ◐ Asset record (assets/registry/[id]) — hero w/ status + where-is-it-now + QR action; consolidate
-  8 tabs → ~5 (merge Photos+Documents→Files, QR→hero action); unified history timeline; lean sidebar.
+- ✅ Asset record (assets/registry/[id]) — hero w/ status + where-is-it-now + QR action; tabs 8→6
+  (Photos+Documents→Files, QR→hero); history-as-timeline; lean 4-section sidebar. (f07ecb40/18c23c8b/e27aca87)
 - ☐ Model detail (assets/models/[id]) — product/spec record.
 - ☐ Warehouse per-project flow — focused scan mode.
 - ☐ Crew roster + crew detail — availability board.
-- ☐ Equipment registry list — visual gear library (cards, not rows).
+- ✅ Equipment registry list — visual gear library: AssetGallery card grid + Grid⇄Table toggle (default Grid). (6d1b8455/973e8ae6)
 - ☐ Kit / Client / Supplier / Location / Maintenance detail pages — detail-page bar.
 - ☐ Remaining conformance chunks 11(done?)–16 (settings, admin, auth, edge) — still need the calm-by-default pass.

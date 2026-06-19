@@ -203,7 +203,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // Gather specs from model
   const specs = (asset.model?.specifications || []) as Array<{ key: string; value: string }>;
 
-  // Model documents (used in the merged Files tab; the count rides the tab label)
+  // Model documents (used both in the Files tab and the sidebar count is implicit)
   const modelDocs = ((asset.model?.media || []) as MediaItem[]).filter((m) => m.type !== "PHOTO");
 
   // ── "Where is it now?" — the #1 question for a physical unit ──────────
@@ -478,6 +478,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <BookingCalendar entityType="asset" entityId={id} modelId={asset.modelId} initialDate={initialDate} />
               </TabsContent>
 
+              {/* Maintenance */}
               <TabsContent value="maintenance" className="mt-4">
                 {asset.maintenanceLinks.length === 0 ? (
                   <div className="rounded-[var(--r-lg)] border-2 border-border p-7 text-center">
@@ -623,117 +624,114 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
             </Tabs>
           </DetailMain>
 
-          {/* ── Sidebar ──────────────────────────────────────────── */}
+          {/* ── Sidebar (lean: Details · Location · Specs · Activity) ─ */}
           <DetailSidebar>
-              {/* Status */}
-              <SidebarSection title="Status">
-                <div className="flex items-center gap-2">
-                  <StatusIndicator
-                    category="asset"
-                    value={asset.status}
-                    label={assetStatusLabels[asset.status] || formatLabel(asset.status)}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusIndicator
-                    category="condition"
-                    value={asset.condition}
-                    label={conditionLabels[asset.condition] || asset.condition}
-                  />
-                </div>
-              </SidebarSection>
-
-              {/* Asset Info */}
-              <SidebarSection title="Asset info">
-                <div className="space-y-1 text-table-cell">
-                  <div className="flex justify-between">
-                    <span className="text-muted">Asset tag</span>
-                    <span className="t-mono font-medium text-ink t-data">{asset.assetTag}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Serial number</span>
-                    <span className="t-mono font-medium text-ink t-data">{asset.serialNumber || "—"}</span>
-                  </div>
-                  {asset.customName && (
-                    <div className="flex justify-between">
-                      <span className="text-muted">Custom name</span>
-                      <span className="font-medium text-ink">{asset.customName}</span>
-                    </div>
-                  )}
-                  {asset.barcode && (
-                    <div className="flex justify-between">
-                      <span className="text-muted">Barcode</span>
-                      <span className="t-mono font-medium text-ink t-data">{asset.barcode}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted">Model</span>
-                    <Link href={`/assets/models/${asset.modelId}`} className={cn("font-medium text-ink hover:underline truncate ml-2 text-right rounded-sm", focusRing)}>
+            {/* Details — identity + purchase + T&T, omit unset rows */}
+            <SidebarSection title="Details">
+              <div className="space-y-1 text-table-cell">
+                <KvRow label="Asset tag" value={<span className="t-mono font-medium text-ink t-data">{asset.assetTag}</span>} />
+                {asset.serialNumber && (
+                  <KvRow label="Serial" value={<span className="t-mono font-medium text-ink t-data">{asset.serialNumber}</span>} />
+                )}
+                {asset.barcode && (
+                  <KvRow label="Barcode" value={<span className="t-mono font-medium text-ink t-data">{asset.barcode}</span>} />
+                )}
+                <KvRow
+                  label="Category"
+                  value={
+                    asset.model?.category ? (
+                      <span className="font-medium text-ink">{asset.model.category.name}</span>
+                    ) : (
+                      <span className="text-faint">Not set</span>
+                    )
+                  }
+                />
+                <KvRow
+                  label="Model"
+                  value={
+                    <Link
+                      href={`/assets/models/${asset.modelId}`}
+                      className={cn("font-medium text-ink hover:underline truncate text-right rounded-sm", focusRing)}
+                    >
                       {asset.model?.name || "—"}
                     </Link>
-                  </div>
-                  {asset.model?.category && (
-                    <div className="flex justify-between">
-                      <span className="text-muted">Category</span>
-                      <span className="font-medium text-ink">{asset.model.category.name}</span>
-                    </div>
-                  )}
-                </div>
-              </SidebarSection>
+                  }
+                />
+                <KvRow
+                  label="Condition"
+                  value={<span className="font-medium text-ink">{conditionLabels[asset.condition] || asset.condition}</span>}
+                />
+                {asset.purchaseDate && (
+                  <KvRow label="Purchased" value={<span className="font-medium text-ink">{formatDate(asset.purchaseDate)}</span>} />
+                )}
+                {asset.purchasePrice != null && (
+                  <KvRow label="Cost" value={<span className="font-medium text-ink t-data">${Number(asset.purchasePrice).toFixed(2)}</span>} />
+                )}
+                {(asset.supplier?.name || asset.purchaseSupplier) && (
+                  <KvRow label="Supplier" value={<span className="font-medium text-ink">{asset.supplier?.name || asset.purchaseSupplier}</span>} />
+                )}
+                {asset.warrantyExpiry && (
+                  <KvRow label="Warranty" value={<span className="font-medium text-ink">{formatDate(asset.warrantyExpiry)}</span>} />
+                )}
+              </div>
 
-              {/* Purchase */}
-              <SidebarSection title="Purchase">
-                <div className="space-y-1 text-table-cell">
-                  <div className="flex justify-between">
-                    <span className="text-muted">Date</span>
-                    <span className="font-medium text-ink">{formatDate(asset.purchaseDate)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Price</span>
-                    <span className="font-medium text-ink t-data">
-                      {asset.purchasePrice ? `$${Number(asset.purchasePrice).toFixed(2)}` : "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Supplier</span>
-                    <span className="font-medium text-ink">{asset.supplier?.name || asset.purchaseSupplier || "—"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Warranty</span>
-                    <span className="font-medium text-ink">{formatDate(asset.warrantyExpiry)}</span>
-                  </div>
+              {/* Test & tag — folded into Details (compliance is part of "what is it") */}
+              {asset.testTagAsset ? (
+                <div className="mt-3 space-y-1 border-t border-line pt-3 text-table-cell">
+                  <KvRow label="Test & tag" value={<span className="font-medium text-ink">{asset.testTagAsset.status?.replace(/_/g, " ") || "—"}</span>} />
+                  <KvRow
+                    label={<span className="flex items-center gap-1"><CalendarClock className="h-3.5 w-3.5" />Last tested</span>}
+                    value={<span className="font-medium text-ink">{formatDate(asset.testTagAsset.lastTestDate)}</span>}
+                  />
+                  <KvRow
+                    label={<span className="flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />Next due</span>}
+                    value={<span className="font-medium text-ink">{formatDate(asset.testTagAsset.nextDueDate)}</span>}
+                  />
+                  <Button variant="line" size="sm" className="mt-2 w-full" asChild>
+                    <Link href={`/test-and-tag/${asset.testTagAsset.id}`}>View T&amp;T details</Link>
+                  </Button>
                 </div>
-              </SidebarSection>
+              ) : asset.model?.requiresTestAndTag ? (
+                <div className="mt-3 border-t border-line pt-3 text-table-cell">
+                  <p className="text-muted">Test &amp; tag not registered</p>
+                  <Button variant="line" size="sm" className="mt-2 w-full" asChild>
+                    <Link href={`/test-and-tag/new?assetId=${asset.id}`}>Register for T&amp;T</Link>
+                  </Button>
+                </div>
+              ) : null}
+            </SidebarSection>
 
-              {/* Location */}
-              {asset.location && (
-                <SidebarSection title="Location">
-                  <div className="flex items-center gap-2 text-table-cell">
+            {/* Location — where it lives + parent/accessories */}
+            <SidebarSection title="Location">
+              <div className="space-y-1 text-table-cell">
+                {asset.location ? (
+                  <div className="flex items-center gap-2">
                     <MapPin className="h-3.5 w-3.5 text-muted shrink-0" />
                     <span className="font-medium text-ink">{asset.location.name}</span>
                   </div>
-                </SidebarSection>
-              )}
+                ) : (
+                  <p className="text-faint">No home location set</p>
+                )}
+              </div>
 
               {/* This asset is itself an accessory of another */}
               {asset.parentAsset && (
-                <SidebarSection title="Accessory of">
-                  <Link
-                    href={`/assets/registry/${asset.parentAsset.id}`}
-                    className={cn("flex items-center gap-2 text-table-cell text-ink hover:underline rounded-sm", focusRing)}
-                  >
-                    <Cable className="h-3.5 w-3.5 text-muted shrink-0" />
-                    <span className="font-medium">{asset.parentAsset.assetTag}</span>
-                    {asset.parentAsset.customName && (
-                      <span className="text-muted">{asset.parentAsset.customName}</span>
-                    )}
-                  </Link>
-                </SidebarSection>
+                <Link
+                  href={`/assets/registry/${asset.parentAsset.id}`}
+                  className={cn("mt-2 flex items-center gap-2 text-table-cell text-ink hover:underline rounded-sm", focusRing)}
+                >
+                  <Cable className="h-3.5 w-3.5 text-muted shrink-0" />
+                  <span className="font-medium">Accessory of {asset.parentAsset.assetTag}</span>
+                  {asset.parentAsset.customName && (
+                    <span className="text-muted">{asset.parentAsset.customName}</span>
+                  )}
+                </Link>
               )}
 
               {/* Accessories manager — only for top-level assets (not children) */}
               {!asset.parentAsset && (
-                <SidebarSection title="Accessories">
+                <div className="mt-3 border-t border-line pt-3">
+                  <p className="t-overline text-muted mb-1.5">Accessories</p>
                   <CanDo resource="asset" action="update" fallback={
                     (() => {
                       const ownBulkIds = new Set(asset.childBulkItems.map((c) => c.bulkAssetId));
@@ -777,71 +775,32 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       onChanged={() => refetchAsset()}
                     />
                   </CanDo>
-                </SidebarSection>
+                </div>
               )}
+            </SidebarSection>
 
-              {/* Specifications */}
-              {specs.length > 0 && (
-                <SidebarSection title="Specifications">
+            {/* Specs — model specifications + operator custom fields */}
+            {(specs.length > 0 ||
+              (asset.customFieldValues && Object.keys(asset.customFieldValues as Record<string, string>).length > 0)) && (
+              <SidebarSection title="Specs">
+                {specs.length > 0 && (
                   <div className="space-y-1 text-table-cell">
                     {specs.map((spec, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span className="text-muted">{spec.key}</span>
-                        <span className="font-medium text-ink t-data">{spec.value}</span>
-                      </div>
+                      <KvRow key={i} label={spec.key} value={<span className="font-medium text-ink t-data">{spec.value}</span>} />
                     ))}
                   </div>
-                </SidebarSection>
-              )}
-
-              {/* Operator-defined custom fields */}
-              <CustomFieldsDisplay
-                entityType="ASSET"
-                values={asset.customFieldValues as Record<string, string> | null | undefined}
-              />
-
-              {/* Test & Tag / Maintenance */}
-              <SidebarSection title="Test & tag">
-                {asset.testTagAsset ? (
-                  <div className="space-y-1 text-table-cell">
-                    <div className="flex justify-between">
-                      <span className="text-muted">Status</span>
-                      <span className="font-medium text-ink">{asset.testTagAsset.status?.replace(/_/g, " ") || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted flex items-center gap-1">
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        Last tested
-                      </span>
-                      <span className="font-medium text-ink">{formatDate(asset.testTagAsset.lastTestDate)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted flex items-center gap-1">
-                        <Wrench className="h-3.5 w-3.5" />
-                        Next due
-                      </span>
-                      <span className="font-medium text-ink">{formatDate(asset.testTagAsset.nextDueDate)}</span>
-                    </div>
-                    <Button variant="line" size="sm" className="w-full mt-2" asChild>
-                      <Link href={`/test-and-tag/${asset.testTagAsset.id}`}>View T&amp;T details</Link>
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-table-cell">
-                    <p className="text-muted">Not registered</p>
-                    {asset.model?.requiresTestAndTag && (
-                      <Button variant="line" size="sm" className="w-full mt-2" asChild>
-                        <Link href={`/test-and-tag/new?assetId=${asset.id}`}>Register for T&amp;T</Link>
-                      </Button>
-                    )}
-                  </div>
                 )}
+                <CustomFieldsDisplay
+                  entityType="ASSET"
+                  values={asset.customFieldValues as Record<string, string> | null | undefined}
+                />
               </SidebarSection>
+            )}
 
-              {/* Activity */}
-              <SidebarSection title="Activity" divider={false}>
-                <ActivityTimeline entityType="asset" entityId={id} />
-              </SidebarSection>
+            {/* Activity — realtime feed */}
+            <SidebarSection title="Activity" divider={false}>
+              <ActivityTimeline entityType="asset" entityId={id} />
+            </SidebarSection>
           </DetailSidebar>
         </DetailLayout>
       </div>
@@ -882,5 +841,15 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         pending={deleteMutation.isPending}
       />
     </FadeIn>
+  );
+}
+
+/** Compact key·value row for the lean sidebar. */
+function KvRow({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-muted shrink-0">{label}</span>
+      <span className="min-w-0 text-right">{value}</span>
+    </div>
   );
 }

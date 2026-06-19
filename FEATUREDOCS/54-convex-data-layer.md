@@ -493,6 +493,10 @@ rewired to Convex:
 - **`projectManager`** → `build-document-data.ts` call-sheet PM name/email read
   the frozen join. Now `api.projectManagers.listByProject` + a Prisma `user`
   lookup (Better Auth, kept).
+- **`assetBulkChild`** → `line-items.ts` `lookupAssetByTag` `hasAccessories`
+  flag counted DEDICATED bulk accessories from the frozen table (added after
+  cutover were invisible). Now `api.assetBulkChildren.list` filtered by
+  `parentAssetId` (the inline "stays on Prisma" comment was itself stale).
 
 **Not stale (deliberately left on Prisma):** `crewRole` / `crewSkill` reads —
 seed-only reference tables (no app writes ⇒ Prisma == Convex), and `crew.ts`'s

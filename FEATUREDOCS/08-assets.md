@@ -14,6 +14,35 @@ Stored in `Organization.metadata` JSON:
 - `reserveAssetTags(count)` — Atomic increment, called ONLY after successful creation
 - Users can override suggested tags. Adding/removing form rows doesn't burn numbers
 
+## Asset Registry List (`/assets/registry`)
+The list page (`page.tsx`) is a thin auth-gated wrapper that renders `<AssetsView />`.
+
+- **`AssetsView`** (`src/components/assets/assets-view.tsx`) — a Grid⇄Table
+  segmented toggle (`aria-pressed` + `focusRing`), persisted to localStorage key
+  `assets-view-mode`, **defaulting to Grid** (the visual gear-library is the point).
+  Mirrors the projects Board⇄Table pattern (`projects/projects-view.tsx`). In Grid
+  mode the toggle is injected into the gallery toolbar; in Table mode it sits above
+  the table's own toolbar.
+- **Grid — `AssetGallery`** (`src/components/assets/asset-gallery.tsx`) — a
+  responsive card grid (`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`)
+  grouped by category under a calm `t-overline` muted overline (uncategorised last).
+  Each card: cover photo on top (same resolver as the table — asset's own primary
+  photo, then the model's; falls back to a tokenised `ImageIcon` placeholder), model
+  name (truncate), asset tag (`t-mono`), a status pill (`getStatusColor("asset", …)`
+  via `StatusIndicator`), and a muted condition · location line. Whole card is a
+  focus-ringed `<Link href="/assets/registry/{id}">` with the RVLT hard-shadow lift.
+  Read-only browse surface: carries its **own** search box + the New-asset action.
+- **Table — `AssetTable`** (unchanged) — the dense power view: serialized/bulk
+  toggle, column filters, saved views, bulk-select + bulk-edit, force-return, and
+  CSV import/export. All existing behaviour preserved.
+- **Shared data source:** both views read the SAME reactive Convex source
+  (`useAssets(orgId)`) and the SAME cross-domain photo query
+  (`getAssetRegistryPhotos()`), enriched identically (model + category + location +
+  primary media), so they always show the same serialized assets. The Gallery only
+  shows serialized assets (the visual library); bulk assets remain Table-only.
+  Filters/bulk/CSV are intentionally **not** shared into the Gallery — the Grid
+  keeps its own client-side search only.
+
 ## Asset Record Page (`/assets/registry/[id]`)
 The serialized-asset detail page mirrors the approved project-detail "bar"
 (`projects/[id]` + `project-lifecycle.tsx`). Layout/composition only — all data,

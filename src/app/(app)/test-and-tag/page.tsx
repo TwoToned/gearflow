@@ -69,7 +69,7 @@ export default function TestAndTagPage() {
               <Button size="sm" variant="line" asChild>
                 <Link href="/test-and-tag/new">
                   <Plus className="mr-2 h-4 w-4" />
-                  Add item
+                  Add equipment
                 </Link>
               </Button>
             </CanDo>

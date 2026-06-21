@@ -115,6 +115,16 @@ Same pattern as asset tags. Stored in `Organization.metadata.testTag`:
 - `/test-and-tag/reports` — 10 report types
 - `/settings/test-and-tag/profiles` — Test profile management
 
+## Page header actions (UX prominence)
+Running a test is the primary task across the section, so the header CTAs are ranked
+test-first to avoid confusing "new test" with "register equipment":
+- **Overview** (`/test-and-tag`): primary "Quick test" (→ `quick-test`), secondary `line`
+  "Add equipment" (→ `new`), `line` "Registry" (→ `registry`).
+- **Registry** (`/test-and-tag/registry`): primary "New test" (→ `quick-test`), secondary
+  `line` "Add equipment" (→ `new`); "Sync from assets" (the `backfillTestTagAssets` action)
+  lives in a `⋯` overflow `DropdownMenu`. ("Add item"/"Sync" were the old prominent labels —
+  the bare "Add item" primary made registration look like the main task.)
+
 ## Server Actions
 - `src/server/test-tag-assets.ts` — CRUD, batch create, sync, reactivate
 - `src/server/test-tag-records.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation

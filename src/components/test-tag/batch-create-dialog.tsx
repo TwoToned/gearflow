@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
@@ -176,43 +176,49 @@ export function BatchCreateDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Equipment class</Label>
-              <Select
-                value={form.watch("equipmentClass")}
-                onValueChange={(v) => v && form.setValue("equipmentClass", v as BatchCreateTestTagFormValues["equipmentClass"])}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue>
-                    {equipmentClassOptions.find((o) => o.value === form.watch("equipmentClass"))?.label}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {equipmentClassOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                control={form.control}
+                name="equipmentClass"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {equipmentClassOptions.find((o) => o.value === field.value)?.label ?? "Class I"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {equipmentClassOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div className="space-y-2">
               <Label>Appliance type</Label>
-              <Select
-                value={form.watch("applianceType")}
-                onValueChange={(v) => v && form.setValue("applianceType", v as BatchCreateTestTagFormValues["applianceType"])}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue>
-                    {applianceTypeOptions.find((o) => o.value === form.watch("applianceType"))?.label}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {applianceTypeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                control={form.control}
+                name="applianceType"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {applianceTypeOptions.find((o) => o.value === field.value)?.label ?? "Appliance"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {applianceTypeOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
           </div>
 

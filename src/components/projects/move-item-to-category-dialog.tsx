@@ -110,7 +110,7 @@ function MoveItemToCategoryDialogBody({
         </select>
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} disabled={isPending}>

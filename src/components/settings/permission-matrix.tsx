@@ -102,10 +102,10 @@ export function PermissionMatrix({
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={selectAll} disabled={disabled}>
+        <Button type="button" variant="line" size="sm" onClick={selectAll} disabled={disabled}>
           Select All
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={clearAll} disabled={disabled}>
+        <Button type="button" variant="line" size="sm" onClick={clearAll} disabled={disabled}>
           Clear All
         </Button>
       </div>

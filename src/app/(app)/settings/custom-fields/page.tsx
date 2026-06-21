@@ -221,7 +221,7 @@ function FieldDialog({
           />
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="line" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
@@ -306,10 +306,10 @@ export default function CustomFieldsSettingsPage() {
                     {def.fieldKey}
                   </code>
                   {!def.isActive && (
-                    <Badge variant="outline" className="text-fg-4">Hidden</Badge>
+                    <Badge status="neutral" className="text-fg-4">Hidden</Badge>
                   )}
                   {def.required && (
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-600">
+                    <Badge status="neutral" className="border-amber-500/40 text-amber-600">
                       Required
                     </Badge>
                   )}

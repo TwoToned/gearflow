@@ -140,7 +140,7 @@ function MoveItemToGroupDialogBody({
         </div>
       )}
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="line" onClick={onClose}>
           {hasGroups ? "Cancel" : "Close"}
         </Button>
         {hasGroups && (

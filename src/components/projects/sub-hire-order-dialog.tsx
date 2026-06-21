@@ -117,12 +117,12 @@ function ConfirmDialog({
           </div>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose}>
+          <Button variant="line" size="sm" onClick={onClose}>
             Cancel
           </Button>
           <Button
             size="sm"
-            variant={action?.variant === "destructive" ? "destructive" : "default"}
+            variant="primary"
             onClick={() => {
               action?.onConfirm();
               onClose();
@@ -405,7 +405,7 @@ function SubHireListView({
       </div>
       {subHires.length > 0 && (
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="line" onClick={onClose}>Close</Button>
           <CanDo resource="subHire" action="create">
             <Button onClick={onCreateNew}>
               <Plus className="mr-1 h-3 w-3" />
@@ -466,7 +466,7 @@ function SubHireCreateView({
     <>
       <DialogHeader>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -516,7 +516,7 @@ function SubHireCreateView({
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onBack}>Cancel</Button>
+        <Button variant="line" onClick={onBack}>Cancel</Button>
         <Button
           onClick={() => createMutation.mutate()}
           disabled={!supplierId || createMutation.isPending}
@@ -733,7 +733,7 @@ function SubHireManageView({
     <>
       <DialogHeader>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
@@ -756,8 +756,10 @@ function SubHireManageView({
           </div>
           {/* Actions dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreVertical className="h-4 w-4" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -928,7 +930,7 @@ function SubHireManageView({
               <div className="flex items-center gap-1.5">
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="line"
                   onClick={() => setShowNewGroupInput(true)}
                 >
                   <FolderPlus className="mr-1 h-3 w-3" />
@@ -936,7 +938,7 @@ function SubHireManageView({
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="line"
                   onClick={() => { setEditingItem(null); setAddToGroupId(null); setShowItemForm(true); }}
                 >
                   <Plus className="mr-1 h-3 w-3" />
@@ -992,7 +994,7 @@ function SubHireManageView({
                 <div className="flex items-center justify-center gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="line"
                     onClick={() => setShowNewGroupInput(true)}
                   >
                     <FolderPlus className="mr-1 h-3 w-3" />
@@ -1080,8 +1082,10 @@ function SubHireManageView({
                       <span className="text-xs text-fg-4">{groupItems.length} item{groupItems.length !== 1 ? "s" : ""}</span>
                       <CanDo resource="subHire" action="update">
                         <DropdownMenu>
-                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-                            <MoreVertical className="h-3 w-3" />
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-3 w-3" />
+                            </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
@@ -1128,7 +1132,7 @@ function SubHireManageView({
                             <p className="text-xs text-fg-4 mb-2">No items in this group</p>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="line"
                               className="h-7 text-xs"
                               onClick={() => {
                                 setEditingItem(null);
@@ -1335,7 +1339,7 @@ function SubHireManageView({
       </div>
 
       <DialogFooter>
-        <Button variant="outline" onClick={onBack}>Done</Button>
+        <Button variant="line" onClick={onBack}>Done</Button>
       </DialogFooter>
 
       {/* Item add/edit sub-dialog */}
@@ -1542,7 +1546,7 @@ function SubHireGroupEditDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="line" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => onSave({
               title,
@@ -1622,8 +1626,10 @@ function SubHireItemRow({
       <TableCell className="py-2 w-[40px]">
         <CanDo resource="subHire" action="update">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreVertical className="h-3 w-3" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreVertical className="h-3 w-3" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -1916,7 +1922,7 @@ function SubHireItemForm({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="line" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={() => addMutation.mutate()}
             disabled={!description || addMutation.isPending}

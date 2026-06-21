@@ -26,7 +26,7 @@ export function ProjectCommentsButton({
 
   return (
     <CommentThreadPanel orgId={orgId} entityType="project" entityId={projectId}>
-      <Button variant="outline" size="sm" className="relative">
+      <Button variant="line" size="sm" className="relative">
         {blockingCount > 0 ? (
           <ShieldAlert className="mr-2 h-4 w-4 text-red-600" />
         ) : (

@@ -23,7 +23,9 @@ const SelectTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <SelectPrimitive.Icon render={<ChevronDown className="size-4 shrink-0 text-muted" />}></SelectPrimitive.Icon>
+    <SelectPrimitive.Icon asChild>
+      <ChevronDown className="size-4 shrink-0 text-muted" />
+    </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;

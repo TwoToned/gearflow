@@ -106,9 +106,11 @@ export function BulkDeleteDialog({
         </div>
 
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          <DialogClose asChild>
+            <Button variant="line">Cancel</Button>
+          </DialogClose>
           <Button
-            variant="destructive"
+            variant="primary"
             onClick={() => onConfirm()}
             disabled={!matches || pending}
           >

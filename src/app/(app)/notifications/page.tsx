@@ -182,7 +182,7 @@ export default function NotificationsPage() {
           description={description}
           actions={
             unreadCount > 0 ? (
-              <Button variant="outline" onClick={dismissAll}>
+              <Button variant="line" onClick={dismissAll}>
                 <CheckCheck className="mr-1.5 h-4 w-4" /> Dismiss All
               </Button>
             ) : undefined
@@ -195,7 +195,7 @@ export default function NotificationsPage() {
         <FadeIn delay={0.05}>
           <div className="flex flex-wrap gap-2">
             {errorCount > 0 && (
-              <Badge variant="destructive" className="text-xs">
+              <Badge status="overbooked" className="text-xs">
                 {errorCount} urgent
               </Badge>
             )}
@@ -205,7 +205,7 @@ export default function NotificationsPage() {
               </Badge>
             )}
             {infoCount > 0 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge status="neutral" className="text-xs">
                 {infoCount} info
               </Badge>
             )}
@@ -252,7 +252,7 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{n.title}</p>
-                        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">
+                        <Badge status="neutral" className="shrink-0 text-[10px] px-1.5 py-0">
                           {typeLabels[n.type] || n.type}
                         </Badge>
                       </div>

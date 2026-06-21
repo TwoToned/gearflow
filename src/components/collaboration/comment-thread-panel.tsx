@@ -75,18 +75,16 @@ function MentionPicker({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
-          />
-        }
-      >
-        <AtSign className="h-3.5 w-3.5" />
-        {selected.length > 0 ? `${selected.length} mentioned` : "Mention"}
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+        >
+          <AtSign className="h-3.5 w-3.5" />
+          {selected.length > 0 ? `${selected.length} mentioned` : "Mention"}
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
         {members.length === 0 && (
@@ -104,7 +102,7 @@ function MentionPicker({
               )
             }
             // Keep the menu open while toggling multiple people.
-            closeOnClick={false}
+            onSelect={(e) => e.preventDefault()}
           >
             {m.name}
           </DropdownMenuCheckboxItem>

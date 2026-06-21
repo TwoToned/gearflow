@@ -46,14 +46,14 @@ export default function ChangelogPage() {
                     <div className="p-4 pb-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge
-                          variant="secondary"
+                          status="neutral"
                           className="font-mono text-xs"
                         >
                           {entry.hash}
                         </Badge>
                         {i === 0 && (
                           <Badge
-                            variant="outline"
+                            status="neutral"
                             className="border-primary/40 text-primary text-xs"
                           >
                             Latest

@@ -84,7 +84,7 @@ export default function AdminSettingsPage() {
                 )}
               </div>
               <span className="font-semibold text-lg">{form.platformName}</span>
-              <Badge variant="outline" className="ml-auto text-xs">Preview</Badge>
+              <Badge status="neutral" className="ml-auto text-xs">Preview</Badge>
             </div>
 
             <div className="space-y-2">
@@ -146,7 +146,7 @@ export default function AdminSettingsPage() {
               <span className="text-sm text-fg-3">
                 Secret admin registration link:
               </span>
-              <Badge variant={adminRegEnabled ? "default" : "secondary"}>
+              <Badge status={adminRegEnabled ? "ok" : "neutral"}>
                 {adminRegEnabled ? "Enabled" : "Disabled"}
               </Badge>
               <span className="text-xs text-fg-3">

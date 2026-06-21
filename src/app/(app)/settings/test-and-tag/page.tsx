@@ -405,7 +405,7 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
       )}
 
       {canEdit && !showCreate && editingId === null && (
-        <Button variant="outline" size="sm" onClick={() => setShowCreate(true)}>
+        <Button variant="line" size="sm" onClick={() => setShowCreate(true)}>
           <Plus className="h-3.5 w-3.5 mr-1.5" />
           Create Auditor Link
         </Button>

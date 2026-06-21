@@ -88,7 +88,7 @@ function SwapPicker({
         {list.map((c) => (
           <Button
             key={c.assetId}
-            variant="outline"
+            variant="line"
             size="sm"
             className="h-7"
             disabled={swapMutation.isPending}

@@ -254,7 +254,7 @@ export default function LoginPage() {
 
             {/* Passkey */}
             <Button
-              variant="outline"
+              variant="line"
               className="w-full"
               onClick={handlePasskeyLogin}
               disabled={passkeyLoading || loading || checkingSSO}

@@ -164,7 +164,7 @@ function EditGroupDialogBody({
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
         <Button onClick={handleSave} disabled={!title.trim() || isPending || formDisabled}>

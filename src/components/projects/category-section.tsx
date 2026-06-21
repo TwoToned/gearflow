@@ -132,8 +132,10 @@ export function CategorySection({
         {/* Category actions menu */}
         {(onRename || onDelete) && (
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
-              <MoreHorizontal className="h-3 w-3" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover/cat:opacity-100 transition-opacity">
+                <MoreHorizontal className="h-3 w-3" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>

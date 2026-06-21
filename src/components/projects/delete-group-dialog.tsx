@@ -66,11 +66,11 @@ export function DeleteGroupDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="line" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            variant="destructive"
+            variant="primary"
             onClick={() => groupId && onConfirm(groupId)}
             disabled={isPending}
           >

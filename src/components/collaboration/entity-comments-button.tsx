@@ -32,7 +32,7 @@ export function EntityCommentsButton({
 
   return (
     <CommentThreadPanel orgId={orgId} entityType={entityType} entityId={entityId}>
-      <Button variant="outline" size="sm" className="relative">
+      <Button variant="line" size="sm" className="relative">
         <MessageCircle className="mr-2 h-4 w-4" />
         <span className="hidden sm:inline">Comments</span>
         {open > 0 && (

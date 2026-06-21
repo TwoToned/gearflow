@@ -45,7 +45,7 @@ export function SSOStatusSection({ enabled, canUpdate, onToggle }: Props) {
             <code className="flex-1 text-sm bg-bg-inset px-2 py-1 rounded truncate">
               {loginUrl}
             </code>
-            <Button variant="outline" size="sm" onClick={handleCopy}>
+            <Button variant="line" size="sm" onClick={handleCopy}>
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </Button>
           </div>

@@ -149,7 +149,7 @@ function AddGroupToolbarDialogBody({
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button variant="line" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
         <Button

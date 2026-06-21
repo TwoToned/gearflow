@@ -30,7 +30,7 @@ bugs where the flow appeared to run in reverse:
 
 **The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
 exactly like the lifecycle: **Pick → Prepped → Deployed → Returned → De-prepped** (then
-**Bulk check-in** and **Close-out** as trailing utilities). The primary button inside each tab
+**Close-out** as a trailing utility). The primary button inside each tab
 performs the action that advances gear to the next stage:
 
 | Tab (stage gear is in) | Shows | Button → next stage |
@@ -71,32 +71,26 @@ run, back into inventory) after being **returned**.
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- Permanent accessories (`childKind === "ACCESSORY"`) of a scanned asset render as read-only indented rows under the parent via `AccessoryChildRows` (`deploy` mode shows not-yet-out accessories). They cascade atomically with the parent — no separate scan/verify. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). **There is no warehouse UI for accessories** — the "Include accessories" toggle was removed; `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
 - Split bulk items (qty=1 with bulkAssetId) use the serialized return path
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
-- Accessory children render as read-only indented rows via `AccessoryChildRows` (`return` mode shows currently-deployed accessories), mirroring the Deploy tab. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories cascade back with their parent automatically on return — no separate rows or toggle. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### De-prep Tab
 - Shows gear at the **Returned** stage: `status === "RETURNED"` and `prepStatus === "PACKED"` (`returnedItems` filter; kit parents surface if any child/grandchild matches). Once de-prepped, `prepStatus` resets off PACKED and the item leaves this tab.
 - Renders by **reusing `DeployTab` with `mode="deprep"`** — identical grouping (`groupItems(returnedItems, "deploy")`), container sectioning (`deprepContainerGroups`) and selection keys (`allDeprepKeys` / `selectedDeprep`), so `handleDeprep` parses them exactly as before. Only the chrome differs: no deploy scanner, no accessories toggle, a single primary **Deprep** button, and the "remove container" action is hidden.
 - The **Deprep action moved here from the Deploy tab.** `handleDeprep` (lifted to a named callback in the page) runs RETURN checks where the model has check items (`fromDeprep: true` check queue), otherwise deprep straight back into inventory via `deprepItem`/`deprepKit`. Kits route through `startKitCheckFlow(..., "RETURN", "GOOD", true)`.
 
-### Bulk Check-In Tab
-A project-wide accessory totals view for accessory-heavy jobs (50 lights = 100
-clamps + 50 TrueCons). Instead of returning each parent's accessories per
-parent, it aggregates every **deployed accessory child** (`childKind: ACCESSORY`)
-across the whole project into per-identity totals — bulk by `bulkAssetId`,
-serialised by `modelId` — and lets the operator check a counted quantity in with
-one action. The count is distributed deterministically back across the
-underlying child line items via the canonical `returnLineUnits` primitive (the
-same one the per-parent Return path uses). Over-return is rejected, empty/zero
-submits are no-ops, and repeated partial returns accumulate safely. Additive and
-parallel to the Return tab — the per-parent flow is unchanged. See
-[Bulk Check-In Totals](./52-bulk-checkin.md).
+### Bulk Check-In Tab — REMOVED
+The project-wide accessory-totals check-in tab was **removed from the warehouse UI**
+(accessories are no longer surfaced as a separate warehouse concern — they cascade
+silently with their parent). The backend (`src/server/bulk-checkin.ts`,
+`src/lib/bulk-checkin.ts` and their tests) is retained but no longer wired into any
+UI. See [Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly

@@ -76,10 +76,6 @@ export interface DeployTabProps {
   clearContainerIsPending: boolean;
   checkOutIsPending: boolean;
 
-  // Accessories
-  includeAccessories: boolean;
-  onIncludeAccessoriesChange: (v: boolean) => void;
-
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
   toggleGroupSelection: (set: Set<string>, setFn: (s: Set<string>) => void, keys: string[]) => void;
@@ -121,8 +117,6 @@ export function DeployTab({
   toggleGroupSelection,
   toggleAll,
   renderGroupHeader,
-  includeAccessories,
-  onIncludeAccessoriesChange,
 }: DeployTabProps) {
   const isDeprep = mode === "deprep";
   return (
@@ -148,15 +142,6 @@ export function DeployTab({
                   : "Items prepped and ready to deploy."}
               </p>
               <div className="flex items-center gap-2">
-                {!isDeprep && (
-                  <label className="flex items-center gap-1.5 text-ui-text text-muted cursor-pointer">
-                    <Checkbox
-                      checked={includeAccessories}
-                      onCheckedChange={(c) => onIncludeAccessoriesChange(c === true)}
-                    />
-                    Include accessories
-                  </label>
-                )}
                 {isDeprep ? (
                   <Button
                     onClick={() => handleDeprep(selectedOut)}

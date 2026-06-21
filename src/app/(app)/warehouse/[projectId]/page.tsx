@@ -22,7 +22,6 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
-  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
@@ -87,7 +86,6 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
-import { BulkCheckInTab } from "@/components/warehouse/bulk-checkin-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
@@ -325,7 +323,6 @@ function WarehouseProjectPage({
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
   const [selectedDeprep, setSelectedDeprep] = useState<Set<string>>(new Set());
   const [selectedIn, setSelectedIn] = useState<Set<string>>(new Set());
-  const [includeAccessories, setIncludeAccessories] = useState(true);
 
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
@@ -1816,7 +1813,9 @@ function WarehouseProjectPage({
     if (items.length === 0) return;
 
     checkOutMutation
-      .mutateAsync({ items, includeAccessories })
+      // Accessories always cascade with their parent (they're permanently
+      // attached) — there's no longer a warehouse toggle for it.
+      .mutateAsync({ items, includeAccessories: true })
       .then(() => toast.success(`Deployed ${selectedOutCount} items`))
       .catch(() => {});
   };
@@ -2352,10 +2351,6 @@ function WarehouseProjectPage({
             <PackageOpen className="mr-1.5 h-4 w-4" />
             De-prepped ({deprepedItems.length})
           </TabsTrigger>
-          <TabsTrigger value="bulk-checkin">
-            <Layers className="mr-1.5 h-4 w-4" />
-            Bulk check-in
-          </TabsTrigger>
           <TabsTrigger value="close-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
             Close-out
@@ -2408,8 +2403,6 @@ function WarehouseProjectPage({
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}
           toggleExpanded={toggleExpanded}
-          includeAccessories={includeAccessories}
-          onIncludeAccessoriesChange={setIncludeAccessories}
           handleCheckOutSelected={handleCheckOutSelected}
           handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
@@ -2441,8 +2434,6 @@ function WarehouseProjectPage({
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}
           toggleExpanded={toggleExpanded}
-          includeAccessories={includeAccessories}
-          onIncludeAccessoriesChange={setIncludeAccessories}
           handleCheckOutSelected={handleCheckOutSelected}
           handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
@@ -2533,12 +2524,6 @@ function WarehouseProjectPage({
           </div>
         </TabsContent>
 
-        {/* ================================================================ */}
-        {/* BULK CHECK-IN TAB — accessory totals across the whole project    */}
-        {/* ================================================================ */}
-        <TabsContent value="bulk-checkin">
-          <BulkCheckInTab projectId={projectId} onChanged={refetchProject} />
-        </TabsContent>
 
         {/* ================================================================ */}
         {/* CLOSE-OUT TAB                                                    */}

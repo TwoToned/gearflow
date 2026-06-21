@@ -85,6 +85,8 @@ import { BulkCheckInTab } from "@/components/warehouse/bulk-checkin-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
+import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
+import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
   isBulkItem,
@@ -1268,10 +1270,18 @@ function WarehouseProjectPage({
     return true;
   });
 
+  // Per-stage counts for the lifecycle stepper (Pick/prep → … → De-prepped).
+  const stageCounts = summarizeWarehouseStages(equipmentItems);
+
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
+    // A returned piece of gear is DONE with the prep half of the flow — it lives
+    // in the Returned / De-prep stage, never back here. (Without this, a returned
+    // item whose prepStatus is no longer PACKED fell through below and reappeared
+    // in Pick/Prep, looking like it had never been sent out.)
+    if (item.status === "RETURNED") return false;
     // Kit parents: show if any children still need prepping
     if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
@@ -1290,7 +1300,6 @@ function WarehouseProjectPage({
     // After prep-splitting, exhausted originals have qty=0 — hide them
     if (item.quantity <= 0) return false;
     if (item.prepStatus === "PACKED") return false;
-    if (item.status === "RETURNED") return true;
     return true;
   });
 
@@ -2112,6 +2121,15 @@ function WarehouseProjectPage({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Lifecycle stepper — where every piece of this job's gear sits, left to
+          right. Returned gear shows in its own stage, never folded back into
+          Prep or Deploy. */}
+      <FadeIn>
+        <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] px-4 py-3">
+          <WarehouseLifecycle counts={stageCounts} />
+        </div>
+      </FadeIn>
 
       <Tabs defaultValue={initialTab}>
         <TabsList>

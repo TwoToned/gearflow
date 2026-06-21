@@ -6,19 +6,18 @@ import Link from "next/link";
 import { signUp, organization } from "@/lib/auth-client";
 import { getTheOrgId } from "@/server/public-org";
 import { usePlatformBranding } from "@/lib/use-platform-name";
-import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, ShieldX } from "lucide-react";
-import { FadeIn } from "@/components/ui/motion";
+import { AuthShell } from "../auth-playful";
 
 function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteId = searchParams.get("invite");
-  const { name: platformName, icon: platformIcon } = usePlatformBranding();
+  const { name: platformName } = usePlatformBranding();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,72 +78,65 @@ function RegisterContent() {
 
   if (policy === null) {
     return (
-      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      <div className="flex justify-center py-6 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted" />
       </div>
     );
   }
 
   if (policy === "DISABLED" && !inviteId) {
     return (
-      <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <>
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--r)] bg-out-soft text-t-out">
             <ShieldX className="h-5 w-5" />
           </div>
-          <h2 className="t-title">Registration Disabled</h2>
-          <p className="text-sm text-fg-3">
+          <h2 className="t-title text-ink">Registration disabled</h2>
+          <p className="mt-1 text-sm text-muted">
             New account registration is currently disabled. Contact an administrator for access.
           </p>
         </div>
         <div className="flex justify-center">
-          <p className="text-sm text-fg-3">
+          <p className="text-sm text-muted">
             Already have an account?{" "}
-            <Link href="/login" className="text-primary hover:underline">
+            <Link href="/login" className="text-link hover:underline">
               Sign in
             </Link>
           </p>
         </div>
-      </div>
+      </>
     );
   }
 
   if (policy === "INVITE_ONLY" && !inviteId) {
     return (
-      <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <>
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-inset text-fg-3">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--r)] bg-elev text-muted">
             <ShieldX className="h-5 w-5" />
           </div>
-          <h2 className="t-title">Invite Only</h2>
-          <p className="text-sm text-fg-3">
+          <h2 className="t-title text-ink">Invite only</h2>
+          <p className="mt-1 text-sm text-muted">
             Registration is invite-only. Contact an administrator to get an invitation.
           </p>
         </div>
         <div className="flex justify-center">
-          <p className="text-sm text-fg-3">
+          <p className="text-sm text-muted">
             Already have an account?{" "}
-            <Link href="/login" className="text-primary hover:underline">
+            <Link href="/login" className="text-link hover:underline">
               Sign in
             </Link>
           </p>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
-      <div className="mb-6 text-center">
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-          {platformIcon ? (
-            <DynamicIcon name={platformIcon} className="h-5 w-5" />
-          ) : (
-            platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
-          )}
-        </div>
-        <h2 className="t-title">Create your account</h2>
-        <p className="text-sm text-fg-3">
+    <>
+      <div className="mb-6">
+        <h2 className="t-title text-ink">Create your account</h2>
+        <p className="mt-1 text-sm text-muted">
           Get started with {platformName} for your AV business
         </p>
       </div>
@@ -171,10 +163,10 @@ function RegisterContent() {
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={inviteEmailLocked}
-              className={inviteEmailLocked ? "bg-bg-inset" : ""}
+              className={inviteEmailLocked ? "bg-elev" : ""}
             />
             {inviteEmailLocked && (
-              <p className="text-xs text-fg-3">
+              <p className="text-xs text-muted">
                 Email is set from your invitation and cannot be changed.
               </p>
             )}
@@ -198,27 +190,29 @@ function RegisterContent() {
         </form>
       </div>
       <div className="mt-6 flex justify-center">
-        <p className="text-sm text-fg-3">
+        <p className="text-sm text-muted">
           Already have an account?{" "}
-          <Link href="/login" className="text-primary hover:underline">
+          <Link href="/login" className="text-link hover:underline">
             Sign in
           </Link>
         </p>
       </div>
-    </div>
+    </>
   );
 }
 
 export default function RegisterPage() {
   return (
-    <FadeIn>
-    <Suspense fallback={
-      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
-      </div>
-    }>
-      <RegisterContent />
-    </Suspense>
-    </FadeIn>
+    <AuthShell accent="join" annotation="first one's on the house.">
+      <Suspense
+        fallback={
+          <div className="flex justify-center py-6 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted" />
+          </div>
+        }
+      >
+        <RegisterContent />
+      </Suspense>
+    </AuthShell>
   );
 }

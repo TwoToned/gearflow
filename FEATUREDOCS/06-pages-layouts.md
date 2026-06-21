@@ -19,6 +19,8 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 
 **Auth Layout** (`src/app/(auth)/layout.tsx`): Centered card, no sidebar
 
+**Auth playful shell** (`src/app/(auth)/auth-playful.tsx`): the login / register / admin-register screens share a decorative-only split-panel shell (`AuthShell`) following the marketing aesthetic (DESIGN.md §17 "Auth pages"). Desktop shows a `bg-paper-2` brand collage — `RvltFlowLogo` wordmark, the `FlowMascot` roadie, scattered module-hue `FeaturePatch` stickers (red is never a module hue), a CSS GAFF tape-roll sticker, doodle SVGs (star/arrow/squiggle), and Kalam (`.t-annotation`) annotations. The form sits on a `bg-card` surface with stickers peeking over the corners. Everything decorative is `aria-hidden` + `pointer-events-none`; the auth form logic (email/password/passkey/SSO, registration policy states, admin token gate) is untouched — the shell only wraps presentation. Personality/mascot/Kalam are sanctioned here per DESIGN.md §9 (onboarding moments) and §17; the DISABLED/INVITE_ONLY notice states stay plain.
+
 ## All Pages
 
 ### Authentication

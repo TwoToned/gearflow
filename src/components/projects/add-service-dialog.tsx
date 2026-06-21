@@ -4,7 +4,6 @@ import { useForm, Controller } from "react-hook-form";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -25,6 +24,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  SERVICE: "Service",
+  LABOUR: "Labour",
+  TRANSPORT: "Transport",
+  MISC: "Misc",
+};
+const SERVICE_TYPE_ORDER = ["SERVICE", "LABOUR", "TRANSPORT", "MISC"] as const;
+
+const PRICING_TYPE_LABELS: Record<string, string> = {
+  PER_DAY: "Per day",
+  PER_WEEK: "Per week",
+  FLAT: "Flat",
+  PER_HOUR: "Per hour",
+};
+const PRICING_TYPE_ORDER = ["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR"] as const;
 
 interface AddServiceDialogProps {
   projectId: string;
@@ -78,7 +96,7 @@ export function AddServiceDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Service / Other</DialogTitle>
+          <DialogTitle>Add service or other</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
@@ -86,27 +104,34 @@ export function AddServiceDialog({
         >
           <div className="space-y-2">
             <Label htmlFor="svc-type">Type</Label>
-            <select
-              id="svc-type"
-              {...form.register("type")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="SERVICE">Service</option>
-              <option value="LABOUR">Labour</option>
-              <option value="TRANSPORT">Transport</option>
-              <option value="MISC">Misc</option>
-            </select>
+            <Controller
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="svc-type">
+                    <SelectValue>{SERVICE_TYPE_LABELS[field.value ?? "SERVICE"] ?? "Service"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SERVICE_TYPE_ORDER.map((t) => (
+                      <SelectItem key={t} value={t}>{SERVICE_TYPE_LABELS[t]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="svc-description">Description *</Label>
+            <Label htmlFor="svc-description">Description <span className="text-red">*</span></Label>
             <Input
               id="svc-description"
               {...form.register("description")}
-              placeholder="e.g. Sound Engineer - 8hrs"
+              placeholder="e.g. Sound engineer — 8 hrs"
+              aria-invalid={!!form.formState.errors.description}
             />
             {form.formState.errors.description && (
-              <p className="text-xs text-destructive">
+              <p className="t-micro text-t-out">
                 {form.formState.errors.description.message}
               </p>
             )}
@@ -123,7 +148,7 @@ export function AddServiceDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="svc-unitPrice">Unit Price ($)</Label>
+              <Label htmlFor="svc-unitPrice">Unit price ($)</Label>
               <Input
                 id="svc-unitPrice"
                 type="number"
@@ -136,17 +161,23 @@ export function AddServiceDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="svc-pricingType">Pricing Type</Label>
-              <select
-                id="svc-pricingType"
-                {...form.register("pricingType")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="PER_DAY">Per Day</option>
-                <option value="PER_WEEK">Per Week</option>
-                <option value="FLAT">Flat</option>
-                <option value="PER_HOUR">Per Hour</option>
-              </select>
+              <Label htmlFor="svc-pricingType">Pricing type</Label>
+              <Controller
+                control={form.control}
+                name="pricingType"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="svc-pricingType">
+                      <SelectValue>{PRICING_TYPE_LABELS[field.value ?? "FLAT"] ?? "Flat"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRICING_TYPE_ORDER.map((p) => (
+                        <SelectItem key={p} value={p}>{PRICING_TYPE_LABELS[p]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="svc-duration">Duration</Label>
@@ -160,7 +191,7 @@ export function AddServiceDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Group Name</Label>
+            <Label>Group name</Label>
             <Controller
               control={form.control}
               name="groupName"
@@ -170,7 +201,7 @@ export function AddServiceDialog({
                   onChange={field.onChange}
                   options={existingGroups.map((g) => ({ value: g, label: g }))}
                   placeholder="e.g. Crew, Transport"
-                  searchPlaceholder="Search or type new group..."
+                  searchPlaceholder="Search or type new group…"
                   emptyMessage="Type to create a new group."
                   allowClear
                   creatable
@@ -207,10 +238,10 @@ export function AddServiceDialog({
           </div>
 
           <DialogFooter>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+            <Button type="button" variant="line" onClick={() => handleOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={mutation.isPending}>
               Add
             </Button>
           </DialogFooter>

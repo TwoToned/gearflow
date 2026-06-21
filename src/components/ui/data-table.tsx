@@ -696,9 +696,12 @@ export function DataTable<TData>({
                   <TableRow
                     key={rowId}
                     className={cn(
-                      // RVLT row: left-edge red bar reveals on hover (DESIGN.md tables)
-                      "group/row relative transition-colors",
-                      "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:rounded-full before:bg-red before:opacity-0 before:transition-opacity hover:before:opacity-100",
+                      // RVLT row hover. The left-edge red bar lives on the FIRST CELL,
+                      // NOT a ::before on the <tr> — a pseudo-element on a table-row gets
+                      // wrapped in an anonymous table-cell by the browser, which adds a
+                      // phantom leading cell and shifts every column right by one.
+                      "group/row transition-colors",
+                      "[&>td:first-child]:relative [&>td:first-child]:before:pointer-events-none [&>td:first-child]:before:absolute [&>td:first-child]:before:inset-y-0 [&>td:first-child]:before:left-0 [&>td:first-child]:before:w-0.5 [&>td:first-child]:before:rounded-full [&>td:first-child]:before:bg-red [&>td:first-child]:before:opacity-0 [&>td:first-child]:before:transition-opacity hover:[&>td:first-child]:before:opacity-100",
                       onRowClick && "cursor-pointer",
                       isSelected && "bg-select",
                     )}

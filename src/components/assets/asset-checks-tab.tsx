@@ -55,7 +55,7 @@ export function AssetChecksTab({ assetId }: { assetId: string }) {
     );
   }
 
-  const items = records as Record<string, unknown>[];
+  const items = records as unknown as Record<string, unknown>[];
 
   return (
     <div className="space-y-4">

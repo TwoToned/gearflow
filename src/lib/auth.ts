@@ -4,7 +4,7 @@ import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { env } from "@/env";
-import { prisma } from "./prisma";
+import { prisma } from "@/lib/prisma";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
 import { handleSSOProvisioning } from "./sso-provisioning";

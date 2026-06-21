@@ -308,13 +308,13 @@ export function ServicesPanel({
                       </DropdownMenuItem>
                     );
                   })}
-                  {(templates as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
+                  {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuGroup>
                         <DropdownMenuLabel>Templates</DropdownMenuLabel>
                       </DropdownMenuGroup>
-                      {(templates as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
+                      {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
                         const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
                         return (
                           <DropdownMenuItem
@@ -507,7 +507,7 @@ export function ServicesPanel({
           projectId={projectId}
           editingService={editingService}
           preselectedType={preselectedType}
-          templates={templates as Record<string, unknown>[]}
+          templates={templates as unknown as Record<string, unknown>[]}
           projectAddress={projectAddress}
           projectLatitude={projectLatitude}
           projectLongitude={projectLongitude}

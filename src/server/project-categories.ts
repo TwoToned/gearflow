@@ -1,18 +1,14 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
-import {
-  mirrorProjectCategoryCreate,
-  patchProjectCategoryInConvex,
-  removeProjectCategoryFromConvex,
-  removeProjectGroupFromConvex,
-  syncProjectCategoriesToConvex,
-} from "@/lib/project-grouping-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getProjectById } from "@/lib/projects-read";
 import {
@@ -21,261 +17,168 @@ import {
   resolveAttachedSupplier,
 } from "@/lib/line-item-tree-read";
 
+// ── Reads ────────────────────────────────────────────────────────────────────
+
 export async function getProjectCategories(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  // model + supplier are dual-written to Convex — attached in JS via
-  // attachLineItemTree below, not joined here (Phase 6 decommission).
+  const client = await getConvexClient();
+
+  // 1. Convex: categories + groups + slots
+  const [convexCategories, convexGroups] = await Promise.all([
+    client.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
+    client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
+  ]);
+
+  // Fetch all category slots in parallel (one call per category, typically ≤10)
+  const slotArrays = await Promise.all(
+    convexCategories.map((cat) => client.query(api.categorySlots.list, { projectCategoryId: cat.id })),
+  );
+  const allSlots = slotArrays.flat();
+  const slotByGroupId = new Map(allSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
+  const slotBySubHireGroupId = new Map(allSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
+
+  // 2. Prisma: line items + sub-hire groups (still Prisma domain)
   const lineItemInclude = {
     asset: true,
     bulkAsset: true,
     kit: true,
     childLineItems: {
-      include: {
-        asset: true,
-        bulkAsset: true,
-        kit: true,
-      },
+      include: { asset: true, bulkAsset: true, kit: true },
       orderBy: { sortOrder: "asc" as const },
     },
   };
 
-  const categories = await prisma.projectCategory.findMany({
-    where: { projectId, organizationId },
-    include: {
-      groups: {
-        include: {
-          lineItems: {
-            include: lineItemInclude,
-            orderBy: { sortOrder: "asc" },
-          },
-          slot: true,
+  const [allLineItems, subHireGroups] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: { projectId, organizationId },
+      include: lineItemInclude,
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.subHireGroup.findMany({
+      where: {
+        subHire: { projectId, organizationId },
+        targetCategoryId: { not: null },
+      },
+      include: {
+        subHire: { select: { id: true, orderNumber: true, status: true, supplierId: true } },
+        items: true,
+        lineItems: {
+          where: { isKitChild: false, parentLineItemId: null },
+          include: lineItemInclude,
+          orderBy: { sortOrder: "asc" },
         },
-        orderBy: { sortOrder: "asc" },
       },
-      // Sub-hire groups placed in this category (Phase 5b — cross-type
-      // unification). Returned alongside ProjectGroups so the equipment
-      // tab can render a unified ordered list per category. Includes the
-      // sub-hire shell (PO / supplier metadata) so each row can show
-      // "via Supplier" without an extra query.
-      subHireGroupTargets: {
-        include: {
-          slot: true,
-          subHire: {
-            select: {
-              id: true,
-              orderNumber: true,
-              status: true,
-              supplierId: true,
-            },
-          },
-          items: true,
-          lineItems: {
-            where: { isKitChild: false, parentLineItemId: null },
-            include: lineItemInclude,
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-      lineItems: {
-        where: { groupId: null },
-        include: lineItemInclude,
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-    orderBy: { sortOrder: "asc" },
-  });
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
 
-  // model + supplier live in Convex — attach across every line-item tree in the
-  // category composition (grouped, sub-hire-group, and ungrouped) plus the
-  // sub-hire shell's supplier. One maps round-trip serves the whole read.
+  // 3. Build lookup maps
   const attachMaps = await buildLineItemAttachMaps(organizationId);
 
-  // Build the canonical mixed-ordered group list per category. Cross-type
-  // sortOrder lives on CategorySlot; legacy groups without a slot row fall
-  // back to their own per-table sortOrder so existing projects keep working.
-  const withMixed = categories.map((cat) => {
-    type MixedSlot =
-      | { kind: "project"; sortOrder: number; projectGroupId: string }
-      | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+  const lineItemsByGroupId = new Map<string, typeof allLineItems[number][]>();
+  const lineItemsByCatId = new Map<string, typeof allLineItems[number][]>();
+  for (const li of allLineItems) {
+    if (li.isKitChild || li.parentLineItemId) continue;
+    if (li.groupId) {
+      const arr = lineItemsByGroupId.get(li.groupId) ?? [];
+      arr.push(li);
+      lineItemsByGroupId.set(li.groupId, arr);
+    } else if (li.categoryId) {
+      const arr = lineItemsByCatId.get(li.categoryId) ?? [];
+      arr.push(li);
+      lineItemsByCatId.set(li.categoryId, arr);
+    }
+  }
 
-    const mixedGroups: MixedSlot[] = [
-      ...cat.groups.map((g) => ({
-        kind: "project" as const,
-        sortOrder: g.slot?.sortOrder ?? g.sortOrder,
-        projectGroupId: g.id,
-      })),
-      ...cat.subHireGroupTargets.map((g) => ({
-        kind: "subHire" as const,
-        sortOrder: g.slot?.sortOrder ?? g.sortOrder,
-        subHireGroupId: g.id,
-      })),
-    ].sort((a, b) => a.sortOrder - b.sortOrder);
+  const subHireGroupsByCategory = new Map<string, typeof subHireGroups[number][]>();
+  for (const sg of subHireGroups) {
+    if (!sg.targetCategoryId) continue;
+    const arr = subHireGroupsByCategory.get(sg.targetCategoryId) ?? [];
+    arr.push(sg);
+    subHireGroupsByCategory.set(sg.targetCategoryId, arr);
+  }
 
-    return {
-      ...cat,
-      groups: cat.groups.map((g) => ({
-        ...g,
-        lineItems: attachLineItemTree(g.lineItems, attachMaps),
-      })),
-      subHireGroupTargets: cat.subHireGroupTargets.map((sg) => ({
-        ...sg,
-        subHire: {
-          ...sg.subHire,
-          supplier: resolveAttachedSupplier(sg.subHire.supplierId, attachMaps),
-        },
-        lineItems: attachLineItemTree(sg.lineItems, attachMaps),
-      })),
-      lineItems: attachLineItemTree(cat.lineItems, attachMaps),
-      mixedGroups,
-    };
-  });
+  const groupsByCategoryId = new Map<string, typeof convexGroups[number][]>();
+  for (const g of convexGroups) {
+    if (g.categoryId) {
+      const arr = groupsByCategoryId.get(g.categoryId) ?? [];
+      arr.push(g);
+      groupsByCategoryId.set(g.categoryId, arr);
+    }
+  }
+
+  // 4. Reconstruct categories
+  const withMixed = convexCategories
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((cat) => {
+      type MixedSlot =
+        | { kind: "project"; sortOrder: number; projectGroupId: string }
+        | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+
+      const catGroups = (groupsByCategoryId.get(cat.id) ?? [])
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((g) => {
+          const slot = slotByGroupId.get(g.id);
+          return {
+            ...g,
+            price: g.price ?? null,
+            suggestedPrice: g.suggestedPrice ?? null,
+            rentalPeriod: g.rentalPeriod ?? null,
+            rentalQuantity: g.rentalQuantity ?? null,
+            createdAt: new Date(g.createdAt ?? 0),
+            updatedAt: new Date(g.updatedAt ?? 0),
+            slot: slot
+              ? { ...slot, createdAt: new Date(slot.createdAt ?? 0), updatedAt: new Date(slot.updatedAt ?? 0) }
+              : null,
+            lineItems: attachLineItemTree(lineItemsByGroupId.get(g.id) ?? [], attachMaps),
+          };
+        });
+
+      const catSubHireGroups = (subHireGroupsByCategory.get(cat.id) ?? []).map((sg) => {
+        const slot = slotBySubHireGroupId.get(sg.id);
+        return {
+          ...sg,
+          slot: slot
+            ? { ...slot, createdAt: new Date(slot.createdAt ?? 0), updatedAt: new Date(slot.updatedAt ?? 0) }
+            : null,
+          subHire: {
+            ...sg.subHire,
+            supplier: resolveAttachedSupplier(sg.subHire.supplierId, attachMaps),
+          },
+          lineItems: attachLineItemTree(sg.lineItems, attachMaps),
+        };
+      });
+
+      const mixedGroups: MixedSlot[] = [
+        ...catGroups.map((g) => ({
+          kind: "project" as const,
+          sortOrder: g.slot?.sortOrder ?? g.sortOrder ?? 0,
+          projectGroupId: g.id,
+        })),
+        ...catSubHireGroups.map((sg) => ({
+          kind: "subHire" as const,
+          sortOrder: sg.slot?.sortOrder ?? sg.sortOrder ?? 0,
+          subHireGroupId: sg.id,
+        })),
+      ].sort((a, b) => a.sortOrder - b.sortOrder);
+
+      return {
+        ...cat,
+        createdAt: new Date(cat.createdAt ?? 0),
+        updatedAt: new Date(cat.updatedAt ?? 0),
+        groups: catGroups,
+        subHireGroupTargets: catSubHireGroups,
+        lineItems: attachLineItemTree(lineItemsByCatId.get(cat.id) ?? [], attachMaps),
+        mixedGroups,
+      };
+    });
 
   return serialize(withMixed);
 }
 
-export async function createProjectCategory(
-  projectId: string,
-  data: ProjectCategoryFormValues
-) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
-  const parsed = projectCategorySchema.parse(data);
-
-  // Get next sort order
-  const maxSort = await prisma.projectCategory.aggregate({
-    where: { projectId, organizationId },
-    _max: { sortOrder: true },
-  });
-
-  const category = await prisma.projectCategory.create({
-    data: {
-      organizationId,
-      projectId,
-      name: parsed.name,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
-  });
-  await mirrorProjectCategoryCreate(category);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "created",
-    entityType: "project",
-    entityId: projectId,
-    entityName: parsed.name,
-    summary: `Created category "${parsed.name}"`,
-  });
-
-  return serialize(category);
-}
-
-export async function updateProjectCategory(
-  categoryId: string,
-  data: Partial<ProjectCategoryFormValues>
-) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
-
-  const category = await prisma.projectCategory.update({
-    where: { id: categoryId, organizationId },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
-    },
-  });
-  await patchProjectCategoryInConvex(category.id, category);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "updated",
-    entityType: "project",
-    entityId: category.projectId,
-    entityName: category.name,
-    summary: `Updated category "${category.name}"`,
-  });
-
-  // Realtime collaboration feed — only on renames, not pure reorders.
-  if (data.name !== undefined) {
-    await writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: category.projectId,
-        action: "category_updated",
-        summary: `renamed a category to "${category.name}"`,
-        targetType: "category",
-        targetId: category.id,
-      },
-    );
-  }
-
-  return serialize(category);
-}
-
-export async function deleteProjectCategory(categoryId: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
-
-  const category = await prisma.projectCategory.findUniqueOrThrow({
-    where: { id: categoryId, organizationId },
-    include: {
-      groups: { include: { lineItems: true } },
-      lineItems: { where: { groupId: null } },
-    },
-  });
-
-  // Cascade: move all line items (from groups and standalone) to uncategorized
-  const allLineItemIds = [
-    ...category.groups.flatMap((g) => g.lineItems.map((li) => li.id)),
-    ...category.lineItems.map((li) => li.id),
-  ];
-
-  await prisma.$transaction([
-    // Unset category and group on all line items
-    ...(allLineItemIds.length > 0
-      ? [
-          prisma.projectLineItem.updateMany({
-            where: { id: { in: allLineItemIds } },
-            data: { categoryId: null, groupId: null },
-          }),
-        ]
-      : []),
-    // Delete groups (cascade handles the FK)
-    prisma.projectGroup.deleteMany({
-      where: { categoryId, organizationId },
-    }),
-    // Delete category
-    prisma.projectCategory.delete({
-      where: { id: categoryId, organizationId },
-    }),
-  ]);
-
-  // Mirror the cascade to Convex: groups removed first, then the category. (The
-  // line-item categoryId/groupId clears live in the line_item domain — migrated
-  // in step 4. project_group.categoryId clear-to-null on orphaned groups would be
-  // a no-op anyway; here they're hard-deleted.)
-  for (const g of category.groups) await removeProjectGroupFromConvex(g.id);
-  await removeProjectCategoryFromConvex(categoryId);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "deleted",
-    entityType: "project",
-    entityId: category.projectId,
-    entityName: category.name,
-    summary: `Deleted category "${category.name}" — ${allLineItemIds.length} items moved to uncategorized`,
-  });
-
-  return serialize({ success: true });
-}
-
 export async function getUncategorizedLineItems(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  // model + supplier are dual-written to Convex — attached in JS below.
+  // Line items are still Prisma-primary
   const items = await prisma.projectLineItem.findMany({
     where: {
       projectId,
@@ -288,11 +191,7 @@ export async function getUncategorizedLineItems(projectId: string) {
       bulkAsset: true,
       kit: true,
       childLineItems: {
-        include: {
-          asset: true,
-          bulkAsset: true,
-          kit: true,
-        },
+        include: { asset: true, bulkAsset: true, kit: true },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -302,28 +201,178 @@ export async function getUncategorizedLineItems(projectId: string) {
   return serialize(attachLineItemTree(items, attachMaps));
 }
 
+// ── Writes ───────────────────────────────────────────────────────────────────
+
+export async function createProjectCategory(
+  projectId: string,
+  data: ProjectCategoryFormValues,
+) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const parsed = projectCategorySchema.parse(data);
+  const client = await getConvexClient();
+
+  // Get next sort order from Convex
+  const existing = await client.query(api.projectCategories.listByProject, { projectId, orgId: organizationId });
+  const maxSort = existing.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
+
+  const id = createId();
+  const now = Date.now();
+  await client.mutation(api.projectCategories.create, {
+    id,
+    organizationId,
+    projectId,
+    name: parsed.name,
+    sortOrder: maxSort + 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "created",
+    entityType: "project",
+    entityId: projectId,
+    entityName: parsed.name,
+    summary: `Created category "${parsed.name}"`,
+  });
+
+  return serialize({ id, organizationId, projectId, name: parsed.name, sortOrder: maxSort + 1, createdAt: new Date(now), updatedAt: new Date(now) });
+}
+
+export async function updateProjectCategory(
+  categoryId: string,
+  data: Partial<ProjectCategoryFormValues>,
+) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
+
+  const category = await client.query(api.projectCategories.getById, { id: categoryId });
+  if (!category || category.organizationId !== organizationId) {
+    throw new Error("Category not found");
+  }
+
+  const patch: Record<string, unknown> = { updatedAt: Date.now() };
+  if (data.name !== undefined) patch.name = data.name;
+  if (data.sortOrder !== undefined) patch.sortOrder = Number(data.sortOrder);
+
+  await client.mutation(api.projectCategories.update, { id: categoryId, patch });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "updated",
+    entityType: "project",
+    entityId: category.projectId,
+    entityName: category.name,
+    summary: `Updated category "${category.name}"`,
+  });
+
+  if (data.name !== undefined) {
+    await writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: category.projectId,
+        action: "category_updated",
+        summary: `renamed a category to "${data.name}"`,
+        targetType: "category",
+        targetId: categoryId,
+      },
+    );
+  }
+
+  return serialize({ ...category, ...patch, createdAt: new Date(category.createdAt ?? 0), updatedAt: new Date(patch.updatedAt as number) });
+}
+
+export async function deleteProjectCategory(categoryId: string) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
+
+  const category = await client.query(api.projectCategories.getById, { id: categoryId });
+  if (!category || category.organizationId !== organizationId) {
+    throw new Error("Category not found");
+  }
+
+  // 1. Get all groups in this category from Convex
+  const categoryGroups = await client.query(api.projectGroups.listByCategoryId, { categoryId });
+
+  // 2. Get IDs of all line items in this category (for cascade null-out)
+  const groupIds = categoryGroups.map((g) => g.id);
+  const allLineItems = await prisma.projectLineItem.findMany({
+    where: {
+      organizationId,
+      OR: [
+        { groupId: { in: groupIds.length > 0 ? groupIds : ["__none__"] } },
+        { categoryId, groupId: null },
+      ],
+    },
+    select: { id: true },
+  });
+  const lineItemIds = allLineItems.map((li) => li.id);
+
+  // 3. Null out categoryId/groupId on line items (Prisma - line items still Prisma-primary)
+  if (lineItemIds.length > 0) {
+    await prisma.projectLineItem.updateMany({
+      where: { id: { in: lineItemIds } },
+      data: { categoryId: null, groupId: null },
+    });
+  }
+
+  // 4. Delete each group's slot + the group itself from Convex
+  for (const g of categoryGroups) {
+    const groupSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: g.id });
+    for (const slot of groupSlots) {
+      await client.mutation(api.categorySlots.remove, { id: slot.id });
+    }
+    await client.mutation(api.projectGroups.remove, { id: g.id });
+  }
+
+  // 5. Delete remaining category slots (sub-hire group slots)
+  const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: categoryId });
+  for (const slot of catSlots) {
+    await client.mutation(api.categorySlots.remove, { id: slot.id });
+  }
+
+  // 6. Delete the category from Convex
+  await client.mutation(api.projectCategories.remove, { id: categoryId });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "deleted",
+    entityType: "project",
+    entityId: category.projectId,
+    entityName: category.name,
+    summary: `Deleted category "${category.name}" — ${lineItemIds.length} items moved to uncategorized`,
+  });
+
+  return serialize({ success: true });
+}
+
 export async function reorderProjectCategories(
   projectId: string,
-  orderedIds: string[]
+  orderedIds: string[],
 ) {
   const { organizationId } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  await prisma.$transaction(
-    orderedIds.map((id, index) =>
-      prisma.projectCategory.update({
-        where: { id, organizationId },
-        data: { sortOrder: index },
-      })
-    )
-  );
-  await syncProjectCategoriesToConvex(orderedIds);
+  const now = Date.now();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await client.mutation(api.projectCategories.update, {
+      id: orderedIds[i],
+      patch: { sortOrder: i, updatedAt: now },
+    });
+  }
 
   return serialize({ success: true });
 }
 
 /**
  * Returns a map of lineItemId → overbookedInfo for all line items in a project.
- * Used by the equipment tab to show overbooked/reduced stock badges.
  */
 export async function getProjectOverbookedStatus(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
@@ -355,7 +404,6 @@ export async function getProjectOverbookedStatus(projectId: string) {
     project.id,
   );
 
-  // Convert Map to plain object for serialization
   const result: Record<string, {
     overBy: number;
     totalStock: number;

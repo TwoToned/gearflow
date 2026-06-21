@@ -32,6 +32,90 @@ export const getById = query({
   },
 });
 
+/**
+ * Look up a single test tag asset by its human-facing `testTagId` within an org
+ * (the scan / lookup flow). Uses the non-unique `by_organizationId_testTagId`
+ * index, so return `.first()` — duplicates are possible across the dual-write
+ * boundary and `.unique()` would throw.
+ */
+export const getByTestTagId = query({
+  args: { orgId: v.string(), testTagId: v.string() },
+  handler: async (ctx, { orgId, testTagId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_testTagId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagId", testTagId),
+      )
+      .first();
+  },
+});
+
+/**
+ * Alias of {@link getByTestTagId} kept for the scan-lookup consumer (Phase A).
+ * Same `.first()`-not-`.unique()` safety on the non-unique dual-write index.
+ */
+export const getByOrgTestTagId = query({
+  args: { orgId: v.string(), testTagId: v.string() },
+  handler: async (ctx, { orgId, testTagId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_testTagId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagId", testTagId),
+      )
+      .first();
+  },
+});
+
+
+/**
+ * Find all FAILED or OVERDUE active test tag assets for the given org that
+ * match any of the supplied asset or bulk-asset IDs. Used as the pre-flight
+ * T&T compliance gate before warehouse checkout. Returns the blocked rows;
+ * empty array = all clear.
+ */
+export const listBlockedForCheckout = query({
+  args: {
+    orgId: v.string(),
+    assetIds: v.array(v.string()),
+    bulkAssetIds: v.array(v.string()),
+  },
+  handler: async (ctx, { orgId, assetIds, bulkAssetIds }) => {
+    await requireService(ctx);
+    if (assetIds.length === 0 && bulkAssetIds.length === 0) return [];
+    const assetSet = new Set(assetIds);
+    const bulkSet = new Set(bulkAssetIds);
+    // Use the by_organizationId_status composite index to scan only FAILED/OVERDUE
+    const failed = await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "FAILED"))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    const overdue = await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "OVERDUE"))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    return [...failed, ...overdue].filter(
+      (r) =>
+        (r.assetId != null && assetSet.has(r.assetId)) ||
+        (r.bulkAssetId != null && bulkSet.has(r.bulkAssetId)),
+    );
+  },
+});
+
+export const listByAssetId = query({
+  args: { assetId: v.string() },
+  handler: async (ctx, { assetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

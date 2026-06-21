@@ -1,5 +1,6 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getModelById, getModelMap } from "@/lib/models-read";
@@ -16,10 +17,6 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { adjustBulkAvailability } from "@/lib/inventory-mutations";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
-import {
-  mirrorAssetBulkChildCreate,
-  removeAssetBulkChildFromConvex,
-} from "@/lib/asset-bulk-child-mirror";
 import { UserFacingError } from "@/lib/errors";
 
 /**
@@ -213,40 +210,42 @@ export async function addBulkChildToAsset(
   const bulkAsset = bulkAssetDoc && bulkAssetDoc.organizationId === organizationId ? bulkAssetDoc : null;
   if (!bulkAsset) throw new UserFacingError({ code: "NOT_FOUND", title: "Bulk asset not found", message: "The bulk accessory no longer exists." });
 
-  const result = await prisma.$transaction(async (tx) => {
-    if (parsed.allocationMode === "DEDICATED") {
-      // Permanently pull the quantity out of the shared pool (guarded).
+  const convex = await getConvexClient();
+
+  // maxSort from Convex (assetBulkChild is Convex-only after Phase B).
+  const existingChildren = await convex.query(api.assetBulkChildren.list, { orgId: organizationId });
+  const parentChildren = existingChildren.filter((c) => c.parentAssetId === parentAssetId);
+  const sortOrder = parentChildren.reduce((max, c) => Math.max(max, c.sortOrder ?? -1), -1) + 1;
+
+  const bulkChildId = createId();
+  const now = Date.now();
+
+  // DEDICATED mode: deduct from the shared pool atomically in Prisma (bulkAsset
+  // is still dual-written). Convex quantity mirror follows after.
+  if (parsed.allocationMode === "DEDICATED") {
+    await prisma.$transaction(async (tx) => {
       await adjustBulkAvailability(tx, organizationId, [
         { bulkAssetId: parsed.bulkAssetId, delta: -parsed.quantity },
       ]);
-    }
-
-    const maxSort = await tx.assetBulkChild.aggregate({
-      where: { parentAssetId },
-      _max: { sortOrder: true },
     });
+  }
 
-    return tx.assetBulkChild.create({
-      data: {
-        organizationId,
-        parentAssetId,
-        bulkAssetId: parsed.bulkAssetId,
-        quantity: parsed.quantity,
-        allocationMode: parsed.allocationMode,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-        notes: parsed.notes,
-        addedById: userId,
-      },
-      include: { bulkAsset: true },
-    });
+  await convex.mutation(api.assetBulkChildren.createIfMissing, {
+    id: bulkChildId,
+    organizationId,
+    parentAssetId,
+    bulkAssetId: parsed.bulkAssetId,
+    quantity: parsed.quantity,
+    allocationMode: parsed.allocationMode,
+    sortOrder,
+    notes: parsed.notes ?? undefined,
+    addedAt: now,
+    addedById: userId,
   });
-  // Mirror the created bulk child into Convex AFTER the Prisma tx commits
-  // (Convex calls cannot run inside a Prisma $transaction). strip() drops the
-  // nested bulkAsset relation — only scalar columns are sent.
-  await mirrorAssetBulkChildCreate(result as unknown as Record<string, unknown>);
+
   const [, bulkModel] = await Promise.all([
     parsed.allocationMode === "DEDICATED" ? syncBulkAssetsToConvex([parsed.bulkAssetId]) : Promise.resolve(),
-    getModelById(result.bulkAsset.modelId),
+    getModelById(bulkAsset.modelId),
   ]);
 
   await logActivity({
@@ -262,7 +261,19 @@ export async function addBulkChildToAsset(
     assetId: parent.id,
   });
 
-  return serialize({ ...result, bulkAsset: { ...result.bulkAsset, model: bulkModel } });
+  return serialize({
+    id: bulkChildId,
+    organizationId,
+    parentAssetId,
+    bulkAssetId: parsed.bulkAssetId,
+    quantity: parsed.quantity,
+    allocationMode: parsed.allocationMode,
+    sortOrder,
+    notes: parsed.notes ?? null,
+    addedAt: new Date(now),
+    addedById: userId,
+    bulkAsset: { ...bulkAsset, model: bulkModel },
+  });
 }
 
 /** Detach a serialised accessory from its parent. */
@@ -324,18 +335,8 @@ export async function removeBulkChildFromAsset(
     "update",
   );
 
-  const bulkChild = await prisma.assetBulkChild.findUnique({
-    where: { id: bulkChildId },
-    select: {
-      id: true,
-      organizationId: true,
-      parentAssetId: true,
-      bulkAssetId: true,
-      quantity: true,
-      allocationMode: true,
-      bulkAsset: { select: { assetTag: true } },
-    },
-  });
+  const convex = await getConvexClient();
+  const bulkChild = await convex.query(api.assetBulkChildren.getById, { id: bulkChildId });
   if (
     !bulkChild ||
     bulkChild.organizationId !== organizationId ||
@@ -343,19 +344,17 @@ export async function removeBulkChildFromAsset(
   ) {
     throw new UserFacingError({ code: "NOT_FOUND", title: "Accessory not found", message: "That accessory is not attached to this asset." });
   }
+  const bulkAssetDoc = await getBulkAssetById(bulkChild.bulkAssetId);
 
-  await prisma.$transaction(async (tx) => {
-    if (bulkChild.allocationMode === "DEDICATED") {
-      // Return the dedicated quantity to the shared pool.
+  if (bulkChild.allocationMode === "DEDICATED") {
+    // Return the dedicated quantity to the shared pool atomically in Prisma.
+    await prisma.$transaction(async (tx) => {
       await adjustBulkAvailability(tx, organizationId, [
         { bulkAssetId: bulkChild.bulkAssetId, delta: bulkChild.quantity },
       ]);
-    }
-    await tx.assetBulkChild.delete({ where: { id: bulkChildId } });
-  });
-  // Mirror the deletion into Convex AFTER the Prisma tx commits (Convex calls
-  // cannot run inside a Prisma $transaction). id was captured before the tx.
-  await removeAssetBulkChildFromConvex(bulkChildId);
+    });
+  }
+  await convex.mutation(api.assetBulkChildren.remove, { id: bulkChildId });
   // DEDICATED allocation returned stock to the shared pool — mirror the quantity.
   if (bulkChild.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([bulkChild.bulkAssetId]);
 
@@ -366,8 +365,8 @@ export async function removeBulkChildFromAsset(
     action: "UPDATE",
     entityType: "asset",
     entityId: parentAssetId,
-    entityName: bulkChild.bulkAsset.assetTag,
-    summary: `Detached ${bulkChild.quantity}× ${bulkChild.bulkAsset.assetTag}`,
+    entityName: bulkAssetDoc?.assetTag ?? bulkChild.bulkAssetId,
+    summary: `Detached ${bulkChild.quantity}× ${bulkAssetDoc?.assetTag ?? bulkChild.bulkAssetId}`,
     details: { accessory: { bulkAssetId: bulkChild.bulkAssetId, quantity: bulkChild.quantity } },
     assetId: parentAssetId,
   });

@@ -1,0 +1,22 @@
+-- Drop the inbound FK constraint into the frozen Prisma `group_template` table.
+--
+-- Why: GroupTemplate PARENT rows were inverted to Convex-only (Phase B of the
+-- Convex domain-only decommission). New group templates are created ONLY in
+-- Convex; the Prisma `group_template` table is no longer written. The lone
+-- inbound FK
+--   group_template_item.templateId -> group_template(id)  (required, Cascade)
+-- would therefore reject any net-new Convex-only template (the child item has no
+-- Prisma `group_template` row to point at). `templateId` becomes a plain external
+-- id holding the Convex cuid — matching how Convex itself stores FKs
+-- (v.string()). The column + index stay; only the constraint is dropped.
+--
+-- The Cascade that constraint carried (auto-delete a template's child items when
+-- the parent is deleted) is re-implemented cross-store in deleteGroupTemplate:
+-- after removing the Convex parent it runs
+-- prisma.groupTemplateItem.deleteMany({ where: { templateId } }). The child
+-- group_template_item rows STAY a Prisma table (not a Convex domain).
+--
+-- IF EXISTS keeps this idempotent across environments where the constraint may
+-- already be absent.
+
+ALTER TABLE "group_template_item" DROP CONSTRAINT IF EXISTS "group_template_item_templateId_fkey";

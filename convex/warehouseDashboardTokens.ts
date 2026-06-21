@@ -31,6 +31,25 @@ export const getById = query({
   },
 });
 
+/**
+ * Look up a token by its SHA-256 `tokenHash` (the secure public-endpoint lookup
+ * the old Prisma `findUnique({ where: { tokenHash } })` did — `tokenHash` is the
+ * `@unique` column). Service-only; the warehouse-display public route validates
+ * the raw token by hashing then calling this. HAND-ADDED for Phase B write
+ * inversion (bucket-2 tokens). Uses `.unique()` on by_tokenHash to preserve the
+ * one-row-per-hash invariant.
+ */
+export const getByTokenHash = query({
+  args: { tokenHash: v.string() },
+  handler: async (ctx, { tokenHash }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("warehouseDashboardTokens")
+      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", tokenHash))
+      .unique();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

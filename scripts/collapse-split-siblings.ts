@@ -19,6 +19,7 @@
  */
 
 import { prisma } from "../src/lib/prisma";
+import { getModelMap } from "../src/lib/models-read";
 import { runCollapse } from "../src/server/split-sibling-collapse";
 
 const args = process.argv.slice(2);
@@ -68,17 +69,27 @@ async function main() {
         where: { id: { in: canonicalIds } },
         select: {
           id: true,
+          organizationId: true,
+          modelId: true,
           project: { select: { projectNumber: true } },
-          model: { select: { name: true } },
         },
       })
     : [];
   const byId = new Map(canonicalRows.map((c) => [c.id, c]));
 
+  // Model FK was dropped (Phase B); resolve model names from the Convex mirror
+  // (replaces the old nested `model.select.name`). Build one map per org touched.
+  const orgIds = [...new Set(canonicalRows.map((c) => c.organizationId))];
+  const modelMaps = new Map(
+    await Promise.all(orgIds.map(async (oid) => [oid, await getModelMap(oid)] as const)),
+  );
+  const modelNameOf = (c: { organizationId: string; modelId: string | null } | undefined) =>
+    c?.modelId ? modelMaps.get(c.organizationId)?.get(c.modelId)?.name ?? null : null;
+
   for (const plan of mergeable) {
     const c = byId.get(plan.canonicalId);
     console.log(
-      `  ${apply ? "MERGE" : "PLAN "}  ${c?.project.projectNumber ?? "?"}  ${c?.model?.name ?? "?"}  canonical=${plan.canonicalId}  merging ${plan.moves.length}`,
+      `  ${apply ? "MERGE" : "PLAN "}  ${c?.project.projectNumber ?? "?"}  ${modelNameOf(c) ?? "?"}  canonical=${plan.canonicalId}  merging ${plan.moves.length}`,
     );
     for (const m of plan.moves) {
       console.log(

@@ -8,6 +8,7 @@ import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
 import { getModelById } from "@/lib/models-read";
+import { getModelMediaFromConvex } from "@/lib/media-read";
 
 export async function addModelMedia(data: {
   modelId: string;
@@ -153,11 +154,12 @@ export async function reorderModelMedia(modelId: string, orderedIds: string[]) {
 export async function getModelMedia(modelId: string) {
   const { organizationId } = await getOrgContext();
 
-  const media = await prisma.modelMedia.findMany({
-    where: { modelId, organizationId },
-    include: { file: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Read the gallery from the Convex mirror (dual-written, backfilled). The
+  // parent model is org-unique, but keep the org filter for parity with the
+  // old Prisma `where: { modelId, organizationId }`. See media-read.ts.
+  const media = (await getModelMediaFromConvex(modelId)).filter(
+    (m) => m.organizationId === organizationId,
+  );
 
   return serialize(media);
 }

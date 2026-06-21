@@ -17,9 +17,22 @@ import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate } from "@/lib/project-mirror";
 import { flexibleDateParse } from "@/lib/woocommerce-utils";
 import {
+  getWooCommerceOrderLogsPage,
+  getFailedOrderLogById,
+} from "@/lib/woocommerce-order-logs-read";
+import {
   wooCommerceIntegrationSchema,
   type WooCommerceIntegrationFormValues,
 } from "@/lib/validations/woocommerce";
+
+// wooCommerceOrderLog is CONVEX-ONLY (bucket-2 Phase B write inversion): every
+// create/update is written via api.wooCommerceOrderLogs.* (createId() + Date.now())
+// with no Prisma row and no mirror; reads go through
+// src/lib/woocommerce-order-logs-read.ts. The table has NO @@unique constraint and no
+// inbound FK — webhook idempotency (dedup by wooOrderId + COMPLETED) is replicated as a
+// Convex read-before-write in the webhook route. wooCommerceIntegration stays on Prisma
+// (not part of this bucket). The Prisma `woocommerce_order_log` table is left unwritten
+// until Phase C drops it.
 
 // ─── Server Actions (UI) ────────────────────────────────────────────────────
 
@@ -121,23 +134,13 @@ export async function getWooCommerceOrderLogs(params?: {
   const page = params?.page ?? 1;
   const pageSize = params?.pageSize ?? 20;
 
-  const where = {
-    organizationId,
-    ...(params?.status && { status: params.status as never }),
-  };
-
-  const [items, total] = await Promise.all([
-    prisma.wooCommerceOrderLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        project: { select: { id: true, projectNumber: true, name: true } },
-      },
-    }),
-    prisma.wooCommerceOrderLog.count({ where }),
-  ]);
+  // Convex-only read: status filter + createdAt-desc + pagination + project join
+  // reproduced in JS (no Prisma fallback).
+  const { items, total } = await getWooCommerceOrderLogsPage(organizationId, {
+    page,
+    pageSize,
+    status: params?.status,
+  });
 
   return serialize({ items, total, page, pageSize });
 }
@@ -145,9 +148,7 @@ export async function getWooCommerceOrderLogs(params?: {
 export async function retryFailedOrder(logId: string) {
   const { organizationId } = await requirePermission("orgSettings", "update");
 
-  const log = await prisma.wooCommerceOrderLog.findFirst({
-    where: { id: logId, organizationId, status: "FAILED" },
-  });
+  const log = await getFailedOrderLogById(organizationId, logId);
   if (!log) throw new Error("Order log not found or not in FAILED status");
 
   const integration = await prisma.wooCommerceIntegration.findUnique({
@@ -255,20 +256,28 @@ export async function processWooCommerceOrder(
   integration: WooCommerceIntegrationConfig,
   existingLogId?: string,
 ) {
-  const log = existingLogId
-    ? await prisma.wooCommerceOrderLog.update({
-        where: { id: existingLogId },
-        data: { status: "PROCESSING" },
-      })
-    : await prisma.wooCommerceOrderLog.create({
-        data: {
-          organizationId: orgId,
-          wooOrderId: order.id,
-          wooOrderNumber: order.number ?? null,
-          status: "PROCESSING",
-          payload: order as never,
-        },
-      });
+  // Convex-only write. Either move an existing log to PROCESSING (retry) or create a
+  // fresh PROCESSING log. `logId` is the cuid we track through the rest of the flow.
+  const convex = await getConvexClient();
+  let logId: string;
+  if (existingLogId) {
+    logId = existingLogId;
+    await convex.mutation(api.wooCommerceOrderLogs.update, {
+      id: existingLogId,
+      patch: { status: "PROCESSING" },
+    });
+  } else {
+    logId = createId();
+    await convex.mutation(api.wooCommerceOrderLogs.create, {
+      id: logId,
+      organizationId: orgId,
+      wooOrderId: order.id,
+      wooOrderNumber: order.number ?? undefined,
+      status: "PROCESSING",
+      payload: order,
+      createdAt: Date.now(),
+    });
+  }
 
   try {
     // 1. Create or find client
@@ -339,14 +348,14 @@ export async function processWooCommerceOrder(
     const matchedCount = matchResults.filter((m) => m.matched).length;
     const totalCount = matchResults.length;
 
-    await prisma.wooCommerceOrderLog.update({
-      where: { id: log.id },
-      data: {
+    await convex.mutation(api.wooCommerceOrderLogs.update, {
+      id: logId,
+      patch: {
         status: "COMPLETED",
         projectId: project.id,
         clientId: client.id,
-        matchResults: matchResults as never,
-        dateExtraction: dates as never,
+        matchResults: matchResults,
+        dateExtraction: dates,
       },
     });
 
@@ -368,9 +377,9 @@ export async function processWooCommerceOrder(
       await notifyNewWebsiteOrder(orgId, project, client, matchedCount, totalCount, integration.notifyUserIds);
     }
   } catch (error) {
-    await prisma.wooCommerceOrderLog.update({
-      where: { id: log.id },
-      data: {
+    await convex.mutation(api.wooCommerceOrderLogs.update, {
+      id: logId,
+      patch: {
         status: "FAILED",
         errorMessage: error instanceof Error ? error.message : String(error),
       },
@@ -601,15 +610,22 @@ async function resolveLocation(
 
       if (bestMatch) return bestMatch.id;
 
-      // 4. No match — create a new VENUE location
-      const newLocation = await prisma.location.create({
-        data: {
-          organizationId: orgId,
-          name: locationName,
-          type: "VENUE",
-          // If the meta value looks like an address (contains comma or numbers), store as address too
-          address: /\d/.test(locationName) || locationName.includes(",") ? locationName : null,
-        },
+      // 4. No match — create a new VENUE location. Locations are Convex-only
+      // (Phase B write inversion), so write the Convex doc directly (no Prisma row).
+      const newLocationId = createId();
+      const now = Date.now();
+      const address =
+        /\d/.test(locationName) || locationName.includes(",") ? locationName : undefined;
+      await (await getConvexClient()).mutation(api.locations.create, {
+        id: newLocationId,
+        organizationId: orgId,
+        name: locationName,
+        type: "VENUE",
+        address,
+        isDefault: false,
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
       });
 
       await logActivity({
@@ -618,12 +634,12 @@ async function resolveLocation(
         userName: "WooCommerce",
         action: "CREATE",
         entityType: "location",
-        entityId: newLocation.id,
-        entityName: newLocation.name,
+        entityId: newLocationId,
+        entityName: locationName,
         summary: `Auto-created venue location from WooCommerce order`,
       });
 
-      return newLocation.id;
+      return newLocationId;
     }
   }
 

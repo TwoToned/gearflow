@@ -32,6 +32,45 @@ export const getById = query({
   },
 });
 
+/** Assignments for one kit, org-scoped. Replaces a Prisma findMany by kitId. */
+export const listByKitId = query({
+  args: { orgId: v.string(), kitId: v.string() },
+  handler: async (ctx, { orgId, kitId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("kitCheckItems")
+      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** Assignments for one check item across all kits, org-scoped (delete guard). */
+export const listByCheckItemId = query({
+  args: { orgId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("kitCheckItems")
+      .withIndex("by_checkItemId", (q) => q.eq("checkItemId", checkItemId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** Get one kit-check-item assignment by kit + checkItem (first match, org-scoped). */
+export const getByKitAndCheckItem = query({
+  args: { orgId: v.string(), kitId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, kitId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("kitCheckItems")
+      .withIndex("by_kitId_checkItemId", (q) => q.eq("kitId", kitId).eq("checkItemId", checkItemId))
+      .collect();
+    return rows.find((r) => r.organizationId === orgId) ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

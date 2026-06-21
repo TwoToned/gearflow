@@ -5,6 +5,7 @@ import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { getAssetById } from "@/lib/assets-read";
+import { getAssetMediaFromConvex } from "@/lib/media-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
@@ -125,11 +126,12 @@ export async function setAssetPrimaryPhoto(assetId: string, mediaId: string) {
 export async function getAssetMedia(assetId: string) {
   const { organizationId } = await getOrgContext();
 
-  const media = await prisma.assetMedia.findMany({
-    where: { assetId, organizationId },
-    include: { file: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Read the gallery from the Convex mirror (dual-written, backfilled). The
+  // parent asset is org-unique, but keep the org filter for parity with the
+  // old Prisma `where: { assetId, organizationId }`. See media-read.ts.
+  const media = (await getAssetMediaFromConvex(assetId)).filter(
+    (m) => m.organizationId === organizationId,
+  );
 
   return serialize(media);
 }

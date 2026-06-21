@@ -1,23 +1,34 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { syncProjectManagersToConvex } from "@/lib/project-subtable-mirror";
+import { getProjectManagerRows } from "@/lib/project-managers-read";
 
 export async function getProjectManagers(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
 
-  const managers = await prisma.projectManager.findMany({
-    where: { projectId, organizationId },
-    include: {
-      user: {
+  // projectManager rows come from Convex. The `user` half is Better Auth and
+  // stays a batched Prisma lookup.
+  const rows = await getProjectManagerRows(organizationId, projectId);
+
+  const userIds = [...new Set(rows.map((r) => r.userId))];
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
         select: { id: true, name: true, email: true, image: true },
-      },
-    },
-    orderBy: { addedAt: "asc" },
-  });
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const managers = rows.map((r) => ({
+    ...r,
+    user: userMap.get(r.userId) ?? null,
+  }));
 
   return serialize(managers);
 }
@@ -28,7 +39,7 @@ export async function addProjectManager(projectId: string, userId: string) {
     "manage"
   );
 
-  // Verify user belongs to org
+  // Verify user belongs to org (Auth table — stays Prisma).
   const membership = await prisma.member.findFirst({
     where: { organizationId, userId },
   });
@@ -36,20 +47,21 @@ export async function addProjectManager(projectId: string, userId: string) {
     throw new Error("User is not a member of this organization");
   }
 
-  const manager = await prisma.projectManager.create({
-    data: {
-      organizationId,
-      projectId,
-      userId,
-    },
-    include: {
-      user: {
-        select: { id: true, name: true, email: true, image: true },
-      },
-    },
+  // Fetch user for return value + log message (Auth — stays Prisma).
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, image: true },
   });
 
-  await syncProjectManagersToConvex(organizationId, projectId);
+  const convex = await getConvexClient();
+  const id = createId();
+  await convex.mutation(api.projectManagers.createIfMissing, {
+    id,
+    organizationId,
+    projectId,
+    userId,
+    addedAt: Date.now(),
+  });
 
   await logActivity({
     organizationId,
@@ -58,11 +70,11 @@ export async function addProjectManager(projectId: string, userId: string) {
     action: "updated",
     entityType: "project",
     entityId: projectId,
-    entityName: manager.user.name ?? manager.user.email,
-    summary: `Added ${manager.user.name ?? manager.user.email} as project manager`,
+    entityName: user?.name ?? user?.email ?? userId,
+    summary: `Added ${user?.name ?? user?.email ?? userId} as project manager`,
   });
 
-  return serialize(manager);
+  return serialize({ id, organizationId, projectId, userId, user: user ?? null });
 }
 
 export async function removeProjectManager(projectId: string, userId: string) {
@@ -71,24 +83,24 @@ export async function removeProjectManager(projectId: string, userId: string) {
     "manage"
   );
 
-  const manager = await prisma.projectManager.findFirst({
-    where: { projectId, userId, organizationId },
-    include: {
-      user: {
-        select: { id: true, name: true, email: true },
-      },
-    },
+  const convex = await getConvexClient();
+  const pmRows = await convex.query(api.projectManagers.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
+  const manager = pmRows.find((r) => r.userId === userId && r.organizationId === organizationId);
 
   if (!manager) {
     throw new Error("Project manager assignment not found");
   }
 
-  await prisma.projectManager.delete({
-    where: { id: manager.id },
+  // Fetch user for log message (Auth — stays Prisma).
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
   });
 
-  await syncProjectManagersToConvex(organizationId, projectId);
+  await convex.mutation(api.projectManagers.remove, { id: manager.id });
 
   await logActivity({
     organizationId,
@@ -97,8 +109,8 @@ export async function removeProjectManager(projectId: string, userId: string) {
     action: "updated",
     entityType: "project",
     entityId: projectId,
-    entityName: manager.user.name ?? manager.user.email,
-    summary: `Removed ${manager.user.name ?? manager.user.email} as project manager`,
+    entityName: user?.name ?? user?.email ?? userId,
+    summary: `Removed ${user?.name ?? user?.email ?? userId} as project manager`,
   });
 
   return serialize({ success: true });

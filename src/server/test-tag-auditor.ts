@@ -1,10 +1,23 @@
 "use server";
 
 import crypto from "crypto";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  getTestTagAssetsByOrg,
+  assetMatchesAuditorScope,
+  cmpStrAsc,
+} from "@/lib/test-tag-read";
+import {
+  getAuditorTokensByOrg,
+  getAuditorTokenById,
+  getAuditorTokenByHash,
+} from "@/lib/test-tag-auditor-token-read";
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -47,16 +60,21 @@ export async function createAuditorToken(data: {
     if (Object.keys(cleaned).length > 0) scopeJson = JSON.stringify(cleaned);
   }
 
-  const record = await prisma.testTagAuditorToken.create({
-    data: {
-      organizationId,
-      name: data.name,
-      token: rawToken,
-      tokenHash,
-      expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
-      scope: scopeJson,
-      createdById: userId,
-    },
+  // Convex-only write (Phase B): create the testTagAuditorTokens doc.
+  const id = createId();
+  const now = Date.now();
+  const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+  await (await getConvexClient()).mutation(api.testTagAuditorTokens.create, {
+    id,
+    organizationId,
+    name: data.name,
+    token: rawToken,
+    tokenHash,
+    isActive: true,
+    expiresAt: expiresAt ? expiresAt.getTime() : undefined,
+    scope: scopeJson || undefined,
+    createdById: userId,
+    createdAt: now,
   });
 
   await logActivity({
@@ -65,26 +83,48 @@ export async function createAuditorToken(data: {
     userName,
     action: "CREATE",
     entityType: "testTagAuditorToken",
-    entityId: record.id,
+    entityId: id,
     entityName: data.name,
     summary: `Created auditor portal link "${data.name}"`,
   });
 
-  return serialize({ ...record, token: rawToken });
+  return serialize({
+    id,
+    organizationId,
+    name: data.name,
+    token: rawToken,
+    tokenHash,
+    isActive: true,
+    expiresAt,
+    scope: scopeJson,
+    createdById: userId,
+    lastAccessedAt: null,
+    createdAt: new Date(now),
+  });
 }
 
 export async function getAuditorTokens() {
   const { organizationId } = await getOrgContext();
 
-  const tokens = await prisma.testTagAuditorToken.findMany({
-    where: { organizationId },
-    include: {
-      createdBy: { select: { name: true, email: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // Convex-only (Phase B): tokens from Convex, newest first; the createdBy Auth
+  // User join (User stays Prisma) is attached in one batched findMany.
+  const tokens = await getAuditorTokensByOrg(organizationId);
+  const ids = Array.from(new Set(tokens.map((t) => t.createdById)));
+  const users = ids.length
+    ? await prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+  const withCreatedBy = tokens.map((t) => ({
+    ...t,
+    createdBy: userMap.has(t.createdById)
+      ? { name: userMap.get(t.createdById)!.name, email: userMap.get(t.createdById)!.email }
+      : null,
+  }));
 
-  return serialize(tokens);
+  return serialize(withCreatedBy);
 }
 
 export async function updateAuditorToken(id: string, data: {
@@ -94,10 +134,10 @@ export async function updateAuditorToken(id: string, data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "update");
 
-  const existing = await prisma.testTagAuditorToken.findFirst({
-    where: { id, organizationId },
-  });
-  if (!existing) throw new Error("Auditor token not found");
+  const existing = await getAuditorTokenById(id);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Auditor token not found");
+  }
 
   // Clean up empty scope arrays
   let scopeJson: string | null | undefined = undefined;
@@ -114,14 +154,25 @@ export async function updateAuditorToken(id: string, data: {
     }
   }
 
-  const updated = await prisma.testTagAuditorToken.update({
-    where: { id },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.expiresAt !== undefined && { expiresAt: data.expiresAt ? new Date(data.expiresAt) : null }),
-      ...(scopeJson !== undefined && { scope: scopeJson }),
-    },
-  });
+  // Convex-only update (Phase B). Only send the provided fields. For an optional
+  // Convex field, sending `undefined` clears it — matching the old Prisma write
+  // of `null` (expiresAt cleared, scope cleared).
+  const patch: {
+    name?: string;
+    expiresAt?: number;
+    scope?: string;
+  } = {};
+  if (data.name !== undefined) patch.name = data.name;
+  const sendExpires = data.expiresAt !== undefined;
+  const newExpiresAt = sendExpires
+    ? data.expiresAt
+      ? new Date(data.expiresAt)
+      : null
+    : existing.expiresAt;
+  if (sendExpires) patch.expiresAt = newExpiresAt ? newExpiresAt.getTime() : undefined;
+  const sendScope = scopeJson !== undefined;
+  if (sendScope) patch.scope = scopeJson || undefined;
+  await (await getConvexClient()).mutation(api.testTagAuditorTokens.update, { id, patch });
 
   await logActivity({
     organizationId,
@@ -134,20 +185,33 @@ export async function updateAuditorToken(id: string, data: {
     summary: `Updated auditor portal link "${data.name || existing.name}"`,
   });
 
-  return serialize(updated);
+  return serialize({
+    id,
+    organizationId: existing.organizationId,
+    name: data.name ?? existing.name,
+    token: existing.token,
+    tokenHash: existing.tokenHash,
+    isActive: existing.isActive,
+    expiresAt: newExpiresAt,
+    scope: sendScope ? scopeJson ?? null : existing.scope,
+    createdById: existing.createdById,
+    lastAccessedAt: existing.lastAccessedAt,
+    createdAt: existing.createdAt,
+  });
 }
 
 export async function revokeAuditorToken(id: string) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "delete");
 
-  const token = await prisma.testTagAuditorToken.findFirst({
-    where: { id, organizationId },
-  });
-  if (!token) throw new Error("Auditor token not found");
+  const token = await getAuditorTokenById(id);
+  if (!token || token.organizationId !== organizationId) {
+    throw new Error("Auditor token not found");
+  }
 
-  await prisma.testTagAuditorToken.update({
-    where: { id },
-    data: { isActive: false },
+  // Convex-only soft-revoke (Phase B): flip isActive false.
+  await (await getConvexClient()).mutation(api.testTagAuditorTokens.update, {
+    id,
+    patch: { isActive: false },
   });
 
   await logActivity({
@@ -167,12 +231,13 @@ export async function revokeAuditorToken(id: string) {
 export async function deleteAuditorToken(id: string) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "delete");
 
-  const token = await prisma.testTagAuditorToken.findFirst({
-    where: { id, organizationId },
-  });
-  if (!token) throw new Error("Auditor token not found");
+  const token = await getAuditorTokenById(id);
+  if (!token || token.organizationId !== organizationId) {
+    throw new Error("Auditor token not found");
+  }
 
-  await prisma.testTagAuditorToken.delete({ where: { id } });
+  // Convex-only hard delete (Phase B).
+  await (await getConvexClient()).mutation(api.testTagAuditorTokens.remove, { id });
 
   await logActivity({
     organizationId,
@@ -193,34 +258,24 @@ export async function deleteAuditorToken(id: string) {
 export async function getAuditorScopeOptions() {
   const { organizationId } = await getOrgContext();
 
-  const [applianceTypes, equipmentClasses, locations, assets] = await Promise.all([
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { applianceType: true },
-      distinct: ["applianceType"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { equipmentClass: true },
-      distinct: ["equipmentClass"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true, location: { not: null } },
-      select: { location: true },
-      distinct: ["location"],
-    }),
-    prisma.testTagAsset.findMany({
-      where: { organizationId, isActive: true },
-      select: { id: true, testTagId: true, description: true },
-      orderBy: { testTagId: "asc" },
-    }),
-  ]);
+  // Convex read (testTagAsset is dual-written). Distinct facets + the sorted
+  // asset list are computed in JS — replicating the old Prisma `distinct` /
+  // `orderBy` queries over `isActive: true` assets.
+  const active = (await getTestTagAssetsByOrg(organizationId)).filter((a) => a.isActive === true);
+
+  const applianceTypes = [...new Set(active.map((a) => a.applianceType))];
+  const equipmentClasses = [...new Set(active.map((a) => a.equipmentClass))];
+  const locations = [...new Set(active.map((a) => a.location).filter((l): l is string => Boolean(l)))];
+
+  const assets = active
+    .map((a) => ({ id: a.id, testTagId: a.testTagId, description: a.description }))
+    .sort((x, y) => cmpStrAsc(x.testTagId, y.testTagId));
 
   return serialize({
-    applianceTypes: applianceTypes.map((a) => a.applianceType),
-    equipmentClasses: equipmentClasses.map((e) => e.equipmentClass),
-    locations: locations.map((l) => l.location).filter(Boolean) as string[],
-    assets: assets,
+    applianceTypes,
+    equipmentClasses,
+    locations,
+    assets,
   });
 }
 
@@ -229,32 +284,36 @@ export async function getAuditorScopeOptions() {
 export async function validateAuditorToken(rawToken: string) {
   const tokenHash = hashToken(rawToken);
 
-  const record = await prisma.testTagAuditorToken.findUnique({
-    where: { tokenHash },
-    select: {
-      id: true,
-      organizationId: true,
-      name: true,
-      isActive: true,
-      expiresAt: true,
-      scope: true,
-    },
-  });
+  // Convex-only (Phase B): secure lookup by tokenHash. Preserves the exact
+  // validation semantics: a hash miss OR an inactive token → null.
+  const record = await getAuditorTokenByHash(tokenHash);
 
   if (!record || !record.isActive) return null;
 
-  // Check expiry
+  // Check expiry — identical to the old `record.expiresAt < new Date()`.
   if (record.expiresAt && record.expiresAt < new Date()) return null;
 
-  // Update last accessed (fire-and-forget)
-  prisma.testTagAuditorToken
-    .update({
-      where: { id: record.id },
-      data: { lastAccessedAt: new Date() },
-    })
-    .catch(() => {});
+  // Update last accessed (fire-and-forget) — Convex-only patch.
+  void (async () => {
+    try {
+      await (await getConvexClient()).mutation(api.testTagAuditorTokens.update, {
+        id: record.id,
+        patch: { lastAccessedAt: Date.now() },
+      });
+    } catch {
+      /* fire-and-forget: a failed touch must not block the public portal */
+    }
+  })();
 
-  return { ...record, parsedScope: parseScope(record.scope) };
+  return {
+    id: record.id,
+    organizationId: record.organizationId,
+    name: record.name,
+    isActive: record.isActive,
+    expiresAt: record.expiresAt,
+    scope: record.scope,
+    parsedScope: parseScope(record.scope),
+  };
 }
 
 // ─── Auditor portal data (no auth — uses token) ────────────────────────────
@@ -263,62 +322,41 @@ export async function getAuditorPortalData(
   organizationId: string,
   scope?: AuditorTokenScope | null,
 ) {
-  // Build where clause with scope filtering
-  const where: Record<string, unknown> = { organizationId, isActive: true };
-
-  if (scope) {
-    const andConditions: Record<string, unknown>[] = [];
-    if (scope.categories?.length) {
-      andConditions.push({ applianceType: { in: scope.categories } });
-    }
-    if (scope.equipmentClasses?.length) {
-      andConditions.push({ equipmentClass: { in: scope.equipmentClasses } });
-    }
-    if (scope.locations?.length) {
-      andConditions.push({ location: { in: scope.locations } });
-    }
-    if (scope.assetIds?.length) {
-      andConditions.push({ id: { in: scope.assetIds } });
-    }
-    if (andConditions.length > 0) {
-      where.AND = andConditions;
-    }
-  }
-
-  const [org, assets, stats] = await Promise.all([
+  // org/name stays Prisma — Better Auth `Organization` is not a domain table.
+  // testTagAsset is dual-written → read from Convex, then apply the scope `where`
+  // (org + `isActive: true` + the optional scope facets) as a pure JS predicate.
+  const [org, allAssets] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: { name: true, metadata: true },
     }),
-    prisma.testTagAsset.findMany({
-      where,
-      select: {
-        id: true,
-        testTagId: true,
-        description: true,
-        equipmentClass: true,
-        applianceType: true,
-        make: true,
-        modelName: true,
-        serialNumber: true,
-        location: true,
-        status: true,
-        lastTestDate: true,
-        nextDueDate: true,
-        testIntervalMonths: true,
-      },
-      orderBy: { testTagId: "asc" },
-    }),
-    prisma.testTagAsset.groupBy({
-      by: ["status"],
-      where,
-      _count: true,
-    }),
+    getTestTagAssetsByOrg(organizationId),
   ]);
 
+  const scoped = allAssets.filter((a) => assetMatchesAuditorScope(a, scope));
+
+  const assets = scoped
+    .map((a) => ({
+      id: a.id,
+      testTagId: a.testTagId,
+      description: a.description,
+      equipmentClass: a.equipmentClass,
+      applianceType: a.applianceType,
+      make: a.make,
+      modelName: a.modelName,
+      serialNumber: a.serialNumber,
+      location: a.location,
+      status: a.status,
+      lastTestDate: a.lastTestDate,
+      nextDueDate: a.nextDueDate,
+      testIntervalMonths: a.testIntervalMonths,
+    }))
+    .sort((x, y) => cmpStrAsc(x.testTagId, y.testTagId));
+
+  // groupBy status → counts, computed over the same scoped set.
   const statusCounts: Record<string, number> = {};
-  for (const s of stats) {
-    statusCounts[s.status] = s._count;
+  for (const a of scoped) {
+    statusCounts[a.status] = (statusCounts[a.status] ?? 0) + 1;
   }
 
   const total = assets.length;

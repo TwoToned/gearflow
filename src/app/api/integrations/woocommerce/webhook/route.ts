@@ -1,6 +1,10 @@
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../../../../convex/_generated/api";
 import { getTheOrg } from "@/lib/single-org";
 import { verifyWebhookSignature } from "@/lib/woocommerce-utils";
+import { findCompletedOrderLog } from "@/lib/woocommerce-order-logs-read";
 import {
   processWooCommerceOrder,
   type WooOrder,
@@ -85,24 +89,19 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, skipped: true, reason: `Topic ${topic} not handled` });
   }
 
-  // 11. Idempotency: check if this order was already processed
-  const existing = await prisma.wooCommerceOrderLog.findFirst({
-    where: {
+  // 11. Idempotency: check if this order was already processed (wooCommerceOrderLog
+  //     is Convex-only — read-before-write dedup replaces the Prisma findFirst).
+  const existing = await findCompletedOrderLog(orgId, order.id);
+  if (existing) {
+    // Log as duplicate (Convex-only write).
+    await (await getConvexClient()).mutation(api.wooCommerceOrderLogs.create, {
+      id: createId(),
       organizationId: orgId,
       wooOrderId: order.id,
-      status: "COMPLETED",
-    },
-  });
-  if (existing) {
-    // Log as duplicate
-    await prisma.wooCommerceOrderLog.create({
-      data: {
-        organizationId: orgId,
-        wooOrderId: order.id,
-        wooOrderNumber: order.number ?? null,
-        status: "DUPLICATE",
-        payload: order as never,
-      },
+      wooOrderNumber: order.number ?? undefined,
+      status: "DUPLICATE",
+      payload: order,
+      createdAt: Date.now(),
     });
     return Response.json({ ok: true, duplicate: true });
   }

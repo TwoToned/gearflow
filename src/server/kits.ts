@@ -22,11 +22,16 @@ import {
   mirrorKitBulkItemCreate,
   removeKitBulkItemFromConvex,
 } from "@/lib/kit-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
-import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror";
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
+import { getCategoryMap } from "@/lib/categories-read";
+import { getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc } from "@/lib/assets-read";
+import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
@@ -36,20 +41,28 @@ import { getModelById, getModelMap } from "@/lib/models-read";
  * dual-written). Used by the reactive kit table, which subscribes to the kit
  * list via Convex and merges these (non-reactive) values in. Excludes prep-kits
  * (isPrep) to match the kit list.
+ *
+ * Phase A: the member counts now come off the dual-written Convex
+ * `kitSerializedItems` / `kitBulkItems` lists (counted in JS by countKitMembers)
+ * instead of two Prisma `groupBy`s; the primary photo already came from Convex.
  */
 export async function getKitCounts(): Promise<
   Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [serializedGroups, bulkGroups, photoMap] = await Promise.all([
-    prisma.kitSerializedItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
-    prisma.kitBulkItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
+  const [serializedItems, bulkItems, photoMap] = await Promise.all([
+    getKitSerializedItemsByOrg(organizationId),
+    getKitBulkItemsByOrg(organizationId),
     getPrimaryPhotoMap("kit", organizationId),
   ]);
+  const memberCounts = countKitMembers(serializedItems, bulkItems);
   const out: Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
-  for (const g of serializedGroups) if (g.kitId) ensure(g.kitId).serializedItems = g._count._all;
-  for (const g of bulkGroups) if (g.kitId) ensure(g.kitId).bulkItems = g._count._all;
+  for (const [kitId, c] of Object.entries(memberCounts)) {
+    const e = ensure(kitId);
+    e.serializedItems = c.serializedItems;
+    e.bulkItems = c.bulkItems;
+  }
   for (const [kitId, meta] of Object.entries(photoMap)) ensure(kitId).media = meta;
   return serialize(out);
 }
@@ -67,8 +80,6 @@ export async function getKit(id: string) {
       bulkItems: {
         include: { bulkAsset: true },
       },
-      category: true,
-      location: true,
       lineItems: {
         take: 20,
         orderBy: { createdAt: "desc" },
@@ -91,8 +102,17 @@ export async function getKit(id: string) {
   });
   if (!kit) return serialize(null);
   const modelMap = await getModelMap(organizationId);
+  // Location + Category FKs were dropped (Phase B); attach both from the Convex mirror.
+  const location = kit.locationId
+    ? (await getLocationMap(organizationId)).get(kit.locationId) ?? null
+    : null;
+  const category = kit.categoryId
+    ? (await getCategoryMap(organizationId)).get(kit.categoryId) ?? null
+    : null;
   return serialize({
     ...kit,
+    location,
+    category,
     serializedItems: kit.serializedItems.map((si) => ({
       ...si,
       asset: {
@@ -297,33 +317,22 @@ export async function archiveKit(id: string) {
 export async function canDeleteKit(id: string) {
   const { organizationId } = await requirePermission("kit", "delete");
 
-  const kit = await prisma.kit.findUnique({
-    where: { id, organizationId },
-    select: { id: true, status: true, isActive: true },
-  });
-  if (!kit) throw new Error("Kit not found");
+  // The kit row comes off Convex (the dual-written reactive mirror); a miss
+  // reads null with no Prisma fallback (a fallback would mask mirror drift).
+  const convexKit = await getKitById(id);
+  if (!convexKit || convexKit.organizationId !== organizationId) {
+    throw new Error("Kit not found");
+  }
 
-  // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
-  const canArchive = kit.status === "AVAILABLE" && kit.isActive;
-
-  // Hard delete adds two extra constraints: (a) no ProjectLineItem references,
-  // (b) AVAILABLE status. This prevents losing historical project data.
+  // ProjectLineItem references stay on Prisma until the keystone
+  // project-line-item tree migrates (see FEATUREDOCS/54).
   const referencingLineItems = await prisma.projectLineItem.count({
     where: { kitId: id, organizationId },
   });
 
-  const canHardDelete = kit.status === "AVAILABLE" && kit.isActive && referencingLineItems === 0;
-  let reason: string | undefined;
-
-  if (!canArchive) {
-    reason = kit.status !== "AVAILABLE"
-      ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
-      : "Kit is already archived.";
-  } else if (!canHardDelete) {
-    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
-  }
-
-  return serialize({ canArchive, canHardDelete, referencingLineItems, reason });
+  return serialize(
+    computeKitDeletability(coerceKitDeletabilityRow(convexKit), referencingLineItems),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -360,12 +369,9 @@ export async function deleteKit(id: string) {
   const tagForLog = kit.assetTag;
   const nameForLog = kit.name;
 
-  // Capture kit_check_item ids before the cascade delete so we can mirror the
-  // removals to Convex (the table is dual-written; Convex has no FK cascade).
-  const kitCheckItemRows = await prisma.kitCheckItem.findMany({
-    where: { kitId: id },
-    select: { id: true },
-  });
+  // Capture kit_check_item ids before the cascade delete (Convex has no FK cascade).
+  const convexKits = await getConvexClient();
+  const kitCheckItemRows = await convexKits.query(api.kitCheckItems.listByKitId, { orgId: organizationId, kitId: id });
 
   await prisma.$transaction(async (tx) => {
     // Release serialized assets back to inventory.
@@ -403,7 +409,7 @@ export async function deleteKit(id: string) {
   // released assets / restored bulk quantities are reactive too.
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
-  for (const row of kitCheckItemRows) await removeKitCheckItemFromConvex(row.id);
+  for (const row of kitCheckItemRows) await convexKits.mutation(api.kitCheckItems.remove, { id: row.id });
   await syncMediaForParent("kit", organizationId, id);
   await removeKitFromConvex(id);
   await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));
@@ -685,41 +691,33 @@ export async function removeBulkItemFromKit(
   return serialize({ success: true });
 }
 
-// Serialized assets not in any kit.
+// Serialized assets not in any kit. Reads off the dual-written Convex `assets`
+// list; the eligibility where + assetTag sort are replicated by the pure
+// filterAvailableAssetsForKit / sortByAssetTagAsc helpers (Phase A).
 export async function getAvailableAssetsForKit(modelId?: string) {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: "AVAILABLE",
-      kitId: null,
-      ...(modelId && { modelId }),
-    },
-    orderBy: { assetTag: "asc" },
-  });
-  const modelMap = await getModelMap(organizationId);
+  const [allAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const assets = sortByAssetTagAsc(filterAvailableAssetsForKit(allAssets, modelId));
   return serialize(assets.map((a) => ({
     ...a,
     model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
   })));
 }
 
-// Bulk assets with available quantity.
+// Bulk assets with available quantity. Reads off the dual-written Convex
+// `bulkAssets` list; eligibility + sort via the pure helpers (Phase A).
 export async function getAvailableBulkAssetsForKit() {
   const { organizationId } = await getOrgContext();
 
-  const bulkAssets = await prisma.bulkAsset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: "ACTIVE",
-      availableQuantity: { gt: 0 },
-    },
-    orderBy: { assetTag: "asc" },
-  });
-  const modelMap = await getModelMap(organizationId);
+  const [allBulkAssets, modelMap] = await Promise.all([
+    getBulkAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const bulkAssets = sortByAssetTagAsc(filterAvailableBulkAssetsForKit(allBulkAssets));
   return serialize(bulkAssets.map((b) => ({
     ...b,
     model: b.modelId ? modelMap.get(b.modelId) ?? null : null,

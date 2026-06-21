@@ -23,6 +23,8 @@ import {
   createUserFixture,
 } from "../../tests/helpers/integration";
 import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 // Mock org-context BEFORE importing the module under test so all
 // requirePermission calls resolve to our test context.
@@ -212,8 +214,9 @@ describe("S8 — moveSubHireGroupToCategory skips regenerate cascade", () => {
 
     await moveSubHireGroupToCategory({ groupId: shGroup.id, categoryId: catB.id });
 
-    const slotsForGroup = await testPrisma.categorySlot.findMany({
-      where: { subHireGroupId: shGroup.id },
+    const convex = await getConvexClient();
+    const slotsForGroup = await convex.query(api.categorySlots.listBySubHireGroupId, {
+      subHireGroupId: shGroup.id,
     });
     expect(slotsForGroup).toHaveLength(1);
     expect(slotsForGroup[0].projectCategoryId).toBe(catB.id);
@@ -239,7 +242,10 @@ describe("S8 — moveSubHireGroupToCategory skips regenerate cascade", () => {
     const groupAfter = await testPrisma.subHireGroup.findUniqueOrThrow({ where: { id: shGroup.id } });
     expect(groupAfter.targetCategoryId).toBeNull();
 
-    const slots = await testPrisma.categorySlot.findMany({ where: { subHireGroupId: shGroup.id } });
+    const convex = await getConvexClient();
+    const slots = await convex.query(api.categorySlots.listBySubHireGroupId, {
+      subHireGroupId: shGroup.id,
+    });
     expect(slots).toHaveLength(0);
   });
 });
@@ -371,10 +377,9 @@ describe("reorderMixedGroupsInCategory — basic sort write", () => {
       orderedIds: [`shg-${shg.id}`, `pg-${pg.id}`],
     });
 
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { projectCategoryId: cat.id },
-      orderBy: { sortOrder: "asc" },
-    });
+    const convex = await getConvexClient();
+    const rawSlots = await convex.query(api.categorySlots.list, { projectCategoryId: cat.id });
+    const slots = [...rawSlots].sort((a, b) => a.sortOrder - b.sortOrder);
     expect(slots).toHaveLength(2);
     expect(slots[0].subHireGroupId).toBe(shg.id);
     expect(slots[0].sortOrder).toBe(0);
@@ -525,10 +530,9 @@ describe("S11 — reorderMixedGroupsInCategory under concurrent load", () => {
       reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds: orderB }),
     ]);
 
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { projectCategoryId: cat.id },
-      orderBy: { sortOrder: "asc" },
-    });
+    const convex = await getConvexClient();
+    const rawSlots = await convex.query(api.categorySlots.list, { projectCategoryId: cat.id });
+    const slots = [...rawSlots].sort((a, b) => a.sortOrder - b.sortOrder);
     const finalOrder = slots.map((s) =>
       s.projectGroupId ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
     );
@@ -588,8 +592,9 @@ describe("moveSubHireGroupToCategory — concurrent move serialization (/review 
     }
 
     // Final state: exactly one slot for the group, in catB.
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { subHireGroupId: shg.id },
+    const convex = await getConvexClient();
+    const slots = await convex.query(api.categorySlots.listBySubHireGroupId, {
+      subHireGroupId: shg.id,
     });
     expect(slots).toHaveLength(1);
     expect(slots[0].projectCategoryId).toBe(catB.id);
@@ -623,10 +628,12 @@ describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {
       slot: { subHireGroupId: shg.id },
     });
 
-    const cats = await testPrisma.projectCategory.findMany({
-      where: { projectId: project.id },
-      orderBy: { sortOrder: "asc" },
+    const convex = await getConvexClient();
+    const allCats = await convex.query(api.projectCategories.listByProject, {
+      projectId: project.id,
+      orgId: org.id,
     });
+    const cats = [...allCats].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     expect(cats.map((c) => c.name)).toEqual(["First", "Second", "Inline-created"]);
     expect(cats[cats.length - 1].sortOrder).toBe(2);
   });
@@ -646,14 +653,19 @@ describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {
       slot: { subHireGroupId: shg.id },
     });
 
-    const cat = await testPrisma.projectCategory.findFirstOrThrow({
-      where: { projectId: project.id, name: "Audio" },
+    const convex = await getConvexClient();
+    const allCats = await convex.query(api.projectCategories.listByProject, {
+      projectId: project.id,
+      orgId: org.id,
     });
+    const cat = allCats.find((c) => c.name === "Audio")!;
+    expect(cat).toBeDefined();
     const groupAfter = await testPrisma.subHireGroup.findUniqueOrThrow({ where: { id: shg.id } });
     expect(groupAfter.targetCategoryId).toBe(cat.id);
-    const slot = await testPrisma.categorySlot.findFirstOrThrow({
-      where: { subHireGroupId: shg.id },
+    const slotList = await convex.query(api.categorySlots.listBySubHireGroupId, {
+      subHireGroupId: shg.id,
     });
+    const slot = slotList[0]!;
     expect(slot.projectCategoryId).toBe(cat.id);
     expect(slot.sortOrder).toBe(0);
   });
@@ -672,14 +684,19 @@ describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {
       slot: { projectGroupId: pg.id },
     });
 
-    const newCat = await testPrisma.projectCategory.findFirstOrThrow({
-      where: { projectId: project.id, name: "New" },
+    const convex = await getConvexClient();
+    const allCats = await convex.query(api.projectCategories.listByProject, {
+      projectId: project.id,
+      orgId: org.id,
     });
-    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
-    expect(pgAfter.categoryId).toBe(newCat.id);
-    const slot = await testPrisma.categorySlot.findFirstOrThrow({
-      where: { projectGroupId: pg.id },
+    const newCat = allCats.find((c) => c.name === "New")!;
+    expect(newCat).toBeDefined();
+    const pgAfter = await convex.query(api.projectGroups.getById, { id: pg.id });
+    expect(pgAfter!.categoryId).toBe(newCat.id);
+    const slotList = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: pg.id,
     });
+    const slot = slotList[0]!;
     expect(slot.projectCategoryId).toBe(newCat.id);
   });
 });
@@ -722,14 +739,15 @@ describe("moveProjectGroupToCategory — happy path + invariants", () => {
     });
     expect(result).toMatchObject({ success: true });
 
-    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
-    expect(pgAfter.categoryId).toBe(catB.id);
+    const convex = await getConvexClient();
+    const pgAfter = await convex.query(api.projectGroups.getById, { id: pg.id });
+    expect(pgAfter!.categoryId).toBe(catB.id);
 
     const itemAfter = await testPrisma.projectLineItem.findUniqueOrThrow({ where: { id: item.id } });
     expect(itemAfter.categoryId).toBe(catB.id);
 
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { projectGroupId: pg.id },
+    const slots = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: pg.id,
     });
     expect(slots).toHaveLength(1);
     expect(slots[0].projectCategoryId).toBe(catB.id);
@@ -778,9 +796,11 @@ describe("moveProjectGroupToCategory — happy path + invariants", () => {
     const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
     await moveProjectGroupToCategory({ groupId: pg.id, categoryId: catB.id });
 
-    const slot = await testPrisma.categorySlot.findFirstOrThrow({
-      where: { projectGroupId: pg.id },
+    const convex = await getConvexClient();
+    const slots = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: pg.id,
     });
+    const slot = slots[0]!;
     expect(slot.projectCategoryId).toBe(catB.id);
     expect(slot.sortOrder).toBe(2);
   });
@@ -887,13 +907,14 @@ describe("moveProjectGroupToCategory — concurrent move advisory lock", () => {
     }
 
     // Final state: exactly one slot for the group, in catB.
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { projectGroupId: pg.id },
+    const convex = await getConvexClient();
+    const slots = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: pg.id,
     });
     expect(slots).toHaveLength(1);
     expect(slots[0].projectCategoryId).toBe(catB.id);
-    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
-    expect(pgAfter.categoryId).toBe(catB.id);
+    const pgAfter = await convex.query(api.projectGroups.getById, { id: pg.id });
+    expect(pgAfter!.categoryId).toBe(catB.id);
   });
 });
 
@@ -931,14 +952,16 @@ describe("moveProjectGroupToCategory — null destination (move to Uncategorised
     });
     expect(result).toMatchObject({ success: true });
 
-    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
-    expect(pgAfter.categoryId).toBeNull();
+    const convex = await getConvexClient();
+    const pgAfter = await convex.query(api.projectGroups.getById, { id: pg.id });
+    // Convex represents absent optional fields as undefined (not null).
+    expect(pgAfter!.categoryId ?? null).toBeNull();
 
     const itemAfter = await testPrisma.projectLineItem.findUniqueOrThrow({ where: { id: item.id } });
     expect(itemAfter.categoryId).toBeNull();
 
-    const slots = await testPrisma.categorySlot.findMany({
-      where: { projectGroupId: pg.id },
+    const slots = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: pg.id,
     });
     expect(slots).toHaveLength(0);
 
@@ -973,12 +996,14 @@ describe("moveProjectGroupToCategory — null destination (move to Uncategorised
 
     await moveProjectGroupToCategory({ groupId: orphan.id, categoryId: cat.id });
 
-    const orphanAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: orphan.id } });
-    expect(orphanAfter.categoryId).toBe(cat.id);
+    const convex = await getConvexClient();
+    const orphanAfter = await convex.query(api.projectGroups.getById, { id: orphan.id });
+    expect(orphanAfter!.categoryId).toBe(cat.id);
 
-    const slot = await testPrisma.categorySlot.findFirstOrThrow({
-      where: { projectGroupId: orphan.id },
+    const slotList = await convex.query(api.categorySlots.listByProjectGroupId, {
+      projectGroupId: orphan.id,
     });
+    const slot = slotList[0]!;
     expect(slot.projectCategoryId).toBe(cat.id);
     expect(slot.sortOrder).toBe(2);
   });

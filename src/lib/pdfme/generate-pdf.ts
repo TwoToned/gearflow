@@ -12,6 +12,7 @@
 import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
 import { prisma } from "@/lib/prisma";
+import { getBrandTemplateForOrg } from "@/lib/brand-templates-read";
 import { gearflowPlugins } from "./plugins";
 import { getPdfmeFonts } from "./fonts";
 import { buildDocumentData } from "./build-document-data";
@@ -58,17 +59,25 @@ async function loadTemplate(
 
     const record = await prisma.documentTemplate.findFirst({
       where,
-      include: { brandTemplate: true },
     });
 
     if (!record) {
       return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };
     }
 
+    // Resolve the brand template from Convex (Phase B: brand_template is
+    // Convex-only; the document_template → brand_template FK was dropped).
+    // documentTemplate stays Prisma here; only the brandTemplate JOIN moves to
+    // Convex. getBrandTemplateForOrg returns the same field shape the PDF code
+    // reads off the old `record.brandTemplate` relation (accentColor +
+    // footerSettings JSON string), org-scoped, or null on miss.
+    const brand = record.brandTemplateId
+      ? await getBrandTemplateForOrg(record.brandTemplateId, organizationId)
+      : null;
+
     // Check for section-based template (new pipeline)
     if (record.sections) {
       const sections = JSON.parse(record.sections) as TemplateSection[];
-      const brand = record.brandTemplate;
       const brandFooter = brand ? JSON.parse(brand.footerSettings) : null;
       return {
         sections,

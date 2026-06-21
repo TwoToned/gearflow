@@ -397,7 +397,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                     entityType="location"
                     entityId={id}
                     accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
-                    existingMedia={(location.media || []).map((m: MediaItem) => m)}
+                    existingMedia={(location.media || []).filter((m) => m.file).map((m) => m as MediaItem)}
                     onChanged={refetch}
                     onUploadComplete={async (fileUpload) => {
                       await addLocationMedia({

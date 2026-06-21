@@ -17,6 +17,7 @@
  */
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { existsSync } from "node:fs";
 
 // Backfill script basenames (under scripts/), in run order.
 const ORDER: string[] = [
@@ -43,13 +44,31 @@ const ORDER: string[] = [
   "project-grouping",
   "project-subtables",
   "line-items",
+  "line-item-units",
   "asset",
+  "asset-bulk-children",
   "kit",
+  // Phase 6 sub-table dual-write tables (accessory joins, supplier rates,
+  // T&T + event tables). Idempotent like the rest; run after their parents.
+  "model-bulk-accessories",
+  "supplier-model-rates",
+  "test-tag-assets",
+  "test-tag-records",
+  "sub-test-records",
+  "asset-scan-logs",
+  "check-records",
   // transactional
   "sub-hires",
   "maintenance",
   "warehouse-close",
   "saved-views",
+  // bucket-2 (Phase B write inversion); no inbound FKs.
+  "notification-dismissals",
+  "user-notification-preferences",
+  "woocommerce-order-logs",
+  "warehouse-dashboard-tokens",
+  "test-tag-auditor-tokens",
+  "maintenance-record-assets",
   // media + denormalized stamps last
   "media",
   "crew-availability-org",
@@ -59,13 +78,20 @@ function main() {
   const scriptsDir = path.dirname(new URL(import.meta.url).pathname);
   const results: Array<{ name: string; ok: boolean; ms: number }> = [];
 
+  // Only pass --env-file flags for files that actually exist (Coolify injects
+  // env vars directly and has no .env file — the flag causes node to exit 9).
+  const cwd = process.cwd();
+  const envFileArgs = [".env", ".env.local"]
+    .filter((f) => existsSync(path.join(cwd, f)))
+    .flatMap((f) => [`--env-file=${f}`]);
+
   for (const name of ORDER) {
     const file = path.join(scriptsDir, `convex-backfill-${name}.ts`);
     console.log(`\n── backfill: ${name} ──`);
     const started = Date.now();
     const res = spawnSync(
       "npx",
-      ["tsx", "--env-file=.env", "--env-file=.env.local", file],
+      ["tsx", ...envFileArgs, file],
       { stdio: "inherit", env: process.env },
     );
     const ms = Date.now() - started;

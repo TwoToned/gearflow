@@ -1,10 +1,23 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getDismissedKeysForUser,
+  getDismissalsForUser,
+} from "@/lib/notification-dismissals-read";
+import {
+  getCrewAssignmentsByOrg,
+  countAssignmentsByStatus,
+  getCrewTimeEntriesByOrg,
+  countTimeEntriesByStatus,
+} from "@/lib/crew-scheduling-read";
 
 export interface AppNotification {
   id: string;
@@ -29,13 +42,11 @@ export async function getDismissedKeys(): Promise<string[]> {
   } catch {
     return [];
   }
-  const { userId } = ctx;
+  const { organizationId, userId } = ctx;
 
-  const rows = await prisma.notificationDismissal.findMany({
-    where: { userId },
-    select: { notificationKey: true },
-  });
-  return rows.map((r) => r.notificationKey);
+  // notificationDismissal is CONVEX-ONLY (bucket-2 Phase B write inversion):
+  // read the dismissed keys from Convex (no Prisma fallback on a miss).
+  return await getDismissedKeysForUser(organizationId, userId);
 }
 
 /**
@@ -46,12 +57,19 @@ export async function dismissNotification(notificationKey: string): Promise<void
   if (!notificationKey) return;
   const { organizationId, userId } = await getOrgContext();
 
-  await prisma.notificationDismissal.upsert({
-    where: {
-      userId_notificationKey: { userId, notificationKey },
-    },
-    create: { organizationId, userId, notificationKey },
-    update: {}, // already dismissed — keep original dismissedAt
+  // Convex-only write. Re-implement the @@unique([userId, notificationKey]) DB
+  // guard (Convex has no unique index): read the user's existing dismissals and
+  // no-op if this key is already dismissed (keeps the original dismissedAt),
+  // otherwise create. App-level dedup replaces the old Prisma upsert.
+  const existing = await getDismissalsForUser(organizationId, userId);
+  if (existing.some((d) => d.notificationKey === notificationKey)) return;
+
+  await (await getConvexClient()).mutation(api.notificationDismissals.create, {
+    id: createId(),
+    organizationId,
+    userId,
+    notificationKey,
+    dismissedAt: Date.now(),
   });
 }
 
@@ -68,15 +86,22 @@ export async function pruneStaleDismissals(activeKeys: string[]): Promise<number
   } catch {
     return 0;
   }
-  const { userId } = ctx;
+  const { organizationId, userId } = ctx;
 
-  const result = await prisma.notificationDismissal.deleteMany({
-    where: {
-      userId,
-      notificationKey: { notIn: activeKeys.length > 0 ? activeKeys : [""] },
-    },
-  });
-  return result.count;
+  // Convex-only: replicate the Prisma deleteMany(where userId, notificationKey
+  // notIn activeKeys) by reading the user's dismissals and removing those whose
+  // key is no longer active. Empty activeKeys → prune everything (matches the old
+  // `notIn: [""]` sentinel, since no real key is the empty string).
+  const activeSet = new Set(activeKeys);
+  const rows = await getDismissalsForUser(organizationId, userId);
+  const stale = rows.filter((r) => !activeSet.has(r.notificationKey));
+  if (stale.length === 0) return 0;
+
+  const convex = await getConvexClient();
+  for (const row of stale) {
+    await convex.mutation(api.notificationDismissals.remove, { id: row.id });
+  }
+  return stale.length;
 }
 
 export async function getNotifications(): Promise<AppNotification[]> {
@@ -216,9 +241,11 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 6. Pending crew offers (assignments in OFFERED status)
-  const pendingOffers = await prisma.crewAssignment.count({
-    where: { organizationId, status: "OFFERED" },
-  });
+  // crewAssignment is dual-written — count from Convex.
+  const pendingOffers = countAssignmentsByStatus(
+    await getCrewAssignmentsByOrg(organizationId),
+    ["OFFERED"],
+  );
   if (pendingOffers > 0) {
     notifications.push({
       id: "crew-pending-offers",
@@ -232,9 +259,11 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 8. Submitted timesheets awaiting approval
-  const submittedTimesheets = await prisma.crewTimeEntry.count({
-    where: { organizationId, status: "SUBMITTED" },
-  });
+  // crewTimeEntry is dual-written — count from Convex.
+  const submittedTimesheets = countTimeEntriesByStatus(
+    await getCrewTimeEntriesByOrg(organizationId),
+    ["SUBMITTED"],
+  );
   if (submittedTimesheets > 0) {
     notifications.push({
       id: "crew-pending-timesheets",

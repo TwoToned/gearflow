@@ -32,6 +32,64 @@ export const getById = query({
   },
 });
 
+/**
+ * Check items assigned to a single model within an org. Backs
+ * getModelFailureAnalytics's read-rewire to Convex (Phase A). Uses the composite
+ * by_organizationId_modelId index. Caller sorts by sortOrder asc and resolves
+ * checkItem label/type via checkItems.list.
+ */
+export const listByModel = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_organizationId_modelId", (q) =>
+        q.eq("organizationId", orgId).eq("modelId", modelId),
+      )
+      .collect();
+  },
+});
+
+/** Assignments for one model, org-scoped. Replaces a Prisma findMany by modelId. */
+export const listByModelId = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
+/** Assignments for one check item, org-scoped. Replaces a Prisma findMany by
+ *  checkItemId (the `modelCheckItems` include on a single check item). */
+export const listByCheckItemId = query({
+  args: { orgId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_checkItemId", (q) => q.eq("checkItemId", checkItemId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+/** Get one model-check-item assignment by model + checkItem (first match, org-scoped). */
+export const getByModelAndCheckItem = query({
+  args: { orgId: v.string(), modelId: v.string(), checkItemId: v.string() },
+  handler: async (ctx, { orgId, modelId, checkItemId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("modelCheckItems")
+      .withIndex("by_modelId_checkItemId", (q) => q.eq("modelId", modelId).eq("checkItemId", checkItemId))
+      .collect();
+    return rows.find((r) => r.organizationId === orgId) ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

@@ -4,46 +4,64 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
+import {
+  getLineItemsByOrg,
+  getLineItemsByProjectIds,
+  countCheckedOutInProjects,
+  countEquipmentLineItemsByProject,
+} from "@/lib/line-item-count-read";
 import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg, getProjectIdsForManager } from "@/lib/projects-read";
+import { getMaintenanceRecordsByOrg, countDueMaintenance } from "@/lib/maintenance-read";
+import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
+import { getCrewMembersByOrg, countActiveCrew } from "@/lib/crew-read";
+import { getCrewAssignmentsByOrg, countAssignmentsByStatus } from "@/lib/crew-scheduling-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
 
   const now = new Date();
 
-  const [allAssets, allBulkAssets, allProjects, maintenanceDue, overdueReturns, activeCrew, pendingCrewOffers] =
+  const [allAssets, allBulkAssets, allProjects, maintenanceRecords, allLineItems, crewMembers, crewAssignments] =
     await Promise.all([
       getAssetsByOrg(organizationId),
       getBulkAssetsByOrg(organizationId),
       getProjectsByOrg(organizationId),
-      prisma.maintenanceRecord.count({
-        where: {
-          organizationId,
-          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-          scheduledDate: { lte: now },
-        },
-      }),
-      prisma.projectLineItem.count({
-        where: {
-          organizationId,
-          status: "CHECKED_OUT",
-          project: {
-            isTemplate: false,
-            rentalEndDate: { lt: now },
-            status: { notIn: ["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"] },
-          },
-        },
-      }),
-      prisma.crewMember.count({
-        where: { organizationId, status: "ACTIVE" },
-      }),
-      prisma.crewAssignment.count({
-        where: { organizationId, status: { in: ["OFFERED", "PENDING"] } },
-      }),
+      // Maintenance is dual-written — count due records (status + scheduledDate) from Convex.
+      getMaintenanceRecordsByOrg(organizationId),
+      // overdueReturns aggregates projectLineItem joined to a project filter. The
+      // project rows are in Convex (allProjects), so resolve the overdue project
+      // set in JS and count CHECKED_OUT line items within it (Convex read).
+      getLineItemsByOrg(organizationId),
+      // Crew roster + assignments are dual-written — count from Convex.
+      getCrewMembersByOrg(organizationId),
+      getCrewAssignmentsByOrg(organizationId),
     ]);
+
+  // overdueReturns: CHECKED_OUT line items whose project is non-template, past its
+  // rentalEndDate, and not in a terminal status (matches the old Prisma `project`
+  // relation filter). `rentalEndDate` is epoch-ms on the Convex project doc.
+  const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
+  const overdueProjectIds = new Set(
+    allProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          p.rentalEndDate != null &&
+          (p.rentalEndDate as number) < now.getTime() &&
+          !RETURN_TERMINAL.has(p.status ?? ""),
+      )
+      .map((p) => p.id),
+  );
+  const overdueReturns = countCheckedOutInProjects(allLineItems, overdueProjectIds);
+
+  const maintenanceDue = countDueMaintenance(maintenanceRecords, now.getTime());
+  const activeCrew = countActiveCrew(crewMembers);
+  const pendingCrewOffers = countAssignmentsByStatus(crewAssignments, ["OFFERED", "PENDING"]);
 
   const activeAssets = allAssets.filter((a) => a.isActive !== false);
   const activeBulkAssets = allBulkAssets.filter((ba) => ba.isActive !== false);
@@ -94,15 +112,8 @@ export async function getMyHomeData() {
     .slice(0, 24);
 
   const projectIds = candidateProjects.map((p) => p.id);
-  const lineItemCounts =
-    projectIds.length > 0
-      ? await prisma.projectLineItem.groupBy({
-          by: ["projectId"],
-          where: { organizationId, projectId: { in: projectIds }, type: "EQUIPMENT" },
-          _count: { _all: true },
-        })
-      : [];
-  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+  const homeLineItems = await getLineItemsByProjectIds(organizationId, projectIds);
+  const liCountMap = countEquipmentLineItemsByProject(homeLineItems, projectIds);
   const myProjects = candidateProjects.map((p) => ({ ...p, _count: { lineItems: liCountMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.
@@ -174,15 +185,8 @@ export async function getUpcomingProjects() {
     .slice(0, 8);
 
   const upcomingIds = candidateUpcoming.map((p) => p.id);
-  const upcomingLiCounts =
-    upcomingIds.length > 0
-      ? await prisma.projectLineItem.groupBy({
-          by: ["projectId"],
-          where: { organizationId, projectId: { in: upcomingIds }, type: "EQUIPMENT" },
-          _count: { _all: true },
-        })
-      : [];
-  const upcomingLiMap = new Map(upcomingLiCounts.map((g) => [g.projectId, g._count._all]));
+  const upcomingLineItems = await getLineItemsByProjectIds(organizationId, upcomingIds);
+  const upcomingLiMap = countEquipmentLineItemsByProject(upcomingLineItems, upcomingIds);
   const projects = candidateUpcoming.map((p) => ({ ...p, _count: { lineItems: upcomingLiMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.
@@ -192,55 +196,103 @@ export async function getUpcomingProjects() {
 export async function getRecentActivity() {
   const { organizationId } = await getOrgContext();
 
-  const [logs, testRecords, maintenanceRecords, modelMap] = await Promise.all([
-    prisma.assetScanLog.findMany({
-      where: { organizationId },
-      include: {
-        asset: true,
-        bulkAsset: true,
-        project: true,
-        scannedBy: true,
-      },
-      orderBy: { scannedAt: "desc" },
-      take: 10,
-    }),
-    prisma.testTagRecord.findMany({
-      where: { organizationId },
-      include: {
-        testTagAsset: { select: { testTagId: true, description: true } },
-        testedBy: { select: { id: true, name: true } },
-      },
-      orderBy: { testDate: "desc" },
-      take: 10,
-    }),
+  const convex = await getConvexClient();
+  const [rawScanLogs, rawTestTagRecords, rawTestTagAssets, maintenanceRecords, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
+    convex.query(api.assetScanLogs.list, { orgId: organizationId }),
+    convex.query(api.testTagRecords.list, { orgId: organizationId }),
+    convex.query(api.testTagAssets.list, { orgId: organizationId }),
     prisma.maintenanceRecord.findMany({
       where: { organizationId },
       include: {
-        assets: {
-          include: { asset: true },
-          take: 3,
-        },
         reportedBy: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 10,
     }),
     getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
   ]);
 
+  // Sort scan logs newest-first and take top 10
+  const scanLogsSorted = [...rawScanLogs]
+    .sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0))
+    .slice(0, 10);
+
+  // Attach scannedBy (Better Auth user — stays Prisma)
+  const scannedByIds = [...new Set(scanLogsSorted.map((l) => l.scannedById))];
+  const scanUsers = scannedByIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: scannedByIds } } })
+    : [];
+  const scanUserMap = new Map(scanUsers.map((u) => [u.id, u]));
+
+  const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
+  const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));
+
+  // Sort testTagRecords newest-first and take top 10, attaching testTagAsset + testedBy.
+  const testTagRecordsSorted = [...rawTestTagRecords]
+    .sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0))
+    .slice(0, 10);
+  const testTagAssetMap = new Map(rawTestTagAssets.map((a) => [a.id, a]));
+  const testedByIds = [...new Set(testTagRecordsSorted.map((r) => r.testedById))];
+  const testedByUsers = testedByIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: testedByIds } }, select: { id: true, name: true } })
+    : [];
+  const testedByMap = new Map(testedByUsers.map((u) => [u.id, u]));
+  const testRecords = testTagRecordsSorted.map((r) => {
+    const tta = r.testTagAssetId ? testTagAssetMap.get(r.testTagAssetId) ?? null : null;
+    return {
+      ...r,
+      testDate: r.testDate != null ? new Date(r.testDate) : null,
+      testTagAsset: tta ? { testTagId: tta.testTagId, description: tta.description ?? null } : null,
+      testedBy: testedByMap.get(r.testedById) ?? null,
+    };
+  });
+
+  // The maintenanceRecordAsset join is Convex-only (Phase B): fetch the links for
+  // the top-10 records, attach asset scalars from Convex (assets are dual-written),
+  // and keep the old `take: 3` cap per record.
+  const maintenanceRecordIds = maintenanceRecords.map((m) => m.id);
+  const maintenanceLinks = await getMaintenanceAssetLinksByRecordIds(maintenanceRecordIds);
+  const maintAssetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const linksByRecord = new Map<string, typeof maintenanceLinks>();
+  for (const l of maintenanceLinks) {
+    const arr = linksByRecord.get(l.maintenanceRecordId) ?? [];
+    arr.push(l);
+    linksByRecord.set(l.maintenanceRecordId, arr);
+  }
+
   const withModels = {
-    logs: logs.map((l) => ({
-      ...l,
-      asset: l.asset ? { ...l.asset, model: l.asset.modelId ? modelMap.get(l.asset.modelId) ?? null : null } : null,
-      bulkAsset: l.bulkAsset ? { ...l.bulkAsset, model: l.bulkAsset.modelId ? modelMap.get(l.bulkAsset.modelId) ?? null : null } : null,
-    })),
+    logs: scanLogsSorted.map((l) => {
+      const convexAsset = l.assetId ? scanAssetMap.get(l.assetId) ?? null : null;
+      return {
+        ...l,
+        asset: convexAsset
+          ? { ...convexAsset, model: convexAsset.modelId ? modelMap.get(convexAsset.modelId) ?? null : null }
+          : null,
+        bulkAsset: l.bulkAssetId ? scanBulkAssetMap.get(l.bulkAssetId) ?? null : null,
+        project: l.projectId ? scanProjectMap.get(l.projectId) ?? null : null,
+        scannedBy: scanUserMap.get(l.scannedById) ?? null,
+      };
+    }),
     testRecords,
     maintenanceRecords: maintenanceRecords.map((m) => ({
       ...m,
-      assets: m.assets.map((a) => ({
-        ...a,
-        asset: { ...a.asset, model: a.asset.modelId ? modelMap.get(a.asset.modelId) ?? null : null },
-      })),
+      assets: (linksByRecord.get(m.id) ?? [])
+        .slice(0, 3) // preserve the old include `take: 3`
+        .map((l) => {
+          const asset = maintAssetMap.get(l.assetId) ?? null;
+          return {
+            id: l.id,
+            maintenanceRecordId: l.maintenanceRecordId,
+            assetId: l.assetId,
+            asset: asset
+              ? { ...asset, model: asset.modelId ? modelMap.get(asset.modelId) ?? null : null }
+              : null,
+          };
+        }),
     })),
   };
 

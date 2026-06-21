@@ -102,3 +102,29 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+export const getByComposite = query({
+  args: { organizationId: v.string(), supplierId: v.string(), modelId: v.string() },
+  handler: async (ctx, { organizationId, supplierId, modelId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("supplierModelRates")
+      .withIndex("by_organizationId_supplierId_modelId", (q) =>
+        q.eq("organizationId", organizationId).eq("supplierId", supplierId).eq("modelId", modelId),
+      )
+      .unique();
+  },
+});
+
+export const listByModel = query({
+  args: { organizationId: v.string(), modelId: v.string() },
+  handler: async (ctx, { organizationId, modelId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("supplierModelRates")
+      .withIndex("by_organizationId_modelId", (q) =>
+        q.eq("organizationId", organizationId).eq("modelId", modelId),
+      )
+      .collect();
+  },
+});

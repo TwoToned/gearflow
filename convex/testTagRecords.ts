@@ -32,6 +32,53 @@ export const getById = query({
   },
 });
 
+/**
+ * All test records for a single test tag asset, via the `by_testTagAssetId`
+ * index. Used by the asset-detail / scan reads to attach the recent test
+ * history. Service-only (not on the browser-readable allowlist).
+ */
+/** All test records created by a given user (for user-delete cascade). */
+export const listByTestedById = query({
+  args: { testedById: v.string() },
+  handler: async (ctx, { testedById }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_testedById", (q) => q.eq("testedById", testedById))
+      .collect();
+  },
+});
+
+export const listByAssetId = query({
+  args: { testTagAssetId: v.string() },
+  handler: async (ctx, { testTagAssetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_testTagAssetId", (q) => q.eq("testTagAssetId", testTagAssetId))
+      .collect();
+  },
+});
+
+/**
+ * Records for one asset within an org, in one round trip. Used by the
+ * per-asset test history (`getTestTagRecords`) and the Quick Pass pre-fill
+ * (`getLatestTestRecord`) reads. Org-scoped via the composite index so a stray
+ * cross-org id can't leak. Caller sorts by `testDate` desc + paginates.
+ * HAND-ADDED for the Phase A read-rewiring of the test-tag records surface.
+ */
+export const listByOrgAndAsset = query({
+  args: { orgId: v.string(), testTagAssetId: v.string() },
+  handler: async (ctx, { orgId, testTagAssetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_organizationId_testTagAssetId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagAssetId", testTagAssetId),
+      )
+      .collect();
+  },
+});
 export const create = mutation({
   args: {
     id: v.string(),

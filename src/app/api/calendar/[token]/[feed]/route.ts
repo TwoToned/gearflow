@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientMap } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
+import { getModelMap } from "@/lib/models-read";
 import {
   generateVCalendar,
   buildDateTime,
@@ -233,7 +234,7 @@ async function buildMaintenanceFeed(
             select: {
               assetTag: true,
               customName: true,
-              model: { select: { name: true } },
+              modelId: true,
             },
           },
         },
@@ -241,6 +242,10 @@ async function buildMaintenanceFeed(
     },
     orderBy: { scheduledDate: "asc" },
   });
+
+  // Model FK was dropped (Phase B); resolve asset model names from the Convex
+  // mirror (replaces the old nested `asset.model.select.name`).
+  const modelMap = await getModelMap(orgId);
 
   const events: ICalEvent[] = [];
 
@@ -251,10 +256,12 @@ async function buildMaintenanceFeed(
     const dtend = new Date(dtstart); // Same day — flagged as all-day below
 
     const assetNames = r.assets
-      .map(
-        (a) =>
-          a.asset.customName || `${a.asset.model.name} (${a.asset.assetTag})`
-      )
+      .map((a) => {
+        const modelName = a.asset.modelId
+          ? modelMap.get(a.asset.modelId)?.name ?? ""
+          : "";
+        return a.asset.customName || `${modelName} (${a.asset.assetTag})`;
+      })
       .join(", ");
 
     const descLines = [

@@ -21,7 +21,8 @@ import {
 } from "@/lib/split-sibling-collapse";
 import { nextOrdinal } from "@/lib/line-item-units";
 import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
-import { patchCheckRecordInConvex } from "@/lib/check-record-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { syncLineItemRollup } from "@/lib/line-item-fulfillment";
 
 export interface CollapseRunStats {
@@ -306,12 +307,15 @@ export async function mergeGroup(
   });
   // Mirror the canonical + deactivated sibling line items to Convex.
   await syncLineItemsToConvex([plan.canonicalId, ...plan.moves.map((m) => m.siblingId)]);
-  // Mirror the repointed CheckRecord rows to Convex (post-commit; updateMany
-  // gives no ids, so we captured them inside the tx above).
+  // Update repointed CheckRecord rows in Convex (Phase B: Convex-only writes)
+  const convexForCR = await getConvexClient();
   for (const p of checkRecordPatches) {
-    await patchCheckRecordInConvex(p.id, {
-      lineItemId: p.lineItemId,
-      lineItemUnitId: p.lineItemUnitId,
+    await convexForCR.mutation(api.checkRecords.update, {
+      id: p.id,
+      patch: {
+        ...(p.lineItemId ? { lineItemId: p.lineItemId } : {}),
+        ...(p.lineItemUnitId ? { lineItemUnitId: p.lineItemUnitId } : {}),
+      },
     });
   }
 }

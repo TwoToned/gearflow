@@ -8,7 +8,7 @@ import { getKitsByOrg } from "@/lib/kits-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getCategoriesByOrg } from "@/lib/categories-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
-import { prisma } from "@/lib/prisma";
+import { getMaintenanceTagsByOrg } from "@/lib/maintenance-read";
 
 /**
  * Get all distinct tags used across the organization.
@@ -26,7 +26,8 @@ export async function getOrgTags(): Promise<string[]> {
     getKitsByOrg(organizationId).then((ks) => ks.map((k) => ({ tags: k.tags ?? [] }))),
     getLocationsByOrg(organizationId).then((ls) => ls.map((l) => ({ tags: l.tags ?? [] }))),
     getCategoriesByOrg(organizationId).then((cs) => cs.map((c) => ({ tags: c.tags ?? [] }))),
-    prisma.maintenanceRecord.findMany({ where: { organizationId }, select: { tags: true } }),
+    // Maintenance records live in Convex (dual-written) — normalise to { tags }.
+    getMaintenanceTagsByOrg(organizationId),
     getProjectsByOrg(organizationId).then((ps) => ps.map((p) => ({ tags: p.tags ?? [] }))),
     // Clients live in Convex now — normalise to the same { tags } shape.
     getClientsByOrg(organizationId).then((cs) => cs.map((c) => ({ tags: c.tags ?? [] }))),

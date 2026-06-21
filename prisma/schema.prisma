@@ -628,9 +628,7 @@ model Category {
   organizationId     String
   organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name               String
-  parentId           String?
-  parent             Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children           Category[]   @relation("CategoryHierarchy")
+  parentId           String? // self-reference to a Convex categories doc; FK dropped Phase B (tree rebuilt client-side in categories-read)
   description        String?
   icon               String?
   sortOrder          Int          @default(0)
@@ -639,8 +637,11 @@ model Category {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  models Model[]
-  kits   Kit[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // categories are now CONVEX-ONLY (no Prisma `category` row is written), so the
+  // inbound FK constraints from model.categoryId, kit.categoryId, and the self-ref
+  // category.parentId were dropped (migration 20260617131300_drop_category_fk_constraints).
+  // Dependent rows keep a plain `categoryId`/`parentId` referencing the Convex doc.
 
   @@index([organizationId])
   @@index([parentId])
@@ -657,8 +658,7 @@ model Model {
   manufacturer            String?
   modelNumber             String?
   sku                     String?
-  categoryId              String?
-  category                Category?       @relation(fields: [categoryId], references: [id])
+  categoryId              String? // references a Convex categories doc; FK dropped Phase B
   description             String?
   image                   String?
   images                  String[]        @default([])
@@ -677,8 +677,7 @@ model Model {
   testAndTagIntervalDays  Int?
   defaultEquipmentClass   EquipmentClass?
   defaultApplianceType    ApplianceType?
-  defaultTestProfileId    String?
-  defaultTestProfile      TestProfile?    @relation("ModelDefaultTestProfile", fields: [defaultTestProfileId], references: [id], onDelete: SetNull)
+  defaultTestProfileId    String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   maintenanceIntervalDays Int?
   assetType               AssetType       @default(SERIALIZED)
   barcodeLabelTemplate    String?
@@ -687,17 +686,13 @@ model Model {
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
 
-  assets             Asset[]
-  bulkAssets         BulkAsset[]
-  lineItems          ProjectLineItem[]
-  media              ModelMedia[]
-  modelCheckItems    ModelCheckItem[]
-  groupTemplateItems GroupTemplateItem[]
-  bulkAccessories    ModelBulkAccessory[]
-
-  supplierOrderItems SupplierOrderItem[]
-  subHireItems       SubHireItem[]
-  supplierModelRates SupplierModelRate[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // models are now CONVEX-ONLY (no Prisma `model` row is written), so the inbound
+  // FK constraints from asset / bulk_asset / project_line_item / model_media /
+  // model_check_item / group_template_item / model_bulk_accessory /
+  // supplier_order_item / sub_hire_item / supplier_model_rate were dropped (see
+  // migration 20260617131200_drop_model_fk_constraints). The dependent rows keep a
+  // plain `modelId` referencing the Convex `models` doc.
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -729,11 +724,12 @@ model Supplier {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  assets              Asset[]
-  lineItems           ProjectLineItem[]
-  orders              SupplierOrder[]
-  subHires            SubHire[]
-  supplierModelRates  SupplierModelRate[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // suppliers are now CONVEX-ONLY (no Prisma `supplier` row is written), so the
+  // inbound FK constraints from asset / project_line_item / supplier_order /
+  // sub_hire / supplier_model_rate were dropped (see migration
+  // 20260617131100_drop_supplier_fk_constraints). The dependent rows keep a plain
+  // `supplierId String?` referencing the Convex `suppliers` doc.
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -746,8 +742,7 @@ model SupplierOrder {
   id             String              @id @default(cuid())
   organizationId String
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
   orderNumber    String
   type           SupplierOrderType
   status         SupplierOrderStatus @default(DRAFT)
@@ -782,8 +777,7 @@ model SupplierOrderItem {
   quantity    Int           @default(1)
   unitPrice   Decimal?      @db.Decimal(10, 2)
   lineTotal   Decimal?      @db.Decimal(10, 2)
-  modelId     String?
-  model       Model?        @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelId     String? // references a Convex models doc; FK dropped Phase B
   assetId     String?
   asset       Asset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
   notes       String?
@@ -799,8 +793,7 @@ model SubHire {
   id                      String               @id @default(cuid())
   organizationId          String
   organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId              String
-  supplier                Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId              String // references a Convex suppliers doc; FK dropped Phase B
   projectId               String?
   project                 Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdById             String
@@ -844,8 +837,7 @@ model SubHireItem {
   subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
   groupId          String?
   group            SubHireGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  modelId          String?
-  model            Model?            @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelId          String? // references a Convex models doc; FK dropped Phase B
   description      String
   quantity         Int               @default(1)
   unitCost         Decimal           @default(0) @db.Decimal(10, 2)
@@ -901,10 +893,8 @@ model SupplierModelRate {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
+  modelId        String // references a Convex models doc; FK dropped Phase B
   lastUnitCost   Decimal      @db.Decimal(10, 2)
   pricingType    PricingType  @default(FLAT)
   lastUsedAt     DateTime     @default(now())
@@ -925,12 +915,10 @@ model Kit {
   assetTag          String
   name              String
   description       String?
-  categoryId        String?
-  category          Category?      @relation(fields: [categoryId], references: [id])
+  categoryId        String? // references a Convex categories doc; FK dropped Phase B
   status            KitStatus      @default(AVAILABLE)
   condition         AssetCondition @default(NEW)
-  locationId        String?
-  location          Location?      @relation(fields: [locationId], references: [id])
+  locationId        String? // references a Convex locations doc; FK dropped Phase B
   weight            Decimal?       @db.Decimal(8, 2)
   caseType          String?
   caseDimensions    String?
@@ -1016,8 +1004,7 @@ model Asset {
   id                  String         @id @default(cuid())
   organizationId      String
   organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId             String
-  model               Model          @relation(fields: [modelId], references: [id])
+  modelId             String // references a Convex models doc; FK dropped Phase B
   assetTag            String
   serialNumber        String?
   customName          String?
@@ -1026,15 +1013,13 @@ model Asset {
   purchaseDate        DateTime?
   purchasePrice       Decimal?       @db.Decimal(10, 2)
   purchaseSupplier    String?
-  supplierId          String?
-  supplier            Supplier?      @relation(fields: [supplierId], references: [id])
+  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
   purchaseOrderNumber String?
   supplierOrderId     String?
   supplierOrder       SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
   warrantyExpiry      DateTime?
   notes               String?
-  locationId          String?
-  location            Location?      @relation(fields: [locationId], references: [id])
+  locationId          String? // references a Convex locations doc; FK dropped Phase B
   customFieldValues   Json?
   lastTestAndTagDate  DateTime?
   nextTestAndTagDate  DateTime?
@@ -1086,14 +1071,12 @@ model BulkAsset {
   id                   String          @id @default(cuid())
   organizationId       String
   organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId              String
-  model                Model           @relation(fields: [modelId], references: [id])
+  modelId              String // references a Convex models doc; FK dropped Phase B
   assetTag             String
   totalQuantity        Int             @default(0)
   availableQuantity    Int             @default(0)
   purchasePricePerUnit Decimal?        @db.Decimal(10, 2)
-  locationId           String?
-  location             Location?       @relation(fields: [locationId], references: [id])
+  locationId           String? // references a Convex locations doc; FK dropped Phase B
   status               BulkAssetStatus @default(ACTIVE)
   notes                String?
   tags                 String[]        @default([])
@@ -1165,8 +1148,7 @@ model ModelBulkAccessory {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   bulkAssetId    String
   bulkAsset      BulkAsset    @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
   quantity       Int
@@ -1195,20 +1177,15 @@ model Location {
   longitude      Float?
   type           LocationType @default(WAREHOUSE)
   isDefault      Boolean      @default(false)
-  parentId       String?
-  parent         Location?    @relation("LocationHierarchy", fields: [parentId], references: [id])
-  children       Location[]   @relation("LocationHierarchy")
+  parentId       String? // self-reference to a Convex locations doc; FK dropped Phase B (tree rebuilt client-side in locations-read)
   notes          String?
   tags           String[]     @default([])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  assets                   Asset[]
-  bulkAssets               BulkAsset[]
-  kits                     Kit[]
-  projects                 Project[]
-  media                    LocationMedia[]
-  warehouseDashboardTokens WarehouseDashboardToken[]
+  // Inbound FK back-relations (assets/bulkAssets/kits/projects/media/
+  // warehouseDashboardTokens/children) were removed Phase B — those tables now
+  // hold a plain locationId/parentId string referencing the Convex locations doc.
 
   @@index([organizationId])
   @@index([parentId])
@@ -1326,8 +1303,7 @@ model Project {
   status                ProjectStatus @default(ENQUIRY)
   type                  ProjectType   @default(OTHER)
   description           String?
-  locationId            String?
-  location              Location?     @relation(fields: [locationId], references: [id])
+  locationId            String? // references a Convex locations doc; FK dropped Phase B
   siteContactName       String?
   siteContactPhone      String?
   siteContactEmail      String?
@@ -1401,8 +1377,7 @@ model ProjectLineItem {
   projectId           String
   project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   type                LineItemType          @default(EQUIPMENT)
-  modelId             String?
-  model               Model?                @relation(fields: [modelId], references: [id])
+  modelId             String? // references a Convex models doc; FK dropped Phase B
   assetId             String?
   asset               Asset?                @relation(fields: [assetId], references: [id], onDelete: SetNull)
   bulkAssetId         String?
@@ -1466,8 +1441,7 @@ model ProjectLineItem {
   // verified to have 0 legacy-only rows before drop. See
   // 20260514XXXXXX_drop_line_item_isSubhire migration.
   showSubhireOnDocs   Boolean               @default(false)
-  supplierId          String?
-  supplier            Supplier?             @relation(fields: [supplierId], references: [id])
+  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
   subhireOrderNumber  String?
   supplierOrderId     String?
   supplierOrder       SupplierOrder?        @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
@@ -1708,7 +1682,12 @@ model GroupTemplate {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  items GroupTemplateItem[]
+  // GroupTemplate PARENT rows are CONVEX-ONLY (Phase B write inversion). No
+  // Prisma row is written; the Convex `groupTemplates` doc is the sole source of
+  // truth. This model is retained only as a (now-unwritten) anchor for the raw
+  // search query. The `items` back-relation is gone — the child
+  // group_template_item.templateId FK was dropped (Phase B), so the cascade
+  // delete is re-implemented cross-store in deleteGroupTemplate.
 
   @@index([organizationId])
   @@map("group_template")
@@ -1724,10 +1703,8 @@ model GroupTemplateItem {
   id             String        @id @default(cuid())
   organizationId String
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  templateId     String
-  template       GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  modelId        String?
-  model          Model?        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  templateId     String // references a Convex groupTemplates doc; FK dropped Phase B
+  modelId        String? // references a Convex models doc; FK dropped Phase B
   kitId          String?
   kit            Kit?          @relation(fields: [kitId], references: [id], onDelete: Cascade)
   quantity       Int           @default(1)
@@ -1804,8 +1781,7 @@ model ModelMedia {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   fileId         String
   file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
   type           MediaType    @default(PHOTO)
@@ -1904,8 +1880,7 @@ model LocationMedia {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId     String
-  location       Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId     String // references a Convex locations doc; FK (Cascade) dropped Phase B — cascade re-implemented in deleteLocation
   fileId         String
   file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
   type           MediaType    @default(DOCUMENT)
@@ -1958,9 +1933,10 @@ model TestProfile {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
-  testTagAssets  TestTagAsset[]
-  testTagRecords TestTagRecord[]
-  models         Model[]         @relation("ModelDefaultTestProfile")
+  // Inbound SetNull FKs (model.defaultTestProfileId, test_tag_asset.testProfileId,
+  // test_tag_record.testProfileId) were dropped in Phase B (write inversion) — those
+  // columns now hold a Convex testProfiles doc cuid, so the Prisma back-relations
+  // are gone. The organizationId FK stays (test profiles remain org-cascade-scoped).
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
@@ -1993,8 +1969,7 @@ model TestTagAsset {
   bulkAssetId String?
   bulkAsset   BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
 
-  testProfileId String?
-  testProfile   TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  testProfileId String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   outletCount   Int?
 
   isActive  Boolean  @default(true)
@@ -2020,8 +1995,7 @@ model TestTagRecord {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   testTagAssetId String
   testTagAsset   TestTagAsset @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
-  testProfileId  String?
-  testProfile    TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  testProfileId  String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
   testDate       DateTime
   testedById     String
   testedBy       User         @relation(fields: [testedById], references: [id])
@@ -2650,7 +2624,9 @@ model BrandTemplate {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  documentTemplates DocumentTemplate[]
+  // Phase B (Convex domain-only decommission): brand_template is Convex-only.
+  // The inbound document_template.brandTemplateId FK was dropped; the
+  // back-relation is removed (DocumentTemplate now carries a plain string id).
 
   @@index([organizationId])
   @@map("brand_template")
@@ -2673,8 +2649,7 @@ model DocumentTemplate {
 
   // New section-based fields
   sections        String?        @db.Text // JSON — TemplateSection[] (ordered section list)
-  brandTemplateId String?
-  brandTemplate   BrandTemplate? @relation(fields: [brandTemplateId], references: [id], onDelete: SetNull)
+  brandTemplateId String? // references a Convex brandTemplates doc (cuid); FK dropped in Phase B
   thumbnailData   String?        @db.Text // base64 thumbnail image
 
   isDefault    Boolean   @default(false)
@@ -2716,8 +2691,7 @@ model WarehouseDashboardToken {
   name       String // "Main Warehouse TV", "Loading Dock Screen"
   token      String // Raw access token (for URL display in settings)
   tokenHash  String    @unique // SHA-256 of the access token (for lookup)
-  locationId String? // Scope to a specific warehouse location
-  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId String? // Scope to a specific warehouse location — references a Convex locations doc; FK (SetNull) dropped Phase B
   isActive   Boolean   @default(true)
   layout     String    @default("standard") // "standard", "compact", "dispatch-only"
 
@@ -2866,8 +2840,7 @@ model ModelCheckItem {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String
-  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId        String // references a Convex models doc; FK dropped Phase B
   checkItemId    String
   checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
   sortOrder      Int          @default(0)

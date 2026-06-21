@@ -105,3 +105,74 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Atomically clear any existing defaults for user+table, then create the new
+ * view. Single Convex transaction prevents a concurrent create from leaving
+ * two defaults.
+ */
+export const createForUser = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    tableId: v.string(),
+    name: v.string(),
+    config: v.any(),
+    isDefault: v.boolean(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, userId, tableId, name, config, isDefault, now }) => {
+    await requireService(ctx);
+    if (isDefault) {
+      const views = await ctx.db
+        .query("savedTableViews")
+        .withIndex("by_userId_tableId", (q) => q.eq("userId", userId).eq("tableId", tableId))
+        .collect();
+      for (const view of views) {
+        if (view.isDefault && view.organizationId === organizationId) {
+          await ctx.db.patch(view._id, { isDefault: false, updatedAt: now });
+        }
+      }
+    }
+    return await ctx.db.insert("savedTableViews", {
+      id, organizationId, userId, tableId, name, config, isDefault, createdAt: now, updatedAt: now,
+    });
+  },
+});
+
+/**
+ * Atomically clear all defaults for user+table and optionally set a new one.
+ * Passing null for targetId just clears without setting.
+ */
+export const setDefault = mutation({
+  args: {
+    organizationId: v.string(),
+    userId: v.string(),
+    tableId: v.string(),
+    targetId: v.union(v.string(), v.null()),
+    now: v.number(),
+  },
+  handler: async (ctx, { organizationId, userId, tableId, targetId, now }) => {
+    await requireService(ctx);
+    const views = await ctx.db
+      .query("savedTableViews")
+      .withIndex("by_userId_tableId", (q) => q.eq("userId", userId).eq("tableId", tableId))
+      .collect();
+    for (const view of views) {
+      if (view.isDefault && view.organizationId === organizationId) {
+        await ctx.db.patch(view._id, { isDefault: false, updatedAt: now });
+      }
+    }
+    if (targetId) {
+      const target = await ctx.db
+        .query("savedTableViews")
+        .withIndex("by_cuid", (q) => q.eq("id", targetId))
+        .unique();
+      if (!target || target.organizationId !== organizationId || target.userId !== userId || target.tableId !== tableId) {
+        throw new ConvexError("savedTableViews not found: " + targetId);
+      }
+      await ctx.db.patch(target._id, { isDefault: true, updatedAt: now });
+    }
+  },
+});

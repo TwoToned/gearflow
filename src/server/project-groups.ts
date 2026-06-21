@@ -1,5 +1,6 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import {
@@ -11,15 +12,12 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
-import {
-  mirrorProjectGroupCreate,
-  removeProjectGroupFromConvex,
-  syncProjectGroupsToConvex,
-} from "@/lib/project-grouping-mirror";
 import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { getModelMap } from "@/lib/models-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Calculate the suggested price for a group based on its line items' rates.
@@ -28,32 +26,27 @@ import { getModelMap } from "@/lib/models-read";
  * (or project's) default rental period/quantity.
  */
 export async function calculateSuggestedPrice(groupId: string): Promise<number> {
-  const group = await prisma.projectGroup.findUniqueOrThrow({
-    where: { id: groupId },
-    include: {
-      project: {
-        select: {
-          defaultRentalPeriod: true,
-          defaultRentalQuantity: true,
-        },
-      },
-      lineItems: {
-        where: { isKitChild: false },
-      },
-    },
+  const client = await getConvexClient();
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group) return 0;
+
+  const project = await prisma.project.findUnique({
+    where: { id: group.projectId },
+    select: { defaultRentalPeriod: true, defaultRentalQuantity: true },
+  });
+
+  const lineItems = await prisma.projectLineItem.findMany({
+    where: { groupId, isKitChild: false },
   });
 
   let total = 0;
   const modelMap = await getModelMap(group.organizationId);
 
   // Custom items intentionally excluded: the suggested price covers the
-  // *equipment bundle* only. Custom items are always counted as extras on
-  // top via `recalculateProjectTotals` (customExtras). Including them here
-  // double-counts when the user clicks Accept Suggested Price — the
-  // suggestion becomes `g.price`, and the extras get added again.
-  const rentalPeriod = group.rentalPeriod ?? group.project.defaultRentalPeriod ?? "DAILY";
-  const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
-  for (const item of group.lineItems) {
+  // *equipment bundle* only.
+  const rentalPeriod = group.rentalPeriod ?? project?.defaultRentalPeriod ?? "DAILY";
+  const rentalQuantity = group.rentalQuantity ?? project?.defaultRentalQuantity ?? 1;
+  for (const item of lineItems) {
     if (item.isCustomItem) continue;
     const model = item.modelId ? modelMap.get(item.modelId) ?? null : null;
 
@@ -73,33 +66,31 @@ export async function createProjectGroup(
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = projectGroupSchema.parse(data);
+  const client = await getConvexClient();
 
-  // Get next sort order within the (project, category) bucket.
-  // Scoping by projectId matters when categoryId is null — without
-  // it, orphan groups from other projects in the same org would
-  // share the same null sortOrder pool. With it, each project's
-  // Uncategorized zone has its own independent sequence.
-  const maxSort = await prisma.projectGroup.aggregate({
-    where: { categoryId: parsed.categoryId, projectId, organizationId },
-    _max: { sortOrder: true },
-  });
+  // Get next sort order within the (project, category) bucket from Convex.
+  const existing = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
+  const inBucket = existing.filter((g) => (g.categoryId ?? null) === (parsed.categoryId ?? null));
+  const maxSort = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
 
-  const group = await prisma.projectGroup.create({
-    data: {
-      organizationId,
-      projectId,
-      categoryId: parsed.categoryId,
-      title: parsed.title,
-      description: parsed.description || null,
-      quantity: parsed.quantity,
-      price: parsed.price != null ? parsed.price : null,
-      rentalPeriod: parsed.rentalPeriod || null,
-      rentalQuantity: parsed.rentalQuantity || null,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      suggestedPrice: 0,
-    },
+  const id = createId();
+  const now = Date.now();
+  await client.mutation(api.projectGroups.create, {
+    id,
+    organizationId,
+    projectId,
+    categoryId: parsed.categoryId || undefined,
+    title: parsed.title,
+    description: parsed.description || undefined,
+    quantity: parsed.quantity,
+    price: parsed.price != null ? parsed.price : undefined,
+    rentalPeriod: parsed.rentalPeriod || undefined,
+    rentalQuantity: parsed.rentalQuantity || undefined,
+    sortOrder: maxSort + 1,
+    suggestedPrice: 0,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorProjectGroupCreate(group);
 
   await logActivity({
     organizationId,
@@ -112,7 +103,22 @@ export async function createProjectGroup(
     summary: `Created group "${parsed.title}"`,
   });
 
-  return serialize(group);
+  return serialize({
+    id,
+    organizationId,
+    projectId,
+    categoryId: parsed.categoryId ?? null,
+    title: parsed.title,
+    description: parsed.description || null,
+    quantity: parsed.quantity,
+    price: parsed.price != null ? parsed.price : null,
+    rentalPeriod: parsed.rentalPeriod || null,
+    rentalQuantity: parsed.rentalQuantity || null,
+    sortOrder: maxSort + 1,
+    suggestedPrice: 0,
+    createdAt: new Date(now),
+    updatedAt: new Date(now),
+  });
 }
 
 export async function updateProjectGroup(
@@ -120,28 +126,32 @@ export async function updateProjectGroup(
   data: Partial<ProjectGroupFormValues>
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  const group = await prisma.projectGroup.update({
-    where: { id: groupId, organizationId },
-    data: {
-      ...(data.title !== undefined && { title: data.title }),
-      ...(data.description !== undefined && { description: data.description || null }),
-      ...(data.quantity !== undefined && { quantity: Number(data.quantity) }),
-      ...(data.rentalPeriod !== undefined && { rentalPeriod: data.rentalPeriod || null }),
-      ...(data.rentalQuantity !== undefined && { rentalQuantity: data.rentalQuantity ? Number(data.rentalQuantity) : null }),
-      ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
-    },
-  });
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group || group.organizationId !== organizationId) {
+    throw new Error("Group not found");
+  }
+
+  const now = Date.now();
+  const patch: Record<string, unknown> = { updatedAt: now };
+  if (data.title !== undefined) patch.title = data.title;
+  if (data.description !== undefined) patch.description = data.description || undefined;
+  if (data.quantity !== undefined) patch.quantity = Number(data.quantity);
+  if (data.rentalPeriod !== undefined) patch.rentalPeriod = data.rentalPeriod || undefined;
+  if (data.rentalQuantity !== undefined) patch.rentalQuantity = data.rentalQuantity ? Number(data.rentalQuantity) : undefined;
+  if (data.sortOrder !== undefined) patch.sortOrder = Number(data.sortOrder);
+
+  await client.mutation(api.projectGroups.update, { id: groupId, patch });
 
   // Recalculate suggestion if rental settings changed
   if (data.rentalPeriod !== undefined || data.rentalQuantity !== undefined) {
     const suggested = await calculateSuggestedPrice(groupId);
-    await prisma.projectGroup.update({
-      where: { id: groupId },
-      data: { suggestedPrice: suggested },
+    await client.mutation(api.projectGroups.update, {
+      id: groupId,
+      patch: { suggestedPrice: suggested, updatedAt: Date.now() },
     });
   }
-  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -166,23 +176,38 @@ export async function updateProjectGroup(
         action: "group_updated",
         summary: `updated group "${group.title}"`,
         targetType: "group",
-        targetId: group.id,
+        targetId: groupId,
       },
     );
   }
 
-  return serialize(group);
+  const updated = await client.query(api.projectGroups.getById, { id: groupId });
+  return serialize({
+    ...(updated ?? group),
+    price: (updated ?? group).price ?? null,
+    suggestedPrice: (updated ?? group).suggestedPrice ?? null,
+    rentalPeriod: (updated ?? group).rentalPeriod ?? null,
+    rentalQuantity: (updated ?? group).rentalQuantity ?? null,
+    createdAt: new Date((updated ?? group).createdAt ?? 0),
+    updatedAt: new Date((updated ?? group).updatedAt ?? now),
+  });
 }
 
 export async function updateGroupPrice(groupId: string, price: number) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   updateGroupPriceSchema.parse({ price });
+  const client = await getConvexClient();
 
-  const group = await prisma.projectGroup.update({
-    where: { id: groupId, organizationId },
-    data: { price },
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group || group.organizationId !== organizationId) {
+    throw new Error("Group not found");
+  }
+
+  const now = Date.now();
+  await client.mutation(api.projectGroups.update, {
+    id: groupId,
+    patch: { price, updatedAt: now },
   });
-  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -197,23 +222,33 @@ export async function updateGroupPrice(groupId: string, price: number) {
 
   await recalculateProjectTotals(group.projectId);
 
-  return serialize(group);
+  return serialize({
+    ...group,
+    price,
+    suggestedPrice: group.suggestedPrice ?? null,
+    rentalPeriod: group.rentalPeriod ?? null,
+    rentalQuantity: group.rentalQuantity ?? null,
+    createdAt: new Date(group.createdAt ?? 0),
+    updatedAt: new Date(now),
+  });
 }
 
 export async function acceptSuggestedPrice(groupId: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  const group = await prisma.projectGroup.findUniqueOrThrow({
-    where: { id: groupId, organizationId },
-  });
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group || group.organizationId !== organizationId) {
+    throw new Error("Group not found");
+  }
 
   const suggested = await calculateSuggestedPrice(groupId);
 
-  await prisma.projectGroup.update({
-    where: { id: groupId },
-    data: { price: suggested, suggestedPrice: suggested },
+  const now = Date.now();
+  await client.mutation(api.projectGroups.update, {
+    id: groupId,
+    patch: { price: suggested, suggestedPrice: suggested, updatedAt: now },
   });
-  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -236,27 +271,24 @@ export async function acceptAllSuggestedPrices(
   categoryId?: string
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  const where: { projectId: string; organizationId: string; categoryId?: string } = {
-    projectId,
-    organizationId,
-  };
-  if (categoryId) where.categoryId = categoryId;
-
-  const groups = await prisma.projectGroup.findMany({ where });
+  const allGroups = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
+  const groups = categoryId
+    ? allGroups.filter((g) => g.categoryId === categoryId)
+    : allGroups;
 
   let count = 0;
   for (const group of groups) {
     const suggested = await calculateSuggestedPrice(group.id);
     if (suggested > 0) {
-      await prisma.projectGroup.update({
-        where: { id: group.id },
-        data: { price: suggested, suggestedPrice: suggested },
+      await client.mutation(api.projectGroups.update, {
+        id: group.id,
+        patch: { price: suggested, suggestedPrice: suggested, updatedAt: Date.now() },
       });
       count++;
     }
   }
-  await syncProjectGroupsToConvex(groups.map((g) => g.id));
 
   await logActivity({
     organizationId,
@@ -276,23 +308,33 @@ export async function acceptAllSuggestedPrices(
 
 export async function deleteProjectGroup(groupId: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  const group = await prisma.projectGroup.findUniqueOrThrow({
-    where: { id: groupId, organizationId },
-    include: { lineItems: true },
+  const group = await client.query(api.projectGroups.getById, { id: groupId });
+  if (!group || group.organizationId !== organizationId) {
+    throw new Error("Group not found");
+  }
+
+  // Count line items for log message
+  const lineItems = await prisma.projectLineItem.findMany({
+    where: { groupId, organizationId },
+    select: { id: true },
   });
 
   // Cascade: move line items to standalone in same category
-  await prisma.$transaction([
-    prisma.projectLineItem.updateMany({
-      where: { groupId, organizationId },
-      data: { groupId: null },
-    }),
-    prisma.projectGroup.delete({
-      where: { id: groupId, organizationId },
-    }),
-  ]);
-  await removeProjectGroupFromConvex(groupId);
+  await prisma.projectLineItem.updateMany({
+    where: { groupId, organizationId },
+    data: { groupId: null },
+  });
+
+  // Delete the group's slot from Convex
+  const groupSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: groupId });
+  for (const slot of groupSlots) {
+    await client.mutation(api.categorySlots.remove, { id: slot.id });
+  }
+
+  // Delete the group from Convex
+  await client.mutation(api.projectGroups.remove, { id: groupId });
 
   await logActivity({
     organizationId,
@@ -302,7 +344,7 @@ export async function deleteProjectGroup(groupId: string) {
     entityType: "project",
     entityId: group.projectId,
     entityName: group.title,
-    summary: `Deleted group "${group.title}" — ${group.lineItems.length} items moved to standalone`,
+    summary: `Deleted group "${group.title}" — ${lineItems.length} items moved to standalone`,
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -330,26 +372,25 @@ export async function moveLineItemToGroup(
     },
   });
 
-  // Recalculate suggestions for both old and new groups
+  // Recalculate suggestions for both old and new groups in Convex
+  const client = await getConvexClient();
+  const now = Date.now();
   if (oldGroupId) {
     const suggested = await calculateSuggestedPrice(oldGroupId);
-    await prisma.projectGroup.update({
-      where: { id: oldGroupId },
-      data: { suggestedPrice: suggested },
+    await client.mutation(api.projectGroups.update, {
+      id: oldGroupId,
+      patch: { suggestedPrice: suggested, updatedAt: now },
     });
   }
   if (parsed.targetGroupId) {
     const suggested = await calculateSuggestedPrice(parsed.targetGroupId);
-    await prisma.projectGroup.update({
-      where: { id: parsed.targetGroupId },
-      data: { suggestedPrice: suggested },
+    await client.mutation(api.projectGroups.update, {
+      id: parsed.targetGroupId,
+      patch: { suggestedPrice: suggested, updatedAt: now },
     });
   }
-  // Mirror the moved line item's new groupId/categoryId + the affected groups'
-  // suggestedPrice recalcs. (Move to standalone clears groupId→null — the
-  // documented clear-to-null no-op in Convex.)
+  // Mirror the moved line item's new groupId/categoryId to Convex.
   await syncLineItemsToConvex([parsed.lineItemId]);
-  await syncProjectGroupsToConvex([oldGroupId, parsed.targetGroupId]);
 
   await logActivity({
     organizationId,
@@ -371,17 +412,16 @@ export async function reorderProjectGroups(
   categoryId: string,
   orderedIds: string[]
 ) {
-  const { organizationId } = await requirePermission("project", "manage_line_items");
+  await requirePermission("project", "manage_line_items");
+  const client = await getConvexClient();
 
-  await prisma.$transaction(
-    orderedIds.map((id, index) =>
-      prisma.projectGroup.update({
-        where: { id, organizationId },
-        data: { sortOrder: index },
-      })
-    )
-  );
-  await syncProjectGroupsToConvex(orderedIds);
+  const now = Date.now();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await client.mutation(api.projectGroups.update, {
+      id: orderedIds[i],
+      patch: { sortOrder: i, updatedAt: now },
+    });
+  }
 
   return serialize({ success: true });
 }

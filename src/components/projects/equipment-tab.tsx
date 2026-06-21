@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -109,11 +110,16 @@ interface EquipmentTabProps {
   projectId: string;
   rentalStartDate?: Date | null;
   rentalEndDate?: Date | null;
+  /** When provided, the primary "Add ▾" menu is portalled into this element
+   *  (the tab row) instead of the in-panel toolbar. The page renders an empty
+   *  slot inline with the Equipment/Labour/Tasks tabs and hands the node here so
+   *  the Add action sits on the tab row. */
+  addMenuSlot?: HTMLElement | null;
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -586,41 +592,49 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     }
   };
 
+  // Primary "Add ▾" menu (item / group / category). The three add actions reuse
+  // the exact handlers the old three buttons triggered (UnifiedAddDialog,
+  // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
+  // either inline in the in-panel toolbar (fallback) or portalled onto the tab
+  // row when the page supplies `addMenuSlot`.
+  const addMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          Add
+          <ChevronDownIcon className="h-3 w-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => {
+            setUnifiedAddTarget({});
+            setShowUnifiedAdd(true);
+          }}
+        >
+          <Plus className="mr-2 h-3.5 w-3.5" />
+          Add item
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
+          <FolderPlus className="mr-2 h-3.5 w-3.5" />
+          Add group
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
+          <FolderTree className="mr-2 h-3.5 w-3.5" />
+          Add category
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <div className="space-y-3" data-shortcut-scope="equipment">
-      {/* Toolbar — one primary "Add ▾" menu (item / group / category) on the
-          left, a quiet margin toggle on the right. The three add actions reuse
-          the exact handlers the old three buttons triggered (UnifiedAddDialog,
-          AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. */}
+      {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
+          inline in this toolbar. The quiet margin toggle always stays here. */}
+      {addMenuSlot ? createPortal(addMenu, addMenuSlot) : null}
       <div className="flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              Add
-              <ChevronDownIcon className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem
-              onClick={() => {
-                setUnifiedAddTarget({});
-                setShowUnifiedAdd(true);
-              }}
-            >
-              <Plus className="mr-2 h-3.5 w-3.5" />
-              Add item
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
-              <FolderPlus className="mr-2 h-3.5 w-3.5" />
-              Add group
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
-              <FolderTree className="mr-2 h-3.5 w-3.5" />
-              Add category
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!addMenuSlot && addMenu}
         <div className="flex-1" />
         <Button
           variant="ghost"

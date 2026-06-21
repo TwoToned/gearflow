@@ -587,20 +587,20 @@ export function DataTable<TData>({
           />
         ))}
         <div className="flex items-center gap-2 ml-auto">
-          {savedViews && (
-            <SavedViewsMenu
-              tableId={savedViews.tableId}
-              currentConfig={savedViews.currentConfig}
-              applyConfig={savedViews.applyConfig}
-              onResetPreferences={onResetPreferences}
-            />
-          )}
           {enableColumnVisibility && onToggleColumnVisibility && (
             <ColumnVisibilityPopover
               columns={columns}
               visibility={columnVisibility}
               onToggle={onToggleColumnVisibility}
               onReset={onResetPreferences}
+            />
+          )}
+          {savedViews && (
+            <SavedViewsMenu
+              tableId={savedViews.tableId}
+              currentConfig={savedViews.currentConfig}
+              applyConfig={savedViews.applyConfig}
+              onResetPreferences={onResetPreferences}
             />
           )}
           {toolbarActions}

@@ -791,7 +791,7 @@ export function CategoryRow({
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
 
   return (
-    <TableRow className="group/cat border-b-0 bg-paper-2/50">
+    <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
       <TableCell colSpan={COL_COUNT} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <MoveButtons

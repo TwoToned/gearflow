@@ -13,8 +13,8 @@ import {
 /**
  * ProjectLifecycle — the RVLT job lifecycle as a hero stepper.
  *
- * Circular-node stepper (Enquiry → Quote → Confirmed → Prep → On site → Return)
- * matching the RVLT design-language lifecycle component:
+ * Circular-node stepper (Enquiry → Quote → Confirmed → Prep → On site → Return →
+ * Completed) matching the RVLT design-language lifecycle component:
  *   - completed stages: solid --ink filled node + white check
  *   - current stage: --card node with a 2px red ring + red number, bold label
  *   - upcoming stages: outlined (--line) node + muted number
@@ -27,7 +27,7 @@ import {
  */
 
 export type LifecycleStageKey =
-  | "enquiry" | "quote" | "confirmed" | "prep" | "onsite" | "return";
+  | "enquiry" | "quote" | "confirmed" | "prep" | "onsite" | "return" | "completed";
 
 const STAGES: { key: LifecycleStageKey; label: string; statuses: string[] }[] = [
   { key: "enquiry", label: "Enquiry", statuses: ["ENQUIRY"] },
@@ -35,12 +35,14 @@ const STAGES: { key: LifecycleStageKey; label: string; statuses: string[] }[] = 
   { key: "confirmed", label: "Confirmed", statuses: ["CONFIRMED"] },
   { key: "prep", label: "Prep", statuses: ["PREPPING"] },
   { key: "onsite", label: "On site", statuses: ["CHECKED_OUT", "ON_SITE"] },
-  { key: "return", label: "Return", statuses: ["RETURNED", "COMPLETED", "INVOICED"] },
+  { key: "return", label: "Return", statuses: ["RETURNED"] },
+  { key: "completed", label: "Completed", statuses: ["COMPLETED", "INVOICED"] },
 ];
 
 const STAGE_ENTRY_STATUS: Record<LifecycleStageKey, string> = {
   enquiry: "ENQUIRY", quote: "QUOTING", confirmed: "CONFIRMED",
   prep: "PREPPING", onsite: "CHECKED_OUT", return: "RETURNED",
+  completed: "COMPLETED",
 };
 
 function stageIndexForStatus(status: string): number {

@@ -147,6 +147,10 @@ export default function ProjectDetailPage({
   const [callSheetOpen, setCallSheetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Slot on the tab row that the Equipment tab portals its "Add ▾" menu into,
+  // so the primary action sits inline with the tab selector. State-backed (not a
+  // plain ref) so EquipmentTab re-renders its portal once the node mounts.
+  const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
 
@@ -478,21 +482,28 @@ export default function ProjectDetailPage({
             {/* Main content */}
             <DetailMain>
               <Tabs defaultValue="equipment">
-                <TabsList>
-                  <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                  <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
-                  {!project.isTemplate && (
-                    <TabsTrigger value="financials">Financials</TabsTrigger>
-                  )}
-                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
-                  <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
-                </TabsList>
+                {/* Tab selector + the active tab's primary action share one row.
+                    The Equipment tab portals its "Add ▾" menu into the right-hand
+                    slot (mirrors how the services panel places its action inline
+                    with the tabs). The slot stays empty for other tabs. */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <TabsList>
+                    <TabsTrigger value="equipment">Equipment</TabsTrigger>
+                    <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
+                    {!project.isTemplate && (
+                      <TabsTrigger value="financials">Financials</TabsTrigger>
+                    )}
+                    <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                    <TabsTrigger value="notes">Notes</TabsTrigger>
+                    <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
+                  </TabsList>
+                  <div ref={setEquipmentAddSlot} className="flex items-center gap-2" />
+                </div>
 
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} />
+                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
                   </div>
                 </TabsContent>
 

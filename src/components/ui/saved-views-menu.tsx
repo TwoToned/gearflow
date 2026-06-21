@@ -168,16 +168,12 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+        <DropdownMenuTrigger asChild>
+            <Button variant="line" size="sm" className="h-8 gap-1.5 text-xs">
               <BookmarkPlus className="h-3.5 w-3.5" />
               <span className="max-w-[140px] truncate">{label}</span>
               <ChevronDown className="h-3.5 w-3.5 opacity-60" />
             </Button>
-          }
-        >
-          {label}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
           <DropdownMenuGroup>
@@ -291,7 +287,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
             </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSaveOpen(false)}>
+            <Button variant="line" onClick={() => setSaveOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={!newName.trim() || createMut.isPending}>

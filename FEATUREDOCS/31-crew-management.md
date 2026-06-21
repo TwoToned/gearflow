@@ -143,9 +143,23 @@ Assignment rate is resolved in this order:
 - Falls back to initials (first + last name) when no image
 - **Linked crew members** inherit their profile picture from the linked user account — no separate upload
 
+## Crew Member Form (`/crew/new` + `/crew/[id]/edit`)
+`CrewMemberForm` (`src/components/crew/crew-member-form.tsx`) is built on the
+shared `SmartFormLayout` shell (see [08-assets](./08-assets.md)) — both routes
+render it (edit pre-fills `initialData`, reusing create). Sections: Identity
+(first/last name, type + status `Select`s with sentence-case labels, linked
+platform user via `ComboboxPicker` with auto-fill) → Contact (email, phone) →
+Rates (day/hourly/overtime) → "More details" accordion (department, default role
+via `crewRoleId` picker, DOB, ABN/GST, address, emergency contact, notes, tags).
+Live preview rail: `PersonAvatar` (synced photo if linked) + name + type chip +
+rate line. The `crewRoleId` field already existed in the schema but previously
+had no UI; it is now surfaced as a default-role picker. Same
+`createCrewMember`/`updateCrewMember` actions, `crewMemberSchema`, and `crew`
+create/update permission gates.
+
 ## User Account Linking
 - Crew members can be linked to platform users via `userId` field
-- **"Platform Account" is the first card** in the crew member form — selecting a user auto-fills first name, last name, and email
+- **The "Platform account" picker lives in the Identity section** of the crew member form — selecting a user auto-fills first name, last name, and email
 - Linked crew members inherit **name, email, and profile picture** from the user account for display
 - Users already linked to another crew member are filtered out of the picker
 - Linked user shown in crew detail page header with link icon (hidden on own profile)

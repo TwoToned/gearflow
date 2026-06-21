@@ -55,8 +55,23 @@ quick-create, RVLT tokens, fun microcopy) but as ONE clean page, not multi-step.
 reusable shell so other moderate forms get the same quality without
 reimplementing it. `asset-form.tsx` is intentionally **not** refactored onto it
 (the approved reference stays as-is); the shell is for the directory forms
-(client / supplier — see [22-suppliers](./22-suppliers.md) — and location) and
-future forms.
+(client / supplier — see [22-suppliers](./22-suppliers.md) — and location), the
+crew-member form (see [31-crew-management](./31-crew-management.md)), the
+**model form** (`model-form.tsx`), and future forms.
+
+The **model form** (`/assets/models/new` + `/assets/models/[id]/edit`, both
+render `ModelForm` — edit pre-fills, reusing create) uses the shell with these
+sections: Identity (name, manufacturer, model number, SKU, category via
+`ComboboxPicker` with inline `QuickCreateCategory`, asset-type `Select`,
+description) → Pricing (daily/weekly/monthly rate card with the suggested-rate
+"Apply 4×/12× daily" buttons, purchase price, replacement cost) → Compliance &
+technical (weight, power draw, maintenance interval, requires-test-and-tag with
+nested test-profile picker + validity) → "More details" accordion (relocated
+`SpecificationsEditor`, tags, active switch). Live preview: a model card
+(image/`Package` placeholder + manufacturer-prefixed name + category chip +
+daily-rate line). The old native asset-type `<select>` is now a shadcn `Select`
+with explicit `SelectValue` children. Same `createModel`/`updateModel` actions,
+schema (`modelSchema`), fields, and `model` create/update permission gates.
 
 - `SmartFormLayout` — owns the `grid gap-6 lg:grid-cols-[1fr_300px]`, the
   left-hand card surface, and the sticky `hidden lg:block` rail. The rail content

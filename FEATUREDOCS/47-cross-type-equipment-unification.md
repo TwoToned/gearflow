@@ -172,6 +172,25 @@ All under `src/components/projects/`:
   Empty-state copy with a Cancel button when the project has zero
   groups instead of an empty dropdown.
 
+### Add-form visual pass (RVLT Flow)
+
+The four inline add forms rendered by `UnifiedAddDialog`
+(`equipment-add-form.tsx`, `kit-add-form.tsx`, `sub-hire-add-form.tsx`,
+`custom-item-add-form.tsx`) share a common dialog-form layout, modelled on
+`src/components/assets/asset-form.tsx`: labelled `SectionTitle` groups
+separated by `border-t border-line`, sentence-case `Field` labels, the
+registry `ComboboxPicker` for relational pickers, registry `Select`
+(explicit `SelectValue` children; a `"__none__"` sentinel stands in for the
+empty/none option since Radix forbids empty-string `SelectItem` values) and
+`Checkbox`, registry `Button` variants (`line` Cancel + `loading` submit),
+and a compact live summary line where it helps. Availability / overbook /
+duplicate / conflict notices use RVLT semantic tokens (`t-out` / `ok` /
+`warn` / `blue`) and the left-edge accent-bar notice style, not raw Tailwind
+palette colours. The sub-hire supplier picker has an inline "New supplier"
+quick-create (`QuickCreateSupplier`). This was a markup/component pass only —
+no add/pricing/promotion/availability/mutation logic, data shape, or
+persisted payload changed.
+
 Both move-item dialogs replaced the combined `move-line-item-dialog.tsx`
 in v0.9.3.0. The server action (`moveLineItemToGroup`) is unchanged —
 this is purely a UI split. The combined dialog landed in v0.9.1.0 and

@@ -159,12 +159,18 @@ export async function saveGroupAsTemplate(
     throw new Error("Group not found");
   }
 
-  // Line items stay Prisma — read separately.
-  const groupLineItems = await prisma.projectLineItem.findMany({
-    where: { groupId, organizationId, isKitChild: false },
-    select: { modelId: true, kitId: true, quantity: true, sortOrder: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Line items live in Convex — read the group's project, filter to this group.
+  const groupLineItems = (
+    await client.query(api.projectLineItems.listByProject, { projectId: group.projectId, orgId: organizationId })
+  )
+    .filter((li) => li.groupId === groupId && !li.isKitChild)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((li) => ({
+      modelId: li.modelId ?? null,
+      kitId: li.kitId ?? null,
+      quantity: li.quantity ?? 0,
+      sortOrder: li.sortOrder ?? 0,
+    }));
 
   // Only items that reference either a model or a kit can be templated.
   // Free-text/service lines (no modelId AND no kitId) are skipped.
@@ -298,32 +304,32 @@ export async function applyGroupTemplate(
     updatedAt: new Date(now),
   };
 
-  // Create model line items in a Prisma transaction.
-  let sortOrder = 0;
-  await prisma.$transaction(async (tx) => {
-    for (const item of modelItems) {
-      const period = project.defaultRentalPeriod ?? "DAILY";
-      const rate =
-        period === "WEEKLY"
-          ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? 0)
-          : Number(item.model?.dailyRate ?? 0);
+  // Create model line items in Convex (sortOrder computed in-mutation). Accessory
+  // expansion is suppressed — template lines are bare model rows.
+  for (const item of modelItems) {
+    const period = project.defaultRentalPeriod ?? "DAILY";
+    const rate =
+      period === "WEEKLY"
+        ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? 0)
+        : Number(item.model?.dailyRate ?? 0);
 
-      await tx.projectLineItem.create({
-        data: {
-          organizationId,
-          projectId,
-          categoryId: parsed.categoryId,
-          groupId,
-          modelId: item.modelId!,
-          description: item.model!.name,
-          quantity: item.quantity,
-          unitPrice: rate,
-          lineTotal: rate * item.quantity,
-          sortOrder: sortOrder++,
-        },
-      });
-    }
-  });
+    await client.mutation(api.projectLineItems.createLineItem, {
+      id: createId(),
+      organizationId,
+      projectId,
+      fields: {
+        categoryId: parsed.categoryId || undefined,
+        groupId,
+        modelId: item.modelId!,
+        description: item.model!.name,
+        quantity: item.quantity,
+        unitPrice: rate,
+        lineTotal: rate * item.quantity,
+      },
+      includeAccessories: false,
+      now: Date.now(),
+    });
+  }
 
   // Expand kit items outside the tx. Each call creates parent + children and
   // runs its own availability check. We skip kits that conflict (already on an

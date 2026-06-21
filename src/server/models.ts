@@ -3,7 +3,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
-import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap, getModelMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import {
   getModelById,
@@ -51,8 +50,9 @@ import type { FilterValue } from "@/lib/table-utils";
 //    before any update / archive (matches the old where:{id,organizationId}).
 //  - No hard delete: models are only SOFT-archived (isActive=false), so the dropped
 //    Cascade FKs never fired via a model delete — no cascade re-impl is needed.
-//    archiveModel keeps its existing asset/bulk-asset deletion side-effects (those
-//    rows are dual-written; their removals are mirrored to Convex as before).
+//    archiveModel keeps its existing asset/bulk-asset deletion side-effects; those
+//    rows are Convex-only now (core mega-flip), so it queries + removes them directly
+//    in Convex (no Prisma deleteMany, no mirror).
 //  - Decimal rate columns + Json (specifications/customFields) round-trip through
 //    Convex as numbers / v.any(); mapConvexModelToRow maps the doc back to the
 //    Prisma-row shape the callers (model-form `result.id`, activity log) expect.
@@ -373,10 +373,7 @@ export async function updateModel(id: string, data: ModelFormValues) {
       ? Math.max(1, Math.round(parsed.testAndTagIntervalDays / 30))
       : (orgTT.defaultIntervalMonths || 3);
 
-    const assetIds = (await prisma.asset.findMany({
-      where: { modelId: id, organizationId, isActive: true },
-      select: { id: true },
-    })).map((a) => a.id);
+    const assetIds = (await getActiveAssetsByModel(id, organizationId)).map((a) => a.id);
 
     if (assetIds.length > 0) {
       // Propagate T&T defaults to active Convex testTagAsset rows linked to these assets.
@@ -412,18 +409,20 @@ export async function updateModel(id: string, data: ModelFormValues) {
 export async function archiveModel(id: string) {
   const { organizationId, userId, userName } = await requirePermission("model", "delete");
 
-  // Delete all assets and bulk assets under this model — capture their ids first
-  // so we can mirror the removals to Convex (both are dual-written).
+  // Delete all assets and bulk assets under this model — assets/bulkAssets are
+  // Convex-only (core mega-flip). Query the model's rows from Convex, then remove
+  // each directly.
+  const convexForAssets = await getConvexClient();
   const [assetsToRemove, bulkToRemove] = await Promise.all([
-    prisma.asset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
-    prisma.bulkAsset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
+    convexForAssets.query(api.assets.listByModel, { modelId: id, orgId: organizationId }),
+    convexForAssets.query(api.bulkAssets.listByModel, { modelId: id, orgId: organizationId }),
   ]);
-  await Promise.all([
-    prisma.asset.deleteMany({ where: { modelId: id, organizationId } }),
-    prisma.bulkAsset.deleteMany({ where: { modelId: id, organizationId } }),
-  ]);
-  for (const a of assetsToRemove) await removeAssetFromConvex(a.id);
-  for (const b of bulkToRemove) await removeBulkAssetFromConvex(b.id);
+  for (const a of assetsToRemove) {
+    if (a.organizationId === organizationId) await convexForAssets.mutation(api.assets.remove, { id: a.id });
+  }
+  for (const b of bulkToRemove) {
+    if (b.organizationId === organizationId) await convexForAssets.mutation(api.bulkAssets.remove, { id: b.id });
+  }
 
   // Soft archive — models are Convex-only. Org-guard via the prior doc.
   const existing = await getModelById(id);

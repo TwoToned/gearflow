@@ -20,10 +20,8 @@ import {
   type GroupPlan,
 } from "@/lib/split-sibling-collapse";
 import { nextOrdinal } from "@/lib/line-item-units";
-import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { syncLineItemRollup } from "@/lib/line-item-fulfillment";
 
 export interface CollapseRunStats {
   groupsTotal: number;
@@ -101,19 +99,41 @@ export interface RunOptions {
  * transaction so one pathological group fails alone.
  */
 export async function runCollapse(opts: RunOptions): Promise<CollapseRunResult> {
-  const candidates = await prisma.projectLineItem.findMany({
-    where: {
-      ...(opts.organizationId ? { organizationId: opts.organizationId } : {}),
-      ...(opts.projectId ? { projectId: opts.projectId } : {}),
-      type: "EQUIPMENT",
-      OR: [{ assetId: { not: null } }, { bulkAssetId: { not: null } }],
-      isKitChild: false,
-      // Skip already-merged-away rows.
-      NOT: { AND: [{ status: "CANCELLED" }, { quantity: 0 }] },
-    },
-    select: CANDIDATE_SELECT,
-    orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  // projectLineItem is Convex-only (Phase C). Read candidates from Convex and
+  // replicate the Prisma `where` filters + ordering in JS.
+  const convex = await getConvexClient();
+  let rawCandidates;
+  if (opts.projectId) {
+    if (!opts.organizationId) {
+      throw new Error("runCollapse requires organizationId when scoping by projectId (Convex listByProject is org-scoped)");
+    }
+    rawCandidates = await convex.query(api.projectLineItems.listByProject, {
+      projectId: opts.projectId,
+      orgId: opts.organizationId,
+    });
+  } else if (opts.organizationId) {
+    rawCandidates = await convex.query(api.projectLineItems.list, { orgId: opts.organizationId });
+  } else {
+    throw new Error("runCollapse requires organizationId or projectId (no cross-org Convex line-item query exists post-flip)");
+  }
+
+  const candidates = rawCandidates
+    .filter(
+      (r) =>
+        (!opts.organizationId || r.organizationId === opts.organizationId) &&
+        (!opts.projectId || r.projectId === opts.projectId) &&
+        r.type === "EQUIPMENT" &&
+        (r.assetId != null || r.bulkAssetId != null) &&
+        !r.isKitChild &&
+        // Skip already-merged-away rows.
+        !(r.status === "CANCELLED" && (r.quantity ?? 0) === 0),
+    )
+    .sort(
+      (a, b) =>
+        (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0) ||
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+        (a.createdAt ?? 0) - (b.createdAt ?? 0),
+    );
 
   const plans = planAll(candidates as unknown as CollapseRow[]);
   const mergeable = plans.filter((p) => p.flags.length === 0);
@@ -136,15 +156,13 @@ export async function runCollapse(opts: RunOptions): Promise<CollapseRunResult> 
     return { stats, plans, mergeable, flagged };
   }
 
+  // Resolve canonical orgs from the already-fetched candidate set (Convex
+  // read above) rather than a fresh per-iteration Prisma lookup.
+  const orgByLineId = new Map(candidates.map((c) => [c.id, c.organizationId]));
   for (const plan of mergeable) {
-    // Re-find canonical's org each iteration — cheaper than building a
-    // map and clearer for the audit row.
-    const canonical = await prisma.projectLineItem.findUnique({
-      where: { id: plan.canonicalId },
-      select: { organizationId: true },
-    });
-    if (!canonical) continue;
-    await mergeGroup(plan, canonical.organizationId, opts.runId, stats);
+    const canonicalOrg = orgByLineId.get(plan.canonicalId);
+    if (!canonicalOrg) continue;
+    await mergeGroup(plan, canonicalOrg, opts.runId, stats);
   }
 
   return { stats, plans, mergeable, flagged };
@@ -159,163 +177,41 @@ export async function mergeGroup(
   runId: string,
   stats: CollapseRunStats,
 ): Promise<void> {
-  // Buffer of CheckRecord repoints to mirror to Convex AFTER the tx commits.
-  // updateMany returns only a count, so we capture the affected ids + their new
-  // scalar values inside the tx (before the update lands) and patch post-commit.
-  const checkRecordPatches: Array<{
-    id: string;
-    lineItemId: string;
-    lineItemUnitId: string | null;
-  }> = [];
+  const now = Date.now();
+  const convex = await getConvexClient();
 
-  await prisma.$transaction(async (tx) => {
-    const canonicalUnits = await tx.projectLineItemUnit.findMany({
-      where: { lineItemId: plan.canonicalId },
-      select: { ordinal: true },
-    });
-    const usedOrdinals = new Set(canonicalUnits.map((u) => u.ordinal));
-
-    let quantityAdded = 0;
-
-    for (const move of plan.moves) {
-      // Look up the sibling's existing unit (Phase 2a backfill creates
-      // one per asset). Absent ⇒ pre-Phase-2a or kit child — repoint
-      // FKs anyway, just skip the lineItemUnitId enrichment.
-      let unit: { id: string } | null = null;
-      if (move.assetId) {
-        unit = await tx.projectLineItemUnit.findUnique({
-          where: {
-            lineItemId_assetId: {
-              lineItemId: move.siblingId,
-              assetId: move.assetId,
-            },
-          },
-          select: { id: true },
-        });
-      } else if (move.bulkAssetId) {
-        unit = await tx.projectLineItemUnit.findFirst({
-          where: {
-            lineItemId: move.siblingId,
-            bulkAssetId: move.bulkAssetId,
-          },
-          select: { id: true },
-        });
-      }
-
-      let movedUnitId: string | null = null;
-      if (unit) {
-        let ord = nextOrdinal(
-          [...usedOrdinals].map((o) => ({ ordinal: o })),
-        );
-        // Defensive: nextOrdinal returns max+1; loop in case of races.
-        while (usedOrdinals.has(ord)) ord += 1;
-        usedOrdinals.add(ord);
-
-        await tx.projectLineItemUnit.update({
-          where: { id: unit.id },
-          data: { lineItemId: plan.canonicalId, ordinal: ord },
-        });
-        movedUnitId = unit.id;
-        stats.unitsMoved += 1;
-      }
-
-      // Repoint CheckRecord — first the matching-asset rows get
-      // lineItemUnitId filled too; remaining rows just get the FK
-      // updated. Capture the affected ids first (updateMany returns only a
-      // count) so the post-commit Convex mirror can patch each row.
-      if (movedUnitId && (move.assetId || move.bulkAssetId)) {
-        const matchedWhere = {
-          lineItemId: move.siblingId,
-          ...(move.assetId
-            ? { assetId: move.assetId }
-            : { bulkAssetId: move.bulkAssetId }),
-        };
-        const matchedRows = await tx.checkRecord.findMany({
-          where: matchedWhere,
-          select: { id: true },
-        });
-        const matched = await tx.checkRecord.updateMany({
-          where: matchedWhere,
-          data: { lineItemId: plan.canonicalId, lineItemUnitId: movedUnitId },
-        });
-        for (const r of matchedRows) {
-          checkRecordPatches.push({
-            id: r.id,
-            lineItemId: plan.canonicalId,
-            lineItemUnitId: movedUnitId,
-          });
-        }
-        stats.checkRecordsRepointed += matched.count;
-      }
-      const remainingRows = await tx.checkRecord.findMany({
-        where: { lineItemId: move.siblingId },
-        select: { id: true },
-      });
-      const remaining = await tx.checkRecord.updateMany({
-        where: { lineItemId: move.siblingId },
-        data: { lineItemId: plan.canonicalId },
-      });
-      for (const r of remainingRows) {
-        checkRecordPatches.push({
-          id: r.id,
-          lineItemId: plan.canonicalId,
-          lineItemUnitId: null,
-        });
-      }
-      stats.checkRecordsRepointed += remaining.count;
-
-      const serviceMove = await tx.projectService.updateMany({
-        where: { lineItemId: move.siblingId },
-        data: { lineItemId: plan.canonicalId },
-      });
-      stats.servicesRepointed += serviceMove.count;
-
-      // Audit row — permanent. Never auto-cleaned.
-      await tx.lineItemMergeMap.create({
-        data: {
-          organizationId,
-          oldLineItemId: move.siblingId,
-          canonicalLineItemId: plan.canonicalId,
-          movedUnitId,
-          checkRecordsRepointed: 0, // per-row counts aggregate at stats level
-          serviceRepointed: serviceMove.count > 0,
-          notes: `${runId} | key=${plan.key}`,
-        },
-      });
-
-      // Deactivate the sibling: keep the row for audit, drop its
-      // booking footprint so every reader treats it as gone.
-      await tx.projectLineItem.update({
-        where: { id: move.siblingId },
-        data: {
-          assetId: null,
-          bulkAssetId: null,
-          quantity: 0,
-          status: "CANCELLED",
-          notes: `[merged into ${plan.canonicalId} on ${new Date().toISOString()} (${runId})]`,
-        },
-      });
-      stats.rowsMergedAway += 1;
-      quantityAdded += move.quantity;
-    }
-
-    await tx.projectLineItem.update({
-      where: { id: plan.canonicalId },
-      data: { quantity: { increment: quantityAdded } },
-    });
-    await syncLineItemRollup(tx, plan.canonicalId);
+  // 1. Move units + repoint checkRecords + write lineItemMergeMap + deactivate
+  //    siblings + bump canonical quantity, all atomically in-mutation.
+  await convex.mutation(api.projectLineItems.mergeGroup, {
+    organizationId,
+    canonicalId: plan.canonicalId,
+    key: plan.key,
+    runId,
+    moves: plan.moves.map((m) => ({
+      siblingId: m.siblingId,
+      ...(m.assetId ? { assetId: m.assetId } : {}),
+      ...(m.bulkAssetId ? { bulkAssetId: m.bulkAssetId } : {}),
+      quantity: m.quantity,
+    })),
+    now,
   });
-  // Mirror the canonical + deactivated sibling line items to Convex.
-  await syncLineItemsToConvex([plan.canonicalId, ...plan.moves.map((m) => m.siblingId)]);
-  // Update repointed CheckRecord rows in Convex (Phase B: Convex-only writes)
-  const convexForCR = await getConvexClient();
-  for (const p of checkRecordPatches) {
-    await convexForCR.mutation(api.checkRecords.update, {
-      id: p.id,
-      patch: {
-        ...(p.lineItemId ? { lineItemId: p.lineItemId } : {}),
-        ...(p.lineItemUnitId ? { lineItemUnitId: p.lineItemUnitId } : {}),
-      },
+
+  // 2. Repoint ProjectService FKs — projectService is NOT flipped (stays Prisma).
+  //    Done in the action since the Convex mergeGroup mutation doesn't touch it.
+  let servicesRepointed = 0;
+  for (const move of plan.moves) {
+    const serviceMove = await prisma.projectService.updateMany({
+      where: { lineItemId: move.siblingId },
+      data: { lineItemId: plan.canonicalId },
     });
+    servicesRepointed += serviceMove.count;
   }
+
+  // 3. Stats. The Convex mutation doesn't return per-row counts, so the
+  //    unit-moved / check-records-repointed counters can't be tracked exactly
+  //    here — approximate from the plan (one unit moved per move at most) and
+  //    use the actual projectService count. rowsMergedAway is exact.
+  stats.unitsMoved += plan.moves.filter((m) => m.assetId || m.bulkAssetId).length;
+  stats.servicesRepointed += servicesRepointed;
+  stats.rowsMergedAway += plan.moves.length;
 }

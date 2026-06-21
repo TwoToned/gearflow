@@ -27,7 +27,8 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById, getProjectsByOrg, type ConvexProject } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
@@ -222,18 +223,12 @@ export async function swapLineItemAssetCore(
   newAssetId: string,
   organizationId: string,
 ): Promise<{ lineItemId: string; assetId: string }> {
-  const lineItem = await prisma.projectLineItem.findUnique({
-    where: { id: lineItemId, organizationId },
-    select: {
-      id: true,
-      modelId: true,
-      projectId: true,
-    },
-  });
-  if (!lineItem) throw new Error("Line item not found");
-
-  // Project header (rental window) lives in Convex.
-  const lineItemProject = await getProjectById(lineItem.projectId);
+  // Pre-checks read Convex for early validation/clear error messages. The
+  // authoritative double-booking guard + write live atomically inside the
+  // swapLineItemAsset mutation (OCC makes its re-check + write race-safe).
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!lineItem || lineItem.organizationId !== organizationId) throw new Error("Line item not found");
 
   const allOrgAssetsForSwap = await getAssetsByOrg(organizationId);
   const newAsset = allOrgAssetsForSwap.find((a) => a.id === newAssetId) ?? null;
@@ -249,72 +244,15 @@ export async function swapLineItemAssetCore(
     throw new Error(`Asset ${newAsset.assetTag} is ${newAsset.status.toLowerCase()}`);
   }
 
-  // Re-verify free-in-window AND reassign inside one transaction. Without
-  // the shared transaction the check + update is a TOCTOU window: two
-  // operators swapping onto the same free asset both pass the check, both
-  // write, and the asset ends up double-booked — re-introducing exactly
-  // the conflict this feature exists to resolve.
-  const rentalStartDate = lineItemProject?.rentalStartDate ?? null;
-  const rentalEndDate = lineItemProject?.rentalEndDate ?? null;
-  // Other live projects overlapping the window — collect ids from Convex up
-  // front (read outside the tx; the tx still re-reads the booking rows for the
-  // TOCTOU guard). projectMap resolves the conflicting project number.
-  const swapAllProjects = await getProjectsByOrg(organizationId);
-  const swapProjectMap = new Map(swapAllProjects.map((p) => [p.id, p]));
-  await prisma.$transaction(async (tx) => {
-    if (rentalStartDate != null && rentalEndDate != null) {
-      const swapConflictProjectIds = [
-        ...overlappingProjectIdSet(
-          swapAllProjects,
-          rentalStartDate as number,
-          rentalEndDate as number,
-          "",
-        ),
-      ];
-      // Re-check both the legacy line.assetId rows AND the unit table —
-      // a fresh deployment may have landed on a ProjectLineItemUnit.
-      const [lineConflict, unitConflict] = swapConflictProjectIds.length
-        ? await Promise.all([
-            tx.projectLineItem.findFirst({
-              where: {
-                organizationId,
-                assetId: newAssetId,
-                status: { not: "CANCELLED" },
-                id: { not: lineItemId },
-                projectId: { in: swapConflictProjectIds },
-              },
-              select: { projectId: true },
-            }),
-            tx.projectLineItemUnit.findFirst({
-              where: {
-                organizationId,
-                assetId: newAssetId,
-                status: { not: "RETURNED" },
-                lineItemId: { not: lineItemId },
-                lineItem: { status: { not: "CANCELLED" }, projectId: { in: swapConflictProjectIds } },
-              },
-              select: {
-                lineItem: { select: { projectId: true } },
-              },
-            }),
-          ])
-        : [null, null];
-      const conflictProjectId =
-        lineConflict?.projectId ?? unitConflict?.lineItem.projectId;
-      if (conflictProjectId) {
-        const conflictProjectNumber = swapProjectMap.get(conflictProjectId)?.projectNumber ?? conflictProjectId;
-        throw new Error(
-          `Asset ${newAsset.assetTag} was just booked on ${conflictProjectNumber}. Pick another.`,
-        );
-      }
-    }
-
-    await tx.projectLineItem.update({
-      where: { id: lineItemId, organizationId },
-      data: { assetId: newAssetId },
-    });
+  // The mutation re-checks free-in-window (line.assetId rows AND unit rows)
+  // against live overlapping projects and writes the new assetId in ONE atomic
+  // mutation — the TOCTOU guard. Throws ConvexError on a fresh double-booking.
+  await convex.mutation(api.projectLineItems.swapLineItemAsset, {
+    organizationId,
+    lineItemId,
+    newAssetId,
+    now: Date.now(),
   });
-  await syncLineItemsToConvex([lineItemId]);
 
   return { lineItemId, assetId: newAssetId };
 }

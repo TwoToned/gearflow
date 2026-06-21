@@ -2,7 +2,6 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
@@ -501,13 +500,36 @@ export async function adminDeleteUser(userId: string) {
   // deletion to Convex after the transaction commits (Convex calls cannot run
   // inside a Prisma $transaction).
   const convexForDelete = await getConvexClient();
-  const [serializedItemsToRemove, bulkItemsToRemove, scanLogsToRemove, testTagRecordsToRemove] =
-    await Promise.all([
-      prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
-      prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
-      convexForDelete.query(api.assetScanLogs.listByScannedById, { scannedById: userId }),
-      convexForDelete.query(api.testTagRecords.listByTestedById, { testedById: userId }),
+
+  // kitSerializedItem / kitBulkItem are now Convex-only. There is no
+  // by-addedById query, only org-scoped lists, so enumerate every org and
+  // filter in JS to find this user's rows across the whole platform (GDPR sweep
+  // is cross-org). organization stays on Prisma (KEPT table).
+  const allOrgsForSweep = await prisma.organization.findMany({ select: { id: true } });
+  const serializedItemsToRemove: { id: string }[] = [];
+  const bulkItemsToRemove: { id: string }[] = [];
+  // projectLineItem is Convex-only too; collect the lines whose checkedOutById /
+  // returnedById point at this user so we can clear those FKs post-commit.
+  const lineItemsToClearCheckedOut: { id: string }[] = [];
+  const lineItemsToClearReturned: { id: string }[] = [];
+  for (const org of allOrgsForSweep) {
+    const [serialized, bulk, lines] = await Promise.all([
+      convexForDelete.query(api.kitSerializedItems.list, { orgId: org.id }),
+      convexForDelete.query(api.kitBulkItems.list, { orgId: org.id }),
+      convexForDelete.query(api.projectLineItems.list, { orgId: org.id }),
     ]);
+    for (const s of serialized) if (s.addedById === userId) serializedItemsToRemove.push({ id: s.id });
+    for (const b of bulk) if (b.addedById === userId) bulkItemsToRemove.push({ id: b.id });
+    for (const li of lines) {
+      if (li.checkedOutById === userId) lineItemsToClearCheckedOut.push({ id: li.id });
+      if (li.returnedById === userId) lineItemsToClearReturned.push({ id: li.id });
+    }
+  }
+
+  const [scanLogsToRemove, testTagRecordsToRemove] = await Promise.all([
+    convexForDelete.query(api.assetScanLogs.listByScannedById, { scannedById: userId }),
+    convexForDelete.query(api.testTagRecords.listByTestedById, { testedById: userId }),
+  ]);
   // SubTestRecords cascade-delete when their TestTagRecord is removed; capture
   // them so their Convex mirrors are removed too.
   const subTestRecordsToRemove = testTagRecordsToRemove.length
@@ -515,27 +537,42 @@ export async function adminDeleteUser(userId: string) {
     : [];
 
   await prisma.$transaction(async (tx) => {
-    // Null out nullable User FK references
+    // Null out nullable User FK references (KEPT tables only).
     await tx.maintenanceRecord.updateMany({ where: { reportedById: userId }, data: { reportedById: null } });
     await tx.maintenanceRecord.updateMany({ where: { assignedToId: userId }, data: { assignedToId: null } });
     await tx.project.updateMany({ where: { projectManagerId: userId }, data: { projectManagerId: null } });
-    await tx.projectLineItem.updateMany({ where: { checkedOutById: userId }, data: { checkedOutById: null } });
-    await tx.projectLineItem.updateMany({ where: { returnedById: userId }, data: { returnedById: null } });
 
-    // Delete records with non-nullable User FKs
+    // Delete records with non-nullable User FKs (KEPT tables only).
     await tx.assetScanLog.deleteMany({ where: { scannedById: userId } });
-    await tx.kitSerializedItem.deleteMany({ where: { addedById: userId } });
-    await tx.kitBulkItem.deleteMany({ where: { addedById: userId } });
     await tx.fileUpload.deleteMany({ where: { uploadedById: userId } });
     await tx.testTagRecord.deleteMany({ where: { testedById: userId } });
 
     await tx.user.delete({ where: { id: userId } });
   });
 
-  // Mirror the deletions to Convex (these rows are dual-written) — strictly
-  // post-commit, since Convex calls cannot run inside a $transaction.
-  for (const item of serializedItemsToRemove) await removeKitSerializedItemFromConvex(item.id);
-  for (const item of bulkItemsToRemove) await removeKitBulkItemFromConvex(item.id);
+  // Convex-only follow-ups (cannot run inside a $transaction). projectLineItem,
+  // kitSerializedItem and kitBulkItem are Convex-only: clear the user FKs on
+  // line items and delete the kit-member rows this user added.
+  for (const li of lineItemsToClearCheckedOut) {
+    await convexForDelete.mutation(api.projectLineItems.patchLineItem, {
+      id: li.id,
+      set: {},
+      clear: ["checkedOutById"],
+    });
+  }
+  for (const li of lineItemsToClearReturned) {
+    await convexForDelete.mutation(api.projectLineItems.patchLineItem, {
+      id: li.id,
+      set: {},
+      clear: ["returnedById"],
+    });
+  }
+  for (const item of serializedItemsToRemove) {
+    await convexForDelete.mutation(api.kitSerializedItems.remove, { id: item.id });
+  }
+  for (const item of bulkItemsToRemove) {
+    await convexForDelete.mutation(api.kitBulkItems.remove, { id: item.id });
+  }
   for (const item of scanLogsToRemove) await convexForDelete.mutation(api.assetScanLogs.remove, { id: item.id });
   for (const item of subTestRecordsToRemove) {
     await convexForDelete.mutation(api.subTestRecords.remove, { id: item.id });

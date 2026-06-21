@@ -26,7 +26,6 @@ import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import {
   syncCrewAssignmentsForServiceToConvex,
   syncCrewAssignmentsForProjectToConvex,
@@ -312,12 +311,12 @@ export async function updateProjectService(
     return svc;
   });
 
-  // Clean up any legacy linked line item
+  // Clean up any legacy linked line item (Convex-only — cascade delete the line).
   if (existing.lineItemId) {
-    await prisma.projectLineItem.delete({
-      where: { id: existing.lineItemId },
-    }).catch(() => {});
-    await removeLineItemFromConvex(existing.lineItemId);
+    const convex = await getConvexClient();
+    await convex
+      .mutation(api.projectLineItems.removeLineItemCascade, { id: existing.lineItemId })
+      .catch(() => {});
     await prisma.projectService.update({
       where: { id },
       data: { lineItemId: null },
@@ -368,17 +367,15 @@ export async function deleteProjectService(id: string) {
   // Capture the service's crew cascade before the deleteMany removes it.
   const crewCascade = await snapshotServiceCrew(id);
 
-  // Wrap in transaction (Arch fix #1)
+  // Wrap in transaction (Arch fix #1). The line item is Convex-only now (Phase C),
+  // so it can't be deleted inside the Prisma tx — unlink it here, then cascade-
+  // delete the orphaned Convex line after the tx commits.
   await prisma.$transaction(async (tx) => {
-    // Unlink line item — set lineItemId to null, don't delete the line item (Arch fix #7)
+    // Unlink line item — set lineItemId to null (Arch fix #7)
     if (service.lineItemId) {
       await tx.projectService.update({
         where: { id },
         data: { lineItemId: null },
-      });
-      // Delete the orphaned line item since the service is being deleted
-      await tx.projectLineItem.delete({
-        where: { id: service.lineItemId },
       });
     }
 
@@ -389,7 +386,12 @@ export async function deleteProjectService(id: string) {
 
     await tx.projectService.delete({ where: { id } });
   });
-  if (service.lineItemId) await removeLineItemFromConvex(service.lineItemId);
+  if (service.lineItemId) {
+    const convex = await getConvexClient();
+    await convex
+      .mutation(api.projectLineItems.removeLineItemCascade, { id: service.lineItemId })
+      .catch(() => {});
+  }
   await removeCrewAssignmentCascadeFromConvex(crewCascade);
 
   await recalculateProjectTotals(service.projectId);
@@ -1019,22 +1021,23 @@ export async function convertLineItemToService(lineItemId: string) {
     "update",
   );
 
-  const lineItem = await prisma.projectLineItem.findFirst({
-    where: { id: lineItemId, organizationId },
-    select: {
-      id: true,
-      projectId: true,
-      type: true,
-      description: true,
-      quantity: true,
-      unitPrice: true,
-      pricingType: true,
-      duration: true,
-      discount: true,
-      lineTotal: true,
-    },
-  });
-  if (!lineItem) throw new Error("Line item not found");
+  const convexForRead = await getConvexClient();
+  const lineItemDoc = await convexForRead.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!lineItemDoc || lineItemDoc.organizationId !== organizationId) {
+    throw new Error("Line item not found");
+  }
+  const lineItem = {
+    id: lineItemDoc.id,
+    projectId: lineItemDoc.projectId,
+    type: lineItemDoc.type ?? "EQUIPMENT",
+    description: lineItemDoc.description ?? null,
+    quantity: lineItemDoc.quantity ?? 1,
+    unitPrice: lineItemDoc.unitPrice ?? null,
+    pricingType: lineItemDoc.pricingType ?? null,
+    duration: lineItemDoc.duration ?? null,
+    discount: lineItemDoc.discount ?? null,
+    lineTotal: lineItemDoc.lineTotal ?? null,
+  };
 
   // Map line item type back to service type
   const typeMap: Record<string, ServiceType> = {
@@ -1145,20 +1148,20 @@ export async function getServiceCostHistory(
 export async function getCrewSuggestionsForProject(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  // Get equipment categories used in this project
-  const projectCategories = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      organizationId,
-      type: "EQUIPMENT",
-    },
-    select: { categoryId: true },
-    distinct: ["categoryId"],
+  // Get equipment categories used in this project (line items are Convex-only).
+  const convexForRead = await getConvexClient();
+  const projectLines = await convexForRead.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
 
-  const categoryIds = projectCategories
-    .map((p) => p.categoryId)
-    .filter((id): id is string => id != null);
+  const categoryIds = [
+    ...new Set(
+      projectLines
+        .filter((li) => li.type === "EQUIPMENT" && li.categoryId != null)
+        .map((li) => li.categoryId as string),
+    ),
+  ];
 
   if (categoryIds.length === 0) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });

@@ -20,12 +20,10 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
-import { syncKitsToConvex } from "@/lib/kit-mirror";
-import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import { getKitSerializedItemsByOrg } from "@/lib/kits-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
-import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
@@ -737,11 +735,6 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
   const source = await prisma.project.findUniqueOrThrow({
     where: { id: sourceId, organizationId },
     include: {
-      lineItems: {
-        where: { isKitChild: false, categoryId: null },
-        include: { childLineItems: true },
-        orderBy: { sortOrder: "asc" },
-      },
       projectManagers: true,
     },
   });
@@ -753,15 +746,31 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
   ]);
   const sortedSourceCategories = [...sourceCategories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-  // Read all non-kit-child source line items from Prisma (line items stay Prisma).
-  type SourceLineItem = Awaited<ReturnType<typeof prisma.projectLineItem.findMany<{
-    include: { childLineItems: true }
-  }>>>[number];
-  const allSourceLineItems = await prisma.projectLineItem.findMany({
-    where: { projectId: sourceId, organizationId, isKitChild: false },
-    include: { childLineItems: true },
-    orderBy: { sortOrder: "asc" },
-  }) as SourceLineItem[];
+  // Read all source line items from Convex (line items are Convex-only, Phase C).
+  // Reconstruct the parent → childLineItems shape the copy loop expects.
+  const allConvexLineItems = await client.query(api.projectLineItems.listByProject, {
+    projectId: sourceId,
+    orgId: organizationId,
+  });
+  type ConvexLineItem = (typeof allConvexLineItems)[number];
+  type SourceLineItem = ConvexLineItem & { childLineItems: ConvexLineItem[] };
+  const childrenByParentId = new Map<string, ConvexLineItem[]>();
+  for (const li of allConvexLineItems) {
+    if (li.isKitChild && li.parentLineItemId) {
+      const arr = childrenByParentId.get(li.parentLineItemId) ?? [];
+      arr.push(li);
+      childrenByParentId.set(li.parentLineItemId, arr);
+    }
+  }
+  const allSourceLineItems: SourceLineItem[] = allConvexLineItems
+    .filter((li) => !li.isKitChild)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((li) => ({
+      ...li,
+      childLineItems: (childrenByParentId.get(li.id) ?? []).sort(
+        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+      ),
+    }));
 
   const lineItemsByGroupId = new Map<string, SourceLineItem[]>();
   const lineItemsByCatId = new Map<string, SourceLineItem[]>();
@@ -818,104 +827,82 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
         },
       });
 
-      // Helper to copy a line item and its children
-      async function copyLineItem(
-        li: SourceLineItem,
-        newProjectId: string,
-        newCategoryId: string | null,
-        newGroupId: string | null,
-      ) {
-        const parentItem = await tx.projectLineItem.create({
-          data: {
-            organizationId,
-            projectId: newProjectId,
-            categoryId: newCategoryId,
-            groupId: newGroupId,
-            type: li.type,
-            modelId: li.modelId,
-            bulkAssetId: li.bulkAssetId,
-            kitId: li.kitId,
-            supplierId: li.supplierId,
-            description: li.description,
-            quantity: li.quantity,
-            unitPrice: li.unitPrice,
-            pricingType: li.pricingType,
-            duration: li.duration,
-            discount: li.discount,
-            lineTotal: li.lineTotal,
-            sortOrder: li.sortOrder,
-            groupName: li.groupName,
-            notes: li.notes,
-            isOptional: li.isOptional,
-            showSubhireOnDocs: li.showSubhireOnDocs,
-            isKitChild: false,
-            pricingMode: li.pricingMode,
-            status: "QUOTED",
-          },
-        });
-
-        if (li.childLineItems?.length) {
-          for (const child of li.childLineItems) {
-            await tx.projectLineItem.create({
-              data: {
-                organizationId,
-                projectId: newProjectId,
-                categoryId: newCategoryId,
-                groupId: newGroupId,
-                type: child.type,
-                modelId: child.modelId,
-                bulkAssetId: child.bulkAssetId,
-                description: child.description,
-                quantity: child.quantity,
-                unitPrice: child.unitPrice,
-                pricingType: child.pricingType,
-                duration: child.duration,
-                discount: child.discount,
-                lineTotal: child.lineTotal,
-                sortOrder: child.sortOrder,
-                groupName: child.groupName,
-                notes: child.notes,
-                isKitChild: true,
-                parentLineItemId: parentItem.id,
-                status: "QUOTED",
-              },
-            });
-          }
-        }
-      }
-
-      // Copy category line items using pre-generated category/group IDs.
-      // Categories and groups are Convex-only; no Prisma rows are written for them.
-      for (const cat of sortedSourceCategories) {
-        const newCatId = catIdMap.get(cat.id)!;
-        const catGroups = (groupsByCatId.get(cat.id) ?? [])
-          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-
-        for (const group of catGroups) {
-          const newGroupId = groupIdMap.get(group.id)!;
-          for (const li of lineItemsByGroupId.get(group.id) ?? []) {
-            await copyLineItem(li, newProject.id, newCatId, newGroupId);
-          }
-        }
-
-        // Copy standalone line items in category (groupId=null)
-        for (const li of lineItemsByCatId.get(cat.id) ?? []) {
-          await copyLineItem(li, newProject.id, newCatId, null);
-        }
-      }
-
-      // Copy uncategorized line items
-      const uncategorizedLineItems = allSourceLineItems.filter((li) => !li.categoryId && !li.groupId);
-      for (const li of uncategorizedLineItems) {
-        await copyLineItem(li, newProject.id, null, null);
-      }
-
       return newProject;
     });
 
-    // Create duplicated categories + groups in Convex. Line items were written
-    // to Prisma above using the pre-generated IDs.
+    // Create duplicated categories + groups + line items in Convex. Line items
+    // are Convex-only (Phase C), so they're written here (outside the Prisma tx)
+    // via the generated full-field create — parent first, then each child with
+    // parentLineItemId set to the new parent's id. Dates→ms, Decimals→number.
     const dupNow = Date.now();
+
+    // Helper to copy a line item and its children into Convex.
+    async function copyLineItem(
+      li: SourceLineItem,
+      newProjectId: string,
+      newCategoryId: string | null,
+      newGroupId: string | null,
+    ) {
+      const parentId = createId();
+      await client.mutation(api.projectLineItems.create, {
+        id: parentId,
+        organizationId,
+        projectId: newProjectId,
+        ...(newCategoryId ? { categoryId: newCategoryId } : {}),
+        ...(newGroupId ? { groupId: newGroupId } : {}),
+        ...(li.type ? { type: li.type } : {}),
+        ...(li.modelId ? { modelId: li.modelId } : {}),
+        ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
+        ...(li.kitId ? { kitId: li.kitId } : {}),
+        ...(li.supplierId ? { supplierId: li.supplierId } : {}),
+        ...(li.description != null ? { description: li.description } : {}),
+        ...(li.quantity != null ? { quantity: li.quantity } : {}),
+        ...(li.unitPrice != null ? { unitPrice: Number(li.unitPrice) } : {}),
+        ...(li.pricingType ? { pricingType: li.pricingType } : {}),
+        ...(li.duration != null ? { duration: Number(li.duration) } : {}),
+        ...(li.discount != null ? { discount: Number(li.discount) } : {}),
+        ...(li.lineTotal != null ? { lineTotal: Number(li.lineTotal) } : {}),
+        ...(li.sortOrder != null ? { sortOrder: li.sortOrder } : {}),
+        ...(li.groupName != null ? { groupName: li.groupName } : {}),
+        ...(li.notes != null ? { notes: li.notes } : {}),
+        ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
+        ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
+        ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
+        isKitChild: false,
+        status: "QUOTED",
+        createdAt: dupNow,
+        updatedAt: dupNow,
+      });
+
+      for (const child of li.childLineItems ?? []) {
+        await client.mutation(api.projectLineItems.create, {
+          id: createId(),
+          organizationId,
+          projectId: newProjectId,
+          ...(newCategoryId ? { categoryId: newCategoryId } : {}),
+          ...(newGroupId ? { groupId: newGroupId } : {}),
+          ...(child.type ? { type: child.type } : {}),
+          ...(child.modelId ? { modelId: child.modelId } : {}),
+          ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
+          ...(child.description != null ? { description: child.description } : {}),
+          ...(child.quantity != null ? { quantity: child.quantity } : {}),
+          ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
+          ...(child.pricingType ? { pricingType: child.pricingType } : {}),
+          ...(child.duration != null ? { duration: Number(child.duration) } : {}),
+          ...(child.discount != null ? { discount: Number(child.discount) } : {}),
+          ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+          ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
+          ...(child.groupName != null ? { groupName: child.groupName } : {}),
+          ...(child.notes != null ? { notes: child.notes } : {}),
+          ...(child.childKind ? { childKind: child.childKind } : {}),
+          isKitChild: true,
+          parentLineItemId: parentId,
+          status: "QUOTED",
+          createdAt: dupNow,
+          updatedAt: dupNow,
+        });
+      }
+    }
     for (const cat of sortedSourceCategories) {
       await client.mutation(api.projectCategories.createIfMissing, {
         id: catIdMap.get(cat.id)!,
@@ -947,8 +934,32 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
       });
     }
 
+    // Copy line items (Convex-only) using the pre-generated category/group IDs.
+    for (const cat of sortedSourceCategories) {
+      const newCatId = catIdMap.get(cat.id)!;
+      const catGroups = (groupsByCatId.get(cat.id) ?? [])
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      for (const group of catGroups) {
+        const newGroupId = groupIdMap.get(group.id)!;
+        for (const li of lineItemsByGroupId.get(group.id) ?? []) {
+          await copyLineItem(li, result.id, newCatId, newGroupId);
+        }
+      }
+
+      // Copy standalone line items in category (groupId=null)
+      for (const li of lineItemsByCatId.get(cat.id) ?? []) {
+        await copyLineItem(li, result.id, newCatId, null);
+      }
+    }
+
+    // Copy uncategorized line items
+    const uncategorizedLineItems = allSourceLineItems.filter((li) => !li.categoryId && !li.groupId);
+    for (const li of uncategorizedLineItems) {
+      await copyLineItem(li, result.id, null, null);
+    }
+
     await mirrorProjectCreate(result);
-    await upsertProjectLineItemsToConvex(result.id);
     // Copy project managers directly to Convex (Convex-only after Phase B).
     for (const pm of source.projectManagers) {
       await client.mutation(api.projectManagers.createIfMissing, {
@@ -976,13 +987,6 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
 
   const source = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
-    include: {
-      lineItems: {
-        where: { isKitChild: false },
-        include: { childLineItems: true },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
   });
 
   if (!source) {
@@ -992,6 +996,19 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
       message: "This project was deleted or moved. Refresh the page to see the latest state.",
     });
   }
+
+  // Line items are Convex-only — read flat + reconstruct the parent/children shape.
+  const convexForTemplate = await getConvexClient();
+  const flatSourceLines = await convexForTemplate.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId });
+  const sourceLineItems = flatSourceLines
+    .filter((l) => !l.isKitChild)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((parent) => ({
+      ...parent,
+      childLineItems: flatSourceLines
+        .filter((c) => c.parentLineItemId === parent.id)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    }));
 
   const templateNumber = await generateTemplateCode(organizationId);
 
@@ -1020,68 +1037,38 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
         },
       });
 
-      for (const li of source.lineItems) {
-        const parentItem = await tx.projectLineItem.create({
-          data: {
-            organizationId,
-            projectId: template.id,
-            type: li.type,
-            modelId: li.modelId,
-            bulkAssetId: li.bulkAssetId,
-            kitId: li.kitId,
-            supplierId: li.supplierId,
-            description: li.description,
-            quantity: li.quantity,
-            unitPrice: li.unitPrice,
-            pricingType: li.pricingType,
-            duration: li.duration,
-            discount: li.discount,
-            lineTotal: li.lineTotal,
-            sortOrder: li.sortOrder,
-            groupName: li.groupName,
-            notes: li.notes,
-            isOptional: li.isOptional,
-            showSubhireOnDocs: li.showSubhireOnDocs,
-            isKitChild: false,
-            pricingMode: li.pricingMode,
-            status: "QUOTED",
-          },
-        });
-
-        if (li.childLineItems?.length) {
-          for (const child of li.childLineItems) {
-            await tx.projectLineItem.create({
-              data: {
-                organizationId,
-                projectId: template.id,
-                type: child.type,
-                modelId: child.modelId,
-                bulkAssetId: child.bulkAssetId,
-                description: child.description,
-                quantity: child.quantity,
-                unitPrice: child.unitPrice,
-                pricingType: child.pricingType,
-                duration: child.duration,
-                discount: child.discount,
-                lineTotal: child.lineTotal,
-                sortOrder: child.sortOrder,
-                groupName: child.groupName,
-                notes: child.notes,
-                isKitChild: true,
-                parentLineItemId: parentItem.id,
-                status: "QUOTED",
-              },
-            });
-          }
-        }
-      }
-
       return template;
     });
 
-    // Mirror the new template project + its copied line items to Convex.
+    // Mirror the new template project to Convex.
     await mirrorProjectCreate(result);
-    await upsertProjectLineItemsToConvex(result.id);
+
+    // Create the copied line items in Convex (project row is Prisma; lines Convex).
+    const tNow = Date.now();
+    for (const li of sourceLineItems) {
+      const parentId = createId();
+      await convexForTemplate.mutation(api.projectLineItems.create, {
+        id: parentId, organizationId, projectId: result.id, type: li.type,
+        modelId: li.modelId || undefined, bulkAssetId: li.bulkAssetId || undefined, kitId: li.kitId || undefined,
+        supplierId: li.supplierId || undefined, description: li.description || undefined, quantity: li.quantity,
+        unitPrice: li.unitPrice ?? undefined, pricingType: li.pricingType, duration: li.duration,
+        discount: li.discount ?? undefined, lineTotal: li.lineTotal ?? undefined, sortOrder: li.sortOrder,
+        groupName: li.groupName || undefined, notes: li.notes || undefined, isOptional: li.isOptional,
+        showSubhireOnDocs: li.showSubhireOnDocs, isKitChild: false, pricingMode: li.pricingMode || undefined,
+        status: "QUOTED", createdAt: tNow, updatedAt: tNow,
+      });
+      for (const child of li.childLineItems ?? []) {
+        await convexForTemplate.mutation(api.projectLineItems.create, {
+          id: createId(), organizationId, projectId: result.id, type: child.type,
+          modelId: child.modelId || undefined, bulkAssetId: child.bulkAssetId || undefined,
+          description: child.description || undefined, quantity: child.quantity, unitPrice: child.unitPrice ?? undefined,
+          pricingType: child.pricingType, duration: child.duration, discount: child.discount ?? undefined,
+          lineTotal: child.lineTotal ?? undefined, sortOrder: child.sortOrder, groupName: child.groupName || undefined,
+          notes: child.notes || undefined, isKitChild: true, parentLineItemId: parentId, status: "QUOTED",
+          createdAt: tNow, updatedAt: tNow,
+        });
+      }
+    }
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1163,20 +1150,10 @@ export async function deleteTemplate(id: string) {
 export async function deleteProject(id: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "delete");
 
-  // Only allow deleting cancelled projects
+  // Only allow deleting cancelled projects. Project scalar stays Prisma (project
+  // table not flipped yet); its line items are Convex-only (Phase C).
   const project = await prisma.project.findUnique({
     where: { id, organizationId },
-    include: {
-      lineItems: {
-        select: {
-          id: true,
-          assetId: true,
-          kitId: true,
-          status: true,
-          kit: { select: { id: true } },
-        },
-      },
-    },
   });
 
   if (!project) {
@@ -1195,11 +1172,20 @@ export async function deleteProject(id: string) {
     });
   }
 
+  const convex = await getConvexClient();
+
+  // Line items are Convex-only — read them to collect assets/kits to free and
+  // to drive the explicit cascade removal (the dropped FK no longer cascades).
+  const lineItems = await convex.query(api.projectLineItems.listByProject, {
+    projectId: id,
+    orgId: organizationId,
+  });
+
   // Collect IDs to reset
   const checkedOutAssetIds: string[] = [];
   const checkedOutKitIds: string[] = [];
 
-  for (const li of project.lineItems) {
+  for (const li of lineItems) {
     if (li.assetId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
       checkedOutAssetIds.push(li.assetId);
     }
@@ -1210,64 +1196,67 @@ export async function deleteProject(id: string) {
 
   // Get org default location from Convex.
   const defaultLocation = await getDefaultLocation(organizationId);
+  const now = Date.now();
 
   // Capture the project's crew cascade (assignments → shifts/time-entries) before
   // the project delete cascades them away, so they can be dropped from Convex.
   const crewCascade = await snapshotProjectCrew(id);
 
-  const freedKitAssetIds = await prisma.$transaction(async (tx) => {
-    // Reset checked-out assets to AVAILABLE
-    if (checkedOutAssetIds.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: checkedOutAssetIds }, organizationId },
-        data: {
-          status: "AVAILABLE",
-          locationId: defaultLocation?.id ?? null,
-        },
+  // Reset checked-out assets to AVAILABLE (Convex). Clear locationId when there
+  // is no default location.
+  if (checkedOutAssetIds.length > 0) {
+    await convex.mutation(api.assets.bulkUpdate, {
+      organizationId,
+      ids: checkedOutAssetIds,
+      set: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
+      ...(defaultLocation?.id ? {} : { clear: ["locationId"] }),
+    });
+  }
+
+  // Reset checked-out kits and their contents to AVAILABLE (Convex). Kits are
+  // patched per-id (status AVAILABLE + location — NOT archived). Kit serialized
+  // assets are reset via assets.bulkUpdate.
+  const kitAssetIds: string[] = [];
+  if (checkedOutKitIds.length > 0) {
+    const allKitSerialized = await getKitSerializedItemsByOrg(organizationId);
+    const checkedOutKitIdSet = new Set(checkedOutKitIds);
+    for (const kitId of checkedOutKitIds) {
+      await convex.mutation(api.kits.update, {
+        id: kitId,
+        patch: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
       });
     }
-
-    // Reset checked-out kits and their contents to AVAILABLE
-    let kitAssetIds: string[] = [];
-    if (checkedOutKitIds.length > 0) {
-      await tx.kit.updateMany({
-        where: { id: { in: checkedOutKitIds }, organizationId },
-        data: {
-          status: "AVAILABLE",
-          locationId: defaultLocation?.id ?? null,
-        },
-      });
-      // Reset serialized assets inside those kits
-      const kitAssets = await tx.kitSerializedItem.findMany({
-        where: { kitId: { in: checkedOutKitIds } },
-        select: { assetId: true },
-      });
-      kitAssetIds = kitAssets.map((ka) => ka.assetId);
-      if (kitAssetIds.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: kitAssetIds }, organizationId },
-          data: {
-            status: "AVAILABLE",
-            locationId: defaultLocation?.id ?? null,
-          },
-        });
-      }
+    for (const ks of allKitSerialized) {
+      if (checkedOutKitIdSet.has(ks.kitId)) kitAssetIds.push(ks.assetId);
     }
+  }
+  if (kitAssetIds.length > 0) {
+    await convex.mutation(api.assets.bulkUpdate, {
+      organizationId,
+      ids: kitAssetIds,
+      set: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
+      ...(defaultLocation?.id ? {} : { clear: ["locationId"] }),
+    });
+  }
 
-    // Delete the project (cascades to line items, media, etc.)
-    await tx.project.delete({ where: { id, organizationId } });
-    return kitAssetIds;
-  });
+  // Remove the project's line items from Convex. The project↔line-item FK is
+  // dropped, so prisma.project.delete no longer cascades — explicitly cascade
+  // each top-level line (removeLineItemCascade handles its children + units).
+  for (const li of lineItems) {
+    if (li.parentLineItemId == null) {
+      await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
+    }
+  }
 
-  // Mirror the freed kits + assets (direct line-item assets + kit-content assets)
-  // status/location resets to Convex, and remove the cascade-deleted line items.
-  await syncKitsToConvex(checkedOutKitIds);
-  await syncAssetsToConvex([...checkedOutAssetIds, ...freedKitAssetIds]);
-  for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
+  // Delete the Prisma project row (project table not flipped yet).
+  await prisma.project.delete({ where: { id, organizationId } });
+
+  // Mirror the freed kits' status (kit table is Convex — already patched above,
+  // but keep the mirror reconcile for any kit-mirror-derived projections), and
+  // tidy the remaining Convex sub-tables / crew cascade / project doc.
   await removeCrewAssignmentCascadeFromConvex(crewCascade);
   await removeProjectFromConvex(id);
   // Delete Convex-only sub-table rows (PM/tasks) and reconcile Prisma-cascade ones (services).
-  const convex = await getConvexClient();
   const [pmRows, taskRows] = await Promise.all([
     convex.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
     convex.query(api.projectTasks.listByProject, { projectId: id, orgId: organizationId }),

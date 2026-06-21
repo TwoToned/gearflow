@@ -5,11 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { syncAssetsToConvex } from "@/lib/asset-mirror";
-import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
-import { getAssetById, getAssetByAssetTag } from "@/lib/assets-read";
+import { getAssetById, getAssetByAssetTag, getBulkAssetById } from "@/lib/assets-read";
 import {
   getCheckHistoryRows,
   getModelFailureAnalyticsRows,
@@ -22,13 +20,6 @@ import {
   getMaintenanceAssetLinksByAssetIds,
   createMaintenanceAssetLinks,
 } from "@/lib/maintenance-record-asset-read";
-import {
-  prepUnit,
-  syncLineItemRollup,
-  returnLineUnits,
-  checkinAccessoryChildren,
-  resolveAssetAccessories,
-} from "@/lib/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,
@@ -233,11 +224,10 @@ export async function pullItem(projectId: string, lineItemId: string) {
     "check_out"
   );
 
-  const lineItem = await prisma.projectLineItem.findFirst({
-    where: { id: lineItemId, projectId, organizationId },
-  });
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
 
-  if (!lineItem) {
+  if (!lineItem || lineItem.projectId !== projectId || lineItem.organizationId !== organizationId) {
     throw new Error("Line item not found in project");
   }
 
@@ -247,12 +237,14 @@ export async function pullItem(projectId: string, lineItemId: string) {
     actionLabel: "pull this item",
   });
 
-  const result = await prisma.projectLineItem.update({
-    where: { id: lineItemId },
-    data: { prepStatus: "PULLED" },
-    include: { asset: true, bulkAsset: true },
+  await convex.mutation(api.projectLineItems.update, {
+    id: lineItemId,
+    patch: { prepStatus: "PULLED", updatedAt: Date.now() },
   });
-  const [grafted] = await attachLineItemModels(organizationId, [result]);
+  const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  const [grafted] = await attachLineItemModels(organizationId, [
+    { ...result, modelId: result?.modelId ?? null },
+  ]);
 
   await logActivity({
     organizationId,
@@ -267,7 +259,6 @@ export async function pullItem(projectId: string, lineItemId: string) {
     assetId: lineItem.assetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize(grafted);
 }
 
@@ -283,20 +274,62 @@ export async function pullItem(projectId: string, lineItemId: string) {
  */
 export async function getAssetAccessories(assetId: string) {
   const { organizationId } = await getOrgContext();
-  const profile = await prisma.$transaction((tx) =>
-    resolveAssetAccessories(tx, organizationId, assetId)
+
+  // Rebuild the accessory profile directly from Convex (asset / assetBulkChild /
+  // modelBulkAccessory are Convex-only — Phase C mega-flip). Replaces
+  // resolveAssetAccessories' prisma reads. org-scoped (assetId can be a scan value).
+  const convex = await getConvexClient();
+  const asset = await getAssetById(assetId);
+  if (!asset || asset.organizationId !== organizationId) {
+    return serialize({ serialised: [], bulk: [] });
+  }
+
+  const [childAssetDocs, childBulkDocs, modelBulks, modelMap] = await Promise.all([
+    convex.query(api.assets.listByParentAssetId, { parentAssetId: assetId, orgId: organizationId }),
+    convex.query(api.assetBulkChildren.listByParentAssetId, { parentAssetId: assetId, orgId: organizationId }),
+    asset.modelId
+      ? convex.query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
+      : Promise.resolve([]),
+    getModelMap(organizationId),
+  ]);
+
+  // assetBulkChildren docs carry only bulkAssetId — resolve each child's bulk
+  // asset for its modelId (the model name shown), mirroring the old
+  // resolveAssetAccessories `bulkAsset.modelId` join.
+  const childBulkAssetDocs = await Promise.all(
+    childBulkDocs.map((b) => getBulkAssetById(b.bulkAssetId)),
   );
-  return serialize({
-    serialised: profile.serialised.map((s) => ({
-      id: s.assetId,
-      name: s.modelName,
-    })),
-    bulk: profile.bulks.map((b) => ({
-      id: b.bulkAssetId,
-      name: b.modelName,
-      quantity: b.quantity,
-    })),
-  });
+  const childBulkModelIdById = new Map(
+    childBulkAssetDocs.filter((d): d is NonNullable<typeof d> => d != null).map((d) => [d.id, d.modelId]),
+  );
+
+  // Asset-level bulk children win by bulkAssetId over inherited model accessories.
+  const assetBulkIds = new Set(childBulkDocs.map((b) => b.bulkAssetId));
+
+  const serialised = childAssetDocs.map((c) => ({
+    id: c.id,
+    name: c.modelId ? modelMap.get(c.modelId)?.name ?? null : null,
+  }));
+
+  const bulk = [
+    ...childBulkDocs.map((b) => {
+      const bulkModelId = childBulkModelIdById.get(b.bulkAssetId) ?? null;
+      return {
+        id: b.bulkAssetId,
+        name: bulkModelId ? modelMap.get(bulkModelId)?.name ?? null : null,
+        quantity: b.quantity,
+      };
+    }),
+    ...modelBulks
+      .filter((m) => !assetBulkIds.has(m.bulkAssetId))
+      .map((m) => ({
+        id: m.bulkAssetId,
+        name: m.bulkAssetModelId ? modelMap.get(m.bulkAssetModelId)?.name ?? null : null,
+        quantity: m.quantity,
+      })),
+  ];
+
+  return serialize({ serialised, bulk });
 }
 
 export async function prepItemDirect(
@@ -315,40 +348,34 @@ export async function prepItemDirect(
     "check_out"
   );
 
-  // Resolve the line item's group before the tx so a group-level blocker gates
-  // prep too (Convex read kept outside the Prisma transaction).
-  const liForGate = await prisma.projectLineItem.findFirst({
-    where: { id: lineItemId, projectId, organizationId },
-    select: { groupId: true },
-  });
+  const convex = await getConvexClient();
+  // Resolve the line item (group for the blocker gate + bulkAssetId fallback).
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!lineItem || lineItem.projectId !== projectId || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found in project");
+  }
   await assertNoBlockingComments(organizationId, projectId, {
     lineItemId,
-    groupId: liForGate?.groupId,
+    groupId: lineItem.groupId,
     actionLabel: "prep this item",
   });
 
-  const result = await prisma.$transaction(async (tx) => {
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: { id: lineItemId, projectId, organizationId },
-    });
-
-    if (!lineItem) {
-      throw new Error("Line item not found in project");
-    }
-
-    // Prep creates/marks a ProjectLineItemUnit — never splits the line.
-    return prepUnit(tx, {
-      organizationId,
-      lineItemId,
-      assetId: assetId ?? null,
-      bulkAssetId: assetId ? null : lineItem.bulkAssetId,
-      quantity,
-      prepContainer,
-      includeAccessoryIds: includeAccessoryIds ? new Set(includeAccessoryIds) : null,
-    });
+  // Prep creates/marks a ProjectLineItemUnit — never splits the line (Convex mutation).
+  const now = Date.now();
+  await convex.mutation(api.checkRecordOps.prepItem, {
+    organizationId,
+    projectId,
+    lineItemId,
+    ...(assetId ? { assetId } : {}),
+    ...(!assetId && lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
+    ...(quantity != null ? { quantity } : {}),
+    prepContainer: prepContainer ?? undefined,
+    ...(includeAccessoryIds ? { includeAccessoryIds } : {}),
+    now,
   });
+  const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
 
-  const prepModel = result.modelId ? await getModelById(result.modelId) : null;
+  const prepModel = result?.modelId ? await getModelById(result.modelId) : null;
   await logActivity({
     organizationId,
     userId,
@@ -359,10 +386,9 @@ export async function prepItemDirect(
     entityName: prepModel?.name || "Line item",
     summary: "Prepped item (no checks required)",
     projectId,
-    assetId: assetId || result.assetId || undefined,
+    assetId: assetId || result?.assetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -376,111 +402,19 @@ export async function deprepItem(
     "check_out"
   );
 
-  const result = await prisma.$transaction(async (tx) => {
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: { id: lineItemId, projectId, organizationId },
-      include: { asset: true, bulkAsset: true },
-    });
-
-    if (!lineItem) {
-      throw new Error("Line item not found in project");
-    }
-
-    // Allow deprep from any non-deployed state (handles PACKED, PULLED, or inconsistent states)
-    if (lineItem.status === "CHECKED_OUT") {
-      throw new Error("Item is already deployed — return it first");
-    }
-
-    // Clean up the unit rows. Post-cutover, prep creates a unit per
-    // assigned asset (and marks it PACKED); deprep needs to remove
-    // them or the asset stays "stuck" on the line — visible in the
-    // project view, on dockets, and blocking the asset from being
-    // reassigned to a different line / project. Without this the
-    // line.prepStatus reset is cosmetic.
-    //
-    // asset.status is left alone — prep never marked it CHECKED_OUT,
-    // so it's still AVAILABLE. The unit row carries the assignment;
-    // deleting the unit removes the assignment.
-    const preppedUnits = await tx.projectLineItemUnit.findMany({
-      where: {
-        lineItemId,
-        status: { not: "CHECKED_OUT" },
-      },
-      orderBy: { ordinal: "desc" },
-      select: { id: true, quantity: true, bulkAssetId: true, assetId: true },
-    });
-
-    // Partial bulk deprep: a single bulk unit row carries the qty —
-    // reduce its quantity instead of deleting the whole row.
-    const isPartialBulk =
-      preppedUnits.length === 1 &&
-      preppedUnits[0].bulkAssetId &&
-      !preppedUnits[0].assetId &&
-      quantity < preppedUnits[0].quantity;
-    if (isPartialBulk) {
-      await tx.projectLineItemUnit.update({
-        where: { id: preppedUnits[0].id },
-        data: { quantity: preppedUnits[0].quantity - quantity },
-      });
-    } else {
-      // Serialised deprep — remove `quantity` units, highest-ordinal
-      // first (preserves the lower ordinals for staff who already
-      // pulled them physically; also natural LIFO).
-      const removeCount = Math.min(quantity, preppedUnits.length);
-      const removedParentAssetIds: string[] = [];
-      for (let i = 0; i < removeCount; i++) {
-        if (preppedUnits[i].assetId) removedParentAssetIds.push(preppedUnits[i].assetId as string);
-        await tx.projectLineItemUnit.delete({
-          where: { id: preppedUnits[i].id },
-        });
-      }
-      // Cascade: the accessory units that rode with each removed handheld
-      // (parentUnitAssetId) come off too — else a battery/clip unit lingers on
-      // the deploy board with no parent. Mirrors how prep materialised them.
-      if (removedParentAssetIds.length > 0) {
-        const accChildren = await tx.projectLineItem.findMany({
-          where: { parentLineItemId: lineItemId, organizationId, childKind: "ACCESSORY" },
-          select: { id: true },
-        });
-        if (accChildren.length > 0) {
-          const accChildIds = accChildren.map((c) => c.id);
-          await tx.projectLineItemUnit.deleteMany({
-            where: {
-              lineItemId: { in: accChildIds },
-              organizationId,
-              parentUnitAssetId: { in: removedParentAssetIds },
-              status: { not: "CHECKED_OUT" },
-            },
-          });
-          for (const id of accChildIds) await syncLineItemRollup(tx, id);
-        }
-      }
-    }
-
-    // Clear legacy line.assetId (kit children excepted — they store
-    // their asset there as an active path, not as a fulfillment row).
-    if (!lineItem.isKitChild && lineItem.assetId) {
-      await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: { asset: { disconnect: true } },
-      });
-    }
-
-    // Recompute rollup. With units gone, deriveOrderLinePrepStatus
-    // falls back to whatever was on the line — explicitly reset to
-    // PENDING here so the line returns to the prep tab.
-    await tx.projectLineItem.update({
-      where: { id: lineItemId },
-      data: { prepStatus: "PENDING" },
-    });
-    await syncLineItemRollup(tx, lineItemId);
-
-    return tx.projectLineItem.findUniqueOrThrow({
-      where: { id: lineItemId },
-      include: { asset: true, bulkAsset: true },
-    });
+  const convex = await getConvexClient();
+  await convex.mutation(api.checkRecordOps.deprepItem, {
+    organizationId,
+    projectId,
+    lineItemId,
+    quantity,
+    now: Date.now(),
   });
-  const [grafted] = await attachLineItemModels(organizationId, [result]);
+  const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!result) throw new Error("Line item not found in project");
+  const [grafted] = await attachLineItemModels(organizationId, [
+    { ...result, modelId: result.modelId ?? null },
+  ]);
 
   await logActivity({
     organizationId,
@@ -495,7 +429,6 @@ export async function deprepItem(
     assetId: result.assetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize(grafted);
 }
 
@@ -524,99 +457,49 @@ export async function completeCheckAndDeprep(data: {
     "check_out"
   );
 
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: data.lineItemId });
+  if (!lineItem || lineItem.projectId !== data.projectId || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found in project");
+  }
+
+  // Write RETURN-context check records (saveCheckRecords only reads checkItem +
+  // pushes to the sink — no Prisma writes, so plain client is fine as the tx).
+  // assetId may be empty if the return-tab scan already disconnected it — that's OK,
+  // saveCheckRecords skips the asset connect when assetId is falsy.
   const checkRecordSink: CheckRecordDoc[] = [];
-  const result = await prisma.$transaction(async (tx) => {
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: { id: data.lineItemId, projectId: data.projectId, organizationId },
-      include: { asset: true, bulkAsset: true },
-    });
+  const resolvedAssetId = data.assetId || lineItem.assetId || "";
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    resolvedAssetId,
+    data.lineItemId,
+    data.bulkAssetId || lineItem.bulkAssetId,
+    "RETURN",
+    data.checks,
+    null,
+    checkRecordSink
+  );
 
-    if (!lineItem) {
-      throw new Error("Line item not found in project");
-    }
-    if (lineItem.status !== "RETURNED") {
-      throw new Error(
-        `Deprep return check requires RETURNED status (got ${lineItem.status})`
-      );
-    }
-    // Idempotent on prepStatus. A multi-unit line generates N sequential
-    // completeCheckAndDeprep calls — the first resets prepStatus from
-    // PACKED to PENDING, and the remaining calls would have failed a
-    // strict PACKED-only precondition. We still want each call to save
-    // its check records (one per asset), and resetting prepStatus to
-    // PENDING is idempotent. Only reject states that indicate the line
-    // never went through prep at all (eg FLAGGED_FAULTY).
-    if (
-      lineItem.prepStatus !== "PACKED" &&
-      lineItem.prepStatus !== "PENDING"
-    ) {
-      throw new Error(
-        `Deprep return check expected prepStatus=PACKED or PENDING (got ${lineItem.prepStatus ?? "null"})`
-      );
-    }
-
-    // Write RETURN-context check records.
-    // assetId may be empty if the return-tab scan already disconnected it — that's OK,
-    // saveCheckRecords skips the asset connect when assetId is falsy.
-    const resolvedAssetId = data.assetId || lineItem.assetId || "";
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      resolvedAssetId,
-      data.lineItemId,
-      data.bulkAssetId || lineItem.bulkAssetId,
-      "RETURN",
-      data.checks,
-      null,
-      checkRecordSink
-    );
-
-    // Reset prepStatus to remove from deploy staging. Do not touch status/returnStatus —
-    // the return-tab flow already set those.
-    const updated = await tx.projectLineItem.update({
-      where: { id: data.lineItemId },
-      data: {
-        prepStatus: "PENDING",
-        ...(!lineItem.isKitChild && lineItem.assetId
-          ? { asset: { disconnect: true } }
-          : {}),
-      },
-      include: { asset: true, bulkAsset: true },
-    });
-
-    // Permanent accessories de-prep with their parent so they don't linger in
-    // the deploy-staging board. Scoped to the returned unit (resolvedAssetId):
-    // its serialised accessories (asset.parentAssetId match) plus the shared
-    // bulk accessory rows. A whole-line deprep (no assetId) clears them all.
-    await tx.projectLineItem.updateMany({
-      where: {
-        parentLineItemId: data.lineItemId,
-        organizationId,
-        childKind: "ACCESSORY",
-        ...(resolvedAssetId
-          ? { OR: [{ asset: { parentAssetId: resolvedAssetId } }, { assetId: null }] }
-          : {}),
-      },
-      data: { prepStatus: "PENDING" },
-    });
-    // Clear the per-parent-unit accessory units' stale PACKED prepStatus too
-    // (scoped to the returned handheld), so the line's derived prep state and
-    // the deploy-staging board don't show them as still packed.
-    await tx.projectLineItemUnit.updateMany({
-      where: {
-        organizationId,
-        lineItem: { parentLineItemId: data.lineItemId, childKind: "ACCESSORY" },
-        ...(resolvedAssetId ? { parentUnitAssetId: resolvedAssetId } : {}),
-      },
-      data: { prepStatus: "PENDING" },
-    });
-
-    return updated;
+  // Reset prepStatus (+ scoped accessory de-prep) via Convex. The mutation
+  // re-validates RETURNED status + PACKED/PENDING prepStatus (idempotent on
+  // multi-unit lines). Does not touch status/returnStatus.
+  await convex.mutation(api.checkRecordOps.completeCheckAndDeprepLine, {
+    organizationId,
+    projectId: data.projectId,
+    lineItemId: data.lineItemId,
+    ...(resolvedAssetId ? { resolvedAssetId } : {}),
+    now: Date.now(),
   });
+
   // Mirror created check records to Convex post-commit.
   await writeCheckRecordsToConvex(checkRecordSink);
-  const [grafted] = await attachLineItemModels(organizationId, [result]);
+  const result = await convex.query(api.projectLineItems.getById, { id: data.lineItemId });
+  if (!result) throw new Error("Line item not found in project");
+  const [grafted] = await attachLineItemModels(organizationId, [
+    { ...result, modelId: result.modelId ?? null },
+  ]);
 
   await logActivity({
     organizationId,
@@ -631,7 +514,6 @@ export async function completeCheckAndDeprep(data: {
     assetId: result.assetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(data.projectId);
   return serialize(grafted);
 }
 
@@ -647,58 +529,37 @@ export async function deprepKit(
     "check_out"
   );
 
-  const parentLi = await prisma.projectLineItem.findFirst({
-    where: { id: parentLineItemId, projectId, organizationId },
-    include: {
-      childLineItems: {
-        include: {
-          childLineItems: true,
-        },
-      },
-      kit: true,
-    },
-  });
-
-  if (!parentLi) throw new Error("Kit line item not found");
+  const convex = await getConvexClient();
+  const parentLi = await convex.query(api.projectLineItems.getById, { id: parentLineItemId });
+  if (!parentLi || parentLi.projectId !== projectId || parentLi.organizationId !== organizationId) {
+    throw new Error("Kit line item not found");
+  }
 
   // Allow deprep if the kit or any children are in a prepped state
   // (handles edge cases where parent/children are out of sync)
   if (parentLi.prepStatus !== "PACKED" && parentLi.prepStatus !== "PULLED") {
-    // Check if any children are prepped even if parent isn't
-    const hasPreppedChildren = (parentLi.childLineItems || []).some(
-      (c) => c.prepStatus === "PACKED" || c.prepStatus === "PULLED"
+    const children = await convex.query(api.projectLineItems.listByProject, {
+      projectId,
+      orgId: organizationId,
+    });
+    const hasPreppedChildren = children.some(
+      (c) =>
+        c.parentLineItemId === parentLineItemId &&
+        (c.prepStatus === "PACKED" || c.prepStatus === "PULLED")
     );
     if (!hasPreppedChildren) {
       throw new Error("Kit is not prepped");
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    const children = parentLi.childLineItems || [];
-    for (const child of children) {
-      if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
-
-      await tx.projectLineItem.update({
-        where: { id: child.id },
-        data: { prepStatus: "PENDING" },
-      });
-
-      const grandchildren = child.childLineItems || [];
-      for (const gc of grandchildren) {
-        if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
-        await tx.projectLineItem.update({
-          where: { id: gc.id },
-          data: { prepStatus: "PENDING" },
-        });
-      }
-    }
-
-    await tx.projectLineItem.update({
-      where: { id: parentLineItemId },
-      data: { prepStatus: "PENDING" },
-    });
+  await convex.mutation(api.checkRecordOps.deprepKit, {
+    organizationId,
+    projectId,
+    parentLineItemId,
+    now: Date.now(),
   });
 
+  const kit = parentLi.kitId ? await convex.query(api.kits.getById, { id: parentLi.kitId }) : null;
   await logActivity({
     organizationId,
     userId,
@@ -706,12 +567,11 @@ export async function deprepKit(
     action: "UPDATE",
     entityType: "asset",
     entityId: parentLineItemId,
-    entityName: parentLi.kit?.name || "Kit",
+    entityName: kit?.name || "Kit",
     summary: "Removed kit from prep",
     projectId,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize({ success: true });
 }
 
@@ -728,19 +588,11 @@ export async function prepKitChildren(
     "check_out"
   );
 
-  const parentLi = await prisma.projectLineItem.findFirst({
-    where: { id: parentLineItemId, projectId, organizationId },
-    include: {
-      childLineItems: {
-        include: {
-          childLineItems: true, // nested kit grandchildren
-        },
-      },
-      kit: true,
-    },
-  });
-
-  if (!parentLi) throw new Error("Kit line item not found");
+  const convex = await getConvexClient();
+  const parentLi = await convex.query(api.projectLineItems.getById, { id: parentLineItemId });
+  if (!parentLi || parentLi.projectId !== projectId || parentLi.organizationId !== organizationId) {
+    throw new Error("Kit line item not found");
+  }
 
   await assertNoBlockingComments(organizationId, projectId, {
     lineItemId: parentLineItemId,
@@ -748,35 +600,14 @@ export async function prepKitChildren(
     actionLabel: "prep this kit",
   });
 
-  await prisma.$transaction(async (tx) => {
-    const children = parentLi.childLineItems || [];
-    for (const child of children) {
-      if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
-
-      // Mark child as prepped (reset status in case of re-prep after return)
-      await tx.projectLineItem.update({
-        where: { id: child.id },
-        data: { status: "CONFIRMED", prepStatus: "PACKED" },
-      });
-
-      // If child is a nested kit, also mark its grandchildren
-      const grandchildren = child.childLineItems || [];
-      for (const gc of grandchildren) {
-        if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
-        await tx.projectLineItem.update({
-          where: { id: gc.id },
-          data: { status: "CONFIRMED", prepStatus: "PACKED" },
-        });
-      }
-    }
-
-    // Mark the parent kit line item as prepped too
-    await tx.projectLineItem.update({
-      where: { id: parentLineItemId },
-      data: { status: "CONFIRMED", prepStatus: "PACKED" },
-    });
+  await convex.mutation(api.checkRecordOps.prepKitChildren, {
+    organizationId,
+    projectId,
+    parentLineItemId,
+    now: Date.now(),
   });
 
+  const kit = parentLi.kitId ? await convex.query(api.kits.getById, { id: parentLi.kitId }) : null;
   await logActivity({
     organizationId,
     userId,
@@ -784,12 +615,11 @@ export async function prepKitChildren(
     action: "UPDATE",
     entityType: "asset",
     entityId: parentLineItemId,
-    entityName: parentLi.kit?.name || "Kit",
+    entityName: kit?.name || "Kit",
     summary: "Kit prepped (checks completed)",
     projectId,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize({ success: true });
 }
 
@@ -799,20 +629,20 @@ export async function unpackItem(projectId: string, lineItemId: string) {
     "check_in"
   );
 
-  const lineItem = await prisma.projectLineItem.findFirst({
-    where: { id: lineItemId, projectId, organizationId },
-  });
-
-  if (!lineItem) {
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!lineItem || lineItem.projectId !== projectId || lineItem.organizationId !== organizationId) {
     throw new Error("Line item not found in project");
   }
 
-  const result = await prisma.projectLineItem.update({
-    where: { id: lineItemId },
-    data: { returnStatus: "UNPACKED" },
-    include: { asset: true, bulkAsset: true },
+  await convex.mutation(api.projectLineItems.update, {
+    id: lineItemId,
+    patch: { returnStatus: "UNPACKED", updatedAt: Date.now() },
   });
-  const [grafted] = await attachLineItemModels(organizationId, [result]);
+  const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  const [grafted] = await attachLineItemModels(organizationId, [
+    { ...result, modelId: result?.modelId ?? null },
+  ]);
 
   await logActivity({
     organizationId,
@@ -827,7 +657,6 @@ export async function unpackItem(projectId: string, lineItemId: string) {
     assetId: lineItem.assetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize(grafted);
 }
 
@@ -840,62 +669,50 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   );
   const parsed = completeCheckAndPackSchema.parse(data);
 
-  // Resolve the line item's group before the tx so a group-level blocker gates
-  // this prep too (Convex read kept outside the Prisma transaction).
-  const liForGate = await prisma.projectLineItem.findFirst({
-    where: { id: parsed.lineItemId, projectId: parsed.projectId, organizationId },
-    select: { groupId: true },
-  });
+  const convex = await getConvexClient();
+  // Resolve the line item (group for the blocker gate + assetId/bulkAssetId).
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  if (!lineItem || lineItem.projectId !== parsed.projectId || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found in project");
+  }
   await assertNoBlockingComments(organizationId, parsed.projectId, {
     lineItemId: parsed.lineItemId,
-    groupId: liForGate?.groupId,
+    groupId: lineItem.groupId,
     actionLabel: "complete the check & pack",
   });
 
+  // Resolve assetId: prefer parsed value, fall back to line item's asset
+  const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+  // 1. Save check records (saveCheckRecords only reads checkItem + fills the
+  // sink — no Prisma writes, so the plain client serves as the tx).
   const checkRecordSink: CheckRecordDoc[] = [];
-  const result = await prisma.$transaction(async (tx) => {
-    // 1. Verify line item
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: {
-        id: parsed.lineItemId,
-        projectId: parsed.projectId,
-        organizationId,
-      },
-    });
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    resolvedAssetId,
+    parsed.lineItemId,
+    parsed.bulkAssetId || lineItem.bulkAssetId,
+    "PREP",
+    parsed.checks,
+    null,
+    checkRecordSink
+  );
 
-    if (!lineItem) {
-      throw new Error("Line item not found in project");
-    }
-
-    // Resolve assetId: prefer parsed value, fall back to line item's asset
-    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
-
-    // 2. Save check records
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      resolvedAssetId,
-      parsed.lineItemId,
-      parsed.bulkAssetId || lineItem.bulkAssetId,
-      "PREP",
-      parsed.checks,
-      null,
-      checkRecordSink
-    );
-
-    // 3. Prep — create/mark the unit (no checkout; deploy is a separate step).
-    const updatedItem = await prepUnit(tx, {
-      organizationId,
-      lineItemId: parsed.lineItemId,
-      assetId: parsed.assetId ?? null,
-      bulkAssetId: parsed.assetId ? null : lineItem.bulkAssetId,
-      prepContainer: parsed.prepContainer,
-      includeAccessoryIds: parsed.includeAccessoryIds ? new Set(parsed.includeAccessoryIds) : null,
-    });
-
-    return { updatedItem, resolvedAssetId };
+  // 2. Prep — create/mark the unit (no checkout; deploy is a separate step).
+  await convex.mutation(api.checkRecordOps.prepItem, {
+    organizationId,
+    projectId: parsed.projectId,
+    lineItemId: parsed.lineItemId,
+    ...(parsed.assetId ? { assetId: parsed.assetId } : {}),
+    ...(!parsed.assetId && lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
+    prepContainer: parsed.prepContainer ?? undefined,
+    ...(parsed.includeAccessoryIds ? { includeAccessoryIds: parsed.includeAccessoryIds } : {}),
+    now: Date.now(),
   });
+  const updatedItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  const result = { updatedItem, resolvedAssetId };
 
   // Mirror created check records to Convex post-commit.
   await writeCheckRecordsToConvex(checkRecordSink);
@@ -925,7 +742,6 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     assetId: result.resolvedAssetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 
@@ -938,40 +754,36 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
   );
   const parsed = completeCheckAndFlagSchema.parse(data);
 
+  const convex = await getConvexClient();
+  // 1. Resolve assetId from line item if not provided
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  if (!lineItem || lineItem.projectId !== parsed.projectId || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found in project");
+  }
+  const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+  // 2. Save check records (saveCheckRecords only reads checkItem + fills sink).
   const checkRecordSink: CheckRecordDoc[] = [];
-  const result = await prisma.$transaction(async (tx) => {
-    // 1. Resolve assetId from line item if not provided
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: { id: parsed.lineItemId, projectId: parsed.projectId, organizationId },
-    });
-    if (!lineItem) throw new Error("Line item not found in project");
-    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    resolvedAssetId,
+    parsed.lineItemId,
+    parsed.bulkAssetId || lineItem.bulkAssetId,
+    "PREP",
+    parsed.checks,
+    null,
+    checkRecordSink
+  );
 
-    // 2. Save check records
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      resolvedAssetId,
-      parsed.lineItemId,
-      parsed.bulkAssetId || lineItem.bulkAssetId,
-      "PREP",
-      parsed.checks,
-      null,
-      checkRecordSink
-    );
-
-    // 3. Update line item to flagged status
-    const updatedItem = await tx.projectLineItem.update({
-      where: { id: parsed.lineItemId },
-      data: {
-        prepStatus: parsed.flagType,
-      },
-      include: { asset: true, bulkAsset: true },
-    });
-
-    return { updatedItem, resolvedAssetId };
+  // 3. Update line item to flagged status (Convex)
+  await convex.mutation(api.projectLineItems.update, {
+    id: parsed.lineItemId,
+    patch: { prepStatus: parsed.flagType, updatedAt: Date.now() },
   });
+  const updatedItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  const result = { updatedItem, resolvedAssetId };
 
   // Mirror created check records to Convex post-commit.
   await writeCheckRecordsToConvex(checkRecordSink);
@@ -1001,7 +813,6 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
     assetId: result.resolvedAssetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 
@@ -1016,119 +827,55 @@ export async function completeCheckAndStore(
   );
   const parsed = completeCheckAndStoreSchema.parse(data);
 
+  const convex = await getConvexClient();
+  // 1. Verify line item (needed to resolve assetId).
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  if (!lineItem || lineItem.projectId !== parsed.projectId || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found in project");
+  }
+
+  // Resolve assetId: prefer parsed value, fall back to line item's asset.
+  const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+  // 2. Save check records (saveCheckRecords only reads checkItem + fills sink).
   const checkRecordSink: CheckRecordDoc[] = [];
-  const result = await prisma.$transaction(async (tx) => {
-    // 1. Verify line item (needed to resolve assetId)
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: {
-        id: parsed.lineItemId,
-        projectId: parsed.projectId,
-        organizationId,
-      },
-    });
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    resolvedAssetId,
+    parsed.lineItemId,
+    parsed.bulkAssetId || lineItem.bulkAssetId,
+    "RETURN",
+    parsed.checks,
+    null,
+    checkRecordSink
+  );
 
-    if (!lineItem) {
-      throw new Error("Line item not found in project");
-    }
-
-    // Resolve assetId: prefer parsed value, fall back to line item's asset
-    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
-
-    // 2. Save check records
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      resolvedAssetId,
-      parsed.lineItemId,
-      parsed.bulkAssetId || lineItem.bulkAssetId,
-      "RETURN",
-      parsed.checks,
-      null,
-      checkRecordSink
-    );
-
-    // 3. Determine return location
-    let locationId = parsed.locationId || null;
-    if (!locationId) {
-      const defaultLocation = await tx.location.findFirst({
-        where: { organizationId, isDefault: true },
-        select: { id: true },
-      });
-      locationId = defaultLocation?.id || null;
-    }
-
-    // 4. Perform the actual return via the canonical helper — same
-    //    code path checkInItems uses, so a multi-unit line's units
-    //    and assets all get flipped, not just the order-line counter.
-    //    Pre-cutover this function hand-rolled the checkin, which
-    //    only touched `line.returnedQuantity` and left units / assets
-    //    stuck in CHECKED_OUT — the root cause of "return didn't
-    //    release the assets" on multi-quantity serialised lines.
-    const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
-      organizationId,
-      projectId: parsed.projectId,
-      lineItemId: parsed.lineItemId,
-      assetId: parsed.assetId,
-      bulkAssetId: parsed.bulkAssetId,
-      returnCondition: parsed.condition,
-      quantity: 1,
-      notes: parsed.notes,
-      userId,
-      defaultLocationId: locationId,
-    });
-
-    // 5. Sync rollup counters + derived status.
-    await syncLineItemRollup(tx, parsed.lineItemId);
-
-    // 5b. Permanent accessories return with their parent — the same cascade
-    //     checkInItems runs, scoped to the returned unit (resolvedAssetId) so a
-    //     multi-quantity parent doesn't return its siblings' accessories. Only
-    //     when the parent return flipped a unit, so a re-check-and-store of an
-    //     already-returned unit can't re-return the shared bulk accessory.
-    //     No-op for non-parent lines.
-    const touchedAssets = [...assetsTouched];
-    if (unitsFlipped > 0) {
-      const acc = await checkinAccessoryChildren(tx, {
-        organizationId,
-        projectId: parsed.projectId,
-        parentLineItemId: parsed.lineItemId,
+  // 3. Perform the actual return via the canonical Convex mutation — does
+  //    returnLineUnits + rollup + accessory cascade + scan log + asset status
+  //    all in-mutation (parsed.locationId is honored by the mutation's default
+  //    location resolution; explicit per-call location is no longer needed).
+  await convex.mutation(api.warehouseOps.checkinItems, {
+    organizationId,
+    projectId: parsed.projectId,
+    userId,
+    items: [
+      {
+        lineItemId: parsed.lineItemId,
+        ...(parsed.assetId ? { assetId: parsed.assetId } : {}),
         returnCondition: parsed.condition,
-        userId,
-        defaultLocationId: locationId,
-        returnedAssetId: resolvedAssetId || null,
-      });
-      touchedAssets.push(...acc.assetsTouched);
-    }
-
-    // 6. Scan log (Phase B: build doc for post-tx Convex write)
-    const scanLog = {
-      id: createId(),
-      organizationId,
-      ...(assetsTouched.length === 1 ? { assetId: assetsTouched[0] } : {}),
-      ...(lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
-      projectId: parsed.projectId,
-      action: "CHECK_IN" as const,
-      scannedById: userId,
-      scannedAt: Date.now(),
-      notes: parsed.notes || `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
-    };
-
-    const updatedItem = await tx.projectLineItem.findUnique({
-      where: { id: parsed.lineItemId },
-      include: { asset: true, bulkAsset: true },
-    });
-
-    return { updatedItem, resolvedAssetId, touchedAssets, scanLog };
+        quantity: 1,
+        ...(parsed.notes ? { notes: parsed.notes } : {}),
+      },
+    ],
+    now: Date.now(),
   });
+  const updatedItem = await convex.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  const result = { updatedItem, resolvedAssetId };
 
-  // Write check records + scan log to Convex post-commit (Phase B).
+  // Write check records to Convex post-commit (Phase B).
   await writeCheckRecordsToConvex(checkRecordSink);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (await getConvexClient()).mutation(api.assetScanLogs.createIfMissing, result.scanLog as any);
-
-  // Mirror the returned asset(s) status/location changes to Convex.
-  await syncAssetsToConvex(result.touchedAssets);
 
   // Post-commit: predictive maintenance
   const failedChecks = parsed.checks.filter((c) => c.result === "FAIL");
@@ -1155,7 +902,6 @@ export async function completeCheckAndStore(
     assetId: result.resolvedAssetId || undefined,
   });
 
-  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 
@@ -1172,20 +918,20 @@ export async function saveAdHocCheck(data: SubmitChecksFormValues) {
     throw new Error("This function is for ad-hoc checks only");
   }
 
-  const records = await prisma.$transaction(async (tx) => {
-    return saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      parsed.assetId,
-      null,
-      parsed.bulkAssetId,
-      "AD_HOC",
-      parsed.checks
-    );
-  });
+  // saveCheckRecords only reads checkItem (kept Prisma table) + builds the
+  // Convex-ready docs — no Prisma writes, so no transaction is needed.
+  const records = await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    parsed.assetId,
+    null,
+    parsed.bulkAssetId,
+    "AD_HOC",
+    parsed.checks
+  );
 
-  // Mirror created check records to Convex post-commit (the tx return value IS
+  // Mirror created check records to Convex post-commit (the return value IS
   // the created rows).
   await writeCheckRecordsToConvex(records);
 
@@ -1280,20 +1026,19 @@ export async function saveKitLevelChecks(
   );
 
   const checkRecordSink: CheckRecordDoc[] = [];
-  await prisma.$transaction(async (tx) => {
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      "", // no specific asset for kit-level
-      lineItemId,
-      null,
-      context,
-      checks,
-      kitId,
-      checkRecordSink
-    );
-  });
+  // saveCheckRecords only reads checkItem + fills the sink — no Prisma writes.
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    "", // no specific asset for kit-level
+    lineItemId,
+    null,
+    context,
+    checks,
+    kitId,
+    checkRecordSink
+  );
 
   // Mirror created check records to Convex post-commit.
   await writeCheckRecordsToConvex(checkRecordSink);
@@ -1318,31 +1063,29 @@ export async function saveChildItemChecks(
     context === "PREP" ? "check_out" : "check_in"
   );
 
-  let resolvedAssetId = "";
   const checkRecordSink: CheckRecordDoc[] = [];
 
-  await prisma.$transaction(async (tx) => {
-    // Verify line item exists
-    const lineItem = await tx.projectLineItem.findFirst({
-      where: { id: lineItemId, organizationId },
-    });
-    if (!lineItem) throw new Error("Line item not found");
+  // Verify line item exists + resolve assetId (Convex read).
+  const convex = await getConvexClient();
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  if (!lineItem || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found");
+  }
+  const resolvedAssetId = assetId || lineItem.assetId || "";
 
-    resolvedAssetId = assetId || lineItem.assetId || "";
-
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      resolvedAssetId,
-      lineItemId,
-      bulkAssetId || lineItem.bulkAssetId,
-      context,
-      checks,
-      null,
-      checkRecordSink
-    );
-  });
+  // saveCheckRecords only reads checkItem + fills the sink — no Prisma writes.
+  await saveCheckRecords(
+    prisma,
+    organizationId,
+    userId,
+    resolvedAssetId,
+    lineItemId,
+    bulkAssetId || lineItem.bulkAssetId,
+    context,
+    checks,
+    null,
+    checkRecordSink
+  );
 
   // Mirror created check records to Convex post-commit.
   await writeCheckRecordsToConvex(checkRecordSink);

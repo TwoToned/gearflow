@@ -4,16 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { syncAssetsToConvex } from "@/lib/asset-mirror";
-import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { createId } from "@paralleldrive/cuid2";
 import { getModelMap } from "@/lib/models-read";
-import {
-  returnLineUnits,
-  syncLineItemRollup,
-} from "@/lib/line-item-fulfillment";
 import {
   aggregateCheckInTotals,
   itemGroupKey,
@@ -89,41 +83,51 @@ async function loadDeployedItems(
   organizationId: string,
   projectId: string,
 ): Promise<DeployedItemRow[]> {
-  const [rows, modelMap] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: {
-        organizationId,
-        projectId,
-        status: "CHECKED_OUT",
-        subHireGroupId: null,
-        OR: [
-          { isKitChild: false },
-          { isKitChild: true, childKind: "ACCESSORY" },
-        ],
-      },
-      orderBy: { sortOrder: "asc" },
-      select: {
-        id: true,
-        modelId: true,
-        sortOrder: true,
-        assetId: true,
-        bulkAssetId: true,
-        subHireId: true,
-        isCustomItem: true,
-        childKind: true,
-        checkedOutQuantity: true,
-        returnedQuantity: true,
-        status: true,
-        units: { select: UNIT_SELECT },
-      },
-    }),
+  const convex = await getConvexClient();
+  const [allLines, modelMap] = await Promise.all([
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
     getModelMap(organizationId),
   ]);
+
+  // Replicate the Prisma `where`: deployed, non-sub-hire-group, and either a
+  // non-kit-child OR an accessory child.
+  const rows = allLines
+    .filter(
+      (r) =>
+        r.organizationId === organizationId &&
+        r.status === "CHECKED_OUT" &&
+        !r.subHireGroupId &&
+        (!r.isKitChild || r.childKind === "ACCESSORY"),
+    )
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+  // Units per line (batched).
+  const unitsByLine = new Map<string, Array<{ quantity: number; returnedQuantity: number; status: string }>>();
+  const allUnits = await convex.query(api.projectLineItemUnits.listByLineItemIds, {
+    lineItemIds: rows.map((r) => r.id),
+  });
+  for (const u of allUnits) {
+    const bucket = unitsByLine.get(u.lineItemId) ?? [];
+    bucket.push({ quantity: u.quantity ?? 0, returnedQuantity: u.returnedQuantity ?? 0, status: u.status ?? "" });
+    unitsByLine.set(u.lineItemId, bucket);
+  }
+
   return rows.map((r) => ({
-    ...r,
+    id: r.id,
+    modelId: r.modelId ?? null,
+    sortOrder: r.sortOrder ?? 0,
+    assetId: r.assetId ?? null,
+    bulkAssetId: r.bulkAssetId ?? null,
+    subHireId: r.subHireId ?? null,
+    isCustomItem: !!r.isCustomItem,
+    childKind: r.childKind ?? null,
+    checkedOutQuantity: r.checkedOutQuantity ?? 0,
+    returnedQuantity: r.returnedQuantity ?? 0,
+    status: r.status ?? "",
     model: r.modelId
       ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
       : null,
+    units: unitsByLine.get(r.id) ?? [],
   })) as DeployedItemRow[];
 }
 
@@ -151,151 +155,21 @@ export async function checkInBulkTotals(
     return serialize({ returned: [] as Array<{ key: string; quantity: number }> });
   }
 
-  // Pre-fetch model map — model names are display-only, pre-fetching before
-  // the tx avoids a cross-domain read inside the Prisma transaction.
-  const modelMap = await getModelMap(organizationId);
-
-  const allTouchedAssets = new Set<string>();
-  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits
-  // (Convex calls can't run inside a Prisma tx).
-  type ScanLogDoc = { id: string; organizationId: string; assetId?: string; bulkAssetId?: string; projectId?: string; action: string; scannedById: string; scannedAt: number; notes?: string };
-  const scanLogSink: ScanLogDoc[] = [];
-  const scanLogNow = Date.now();
-  const returned = await prisma.$transaction(async (tx) => {
-    const defaultLocation = await tx.location.findFirst({
-      where: { organizationId, isDefault: true },
-      select: { id: true },
-    });
-    const defaultLocationId = defaultLocation?.id ?? null;
-
-    const items = (await tx.projectLineItem.findMany({
-      where: {
-        organizationId,
-        projectId,
-        status: "CHECKED_OUT",
-        subHireGroupId: null,
-        OR: [
-          { isKitChild: false },
-          { isKitChild: true, childKind: "ACCESSORY" },
-        ],
-      },
-      orderBy: { sortOrder: "asc" },
-      select: {
-        id: true,
-        modelId: true,
-        sortOrder: true,
-        assetId: true,
-        bulkAssetId: true,
-        subHireId: true,
-        isCustomItem: true,
-        childKind: true,
-        checkedOutQuantity: true,
-        returnedQuantity: true,
-        status: true,
-        units: { select: UNIT_SELECT },
-      },
-    })).map((r) => ({
-      ...r,
-      model: r.modelId
-        ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
-        : null,
-    })) as DeployedItemRow[];
-
-    const byKey = new Map<string, CheckInItem[]>();
-    const labelByKey = new Map<string, string>();
-    for (const item of items) {
-      const input = toInput(item);
-      const key = itemGroupKey(input);
-      if (!key) continue;
-      const bucket = byKey.get(key);
-      if (bucket) bucket.push(input);
-      else byKey.set(key, [input]);
-      if (!labelByKey.has(key)) labelByKey.set(key, input.modelName ?? (input.itemType === "ACCESSORY" ? "Accessory" : "Item"));
-    }
-
-    const summary: Array<{ key: string; quantity: number; condition: ReturnCondition }> = [];
-
-    for (const req of wanted) {
-      const condition: ReturnCondition = req.condition ?? "GOOD";
-      const groupChildren = byKey.get(req.key) ?? [];
-      const { allocations, distributed } = distributeReturn(groupChildren, req.quantity);
-
-      if (distributed < req.quantity) {
-        const available = groupChildren.reduce((s, c) => s + Math.max(0, c.outstanding), 0);
-        throw new Error(
-          `Cannot return ${req.quantity} of "${labelByKey.get(req.key) ?? req.key}" — only ${available} currently deployed.`,
-        );
-      }
-
-      const assetsTouched: string[] = [];
-
-      for (const alloc of allocations) {
-        if (alloc.itemType === "SUBHIRE" || alloc.itemType === "CUSTOM") {
-          const line = await tx.projectLineItem.findUnique({
-            where: { id: alloc.lineItemId },
-            select: { checkedOutQuantity: true, returnedQuantity: true },
-          });
-          const newReturned = (line?.returnedQuantity ?? 0) + alloc.quantity;
-          const isFullyReturned = newReturned >= (line?.checkedOutQuantity ?? 0);
-          await tx.projectLineItem.update({
-            where: { id: alloc.lineItemId },
-            data: {
-              status: isFullyReturned ? "RETURNED" : "CHECKED_OUT",
-              returnedQuantity: { increment: alloc.quantity },
-              returnCondition: condition,
-              // Only stamp the return actor/timestamp once the line is fully
-              // back — a partial return shouldn't claim the line is closed out.
-              ...(isFullyReturned
-                ? { returnedAt: new Date(), returnedById: userId }
-                : {}),
-            },
-          });
-          // NB: no syncLineItemRollup here. Sub-hire/custom lines carry no
-          // ProjectLineItemUnit rows, so the rollup would recompute every
-          // counter from an empty unit set and zero out the checkedOut /
-          // returned quantities we just set — making outstanding units
-          // invisible. The line-level fields ARE the source of truth here.
-          continue;
-        }
-
-        const { assetsTouched: touched } = await returnLineUnits(tx, {
-          organizationId,
-          projectId,
-          lineItemId: alloc.lineItemId,
-          assetId: alloc.assetId ?? undefined,
-          bulkAssetId: alloc.bulkAssetId ?? undefined,
-          returnCondition: condition,
-          quantity: alloc.quantity,
-          userId,
-          defaultLocationId,
-        });
-        await syncLineItemRollup(tx, alloc.lineItemId);
-        assetsTouched.push(...touched);
-        for (const id of touched) allTouchedAssets.add(id);
-      }
-
-      for (const assetId of assetsTouched) {
-        scanLogSink.push({ id: createId(), organizationId, assetId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: scanLogNow, notes: `Bulk check-in (${condition})` });
-      }
-      scanLogSink.push({ id: createId(), organizationId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: scanLogNow, notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})` });
-
-      summary.push({ key: req.key, quantity: distributed, condition });
-    }
-
-    return summary;
+  // The whole distribute-and-return flow (deployed-item load, group bucketing,
+  // unit returns + rollup, asset status flips, scan logs) is now ONE atomic
+  // Convex mutation. Permissions + activity-log stay here.
+  const convex = await getConvexClient();
+  const { returned } = await convex.mutation(api.warehouseOps.checkInBulkTotals, {
+    organizationId,
+    projectId,
+    userId,
+    returns: wanted.map((r) => ({
+      key: r.key,
+      quantity: r.quantity,
+      ...(r.condition ? { condition: r.condition } : {}),
+    })),
+    now: Date.now(),
   });
-
-  // Mirror the returned serialized assets' status/location changes + the
-  // project's line-item status flips to Convex.
-  await syncAssetsToConvex([...allTouchedAssets]);
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan log rows to Convex (Phase B: Convex-only).
-  const convexForScanLog = await getConvexClient();
-  for (const row of scanLogSink) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await convexForScanLog.mutation(api.assetScanLogs.createIfMissing, row as any);
-  }
 
   for (const r of returned) {
     await logActivity({

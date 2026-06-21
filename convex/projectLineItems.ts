@@ -696,3 +696,13 @@ export const listByAssetId = query({
       .filter((r) => r.organizationId === orgId);
   },
 });
+
+// ── CUSTOM (Phase C H) — by-kit lookup for kit delete-guards ──
+export const listByKitId = query({
+  args: { kitId: v.string(), orgId: v.string() },
+  handler: async (ctx, { kitId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
+      .filter((r) => r.organizationId === orgId);
+  },
+});

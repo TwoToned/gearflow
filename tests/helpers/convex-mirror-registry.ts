@@ -23,30 +23,10 @@
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import {
-  mirrorAssetCreate,
-  patchAssetInConvex,
-  removeAssetFromConvex,
-  mirrorBulkAssetCreate,
-  patchBulkAssetInConvex,
-  removeBulkAssetFromConvex,
-} from "@/lib/asset-mirror";
-import {
-  mirrorKitCreate,
-  patchKitInConvex,
-  removeKitFromConvex,
-  mirrorKitBulkItemCreate,
-  removeKitBulkItemFromConvex,
-} from "@/lib/kit-mirror";
-import {
   mirrorProjectCreate,
   patchProjectInConvex,
   removeProjectFromConvex,
 } from "@/lib/project-mirror";
-import {
-  mirrorLineItemCreate,
-  patchLineItemInConvex,
-  removeLineItemFromConvex,
-} from "@/lib/line-item-mirror";
 
 type Row = Record<string, unknown>;
 
@@ -95,14 +75,14 @@ function generic(table: {
  */
 export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   Model: generic(api.models),
-  Asset: { create: mirrorAssetCreate, patch: patchAssetInConvex, remove: removeAssetFromConvex },
-  BulkAsset: { create: mirrorBulkAssetCreate, patch: patchBulkAssetInConvex, remove: removeBulkAssetFromConvex },
-  Kit: { create: mirrorKitCreate, patch: patchKitInConvex, remove: removeKitFromConvex },
-  KitBulkItem: { create: mirrorKitBulkItemCreate, patch: generic(api.kitBulkItems).patch, remove: removeKitBulkItemFromConvex },
+  Asset: generic(api.assets),
+  BulkAsset: generic(api.bulkAssets),
+  Kit: generic(api.kits),
+  KitBulkItem: generic(api.kitBulkItems),
   Project: { create: mirrorProjectCreate, patch: patchProjectInConvex, remove: removeProjectFromConvex },
   ProjectCategory: generic(api.projectCategories),
   ProjectGroup: generic(api.projectGroups),
-  ProjectLineItem: { create: mirrorLineItemCreate, patch: patchLineItemInConvex, remove: (id) => removeLineItemFromConvex(id) },
+  ProjectLineItem: generic(api.projectLineItems),
   ProjectLineItemUnit: generic(api.projectLineItemUnits),
   CategorySlot: generic(api.categorySlots),
   Location: generic(api.locations),

@@ -1,10 +1,10 @@
 "use server";
+import { createId } from "@paralleldrive/cuid2";
 
 import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
 import { attachSupplier, getSuppliersByOrg } from "@/lib/suppliers-read";
 import { getModelWithCategoryMap, getModelsByOrg, type ConvexModel } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset } from "@/lib/assets-read";
@@ -479,51 +479,54 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
       // the existing date fields back into Date for the Prisma update fallbacks.
       const existing = assetByTag.get(assetTag) ?? null;
 
+      const csvConvex = await getConvexClient();
+      const pDate = parseDate(get("purchasedate") || get("purchase_date"));
+      const wDate = parseDate(get("warrantyexpiry") || get("warranty_expiry"));
+      const pPrice = parseDecimal(get("purchaseprice") || get("purchase_price"));
+      const csvNow = Date.now();
       if (existing) {
-        const updated = await prisma.asset.update({
-          where: { id: existing.id },
-          data: {
-            serialNumber: get("serialnumber") || get("serial_number") || existing.serialNumber,
-            customName: get("customname") || get("custom_name") || existing.customName,
-            status: status as "AVAILABLE" | "CHECKED_OUT" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED",
-            condition: condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
-            locationId: locationId ?? existing.locationId,
-            supplierId: supplierId ?? existing.supplierId,
-            purchaseDate:
-              parseDate(get("purchasedate") || get("purchase_date")) ??
-              (existing.purchaseDate != null ? new Date(existing.purchaseDate) : null),
-            purchasePrice: parseDecimal(get("purchaseprice") || get("purchase_price")) ?? existing.purchasePrice,
-            warrantyExpiry:
-              parseDate(get("warrantyexpiry") || get("warranty_expiry")) ??
-              (existing.warrantyExpiry != null ? new Date(existing.warrantyExpiry) : null),
-            notes: get("notes") || existing.notes,
-            ...(tags.length > 0 ? { tags } : {}),
-          },
-        });
-        await patchAssetInConvex(updated.id, updated);
+        // Asset is Convex-only — patch via the clear-to-null helper.
+        const set: Record<string, unknown> = {
+          serialNumber: get("serialnumber") || get("serial_number") || existing.serialNumber || undefined,
+          customName: get("customname") || get("custom_name") || existing.customName || undefined,
+          status,
+          condition,
+          locationId: locationId ?? existing.locationId ?? undefined,
+          supplierId: supplierId ?? existing.supplierId ?? undefined,
+          purchaseDate: pDate ? pDate.getTime() : existing.purchaseDate ?? undefined,
+          purchasePrice: pPrice ?? existing.purchasePrice ?? undefined,
+          warrantyExpiry: wDate ? wDate.getTime() : existing.warrantyExpiry ?? undefined,
+          notes: get("notes") || existing.notes || undefined,
+          updatedAt: csvNow,
+          ...(tags.length > 0 ? { tags } : {}),
+        };
+        const clear = Object.entries(set).filter(([, v]) => v === undefined).map(([k]) => k);
+        for (const k of clear) delete set[k];
+        await csvConvex.mutation(api.assets.patchAsset, { id: existing.id, set: set as never, clear });
         result.updated++;
       } else {
-        const created = await prisma.asset.create({
-          data: {
-            organizationId,
-            modelId: model.id,
-            assetTag,
-            serialNumber: get("serialnumber") || get("serial_number") || null,
-            customName: get("customname") || get("custom_name") || null,
-            status: status as "AVAILABLE" | "CHECKED_OUT" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED",
-            condition: condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
-            locationId,
-            supplierId,
-            purchaseDate: parseDate(get("purchasedate") || get("purchase_date")),
-            purchasePrice: parseDecimal(get("purchaseprice") || get("purchase_price")),
-            warrantyExpiry: parseDate(get("warrantyexpiry") || get("warranty_expiry")),
-            notes: get("notes") || null,
-            tags,
-          },
+        const newId = createId();
+        await csvConvex.mutation(api.assets.create, {
+          id: newId,
+          organizationId,
+          modelId: model.id,
+          assetTag,
+          serialNumber: get("serialnumber") || get("serial_number") || undefined,
+          customName: get("customname") || get("custom_name") || undefined,
+          status: status as "AVAILABLE" | "CHECKED_OUT" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED",
+          condition: condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
+          locationId: locationId ?? undefined,
+          supplierId: supplierId ?? undefined,
+          purchaseDate: pDate ? pDate.getTime() : undefined,
+          purchasePrice: pPrice ?? undefined,
+          warrantyExpiry: wDate ? wDate.getTime() : undefined,
+          notes: get("notes") || undefined,
+          tags,
+          createdAt: csvNow,
+          updatedAt: csvNow,
         });
-        await mirrorAssetCreate(created);
         // Register the new asset so later rows in the same file dedup against it.
-        assetByTag.set(created.assetTag, created as unknown as ConvexAsset);
+        assetByTag.set(assetTag, { id: newId, assetTag, organizationId, modelId: model.id } as unknown as ConvexAsset);
         result.created++;
       }
     } catch (e) {

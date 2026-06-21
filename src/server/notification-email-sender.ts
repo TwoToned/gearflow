@@ -18,9 +18,12 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { sendEmail } from "@/lib/email";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
 import { env } from "@/env";
 import {
   flaggedAssetEmail,
@@ -158,12 +161,17 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
 
   if (overdueProjectCandidates.length > 0) {
     const overdueIds = overdueProjectCandidates.map((p) => p.id);
-    const checkedOutCounts = await prisma.projectLineItem.groupBy({
-      by: ["projectId"],
-      where: { organizationId, projectId: { in: overdueIds }, status: "CHECKED_OUT" },
-      _count: { _all: true },
-    });
-    const countMap = new Map(checkedOutCounts.map((g) => [g.projectId, g._count._all]));
+    // projectLineItem is Convex-only — fetch the candidate projects' lines and
+    // group CHECKED_OUT counts by projectId in JS (replicates the groupBy).
+    const checkedOutLines = await (await getConvexClient()).query(
+      api.projectLineItems.listByProjectIds,
+      { orgId: organizationId, projectIds: overdueIds },
+    );
+    const countMap = new Map<string, number>();
+    for (const li of checkedOutLines) {
+      if (li.status !== "CHECKED_OUT") continue;
+      countMap.set(li.projectId, (countMap.get(li.projectId) ?? 0) + 1);
+    }
     for (const p of overdueProjectCandidates) {
       const deployed = countMap.get(p.id) ?? 0;
       if (deployed <= 0) continue;
@@ -257,38 +265,45 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     });
   }
 
-  // 8. Flagged assets
-  const flagged = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      prepStatus: { in: ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] },
-    },
-    include: {
-      asset: { select: { assetTag: true } },
-      project: { select: { id: true, name: true, projectNumber: true } },
-    },
-    take: 50,
-  });
-  for (const li of flagged) {
-    const liModelName = li.modelId ? modelMap.get(li.modelId)?.name : undefined;
-    const label = li.asset?.assetTag || liModelName || "Unknown";
-    const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
-    out.push({
-      key: `flagged-${li.id}`,
-      type: "flagged_asset",
-      build: (recipient, c) =>
-        flaggedAssetEmail({
-          recipientName: recipient.name,
-          orgName: c.organizationName,
-          appBaseUrl: c.appBaseUrl,
-          href: `/warehouse/${li.project.id}`,
-          notificationKey: `flagged-${li.id}`,
-          assetLabel: label,
-          reason,
-          projectNumber: li.project.projectNumber,
-          projectName: li.project.name,
-        }),
-    });
+  // 8. Flagged assets.
+  // projectLineItem is Convex-only — read the org's lines, filter by prepStatus
+  // in JS, take 50. Asset tags + project headers are resolved from Convex.
+  const allOrgLines = await (await getConvexClient()).query(
+    api.projectLineItems.list,
+    { orgId: organizationId },
+  );
+  const flagged = allOrgLines
+    .filter(
+      (li) =>
+        li.prepStatus === "FLAGGED_FAULTY" || li.prepStatus === "FLAGGED_TT_OVERDUE",
+    )
+    .slice(0, 50);
+  if (flagged.length > 0) {
+    const assets = await getAssetsByOrg(organizationId);
+    const assetTagMap = new Map(assets.map((a) => [a.id, a.assetTag]));
+    const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+    for (const li of flagged) {
+      const liModelName = li.modelId ? modelMap.get(li.modelId)?.name : undefined;
+      const label = (li.assetId ? assetTagMap.get(li.assetId) : undefined) || liModelName || "Unknown";
+      const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
+      const proj = projectMap.get(li.projectId);
+      out.push({
+        key: `flagged-${li.id}`,
+        type: "flagged_asset",
+        build: (recipient, c) =>
+          flaggedAssetEmail({
+            recipientName: recipient.name,
+            orgName: c.organizationName,
+            appBaseUrl: c.appBaseUrl,
+            href: `/warehouse/${li.projectId}`,
+            notificationKey: `flagged-${li.id}`,
+            assetLabel: label,
+            reason,
+            projectNumber: proj?.projectNumber ?? "",
+            projectName: proj?.name ?? "",
+          }),
+      });
+    }
   }
 
   return out;

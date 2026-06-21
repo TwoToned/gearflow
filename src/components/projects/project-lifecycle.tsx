@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Check, ArrowRight, Loader2, MoreHorizontal } from "lucide-react";
 import { cn, focusRing, disabledState } from "@/lib/utils";
+import { fireConfettiFromElement } from "@/lib/confetti";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +83,24 @@ export function ProjectLifecycle({
   const showAdvance = !cancelled && nextStage && onAdvance && canAdvance;
   const showMenu = !!onStatusChange && !!statuses;
 
+  // Celebrate the big milestones: confetti bursts out of the node when a job
+  // becomes Confirmed or Completed — but only on the actual transition, never
+  // on initial load of an already-confirmed/completed job.
+  const nodeRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
+  const prevStatus = React.useRef(status);
+  React.useEffect(() => {
+    if (prevStatus.current !== status) {
+      if (status === "CONFIRMED" || status === "COMPLETED") {
+        const idx = stageIndexForStatus(status);
+        // next frame so the node has its final position before we read it
+        requestAnimationFrame(() =>
+          fireConfettiFromElement(nodeRefs.current[idx], { power: 16 }),
+        );
+      }
+      prevStatus.current = status;
+    }
+  }, [status]);
+
   const controls = (showAdvance || showMenu) && (
     <div className="flex shrink-0 items-center gap-2">
       {showAdvance && (
@@ -157,6 +176,9 @@ export function ProjectLifecycle({
                 <div className="flex w-full items-center">
                   <span className={cn("h-[2px] flex-1 rounded-full", isFirst ? "opacity-0" : connectorClass(i - 1, currentIdx))} aria-hidden />
                   <span
+                    ref={(el) => {
+                      nodeRefs.current[i] = el;
+                    }}
                     className={cn(
                       "flex size-10 shrink-0 items-center justify-center rounded-full text-ui-text font-bold transition-colors",
                       state === "done" && "bg-ink text-paper",

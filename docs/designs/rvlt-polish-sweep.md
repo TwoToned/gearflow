@@ -428,3 +428,22 @@ consistent table grids, density-good) to:
 - ✅ Equipment registry list — visual gear library: AssetGallery card grid + Grid⇄Table toggle (default Grid). (6d1b8455/973e8ae6)
 - ☐ Kit / Client / Supplier / Location / Maintenance detail pages — detail-page bar.
 - ☐ Remaining conformance chunks 11(done?)–16 (settings, admin, auth, edge) — still need the calm-by-default pass.
+
+## Review batch 2026-06-21 (user feedback — big list)
+GLOBAL (shared shell, do first): (a) horizontal scroll → top bar covers sidebar; (b) notification badge not above the bell (sitting far right).
+PER-DOMAIN (parallel agents, Mobbin-researched, compliant):
+- Projects TABLE: remove board view; Views button match other buttons + place after Columns.
+- Projects DETAIL: add Completed to lifecycle; move Add button onto the tab row (like services); category-row hover should highlight full row.
+- Schedule page: full redream (bad UX).
+- Crew page: the 4 dashboard boxes (pending offers etc.) overflow + hide the crew box — cap/scroll them.
+- Crew planner: add search + filters (by project, crew); make it less basic/boring.
+- Warehouse landing: looks unchanged — reinvent.
+- Warehouse project page: reinvent + add a LIFECYCLE (pick/prep → prepped → deployed → returned → depreped), make flow strictly L→R (early return must read as "returned", not "never went out"); separate "returned" from "not yet out". Research warehouse UX.
+- Test & Tag registry: New test should be the primary action (new-test vs add-item confusing).
+- Maintenance: redream → dashboard (stats) + table.
+- Clients (list → dashboard+stats+table) + Clients detail redream.
+- Suppliers (list → dashboard+stats+table) + Suppliers detail redream.
+- Locations (list → dashboard+stats+table) + Locations detail redream (assets at location / on project there).
+- Settings: research + improve UX.
+- User account page: redream (boring/bad UX).
+- Crew profile page: redream — crew-facing, fun + informative.

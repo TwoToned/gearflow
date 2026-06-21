@@ -34,6 +34,14 @@ import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
 
 export interface DeployTabProps {
+  /**
+   * "deploy" (default) = prepped gear ready to go out (Deploy stage).
+   * "deprep" = returned gear, run return checks and put back into inventory
+   * (De-prep stage). Same rendering + selection keys (so handleDeprep parses
+   * them identically); only the chrome differs.
+   */
+  mode?: "deploy" | "deprep";
+
   // Scan state
   deployScanInputRef: React.RefObject<HTMLInputElement | null>;
   deployScanValue: string;
@@ -86,6 +94,7 @@ export interface DeployTabProps {
 }
 
 export function DeployTab({
+  mode = "deploy",
   deployScanInputRef,
   deployScanValue,
   setDeployScanValue,
@@ -115,55 +124,70 @@ export function DeployTab({
   includeAccessories,
   onIncludeAccessoriesChange,
 }: DeployTabProps) {
+  const isDeprep = mode === "deprep";
   return (
-    <TabsContent value="check-out">
+    <TabsContent value={isDeprep ? "deprep" : "check-out"}>
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
-            <AssetTagInput
-              ref={deployScanInputRef}
-              placeholder="Scan asset tag to deploy..."
-              value={deployScanValue}
-              onChange={(e) => setDeployScanValue(e.target.value)}
-              onScan={(value) => deployScanMutationMutate(value)}
-              onKeyDown={handleDeployScanKeyDown}
-              disabled={deployScanMutationIsPending || checkOutIsPending}
-              className="h-11"
-            />
+            {!isDeprep && (
+              <AssetTagInput
+                ref={deployScanInputRef}
+                placeholder="Scan asset tag to deploy..."
+                value={deployScanValue}
+                onChange={(e) => setDeployScanValue(e.target.value)}
+                onScan={(value) => deployScanMutationMutate(value)}
+                onKeyDown={handleDeployScanKeyDown}
+                disabled={deployScanMutationIsPending || checkOutIsPending}
+                className="h-11"
+              />
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-ui-text text-muted">Items prepped and ready to deploy.</p>
+              <p className="text-ui-text text-muted">
+                {isDeprep
+                  ? "Gear that's back from site. Run return checks, then deprep it into inventory."
+                  : "Items prepped and ready to deploy."}
+              </p>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 text-ui-text text-muted cursor-pointer">
-                  <Checkbox
-                    checked={includeAccessories}
-                    onCheckedChange={(c) => onIncludeAccessoriesChange(c === true)}
-                  />
-                  Include accessories
-                </label>
-                <Button
-                  variant="line"
-                  size="sm"
-                  onClick={() => handleDeprep(selectedOut)}
-                  disabled={selectedOutCount === 0 || deprepIsPending}
-                  loading={deprepIsPending}
-                >
-                  Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                </Button>
-                <Button
-                  onClick={handleCheckOutSelected}
-                  disabled={selectedOutCount === 0 || checkOutIsPending}
-                  loading={checkOutIsPending}
-                  className="shrink-0"
-                >
-                  Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                </Button>
+                {!isDeprep && (
+                  <label className="flex items-center gap-1.5 text-ui-text text-muted cursor-pointer">
+                    <Checkbox
+                      checked={includeAccessories}
+                      onCheckedChange={(c) => onIncludeAccessoriesChange(c === true)}
+                    />
+                    Include accessories
+                  </label>
+                )}
+                {isDeprep ? (
+                  <Button
+                    onClick={() => handleDeprep(selectedOut)}
+                    disabled={selectedOutCount === 0 || deprepIsPending}
+                    loading={deprepIsPending}
+                    className="shrink-0"
+                  >
+                    Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCheckOutSelected}
+                    disabled={selectedOutCount === 0 || checkOutIsPending}
+                    loading={checkOutIsPending}
+                    className="shrink-0"
+                  >
+                    Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                  </Button>
+                )}
               </div>
             </div>
         </div>
 
         {checkOutItemsList.length === 0 ? (
           <EmptyState
-            title="Nothing to deploy yet"
-            description="Pick and prep items in the Pick/Prep tab, then deploy them here."
+            title={isDeprep ? "Nothing to de-prep" : "Nothing to deploy yet"}
+            description={
+              isDeprep
+                ? "Gear you check in on the Return tab lands here, ready for return checks and putting back into inventory."
+                : "Pick and prep items in the Pick/Prep tab, then deploy them here."
+            }
           />
         ) : (
           <>
@@ -203,16 +227,18 @@ export function DeployTab({
                               <Package className="h-3.5 w-3.5" />
                               {container}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => clearContainerMutate(container)}
-                              disabled={clearContainerIsPending}
-                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                              title="Remove container"
-                              aria-label={`Remove container ${container}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                            {!isDeprep && (
+                              <button
+                                type="button"
+                                onClick={() => clearContainerMutate(container)}
+                                disabled={clearContainerIsPending}
+                                className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                                title="Remove container"
+                                aria-label={`Remove container ${container}`}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -448,16 +474,18 @@ export function DeployTab({
                   <ScanContainerHeading
                     label={container}
                     action={
-                      <button
-                        type="button"
-                        onClick={() => clearContainerMutate(container)}
-                        disabled={clearContainerIsPending}
-                        className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                        title="Remove container"
-                        aria-label={`Remove container ${container}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
+                      isDeprep ? undefined : (
+                        <button
+                          type="button"
+                          onClick={() => clearContainerMutate(container)}
+                          disabled={clearContainerIsPending}
+                          className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                          title="Remove container"
+                          aria-label={`Remove container ${container}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )
                     }
                   />
                 ) : deployContainerGroups.some((g) => g.container !== null) && (

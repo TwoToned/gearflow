@@ -6,9 +6,32 @@
 - `CHECKED_OUT` status displays as **"Deployed"**
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
-## Three-Phase Warehouse Flow
+## Lifecycle Flow
 
-The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped** (packed) before being **deployed** (checked out).
+Gear moves strictly **left to right** through five stages — there is no reversing:
+
+```
+Pick/prep → Prepped → Deployed → Returned → De-prepped
+```
+
+The project warehouse page header renders a **lifecycle stepper** (`WarehouseLifecycle`,
+fed by `summarizeWarehouseStages` from `warehouse-stages.ts`) showing a live count of gear
+at each stage as a distribution — so returned gear sits in its own node and is never folded
+back into Prep or Deploy. The stage model is a single pure function, `deriveItemStage`,
+unit-tested in `warehouse-stages.test.ts`.
+
+**The cardinal rule: `status === "RETURNED"` always wins.** A returned piece of gear reads
+as *Returned* (still `prepStatus=PACKED`, awaiting de-prep) or *De-prepped* (`prepStatus`
+reset off PACKED), and can never be re-derived as "needs prepping". This fixes two confusing
+bugs where the flow appeared to run in reverse:
+- An early-returned item used to reappear in **Pick/Prep**, looking like it had never gone out.
+- A returned item used to show in the **Deploy** tab (because the de-prep action lived there),
+  so returning gear "went back to Deploy".
+
+The workflow tabs map to the transitions between stages: **Pick/prep → Deploy → Return →
+De-prep**, with **Bulk check-in** (a faster Return) and **Close-out** as trailing utilities.
+Items are **prepped** (packed) before being **deployed** (checked out), and **de-prepped**
+(return checks run, back into inventory) after being **returned**.
 
 ### Pick/Prep Tab
 - Scan or select items to prep
@@ -30,6 +53,7 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 
 ### Deploy Tab
 - Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
+- **Excludes `status === "RETURNED"`** (leaf, kit-child and grandchild filters) — returned gear belongs in the De-prep tab, not here
 - Split items (qty=1) flow through the serialized deploy path regardless of whether they have a `bulkAssetId`
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
@@ -42,6 +66,11 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
 - Accessory children render as read-only indented rows via `AccessoryChildRows` (`return` mode shows currently-deployed accessories), mirroring the Deploy tab. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+
+### De-prep Tab
+- Shows gear at the **Returned** stage: `status === "RETURNED"` and `prepStatus === "PACKED"` (`returnedItems` filter; kit parents surface if any child/grandchild matches). Once de-prepped, `prepStatus` resets off PACKED and the item leaves this tab.
+- Renders by **reusing `DeployTab` with `mode="deprep"`** — identical grouping (`groupItems(returnedItems, "deploy")`), container sectioning (`deprepContainerGroups`) and selection keys (`allDeprepKeys` / `selectedDeprep`), so `handleDeprep` parses them exactly as before. Only the chrome differs: no deploy scanner, no accessories toggle, a single primary **Deprep** button, and the "remove container" action is hidden.
+- The **Deprep action moved here from the Deploy tab.** `handleDeprep` (lifted to a named callback in the page) runs RETURN checks where the model has check items (`fromDeprep: true` check queue), otherwise deprep straight back into inventory via `deprepItem`/`deprepKit`. Kits route through `startKitCheckFlow(..., "RETURN", "GOOD", true)`.
 
 ### Bulk Check-In Tab
 A project-wide accessory totals view for accessory-heavy jobs (50 lights = 100

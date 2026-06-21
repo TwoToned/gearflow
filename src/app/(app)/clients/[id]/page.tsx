@@ -13,7 +13,7 @@ import {
   MapPin,
   FileText,
   ChevronRight,
-  DollarSign,
+  MoreHorizontal,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 import { getClient, archiveClient, updateClientNotes } from "@/server/clients";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
+import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
@@ -33,6 +34,12 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
@@ -95,32 +102,44 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
     );
   }
 
-  // Compute financial summary from projects
+  // Compute financial / activity summary from the projects the page already loads.
   const totalProjects = client.projects.length;
   const activeProjects = client.projects.filter(
     (p) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status ?? "")
   );
+  const totalValue = client.projects.reduce(
+    (sum: number, p: { total?: number | null }) => sum + (p.total != null ? Number(p.total) : 0),
+    0,
+  );
+  const lastProjectAt = client.projects.reduce<number | null>((latest, p) => {
+    const t = (p.createdAt ?? p._creationTime) as number | undefined;
+    if (t == null) return latest;
+    return latest == null || t > latest ? t : latest;
+  }, null);
 
   return (
     <>
       <PageMeta title={client?.name} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity + compact actions) ── */}
+          <div className="space-y-4 rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+            <nav className="flex items-center gap-1 text-caption text-muted">
               <Link href="/clients" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Clients
               </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="truncate font-medium text-ink">{client.name}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="truncate text-ink-2">{client.name}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-ink">{client.name}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate font-display text-page-title font-extrabold text-ink">
+                    {client.name}
+                  </h1>
                   <StatusIndicator
                     category="clientType"
                     value={client.type ?? "COMPANY"}
@@ -128,39 +147,85 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   />
                   {!client.isActive && <Badge status="overbooked">Archived</Badge>}
                 </div>
-                <p className="t-body text-muted">
-                  {client.contactName || "No primary contact"}
-                  {client.contactEmail && <> &middot; {client.contactEmail}</>}
-                </p>
+                {/* Meta line: primary contact · email · phone */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  {client.contactName ? (
+                    <span className="text-ink-2">{client.contactName}</span>
+                  ) : (
+                    <span>No primary contact</span>
+                  )}
+                  {client.contactEmail && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <a
+                        href={`mailto:${client.contactEmail}`}
+                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                      >
+                        {client.contactEmail}
+                      </a>
+                    </>
+                  )}
+                  {client.contactPhone && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <a
+                        href={`tel:${client.contactPhone}`}
+                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                      >
+                        {client.contactPhone}
+                      </a>
+                    </>
+                  )}
+                  {orgId && (
+                    <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {orgId && (
-                  <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
-                )}
+
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
                 {orgId && (
                   <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />
                 )}
                 <CanDo resource="client" action="update">
-                  <div className="flex gap-2">
-                    <Button variant="line" asChild>
-                      <Link href={`/clients/${id}/edit`}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </Link>
-                    </Button>
-                    {client.isActive && (
-                      <Button
-                        variant="line"
-                        className="text-t-out hover:border-t-out hover:bg-out-soft hover:text-t-out"
-                        onClick={() => setArchiveOpen(true)}
-                      >
-                        <Archive className="mr-2 h-4 w-4" />
-                        Archive
-                      </Button>
-                    )}
-                  </div>
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/clients/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Link>
+                  </Button>
+                  {client.isActive && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="line" size="sm" aria-label="More actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setArchiveOpen(true)}
+                          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                        >
+                          <Archive className="mr-2 h-4 w-4" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </CanDo>
               </div>
+            </div>
+
+            {/* At-a-glance stats strip */}
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
+              <HeroStat figure={String(totalProjects)} label="Total jobs" />
+              <HeroStat figure={String(activeProjects.length)} label="Active jobs" />
+              <HeroStat figure={formatCurrency(totalValue)} label="Total value" />
+              <HeroStat
+                figure={lastProjectAt ? new Date(lastProjectAt).toLocaleDateString() : "—"}
+                label="Last job"
+                muted={!lastProjectAt}
+              />
             </div>
           </div>
 
@@ -277,42 +342,41 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
             <DetailSidebar>
-                {/* Contact Info */}
+                {/* Contact */}
                 <SidebarSection title="Contact">
-                  <div className="space-y-2 text-ui-text">
-                    {client.contactName && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-ink">{client.contactName}</span>
-                      </div>
-                    )}
-                    {client.contactEmail && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        <a
-                          href={`mailto:${client.contactEmail}`}
-                          className={cn("truncate rounded-sm text-link hover:underline", focusRing)}
-                        >
-                          {client.contactEmail}
-                        </a>
-                      </div>
-                    )}
-                    {client.contactPhone && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${client.contactPhone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>
-                          {client.contactPhone}
-                        </a>
-                      </div>
-                    )}
-                    {!client.contactName && !client.contactEmail && !client.contactPhone && (
-                      <p className="text-muted">No contact info</p>
-                    )}
-                  </div>
+                  {client.contactName || client.contactEmail || client.contactPhone ? (
+                    <div className="space-y-2 text-table-cell">
+                      {client.contactName && (
+                        <p className="font-medium text-ink">{client.contactName}</p>
+                      )}
+                      {client.contactEmail && (
+                        <div className="flex items-center gap-2 text-muted">
+                          <Mail className="h-3.5 w-3.5 shrink-0" />
+                          <a
+                            href={`mailto:${client.contactEmail}`}
+                            className={cn("truncate rounded-sm text-link hover:underline", focusRing)}
+                          >
+                            {client.contactEmail}
+                          </a>
+                        </div>
+                      )}
+                      {client.contactPhone && (
+                        <div className="flex items-center gap-2 text-muted">
+                          <Phone className="h-3.5 w-3.5 shrink-0" />
+                          <a href={`tel:${client.contactPhone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>
+                            {client.contactPhone}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-table-cell text-muted">No contact info yet</p>
+                  )}
                 </SidebarSection>
 
-                {/* Addresses */}
-                <SidebarSection title="Addresses">
-                  <div className="space-y-3 text-ui-text">
+                {/* Address & billing — merged: addresses + payment terms */}
+                <SidebarSection title="Address & billing">
+                  <div className="space-y-3 text-table-cell">
                     {client.billingAddress && (
                       <div>
                         <div className="mb-1 flex items-center gap-1 text-caption text-muted">
@@ -343,75 +407,46 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         />
                       </div>
                     )}
-                    {!client.billingAddress && !client.shippingAddress && (
-                      <p className="text-muted">No addresses</p>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Billing / Financial */}
-                <SidebarSection title="Billing">
-                  <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <span className="text-muted">ABN</span>
-                      <span className="font-medium text-ink">{client.taxId || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Payment terms</span>
-                      <span className="font-medium text-ink">{client.paymentTerms || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Default discount</span>
-                      <span className="font-medium text-ink t-data">
-                        {client.defaultDiscount != null
-                          ? `${Number(client.defaultDiscount)}%`
-                          : "\u2014"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Total projects</span>
-                      <span className="font-medium text-ink t-data">{totalProjects}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Active</span>
-                      <span className="font-medium text-ink t-data">{activeProjects.length}</span>
-                    </div>
-                  </div>
-                </SidebarSection>
-
-                {/* Recent Projects (compact) */}
-                {client.projects.length > 0 && (
-                  <SidebarSection title="Recent projects">
-                    <div className="space-y-1">
-                      {client.projects.slice(0, 5).map((project) => (
-                        <Link
-                          key={project.id}
-                          href={`/projects/${project.id}`}
-                          className={cn(
-                            "flex items-center justify-between rounded-[var(--r)] px-2 py-1.5 text-ui-text transition-colors hover:bg-elev",
-                            focusRing,
-                          )}
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="shrink-0 t-mono text-muted">
-                              {project.projectNumber}
-                            </span>
-                            <span className="truncate text-ink">{project.name}</span>
+                    {/* Payment terms \u2014 only render rows that carry a value (calm-by-default) */}
+                    {(client.taxId || client.paymentTerms || client.defaultDiscount != null) && (
+                      <div
+                        className={cn(
+                          "space-y-1.5",
+                          (client.billingAddress || client.shippingAddress) && "border-t border-line pt-3",
+                        )}
+                      >
+                        {client.taxId && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">ABN</span>
+                            <span className="font-medium text-ink">{client.taxId}</span>
                           </div>
-                          <StatusIndicator
-                            category="project"
-                            value={project.status ?? ""}
-                            label={
-                              projectStatusLabels[project.status ?? ""] ||
-                              formatLabel(project.status ?? "")
-                            }
-                            variant="pill"
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  </SidebarSection>
-                )}
+                        )}
+                        {client.paymentTerms && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">Payment terms</span>
+                            <span className="font-medium text-ink">{client.paymentTerms}</span>
+                          </div>
+                        )}
+                        {client.defaultDiscount != null && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">Default discount</span>
+                            <span className="font-medium text-ink t-data">
+                              {Number(client.defaultDiscount)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!client.billingAddress &&
+                      !client.shippingAddress &&
+                      !client.taxId &&
+                      !client.paymentTerms &&
+                      client.defaultDiscount == null && (
+                        <p className="text-muted">No address or billing details yet</p>
+                      )}
+                  </div>
+                </SidebarSection>
 
                 {/* Activity Timeline */}
                 <SidebarSection title="Activity" divider={false}>
@@ -434,5 +469,30 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
         pending={archiveMutation.isPending}
       />
     </>
+  );
+}
+
+/** One cell in the hero's at-a-glance stats strip. */
+function HeroStat({
+  figure,
+  label,
+  muted = false,
+}: {
+  figure: React.ReactNode;
+  label: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="bg-card px-3 py-2.5">
+      <p
+        className={cn(
+          "font-display font-extrabold leading-none tracking-tight tabular-nums",
+          muted ? "text-[18px] text-faint" : "text-[18px] text-ink",
+        )}
+      >
+        {figure}
+      </p>
+      <p className="mt-1 text-caption text-muted">{label}</p>
+    </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ClientTable } from "@/components/clients/client-table";
+import { ClientsDashboard } from "@/components/clients/clients-dashboard";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
@@ -18,6 +19,7 @@ export default function ClientsPage() {
           title="Clients"
           description="Production companies, venues, and contacts."
         >
+          <ClientsDashboard />
           <ClientTable />
         </ListPageLayout>
       </RequirePermission>

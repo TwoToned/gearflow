@@ -107,7 +107,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
   const rateLine = dailyRate ? `$${dailyRate.toFixed(2)} / day` : null;
 
   const helperTip = !modelName
-    ? "Start with the name — that's the only thing you need to save. Everything else can wait."
+    ? "This is the spec sheet, not a physical unit — name it now and the actual gear hangs off it later."
     : !v.categoryId
       ? "Filing it under a category makes it easy to find when you're building a quote."
       : "Looking good. Rates, technical details and specs are all optional — fill what you know.";

@@ -130,7 +130,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
       : null;
 
   const helperTip = !fullName
-    ? "Start with a name — that's all you need to save. Link a platform user to auto-fill it."
+    ? "Who are we booking? A name does it — link their platform login and the details auto-fill."
     : !v.email && !v.phone
       ? "Add an email or phone so call sheets and offers reach them."
       : "Looking good. Rates and the rest are optional — fill what you know.";

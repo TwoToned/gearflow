@@ -75,7 +75,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
   const primaryContact = (v.contactName || v.email || "").trim();
 
   const helperTip = !v.name
-    ? "Start with the name — that's all you need to save. The rest can wait."
+    ? "Your bench for when the warehouse comes up short — a name's enough to get them on the list."
     : !primaryContact
       ? "Add a contact so purchase orders reach the right desk."
       : "Looking good. Address, terms and lead time are optional — fill what you know.";

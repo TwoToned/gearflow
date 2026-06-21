@@ -172,7 +172,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const statusLabel = assetStatusLabels[v.status ?? "AVAILABLE"] ?? "Available";
 
   const helperTip = !v.modelId
-    ? "Start with the model — everything else hangs off it. The rest can wait."
+    ? "Pick the model first — the unit inherits its rates, specs and category from it. We've already grabbed the next tag."
     : !previewTag
       ? "An asset tag is how the warehouse finds this on a shelf. We pre-filled the next one."
       : "Looking good. Status, location and purchase details are all optional — fill what you know.";

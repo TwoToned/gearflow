@@ -85,7 +85,7 @@ export function ClientForm({ initialData }: ClientFormProps) {
   const primaryContact = (v.contactName || v.contactEmail || "").trim();
 
   const helperTip = !v.name
-    ? "Start with the name — that's all you need to save. Everything else can come later."
+    ? "A name puts them on the books. Wire up contacts and billing when there's actually a quote to send."
     : !primaryContact
       ? "Add a contact so quotes and dockets reach the right person."
       : "Looking good. Address and billing details are optional — fill what you know.";

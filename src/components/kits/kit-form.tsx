@@ -120,7 +120,7 @@ export function KitForm({ initialData }: KitFormProps) {
   const checkModeLabel = CHECK_MODE_LABELS[v.checkMode ?? "KIT_LEVEL"] ?? "Kit level";
 
   const helperTip = !v.name
-    ? "Start with a name — that's all you need to save. Contents and case details can come later."
+    ? "Right now it's just a named, empty case — load the gear in from the kit's page once it exists."
     : !previewTag
       ? "An asset tag is how the warehouse finds this kit on a shelf. We pre-filled the next one."
       : "Looking good. Add assets from the kit's page after saving — case and purchase details are optional.";

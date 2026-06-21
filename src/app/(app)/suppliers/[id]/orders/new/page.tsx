@@ -116,7 +116,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
   const expectedDate = v.expectedDate ? String(v.expectedDate) : "";
 
   const helperTip = !orderRef
-    ? "Start with the order reference — that's all you need to save. Everything else can come later."
+    ? "Give it a reference you'll recognise later — a PO number, a quote ID, whatever you'll search for."
     : !v.expectedDate
       ? "Add an expected date so you can track what's still outstanding."
       : "Looking good. You can add line items once the order is created.";

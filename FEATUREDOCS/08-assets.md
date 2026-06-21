@@ -17,7 +17,8 @@ Stored in `Organization.metadata` JSON:
 ## Smart Asset Form (`AssetForm`)
 `src/components/assets/asset-form.tsx` — the create/edit form for serialized
 assets, served by `/assets/registry/new` and `/assets/registry/[id]/edit` (the
-bulk path still routes to `BulkAssetForm`, unchanged). This is the **reference
+bulk path routes to `BulkAssetForm`, now also on the shared shell — see below).
+This is the **reference
 "smart single-page form"** that sets the bar for the app's moderate forms —
 modelled on the new-project wizard's quality (helper rail, smart inputs, inline
 quick-create, RVLT tokens, fun microcopy) but as ONE clean page, not multi-step.
@@ -72,6 +73,18 @@ nested test-profile picker + validity) → "More details" accordion (relocated
 daily-rate line). The old native asset-type `<select>` is now a shadcn `Select`
 with explicit `SelectValue` children. Same `createModel`/`updateModel` actions,
 schema (`modelSchema`), fields, and `model` create/update permission gates.
+
+The **bulk asset form** (`bulk-asset-form.tsx`, served by
+`/assets/registry/new?type=bulk` + the bulk branch of `/assets/registry/[id]/edit`)
+also uses the shell: Identity (model `ComboboxPicker` with inline "＋ New model"
+routing to `/assets/models/new`, asset tag pre-filled via `peekNextAssetTags(1)`,
+total quantity) → Status & location (status `Select`, location `ComboboxPicker`
+with inline `QuickCreateLocation`) → "More details" accordion (price per unit,
+notes, tags). Live preview: a bulk-stock card (model image/`Layers` placeholder +
+model name + ×quantity + status pill via `StatusIndicator category="bulkAsset"`).
+The old native status `<select>` is now a shadcn `Select` with explicit
+`SelectValue` children from `bulkAssetStatusLabels`. Same `createBulkAsset`/
+`updateBulkAsset` actions, schema (`bulkAssetSchema`), fields, and permission gates.
 
 - `SmartFormLayout` — owns the `grid gap-6 lg:grid-cols-[1fr_300px]`, the
   left-hand card surface, and the sticky `hidden lg:block` rail. The rail content

@@ -31,7 +31,7 @@ export interface WarehouseStageMeta {
 }
 
 export const WAREHOUSE_STAGES: WarehouseStageMeta[] = [
-  { key: "to_prep", label: "Pick / prep", hint: "Pull gear and pack it ready to go." },
+  { key: "to_prep", label: "Pick prep", hint: "Pull gear and pack it ready to go." },
   { key: "prepped", label: "Prepped", hint: "Packed and waiting to be deployed." },
   { key: "deployed", label: "Deployed", hint: "Out on site with the crew." },
   { key: "returned", label: "Returned", hint: "Physically back — run return checks." },

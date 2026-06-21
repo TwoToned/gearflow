@@ -15,6 +15,7 @@ import {
   PackageCheck,
   PackageX,
   PackageOpen,
+  Truck,
   Container,
   ClipboardList,
   MoreVertical,
@@ -54,7 +55,11 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import {
+  Table,
+  TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -88,6 +93,7 @@ import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
 import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
   isBulkItem,
@@ -1350,6 +1356,24 @@ function WarehouseProjectPage({
     return item.status === "RETURNED" && item.prepStatus === "PACKED";
   });
 
+  // De-prepped: returned gear checked back into inventory (prepStatus reset off
+  // PACKED). Terminal stage — a read-only confirmation list.
+  const deprepedItems = equipmentItems.filter((item) => {
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status === "RETURNED" && gc.prepStatus !== "PACKED"
+          );
+        }
+        return false;
+      });
+    }
+    return item.status === "RETURNED" && item.prepStatus !== "PACKED";
+  });
+
   // Keep old name for compatibility with deploy tab selection logic
   const checkOutItemsList = preppedItems;
 
@@ -2310,19 +2334,23 @@ function WarehouseProjectPage({
         <TabsList>
           <TabsTrigger value="pick-prep">
             <ScanBarcode className="mr-1.5 h-4 w-4" />
-            Pick/prep ({pickPrepItems.length})
+            Pick prep ({pickPrepItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Deploy ({preppedItems.length})
+            Prepped ({preppedItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-in">
-            <PackageX className="mr-1.5 h-4 w-4" />
-            Return ({checkedOutItems.length})
+            <Truck className="mr-1.5 h-4 w-4" />
+            Deployed ({checkedOutItems.length})
           </TabsTrigger>
           <TabsTrigger value="deprep">
+            <PackageX className="mr-1.5 h-4 w-4" />
+            Returned ({returnedItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="deprepped">
             <PackageOpen className="mr-1.5 h-4 w-4" />
-            De-prep ({returnedItems.length})
+            De-prepped ({deprepedItems.length})
           </TabsTrigger>
           <TabsTrigger value="bulk-checkin">
             <Layers className="mr-1.5 h-4 w-4" />
@@ -2456,6 +2484,54 @@ function WarehouseProjectPage({
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
         />
+
+        {/* De-prepped Tab — terminal stage, read-only: gear back in inventory */}
+        <TabsContent value="deprepped">
+          <div className="space-y-4 pt-4">
+            {deprepedItems.length === 0 ? (
+              <EmptyState
+                title="Nothing de-prepped yet"
+                description="Gear you deprep on the Returned tab lands here, checked back into inventory."
+              />
+            ) : (
+              <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Asset tag</TableHead>
+                      <TableHead className="text-center w-16">Qty</TableHead>
+                      <TableHead className="w-32">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deprepedItems.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <span className="font-medium text-ink">
+                            {isKitParent(item)
+                              ? item.description || item.kit?.name || "Kit"
+                              : modelDisplayName(item)}
+                          </span>
+                          {isKitParent(item) && (
+                            <Badge status="neutral" className="ml-1.5">Kit</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="t-mono text-muted">
+                          {item.asset?.assetTag || item.bulkAsset?.assetTag || item.kit?.assetTag || "—"}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
+                        <TableCell>
+                          <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
         {/* ================================================================ */}
         {/* BULK CHECK-IN TAB — accessory totals across the whole project    */}

@@ -28,10 +28,23 @@ bugs where the flow appeared to run in reverse:
 - A returned item used to show in the **Deploy** tab (because the de-prep action lived there),
   so returning gear "went back to Deploy".
 
-The workflow tabs map to the transitions between stages: **Pick/prep → Deploy → Return →
-De-prep**, with **Bulk check-in** (a faster Return) and **Close-out** as trailing utilities.
-Items are **prepped** (packed) before being **deployed** (checked out), and **de-prepped**
-(return checks run, back into inventory) after being **returned**.
+**The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
+exactly like the lifecycle: **Pick prep → Prepped → Deployed → Returned → De-prepped** (then
+**Bulk check-in** and **Close-out** as trailing utilities). The primary button inside each tab
+performs the action that advances gear to the next stage:
+
+| Tab (stage gear is in) | Shows | Button → next stage |
+| --- | --- | --- |
+| Pick prep | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
+| Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed |
+| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned |
+| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped |
+| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | — (terminal, read-only) |
+
+(Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
+`check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
+**prepped** (packed) before being **deployed** (checked out), and **de-prepped** (return checks
+run, back into inventory) after being **returned**.
 
 ### Pick/Prep Tab
 - Scan or select items to prep

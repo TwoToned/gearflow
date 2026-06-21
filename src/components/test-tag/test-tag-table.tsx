@@ -2,47 +2,39 @@
 
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter } from "next/navigation";
-import { useState, Suspense, useCallback } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { getTestTagAssets } from "@/server/test-tag-assets";
-import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn, focusRing } from "@/lib/utils";
+import { getStatusColor } from "@/lib/status-colors";
+import { testTagStatusLabels, equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; className: string }> = {
-    CURRENT: { label: "Current", className: "bg-green-500/15 text-green-600 border-green-500/30" },
-    DUE_SOON: { label: "Due Soon", className: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
-    OVERDUE: { label: "Overdue", className: "bg-red-500/15 text-red-600 border-red-500/30" },
-    FAILED: { label: "Failed", className: "bg-red-500/15 text-red-600 border-red-500/30 border-dashed" },
-    NOT_YET_TESTED: { label: "Not Tested", className: "bg-bg-inset text-fg-3" },
-    RETIRED: { label: "Retired", className: "bg-bg-inset text-fg-3 opacity-60" },
-  };
-  const { label, className } = map[status] || { label: status, className: "" };
-  return <Badge variant="outline" className={className}>{label}</Badge>;
+  return (
+    <StatusIndicator
+      category="testTag"
+      value={status}
+      label={testTagStatusLabels[status] ?? status}
+      variant="pill"
+    />
+  );
 }
 
 function formatEquipmentClass(value: string): string {
-  const map: Record<string, string> = {
-    CLASS_I: "Class I",
-    CLASS_II: "Class II",
-    CLASS_II_DOUBLE_INSULATED: "Class II (DI)",
-    LEAD_CORD_ASSEMBLY: "Lead / Cord",
-  };
-  return map[value] || value;
+  return equipmentClassLabels[value] ?? value;
 }
 
 function formatApplianceType(value: string): string {
-  return value
-    .split("_")
-    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
-    .join(" ");
+  return applianceTypeLabels[value] ?? value;
 }
 
 function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "\u2014";
+  if (!date) return "—";
   const d = new Date(date);
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
 }
@@ -54,11 +46,11 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
   return [
     {
       id: "testTagId",
-      header: "Test Tag ID",
+      header: "Test tag ID",
       accessorKey: "testTagId",
       alwaysVisible: true,
       cell: (row) => (
-        <span className="font-mono font-medium text-sm">{row.testTagId}</span>
+        <span className="t-mono font-medium text-table-cell">{row.testTagId}</span>
       ),
     },
     {
@@ -71,7 +63,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
     },
     {
       id: "equipmentClass",
-      header: "Equipment Class",
+      header: "Equipment class",
       accessorKey: "equipmentClass",
       filterable: true,
       filterType: "enum",
@@ -80,17 +72,17 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
         { value: "CLASS_I", label: "Class I" },
         { value: "CLASS_II", label: "Class II" },
         { value: "CLASS_II_DOUBLE_INSULATED", label: "Class II (DI)" },
-        { value: "LEAD_CORD_ASSEMBLY", label: "Lead / Cord" },
+        { value: "LEAD_CORD_ASSEMBLY", label: "Lead / cord" },
       ],
       cell: (row) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-table-cell text-muted">
           {formatEquipmentClass(row.equipmentClass)}
         </span>
       ),
     },
     {
       id: "applianceType",
-      header: "Appliance Type",
+      header: "Appliance type",
       accessorKey: "applianceType",
       filterable: true,
       filterType: "enum",
@@ -98,30 +90,30 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       defaultVisible: false,
       filterOptions: [
         { value: "APPLIANCE", label: "Appliance" },
-        { value: "CORD_SET", label: "Cord Set" },
-        { value: "EXTENSION_LEAD", label: "Extension Lead" },
-        { value: "POWER_BOARD", label: "Power Board" },
-        { value: "RCD_PORTABLE", label: "RCD Portable" },
-        { value: "RCD_FIXED", label: "RCD Fixed" },
-        { value: "THREE_PHASE", label: "Three Phase" },
+        { value: "CORD_SET", label: "Cord set" },
+        { value: "EXTENSION_LEAD", label: "Extension lead" },
+        { value: "POWER_BOARD", label: "Power board" },
+        { value: "RCD_PORTABLE", label: "RCD portable" },
+        { value: "RCD_FIXED", label: "RCD fixed" },
+        { value: "THREE_PHASE", label: "Three phase" },
         { value: "MICROWAVE", label: "Microwave" },
         { value: "OTHER", label: "Other" },
       ],
       cell: (row) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-table-cell text-muted">
           {formatApplianceType(row.applianceType)}
         </span>
       ),
     },
     {
       id: "testProfile",
-      header: "Test Profile",
+      header: "Test profile",
       responsiveHide: "lg",
       defaultVisible: false,
       sortable: false,
       cell: (row) => (
-        <span className="text-sm text-fg-3">
-          {row.testProfile?.name || "\u2014"}
+        <span className="text-table-cell text-muted">
+          {row.testProfile?.name || "—"}
         </span>
       ),
     },
@@ -132,37 +124,37 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "CURRENT", label: "Current", color: "bg-green-500" },
-        { value: "DUE_SOON", label: "Due Soon", color: "bg-amber-500" },
-        { value: "OVERDUE", label: "Overdue", color: "bg-red-500" },
-        { value: "FAILED", label: "Failed", color: "bg-red-500" },
-        { value: "NOT_YET_TESTED", label: "Not Tested", color: "bg-gray-500" },
-        { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
+        { value: "CURRENT", label: "Current", color: getStatusColor("testTag", "CURRENT").dot },
+        { value: "DUE_SOON", label: "Due soon", color: getStatusColor("testTag", "DUE_SOON").dot },
+        { value: "OVERDUE", label: "Overdue", color: getStatusColor("testTag", "OVERDUE").dot },
+        { value: "FAILED", label: "Failed", color: getStatusColor("testTag", "FAILED").dot },
+        { value: "NOT_YET_TESTED", label: "Not tested", color: getStatusColor("testTag", "NOT_YET_TESTED").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("testTag", "RETIRED").dot },
       ],
       cell: (row) => <StatusBadge status={row.status} />,
     },
     {
       id: "lastTestDate",
-      header: "Last Tested",
+      header: "Last tested",
       responsiveHide: "sm",
       defaultVisible: false,
       sortable: false,
       cell: (row) => (
-        <span className="text-sm text-fg-3">{formatDate(row.lastTestDate)}</span>
+        <span className="text-table-cell text-muted t-data">{formatDate(row.lastTestDate)}</span>
       ),
     },
     {
       id: "nextDueDate",
-      header: "Next Due",
+      header: "Next due",
       responsiveHide: "sm",
       sortable: false,
       cell: (row) => (
-        <span className="text-sm text-fg-3">{formatDate(row.nextDueDate)}</span>
+        <span className="text-table-cell text-muted t-data">{formatDate(row.nextDueDate)}</span>
       ),
     },
     {
       id: "linkedAsset",
-      header: "Linked Asset",
+      header: "Linked asset",
       responsiveHide: "md",
       sortable: false,
       cell: (row) => {
@@ -170,7 +162,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
           return (
             <Link
               href={`/assets/registry/${row.asset.id}`}
-              className="text-sm hover:underline"
+              className={cn("t-mono text-table-cell text-link hover:underline rounded-sm", focusRing)}
               onClick={(e) => e.stopPropagation()}
             >
               {row.asset.assetTag}
@@ -181,14 +173,14 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
           return (
             <Link
               href={`/assets/registry/${row.bulkAsset.id}?type=bulk`}
-              className="text-sm hover:underline"
+              className={cn("t-mono text-table-cell text-link hover:underline rounded-sm", focusRing)}
               onClick={(e) => e.stopPropagation()}
             >
               {row.bulkAsset.assetTag}
             </Link>
           );
         }
-        return <span className="text-fg-3">{"\u2014"}</span>;
+        return <span className="text-muted">—</span>;
       },
     },
   ];
@@ -255,6 +247,7 @@ function TestTagTableContent({ refreshSignal = 0 }: { refreshSignal?: number }) 
       isLoading={isLoading}
       emptyPreset="maintenance"
       emptyTitle="No test tag assets found"
+      emptyDescription="Register an item or sync from your bulk assets to start tracking compliance."
       onRowClick={(item) => router.push(`/test-and-tag/${item.id}`)}
     />
   );
@@ -264,8 +257,10 @@ export function TestTagTable({ refreshSignal }: { refreshSignal?: number }) {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-fg-3" />
+        <div className="space-y-3 py-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 rounded-[var(--r)]" />
+          ))}
         </div>
       }
     >

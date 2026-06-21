@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AssetTable } from "@/components/assets/asset-table";
+import { AssetsView } from "@/components/assets/assets-view";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
@@ -15,10 +15,10 @@ export default function RegistryPage() {
     <FadeIn>
       <RequirePermission resource="asset" action="read">
         <ListPageLayout
-          title="Asset Registry"
+          title="Asset registry"
           description="Every piece of gear your organisation owns, tracked individually."
         >
-          <AssetTable />
+          <AssetsView />
         </ListPageLayout>
       </RequirePermission>
     </FadeIn>

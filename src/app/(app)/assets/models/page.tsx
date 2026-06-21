@@ -15,7 +15,7 @@ export default function ModelsPage() {
     <FadeIn>
       <RequirePermission resource="model" action="read">
         <ListPageLayout
-          title="Equipment Models"
+          title="Equipment models"
           description="Templates for your equipment — each model defines a type of gear."
         >
           <ModelTable />

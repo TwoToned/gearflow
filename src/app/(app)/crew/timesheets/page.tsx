@@ -21,11 +21,11 @@ import {
   AlertTriangle,
   Trash2,
   Briefcase,
-  Loader2,
   Plus,
-  ArrowRight,
 } from "lucide-react";
+import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,6 +69,7 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 import { formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/motion";
@@ -200,7 +201,7 @@ export default function TimesheetsPage() {
   const columns: ColumnDef<any>[] = [
     {
       id: "crewMember",
-      header: "Crew Member",
+      header: "Crew member",
       alwaysVisible: true,
       sortKey: "crewMember",
       filterable: true,
@@ -208,13 +209,16 @@ export default function TimesheetsPage() {
       filterKey: "crewMemberId",
       filterOptions: crewFilterOptions,
       cell: (row: any) => (
-        <Link
-          href={`/crew/${row.crewMember?.id}`}
-          className="text-sm font-medium hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.crewMember?.firstName} {row.crewMember?.lastName}
-        </Link>
+        <div className="flex items-center gap-2">
+          <PersonAvatar name={`${row.crewMember?.firstName ?? ""} ${row.crewMember?.lastName ?? ""}`.trim()} className="size-7" />
+          <Link
+            href={`/crew/${row.crewMember?.id}`}
+            className={`text-table-cell font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.crewMember?.firstName} {row.crewMember?.lastName}
+          </Link>
+        </div>
       ),
     },
     {
@@ -222,25 +226,25 @@ export default function TimesheetsPage() {
       header: "Date",
       sortKey: "date",
       cell: (row: any) => (
-        <span className="text-sm">{formatDate(row.date)}</span>
+        <span className="text-table-cell tabular-nums text-ink-2">{formatDate(row.date)}</span>
       ),
     },
     {
       id: "project",
-      header: "Project / Description",
+      header: "Project / description",
       sortable: false,
       cell: (row: any) =>
         row.assignment ? (
           <Link
             href={`/projects/${row.assignment.project?.id}`}
-            className="text-sm hover:underline"
+            className={`text-table-cell text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
             onClick={(e) => e.stopPropagation()}
           >
             {row.assignment.project?.projectNumber} —{" "}
             {row.assignment.project?.name}
           </Link>
         ) : (
-          <span className="text-sm text-fg-3 italic">
+          <span className="text-table-cell text-muted italic">
             {row.description || "General"}
           </span>
         ),
@@ -251,7 +255,7 @@ export default function TimesheetsPage() {
       sortable: false,
       responsiveHide: "md",
       cell: (row: any) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-table-cell text-muted">
           {row.assignment?.crewRole?.name || "\u2014"}
         </span>
       ),
@@ -261,7 +265,7 @@ export default function TimesheetsPage() {
       header: "Time",
       sortKey: "startTime",
       cell: (row: any) => (
-        <span className="text-sm font-mono">
+        <span className="text-table-cell font-mono tabular-nums text-ink-2">
           {row.startTime}–{row.endTime}
         </span>
       ),
@@ -272,7 +276,7 @@ export default function TimesheetsPage() {
       sortable: false,
       responsiveHide: "md",
       cell: (row: any) => (
-        <span className="text-sm">
+        <span className="text-table-cell tabular-nums text-ink-2">
           {row.breakMinutes > 0 ? `${row.breakMinutes}m` : "\u2014"}
         </span>
       ),
@@ -283,7 +287,7 @@ export default function TimesheetsPage() {
       sortKey: "totalHours",
       align: "right",
       cell: (row: any) => (
-        <span className="text-sm font-mono t-data">
+        <span className="text-table-cell font-mono tabular-nums text-ink">
           {row.totalHours != null
             ? `${Number(row.totalHours).toFixed(1)}h`
             : "\u2014"}
@@ -297,11 +301,11 @@ export default function TimesheetsPage() {
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "DRAFT", label: "Draft" },
-        { value: "SUBMITTED", label: "Submitted" },
-        { value: "APPROVED", label: "Approved" },
-        { value: "DISPUTED", label: "Disputed" },
-        { value: "EXPORTED", label: "Exported" },
+        { value: "DRAFT", label: "Draft", color: getStatusColor("timeEntry", "DRAFT").dot },
+        { value: "SUBMITTED", label: "Submitted", color: getStatusColor("timeEntry", "SUBMITTED").dot },
+        { value: "APPROVED", label: "Approved", color: getStatusColor("timeEntry", "APPROVED").dot },
+        { value: "DISPUTED", label: "Disputed", color: getStatusColor("timeEntry", "DISPUTED").dot },
+        { value: "EXPORTED", label: "Exported", color: getStatusColor("timeEntry", "EXPORTED").dot },
       ],
       cell: (row: any) => (
         <StatusIndicator
@@ -314,12 +318,12 @@ export default function TimesheetsPage() {
     },
     {
       id: "approvedBy",
-      header: "Approved By",
+      header: "Approved by",
       sortable: false,
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-fg-3">
+        <span className="text-table-cell text-muted">
           {row.approvedBy?.name || "\u2014"}
         </span>
       ),
@@ -331,7 +335,7 @@ export default function TimesheetsPage() {
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-fg-3 truncate max-w-[200px] block">
+        <span className="text-table-cell text-muted truncate max-w-[200px] block">
           {row.notes || "\u2014"}
         </span>
       ),
@@ -345,12 +349,10 @@ export default function TimesheetsPage() {
       cell: (row: any) =>
         row.status !== "EXPORTED" ? (
           <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" />
-              }
-            >
-              <MoreHorizontal className="h-4 w-4" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-9" aria-label="Time entry actions">
+                <MoreHorizontal className="size-5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -403,17 +405,17 @@ export default function TimesheetsPage() {
   const toolbarActions = (
     <div className="flex gap-2">
       <Button
-        variant="outline"
+        variant="line"
         size="sm"
         onClick={() => setExportOpen(true)}
       >
-        <Download className="mr-2 h-3.5 w-3.5" />
+        <Download className="size-5" />
         Export CSV
       </Button>
       <CanDo resource="crew" action="create">
         <Button size="sm" onClick={() => setLogTimeOpen(true)}>
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          Log Time
+          <Plus className="size-5" />
+          Log time
         </Button>
       </CanDo>
     </div>
@@ -554,7 +556,7 @@ function EditTimeEntryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Time Entry</DialogTitle>
+          <DialogTitle>Edit time entry</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={form.handleSubmit((data) => {
@@ -563,13 +565,16 @@ function EditTimeEntryDialog({
           })}
           className="space-y-4"
         >
-          <p className="text-sm font-medium">{crewName}</p>
+          <div className="flex items-center gap-2">
+            <PersonAvatar name={crewName || "?"} className="size-8" />
+            <p className="text-ui-text font-medium text-ink">{crewName}</p>
+          </div>
 
           {/* Type toggle */}
           <div className="flex gap-2">
             <Button
               type="button"
-              variant={!isGeneral ? "default" : "outline"}
+              variant={!isGeneral ? "primary" : "line"}
               size="sm"
               className="flex-1"
               onClick={() => {
@@ -577,12 +582,12 @@ function EditTimeEntryDialog({
                 form.setValue("description", "");
               }}
             >
-              <Briefcase className="mr-2 h-3.5 w-3.5" />
+              <Briefcase className="size-5" />
               Project
             </Button>
             <Button
               type="button"
-              variant={isGeneral ? "default" : "outline"}
+              variant={isGeneral ? "primary" : "line"}
               size="sm"
               className="flex-1"
               onClick={() => {
@@ -590,7 +595,7 @@ function EditTimeEntryDialog({
                 form.setValue("assignmentId", "");
               }}
             >
-              <Clock className="mr-2 h-3.5 w-3.5" />
+              <Clock className="size-5" />
               General
             </Button>
           </div>
@@ -602,11 +607,11 @@ function EditTimeEntryDialog({
                 <Input
                   readOnly
                   value={`${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`}
-                  className="bg-bg-inset"
+                  className="bg-paper-2"
                 />
               </div>
             ) : (
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 No assignment linked. Switch to General to add a description.
               </p>
             )
@@ -622,9 +627,9 @@ function EditTimeEntryDialog({
 
           <div className="space-y-1.5">
             <Label>Date</Label>
-            <Input type="date" {...form.register("date")} />
+            <Input type="date" {...form.register("date")} aria-invalid={!!form.formState.errors.date} />
             {form.formState.errors.date && (
-              <p className="text-xs text-destructive">
+              <p className="text-caption text-t-out">
                 {form.formState.errors.date.message}
               </p>
             )}
@@ -632,19 +637,19 @@ function EditTimeEntryDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Start Time</Label>
-              <Input type="time" {...form.register("startTime")} />
+              <Label>Start time</Label>
+              <Input type="time" {...form.register("startTime")} aria-invalid={!!form.formState.errors.startTime} />
               {form.formState.errors.startTime && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.startTime.message}
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label>End Time</Label>
-              <Input type="time" {...form.register("endTime")} />
+              <Label>End time</Label>
+              <Input type="time" {...form.register("endTime")} aria-invalid={!!form.formState.errors.endTime} />
               {form.formState.errors.endTime && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.endTime.message}
                 </p>
               )}
@@ -672,15 +677,12 @@ function EditTimeEntryDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+            <Button type="submit" loading={mutation.isPending}>
               Save
             </Button>
           </DialogFooter>
@@ -798,18 +800,17 @@ function LogTimeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Log Time</DialogTitle>
+          <DialogTitle>Log time</DialogTitle>
         </DialogHeader>
 
         {step === "pick" ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>Select Crew Members</Label>
+              <Label>Select crew members</Label>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 text-xs"
                 onClick={() =>
                   selectedCrewIds.length === (filteredCrew?.length || 0)
                     ? setSelectedCrewIds([])
@@ -817,8 +818,8 @@ function LogTimeDialog({
                 }
               >
                 {selectedCrewIds.length === (filteredCrew?.length || 0) && filteredCrew?.length
-                  ? "Deselect All"
-                  : "Select All"}
+                  ? "Deselect all"
+                  : "Select all"}
               </Button>
             </div>
             <Input
@@ -833,27 +834,29 @@ function LogTimeDialog({
                   <button
                     key={c.id}
                     type="button"
-                    className={`w-full flex items-center gap-3 rounded-md border p-3 text-left transition-colors ${
+                    aria-pressed={isSelected}
+                    className={`w-full flex items-center gap-3 rounded-[var(--r)] border p-3 text-left transition-colors ${focusRing} ${
                       isSelected
-                        ? "bg-primary/10 border-primary/30"
-                        : "hover:bg-accent/50"
+                        ? "bg-red-soft border-red/40"
+                        : "border-line hover:bg-elev"
                     }`}
                     onClick={() => toggleCrewMember(c.id)}
                   >
                     <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                      className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border ${
                         isSelected
-                          ? "bg-primary border-primary text-primary-foreground"
-                          : "border-muted-foreground/30"
+                          ? "bg-red border-red text-white"
+                          : "border-line-2"
                       }`}
                     >
-                      {isSelected && <CheckCircle className="h-3 w-3" />}
+                      {isSelected && <CheckCircle className="size-3" />}
                     </div>
+                    <PersonAvatar name={`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()} className="size-8" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
+                      <p className="text-ui-text font-medium text-ink">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-fg-3">
+                      <p className="text-caption text-muted">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -861,7 +864,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-fg-3 py-4 text-center">
+                <p className="text-ui-text text-muted py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -869,7 +872,7 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
@@ -892,7 +895,7 @@ function LogTimeDialog({
             className="space-y-4"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">
+              <p className="text-ui-text font-medium text-ink">
                 {selectedCrewIds.length === 1
                   ? `${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.firstName} ${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.lastName}`
                   : `${selectedCrewIds.length} crew members selected`}
@@ -910,7 +913,7 @@ function LogTimeDialog({
             <div className="flex gap-2">
               <Button
                 type="button"
-                variant={!isGeneral ? "default" : "outline"}
+                variant={!isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -918,12 +921,12 @@ function LogTimeDialog({
                   form.setValue("description", "");
                 }}
               >
-                <Briefcase className="mr-2 h-3.5 w-3.5" />
+                <Briefcase className="size-5" />
                 Project
               </Button>
               <Button
                 type="button"
-                variant={isGeneral ? "default" : "outline"}
+                variant={isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -931,7 +934,7 @@ function LogTimeDialog({
                   form.setValue("assignmentId", "");
                 }}
               >
-                <Clock className="mr-2 h-3.5 w-3.5" />
+                <Clock className="size-5" />
                 General
               </Button>
             </div>
@@ -985,7 +988,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-fg-3 rounded-md border p-3">
+                <p className="text-caption text-muted rounded-[var(--r)] border border-line p-3">
                   Assignment selection is not available for multiple crew
                   members. Switch to General mode or select one member.
                 </p>
@@ -1002,9 +1005,9 @@ function LogTimeDialog({
 
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Input type="date" {...form.register("date")} />
+              <Input type="date" {...form.register("date")} aria-invalid={!!form.formState.errors.date} />
               {form.formState.errors.date && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.date.message}
                 </p>
               )}
@@ -1012,19 +1015,19 @@ function LogTimeDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
-                <Input type="time" {...form.register("startTime")} />
+                <Label>Start time</Label>
+                <Input type="time" {...form.register("startTime")} aria-invalid={!!form.formState.errors.startTime} />
                 {form.formState.errors.startTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.startTime.message}
                   </p>
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
-                <Input type="time" {...form.register("endTime")} />
+                <Label>End time</Label>
+                <Input type="time" {...form.register("endTime")} aria-invalid={!!form.formState.errors.endTime} />
                 {form.formState.errors.endTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.endTime.message}
                   </p>
                 )}
@@ -1052,16 +1055,13 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Log Time
+              <Button type="submit" loading={submitting}>
+                Log time
                 {selectedCrewIds.length > 1
                   ? ` (${selectedCrewIds.length})`
                   : ""}
@@ -1099,7 +1099,7 @@ function ExportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Export Timesheets</DialogTitle>
+          <DialogTitle>Export timesheets</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -1118,16 +1118,16 @@ function ExportDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-fg-3">
+          <p className="text-caption text-muted">
             Leave empty to export all time entries.
           </p>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleExport}>
-            <Download className="mr-2 h-3.5 w-3.5" />
+            <Download className="size-5" />
             Export CSV
           </Button>
         </DialogFooter>

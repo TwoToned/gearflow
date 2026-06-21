@@ -2,15 +2,16 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Layers } from "lucide-react";
 
-import { Controller } from "react-hook-form";
+import { cn } from "@/lib/utils";
 import { bulkAssetSchema, type BulkAssetFormValues } from "@/lib/validations/asset";
 import { createBulkAsset, updateBulkAsset } from "@/server/bulk-assets";
+import { bulkAssetStatusLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
@@ -19,10 +20,18 @@ import { useLocations } from "@/hooks/use-locations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+} from "@/components/ui/smart-form";
 import { QuickCreateLocation } from "./quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -30,6 +39,8 @@ interface BulkAssetFormProps {
   initialData?: BulkAssetFormValues & { id: string };
   preselectedModelId?: string;
 }
+
+const STATUS_ORDER = ["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK", "RETIRED"] as const;
 
 export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetFormProps) {
   const router = useRouter();
@@ -72,6 +83,8 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     },
   });
 
+  const v = form.watch();
+
   // Auto-populate asset tag for new bulk assets
   useEffect(() => {
     if (!isEditing && !form.getValues("assetTag")) {
@@ -93,111 +106,180 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Live-preview derivations ──────────────────────────────────
+  const selectedModel = models.find((m) => m.id === v.modelId);
+  const modelLabel = selectedModel
+    ? `${selectedModel.manufacturer ? `${selectedModel.manufacturer} ` : ""}${selectedModel.name}`
+    : null;
+  const modelImage = selectedModel?.image || selectedModel?.images?.[0] || null;
+  const previewName = (modelLabel || "New bulk stock").trim();
+  const quantity = Number(v.totalQuantity) || 0;
+  const statusLabel = bulkAssetStatusLabels[v.status ?? "ACTIVE"] ?? "Active";
+
+  const helperTip = !v.modelId
+    ? "Start with the model — bulk stock is tracked by quantity against it."
+    : quantity <= 0
+      ? "Set the quantity on hand so checkout knows what's available."
+      : "Looking good. Price, location and notes are optional — fill what you know.";
 
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <div className="space-y-6">
-      <FormSection title="Bulk Asset Details">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label>Equipment Model *</Label>
-            <ComboboxPicker
-              value={form.watch("modelId")}
-              onChange={(v) => form.setValue("modelId", v, { shouldValidate: true })}
-              options={models.map((m) => ({
-                value: m.id,
-                label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
-                description: m.modelNumber || undefined,
-              }))}
-              placeholder="Select a model"
-              searchPlaceholder="Search models..."
-            />
-            {form.formState.errors.modelId && (
-              <p className="text-xs text-destructive">{form.formState.errors.modelId.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="assetTag">Asset Tag *</Label>
-            <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. AV-SM57" />
-            {form.formState.errors.assetTag && (
-              <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="totalQuantity">Total Quantity *</Label>
-            <Input id="totalQuantity" type="number" {...form.register("totalQuantity")} />
-          </div>
-          <div className="space-y-2">
-            <Label>Location</Label>
-            <ComboboxPicker
-              value={form.watch("locationId") || ""}
-              onChange={(v) => form.setValue("locationId", v)}
-              options={locations.map((loc) => ({
-                value: loc.id,
-                label: loc.parent ? `${loc.parent.name} → ${loc.name}` : loc.name,
-                description: loc.type,
-              }))}
-              placeholder="No location"
-              searchPlaceholder="Search locations..."
-              onCreateNew={() => setShowCreateLocation(true)}
-              createNewLabel="New location"
-              allowClear
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="purchasePricePerUnit">Price Per Unit ($)</Label>
-            <Input id="purchasePricePerUnit" type="number" step="0.01" {...form.register("purchasePricePerUnit")} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <select
-              id="status"
-              {...form.register("status")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    <SmartFormLayout
+      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
+      aside={
+        <>
+          <SmartFormRail eyebrow={isEditing ? "Editing" : "New bulk stock"} tip={helperTip} />
+          <SmartFormPreview>
+            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
+              <div className="flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
+                {modelImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={modelImage} alt={modelLabel ?? "Bulk stock"} className="h-full w-full object-cover" />
+                ) : (
+                  <Layers className="h-8 w-8 text-faint" strokeWidth={1.5} />
+                )}
+              </div>
+              <div className="space-y-1.5 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New bulk stock" ? "text-faint" : "text-ink")}>
+                    {previewName}
+                  </p>
+                  <span className={cn("shrink-0 t-mono text-caption", quantity > 0 ? "text-ink-2" : "text-faint")}>
+                    ×{quantity}
+                  </span>
+                </div>
+                <div className="pt-0.5">
+                  <StatusIndicator category="bulkAsset" value={v.status ?? "ACTIVE"} label={statusLabel} variant="pill" />
+                </div>
+              </div>
+            </div>
+          </SmartFormPreview>
+        </>
+      }
+    >
+      <div className="space-y-8">
+        {/* Identity */}
+        <SmartFormSection title="Identity" hint="The model and how much is on hand." divider={false}>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <SmartFormField label="Equipment model" required error={form.formState.errors.modelId?.message}>
+                <Controller control={form.control} name="modelId" render={({ field }) => (
+                  <ComboboxPicker
+                    value={field.value || ""}
+                    onChange={(val) => field.onChange(val)}
+                    options={models.map((m) => ({
+                      value: m.id,
+                      label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
+                      description: m.modelNumber || undefined,
+                    }))}
+                    placeholder="Select a model…"
+                    searchPlaceholder="Search models…"
+                    emptyMessage="No models found."
+                    onCreateNew={() => router.push("/assets/models/new")}
+                    createNewLabel="New model"
+                  />
+                )} />
+              </SmartFormField>
+            </div>
+            <SmartFormField
+              label="Asset tag"
+              required
+              hint={!isEditing ? "Pre-filled from your next sequence — edit it or scan a label." : undefined}
+              error={form.formState.errors.assetTag?.message}
             >
-              <option value="ACTIVE">Active</option>
-              <option value="LOW_STOCK">Low Stock</option>
-              <option value="OUT_OF_STOCK">Out of Stock</option>
-              <option value="RETIRED">Retired</option>
-            </select>
+              <AssetTagInput
+                {...form.register("assetTag")}
+                aria-invalid={!!form.formState.errors.assetTag}
+                onScan={(val) => form.setValue("assetTag", val)}
+                placeholder="e.g. AV-SM57"
+                className="font-mono"
+              />
+            </SmartFormField>
+            <SmartFormField label="Total quantity" required error={form.formState.errors.totalQuantity?.message}>
+              <Input type="number" {...form.register("totalQuantity")} aria-invalid={!!form.formState.errors.totalQuantity} />
+            </SmartFormField>
           </div>
-        </div>
-      </FormSection>
+        </SmartFormSection>
 
-      <FormSection title="Notes">
-          <Label htmlFor="notes">Notes</Label>
-          <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} className="mt-2" />
-      </FormSection>
-
-      <FormSection title="Tags">
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <Controller
-              name="tags"
-              control={form.control}
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
+        {/* Status & location */}
+        <SmartFormSection title="Status & location" hint="Where it lives and its stock state.">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <SmartFormField label="Status">
+              <Controller control={form.control} name="status" render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue>{bulkAssetStatusLabels[field.value ?? "ACTIVE"] ?? "Active"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_ORDER.map((s) => (
+                      <SelectItem key={s} value={s}>{bulkAssetStatusLabels[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )} />
+            </SmartFormField>
+            <SmartFormField label="Location">
+              <Controller control={form.control} name="locationId" render={({ field }) => (
+                <ComboboxPicker
+                  value={field.value || ""}
                   onChange={field.onChange}
-                  suggestions={orgTags}
-                  placeholder="Add tags..."
+                  options={locations.map((loc) => ({
+                    value: loc.id,
+                    label: loc.parent ? `${loc.parent.name} → ${loc.name}` : loc.name,
+                    description: loc.type,
+                  }))}
+                  placeholder="No location"
+                  searchPlaceholder="Search locations…"
+                  emptyMessage="No locations found."
+                  onCreateNew={() => setShowCreateLocation(true)}
+                  createNewLabel="New location"
+                  allowClear
                 />
-              )}
-            />
+              )} />
+            </SmartFormField>
           </div>
-      </FormSection>
+        </SmartFormSection>
 
-        </div>
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Bulk Asset" : "Create Bulk Asset"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
-            Cancel
-          </Button>
-        </div>
+        {/* More details — progressive disclosure */}
+        <section className="border-t border-line pt-6">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="more" className="border-line">
+              <AccordionTrigger>More details</AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-5 pt-1">
+                  <SmartFormField label="Price per unit ($)" hint="Optional — handy for valuation reports.">
+                    <Input type="number" step="0.01" {...form.register("purchasePricePerUnit")} placeholder="0.00" />
+                  </SmartFormField>
+                  <SmartFormField label="Notes">
+                    <Textarea {...form.register("notes")} placeholder="Any additional notes" rows={3} />
+                  </SmartFormField>
+                  <SmartFormField label="Tags">
+                    <Controller
+                      name="tags"
+                      control={form.control}
+                      render={({ field }) => (
+                        <TagInput
+                          value={field.value ?? []}
+                          onChange={field.onChange}
+                          suggestions={orgTags}
+                          placeholder="Add tags…"
+                        />
+                      )}
+                    />
+                  </SmartFormField>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </section>
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+        <Button type="button" variant="line" onClick={() => router.back()}>
+          Cancel
+        </Button>
+        <Button type="submit" loading={mutation.isPending}>
+          {isEditing ? "Update bulk asset" : "Create bulk asset"}
+        </Button>
       </div>
 
       <QuickCreateLocation
@@ -205,6 +287,6 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
         onOpenChange={setShowCreateLocation}
         onCreated={(id) => form.setValue("locationId", id)}
       />
-    </form>
+    </SmartFormLayout>
   );
 }

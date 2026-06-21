@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ProjectTable } from "@/components/projects/project-table";
+import { ProjectsView } from "@/components/projects/projects-view";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
@@ -18,7 +18,7 @@ export default function ProjectsPage() {
           title="Projects"
           description="Gigs, shows, and events — from enquiry to invoice."
         >
-          <ProjectTable />
+          <ProjectsView />
         </ListPageLayout>
       </RequirePermission>
     </FadeIn>

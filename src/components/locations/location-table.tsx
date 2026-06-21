@@ -11,15 +11,12 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-
-const typeLabels: Record<string, string> = {
-  WAREHOUSE: "Warehouse",
-  VENUE: "Venue",
-  VEHICLE: "Vehicle",
-  OFFSITE: "Offsite",
-};
+import { locationTypeLabels } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
+import { cn, focusRing } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LocationRow = Record<string, any> & { _depth: number };
@@ -72,11 +69,11 @@ const columns: ColumnDef<LocationRow>[] = [
     alwaysVisible: true,
     cell: (row) => (
       <div className="flex items-center gap-2" style={{ paddingLeft: row._depth * 24 }}>
-        <Link href={`/locations/${row.id}`} className="font-medium hover:underline">
+        <Link href={`/locations/${row.id}`} className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)}>
           {row.name}
         </Link>
         {row.isDefault && (
-          <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+          <Star className="h-3 w-3 fill-warn text-warn" />
         )}
       </div>
     ),
@@ -90,13 +87,13 @@ const columns: ColumnDef<LocationRow>[] = [
     filterable: true,
     filterType: "enum",
     filterOptions: [
-      { value: "WAREHOUSE", label: "Warehouse", color: "bg-blue-500" },
-      { value: "VENUE", label: "Venue", color: "bg-amber-500" },
-      { value: "VEHICLE", label: "Vehicle", color: "bg-teal-500" },
-      { value: "OFFSITE", label: "Offsite", color: "bg-gray-500" },
+      { value: "WAREHOUSE", label: "Warehouse", color: getStatusColor("locationType", "WAREHOUSE").dot },
+      { value: "VENUE", label: "Venue", color: getStatusColor("locationType", "VENUE").dot },
+      { value: "VEHICLE", label: "Vehicle", color: getStatusColor("locationType", "VEHICLE").dot },
+      { value: "OFFSITE", label: "Offsite", color: getStatusColor("locationType", "OFFSITE").dot },
     ],
     cell: (row) => (
-      <StatusIndicator category="locationType" value={row.type} label={typeLabels[row.type] || row.type} variant="pill" />
+      <StatusIndicator category="locationType" value={row.type} label={locationTypeLabels[row.type] || row.type} variant="pill" />
     ),
   },
   {
@@ -106,7 +103,7 @@ const columns: ColumnDef<LocationRow>[] = [
     sortKey: "address",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">{row.address || "\u2014"}</span>
+      <span className="text-muted">{row.address || "\u2014"}</span>
     ),
   },
   {
@@ -117,7 +114,7 @@ const columns: ColumnDef<LocationRow>[] = [
     align: "right",
     cell: (row) => {
       const count = (row._count?.assets || 0) + (row._count?.bulkAssets || 0) + (row._count?.kits || 0);
-      return count;
+      return <span className="t-data tabular-nums">{count}</span>;
     },
   },
   {
@@ -128,7 +125,7 @@ const columns: ColumnDef<LocationRow>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <Badge key={tag} status="neutral">
             {tag}
           </Badge>
         ))}
@@ -211,10 +208,14 @@ export function LocationTable() {
   const isLoading = allLocations === undefined;
 
   const actionButtons = (
-    <Button render={<Link href="/locations/new" />}>
-      <Plus className="mr-2 h-4 w-4" />
-      New Location
-    </Button>
+    <CanDo resource="location" action="create">
+      <Button asChild>
+        <Link href="/locations/new">
+          <Plus className="mr-2 h-4 w-4" />
+          New location
+        </Link>
+      </Button>
+    </CanDo>
   );
 
   return (
@@ -239,7 +240,8 @@ export function LocationTable() {
       onResetPreferences={resetPreferences}
       savedViews={{ tableId: "locations", currentConfig, applyConfig }}
       isLoading={isLoading}
-      emptyPreset="locations"
+      emptyTitle="No locations yet"
+      emptyDescription="Add warehouses, venues, vehicles, and offsite stores to track where your gear lives."
       toolbarActions={actionButtons}
     />
   );

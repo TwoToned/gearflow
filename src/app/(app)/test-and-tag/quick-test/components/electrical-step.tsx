@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { evaluateReading } from "@/lib/test-tag/calculate-result";
 import type { ElectricalTest } from "@/lib/test-profiles/seed-data";
 import type { WizardAction, WizardState } from "./wizard-reducer";
@@ -88,23 +89,23 @@ export function ElectricalStep({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="font-medium text-fg-1">Electrical Tests</h3>
-        <p className="text-sm text-fg-3">Enter readings for each test. Pass/fail is calculated automatically.</p>
+        <h3 className="t-heading text-ink">Electrical tests</h3>
+        <p className="text-ui-text text-muted">Enter readings for each test. Pass/fail is calculated automatically.</p>
       </div>
 
       {/* Test method selector */}
       <div className="space-y-2">
-        <Label className="text-xs text-fg-3">Test Method</Label>
+        <Label className="text-caption text-muted">Test method</Label>
         <Select value={state.testMethod} onValueChange={(v) => dispatch({ type: "SET_TEST_METHOD", method: v as WizardState["testMethod"] })}>
           <SelectTrigger className="w-64">
             <SelectValue>
-              {state.testMethod === "INSULATION_RESISTANCE" ? "Insulation Resistance" :
-               state.testMethod === "LEAKAGE_CURRENT" ? "Leakage Current" : "Both"}
+              {state.testMethod === "INSULATION_RESISTANCE" ? "Insulation resistance" :
+               state.testMethod === "LEAKAGE_CURRENT" ? "Leakage current" : "Both"}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="INSULATION_RESISTANCE">Insulation Resistance</SelectItem>
-            <SelectItem value="LEAKAGE_CURRENT">Leakage Current</SelectItem>
+            <SelectItem value="INSULATION_RESISTANCE">Insulation resistance</SelectItem>
+            <SelectItem value="LEAKAGE_CURRENT">Leakage current</SelectItem>
             <SelectItem value="BOTH">Both</SelectItem>
           </SelectContent>
         </Select>
@@ -115,8 +116,8 @@ export function ElectricalStep({
           // Polarity and RCD push-button are manual pass/fail selectors
           if (test.key === "polarity") {
             return (
-              <div key={test.key} className="flex items-center gap-4 py-2 border-b border-border last:border-0 min-h-[48px]">
-                <span className="text-sm text-fg-2 w-48">{test.label}</span>
+              <div key={test.key} className="flex items-center gap-4 py-2 border-b border-line last:border-0 min-h-12">
+                <span className="text-ui-text text-ink-2 w-48">{test.label}</span>
                 <Select
                   value={state.polarityResult}
                   onValueChange={(v) => dispatch({ type: "SET_POLARITY_RESULT", result: v as "PASS" | "FAIL" | "NOT_APPLICABLE" })}
@@ -137,8 +138,8 @@ export function ElectricalStep({
 
           if (test.key === "rcdPushButton") {
             return (
-              <div key={test.key} className="flex items-center gap-4 py-2 border-b border-border last:border-0 min-h-[48px]">
-                <span className="text-sm text-fg-2 w-48">{test.label}</span>
+              <div key={test.key} className="flex items-center gap-4 py-2 border-b border-line last:border-0 min-h-12">
+                <span className="text-ui-text text-ink-2 w-48">{test.label}</span>
                 <Select
                   value={state.rcdPushButtonResult}
                   onValueChange={(v) => dispatch({ type: "SET_RCD_PUSH_BUTTON", result: v as "PASS" | "FAIL" | "NOT_APPLICABLE" })}
@@ -162,8 +163,8 @@ export function ElectricalStep({
           const result = getReadingResult(test);
 
           return (
-            <div key={test.key} className="flex items-center gap-4 py-2 border-b border-border last:border-0 min-h-[48px]">
-              <span className="text-sm text-fg-2 w-48">{test.label}</span>
+            <div key={test.key} className="flex items-center gap-4 py-2 border-b border-line last:border-0 min-h-12">
+              <span className="text-ui-text text-ink-2 w-48">{test.label}</span>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
@@ -177,10 +178,10 @@ export function ElectricalStep({
                   }}
                   placeholder="—"
                 />
-                <span className="text-xs text-fg-3 w-16">{test.unit}</span>
+                <span className="text-caption text-muted w-16">{test.unit}</span>
               </div>
               {test.threshold !== null && (
-                <span className="text-xs text-fg-3">
+                <span className="text-caption text-muted t-data">
                   {test.operator === "lt" && "<"}{test.operator === "lte" && "≤"}{test.operator === "gte" && "≥"}{test.operator === "gt" && ">"}{" "}
                   {test.threshold} {test.unit}
                 </span>
@@ -193,16 +194,16 @@ export function ElectricalStep({
 
       {/* Result indicator */}
       <div className="flex items-center gap-2">
-        <div className={`w-2.5 h-2.5 rounded-full ${state.electricalResult === "PASS" ? "bg-teal-500" : "bg-red-500"}`} />
-        <span className={`text-sm font-medium ${state.electricalResult === "PASS" ? "text-teal-600" : "text-red-600"}`}>
-          Electrical: {state.electricalResult}
+        <div className={cn("w-2.5 h-2.5 rounded-full", state.electricalResult === "PASS" ? "bg-ok" : "bg-t-out")} />
+        <span className={cn("text-ui-text font-medium", state.electricalResult === "PASS" ? "text-ok" : "text-t-out")}>
+          Electrical: {state.electricalResult === "PASS" ? "Pass" : "Fail"}
         </span>
       </div>
 
       <div className="flex justify-between pt-2">
-        <Button variant="outline" onClick={() => dispatch({ type: "PREV_STEP" })}>Back</Button>
+        <Button variant="line" onClick={() => dispatch({ type: "PREV_STEP" })}>Back</Button>
         <Button onClick={() => dispatch({ type: "NEXT_STEP" })}>
-          Next: {state.profile?.requiresSubTests ? "Sub-Tests" : "Result"}
+          Next: {state.profile?.requiresSubTests ? "sub-tests" : "result"}
         </Button>
       </div>
     </div>
@@ -210,12 +211,12 @@ export function ElectricalStep({
 }
 
 function ResultDot({ result }: { result: "PASS" | "FAIL" | "NOT_APPLICABLE" }) {
-  if (result === "NOT_APPLICABLE") return <div className="w-2.5 h-2.5 rounded-full bg-gray-300" />;
+  if (result === "NOT_APPLICABLE") return <div className="w-2.5 h-2.5 rounded-full bg-rep" aria-label="N/A" />;
   return (
     <div className="flex items-center gap-1">
-      <div className={`w-2.5 h-2.5 rounded-full ${result === "PASS" ? "bg-teal-500" : "bg-red-500"}`} />
-      <span className={`text-xs ${result === "PASS" ? "text-teal-600" : "text-red-600"}`} aria-label={`${result}`}>
-        {result}
+      <div className={cn("w-2.5 h-2.5 rounded-full", result === "PASS" ? "bg-ok" : "bg-t-out")} />
+      <span className={cn("text-caption", result === "PASS" ? "text-ok" : "text-t-out")} aria-label={result}>
+        {result === "PASS" ? "Pass" : "Fail"}
       </span>
     </div>
   );

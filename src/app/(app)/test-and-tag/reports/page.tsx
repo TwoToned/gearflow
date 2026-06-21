@@ -7,10 +7,11 @@ import { toast } from "sonner";
 import {
   ArrowLeft, FileText, AlertTriangle, ClipboardList, History,
   Calendar, BarChart3, Users, XCircle, Boxes, Shield,
-  Download, FileDown, Loader2,
+  Download, FileDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { getTestTagAssets } from "@/server/test-tag-assets";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { cn, focusRing } from "@/lib/utils";
 
 type ReportType = "register" | "overdue" | "session" | "item-history" | "due-schedule" | "class-summary" | "tester-activity" | "failed-items" | "bulk-summary" | "compliance-certificate";
 
@@ -35,7 +37,7 @@ type FilterField = "dateFrom" | "dateTo" | "search" | "testTagAssetId" | "bulkAs
 const reportConfigs: ReportConfig[] = [
   {
     key: "register",
-    title: "Full Register",
+    title: "Full register",
     description: "Complete T&T inventory with current status. Ideal for auditors or insurers.",
     icon: FileText,
     formats: ["PDF", "CSV"],
@@ -43,15 +45,15 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "overdue",
-    title: "Overdue / Non-Compliant",
-    description: "Items needing immediate action - overdue, failed, or not yet tested.",
+    title: "Overdue / non-compliant",
+    description: "Items needing immediate action — overdue, failed, or not yet tested.",
     icon: AlertTriangle,
     formats: ["PDF", "CSV"],
     filters: [],
   },
   {
     key: "session",
-    title: "Test Session Report",
+    title: "Test session report",
     description: "Results from a testing session within a date range.",
     icon: ClipboardList,
     formats: ["PDF", "CSV"],
@@ -59,7 +61,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "item-history",
-    title: "Item History",
+    title: "Item history",
     description: "Full test history for a single item. Search by tag ID.",
     icon: History,
     formats: ["PDF"],
@@ -67,7 +69,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "due-schedule",
-    title: "Due For Testing",
+    title: "Due for testing",
     description: "Upcoming testing schedule for a date range.",
     icon: Calendar,
     formats: ["PDF", "CSV"],
@@ -75,7 +77,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "class-summary",
-    title: "Class Summary",
+    title: "Class summary",
     description: "Fleet breakdown by equipment class and appliance type.",
     icon: BarChart3,
     formats: ["PDF", "CSV"],
@@ -83,7 +85,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "tester-activity",
-    title: "Tester Activity",
+    title: "Tester activity",
     description: "Tests performed by each tester over a period.",
     icon: Users,
     formats: ["PDF", "CSV"],
@@ -91,7 +93,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "failed-items",
-    title: "Failed Items",
+    title: "Failed items",
     description: "Detailed log of failures with reasons and actions taken.",
     icon: XCircle,
     formats: ["PDF", "CSV"],
@@ -99,7 +101,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "bulk-summary",
-    title: "Bulk Asset T&T Summary",
+    title: "Bulk asset T&T summary",
     description: "Status of all T&T items for a specific bulk asset type.",
     icon: Boxes,
     formats: ["PDF", "CSV"],
@@ -107,7 +109,7 @@ const reportConfigs: ReportConfig[] = [
   },
   {
     key: "compliance-certificate",
-    title: "Compliance Certificate",
+    title: "Compliance certificate",
     description: "Formal AS/NZS 3760 compliance statement for clients or venues.",
     icon: Shield,
     formats: ["PDF"],
@@ -196,40 +198,46 @@ export default function TestTagReportsPage() {
   return (
     <RequirePermission resource="reports" action="view">
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="t-title text-fg">Test & Tag Reports</h1>
-          <p className="text-fg-3">Generate compliance reports and exports</p>
-        </div>
-        <Button variant="outline" render={<Link href="/test-and-tag" />}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Dashboard
-        </Button>
-      </div>
+      <PageHeader
+        title="Test & tag reports"
+        description="Generate compliance reports and exports."
+        actions={
+          <Button variant="line" asChild>
+            <Link href="/test-and-tag">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Dashboard
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {reportConfigs.map((config) => (
-          <div
+          <button
             key={config.key}
-            className="rounded-lg bg-bg-surface p-4 surface-ring hover:ring-primary/50 transition-colors cursor-pointer"
+            type="button"
+            className={cn(
+              "text-left rounded-[var(--r)] bg-card p-4 ring-1 ring-line shadow-[var(--sh-card)] transition-[box-shadow,transform] hover:ring-red/40 hover:shadow-[var(--sh-hover)] motion-safe:hover:-translate-y-px cursor-pointer",
+              focusRing,
+            )}
             onClick={() => openDialog(config)}
           >
             <div className="flex items-center gap-3 mb-2">
-              <config.icon className="h-5 w-5 text-primary" />
-              <h3 className="text-base font-semibold">{config.title}</h3>
+              <config.icon className="h-5 w-5 text-red" />
+              <h3 className="text-card-title font-semibold text-ink">{config.title}</h3>
             </div>
-            <p className="text-sm text-fg-3 mb-3">{config.description}</p>
+            <p className="text-ui-text text-muted mb-3">{config.description}</p>
             <div className="flex gap-2">
               {config.formats.map((format) => (
                 <span
                   key={format}
-                  className="text-xs px-2 py-0.5 rounded-full border border-border text-fg-3"
+                  className="text-badge px-2 py-0.5 rounded-full ring-1 ring-line text-muted"
                 >
                   {format}
                 </span>
               ))}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -240,13 +248,13 @@ export default function TestTagReportsPage() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <activeReport.icon className="h-5 w-5 text-primary" />
+                  <activeReport.icon className="h-5 w-5 text-red" />
                   {activeReport.title}
                 </DialogTitle>
               </DialogHeader>
 
               <div className="space-y-4 py-2">
-                <p className="text-sm text-fg-3">{activeReport.description}</p>
+                <p className="text-ui-text text-muted">{activeReport.description}</p>
 
                 {/* Date From/To */}
                 {activeReport.filters.includes("dateFrom") && (
@@ -288,7 +296,7 @@ export default function TestTagReportsPage() {
                 {/* Item History: select item */}
                 {activeReport.filters.includes("testTagAssetId") && (
                   <div className="space-y-1.5">
-                    <Label>Select Item</Label>
+                    <Label>Select item</Label>
                     <Input
                       value={searchInput}
                       onChange={(e) => {
@@ -298,24 +306,24 @@ export default function TestTagReportsPage() {
                       placeholder="Search by tag ID or description..."
                     />
                     {searchResults?.items && searchResults.items.length > 0 && !filters.testTagAssetId && (
-                      <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
+                      <div className="ring-1 ring-line rounded-[var(--r)] divide-y divide-line max-h-40 overflow-y-auto">
                         {searchResults.items.map((item) => (
                           <button
                             key={item.id}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-bg-elevated/50 transition-colors"
+                            className={cn("w-full text-left px-3 py-2 text-ui-text min-h-11 hover:bg-elev transition-colors", focusRing)}
                             onClick={() => {
                               setFilters((f) => ({ ...f, testTagAssetId: item.id }));
                               setSearchInput(`${item.testTagId} - ${item.description}`);
                             }}
                           >
-                            <span className="font-medium">{item.testTagId}</span>
-                            <span className="text-fg-3 ml-2">{item.description}</span>
+                            <span className="t-mono font-medium text-ink">{item.testTagId}</span>
+                            <span className="text-muted ml-2">{item.description}</span>
                           </button>
                         ))}
                       </div>
                     )}
                     {filters.testTagAssetId && (
-                      <p className="text-xs text-green-600">Item selected</p>
+                      <p className="text-caption text-ok">Item selected</p>
                     )}
                   </div>
                 )}
@@ -323,9 +331,9 @@ export default function TestTagReportsPage() {
                 {/* Bulk Summary: select bulk asset */}
                 {activeReport.filters.includes("bulkAssetId") && (
                   <div className="space-y-1.5">
-                    <Label>Select Bulk Asset</Label>
+                    <Label>Select bulk asset</Label>
                     {bulkAssets?.items && bulkAssets.items.length > 0 ? (
-                      <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+                      <div className="ring-1 ring-line rounded-[var(--r)] divide-y divide-line max-h-48 overflow-y-auto">
                         {/* Get unique bulk assets */}
                         {Array.from(
                           new Map(
@@ -336,15 +344,15 @@ export default function TestTagReportsPage() {
                         ).map((ba) => (
                           <button
                             key={ba.id}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-bg-elevated/50 transition-colors ${filters.bulkAssetId === ba.id ? "bg-primary/10" : ""}`}
+                            className={cn("w-full text-left px-3 py-2 text-ui-text min-h-11 hover:bg-elev transition-colors", filters.bulkAssetId === ba.id ? "bg-select" : "", focusRing)}
                             onClick={() => setFilters((f) => ({ ...f, bulkAssetId: ba.id }))}
                           >
-                            <span className="font-medium">{ba.assetTag}</span>
+                            <span className="t-mono font-medium text-ink">{ba.assetTag}</span>
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-fg-3">No bulk assets with T&T items found.</p>
+                      <p className="text-ui-text text-muted">No bulk assets with T&T items found.</p>
                     )}
                   </div>
                 )}
@@ -352,14 +360,14 @@ export default function TestTagReportsPage() {
 
               <DialogFooter className="flex gap-2 sm:justify-start">
                 {activeReport.formats.includes("PDF") && (
-                  <Button onClick={() => handleGenerate("pdf")} disabled={generating}>
-                    {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+                  <Button onClick={() => handleGenerate("pdf")} loading={generating}>
+                    <FileDown className="mr-2 h-4 w-4" />
                     Generate PDF
                   </Button>
                 )}
                 {activeReport.formats.includes("CSV") && (
-                  <Button variant="outline" onClick={() => handleGenerate("csv")} disabled={generating}>
-                    {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  <Button variant="line" onClick={() => handleGenerate("csv")} loading={generating}>
+                    <Download className="mr-2 h-4 w-4" />
                     Download CSV
                   </Button>
                 )}

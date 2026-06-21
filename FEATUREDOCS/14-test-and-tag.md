@@ -115,6 +115,16 @@ Same pattern as asset tags. Stored in `Organization.metadata.testTag`:
 - `/test-and-tag/reports` — 10 report types
 - `/settings/test-and-tag/profiles` — Test profile management
 
+## Page header actions (UX prominence)
+Running a test is the primary task across the section, so the header CTAs are ranked
+test-first to avoid confusing "new test" with "register equipment":
+- **Overview** (`/test-and-tag`): primary "Quick test" (→ `quick-test`), secondary `line`
+  "Add equipment" (→ `new`), `line` "Registry" (→ `registry`).
+- **Registry** (`/test-and-tag/registry`): primary "New test" (→ `quick-test`), secondary
+  `line` "Add equipment" (→ `new`); "Sync from assets" (the `backfillTestTagAssets` action)
+  lives in a `⋯` overflow `DropdownMenu`. ("Add item"/"Sync" were the old prominent labels —
+  the bare "Add item" primary made registration look like the main task.)
+
 ## Server Actions
 - `src/server/test-tag-assets.ts` — CRUD, batch create, sync, reactivate
 - `src/server/test-tag-records.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation
@@ -131,3 +141,35 @@ Models can set:
 - `defaultEquipmentClass` — equipment class for auto-registered assets
 - `defaultApplianceType` — appliance type for auto-registered assets
 - `defaultTestProfileId` — test profile inherited by assets
+
+## UI / Design System (RVLT polish, chunk 11)
+- Status colours come from `src/lib/status-colors.ts`: category `testTag` (CURRENT=
+  success, DUE_SOON=warning, OVERDUE/FAILED=error t-out, NOT_YET_TESTED/RETIRED=
+  neutral) and `testTagResult` (PASS=success, FAIL=error, NOT_APPLICABLE=neutral).
+  Per DESIGN.md §1 a FAIL/overdue is the t-out (problem) semantic, a current/valid
+  PASS is ok (success). **Never use teal for a PASS** — teal is the module hue, not
+  a status.
+- Human labels come from `src/lib/status-labels.ts`: `testTagStatusLabels`,
+  `testTagResultLabels`, `equipmentClassLabels`, `applianceTypeLabels` (all sentence
+  case). Reuse/extend these rather than hand-rolling per-file maps.
+- Auth: every page is gated with `RequirePermission resource="testTag"` (read for
+  list/detail/registry, create for new/quick-test). Reports uses `reports`/`view`.
+- The quick-test wizard is the inspector data-entry flow: 44px tap targets, focusRing
+  on every hand-built control, plain copy (no personality) in the fail dialog /
+  failure-details / retired-asset notice (alert contexts, §9).
+- `label-template.tsx` is a print template — intentionally left on its own print-CSS
+  styling, not migrated to app tokens (mirrors the pull-sheet print exception).
+- The **new-item page** (`test-and-tag/new/page.tsx`) is a PAGE smart form on the
+  shared `SmartFormLayout` shell (`src/components/ui/smart-form.tsx`), modelled on
+  `asset-form.tsx`: Identity (bulk/serialized asset `ComboboxPicker` links that
+  auto-fill, test-tag `AssetTagInput`, description, make/model) → Test details (the
+  test-profile `ComboboxPicker` auto-fills equipment class + appliance type, both now
+  overridable via registry `Select` with explicit `SelectValue` children; interval +
+  location) → "More details" accordion (notes). Helper rail = contextual tip + a live
+  preview card (description, tag, equipment-class chip, retest interval). All auto-fill
+  / peek-tag / profile-sync behaviour, the `testTagAssetSchema`, the create action and
+  the `testTag:create` gate are unchanged — markup/layout pass only.
+- The **batch-create dialog** (`test-tag/batch-create-dialog.tsx`) binds its
+  equipment-class / appliance-type registry `Select`s via `Controller` (explicit
+  `SelectValue` children, label fallbacks) instead of `form.watch()`/`setValue` in
+  render. Behaviour unchanged.

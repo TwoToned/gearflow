@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 
-import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
+import { Plus, Pencil, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
-import { cn } from "@/lib/utils";
+import { cn, focusRing, disabledState } from "@/lib/utils";
 import { bulkUpdateAssets, getAssetRegistryPhotos } from "@/server/assets";
 import { useAssets, useBulkAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
@@ -36,6 +36,7 @@ import {
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyAsset = Record<string, any>;
@@ -60,11 +61,11 @@ function useAssetColumns(
             size={32}
           />
           <div>
-            <Link href={`/assets/registry/${row.id}`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/assets/registry/${row.id}`} className={cn("t-mono text-muted hover:underline hover:text-ink", focusRing, "rounded-[var(--r)]")} onClick={(e) => e.stopPropagation()}>
               {row.assetTag}
             </Link>
             {row.customName && (
-              <p className="text-xs text-fg-3 truncate max-w-[180px]">{row.customName}</p>
+              <p className="text-caption text-muted truncate max-w-[180px]">{row.customName}</p>
             )}
           </div>
         </div>
@@ -76,11 +77,11 @@ function useAssetColumns(
       sortKey: "model",
       cell: (row) => (
         <div>
-          <Link href={`/assets/models/${row.modelId}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/assets/models/${row.modelId}`} className={cn("text-table-cell hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-fg-3">{row.model.category.name}</p>
+            <p className="text-caption text-muted">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -92,7 +93,7 @@ function useAssetColumns(
       sortKey: "serialNumber",
       defaultVisible: true,
       cell: (row) => (
-        <span className="font-mono text-sm text-fg-3">
+        <span className="t-mono text-muted">
           {row.serialNumber || "—"}
         </span>
       ),
@@ -104,13 +105,15 @@ function useAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      // Dots derive from the status intent map (status-colors.ts) — the single
+      // source of truth — instead of hardcoded palette swatches.
       filterOptions: [
-        { value: "AVAILABLE", label: "Available", color: "bg-green-500" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
-        { value: "IN_MAINTENANCE", label: "In Maintenance", color: "bg-amber-500" },
-        { value: "RESERVED", label: "Reserved", color: "bg-blue-500" },
-        { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
-        { value: "LOST", label: "Lost", color: "bg-red-500" },
+        { value: "AVAILABLE", label: "Available", color: getStatusColor("asset", "AVAILABLE").dot },
+        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("asset", "CHECKED_OUT").dot },
+        { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("asset", "IN_MAINTENANCE").dot },
+        { value: "RESERVED", label: "Reserved", color: getStatusColor("asset", "RESERVED").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("asset", "RETIRED").dot },
+        { value: "LOST", label: "Lost", color: getStatusColor("asset", "LOST").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status]} variant="pill" />
@@ -123,19 +126,20 @@ function useAssetColumns(
       defaultVisible: true,
       responsiveHide: "md",
       cell: (row) => {
+        // Text colour derives from the status intent map (status-colors.ts).
         if (row.status === "CHECKED_OUT") {
-          return <span className="text-xs font-medium text-teal-400">Deployed</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "CHECKED_OUT").text)}>Deployed</span>;
         }
         if (row.status === "RESERVED") {
-          return <span className="text-xs font-medium text-blue-400">Reserved</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "RESERVED").text)}>Reserved</span>;
         }
         if (row.status === "IN_MAINTENANCE") {
-          return <span className="text-xs font-medium text-amber-400">Maintenance</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "IN_MAINTENANCE").text)}>Maintenance</span>;
         }
         if (row.status === "RETIRED" || row.status === "LOST") {
-          return <span className="text-xs text-fg-4">&mdash;</span>;
+          return <span className="text-caption text-faint">&mdash;</span>;
         }
-        return <span className="text-xs text-fg-3">Available</span>;
+        return <span className="text-caption text-muted">Available</span>;
       },
     },
     {
@@ -146,12 +150,13 @@ function useAssetColumns(
       filterable: true,
       filterType: "enum",
       defaultVisible: false,
+      // Dots derive from the condition intent map (status-colors.ts).
       filterOptions: [
-        { value: "NEW", label: "New", color: "bg-green-500" },
-        { value: "GOOD", label: "Good", color: "bg-blue-500" },
-        { value: "FAIR", label: "Fair", color: "bg-amber-500" },
-        { value: "POOR", label: "Poor", color: "bg-orange-500" },
-        { value: "DAMAGED", label: "Damaged", color: "bg-red-500" },
+        { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
+        { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
+        { value: "FAIR", label: "Fair", color: getStatusColor("condition", "FAIR").dot },
+        { value: "POOR", label: "Poor", color: getStatusColor("condition", "POOR").dot },
+        { value: "DAMAGED", label: "Damaged", color: getStatusColor("condition", "DAMAGED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition]} variant="pill" />
@@ -169,7 +174,7 @@ function useAssetColumns(
       })),
       responsiveHide: "md",
       cell: (row) => (
-        <span className="text-fg-3">{row.location?.name || "—"}</span>
+        <span className="text-muted">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -181,7 +186,7 @@ function useAssetColumns(
       defaultVisible: false,
       responsiveHide: "lg",
       cell: (row) => (
-        <span className="text-fg-3">{row.model?.category?.name || "—"}</span>
+        <span className="text-muted">{row.model?.category?.name || "—"}</span>
       ),
     },
     {
@@ -194,7 +199,7 @@ function useAssetColumns(
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
+            <Badge key={tag} status="neutral">
               {tag}
             </Badge>
           ))}
@@ -215,7 +220,7 @@ function useBulkAssetColumns(
       alwaysVisible: true,
       sortKey: "assetTag",
       cell: (row) => (
-        <Link href={`/assets/registry/${row.id}?type=bulk`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
+        <Link href={`/assets/registry/${row.id}?type=bulk`} className={cn("t-mono text-muted hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
           {row.assetTag}
         </Link>
       ),
@@ -226,11 +231,11 @@ function useBulkAssetColumns(
       sortKey: "model",
       cell: (row) => (
         <div>
-          <Link href={`/assets/models/${row.modelId}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/assets/models/${row.modelId}`} className={cn("text-table-cell hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-fg-3">{row.model.category.name}</p>
+            <p className="text-caption text-muted">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -248,13 +253,13 @@ function useBulkAssetColumns(
         const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
         return (
           <div className="flex items-center justify-end gap-2">
-            <span className="font-medium tabular-nums">{avail}</span>
+            <span className="t-data font-medium tabular-nums text-ink">{avail}</span>
             {total > 0 && (
-              <div className="w-12 h-1.5 rounded-full bg-border overflow-hidden" title={`${pct}% deployed`}>
+              <div className="w-12 h-1.5 rounded-full bg-line-2 overflow-hidden" title={`${pct}% deployed`}>
                 <div
                   className={cn(
-                    "h-full rounded-full transition-all",
-                    pct === 0 ? "bg-success/60" : pct >= 80 ? "bg-error/60" : "bg-primary/60",
+                    "h-full rounded-full motion-safe:transition-all",
+                    pct === 0 ? "bg-ok" : pct >= 80 ? "bg-warn" : "bg-red",
                   )}
                   style={{ width: `${pct}%` }}
                 />
@@ -270,7 +275,7 @@ function useBulkAssetColumns(
       accessorKey: "totalQuantity",
       sortKey: "totalQuantity",
       align: "right",
-      cell: (row) => <span className="text-fg-3 tabular-nums">{row.totalQuantity}</span>,
+      cell: (row) => <span className="t-data text-muted tabular-nums">{row.totalQuantity}</span>,
     },
     {
       id: "status",
@@ -279,11 +284,12 @@ function useBulkAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      // Dots derive from the bulk-asset intent map (status-colors.ts).
       filterOptions: [
-        { value: "ACTIVE", label: "Active", color: "bg-green-500" },
-        { value: "LOW_STOCK", label: "Low Stock", color: "bg-amber-500" },
-        { value: "OUT_OF_STOCK", label: "Out of Stock", color: "bg-red-500" },
-        { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
+        { value: "ACTIVE", label: "Active", color: getStatusColor("bulkAsset", "ACTIVE").dot },
+        { value: "LOW_STOCK", label: "Low stock", color: getStatusColor("bulkAsset", "LOW_STOCK").dot },
+        { value: "OUT_OF_STOCK", label: "Out of stock", color: getStatusColor("bulkAsset", "OUT_OF_STOCK").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("bulkAsset", "RETIRED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="bulkAsset" value={row.status} label={bulkAssetStatusLabels[row.status]} variant="pill" />
@@ -300,7 +306,7 @@ function useBulkAssetColumns(
         label: loc.parent ? `${loc.parent.name} > ${loc.name}` : loc.name,
       })),
       cell: (row) => (
-        <span className="text-fg-3">{row.location?.name || "—"}</span>
+        <span className="text-muted">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -312,7 +318,7 @@ function useBulkAssetColumns(
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
+            <Badge key={tag} status="neutral">
               {tag}
             </Badge>
           ))}
@@ -519,16 +525,24 @@ export function AssetTable() {
   });
 
   const viewToggle = (
-    <div className="flex rounded-md border">
+    <div className="flex rounded-full border-2 border-line-2 p-0.5">
       <button
         onClick={() => { setView("serialized"); clearFilters(); setSelectedIds(new Set()); }}
-        className={`px-3 py-1.5 text-sm font-medium transition-colors ${view === "serialized" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+        className={cn(
+          "rounded-full px-3 py-1.5 text-ui-text font-medium motion-safe:transition-colors",
+          focusRing,
+          view === "serialized" ? "bg-red text-primary-foreground" : "text-muted hover:text-ink",
+        )}
       >
         Serialized
       </button>
       <button
         onClick={() => { setView("bulk"); clearFilters(); setSelectedIds(new Set()); }}
-        className={`px-3 py-1.5 text-sm font-medium transition-colors ${view === "bulk" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+        className={cn(
+          "rounded-full px-3 py-1.5 text-ui-text font-medium motion-safe:transition-colors",
+          focusRing,
+          view === "bulk" ? "bg-red text-primary-foreground" : "text-muted hover:text-ink",
+        )}
       >
         Bulk
       </button>
@@ -538,9 +552,9 @@ export function AssetTable() {
   const actionButtons = (
     <CanDo resource="asset" action="create">
       <Button
-        variant="outline"
+        variant="line"
         size="sm"
-        className="hidden sm:inline-flex h-8"
+        className="hidden sm:inline-flex"
         onClick={async () => {
           const csv = view === "serialized" ? await exportAssetsCSV() : await exportBulkAssetsCSV();
           const blob = new Blob([csv], { type: "text/csv" });
@@ -555,39 +569,41 @@ export function AssetTable() {
         <Download className="mr-2 h-4 w-4" />
         Export
       </Button>
-      <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setImportOpen(true)}>
+      <Button variant="line" size="sm" className="hidden sm:inline-flex" onClick={() => setImportOpen(true)}>
         <Upload className="mr-2 h-4 w-4" />
         Import
       </Button>
-      <Button size="sm" className="h-8" render={<Link href={`/assets/registry/new?type=${view}`} />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New {view === "serialized" ? "Asset" : "Bulk Asset"}
+      <Button size="sm" asChild>
+        <Link href={`/assets/registry/new?type=${view}`}>
+          <Plus className="mr-2 h-4 w-4" />
+          New {view === "serialized" ? "asset" : "bulk asset"}
+        </Link>
       </Button>
     </CanDo>
   );
 
   return (
     <div className="space-y-4">
-      {/* Bulk Edit Bar */}
+      {/* Bulk edit bar */}
       {view === "serialized" && selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
-          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+        <div className="flex items-center gap-3 rounded-[var(--r)] border-2 border-line-2 bg-paper-2/50 px-4 py-2">
+          <span className="text-ui-text font-medium text-ink tabular-nums">{selectedIds.size} selected</span>
           <CanDo resource="asset" action="update">
-            <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
+            <Button size="sm" variant="line" onClick={() => setBulkEditOpen(true)}>
               <Pencil className="mr-2 h-3 w-3" />
-              Bulk Edit
+              Bulk edit
             </Button>
           </CanDo>
           <CanDo resource="warehouse" action="check_in">
             <Button
               size="sm"
-              variant="outline"
-              className="text-amber-500"
-              disabled={forceReturnMutation.isPending}
+              variant="line"
+              className="text-warn"
+              loading={forceReturnMutation.isPending}
               onClick={() => setBulkForceReturnOpen(true)}
             >
-              {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
-              Force Return
+              <RotateCcw className="mr-2 h-3 w-3" />
+              Force return
             </Button>
           </CanDo>
           <Button size="sm" variant="ghost" onClick={clearSelection}>
@@ -657,7 +673,7 @@ export function AssetTable() {
       <CanDo resource="asset" action="create">
         <div className="flex gap-2 sm:hidden">
           <Button
-            variant="outline"
+            variant="line"
             size="sm"
             onClick={async () => {
               const csv = view === "serialized" ? await exportAssetsCSV() : await exportBulkAssetsCSV();
@@ -673,7 +689,7 @@ export function AssetTable() {
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+          <Button variant="line" size="sm" onClick={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
@@ -748,9 +764,9 @@ function BulkEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Bulk Edit {selectedIds.size} Assets</DialogTitle>
+          <DialogTitle>Bulk edit {selectedIds.size} assets</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-fg-3">
+        <p className="text-ui-text text-muted">
           Only fields you change will be updated. Leave a field unchanged to keep existing values.
         </p>
         <div className="space-y-4 py-2">
@@ -759,12 +775,12 @@ function BulkEditDialog({
             <select
               value={bulkStatus}
               onChange={(e) => setBulkStatus(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={cn("flex h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-transparent px-3 py-1 text-ui-text text-ink", focusRing, disabledState)}
             >
               <option value="">— No change —</option>
               <option value="AVAILABLE">Available</option>
               <option value="CHECKED_OUT">Deployed</option>
-              <option value="IN_MAINTENANCE">In Maintenance</option>
+              <option value="IN_MAINTENANCE">In maintenance</option>
               <option value="RESERVED">Reserved</option>
               <option value="RETIRED">Retired</option>
               <option value="LOST">Lost</option>
@@ -775,7 +791,7 @@ function BulkEditDialog({
             <select
               value={bulkCondition}
               onChange={(e) => setBulkCondition(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={cn("flex h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-transparent px-3 py-1 text-ui-text text-ink", focusRing, disabledState)}
             >
               <option value="">— No change —</option>
               <option value="NEW">New</option>
@@ -802,12 +818,11 @@ function BulkEditDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !hasChanges}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Update {selectedIds.size} Assets
+          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!hasChanges}>
+            Update {selectedIds.size} assets
           </Button>
         </DialogFooter>
       </DialogContent>

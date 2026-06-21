@@ -155,7 +155,7 @@ export default function GroupTemplatesSettingsPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-fg truncate">{t.name}</span>
-                        <Badge variant="outline" className="text-xs">
+                        <Badge status="neutral" className="text-xs">
                           {t.items.length} item{t.items.length !== 1 ? "s" : ""}
                         </Badge>
                       </div>
@@ -168,7 +168,7 @@ export default function GroupTemplatesSettingsPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <Button
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon"
                         onClick={() => {
                           setEditTemplate(t);
                           setEditName(t.name);
@@ -180,7 +180,7 @@ export default function GroupTemplatesSettingsPage() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon"
                         onClick={() => setDeleteTemplate(t)}
                         aria-label="Delete template"
                         className="text-[oklch(0.58_0.22_27)]"
@@ -217,7 +217,7 @@ export default function GroupTemplatesSettingsPage() {
                                   )}
                                   <span className="truncate">{label}</span>
                                   {isKit && (
-                                    <Badge variant="outline" className="text-[10px]">
+                                    <Badge status="neutral" className="text-[10px]">
                                       Kit
                                     </Badge>
                                   )}
@@ -274,7 +274,7 @@ export default function GroupTemplatesSettingsPage() {
           </div>
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="line"
               onClick={() => {
                 setEditTemplate(null);
                 setEditName("");
@@ -320,11 +320,11 @@ export default function GroupTemplatesSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTemplate(null)}>
+            <Button variant="line" onClick={() => setDeleteTemplate(null)}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="primary"
               onClick={() => {
                 if (deleteTemplate) deleteMut.mutate(deleteTemplate.id);
               }}

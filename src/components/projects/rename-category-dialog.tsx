@@ -89,7 +89,7 @@ function RenameCategoryDialogBody({
         disabled={isLocked}
       />
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} disabled={!name.trim() || isPending || isLocked}>

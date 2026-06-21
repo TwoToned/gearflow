@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { getMembers } from "@/server/settings";
 
@@ -56,7 +58,7 @@ const STEP_CONFIG: { key: WizardStep; label: string }[] = [
   { key: "scan", label: "Scan" },
   { key: "visual", label: "Visual" },
   { key: "electrical", label: "Electrical" },
-  { key: "subtests", label: "Sub-Tests" },
+  { key: "subtests", label: "Sub-tests" },
   { key: "result", label: "Result" },
 ];
 
@@ -250,12 +252,12 @@ function QuickTestContent() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Link href="/test-and-tag">
-              <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/test-and-tag" aria-label="Back to test & tag">
                 <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <h1 className="text-lg font-semibold text-fg-1">Quick Test</h1>
+              </Link>
+            </Button>
+            <h1 className="t-title text-ink">Quick test</h1>
           </div>
           <div className="flex items-center gap-2">
             {/* Session tester picker */}
@@ -285,10 +287,10 @@ function QuickTestContent() {
             {/* Audio toggle */}
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setAudioEnabled(!audioEnabled)}
-              className="h-9 w-9 p-0"
               title={audioEnabled ? "Disable audio" : "Enable audio"}
+              aria-label={audioEnabled ? "Disable audio" : "Enable audio"}
             >
               {audioEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </Button>
@@ -297,17 +299,19 @@ function QuickTestContent() {
 
         {/* Step indicator — minimal tab style */}
         {state.asset && !state.isRetired && (
-          <div className="flex gap-6 border-b mb-6" role="tablist">
+          <div className="flex gap-6 border-b border-line mb-6" role="tablist">
             {visibleSteps.map((s) => (
               <button
                 key={s.key}
                 role="tab"
                 aria-selected={state.step === s.key}
-                className={`pb-2 text-sm font-medium border-b-2 transition-colors ${
+                className={cn(
+                  "pb-2 text-ui-text font-medium border-b-2 transition-colors rounded-t-sm",
                   state.step === s.key
-                    ? "border-teal-500 text-teal-600"
-                    : "border-transparent text-fg-3 hover:text-fg-2"
-                }`}
+                    ? "border-red text-red"
+                    : "border-transparent text-muted hover:text-ink-2",
+                  focusRing,
+                )}
                 onClick={() => dispatch({ type: "GO_TO_STEP", step: s.key })}
               >
                 {s.label}
@@ -341,19 +345,19 @@ function QuickTestContent() {
       {state.sessionLog.length > 0 && (
         <>
           {/* Desktop sidebar */}
-          <div className="hidden lg:block w-72 border-l pl-6">
-            <h3 className="text-sm font-medium text-fg-1 mb-3">Session Log</h3>
+          <div className="hidden lg:block w-72 border-l border-line pl-6">
+            <h3 className="t-heading text-ink mb-3">Session log</h3>
             <div className="space-y-2">
               {state.sessionLog.map((entry, i) => (
                 <div key={i} className="flex items-center justify-between py-1.5">
                   <div>
-                    <span className="font-mono text-sm text-fg-2">{entry.testTagId}</span>
-                    <p className="text-xs text-fg-3 truncate max-w-[180px]">{entry.description}</p>
+                    <span className="t-mono text-ui-text text-ink-2">{entry.testTagId}</span>
+                    <p className="text-caption text-muted truncate max-w-[180px]">{entry.description}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${entry.result === "PASS" ? "bg-teal-500" : "bg-red-500"}`} />
-                    <span className={`text-xs ${entry.result === "PASS" ? "text-teal-600" : "text-red-600"}`}>
-                      {entry.result}
+                    <div className={cn("w-2 h-2 rounded-full", entry.result === "PASS" ? "bg-ok" : "bg-t-out")} />
+                    <span className={cn("text-caption", entry.result === "PASS" ? "text-ok" : "text-t-out")}>
+                      {entry.result === "PASS" ? "Pass" : "Fail"}
                     </span>
                   </div>
                 </div>
@@ -362,25 +366,28 @@ function QuickTestContent() {
           </div>
 
           {/* Tablet/mobile bottom bar */}
-          <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface border-t p-3 z-10">
+          <div
+            className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-line p-3 z-10"
+            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+          >
             <button
-              className="flex items-center justify-between w-full"
+              className={cn("flex items-center justify-between w-full min-h-11 rounded-sm", focusRing)}
               onClick={() => setSessionLogExpanded(!sessionLogExpanded)}
             >
-              <span className="text-sm text-fg-2">
+              <span className="text-ui-text text-ink-2">
                 Session: {state.sessionLog.length} tested · {state.sessionLog.filter(e => e.result === "PASS").length} pass · {state.sessionLog.filter(e => e.result === "FAIL").length} fail
               </span>
-              {sessionLogExpanded ? <ChevronDown className="h-4 w-4 text-fg-3" /> : <ChevronUp className="h-4 w-4 text-fg-3" />}
+              {sessionLogExpanded ? <ChevronDown className="h-4 w-4 text-muted" /> : <ChevronUp className="h-4 w-4 text-muted" />}
             </button>
             {sessionLogExpanded && (
               <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
                 {state.sessionLog.map((entry, i) => (
                   <div key={i} className="flex items-center justify-between py-1">
-                    <span className="font-mono text-xs text-fg-2">{entry.testTagId}</span>
+                    <span className="t-mono text-caption text-ink-2">{entry.testTagId}</span>
                     <div className="flex items-center gap-1">
-                      <div className={`w-2 h-2 rounded-full ${entry.result === "PASS" ? "bg-teal-500" : "bg-red-500"}`} />
-                      <span className={`text-xs ${entry.result === "PASS" ? "text-teal-600" : "text-red-600"}`}>
-                        {entry.result}
+                      <div className={cn("w-2 h-2 rounded-full", entry.result === "PASS" ? "bg-ok" : "bg-t-out")} />
+                      <span className={cn("text-caption", entry.result === "PASS" ? "text-ok" : "text-t-out")}>
+                        {entry.result === "PASS" ? "Pass" : "Fail"}
                       </span>
                     </div>
                   </div>
@@ -397,7 +404,13 @@ function QuickTestContent() {
 export default function QuickTestPage() {
   return (
     <RequirePermission resource="testTag" action="create">
-      <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500" /></div>}>
+      <Suspense fallback={
+        <div className="max-w-2xl mx-auto w-full space-y-6">
+          <Skeleton className="h-8 w-40 rounded-[var(--r)]" />
+          <Skeleton className="h-12 rounded-[var(--r)]" />
+          <Skeleton className="h-32 rounded-[var(--r)]" />
+        </div>
+      }>
         <QuickTestContent />
       </Suspense>
     </RequirePermission>

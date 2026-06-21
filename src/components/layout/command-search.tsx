@@ -1110,7 +1110,7 @@ export function CommandSearch() {
         <Search className="h-5 w-5" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent showCloseButton={false} className={`p-0 gap-0 overflow-hidden ${isMobile ? "h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none border-0" : "sm:max-w-lg"}`} style={isMobile ? { paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" } : undefined}>
+        <DialogContent className={`p-0 gap-0 overflow-hidden [&>[data-radix-dialog-close]]:hidden [&>button:last-child]:hidden ${isMobile ? "h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none border-0" : "sm:max-w-lg"}`} style={isMobile ? { paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" } : undefined}>
           {/* Search input bar */}
           <div className="flex items-center border-b px-3 gap-1">
             {isSlashMode ? (

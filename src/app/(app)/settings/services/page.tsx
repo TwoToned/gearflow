@@ -180,7 +180,7 @@ export default function ServiceTemplatesPage() {
                     </TableCell>
                     <TableCell>
                       {t.showOnDocuments ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                        <Badge status="neutral" className="bg-green-500/10 text-green-500 border-green-500/20">
                           Yes
                         </Badge>
                       ) : (
@@ -189,7 +189,7 @@ export default function ServiceTemplatesPage() {
                     </TableCell>
                     <TableCell>
                       {t.isAutoAdded ? (
-                        <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                        <Badge status="neutral" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
                           Auto
                         </Badge>
                       ) : (
@@ -198,11 +198,11 @@ export default function ServiceTemplatesPage() {
                     </TableCell>
                     <TableCell>
                       {t.isActive ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                        <Badge status="neutral" className="bg-green-500/10 text-green-500 border-green-500/20">
                           Active
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
+                        <Badge status="neutral" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
                           Inactive
                         </Badge>
                       )}
@@ -484,7 +484,7 @@ function TemplateDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel

@@ -5,25 +5,20 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import {
   CheckCircle2,
   XCircle,
-  FileText,
-  Ruler,
-  ListChecks,
-  Camera,
-  Loader2,
-  ChevronDown,
-  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
+import { cn, focusRing } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sheet,
   SheetContent,
@@ -376,23 +371,27 @@ export function ItemCheckForm({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, embedded]);
 
-  const contextLabel = context === "PREP" ? "Prep Check" : context === "RETURN" ? "Return Check" : "Ad-Hoc Check";
+  const contextLabel = context === "PREP" ? "Prep check" : context === "RETURN" ? "Return check" : "Ad-hoc check";
   const submitLabel = context === "PREP"
-    ? failCount > 0 ? "Flag Item" : "Pack Item"
+    ? failCount > 0 ? "Flag item" : "Pack item"
     : context === "RETURN"
-      ? failCount > 0 ? "Return as Damaged" : `Return as ${returnCondition === "GOOD" ? "Good" : returnCondition === "DAMAGED" ? "Damaged" : "Missing"}`
-      : "Save Check";
+      ? failCount > 0 ? "Return as damaged" : `Return as ${returnCondition === "GOOD" ? "good" : returnCondition === "DAMAGED" ? "damaged" : "missing"}`
+      : "Save check";
 
   const formContent = (
     <>
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-fg-3">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Loading check items...
+        <div className={embedded ? "p-4 space-y-2" : "mt-4 space-y-2"} aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-[var(--r)] border-2 border-line p-3 space-y-2">
+              <Skeleton className="h-4 w-2/3 rounded-[var(--r)]" />
+              <Skeleton className="h-11 w-full rounded-[var(--r)]" />
+            </div>
+          ))}
         </div>
       ) : items.length === 0 ? (
         <div
-          className={`flex items-center justify-center py-16 text-center text-sm text-fg-3 ${embedded ? "px-4" : ""}`}
+          className={`flex items-center justify-center py-16 text-center text-ui-text text-muted ${embedded ? "px-4" : ""}`}
         >
           No check items are configured for this {kitId ? "kit" : "model"}.
         </div>
@@ -402,13 +401,13 @@ export function ItemCheckForm({
           {items.some((mci) => mci.checkItem.type === "PASS_FAIL") && (
             <div className="flex justify-end pb-2">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={handlePassAll}
-                className="text-green-600 border-green-600/20 hover:bg-green-600/10"
+                className="text-ok hover:bg-ok-soft hover:text-ok hover:border-ok/40"
               >
                 <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                Pass All
+                Pass all
               </Button>
             </div>
           )}
@@ -430,9 +429,9 @@ export function ItemCheckForm({
       )}
 
       {/* Footer */}
-      <div className={`${embedded ? "px-4 pb-4" : "mt-6"} border-t border-border pt-4 space-y-3`}>
+      <div className={`${embedded ? "px-4 pb-4" : "mt-6"} border-t border-line pt-4 space-y-3`}>
         {failCount > 0 && (
-          <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="flex items-center gap-2 rounded-[var(--r)] border-l-[3px] border-l-warn bg-warn-soft px-3 py-2 text-ui-text text-warn">
             <XCircle className="h-4 w-4 shrink-0" />
             {failCount} item{failCount !== 1 ? "s" : ""} failed — will be returned as damaged
           </div>
@@ -441,28 +440,33 @@ export function ItemCheckForm({
         {/* Return condition selector */}
         {context === "RETURN" && failCount === 0 && (
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Return Condition</Label>
+            <Label className="text-ui-text font-medium">Return condition</Label>
             <div className="flex gap-2">
-              {(["GOOD", "DAMAGED", "MISSING"] as const).map((cond) => (
-                <Button
-                  key={cond}
-                  type="button"
-                  variant={returnCondition === cond ? "default" : "outline"}
-                  size="sm"
-                  className={`flex-1 ${
-                    returnCondition === cond
-                      ? cond === "GOOD"
-                        ? "bg-green-600 hover:bg-green-700 text-white"
-                        : cond === "DAMAGED"
-                          ? "bg-amber-600 hover:bg-amber-700 text-white"
-                          : "bg-destructive hover:bg-destructive/90 text-white"
-                      : ""
-                  }`}
-                  onClick={() => setReturnCondition(cond)}
-                >
-                  {cond === "GOOD" ? "Good" : cond === "DAMAGED" ? "Damaged" : "Missing"}
-                </Button>
-              ))}
+              {(["GOOD", "DAMAGED", "MISSING"] as const).map((cond) => {
+                const active = returnCondition === cond;
+                // Active state carries the condition's semantic tint (§3) —
+                // good=ok, damaged=warn, missing=problem (t-out). Inactive is a
+                // plain line button.
+                const activeClass =
+                  cond === "GOOD"
+                    ? "bg-ok-soft text-ok border-ok/40"
+                    : cond === "DAMAGED"
+                      ? "bg-warn-soft text-warn border-warn/40"
+                      : "bg-out-soft text-t-out border-t-out/40";
+                return (
+                  <Button
+                    key={cond}
+                    type="button"
+                    variant="line"
+                    size="sm"
+                    aria-pressed={active}
+                    className={cn("flex-1", active && activeClass)}
+                    onClick={() => setReturnCondition(cond)}
+                  >
+                    {cond === "GOOD" ? "Good" : cond === "DAMAGED" ? "Damaged" : "Missing"}
+                  </Button>
+                );
+              })}
             </div>
             {(returnCondition === "DAMAGED" || returnCondition === "MISSING") && (
               <Textarea
@@ -470,7 +474,7 @@ export function ItemCheckForm({
                 value={returnNotes}
                 onChange={(e) => setReturnNotes(e.target.value)}
                 rows={2}
-                className="text-sm"
+                className="text-ui-text"
               />
             )}
           </div>
@@ -478,7 +482,7 @@ export function ItemCheckForm({
 
         <div className="flex gap-2">
           <Button
-            variant="outline"
+            variant="line"
             className="flex-1"
             onClick={onCancel}
             disabled={isSubmitting}
@@ -486,27 +490,23 @@ export function ItemCheckForm({
             Cancel
           </Button>
           <Button
-            className={`flex-1 ${
-              context === "RETURN" && failCount === 0 && returnCondition === "GOOD"
-                ? "bg-green-600 hover:bg-green-700"
-                : ""
-            }`}
+            className="flex-1"
             onClick={handleSubmit}
             disabled={!allComplete || isSubmitting}
+            loading={isSubmitting}
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {submitLabel}
           </Button>
         </div>
 
         {/* Keyboard-shortcut hint bar — desktop only, non-embedded */}
         {!embedded && items.some((mci) => mci.checkItem.type === "PASS_FAIL") && (
-          <div className="hidden sm:flex items-center justify-center gap-3 pt-1 text-[10px] text-fg-3 tabular-nums">
-            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">P</kbd> pass</span>
-            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">F</kbd> fail</span>
-            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">A</kbd> pass all</span>
-            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">↑↓</kbd> move</span>
-            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">↵</kbd> submit</span>
+          <div className="hidden sm:flex items-center justify-center gap-3 pt-1 text-micro text-muted tabular-nums">
+            <span><kbd className="rounded-[6px] bg-elev px-1 py-0.5 font-mono">P</kbd> pass</span>
+            <span><kbd className="rounded-[6px] bg-elev px-1 py-0.5 font-mono">F</kbd> fail</span>
+            <span><kbd className="rounded-[6px] bg-elev px-1 py-0.5 font-mono">A</kbd> pass all</span>
+            <span><kbd className="rounded-[6px] bg-elev px-1 py-0.5 font-mono">↑↓</kbd> move</span>
+            <span><kbd className="rounded-[6px] bg-elev px-1 py-0.5 font-mono">↵</kbd> submit</span>
           </div>
         )}
       </div>
@@ -523,31 +523,31 @@ export function ItemCheckForm({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {queueTotal && queueTotal > 1 ? (
-              <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary tabular-nums">
+              <span className="shrink-0 rounded-[var(--r)] bg-red-soft px-1.5 py-0.5 text-caption font-semibold text-red tabular-nums">
                 {queuePosition}/{queueTotal}
               </span>
             ) : null}
-            <span className="font-mono text-sm text-primary">{assetTag || "—"}</span>
-            <span className="text-fg-3">—</span>
-            <span className="truncate">{assetName}</span>
+            <span className="t-mono text-red">{assetTag || "—"}</span>
+            <span className="text-muted">—</span>
+            <span className="truncate text-ink">{assetName}</span>
           </SheetTitle>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
+            <Badge status="neutral">
               {contextLabel}
             </Badge>
-            <span className="text-xs text-fg-3">
+            <span className="text-caption text-muted">
               {items.length} check{items.length !== 1 ? "s" : ""}
             </span>
             {onPassAllRemaining && queueTotal && queuePosition && queueTotal > 1 && (
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={onPassAllRemaining}
                 disabled={isSubmitting}
-                className="ml-auto text-green-600 border-green-600/20 hover:bg-green-600/10 text-xs h-7"
+                className="ml-auto h-9 text-ok hover:bg-ok-soft hover:text-ok hover:border-ok/40"
               >
                 <CheckCircle2 className="mr-1 h-3 w-3" />
-                Pass All {queueTotal - queuePosition + 1} Items
+                Pass all {queueTotal - queuePosition + 1} items
               </Button>
             )}
           </div>
@@ -588,25 +588,25 @@ function CheckItemRow({
   return (
     <div
       onClick={onFocus}
-      className={`rounded-lg border p-3 transition-colors ${
-        isFocused ? "ring-2 ring-primary ring-offset-1 ring-offset-bg" : ""
+      className={`rounded-[var(--r)] border-2 p-3 transition-colors ${
+        isFocused ? "ring-2 ring-red ring-offset-2 ring-offset-paper" : ""
       } ${
         result === "PASS"
-          ? "border-green-500/30 bg-green-500/5"
+          ? "border-ok/40 bg-ok-soft/50"
           : result === "FAIL"
-            ? "border-destructive/30 bg-destructive/5"
-            : "border-border"
+            ? "border-t-out/40 bg-out-soft/60"
+            : "border-line"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{ci.label}</p>
+          <p className="text-ui-text font-medium text-ink">{ci.label}</p>
           {ci.description && (
-            <p className="mt-0.5 text-xs text-fg-3">{ci.description}</p>
+            <p className="mt-0.5 text-caption text-muted">{ci.description}</p>
           )}
         </div>
-        <span className="text-[10px] text-fg-3 shrink-0 tabular-nums">
-          {index + 1}/{item.sortOrder !== undefined ? "" : ""}
+        <span className="text-micro text-muted shrink-0 tabular-nums">
+          {index + 1}
         </span>
       </div>
 
@@ -660,13 +660,13 @@ function CheckItemRow({
               onChange={(e) => onUpdate({ notes: e.target.value })}
               placeholder="Add notes..."
               rows={2}
-              className="text-sm"
+              className="text-ui-text"
             />
           ) : (
             <button
               type="button"
               onClick={() => setShowNotes(true)}
-              className="text-xs text-fg-3 hover:text-fg transition-colors"
+              className={`inline-flex min-h-11 items-center rounded-[var(--r)] px-3 text-caption text-muted transition-colors hover:text-ink ${focusRing}`}
             >
               + Add notes
             </button>
@@ -691,10 +691,11 @@ function PassFailInput({
       <button
         type="button"
         onClick={() => onUpdate({ result: "FAIL" })}
-        className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors ${
+        aria-pressed={result === "FAIL"}
+        className={`flex-1 flex items-center justify-center gap-1.5 rounded-[var(--r)] py-2 min-h-11 text-ui-text font-medium transition-colors ${focusRing} ${
           result === "FAIL"
-            ? "bg-destructive text-destructive-foreground"
-            : "bg-bg-elevated text-fg-3 hover:text-destructive hover:bg-destructive/10"
+            ? "bg-out-soft text-t-out ring-1 ring-t-out/50"
+            : "bg-elev text-muted hover:text-t-out hover:bg-out-soft"
         }`}
       >
         <XCircle className="h-4 w-4" />
@@ -703,10 +704,11 @@ function PassFailInput({
       <button
         type="button"
         onClick={() => onUpdate({ result: "PASS" })}
-        className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors ${
+        aria-pressed={result === "PASS"}
+        className={`flex-1 flex items-center justify-center gap-1.5 rounded-[var(--r)] py-2 min-h-11 text-ui-text font-medium transition-colors ${focusRing} ${
           result === "PASS"
-            ? "bg-green-600 text-white"
-            : "bg-bg-elevated text-fg-3 hover:text-green-600 hover:bg-green-600/10"
+            ? "bg-ok text-dark"
+            : "bg-elev text-muted hover:text-ok hover:bg-ok-soft"
         }`}
       >
         <CheckCircle2 className="h-4 w-4" />
@@ -729,7 +731,7 @@ function NotesInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder="Enter notes..."
       rows={2}
-      className="text-sm"
+      className="text-ui-text"
     />
   );
 }
@@ -765,24 +767,17 @@ function MeasurementInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter value"
-          className="flex-1 text-sm"
+          className="flex-1 text-ui-text"
         />
-        {unit && <span className="text-sm text-fg-3 shrink-0">{unit}</span>}
+        {unit && <span className="text-ui-text text-muted shrink-0">{unit}</span>}
         {result && (
-          <Badge
-            variant="outline"
-            className={
-              result === "PASS"
-                ? "bg-green-500/10 text-green-500 border-green-500/20"
-                : "bg-destructive/10 text-destructive border-destructive/20"
-            }
-          >
+          <Badge status={result === "PASS" ? "ok" : "overbooked"}>
             {result === "PASS" ? "Pass" : "Fail"}
           </Badge>
         )}
       </div>
       {rangeText && (
-        <p className="text-[11px] text-fg-3">{rangeText}</p>
+        <p className="text-micro text-muted">{rangeText}</p>
       )}
     </div>
   );
@@ -808,7 +803,7 @@ function DropdownInput({
         onChange(v, opt?.isFail ?? false);
       }}
     >
-      <SelectTrigger className="text-sm">
+      <SelectTrigger className="text-ui-text">
         <SelectValue placeholder="Select...">
           {selectedOption ? selectedOption.label : "Select..."}
         </SelectValue>
@@ -819,7 +814,7 @@ function DropdownInput({
             <div className="flex items-center gap-2">
               {opt.label}
               {opt.isFail && (
-                <Badge variant="outline" className="text-[10px] px-1 py-0 text-destructive border-destructive/20">
+                <Badge status="overbooked">
                   Fail
                 </Badge>
               )}

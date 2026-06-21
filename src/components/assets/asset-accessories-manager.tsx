@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
-import { Loader2, Plus, X, Cable } from "lucide-react";
+import { Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -134,14 +134,14 @@ export function AssetAccessoriesManager({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Accessories</p>
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <p className="t-overline text-muted">Accessories</p>
+        <Button size="sm" variant="line" onClick={() => setOpen(true)}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Attach
         </Button>
       </div>
 
       {!hasAny ? (
-        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+        <div className="rounded-[var(--r)] border-2 border-dashed border-line-2 p-4 text-center text-ui-text text-muted">
           <Cable className="mx-auto mb-1 h-5 w-5 opacity-60" />
           No accessories attached. Cables, clamps and adaptors attached here travel
           with this asset onto projects and through the warehouse.
@@ -149,35 +149,35 @@ export function AssetAccessoriesManager({
       ) : (
         <ul className="space-y-1.5">
           {childAssets.map((c) => (
-            <li key={c.id} className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground/60 select-none">└─</span>
-              <span className="font-medium">{c.assetTag}</span>
-              <span className="text-muted-foreground">{c.model?.name ?? ""}</span>
-              <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">accessory</span>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeSerial.mutate(c.id)}>
+            <li key={c.id} className="flex items-center gap-2 text-ui-text">
+              <span className="text-faint select-none">└─</span>
+              <span className="t-mono text-ink">{c.assetTag}</span>
+              <span className="text-muted">{c.model?.name ?? ""}</span>
+              <span className="ml-auto text-badge text-muted">accessory</span>
+              <Button size="icon" variant="ghost" className="size-7" onClick={() => removeSerial.mutate(c.id)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </li>
           ))}
           {childBulkItems.map((c) => (
-            <li key={c.id} className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground/60 select-none">└─</span>
-              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {c.allocationMode === "DEDICATED" ? "dedicated" : "ships-with"}
+            <li key={c.id} className="flex items-center gap-2 text-ui-text">
+              <span className="text-faint select-none">└─</span>
+              <span className="font-medium text-ink"><span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+              <span className="text-badge text-muted">
+                {c.allocationMode === "DEDICATED" ? "Dedicated" : "Ships-with"}
               </span>
-              <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">accessory</span>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeBulk.mutate(c.id)}>
+              <span className="ml-auto text-badge text-muted">accessory</span>
+              <Button size="icon" variant="ghost" className="size-7" onClick={() => removeBulk.mutate(c.id)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </li>
           ))}
           {visibleInherited.map((c) => (
-            <li key={`inh-${c.id}`} className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground/60 select-none">└─</span>
-              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">from model</span>
-              <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">accessory</span>
+            <li key={`inh-${c.id}`} className="flex items-center gap-2 text-ui-text">
+              <span className="text-faint select-none">└─</span>
+              <span className="font-medium text-ink"><span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+              <span className="text-badge text-muted">From model</span>
+              <span className="ml-auto text-badge text-muted">accessory</span>
               {/* No X — inherited rows are managed on the Model page. */}
             </li>
           ))}
@@ -191,10 +191,10 @@ export function AssetAccessoriesManager({
           </DialogHeader>
 
           <div className="flex gap-2">
-            <Button size="sm" variant={tab === "serialized" ? "default" : "outline"} onClick={() => setTab("serialized")}>
+            <Button size="sm" variant={tab === "serialized" ? "primary" : "line"} onClick={() => setTab("serialized")}>
               Tracked asset
             </Button>
-            <Button size="sm" variant={tab === "bulk" ? "default" : "outline"} onClick={() => setTab("bulk")}>
+            <Button size="sm" variant={tab === "bulk" ? "primary" : "line"} onClick={() => setTab("bulk")}>
               Bulk item
             </Button>
           </div>
@@ -216,8 +216,7 @@ export function AssetAccessoriesManager({
                 />
               </div>
               <DialogFooter>
-                <Button disabled={!serialId || addSerial.isPending} onClick={() => addSerial.mutate()}>
-                  {addSerial.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button disabled={!serialId} loading={addSerial.isPending} onClick={() => addSerial.mutate()}>
                   Attach
                 </Button>
               </DialogFooter>
@@ -242,13 +241,12 @@ export function AssetAccessoriesManager({
                 <Label htmlFor="acc-qty">Quantity</Label>
                 <Input id="acc-qty" type="number" min={1} value={bulkQty} onChange={(e) => setBulkQty(Number(e.target.value))} />
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted">
                 These are drawn from the shared pool each time this asset goes
                 out, then counted back in on return.
               </p>
               <DialogFooter>
-                <Button disabled={!bulkId || addBulk.isPending} onClick={() => addBulk.mutate()}>
-                  {addBulk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button disabled={!bulkId} loading={addBulk.isPending} onClick={() => addBulk.mutate()}>
                   Attach
                 </Button>
               </DialogFooter>

@@ -66,9 +66,11 @@ export default function AdminOrganizationsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" render={<Link href={`/admin/organizations/${theOrg.id}`} />}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    Manage
+                  <Button size="sm" asChild>
+                    <Link href={`/admin/organizations/${theOrg.id}`}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      Manage
+                    </Link>
                   </Button>
                 </div>
               </div>

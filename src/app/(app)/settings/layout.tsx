@@ -1,7 +1,8 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
   CreditCard,
@@ -23,6 +24,15 @@ import {
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type SettingsPermission =
   | "orgSettings"
@@ -43,10 +53,11 @@ interface SettingsNavSection {
   items: SettingsNavItem[];
 }
 
-// Grouped settings IA — 4 sections with overline labels (DESIGN.md section labels pattern)
+// Grouped settings IA — 4 sections with overline labels (DESIGN.md §5.2 sentence-case
+// section labels). Section labels read as wayfinding, not shouting.
 const settingsNav: SettingsNavSection[] = [
   {
-    label: "ORGANIZATION",
+    label: "Organization",
     items: [
       { title: "General", href: "/settings", icon: Building2, permission: "orgSettings" },
       { title: "Billing", href: "/settings/billing", icon: CreditCard, permission: "orgSettings" },
@@ -56,7 +67,7 @@ const settingsNav: SettingsNavSection[] = [
     ],
   },
   {
-    label: "OPERATIONS",
+    label: "Operations",
     items: [
       { title: "Assets", href: "/settings/assets", icon: Package, permission: "orgSettings" },
       { title: "Custom Fields", href: "/settings/custom-fields", icon: SlidersHorizontal, permission: "orgSettings" },
@@ -67,7 +78,7 @@ const settingsNav: SettingsNavSection[] = [
     ],
   },
   {
-    label: "DOCUMENTS",
+    label: "Documents",
     items: [
       { title: "Documents", href: "/settings/documents", icon: FileText, permission: "document" },
       { title: "Calendars", href: "/settings/calendars", icon: CalendarSync, permission: "orgSettings" },
@@ -75,15 +86,19 @@ const settingsNav: SettingsNavSection[] = [
     ],
   },
   {
-    label: "INTEGRATIONS",
+    label: "Integrations",
     items: [
       { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" },
     ],
   },
 ];
 
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper";
+
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const canReadSettings = useCanDo("orgSettings", "read");
   const canReadMembers = useCanDo("orgMembers", "read");
   const canManageTemplates = useCanDo("document", "manage_templates");
@@ -94,8 +109,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   if (!canReadSettings && !canReadMembers) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <h2 className="t-title">Access Denied</h2>
-        <p className="mt-2 t-body text-fg-3">
+        <h2 className="t-title text-ink">Access denied</h2>
+        <p className="mt-2 t-body text-muted">
           You don&apos;t have permission to access settings.
         </p>
       </div>
@@ -113,7 +128,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
   const orgInitial = activeOrg?.name?.charAt(0)?.toUpperCase() ?? "O";
 
-  // Active-state logic: longest prefix match wins, with "/settings" only active when exact
+  // Active-state logic: longest prefix match wins, with "/settings" only active when exact.
   const allLinks = settingsNav.flatMap((s) => s.items.map((i) => i.href));
   const activeHref = (() => {
     const matches = allLinks
@@ -123,62 +138,96 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return pathname === "/settings" ? "/settings" : null;
   })();
 
-  const activeTitle = settingsNav.flatMap((s) => s.items).find((i) => i.href === activeHref)?.title ?? "Settings";
+  const activeItem = settingsNav.flatMap((s) => s.items).find((i) => i.href === activeHref);
+  const activeTitle = activeItem?.title ?? "Settings";
+
+  // Visible sections (after permission filtering) — shared by the desktop rail and the
+  // mobile jump-to select so they never drift.
+  const visibleSections = settingsNav
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => hasPermission(item.permission)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <div className="space-y-6">
+      {/* Dynamic header — espresso org monogram (DESIGN.md nav §) + active page + org name */}
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+        <div className="flex size-10 items-center justify-center rounded-[var(--r)] bg-paper-2 text-base font-bold text-red shadow-[var(--sh-card)]">
           {orgInitial}
         </div>
-        <div>
-          <h1 className="t-title text-fg">{activeTitle}</h1>
-          <p className="t-body text-fg-3">
-            {activeOrg?.name ?? "Organization"}
-          </p>
+        <div className="min-w-0">
+          <h1 className="t-title text-ink truncate">{activeTitle}</h1>
+          <p className="t-small text-muted truncate">{activeOrg?.name ?? "Organization"}</p>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Settings nav — grouped with overline section labels */}
-        <nav className="md:w-52 shrink-0 md:overflow-x-visible overflow-x-auto pb-2 md:pb-0">
-          <div className="flex md:flex-col gap-1 md:gap-0 md:space-y-4">
-            {settingsNav.map((section) => {
-              const visibleItems = section.items.filter((item) => hasPermission(item.permission));
-              if (visibleItems.length === 0) return null;
-              return (
-                <div key={section.label} className="md:space-y-0.5">
-                  <div className="hidden md:block t-overline text-fg-4 px-3 mb-1">
-                    {section.label}
-                  </div>
-                  <div className="flex md:flex-col gap-1 md:gap-0.5">
-                    {visibleItems.map((item) => {
-                      const isActive = activeHref === item.href;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          className={cn(
-                            "flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors whitespace-nowrap",
-                            isActive
-                              ? "bg-bg-elevated text-fg"
-                              : "text-fg-2 hover:bg-bg-elevated/50 hover:text-fg"
-                          )}
-                        >
-                          <item.icon className="h-4 w-4" />
-                          {item.title}
-                        </Link>
-                      );
-                    })}
-                  </div>
+      {/* Mobile: a jump-to select beats the old horizontal scroll for discoverability */}
+      <div className="md:hidden">
+        <Select value={activeHref ?? undefined} onValueChange={(href) => router.push(href)}>
+          <SelectTrigger aria-label="Jump to settings section">
+            <SelectValue placeholder="Go to…">
+              <span className="flex items-center gap-2">
+                {activeItem ? <activeItem.icon className="size-4 text-muted" /> : null}
+                {activeTitle}
+              </span>
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {visibleSections.map((section) => (
+              <SelectGroup key={section.label}>
+                <SelectLabel className="t-overline text-faint">{section.label}</SelectLabel>
+                {section.items.map((item) => (
+                  <SelectItem key={item.href} value={item.href}>
+                    <span className="flex items-center gap-2">
+                      <item.icon className="size-4 text-muted" />
+                      {item.title}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
+        {/* Desktop settings rail — grouped, sentence-case overlines, sidebar active grammar */}
+        <nav className="hidden shrink-0 md:block md:w-56">
+          <div className="space-y-5">
+            {visibleSections.map((section) => (
+              <div key={section.label} className="space-y-1">
+                <div className="t-overline px-2.5 text-faint">{section.label}</div>
+                <div className="flex flex-col gap-0.5">
+                  {section.items.map((item) => {
+                    const isActive = activeHref === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-[var(--r)] px-2.5 py-2 text-[14px] font-medium transition-colors",
+                          FOCUS,
+                          isActive
+                            ? "bg-red-soft text-red shadow-[var(--sh-card)]"
+                            : "text-ink-2 hover:bg-elev hover:text-ink",
+                        )}
+                      >
+                        <item.icon className="size-4 shrink-0" />
+                        <span className="truncate">{item.title}</span>
+                      </Link>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </nav>
 
         {/* Page content */}
-        <div className="flex-1 max-w-3xl">{children}</div>
+        <div className="min-w-0 flex-1 md:max-w-3xl">{children}</div>
       </div>
     </div>
   );

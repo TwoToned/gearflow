@@ -14,16 +14,18 @@ import {
   Printer,
   PackageCheck,
   PackageX,
+  PackageOpen,
+  Truck,
   Container,
   ClipboardList,
   MoreVertical,
   FileText,
   ChevronDown,
   ExternalLink,
-  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
+import { focusRing } from "@/lib/utils";
 
 import {
   getProjectForWarehouse,
@@ -43,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   Tabs,
@@ -51,7 +54,11 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import {
+  Table,
+  TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -79,10 +86,12 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
-import { BulkCheckInTab } from "@/components/warehouse/bulk-checkin-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
+import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
+import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
   isBulkItem,
@@ -119,7 +128,7 @@ const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -312,8 +321,8 @@ function WarehouseProjectPage({
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
+  const [selectedDeprep, setSelectedDeprep] = useState<Set<string>>(new Set());
   const [selectedIn, setSelectedIn] = useState<Set<string>>(new Set());
-  const [includeAccessories, setIncludeAccessories] = useState(true);
 
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
@@ -1266,10 +1275,18 @@ function WarehouseProjectPage({
     return true;
   });
 
+  // Per-stage counts for the lifecycle stepper (Pick/prep → … → De-prepped).
+  const stageCounts = summarizeWarehouseStages(equipmentItems);
+
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
+    // A returned piece of gear is DONE with the prep half of the flow — it lives
+    // in the Returned / De-prep stage, never back here. (Without this, a returned
+    // item whose prepStatus is no longer PACKED fell through below and reappeared
+    // in Pick/Prep, looking like it had never been sent out.)
+    if (item.status === "RETURNED") return false;
     // Kit parents: show if any children still need prepping
     if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
@@ -1288,23 +1305,25 @@ function WarehouseProjectPage({
     // After prep-splitting, exhausted originals have qty=0 — hide them
     if (item.quantity <= 0) return false;
     if (item.prepStatus === "PACKED") return false;
-    if (item.status === "RETURNED") return true;
     return true;
   });
 
-  // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT)
+  // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT).
+  // Returned gear is excluded — it lives in the De-prep stage, NOT back here
+  // (the "to return it goes back to deploy" confusion).
   const preppedItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
+    if (item.status === "RETURNED") return false;
     // Kit parents: show if any children are prepped but not deployed
     if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
+        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED" || c.status === "RETURNED") return false;
         if (c.prepStatus === "PACKED") return true;
         if (c.kitId && c.childLineItems?.length) {
           return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus === "PACKED"
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.status !== "RETURNED" && gc.prepStatus === "PACKED"
           );
         }
         return false;
@@ -1312,6 +1331,44 @@ function WarehouseProjectPage({
     }
     if (item.quantity <= 0) return false;
     return item.prepStatus === "PACKED";
+  });
+
+  // De-prep: gear that's physically back (RETURNED) but still packed — it needs
+  // return checks and putting back into inventory. Once de-prepped, prepStatus
+  // resets off PACKED and it leaves this list. Mirrors the checkedOutItems shape
+  // so it can flow through the same Deploy-tab rendering in "deprep" mode.
+  const returnedItems = equipmentItems.filter((item) => {
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status === "RETURNED" && c.prepStatus === "PACKED") return true;
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status === "RETURNED" && gc.prepStatus === "PACKED"
+          );
+        }
+        return false;
+      });
+    }
+    return item.status === "RETURNED" && item.prepStatus === "PACKED";
+  });
+
+  // De-prepped: returned gear checked back into inventory (prepStatus reset off
+  // PACKED). Terminal stage — a read-only confirmation list.
+  const deprepedItems = equipmentItems.filter((item) => {
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status === "RETURNED" && gc.prepStatus !== "PACKED"
+          );
+        }
+        return false;
+      });
+    }
+    return item.status === "RETURNED" && item.prepStatus !== "PACKED";
   });
 
   // Keep old name for compatibility with deploy tab selection logic
@@ -1336,6 +1393,8 @@ function WarehouseProjectPage({
 
   const groupedPrep = groupItems(pickPrepItems);
   const groupedOut = groupItems(checkOutItemsList, "deploy");
+  // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
+  const groupedDeprep = groupItems(returnedItems, "deploy");
 
   // Group deploy items by container for visual sectioning
   const deployContainerGroups = useMemo(() => {
@@ -1364,6 +1423,33 @@ function WarehouseProjectPage({
     }
     return groups;
   }, [groupedOut]);
+
+  // Group de-prep items by the container they came back in (visual sectioning).
+  const deprepContainerGroups = useMemo(() => {
+    const groups: Array<{ container: string | null; entries: typeof groupedDeprep }> = [];
+    const containerMap = new Map<string | null, typeof groupedDeprep>();
+
+    for (const entry of groupedDeprep) {
+      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
+      const container = item.prepContainer || null;
+      if (!containerMap.has(container)) {
+        containerMap.set(container, []);
+      }
+      containerMap.get(container)!.push(entry);
+    }
+
+    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a.localeCompare(b);
+    });
+
+    for (const [container, entries] of sorted) {
+      groups.push({ container, entries });
+    }
+    return groups;
+  }, [groupedDeprep]);
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
@@ -1428,6 +1514,22 @@ function WarehouseProjectPage({
     return keys;
   }, [groupedOut]);
 
+  const allDeprepKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const entry of groupedDeprep) {
+      if (entry.kind === "single") {
+        keys.push(entry.item.id);
+      } else if (entry.kind === "serialized-group") {
+        entry.items.forEach((i) => keys.push(i.id));
+      } else if (entry.kind === "kit-group") {
+        keys.push(entry.item.id);
+      } else {
+        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
+      }
+    }
+    return keys;
+  }, [groupedDeprep]);
+
   const allInKeys = useMemo(() => {
     const keys: string[] = [];
     for (const entry of groupedIn) {
@@ -1446,6 +1548,7 @@ function WarehouseProjectPage({
 
   const selectedPrepCount = selectedPrep.size;
   const selectedOutCount = selectedOut.size;
+  const selectedDeprepCount = selectedDeprep.size;
   const selectedInCount = selectedIn.size;
 
   // --- Prep selected items (for manual selection without scanner) ---
@@ -1710,9 +1813,115 @@ function WarehouseProjectPage({
     if (items.length === 0) return;
 
     checkOutMutation
-      .mutateAsync({ items, includeAccessories })
+      // Accessories always cascade with their parent (they're permanently
+      // attached) — there's no longer a warehouse toggle for it.
+      .mutateAsync({ items, includeAccessories: true })
       .then(() => toast.success(`Deployed ${selectedOutCount} items`))
       .catch(() => {});
+  };
+
+  // De-prep selected returned items: run return checks where the model has them,
+  // otherwise deprep straight back into inventory. Drives the De-prep tab.
+  const handleDeprep = (ids: Set<string>) => {
+    if (ids.size === 0) return;
+    const bulkDeprepMap = new Map<string, number>();
+    const directIds: string[] = [];
+    ids.forEach((id) => {
+      if (id.includes(":")) {
+        const lineItemId = id.split(":")[0];
+        bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
+      } else {
+        directIds.push(id);
+      }
+    });
+
+    // Build a RETURN check queue for returned items that have check items on their model.
+    // Items that were never deployed (outbound deprep) or have no check items bypass this
+    // entirely. Damaged items (prepStatus FLAGGED_FAULTY) also skip the second check.
+    const checkQueueBuild: CheckQueueItem[] = [];
+    const directDeprep: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }> = [];
+
+    for (const [lineItemId, count] of bulkDeprepMap) {
+      const li = lineItems.find((l) => l.id === lineItemId);
+      const needsCheck =
+        li?.status === "RETURNED" &&
+        li.prepStatus === "PACKED" &&
+        !!li.model?._count?.modelCheckItems &&
+        li.model._count.modelCheckItems > 0 &&
+        !!li.modelId;
+      if (needsCheck && li) {
+        for (let i = 0; i < count; i++) {
+          checkQueueBuild.push({
+            context: "RETURN",
+            modelId: li.modelId!,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: `${modelDisplayName(li)}${count > 1 ? ` #${i + 1}` : ""}`,
+            lineItemId,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+            fromDeprep: true,
+          });
+        }
+      } else {
+        directDeprep.push({ lineItemId, quantity: count });
+      }
+    }
+
+    for (const id of directIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (li && isKitParent(li)) {
+        // Kit deprep with checks: respects KIT_LEVEL / PER_ITEM via startKitCheckFlow
+        if (li.status === "RETURNED" && startKitCheckFlow(li.kitId!, li, "RETURN", "GOOD", true)) {
+          continue;
+        }
+        directDeprep.push({ lineItemId: id, isKit: true });
+      } else {
+        const needsCheck =
+          li?.status === "RETURNED" &&
+          li.prepStatus === "PACKED" &&
+          !!li.model?._count?.modelCheckItems &&
+          li.model._count.modelCheckItems > 0 &&
+          !!li.modelId;
+        if (needsCheck && li) {
+          checkQueueBuild.push({
+            context: "RETURN",
+            modelId: li.modelId!,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: modelDisplayName(li),
+            lineItemId: id,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+            fromDeprep: true,
+          });
+        } else {
+          directDeprep.push({ lineItemId: id });
+        }
+      }
+    }
+
+    // Fire direct deprep for items without checks
+    for (const d of directDeprep) {
+      if (d.isKit) {
+        deprepKit(projectId, d.lineItemId)
+          .then(() => {
+            toast.success("Kit removed from prep");
+            invalidate();
+          })
+          .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
+      } else if (d.quantity) {
+        deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
+      } else {
+        deprepMutation.mutate(d.lineItemId);
+      }
+    }
+
+    // Start check queue for items that need it
+    if (checkQueueBuild.length > 0) {
+      startCheckQueue(checkQueueBuild);
+    }
+
+    setSelectedDeprep(new Set());
+    setSelectedOut(new Set());
   };
 
   const handleAssetPickerConfirm = () => {
@@ -1947,39 +2156,74 @@ function WarehouseProjectPage({
 
     return (
       <TableRow
-        className="cursor-pointer hover:bg-accent/50"
+        className={`cursor-pointer hover:bg-elev ${focusRing}`}
         onClick={() => toggleExpanded(entry.groupKey)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleExpanded(entry.groupKey);
+          }
+        }}
       >
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox
-            checked={allChecked || someChecked}
-            indeterminate={someChecked && !allChecked}
+            checked={allChecked ? true : someChecked ? "indeterminate" : false}
             onCheckedChange={() => toggleGroupSelection(selection, setSelection, childKeys)}
           />
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-1.5">
-            <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-            <span className="font-medium">{name}</span>
+            <ChevronRight className={`h-4 w-4 text-muted transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+            <span className="font-medium text-ink">{name}</span>
             {hasSubhire && (
-              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
+              <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">Subhire</Badge>
             )}
             {hasSubhire && supplierName && (
-              <span className="text-xs text-fg-3 ml-1">via {supplierName}</span>
+              <span className="text-caption text-muted ml-1">via {supplierName}</span>
             )}
           </div>
         </TableCell>
-        <TableCell className="font-mono text-sm text-fg-3">
+        <TableCell className="t-mono text-muted">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}
         </TableCell>
-        <TableCell className="text-center">{count}</TableCell>
+        <TableCell className="text-center tabular-nums">{count}</TableCell>
         {qtyLabel}
       </TableRow>
     );
   }
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
-  if (!project) return <div className="text-fg-3">Project not found.</div>;
+  if (isLoading) {
+    return (
+      <RequirePermission resource="warehouse" action="read">
+        <div className="space-y-6" aria-busy="true">
+          <Skeleton className="h-12 w-72 rounded-[var(--r)]" />
+          <Skeleton className="h-10 w-full max-w-md rounded-[var(--r)]" />
+          <Skeleton className="h-64 rounded-[var(--r-lg)]" />
+        </div>
+      </RequirePermission>
+    );
+  }
+  if (!project) {
+    return (
+      <RequirePermission resource="warehouse" action="read">
+        <div className="rounded-[var(--r)] border-l-[3px] border-l-t-out bg-card p-4 ring-1 ring-line">
+          <p className="text-ui-text font-medium text-ink">Project not found</p>
+          <p className="text-caption text-muted mt-0.5">
+            It may have been removed, or you don&apos;t have access to it.
+          </p>
+          <Button variant="line" size="sm" className="mt-3" asChild>
+            <Link href="/warehouse">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to warehouse
+            </Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
+  }
 
   return (
     <RequirePermission resource="warehouse" action="read">
@@ -1989,44 +2233,48 @@ function WarehouseProjectPage({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Button variant="ghost" size="icon-sm" render={<Link href="/warehouse" />}>
-              <ArrowLeft className="h-4 w-4" />
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/warehouse" aria-label="Back to warehouse">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
             </Button>
-            <span className="font-mono text-sm text-fg-3">{project.projectNumber}</span>
+            <span className="t-mono text-muted">{project.projectNumber}</span>
             <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
           </div>
-          <h1 className="t-title text-fg">{project.name}</h1>
-          {project.client && <p className="text-fg-3">{project.client.name}</p>}
+          <h1 className="t-title text-ink">{project.name}</h1>
+          {project.client && <p className="text-muted">{project.client.name}</p>}
         </div>
         <div className="flex gap-2">
           {/* Mobile: Pick List button shown prominently */}
-          <Button variant="outline" className="sm:hidden" onClick={() => setPickListOpen(true)}>
+          <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />
-            Pick List
+            Pick list
           </Button>
           {/* Mobile: Pull Slip as secondary */}
-          <Button variant="outline" className="sm:hidden" onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
+          <Button variant="line" size="icon" className="sm:hidden" aria-label="Print pull slip" onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
             <Printer className="h-4 w-4" />
           </Button>
           {/* Desktop: Documents dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" className="hidden sm:flex" />}>
-              <FileText className="mr-2 h-4 w-4" />
-              Documents
-              <ChevronDown className="ml-1 h-3 w-3" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="line" className="hidden sm:flex">
+                <FileText className="mr-2 h-4 w-4" />
+                Documents
+                <ChevronDown className="ml-1 h-3 w-3" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
-                Pull Slip
+                Pull slip
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=delivery-docket`, "_blank")}>
-                Delivery Docket
+                Delivery docket
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=return-sheet`, "_blank")}>
-                Return Sheet
+                Return sheet
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=quote`, "_blank")}>
-                Quote / Proposal
+                Quote / proposal
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=invoice`, "_blank")}>
                 Invoice
@@ -2034,19 +2282,23 @@ function WarehouseProjectPage({
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Desktop: View Project button */}
-          <Button variant="outline" className="hidden sm:flex" render={<Link href={`/projects/${projectId}`} />}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            View Project
+          <Button variant="line" className="hidden sm:flex" asChild>
+            <Link href={`/projects/${projectId}`}>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              View project
+            </Link>
           </Button>
           {/* Desktop: more menu */}
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="icon" className="hidden sm:flex" />}>
-              <MoreVertical className="h-4 w-4" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="line" size="icon" className="hidden sm:flex" aria-label="More actions">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setPickListOpen(true)}>
                 <ClipboardList className="mr-2 h-4 w-4" />
-                Online Pick List
+                Online pick list
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -2059,7 +2311,7 @@ function WarehouseProjectPage({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
-              Pick List
+              Pick list
             </DialogTitle>
           </DialogHeader>
           <div className={`overflow-y-auto ${isMobile ? "flex-1" : "max-h-[70vh]"}`}>
@@ -2068,27 +2320,40 @@ function WarehouseProjectPage({
         </DialogContent>
       </Dialog>
 
+      {/* Lifecycle stepper — where every piece of this job's gear sits, left to
+          right. Returned gear shows in its own stage, never folded back into
+          Prep or Deploy. */}
+      <FadeIn>
+        <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] px-4 py-3">
+          <WarehouseLifecycle counts={stageCounts} />
+        </div>
+      </FadeIn>
+
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="pick-prep">
             <ScanBarcode className="mr-1.5 h-4 w-4" />
-            Pick/Prep ({pickPrepItems.length})
+            Pick ({pickPrepItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Deploy ({preppedItems.length})
+            Prepped ({preppedItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-in">
-            <PackageX className="mr-1.5 h-4 w-4" />
-            Return ({checkedOutItems.length})
+            <Truck className="mr-1.5 h-4 w-4" />
+            Deployed ({checkedOutItems.length})
           </TabsTrigger>
-          <TabsTrigger value="bulk-checkin">
-            <Layers className="mr-1.5 h-4 w-4" />
-            Bulk Check-In
+          <TabsTrigger value="deprep">
+            <PackageX className="mr-1.5 h-4 w-4" />
+            Returned ({returnedItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="deprepped">
+            <PackageOpen className="mr-1.5 h-4 w-4" />
+            De-prepped ({deprepedItems.length})
           </TabsTrigger>
           <TabsTrigger value="close-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Close-Out
+            Close-out
           </TabsTrigger>
         </TabsList>
 
@@ -2138,109 +2403,39 @@ function WarehouseProjectPage({
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}
           toggleExpanded={toggleExpanded}
-          includeAccessories={includeAccessories}
-          onIncludeAccessoriesChange={setIncludeAccessories}
           handleCheckOutSelected={handleCheckOutSelected}
-          handleDeprep={(ids) => {
-            if (ids.size === 0) return;
-            const bulkDeprepMap = new Map<string, number>();
-            const directIds: string[] = [];
-            ids.forEach((id) => {
-              if (id.includes(":")) {
-                const lineItemId = id.split(":")[0];
-                bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
-              } else {
-                directIds.push(id);
-              }
-            });
+          handleDeprep={handleDeprep}
+          deprepIsPending={deprepMutation.isPending}
+          clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
+          clearContainerIsPending={clearContainerMutation.isPending}
+          checkOutIsPending={checkOutMutation.isPending}
+          toggleSelection={toggleSelection}
+          toggleGroupSelection={toggleGroupSelection}
+          toggleAll={toggleAll}
+          renderGroupHeader={renderGroupHeader}
+        />
 
-            // Build a RETURN check queue for returned items that have check items on their model.
-            // Items that were never deployed (outbound deprep) or have no check items bypass this
-            // entirely. Damaged items (prepStatus FLAGGED_FAULTY) also skip the second check.
-            const checkQueueBuild: CheckQueueItem[] = [];
-            const directDeprep: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }> = [];
-
-            for (const [lineItemId, count] of bulkDeprepMap) {
-              const li = lineItems.find((l) => l.id === lineItemId);
-              const needsCheck =
-                li?.status === "RETURNED" &&
-                li.prepStatus === "PACKED" &&
-                !!li.model?._count?.modelCheckItems &&
-                li.model._count.modelCheckItems > 0 &&
-                !!li.modelId;
-              if (needsCheck && li) {
-                for (let i = 0; i < count; i++) {
-                  checkQueueBuild.push({
-                    context: "RETURN",
-                    modelId: li.modelId!,
-                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-                    assetName: `${modelDisplayName(li)}${count > 1 ? ` #${i + 1}` : ""}`,
-                    lineItemId,
-                    assetId: li.assetId || "",
-                    bulkAssetId: li.bulkAssetId || undefined,
-                    fromDeprep: true,
-                  });
-                }
-              } else {
-                directDeprep.push({ lineItemId, quantity: count });
-              }
-            }
-
-            for (const id of directIds) {
-              const li = lineItems.find((l) => l.id === id);
-              if (li && isKitParent(li)) {
-                // Kit deprep with checks: respects KIT_LEVEL / PER_ITEM via startKitCheckFlow
-                if (li.status === "RETURNED" && startKitCheckFlow(li.kitId!, li, "RETURN", "GOOD", true)) {
-                  continue;
-                }
-                directDeprep.push({ lineItemId: id, isKit: true });
-              } else {
-                const needsCheck =
-                  li?.status === "RETURNED" &&
-                  li.prepStatus === "PACKED" &&
-                  !!li.model?._count?.modelCheckItems &&
-                  li.model._count.modelCheckItems > 0 &&
-                  !!li.modelId;
-                if (needsCheck && li) {
-                  checkQueueBuild.push({
-                    context: "RETURN",
-                    modelId: li.modelId!,
-                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-                    assetName: modelDisplayName(li),
-                    lineItemId: id,
-                    assetId: li.assetId || "",
-                    bulkAssetId: li.bulkAssetId || undefined,
-                    fromDeprep: true,
-                  });
-                } else {
-                  directDeprep.push({ lineItemId: id });
-                }
-              }
-            }
-
-            // Fire direct deprep for items without checks
-            for (const d of directDeprep) {
-              if (d.isKit) {
-                deprepKit(projectId, d.lineItemId)
-                  .then(() => {
-                    toast.success("Kit removed from prep");
-                    invalidate();
-                  })
-                  .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
-              } else if (d.quantity) {
-                deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
-              } else {
-                deprepMutation.mutate(d.lineItemId);
-              }
-            }
-
-            // Start check queue for items that need it
-            if (checkQueueBuild.length > 0) {
-              startCheckQueue(checkQueueBuild);
-            }
-
-            setSelectedOut(new Set());
-          }}
+        {/* De-prep Tab — returned gear, run return checks, back to inventory */}
+        <DeployTab
+          mode="deprep"
+          deployScanInputRef={deployScanInputRef}
+          deployScanValue={deployScanValue}
+          setDeployScanValue={setDeployScanValue}
+          handleDeployScanKeyDown={handleDeployScanKeyDown}
+          deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
+          deployScanMutationIsPending={deployScanMutation.isPending}
+          selectedOut={selectedDeprep}
+          setSelectedOut={setSelectedDeprep}
+          selectedOutCount={selectedDeprepCount}
+          allOutKeys={allDeprepKeys}
+          checkOutItemsList={returnedItems}
+          deployContainerGroups={deprepContainerGroups}
+          verifiedKitItems={verifiedKitItems}
+          setVerifiedKitItems={setVerifiedKitItems}
+          expandedGroups={expandedGroups}
+          toggleExpanded={toggleExpanded}
+          handleCheckOutSelected={handleCheckOutSelected}
+          handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
@@ -2281,12 +2476,54 @@ function WarehouseProjectPage({
           renderGroupHeader={renderGroupHeader}
         />
 
-        {/* ================================================================ */}
-        {/* BULK CHECK-IN TAB — accessory totals across the whole project    */}
-        {/* ================================================================ */}
-        <TabsContent value="bulk-checkin">
-          <BulkCheckInTab projectId={projectId} onChanged={refetchProject} />
+        {/* De-prepped Tab — terminal stage, read-only: gear back in inventory */}
+        <TabsContent value="deprepped">
+          <div className="space-y-4 pt-4">
+            {deprepedItems.length === 0 ? (
+              <EmptyState
+                title="Nothing de-prepped yet"
+                description="Gear you deprep on the Returned tab lands here, checked back into inventory."
+              />
+            ) : (
+              <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Asset tag</TableHead>
+                      <TableHead className="text-center w-16">Qty</TableHead>
+                      <TableHead className="w-32">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deprepedItems.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <span className="font-medium text-ink">
+                            {isKitParent(item)
+                              ? item.description || item.kit?.name || "Kit"
+                              : modelDisplayName(item)}
+                          </span>
+                          {isKitParent(item) && (
+                            <Badge status="neutral" className="ml-1.5">Kit</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="t-mono text-muted">
+                          {item.asset?.assetTag || item.bulkAsset?.assetTag || item.kit?.assetTag || "—"}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
+                        <TableCell>
+                          <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         </TabsContent>
+
 
         {/* ================================================================ */}
         {/* CLOSE-OUT TAB                                                    */}
@@ -2305,18 +2542,18 @@ function WarehouseProjectPage({
                 {kitConfirm.action === "deploy" ? "Prep without full verification?" : "Return without full verification?"}
               </DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-fg-3">
-              <span className="font-medium text-fg">{kitConfirm.kitName}</span> has{" "}
-              <span className="font-medium text-fg">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
+            <p className="text-ui-text text-muted">
+              <span className="font-medium text-ink">{kitConfirm.kitName}</span> has{" "}
+              <span className="font-medium text-ink tabular-nums">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
               items verified. You can {kitConfirm.action === "deploy" ? "prep" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "prep" : "return"} everything.
             </p>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" size="sm" onClick={() => setKitConfirm(null)}>
+              <Button variant="line" size="sm" onClick={() => setKitConfirm(null)}>
                 Cancel
               </Button>
               {kitConfirm.verifiedCount > 0 && (
                 <Button
-                  variant="secondary"
+                  variant="line"
                   size="sm"
                   onClick={() => {
                     if (kitConfirm.action === "deploy") {
@@ -2379,15 +2616,15 @@ function WarehouseProjectPage({
       <Dialog open={addPromptOpen} onOpenChange={setAddPromptOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add to Project?</DialogTitle>
+            <DialogTitle>Add to project?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-fg-3">
-            <span className="font-medium text-fg">{addPromptData?.assetName}</span>{" "}
+          <p className="text-ui-text text-muted">
+            <span className="font-medium text-ink">{addPromptData?.assetName}</span>{" "}
             is not on this project. Would you like to add it and check it out?
           </p>
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="line"
               onClick={() => {
                 setAddPromptOpen(false);
                 setAddPromptData(null);
@@ -2398,6 +2635,7 @@ function WarehouseProjectPage({
             </Button>
             <Button
               disabled={quickAddMutation.isPending}
+              loading={quickAddMutation.isPending}
               onClick={() => {
                 if (!addPromptData) return;
                 quickAddMutation.mutate({
@@ -2408,7 +2646,7 @@ function WarehouseProjectPage({
                 });
               }}
             >
-              {quickAddMutation.isPending ? "Adding..." : "Add & Deploy"}
+              Add &amp; deploy
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2418,22 +2656,22 @@ function WarehouseProjectPage({
       <Dialog open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign Assets</DialogTitle>
+            <DialogTitle>Assign assets</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-fg-3">
+            <p className="text-ui-text text-muted">
               Select which specific asset to deploy for each item.
             </p>
             {assetPickerItems.map((pickerItem, idx) => (
               <div key={`${pickerItem.lineItemId}-${idx}`} className="space-y-1.5">
-                <Label className="text-sm font-medium">
+                <Label className="text-ui-text font-medium">
                   {pickerItem.modelName}
                   {assetPickerItems.filter((i) => i.lineItemId === pickerItem.lineItemId).length > 1
                     ? ` #${assetPickerItems.filter((i, j) => i.lineItemId === pickerItem.lineItemId && j <= idx).length}`
                     : ""}
                 </Label>
                 {pickerItem.availableAssets.length === 0 ? (
-                  <p className="text-sm text-destructive">No available assets</p>
+                  <p className="text-ui-text text-t-out">No available assets</p>
                 ) : (
                   <Select
                     value={pickerItem.selectedAssetId}
@@ -2496,10 +2734,10 @@ function WarehouseProjectPage({
                   </Select>
                 )}
                 {pickerItem.accessories && pickerItem.accessories.length > 0 && (
-                  <div className="pl-3 pt-1 space-y-1 border-l border-border/60 ml-1">
-                    <p className="text-xs text-fg-4">Include accessories:</p>
+                  <div className="pl-3 pt-1 space-y-1 border-l border-line ml-1">
+                    <p className="text-caption text-faint">Include accessories:</p>
                     {pickerItem.accessories.map((acc) => (
-                      <label key={acc.id} className="flex items-center gap-2 text-sm text-fg-3 cursor-pointer">
+                      <label key={acc.id} className="flex items-center gap-2 text-ui-text text-muted cursor-pointer">
                         <Checkbox
                           checked={acc.checked}
                           onCheckedChange={() => {
@@ -2526,7 +2764,7 @@ function WarehouseProjectPage({
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssetPickerOpen(false)}>
+            <Button variant="line" onClick={() => setAssetPickerOpen(false)}>
               Cancel
             </Button>
             <Button

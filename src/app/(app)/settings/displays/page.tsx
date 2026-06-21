@@ -325,14 +325,14 @@ export default function DisplaySettingsPage() {
                     {canEdit && (
                       <div className="flex gap-1 shrink-0">
                         <Button
-                          variant="outline"
+                          variant="line"
                           size="icon"
                           onClick={() => openEdit(t)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="outline"
+                          variant="line"
                           size="icon"
                           className="text-destructive hover:text-destructive"
                           onClick={() => setRevokeTarget({ id: t.id, name: t.name })}
@@ -356,9 +356,11 @@ export default function DisplaySettingsPage() {
                   else setCreateOpen(true);
                 }}
               >
-                <DialogTrigger render={<Button variant="outline" />}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Display
+                <DialogTrigger asChild>
+                  <Button variant="line">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Display
+                  </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
@@ -381,7 +383,7 @@ export default function DisplaySettingsPage() {
                           className="font-mono text-xs"
                         />
                         <Button
-                          variant="outline"
+                          variant="line"
                           size="icon"
                           className="shrink-0"
                           onClick={() => {
@@ -394,8 +396,8 @@ export default function DisplaySettingsPage() {
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
-                      <DialogClose render={<Button className="w-full" />}>
-                        Done
+                      <DialogClose asChild>
+                        <Button className="w-full">Done</Button>
                       </DialogClose>
                     </div>
                   ) : (
@@ -422,8 +424,8 @@ export default function DisplaySettingsPage() {
                       </div>
 
                       <div className="flex gap-2 justify-end">
-                        <DialogClose render={<Button variant="outline" />}>
-                          Cancel
+                        <DialogClose asChild>
+                          <Button variant="line">Cancel</Button>
                         </DialogClose>
                         <Button
                           onClick={handleCreate}
@@ -494,7 +496,7 @@ export default function DisplaySettingsPage() {
                         className="font-mono text-xs"
                       />
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="icon"
                         className="shrink-0"
                         onClick={() => {
@@ -516,7 +518,7 @@ export default function DisplaySettingsPage() {
                       </p>
                     )}
                     <Button
-                      variant="outline"
+                      variant="line"
                       size="sm"
                       onClick={() => {
                         if (editingToken) setRegenerateOpen(true);
@@ -534,7 +536,7 @@ export default function DisplaySettingsPage() {
 
                   <div className="flex gap-2 justify-end border-t pt-4">
                     <Button
-                      variant="outline"
+                      variant="line"
                       onClick={() => {
                         setEditingToken(null);
                         setRegeneratedUrl(null);

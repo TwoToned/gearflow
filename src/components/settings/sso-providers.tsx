@@ -84,9 +84,11 @@ export function SSOProviderSection({ providers, loading, canUpdate, providerMeta
 
       {canUpdate && (
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger render={<Button variant="outline" size="sm" />}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Provider
+          <DialogTrigger asChild>
+            <Button variant="line" size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Provider
+            </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -139,8 +141,10 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
         </div>
         {canUpdate && (
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" />}>
-              <MoreVertical className="h-4 w-4" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -186,11 +190,11 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
             Are you sure you want to delete <strong>{displayName}</strong>? Users will no longer be able to sign in via this provider.
           </p>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+            <Button variant="line" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="primary"
               onClick={() => deleteMutation.mutate()}
               disabled={deleteMutation.isPending}
             >

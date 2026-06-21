@@ -143,9 +143,29 @@ Assignment rate is resolved in this order:
 - Falls back to initials (first + last name) when no image
 - **Linked crew members** inherit their profile picture from the linked user account — no separate upload
 
+## Crew Member Form (`/crew/new` + `/crew/[id]/edit`)
+`CrewMemberForm` (`src/components/crew/crew-member-form.tsx`) is built on the
+shared `SmartFormLayout` shell (see [08-assets](./08-assets.md)) — both routes
+render it (edit pre-fills `initialData`, reusing create). Sections: Identity
+(first/last name, type + status `Select`s with sentence-case labels, linked
+platform user via `ComboboxPicker` with auto-fill) → Contact (email, phone) →
+Rates (day/hourly/overtime) → "More details" accordion (department, default role
+via `crewRoleId` picker, DOB, ABN/GST, address, emergency contact, notes, tags).
+Live preview rail: `PersonAvatar` (synced photo if linked) + name + type chip +
+rate line. The `crewRoleId` field already existed in the schema but previously
+had no UI; it is now surfaced as a default-role picker. Same
+`createCrewMember`/`updateCrewMember` actions, `crewMemberSchema`, and `crew`
+create/update permission gates.
+
+## Crew Member Detail Page (`/crew/[id]`)
+- Detail-page bar layout: breadcrumb → **hero** (`PersonAvatar` + name + status indicator + type badge + an Available/Unavailable badge) with inline contact quick-actions (mailto/tel chips, linked-user note) that render **only when present** (calm-by-default, no `—` noise) → edit/delete actions.
+- **At-a-glance strip** below the hero (single surface, vertical dividers, mirrors the project summary strip via the local `GlanceTile`): next shift (date + project), hours this month (approved, calendar-month), active assignments (live count + total), and headline rate (day rate, falling back to hourly, with OT multiplier sub-line). All computed client-side from the already-loaded `assignments` / `timeEntries` / rate fields — empty/zero values render as quiet muted text, never a bare dash.
+- Two-column body unchanged: tabs (Assignments / Availability / Time / Calendar) in `DetailMain`; Contact / Role & department / Rates / Skills / Tags / Availability / Notes / Activity in `DetailSidebar`. Sidebar Role/Department/Rates placeholders now use `text-faint` so missing values recede.
+- Own-profile banner and `crew.read`-or-own-profile access gate are preserved; all dialogs (availability, time entry, delete, regenerate token) and mutations are unchanged.
+
 ## User Account Linking
 - Crew members can be linked to platform users via `userId` field
-- **"Platform Account" is the first card** in the crew member form — selecting a user auto-fills first name, last name, and email
+- **The "Platform account" picker lives in the Identity section** of the crew member form — selecting a user auto-fills first name, last name, and email
 - Linked crew members inherit **name, email, and profile picture** from the user account for display
 - Users already linked to another crew member are filtered out of the picker
 - Linked user shown in crew detail page header with link icon (hidden on own profile)
@@ -185,9 +205,10 @@ Assignment rate is resolved in this order:
 ## Crew Planner
 - 14-day Gantt-style timeline at `/crew/planner`
 - Shows all active crew with their assignments and availability blocks
-- Color-coded cells: primary (assignment), red (unavailable), amber (tentative), green (preferred)
-- Sticky crew name column, scrollable date columns
-- Weekend/today highlighting
+- **At-a-glance strip** above the board (single surface, vertical dividers): crew on roster, booked today, free today, off today — computed client-side from the loaded data
+- **Filter / search bar**: free-text search (name, role, department, project), plus crew-member, project, and availability-status (`Booked` / `Unavailable` / `Tentative` / `Preferred`) Selects. All filtering is **client-side** over the already-loaded planner data — no server round-trip. "N of M shown" counter + Clear button when any filter is active. Picking a project filter highlights matching assignment chips (red ring) and dims non-matching ones; a dedicated "no crew match these filters" empty state appears when filters exclude everyone.
+- Day cells render labelled status **chips** (project number / `N×` / `Off` / `Tent.` / `Pref.`) via `status-colors`, not bare dots: primary red (assignment), `t-out` (unavailable), warn (tentative), ok (preferred). Blank cell = no plans. On-fill text follows §3.7 (`text-white` on the red assignment fill).
+- Sticky crew name column with per-row `Nd` booked-days chip; circular today pill in the header; weekend columns tinted
 - Tooltip on hover showing project details or availability reason
 - Navigation: back/forward by week, "Today" button
 - Sidebar: "Planner" link under Crew
@@ -282,6 +303,7 @@ read permission.
 ## Crew Dashboard (`src/server/crew-dashboard.ts`)
 - Manager/admin/owner only — users with `crew.update` permission see the dashboard; others see the crew table
 - **Stats**: active crew, assignments, pending offers, submitted timesheets, hours (7d), expiring certs
+- **Four list boxes** (pending timesheets, active assignments, upcoming shifts, pending offers) use a shared `DashboardListCard`: fixed header (title + count chip + optional action) over a **height-capped, internally scrolling body** (`max-h-[19rem] overflow-y-auto`). Caps each box so a long list (e.g. lots of pending offers) can't grow to swallow the page and hide its siblings; all four stay balanced. Error / loading / empty states handled inside the card.
 - **Pending Timesheets**: approve/dispute individual or bulk from dashboard
 - **Active Assignments**: links to project detail
 - **Upcoming Shifts**: next 10 scheduled shifts, consecutive shifts for same assignment grouped as date ranges

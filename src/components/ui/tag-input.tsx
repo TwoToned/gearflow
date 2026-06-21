@@ -156,7 +156,7 @@ function TagInput({
         onClick={() => inputRef.current?.focus()}
       >
         {value.map((tag) => (
-          <Badge key={tag} variant="secondary" className="gap-0.5">
+          <Badge key={tag} status="neutral" className="gap-0.5">
             {tag}
             <button
               type="button"

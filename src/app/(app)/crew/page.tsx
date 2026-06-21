@@ -19,10 +19,13 @@ import {
   CheckCircle,
   Plus,
   Download,
-  Loader2,
 } from "lucide-react";
 
+import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { PersonAvatar } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,27 +127,52 @@ function CrewDashboard() {
     return () => window.removeEventListener("slash-command", handler);
   }, []);
 
-  const { data: stats, refetch: refetchStats } = useServerQuery({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useServerQuery({
     queryKey: ["crew-dashboard-stats", orgId],
     queryFn: getCrewDashboardStats,
   });
 
-  const { data: pendingTime, refetch: refetchPendingTime } = useServerQuery({
+  const {
+    data: pendingTime,
+    isLoading: pendingTimeLoading,
+    error: pendingTimeError,
+    refetch: refetchPendingTime,
+  } = useServerQuery({
     queryKey: ["crew-pending-time", orgId],
     queryFn: getPendingTimeEntries,
   });
 
-  const { data: activeAssignments } = useServerQuery({
+  const {
+    data: activeAssignments,
+    isLoading: activeAssignmentsLoading,
+    error: activeAssignmentsError,
+    refetch: refetchActiveAssignments,
+  } = useServerQuery({
     queryKey: ["crew-active-assignments", orgId],
     queryFn: getActiveAssignmentsSummary,
   });
 
-  const { data: pendingOffers, refetch: refetchPendingOffers } = useServerQuery({
+  const {
+    data: pendingOffers,
+    isLoading: pendingOffersLoading,
+    error: pendingOffersError,
+    refetch: refetchPendingOffers,
+  } = useServerQuery({
     queryKey: ["crew-pending-offers", orgId],
     queryFn: getPendingOffers,
   });
 
-  const { data: upcomingShifts } = useServerQuery({
+  const {
+    data: upcomingShifts,
+    isLoading: upcomingShiftsLoading,
+    error: upcomingShiftsError,
+    refetch: refetchUpcomingShifts,
+  } = useServerQuery({
     queryKey: ["crew-upcoming-shifts", orgId],
     queryFn: getUpcomingShifts,
   });
@@ -186,306 +214,332 @@ function CrewDashboard() {
         description="Overview of crew, assignments, and timesheets."
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
-              <Download className="mr-2 h-3.5 w-3.5" />
-              Export Timesheets
+            <Button variant="line" size="sm" onClick={() => setExportOpen(true)}>
+              <Download className="size-5" />
+              Export timesheets
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
-              <Clock className="mr-2 h-3.5 w-3.5" />
-              Log Time
+            <Button variant="line" size="sm" onClick={() => setLogTimeOpen(true)}>
+              <Clock className="size-5" />
+              Log time
             </Button>
-            <Button size="sm" render={<Link href="/crew/new" />}>
-              <Plus className="mr-2 h-3.5 w-3.5" />
-              Add Crew
+            <Button size="sm" asChild>
+              <Link href="/crew/new">
+                <Plus className="size-5" />
+                Add crew
+              </Link>
             </Button>
           </div>
         }
       />
 
-      {/* Stat Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        <StatCard
-          title="Active Crew"
-          value={stats?.totalActive ?? "—"}
-          icon={Users}
-          href="/crew"
-        />
-        <StatCard
-          title="Assignments"
-          value={stats?.activeAssignments ?? "—"}
-          description="Active"
-          icon={Briefcase}
-          href="/crew/planner"
-        />
-        <StatCard
-          title="Pending Offers"
-          value={stats?.pendingOffers ?? "—"}
-          description="Awaiting response"
-          icon={Send}
-          alert={!!stats?.pendingOffers}
-        />
-        <StatCard
-          title="Timesheets"
-          value={stats?.submittedTime ?? "—"}
-          description="Need approval"
-          icon={Clock}
-          alert={!!stats?.submittedTime}
-        />
-        <StatCard
-          title="Hours (7d)"
-          value={stats?.hoursThisWeek != null ? `${stats.hoursThisWeek.toFixed(1)}h` : "—"}
-          description="Approved"
-          icon={Timer}
-        />
-      </div>
+      {/* Stat cards */}
+      {statsError ? (
+        <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+          <p className="text-ui-text text-t-out">Couldn&apos;t load crew stats. Check your connection and try again.</p>
+          <Button variant="line" size="sm" onClick={() => refetchStats()}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard
+            title="Active crew"
+            value={stats?.totalActive ?? "—"}
+            icon={Users}
+            href="/crew"
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Assignments"
+            value={stats?.activeAssignments ?? "—"}
+            description="Active"
+            icon={Briefcase}
+            href="/crew/planner"
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Pending offers"
+            value={stats?.pendingOffers ?? "—"}
+            description="Awaiting response"
+            icon={Send}
+            alert={!!stats?.pendingOffers}
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Timesheets"
+            value={stats?.submittedTime ?? "—"}
+            description="Need approval"
+            icon={Clock}
+            alert={!!stats?.submittedTime}
+            loading={statsLoading}
+          />
+          <StatCard
+            title="Hours (7d)"
+            value={stats?.hoursThisWeek != null ? `${stats.hoursThisWeek.toFixed(1)}h` : "—"}
+            description="Approved"
+            icon={Timer}
+            loading={statsLoading}
+          />
+        </div>
+      )}
 
       {/* Two-column grid */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Pending Timesheets */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Pending Timesheets</h3>
-            {pendingTime && pendingTime.length > 0 && (
+        {/* Pending timesheets */}
+        <DashboardListCard
+          title="Pending timesheets"
+          count={pendingTime?.length}
+          action={
+            pendingTime && pendingTime.length > 0 ? (
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => {
                   const ids = pendingTime.map((e: any) => e.id);
                   approveMutation.mutate(ids);
                 }}
-                disabled={approveMutation.isPending}
+                loading={approveMutation.isPending}
               >
-                <CheckCircle className="mr-2 h-3.5 w-3.5" />
-                Approve All
+                <CheckCircle className="size-5" />
+                Approve all
               </Button>
-            )}
-          </div>
-          {!pendingTime || pendingTime.length === 0 ? (
-            <p className="text-sm text-fg-3">
-              No timesheets awaiting approval.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {pendingTime.map((entry: any) => (
-                <div
-                  key={entry.id}
-                  className="flex items-center justify-between rounded-md border p-3"
+            ) : null
+          }
+          error={pendingTimeError}
+          onRetry={() => refetchPendingTime()}
+          errorMessage="Couldn't load pending timesheets. Check your connection and try again."
+          loading={pendingTimeLoading}
+          isEmpty={!pendingTime || pendingTime.length === 0}
+          emptyText="No timesheets awaiting approval."
+        >
+          {pendingTime?.map((entry: any) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between rounded-[var(--r)] border border-line p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {entry.crewMember?.firstName}{" "}
+                  {entry.crewMember?.lastName}
+                </p>
+                <p className="text-caption text-muted">
+                  {entry.assignment
+                    ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
+                    : entry.description || "General"}
+                  {" · "}
+                  {formatDate(entry.date)}
+                  {" · "}
+                  {entry.startTime}–{entry.endTime}
+                  {entry.totalHours != null &&
+                    ` · ${Number(entry.totalHours).toFixed(1)}h`}
+                </p>
+              </div>
+              <div className="flex gap-1 ml-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-ok hover:bg-ok-soft"
+                  aria-label="Approve timesheet"
+                  title="Approve"
+                  onClick={() => approveMutation.mutate([entry.id])}
+                  disabled={approveMutation.isPending}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {entry.crewMember?.firstName}{" "}
-                      {entry.crewMember?.lastName}
-                    </p>
-                    <p className="text-xs text-fg-3">
-                      {entry.assignment
-                        ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
-                        : entry.description || "General"}
-                      {" · "}
-                      {formatDate(entry.date)}
-                      {" · "}
-                      {entry.startTime}–{entry.endTime}
-                      {entry.totalHours != null &&
-                        ` · ${Number(entry.totalHours).toFixed(1)}h`}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 ml-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-green-500 hover:text-green-600"
-                      onClick={() => approveMutation.mutate([entry.id])}
-                      disabled={approveMutation.isPending}
-                    >
-                      <CheckCircle className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-amber-500 hover:text-amber-600"
-                      onClick={() => disputeMutation.mutate(entry.id)}
-                      disabled={disputeMutation.isPending}
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                  <CheckCircle className="size-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-warn hover:bg-warn-soft"
+                  aria-label="Dispute timesheet"
+                  title="Dispute"
+                  onClick={() => disputeMutation.mutate(entry.id)}
+                  disabled={disputeMutation.isPending}
+                >
+                  <AlertTriangle className="size-5" />
+                </Button>
+              </div>
             </div>
-          )}
-        </div>
+          ))}
+        </DashboardListCard>
 
-        {/* Active Assignments */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Active Assignments</h3>
+        {/* Active assignments */}
+        <DashboardListCard
+          title="Active assignments"
+          count={activeAssignments?.length}
+          action={
             <Link
               href="/crew/planner"
-              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+              className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </div>
-          {!activeAssignments || activeAssignments.length === 0 ? (
-            <p className="text-sm text-fg-3">
-              No active assignments.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {activeAssignments.map((a: any) => (
-                <Link
-                  key={a.id}
-                  href={`/projects/${a.project?.id}`}
-                  className="flex items-center justify-between rounded-md border p-3 hover:bg-bg-elevated/50 transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {a.crewMember?.firstName} {a.crewMember?.lastName}
-                      {a.crewRole && (
-                        <span className="text-fg-3 font-normal">
-                          {" "}
-                          — {a.crewRole.name}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-fg-3">
-                      {a.project?.projectNumber} — {a.project?.name}
-                      {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
-                      {a.startDate && ` · ${formatDate(a.startDate)}`}
-                      {a.endDate && `–${formatDate(a.endDate)}`}
-                    </p>
-                  </div>
-                  <StatusIndicator
-                    category="assignment"
-                    value={a.status}
-                    label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                    variant="pill"
-                  />
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+          }
+          error={activeAssignmentsError}
+          onRetry={() => refetchActiveAssignments()}
+          errorMessage="Couldn't load active assignments. Check your connection and try again."
+          loading={activeAssignmentsLoading}
+          loadingAvatar
+          isEmpty={!activeAssignments || activeAssignments.length === 0}
+          emptyText="No active assignments."
+        >
+          {activeAssignments?.map((a: any) => (
+            <Link
+              key={a.id}
+              href={`/projects/${a.project?.id}`}
+              className={`flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:bg-elev transition-colors ${focusRing}`}
+            >
+              <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {a.crewMember?.firstName} {a.crewMember?.lastName}
+                  {a.crewRole && (
+                    <span className="text-muted font-normal">
+                      {" "}
+                      — {a.crewRole.name}
+                    </span>
+                  )}
+                </p>
+                <p className="text-caption text-muted">
+                  {a.project?.projectNumber} — {a.project?.name}
+                  {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
+                  {a.startDate && ` · ${formatDate(a.startDate)}`}
+                  {a.endDate && `–${formatDate(a.endDate)}`}
+                </p>
+              </div>
+              <StatusIndicator
+                category="assignment"
+                value={a.status}
+                label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                variant="pill"
+              />
+            </Link>
+          ))}
+        </DashboardListCard>
       </div>
 
       {/* Second row */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Upcoming Shifts */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="t-heading text-fg">Upcoming Shifts</h3>
+        {/* Upcoming shifts */}
+        <DashboardListCard
+          title="Upcoming shifts"
+          count={upcomingShifts ? groupShiftsByAssignment(upcomingShifts).length : undefined}
+          action={
             <Link
               href="/crew/planner"
-              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+              className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </div>
-          {!upcomingShifts || upcomingShifts.length === 0 ? (
-            <p className="text-sm text-fg-3">
-              No upcoming shifts scheduled.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {groupShiftsByAssignment(upcomingShifts).map((group: any) => (
-                <div
-                  key={group.key}
-                  className="flex items-center justify-between rounded-md border p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {group.crewMember}
-                      {group.crewRole && (
-                        <span className="text-fg-3 font-normal">
-                          {" "}
-                          — {group.crewRole}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-fg-3">
-                      {group.projectNumber} — {group.projectName}
-                    </p>
-                  </div>
-                  <div className="text-right text-sm shrink-0 ml-2">
-                    <p className="font-mono text-xs">
-                      {group.startDate === group.endDate
-                        ? formatDate(group.startDate)
-                        : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
-                    </p>
-                    <p className="text-xs text-fg-3 font-mono">
-                      {group.callTime || "—"}–{group.endTime || "—"}
-                      {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Pending Offers */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Pending Offers</h3>
-          {!pendingOffers || pendingOffers.length === 0 ? (
-            <p className="text-sm text-fg-3">
-              No pending offers.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {pendingOffers.map((a: any) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between rounded-md border p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {a.crewMember?.firstName} {a.crewMember?.lastName}
-                      {a.crewRole && (
-                        <span className="text-fg-3 font-normal">
-                          {" "}
-                          — {a.crewRole.name}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-fg-3">
-                      {a.project?.projectNumber} — {a.project?.name}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-2">
-                    <StatusIndicator
-                      category="assignment"
-                      value={a.status}
-                      label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                      variant="pill"
-                    />
-                    {a.status === "PENDING" && a.crewMember?.email && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7"
-                        onClick={() => sendOfferMutation.mutate(a.id)}
-                        disabled={sendOfferMutation.isPending}
-                      >
-                        <Send className="mr-1 h-3 w-3" />
-                        Send
-                      </Button>
+          }
+          error={upcomingShiftsError}
+          onRetry={() => refetchUpcomingShifts()}
+          errorMessage="Couldn't load upcoming shifts. Check your connection and try again."
+          loading={upcomingShiftsLoading}
+          loadingAvatar
+          isEmpty={!upcomingShifts || upcomingShifts.length === 0}
+          emptyText="No upcoming shifts scheduled."
+        >
+          {upcomingShifts &&
+            groupShiftsByAssignment(upcomingShifts).map((group: any) => (
+              <div
+                key={group.key}
+                className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+              >
+                <PersonAvatar name={group.crewMember || "?"} className="size-8" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-ui-text font-medium text-ink">
+                    {group.crewMember}
+                    {group.crewRole && (
+                      <span className="text-muted font-normal">
+                        {" "}
+                        — {group.crewRole}
+                      </span>
                     )}
-                  </div>
+                  </p>
+                  <p className="text-caption text-muted">
+                    {group.projectNumber} — {group.projectName}
+                  </p>
                 </div>
-              ))}
+                <div className="text-right shrink-0 ml-2">
+                  <p className="font-mono text-caption tabular-nums text-ink-2">
+                    {group.startDate === group.endDate
+                      ? formatDate(group.startDate)
+                      : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
+                  </p>
+                  <p className="text-caption text-muted font-mono tabular-nums">
+                    {group.callTime || "—"}–{group.endTime || "—"}
+                    {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
+                  </p>
+                </div>
+              </div>
+            ))}
+        </DashboardListCard>
+
+        {/* Pending offers */}
+        <DashboardListCard
+          title="Pending offers"
+          count={pendingOffers?.length}
+          error={pendingOffersError}
+          onRetry={() => refetchPendingOffers()}
+          errorMessage="Couldn't load pending offers. Check your connection and try again."
+          loading={pendingOffersLoading}
+          loadingAvatar
+          isEmpty={!pendingOffers || pendingOffers.length === 0}
+          emptyText="No pending offers."
+        >
+          {pendingOffers?.map((a: any) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+            >
+              <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {a.crewMember?.firstName} {a.crewMember?.lastName}
+                  {a.crewRole && (
+                    <span className="text-muted font-normal">
+                      {" "}
+                      — {a.crewRole.name}
+                    </span>
+                  )}
+                </p>
+                <p className="text-caption text-muted">
+                  {a.project?.projectNumber} — {a.project?.name}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-2">
+                <StatusIndicator
+                  category="assignment"
+                  value={a.status}
+                  label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                  variant="pill"
+                />
+                {a.status === "PENDING" && a.crewMember?.email && (
+                  <Button
+                    variant="line"
+                    size="sm"
+                    onClick={() => sendOfferMutation.mutate(a.id)}
+                    loading={sendOfferMutation.isPending}
+                  >
+                    <Send className="size-5" />
+                    Send
+                  </Button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          ))}
+        </DashboardListCard>
       </div>
 
-      {/* Crew List */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      {/* Crew list */}
+      <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="t-heading text-fg">All Crew Members</h3>
+          <h3 className="text-card-title font-bold text-ink">All crew members</h3>
           <Link
             href="/crew/settings"
-            className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
+            className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
           >
-            Roles & Skills <ArrowRight className="h-3 w-3" />
+            Roles &amp; skills <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
         <CrewTable />
@@ -550,6 +604,110 @@ function groupShiftsByAssignment(shifts: any[]) {
   return groups;
 }
 
+// ─── Dashboard list card ────────────────────────────────────────────────────
+
+/**
+ * A dashboard list card with a fixed header (title + count chip + optional
+ * action) and a height-capped, internally scrollable body. Caps each of the
+ * four crew dashboard boxes so a long list (e.g. lots of pending offers) can't
+ * grow to swallow the page and hide its siblings. Handles the §8 error / loading
+ * / empty states inline so callers only pass their row markup as children.
+ */
+function DashboardListCard({
+  title,
+  count,
+  action,
+  error,
+  onRetry,
+  errorMessage,
+  loading,
+  loadingAvatar,
+  isEmpty,
+  emptyText,
+  children,
+}: {
+  title: string;
+  count?: number;
+  action?: React.ReactNode;
+  error?: unknown;
+  onRetry: () => void;
+  errorMessage: string;
+  loading?: boolean;
+  loadingAvatar?: boolean;
+  isEmpty: boolean;
+  emptyText: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+      <div className="flex items-center justify-between gap-2 mb-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-card-title font-bold text-ink truncate">{title}</h3>
+          {!loading && !error && count != null && count > 0 && (
+            <Badge status="neutral" className="font-mono tabular-nums">
+              {count}
+            </Badge>
+          )}
+        </div>
+        {action}
+      </div>
+      {error ? (
+        <CardErrorNotice message={errorMessage} onRetry={onRetry} />
+      ) : loading ? (
+        <CardRowSkeleton count={3} avatar={loadingAvatar} />
+      ) : isEmpty ? (
+        <p className="text-ui-text text-muted">{emptyText}</p>
+      ) : (
+        // Cap the list body and scroll internally so the four boxes stay
+        // balanced no matter how many rows each holds.
+        <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1 -mr-1 overscroll-contain">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Dashboard card states (§8 loading / error) ─────────────────────────────
+
+/** Skeleton rows mirroring the dashboard list-card row layout. */
+function CardRowSkeleton({ count = 3, avatar = false }: { count?: number; avatar?: boolean }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+        >
+          {avatar && <Skeleton className="size-8 rounded-full" />}
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Left-edge red error notice with retry, for a single failed dashboard query. */
+function CardErrorNotice({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
+      <p className="text-ui-text text-t-out">{message}</p>
+      <Button variant="line" size="sm" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
 // ─── Export Timesheet Dialog ────────────────────────────────────────────────
 
 function ExportTimesheetDialog({
@@ -575,7 +733,7 @@ function ExportTimesheetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Export Timesheets</DialogTitle>
+          <DialogTitle>Export timesheets</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -594,16 +752,16 @@ function ExportTimesheetDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-fg-3">
+          <p className="text-caption text-muted">
             Leave empty to export all time entries.
           </p>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleExport}>
-            <Download className="mr-2 h-3.5 w-3.5" />
+            <Download className="size-5" />
             Export CSV
           </Button>
         </DialogFooter>
@@ -726,25 +884,24 @@ function LogTimeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Log Time</DialogTitle>
+          <DialogTitle>Log time</DialogTitle>
         </DialogHeader>
 
         {/* Step 1: Pick crew members */}
         {step === "pick" ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>Select Crew Members</Label>
+              <Label>Select crew members</Label>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs"
                   onClick={selectedCrewIds.length === (filteredCrew?.length || 0) ? deselectAll : selectAll}
                 >
                   {selectedCrewIds.length === (filteredCrew?.length || 0) && filteredCrew?.length
-                    ? "Deselect All"
-                    : "Select All"}
+                    ? "Deselect all"
+                    : "Select all"}
                 </Button>
               </div>
             </div>
@@ -760,27 +917,29 @@ function LogTimeDialog({
                   <button
                     key={c.id}
                     type="button"
-                    className={`w-full flex items-center gap-3 rounded-md border p-3 text-left transition-colors ${
+                    aria-pressed={isSelected}
+                    className={`w-full flex items-center gap-3 rounded-[var(--r)] border p-3 text-left transition-colors ${focusRing} ${
                       isSelected
-                        ? "bg-primary/10 border-primary/30"
-                        : "hover:bg-accent/50"
+                        ? "bg-red-soft border-red/40"
+                        : "border-line hover:bg-elev"
                     }`}
                     onClick={() => toggleCrewMember(c.id)}
                   >
                     <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                      className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border ${
                         isSelected
-                          ? "bg-primary border-primary text-primary-foreground"
-                          : "border-muted-foreground/30"
+                          ? "bg-red border-red text-white"
+                          : "border-line-2"
                       }`}
                     >
-                      {isSelected && <CheckCircle className="h-3 w-3" />}
+                      {isSelected && <CheckCircle className="size-3" />}
                     </div>
+                    <PersonAvatar name={`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()} className="size-8" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
+                      <p className="text-ui-text font-medium text-ink">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-fg-3">
+                      <p className="text-caption text-muted">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -788,7 +947,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-fg-3 py-4 text-center">
+                <p className="text-ui-text text-muted py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -796,7 +955,7 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
@@ -821,7 +980,7 @@ function LogTimeDialog({
             className="space-y-4"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">
+              <p className="text-ui-text font-medium text-ink">
                 {selectedCrewIds.length === 1
                   ? `${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.firstName} ${crewList?.find((c: any) => c.id === selectedCrewIds[0])?.lastName}`
                   : `${selectedCrewIds.length} crew members selected`}
@@ -840,7 +999,7 @@ function LogTimeDialog({
             <div className="flex gap-2">
               <Button
                 type="button"
-                variant={!isGeneral ? "default" : "outline"}
+                variant={!isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -848,12 +1007,12 @@ function LogTimeDialog({
                   form.setValue("description", "");
                 }}
               >
-                <Briefcase className="mr-2 h-3.5 w-3.5" />
+                <Briefcase className="size-5" />
                 Project
               </Button>
               <Button
                 type="button"
-                variant={isGeneral ? "default" : "outline"}
+                variant={isGeneral ? "primary" : "line"}
                 size="sm"
                 className="flex-1"
                 onClick={() => {
@@ -861,7 +1020,7 @@ function LogTimeDialog({
                   form.setValue("assignmentId", "");
                 }}
               >
-                <Clock className="mr-2 h-3.5 w-3.5" />
+                <Clock className="size-5" />
                 General
               </Button>
             </div>
@@ -906,7 +1065,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-fg-3 rounded-md border p-3">
+                <p className="text-caption text-muted rounded-[var(--r)] border border-line p-3">
                   Project assignment selection is not available for multiple crew members. Each member&apos;s entry will be created without a linked assignment, or switch to General mode.
                 </p>
               )
@@ -922,9 +1081,9 @@ function LogTimeDialog({
 
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Input type="date" {...form.register("date")} />
+              <Input type="date" {...form.register("date")} aria-invalid={!!form.formState.errors.date} />
               {form.formState.errors.date && (
-                <p className="text-xs text-destructive">
+                <p className="text-caption text-t-out">
                   {form.formState.errors.date.message}
                 </p>
               )}
@@ -932,19 +1091,19 @@ function LogTimeDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
-                <Input type="time" {...form.register("startTime")} />
+                <Label>Start time</Label>
+                <Input type="time" {...form.register("startTime")} aria-invalid={!!form.formState.errors.startTime} />
                 {form.formState.errors.startTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.startTime.message}
                   </p>
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
-                <Input type="time" {...form.register("endTime")} />
+                <Label>End time</Label>
+                <Input type="time" {...form.register("endTime")} aria-invalid={!!form.formState.errors.endTime} />
                 {form.formState.errors.endTime && (
-                  <p className="text-xs text-destructive">
+                  <p className="text-caption text-t-out">
                     {form.formState.errors.endTime.message}
                   </p>
                 )}
@@ -972,16 +1131,13 @@ function LogTimeDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Log Time{selectedCrewIds.length > 1 ? ` (${selectedCrewIds.length})` : ""}
+              <Button type="submit" loading={submitting}>
+                Log time{selectedCrewIds.length > 1 ? ` (${selectedCrewIds.length})` : ""}
               </Button>
             </DialogFooter>
           </form>
@@ -1000,6 +1156,7 @@ function StatCard({
   icon: Icon,
   href,
   alert,
+  loading,
 }: {
   title: string;
   value: string | number;
@@ -1007,30 +1164,39 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
   href?: string;
   alert?: boolean;
+  loading?: boolean;
 }) {
   const content = (
     <div
-      className={`rounded-lg bg-bg-surface p-4 surface-ring ${href ? "hover:bg-bg-elevated transition-colors" : ""} ${alert ? "ring-destructive/50" : ""}`}
+      className={`rounded-[var(--r-lg)] bg-card p-4 ring-1 shadow-[var(--sh-card)] ${href ? "hover:bg-elev transition-colors" : ""} ${alert ? "ring-t-out/50" : "ring-line"}`}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium">{title}</span>
+        <span className="text-ui-text font-medium text-ink-2">{title}</span>
         <Icon
-          className={`h-4 w-4 ${alert ? "text-destructive" : "text-fg-3"}`}
+          className={`size-4 ${alert ? "text-t-out" : "text-muted"}`}
         />
       </div>
-      <div
-        className={`t-title t-data ${alert ? "text-destructive" : ""}`}
-      >
-        {value}
-      </div>
+      {loading ? (
+        <Skeleton className="h-7 w-12" />
+      ) : (
+        <div
+          className={`text-section-header font-display font-extrabold tabular-nums ${alert ? "text-t-out" : "text-ink"}`}
+        >
+          {value}
+        </div>
+      )}
       {description && (
-        <p className="text-xs text-fg-3">{description}</p>
+        <p className="text-caption text-muted">{description}</p>
       )}
     </div>
   );
 
   if (href) {
-    return <Link href={href}>{content}</Link>;
+    return (
+      <Link href={href} className={`block rounded-[var(--r-lg)] ${focusRing}`}>
+        {content}
+      </Link>
+    );
   }
   return content;
 }

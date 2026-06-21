@@ -7,7 +7,7 @@
 export const assetStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
   CHECKED_OUT: "Deployed",
-  IN_MAINTENANCE: "In Maintenance",
+  IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   LOST: "Lost",
   RESERVED: "Reserved",
@@ -16,8 +16,8 @@ export const assetStatusLabels: Record<string, string> = {
 // --- Bulk Asset Status ---
 export const bulkAssetStatusLabels: Record<string, string> = {
   ACTIVE: "Active",
-  LOW_STOCK: "Low Stock",
-  OUT_OF_STOCK: "Out of Stock",
+  LOW_STOCK: "Low stock",
+  OUT_OF_STOCK: "Out of stock",
   RETIRED: "Retired",
 };
 
@@ -25,7 +25,7 @@ export const bulkAssetStatusLabels: Record<string, string> = {
 export const kitStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
   CHECKED_OUT: "Deployed",
-  IN_MAINTENANCE: "In Maintenance",
+  IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   INCOMPLETE: "Incomplete",
 };
@@ -38,7 +38,7 @@ export const projectStatusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -58,7 +58,9 @@ export const lineItemStatusLabels: Record<string, string> = {
 // --- Maintenance Status ---
 export const maintenanceStatusLabels: Record<string, string> = {
   SCHEDULED: "Scheduled",
-  IN_PROGRESS: "In Progress",
+  AWAITING_PARTS: "Awaiting parts",
+  IN_PROGRESS: "In progress",
+  QA: "QA",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -67,10 +69,17 @@ export const maintenanceStatusLabels: Record<string, string> = {
 export const maintenanceTypeLabels: Record<string, string> = {
   REPAIR: "Repair",
   PREVENTATIVE: "Preventative",
-  TEST_AND_TAG: "Test & Tag",
+  TEST_AND_TAG: "Test & tag",
   INSPECTION: "Inspection",
   CLEANING: "Cleaning",
-  FIRMWARE_UPDATE: "Firmware Update",
+  FIRMWARE_UPDATE: "Firmware update",
+};
+
+// --- Maintenance Result ---
+export const maintenanceResultLabels: Record<string, string> = {
+  PASS: "Pass",
+  FAIL: "Fail",
+  CONDITIONAL: "Conditional",
 };
 
 // --- Supplier Order Status ---
@@ -85,29 +94,67 @@ export const supplierOrderStatusLabels: Record<string, string> = {
 export const subHireStatusLabels: Record<string, string> = {
   DRAFT: "Draft",
   CONFIRMED: "Confirmed",
-  ON_HIRE: "On Hire",
+  ON_HIRE: "On hire",
   RETURNED: "Returned",
   CANCELLED: "Cancelled",
+};
+
+// --- Test & Tag Status (computed compliance status) ---
+export const testTagStatusLabels: Record<string, string> = {
+  CURRENT: "Current",
+  DUE_SOON: "Due soon",
+  OVERDUE: "Overdue",
+  FAILED: "Failed",
+  NOT_YET_TESTED: "Not tested",
+  RETIRED: "Retired",
+};
+
+// --- Test & Tag Result ---
+export const testTagResultLabels: Record<string, string> = {
+  PASS: "Pass",
+  FAIL: "Fail",
+  NOT_APPLICABLE: "N/A",
+};
+
+// --- Test & Tag Equipment Class ---
+export const equipmentClassLabels: Record<string, string> = {
+  CLASS_I: "Class I",
+  CLASS_II: "Class II",
+  CLASS_II_DOUBLE_INSULATED: "Class II (double insulated)",
+  LEAD_CORD_ASSEMBLY: "Lead / cord assembly",
+};
+
+// --- Test & Tag Appliance Type ---
+export const applianceTypeLabels: Record<string, string> = {
+  APPLIANCE: "Appliance",
+  CORD_SET: "Cord set",
+  EXTENSION_LEAD: "Extension lead",
+  POWER_BOARD: "Power board",
+  RCD_PORTABLE: "RCD (portable)",
+  RCD_FIXED: "RCD (fixed)",
+  THREE_PHASE: "Three phase",
+  MICROWAVE: "Microwave",
+  OTHER: "Other",
 };
 
 // --- Media Type ---
 export const mediaTypeLabels: Record<string, string> = {
   PHOTO: "Photo",
   MANUAL: "Manual",
-  SPEC_SHEET: "Spec Sheet",
-  WIRING_DIAGRAM: "Wiring Diagram",
+  SPEC_SHEET: "Spec sheet",
+  WIRING_DIAGRAM: "Wiring diagram",
   DOCUMENT: "Document",
   OTHER: "Other",
 };
 
 // --- Project Media Type ---
 export const projectMediaTypeLabels: Record<string, string> = {
-  FLOOR_PLAN: "Floor Plan",
+  FLOOR_PLAN: "Floor plan",
   QUOTE: "Quote",
   INVOICE: "Invoice",
-  SITE_MAP: "Site Map",
-  RISK_ASSESSMENT: "Risk Assessment",
-  CLIENT_BRIEF: "Client Brief",
+  SITE_MAP: "Site map",
+  RISK_ASSESSMENT: "Risk assessment",
+  CLIENT_BRIEF: "Client brief",
   CAD: "CAD",
   CONTRACT: "Contract",
   PHOTO: "Photo",
@@ -128,7 +175,7 @@ export const clientTypeLabels: Record<string, string> = {
   COMPANY: "Company",
   INDIVIDUAL: "Individual",
   VENUE: "Venue",
-  PRODUCTION_COMPANY: "Production Company",
+  PRODUCTION_COMPANY: "Production company",
 };
 
 // --- Location Type ---
@@ -143,7 +190,7 @@ export const locationTypeLabels: Record<string, string> = {
 export const crewMemberStatusLabels: Record<string, string> = {
   ACTIVE: "Active",
   INACTIVE: "Inactive",
-  ON_LEAVE: "On Leave",
+  ON_LEAVE: "On leave",
   ARCHIVED: "Archived",
 };
 
@@ -175,23 +222,23 @@ export const assignmentStatusLabels: Record<string, string> = {
 
 // --- Project Phase ---
 export const phaseLabels: Record<string, string> = {
-  BUMP_IN: "Bump In",
+  BUMP_IN: "Bump in",
   EVENT: "Event",
-  BUMP_OUT: "Bump Out",
+  BUMP_OUT: "Bump out",
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
   SETUP: "Setup",
   REHEARSAL: "Rehearsal",
-  FULL_DURATION: "Full Duration",
+  FULL_DURATION: "Full duration",
 };
 
 // --- Shift Status ---
 export const shiftStatusLabels: Record<string, string> = {
   SCHEDULED: "Scheduled",
-  IN_PROGRESS: "In Progress",
+  IN_PROGRESS: "In progress",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
-  NO_SHOW: "No Show",
+  NO_SHOW: "No show",
 };
 
 // --- Time Entry Status ---
@@ -211,12 +258,12 @@ export const availabilityTypeLabels: Record<string, string> = {
 };
 
 /**
- * Generic fallback: converts ANY_ENUM_VALUE to "Any Enum Value".
- * Use the specific label maps above when possible.
+ * Generic fallback: converts ANY_ENUM_VALUE to sentence case "Any enum value"
+ * (§5.2 — capitalise the first word only). Use the specific label maps above
+ * when possible.
  */
 export function formatLabel(value: string): string {
-  return value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
+  const words = value.replace(/_/g, " ").toLowerCase().trim();
+  if (!words) return "";
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

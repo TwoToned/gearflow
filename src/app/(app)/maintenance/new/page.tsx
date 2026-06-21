@@ -1,25 +1,43 @@
+"use client";
+
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 import { MaintenanceForm } from "@/components/maintenance/maintenance-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 export default function NewMaintenancePage() {
   return (
-    <FadeIn>
-      <div className="space-y-6">
-        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-          <Link href="/maintenance" className="hover:text-fg transition-colors">Maintenance</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-fg">New Record</span>
+    <RequirePermission resource="maintenance" action="create">
+      <FadeIn>
+        <div className="mx-auto max-w-3xl space-y-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/maintenance" />}>Maintenance</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>New record</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div>
+            <h1 className="t-title text-ink">New maintenance record</h1>
+            <p className="t-body text-muted">
+              Log a repair, inspection, or other maintenance work.
+            </p>
+          </div>
+          <MaintenanceForm />
         </div>
-        <div>
-          <h1 className="t-title text-fg">New Maintenance Record</h1>
-          <p className="text-fg-3">
-            Log a repair, inspection, or other maintenance work.
-          </p>
-        </div>
-        <MaintenanceForm />
-      </div>
-    </FadeIn>
+      </FadeIn>
+    </RequirePermission>
   );
 }

@@ -9,10 +9,10 @@ interface PlatformBranding {
 
 async function fetchPlatformBranding(): Promise<PlatformBranding> {
   const res = await fetch("/api/platform-name");
-  if (!res.ok) return { name: "GearFlow", icon: null };
+  if (!res.ok) return { name: "RVLT Flow", icon: null };
   const data = await res.json();
   return {
-    name: data.name || "GearFlow",
+    name: data.name || "RVLT Flow",
     icon: data.icon || null,
   };
 }
@@ -40,10 +40,10 @@ export const refreshPlatformBranding = () => resource.refresh(STORE_KEY);
 
 export function usePlatformName(): string {
   const { data } = resource.use(STORE_KEY);
-  return data?.name || "GearFlow";
+  return data?.name || "RVLT Flow";
 }
 
 export function usePlatformBranding(): PlatformBranding {
   const { data } = resource.use(STORE_KEY);
-  return data || { name: "GearFlow", icon: null };
+  return data || { name: "RVLT Flow", icon: null };
 }

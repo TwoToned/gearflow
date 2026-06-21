@@ -153,24 +153,24 @@ export default function AssetsSettingsPage() {
           <div className="space-y-6">
             <FormSection title="Categories" description="Organize your equipment into categories and subcategories.">
               <div>
-                <Button variant="outline" render={<Link href="/assets/categories" />}>
-                  Manage Categories
+                <Button variant="line" asChild>
+                  <Link href="/assets/categories">Manage Categories</Link>
                 </Button>
               </div>
             </FormSection>
 
             <FormSection title="Suppliers" description="Track your equipment suppliers, vendor contacts, and procurement partners.">
               <div>
-                <Button variant="outline" render={<Link href="/suppliers" />}>
-                  Manage Suppliers
+                <Button variant="line" asChild>
+                  <Link href="/suppliers">Manage Suppliers</Link>
                 </Button>
               </div>
             </FormSection>
 
             <FormSection title="Locations" description="Manage warehouses, venues, and storage locations.">
               <div>
-                <Button variant="outline" render={<Link href="/locations" />}>
-                  Manage Locations
+                <Button variant="line" asChild>
+                  <Link href="/locations">Manage Locations</Link>
                 </Button>
               </div>
             </FormSection>

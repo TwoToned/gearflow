@@ -88,7 +88,7 @@ export default function InviteAcceptPage({
           <h2 className="text-lg font-semibold">Cannot Accept Invitation</h2>
           <p className="text-sm text-fg-3">{error}</p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/login")}>
+        <Button variant="line" onClick={() => router.push("/login")}>
           Go to Login
         </Button>
       </div>
@@ -116,12 +116,8 @@ export default function InviteAcceptPage({
           >
             Sign in
           </Button>
-          <Button
-            variant="outline"
-            className="w-full"
-            render={<Link href={`/register?invite=${id}`} />}
-          >
-            Create an account
+          <Button variant="line" className="w-full" asChild>
+            <Link href={`/register?invite=${id}`}>Create an account</Link>
           </Button>
         </div>
       </div>
@@ -151,7 +147,7 @@ export default function InviteAcceptPage({
           Accept Invitation
         </Button>
         <Button
-          variant="outline"
+          variant="line"
           className="w-full"
           onClick={() => router.push("/dashboard")}
         >

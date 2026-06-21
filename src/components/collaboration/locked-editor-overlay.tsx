@@ -50,7 +50,7 @@ export function LockedEditorOverlay({ lockState, onTakeover, className }: Locked
         {isStale && onTakeover && (
           <Button
             size="sm"
-            variant="outline"
+            variant="line"
             className="mt-2 h-7 text-xs border-amber-300 hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/40"
             onClick={onTakeover}
           >

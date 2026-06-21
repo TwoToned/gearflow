@@ -8,10 +8,17 @@
  * Color intents map to CSS custom properties from DESIGN.md:
  *   success → --success / --success-subtle
  *   warning → --warning / --warning-subtle
- *   error   → --error   / --error-subtle
+ *   error   → --error   / --error-subtle  (tinted red — problem state)
  *   info    → --info    / --info-subtle
  *   neutral → --fg-3    / --bg-inset
- *   primary → --primary / --teal-subtle
+ *   primary → --red (solid fill — live/active/in-use state)
+ *
+ * Red disambiguation (DESIGN.md §1) — RVLT token names:
+ *   primary pill = bg-red text-white                (solid red = LIVE/ACTIVE)
+ *   error pill   = bg-out-soft text-t-out            (tinted red = PROBLEM)
+ *   --red = #E0363D (primary accent)
+ *   --t-out = #F26F73 (overdue/timed-out semantic, lighter red)
+ *   --out-soft = rgba(224,54,61,.18) (subtle red tint for error bg)
  */
 
 export type ColorIntent = "success" | "warning" | "error" | "info" | "neutral" | "primary";
@@ -23,41 +30,43 @@ export const intentStyles: Record<ColorIntent, {
   pill: string;
   bg: string;
 }> = {
+  // RVLT token names: --ok (green), --warn (amber), --red/--t-out (red),
+  // --blue (info), --rep (neutral/muted), --red (primary/live)
   success: {
-    dot: "bg-success",
-    text: "text-success",
-    pill: "bg-success-subtle text-success",
-    bg: "bg-success-subtle",
+    dot: "bg-ok",
+    text: "text-ok",
+    pill: "bg-ok-soft text-ok",
+    bg: "bg-ok-soft",
   },
   warning: {
-    dot: "bg-warning",
-    text: "text-warning",
-    pill: "bg-warning-subtle text-warning",
-    bg: "bg-warning-subtle",
+    dot: "bg-warn",
+    text: "text-warn",
+    pill: "bg-warn-soft text-warn",
+    bg: "bg-warn-soft",
   },
   error: {
-    dot: "bg-error",
-    text: "text-error",
-    pill: "bg-error-subtle text-error",
-    bg: "bg-error-subtle",
+    dot: "bg-t-out",
+    text: "text-t-out",
+    pill: "bg-out-soft text-t-out",
+    bg: "bg-out-soft",
   },
   info: {
-    dot: "bg-info",
-    text: "text-info",
-    pill: "bg-info-subtle text-info",
-    bg: "bg-info-subtle",
+    dot: "bg-blue",
+    text: "text-blue",
+    pill: "bg-blue-soft text-blue",
+    bg: "bg-blue-soft",
   },
   neutral: {
-    dot: "bg-fg-3",
-    text: "text-fg-3",
-    pill: "bg-bg-inset text-fg-3",
-    bg: "bg-bg-inset",
+    dot: "bg-rep",
+    text: "text-rep",
+    pill: "bg-rep-soft text-rep",
+    bg: "bg-rep-soft",
   },
   primary: {
-    dot: "bg-primary",
-    text: "text-primary",
-    pill: "bg-teal-subtle text-primary",
-    bg: "bg-teal-subtle",
+    dot: "bg-red",
+    text: "text-red",
+    pill: "bg-red text-white",
+    bg: "bg-red-soft",
   },
 };
 
@@ -112,9 +121,19 @@ const lineItemStatusIntent: Record<string, ColorIntent> = {
 
 const maintenanceStatusIntent: Record<string, ColorIntent> = {
   SCHEDULED: "info",
-  IN_PROGRESS: "warning",
+  AWAITING_PARTS: "warning",
+  IN_PROGRESS: "primary", // §1: active work = live red
+  QA: "warning",
   COMPLETED: "success",
   CANCELLED: "error",
+};
+
+// Maintenance work-order result (MaintenanceResult enum). §1: a FAIL is a
+// problem (t-out/error), a CONDITIONAL is a caution (warning), a PASS is good.
+const maintenanceResultIntent: Record<string, ColorIntent> = {
+  PASS: "success",
+  FAIL: "error",
+  CONDITIONAL: "warning",
 };
 
 const supplierOrderStatusIntent: Record<string, ColorIntent> = {
@@ -156,6 +175,43 @@ const assignmentStatusIntent: Record<string, ColorIntent> = {
   CONFIRMED: "success",
   CANCELLED: "error",
   COMPLETED: "success",
+};
+
+// Crew availability windows (CrewAvailabilityType enum). Used by the crew planner
+// board cells. UNAVAILABLE = a hard block (problem/error tint), TENTATIVE = soft
+// (warning), PREFERRED = good-to-book (success).
+const availabilityTypeIntent: Record<string, ColorIntent> = {
+  UNAVAILABLE: "error",
+  TENTATIVE: "warning",
+  PREFERRED: "success",
+};
+
+// Test & Tag compliance status (computed per-asset). §1: OVERDUE/FAILED are a
+// problem (t-out/error), DUE_SOON is a caution (warning), a CURRENT/valid test
+// is success (ok). NOT_YET_TESTED + RETIRED are neutral.
+const testTagStatusIntent: Record<string, ColorIntent> = {
+  CURRENT: "success",
+  DUE_SOON: "warning",
+  OVERDUE: "error",
+  FAILED: "error",
+  NOT_YET_TESTED: "neutral",
+  RETIRED: "neutral",
+};
+
+// Test & Tag test result (TestResult enum). §1: a FAIL is a problem (t-out/error),
+// a PASS is good (ok), NOT_APPLICABLE is neutral.
+const testTagResultIntent: Record<string, ColorIntent> = {
+  PASS: "success",
+  FAIL: "error",
+  NOT_APPLICABLE: "neutral",
+};
+
+const serviceStatusIntent: Record<string, ColorIntent> = {
+  PLANNED: "neutral",
+  CONFIRMED: "info",
+  IN_PROGRESS: "primary",
+  COMPLETED: "success",
+  CANCELLED: "error",
 };
 
 const shiftStatusIntent: Record<string, ColorIntent> = {
@@ -228,10 +284,13 @@ export type StatusCategory =
   | "project"
   | "lineItem"
   | "maintenance"
+  | "maintenanceResult"
   | "supplierOrder"
   | "condition"
   | "crewMember"
   | "assignment"
+  | "availabilityType"
+  | "service"
   | "shift"
   | "timeEntry"
   | "clientType"
@@ -239,7 +298,9 @@ export type StatusCategory =
   | "memberRole"
   | "activity"
   | "notification"
-  | "subHire";
+  | "subHire"
+  | "testTag"
+  | "testTagResult";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -248,10 +309,13 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   project: projectStatusIntent,
   lineItem: lineItemStatusIntent,
   maintenance: maintenanceStatusIntent,
+  maintenanceResult: maintenanceResultIntent,
   supplierOrder: supplierOrderStatusIntent,
   condition: conditionIntent,
   crewMember: crewMemberStatusIntent,
   assignment: assignmentStatusIntent,
+  availabilityType: availabilityTypeIntent,
+  service: serviceStatusIntent,
   shift: shiftStatusIntent,
   timeEntry: timeEntryStatusIntent,
   clientType: clientTypeIntent,
@@ -260,6 +324,8 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   activity: activityActionIntent,
   notification: notificationSeverityIntent,
   subHire: subHireStatusIntent,
+  testTag: testTagStatusIntent,
+  testTagResult: testTagResultIntent,
 };
 
 /**

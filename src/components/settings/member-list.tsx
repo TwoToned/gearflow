@@ -200,7 +200,7 @@ export function MemberList() {
                     label={display.label}
                     variant="pill"
                   />
-                  <Badge variant="secondary" className="text-xs">
+                  <Badge status="neutral" className="text-xs">
                     Pending
                   </Badge>
                   <NotViewer>

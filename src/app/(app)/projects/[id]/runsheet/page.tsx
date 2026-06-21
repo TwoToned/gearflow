@@ -19,9 +19,11 @@ import {
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PersonAvatar } from "@/components/ui/avatar";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 
 const SERVICE_TYPE_ICONS: Record<string, typeof Truck> = {
   DELIVERY: Truck,
@@ -35,8 +37,8 @@ const SERVICE_TYPE_ICONS: Record<string, typeof Truck> = {
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
+  BUMP_IN: "Bump in",
+  BUMP_OUT: "Bump out",
   LABOUR: "Labour",
   MISC: "Misc",
 };
@@ -124,24 +126,26 @@ export default function RunsheetPage({
   const today = new Date().toISOString().slice(0, 10);
 
   return (
+    <RequirePermission resource="project" action="read">
     <FadeIn>
       <div className="mx-auto max-w-lg px-4 pb-safe">
         {/* Header — compact, back arrow + project info */}
-        <div className="sticky top-0 z-10 -mx-4 bg-bg-base/95 backdrop-blur-sm px-4 pb-3 pt-4 border-b border-border">
+        <div className="sticky top-0 z-10 -mx-4 bg-paper px-4 pb-3 pt-4 border-b border-line">
           <div className="flex items-center gap-3">
             <Link
               href={`/projects/${id}`}
-              className="flex h-10 w-10 items-center justify-center rounded-md hover:bg-bg-inset transition-colors"
+              aria-label="Back to project"
+              className={cn("flex h-11 w-11 items-center justify-center rounded-[var(--r)] hover:bg-paper-2 transition-colors", focusRing)}
             >
-              <ArrowLeft className="h-5 w-5 text-fg-3" />
+              <ArrowLeft className="h-5 w-5 text-muted" />
             </Link>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base font-bold text-fg truncate">
+              <h1 className="text-card-title font-bold text-ink truncate">
                 {project?.name ?? (
                   <Skeleton className="inline-block h-4 w-36 max-w-full align-middle rounded" />
                 )}
               </h1>
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 {project ? (
                   <>
                     {project.projectNumber}
@@ -160,9 +164,9 @@ export default function RunsheetPage({
               href={`https://www.google.com/maps/dir/?api=1&destination=${(project.location as { latitude: number }).latitude},${(project.location as { longitude: number }).longitude}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 flex items-center gap-2 rounded-md bg-bg-inset px-3 py-2.5 text-sm text-fg-2 active:bg-bg-surface"
+              className={cn("mt-2 flex items-center gap-2 rounded-[var(--r)] bg-paper-2 px-3 py-2.5 text-ui-text text-ink-2 active:bg-card", focusRing)}
             >
-              <MapPin className="h-4 w-4 text-teal-500 shrink-0" />
+              <MapPin className="h-4 w-4 text-link shrink-0" />
               <span className="truncate">
                 {(project.location as { address?: string }).address || (project.location as { name: string }).name}
               </span>
@@ -188,9 +192,9 @@ export default function RunsheetPage({
         {/* Empty state */}
         {!isLoading && dateGroups.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Clock className="h-10 w-10 text-fg-4 mb-3" />
-            <p className="text-sm font-medium text-fg-2">No services scheduled</p>
-            <p className="text-xs text-fg-3 mt-1">
+            <Clock className="h-10 w-10 text-muted mb-3" />
+            <p className="text-ui-text font-medium text-ink-2">No services scheduled</p>
+            <p className="text-caption text-muted mt-1">
               Generate services from the project detail page.
             </p>
           </div>
@@ -206,19 +210,19 @@ export default function RunsheetPage({
                   {/* Date header */}
                   <div className="mb-3 flex items-center gap-2">
                     {isToday && (
-                      <span className="rounded-sm bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-500">
+                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red">
                         Today
                       </span>
                     )}
                     <span
                       className={cn(
                         "t-overline",
-                        isToday ? "text-teal-500" : "text-fg-3"
+                        isToday ? "text-red" : "text-muted"
                       )}
                     >
                       {group.dateLong}
                     </span>
-                    <div className="h-px flex-1 bg-border" />
+                    <div className="h-px flex-1 bg-line" />
                   </div>
 
                   {/* Service cards */}
@@ -228,23 +232,23 @@ export default function RunsheetPage({
                       return (
                         <div
                           key={service.id}
-                          className="rounded-md border border-border bg-bg-surface p-3.5"
+                          className="rounded-[var(--r)] border border-line bg-card p-3.5"
                         >
                           {/* Type + title + status */}
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
-                              <Icon className="h-4 w-4 text-fg-3 shrink-0" />
+                              <Icon className="h-4 w-4 text-muted shrink-0" />
                               <div className="min-w-0">
-                                <span className="text-sm font-semibold text-fg truncate block">
+                                <span className="text-ui-text font-semibold text-ink truncate block">
                                   {service.title || SERVICE_TYPE_LABELS[service.type]}
                                 </span>
-                                <span className="text-[11px] text-fg-3">
+                                <span className="text-[11px] text-muted">
                                   {SERVICE_TYPE_LABELS[service.type]}
                                 </span>
                               </div>
                             </div>
                             <StatusIndicator
-                              category="assignment"
+                              category="service"
                               value={service.status}
                               label={SERVICE_STATUS_LABELS[service.status] || service.status}
                             />
@@ -252,8 +256,8 @@ export default function RunsheetPage({
 
                           {/* Time */}
                           {(service.startTime || service.endTime) && (
-                            <div className="mt-2 flex items-center gap-1.5 text-sm text-fg-2">
-                              <Clock className="h-3.5 w-3.5 text-fg-3" />
+                            <div className="mt-2 flex items-center gap-1.5 text-ui-text text-ink-2">
+                              <Clock className="h-3.5 w-3.5 text-muted" />
                               <span className="tabular-nums">
                                 {formatTime(service.startTime)}
                                 {service.startTime && service.endTime && " – "}
@@ -264,7 +268,7 @@ export default function RunsheetPage({
 
                           {/* Address */}
                           {service.address && (
-                            <div className="mt-1.5 flex items-start gap-1.5 text-sm text-fg-3">
+                            <div className="mt-1.5 flex items-start gap-1.5 text-ui-text text-muted">
                               <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                               <span>{service.address}</span>
                             </div>
@@ -272,17 +276,17 @@ export default function RunsheetPage({
 
                           {/* Notes */}
                           {service.notes && (
-                            <p className="mt-2 text-xs text-fg-3 leading-relaxed border-l-2 border-border pl-2">
+                            <p className="mt-2 text-caption text-muted leading-relaxed border-l-2 border-line pl-2">
                               {service.notes}
                             </p>
                           )}
 
                           {/* Crew */}
                           {service.crewAssignments.length > 0 && (
-                            <div className="mt-3 border-t border-border pt-2.5">
+                            <div className="mt-3 border-t border-line pt-2.5">
                               <div className="flex items-center gap-1.5 mb-2">
-                                <Users className="h-3 w-3 text-fg-4" />
-                                <span className="t-overline text-fg-4">
+                                <Users className="h-3 w-3 text-faint" />
+                                <span className="t-overline text-faint">
                                   Crew ({service.crewAssignments.length})
                                 </span>
                               </div>
@@ -293,18 +297,12 @@ export default function RunsheetPage({
                                     className="flex items-center justify-between"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <div className="h-6 w-6 rounded-full bg-bg-inset flex items-center justify-center text-[10px] font-medium text-fg-3 shrink-0">
-                                        {ca.crewMember.image ? (
-                                          <img
-                                            src={ca.crewMember.image}
-                                            alt=""
-                                            className="h-6 w-6 rounded-full object-cover"
-                                          />
-                                        ) : (
-                                          `${ca.crewMember.firstName.charAt(0)}${ca.crewMember.lastName.charAt(0)}`
-                                        )}
-                                      </div>
-                                      <span className="text-sm text-fg">
+                                      <PersonAvatar
+                                        name={`${ca.crewMember.firstName} ${ca.crewMember.lastName}`}
+                                        src={ca.crewMember.image ?? undefined}
+                                        className="size-6 border-0"
+                                      />
+                                      <span className="text-ui-text text-ink">
                                         {ca.crewMember.firstName} {ca.crewMember.lastName}
                                       </span>
                                     </div>
@@ -331,15 +329,15 @@ export default function RunsheetPage({
 
         {/* Site contact */}
         {project?.siteContactName && (
-          <div className="mt-6 rounded-md border border-border bg-bg-surface p-3.5">
-            <div className="t-overline text-fg-4 mb-2">
-              Site Contact
+          <div className="mt-6 rounded-[var(--r)] border border-line bg-card p-3.5">
+            <div className="t-overline text-faint mb-2">
+              Site contact
             </div>
-            <p className="text-sm font-medium text-fg">{project.siteContactName}</p>
+            <p className="text-ui-text font-medium text-ink">{project.siteContactName}</p>
             {project.siteContactPhone && (
               <a
                 href={`tel:${project.siteContactPhone}`}
-                className="mt-1 flex items-center gap-2 text-sm text-teal-500 active:text-teal-400"
+                className={cn("mt-1 flex items-center gap-2 text-ui-text text-link active:text-link/80 rounded-sm", focusRing)}
               >
                 <Phone className="h-3.5 w-3.5" />
                 {project.siteContactPhone}
@@ -352,5 +350,6 @@ export default function RunsheetPage({
         <div className="h-8" />
       </div>
     </FadeIn>
+    </RequirePermission>
   );
 }

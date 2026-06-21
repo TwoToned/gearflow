@@ -206,22 +206,21 @@ export function FormPageLayout({
 // ─── Section Header ─────────────────────────────────────────────
 
 interface SectionHeaderProps {
-  /** Label text (overline style, uppercase) */
+  /** Label text (overline style, sentence case — never uppercase, §5.2) */
   label: string;
   className?: string;
 }
 
 /**
- * Section header with teal label chip + extending line.
- * Per DESIGN.md: 10px/700/uppercase teal text on teal-subtle bg, with a
- * flex:1 line extending to the right.
+ * Section header — calm muted overline (the DESIGN §5.2 *default* treatment,
+ * Linear/Plane-style grey labels). Reserve the red/Kalam "prominent" label for
+ * the `ui/section-header.tsx` prominent variant — routine section dividers stay
+ * quiet so a sidebar of them reads calm, not loud.
  */
 export function SectionHeader({ label, className }: SectionHeaderProps) {
   return (
-    <div className={cn("section-label", className)}>
-      <span className="t-overline shrink-0 rounded-sm bg-teal-subtle px-2 py-0.5 text-primary">
-        {label}
-      </span>
+    <div className={className}>
+      <span className="t-overline text-muted">{label}</span>
     </div>
   );
 }

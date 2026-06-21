@@ -69,9 +69,11 @@ export function DeleteDialog({
           </div>
         </DialogHeader>
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>{cancelLabel}</DialogClose>
+          <DialogClose asChild>
+            <Button variant="line">{cancelLabel}</Button>
+          </DialogClose>
           <Button
-            variant="destructive"
+            variant="primary"
             onClick={() => {
               onConfirm();
             }}

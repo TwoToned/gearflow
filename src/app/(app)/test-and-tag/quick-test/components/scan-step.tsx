@@ -4,21 +4,15 @@ import { useRef, useEffect } from "react";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Zap, AlertTriangle, RotateCcw } from "lucide-react";
+import { Zap, AlertTriangle, RotateCcw } from "lucide-react";
 import { lookupTestTagAsset, reactivateTestTagAsset } from "@/server/test-tag-assets";
 import { resolveTestProfile } from "@/server/test-tag-profiles";
 import { getLatestTestRecord } from "@/server/test-tag-records";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { getStatusColor } from "@/lib/status-colors";
+import { testTagStatusLabels, equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
 import type { WizardAction, WizardState, ProfileInfo } from "./wizard-reducer";
-
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  NOT_YET_TESTED: { label: "Not Yet Tested", className: "text-fg-3" },
-  CURRENT: { label: "Current", className: "text-teal-600" },
-  DUE_SOON: { label: "Due Soon", className: "text-amber-600" },
-  OVERDUE: { label: "Overdue", className: "text-red-600" },
-  FAILED: { label: "Failed", className: "text-red-600" },
-  RETIRED: { label: "Retired", className: "text-fg-3" },
-};
 
 export function ScanStep({
   state,
@@ -104,51 +98,46 @@ export function ScanStep({
         />
       </div>
 
-      {/* Retired asset block */}
+      {/* Retired asset block — left-edge accent notice (§ Notices/Alerts) */}
       {state.isRetired && state.asset && (
-        <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+        <div className="rounded-[var(--r)] border-l-4 border-l-warn bg-card p-4 ring-1 ring-line shadow-[var(--sh-card)] space-y-3">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <span className="font-medium text-amber-900">This asset is retired</span>
+            <AlertTriangle className="h-5 w-5 text-warn" />
+            <span className="font-medium text-ink">This asset is retired</span>
           </div>
-          <p className="text-sm text-amber-700">
-            Tag <span className="font-mono font-medium">{state.asset.testTagId}</span> — {state.asset.description}
+          <p className="text-ui-text text-ink-2">
+            Tag <span className="t-mono font-medium">{state.asset.testTagId}</span> — {state.asset.description}
           </p>
-          <Button onClick={handleReactivate} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-100">
+          <Button onClick={handleReactivate} variant="line" className="border-transparent text-warn hover:bg-warn-soft hover:text-warn">
             <RotateCcw className="mr-2 h-4 w-4" />
-            Reactivate & Test
+            Reactivate & test
           </Button>
         </div>
       )}
 
       {/* Asset info bar */}
       {state.asset && !state.isRetired && (
-        <div className="border rounded-lg p-4 space-y-3 bg-surface">
+        <div className="rounded-[var(--r)] p-4 space-y-3 bg-card ring-1 ring-line shadow-[var(--sh-card)]">
           <div className="flex items-center justify-between">
             <div>
-              <span className="font-mono font-medium text-fg-1 text-lg">{state.asset.testTagId}</span>
-              <p className="text-sm text-fg-2 mt-0.5">{state.asset.description}</p>
+              <span className="t-mono font-medium text-ink text-lg">{state.asset.testTagId}</span>
+              <p className="text-ui-text text-ink-2 mt-0.5">{state.asset.description}</p>
             </div>
             <div className="flex items-center gap-2">
               {state.asset.status && (
                 <div className="flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${
-                    state.asset.status === "CURRENT" ? "bg-teal-500" :
-                    state.asset.status === "DUE_SOON" ? "bg-amber-500" :
-                    state.asset.status === "OVERDUE" || state.asset.status === "FAILED" ? "bg-red-500" :
-                    "bg-gray-400"
-                  }`} />
-                  <span className={`text-sm ${STATUS_LABELS[state.asset.status]?.className || "text-fg-3"}`}>
-                    {STATUS_LABELS[state.asset.status]?.label || state.asset.status}
+                  <div className={cn("w-2 h-2 rounded-full", getStatusColor("testTag", state.asset.status).dot)} />
+                  <span className={cn("text-ui-text", getStatusColor("testTag", state.asset.status).text)}>
+                    {testTagStatusLabels[state.asset.status] || state.asset.status}
                   </span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-3">
-            <span>Class: {state.asset.equipmentClass.replace(/_/g, " ")}</span>
-            <span>Type: {state.asset.applianceType.replace(/_/g, " ")}</span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted">
+            <span>Class: {equipmentClassLabels[state.asset.equipmentClass] ?? state.asset.equipmentClass}</span>
+            <span>Type: {applianceTypeLabels[state.asset.applianceType] ?? state.asset.applianceType}</span>
             {state.asset.make && <span>Make: {state.asset.make}</span>}
             {state.asset.lastTestDate && (
               <span>Last tested: {new Date(state.asset.lastTestDate).toLocaleDateString()}</span>
@@ -160,7 +149,7 @@ export function ScanStep({
 
           {state.profile && (
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-teal-600 border-teal-200 bg-teal-50">
+              <Badge status="neutral">
                 {state.profile.name}
               </Badge>
             </div>
@@ -168,12 +157,12 @@ export function ScanStep({
 
           <div className="flex gap-2 pt-1">
             <Button onClick={() => dispatch({ type: "NEXT_STEP" })}>
-              Start Test
+              Start test
             </Button>
             {state.asset.lastTestDate && (
-              <Button variant="outline" onClick={handleQuickPass}>
+              <Button variant="line" onClick={handleQuickPass}>
                 <Zap className="mr-2 h-4 w-4" />
-                Quick Pass
+                Quick pass
               </Button>
             )}
           </div>
@@ -181,7 +170,7 @@ export function ScanStep({
       )}
 
       {!state.asset && !state.scanInput && (
-        <p className="text-sm text-fg-3 text-center py-8">Scan a tag to begin testing</p>
+        <p className="text-ui-text text-muted text-center py-8">Scan a tag to begin testing</p>
       )}
     </div>
   );

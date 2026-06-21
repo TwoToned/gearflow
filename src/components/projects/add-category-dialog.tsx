@@ -66,7 +66,7 @@ function AddCategoryDialogBody({
         autoFocus
       />
       <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button variant="line" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} disabled={!name.trim() || isPending}>

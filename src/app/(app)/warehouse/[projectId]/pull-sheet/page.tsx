@@ -8,8 +8,10 @@ import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatDate } from "@/lib/formatters";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Tooltip,
@@ -30,12 +32,19 @@ const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
 };
 
 function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStock: number; effectiveStock?: number; totalBooked: number; inherited?: boolean; unavailableAssets?: number; reducedOnly?: boolean; hasOverbookedChildren?: boolean; hasReducedChildren?: boolean } | null }) {
   if (!info) return null;
+  // NOTE (RVLT polish §5 print exception): the `print:*-red-*` / `print:*-blue-*`
+  // literals below are deliberately NOT swapped to theme tokens. The app default
+  // theme is dark espresso and there is no @media-print theme override, so
+  // print:text-t-out / print:border-line would resolve to the *active* theme's
+  // values — pale coral / near-invisible cream lines on white paper. The literal
+  // mid-red/-blue print colours are theme-independent and chosen for B/W print
+  // fidelity on the physical pull sheet. Leave as-is.
   const effective = info.effectiveStock ?? info.totalStock;
   const unavail = info.unavailableAssets || 0;
 
@@ -45,25 +54,21 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
       <>
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs print:border-red-500 print:text-red-600 bg-red-500/10 text-red-600 border-red-500/20">
-                  Overbooked
-                </Badge>
-              }
-            />
+            <TooltipTrigger asChild>
+              <Badge status="overbooked" className="ml-1.5 cursor-help print:border print:border-red-500 print:text-red-600">
+                Overbooked
+              </Badge>
+            </TooltipTrigger>
             <TooltipContent>Contains items that are over capacity</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs print:border-blue-500 print:text-blue-600 bg-blue-500/10 text-blue-600 border-blue-500/20">
-                  Reduced Stock
-                </Badge>
-              }
-            />
+            <TooltipTrigger asChild>
+              <Badge status="neutral" className="ml-1.5 cursor-help bg-blue-soft text-blue print:border print:border-blue-500 print:text-blue-600">
+                Reduced stock
+              </Badge>
+            </TooltipTrigger>
             <TooltipContent>Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost</TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -72,12 +77,14 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
   }
 
   const isReduced = info.reducedOnly;
-  const colorClass = isReduced
-    ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
+  // Screen colour: reduced stock = info (blue), inherited-overbooked = warning
+  // (amber), direct overbooked = problem (t-out). Print keeps a red outline.
+  const screenClass = isReduced
+    ? "bg-blue-soft text-blue"
     : info.inherited
-      ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
-      : "bg-red-500/10 text-red-600 border-red-500/20";
-  const label = isReduced ? "Reduced Stock" : "Overbooked";
+      ? "bg-warn-soft text-warn"
+      : "bg-out-soft text-t-out";
+  const label = isReduced ? "Reduced stock" : "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
@@ -94,16 +101,14 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <Badge
-              variant="outline"
-              className={`ml-1.5 cursor-help text-xs print:border-red-500 print:text-red-600 ${colorClass}`}
-            >
-              {label}
-            </Badge>
-          }
-        />
+        <TooltipTrigger asChild>
+          <Badge
+            status={isReduced ? "neutral" : info.inherited ? "warn" : "overbooked"}
+            className={`ml-1.5 cursor-help print:border print:border-red-500 print:text-red-600 ${screenClass}`}
+          >
+            {label}
+          </Badge>
+        </TooltipTrigger>
         <TooltipContent>
           {getTooltip()}
         </TooltipContent>
@@ -127,11 +132,33 @@ export default function PullSheetPage({
   });
 
   if (isLoading) {
-    return <div className="text-fg-3">Loading...</div>;
+    return (
+      <RequirePermission resource="warehouse" action="read">
+        <div className="space-y-6" aria-busy="true">
+          <Skeleton className="h-10 w-64 rounded-[var(--r)]" />
+          <Skeleton className="h-64 rounded-[var(--r-lg)]" />
+        </div>
+      </RequirePermission>
+    );
   }
 
   if (!data) {
-    return <div className="text-fg-3">Project not found.</div>;
+    return (
+      <RequirePermission resource="warehouse" action="read">
+        <div className="rounded-[var(--r)] border-l-[3px] border-l-t-out bg-card p-4 ring-1 ring-line">
+          <p className="text-ui-text font-medium text-ink">Project not found</p>
+          <p className="text-caption text-muted mt-0.5">
+            It may have been removed, or you don&apos;t have access to it.
+          </p>
+          <Button variant="line" size="sm" className="mt-3" asChild>
+            <Link href={`/warehouse/${projectId}`}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to warehouse
+            </Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
   }
 
   const project = data.project;
@@ -143,6 +170,7 @@ export default function PullSheetPage({
   }));
 
   return (
+    <RequirePermission resource="warehouse" action="read">
     <div className="space-y-6">
       {/* Print pagination: repeat the table header on every page, never split a
           row mid-cell, keep each item (its units + accessories) together, and
@@ -160,12 +188,14 @@ export default function PullSheetPage({
       <div className="flex items-center gap-2 print:hidden">
         <Button
           variant="ghost"
-          size="icon-sm"
-          render={<Link href={`/warehouse/${projectId}`} />}
+          size="icon"
+          asChild
         >
-          <ArrowLeft className="h-4 w-4" />
+          <Link href={`/warehouse/${projectId}`} aria-label="Back to warehouse view">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
-        <span className="text-sm text-fg-3">
+        <span className="text-ui-text text-muted">
           Back to warehouse view
         </span>
         <div className="ml-auto">
@@ -178,49 +208,49 @@ export default function PullSheetPage({
 
       {/* Print header */}
       <div className="print:mb-6">
-        <h1 className="t-title text-fg print:text-xl">
-          Pull Sheet
+        <h1 className="t-title text-ink print:text-xl">
+          Pull sheet
         </h1>
         <div className="flex items-center gap-3 mt-1">
-          <span className="font-mono text-sm text-fg-3">
+          <span className="t-mono text-muted">
             {project.projectNumber}
           </span>
           <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
         </div>
-        <p className="text-lg font-semibold mt-1">{project.name}</p>
+        <p className="text-section-header font-semibold text-ink mt-1">{project.name}</p>
         {project.client && (
-          <p className="text-fg-3">{project.client.name}</p>
+          <p className="text-muted">{project.client.name}</p>
         )}
-        <div className="flex gap-6 text-sm text-fg-3 mt-2">
+        <div className="flex gap-6 text-ui-text text-muted mt-2">
           <span>
             Rental: {formatDate(project.rentalStartDate as unknown as string | null)} –{" "}
             {formatDate(project.rentalEndDate as unknown as string | null)}
           </span>
           {project.loadInDate && (
-            <span>Load In: {formatDate(project.loadInDate as unknown as string | null)}</span>
+            <span>Load in: {formatDate(project.loadInDate as unknown as string | null)}</span>
           )}
         </div>
       </div>
 
       {/* Equipment grouped */}
       {allGroups.length === 0 ? (
-        <p className="text-fg-3 text-center py-8">
+        <p className="text-muted text-center py-8">
           No equipment items on this project.
         </p>
       ) : (
         allGroups.map((group) => (
           <div key={group.name}>
-            <h3 className="text-sm font-semibold text-fg-3 mb-2 print:text-black">
+            <h3 className="text-heading font-bold text-ink-2 mb-2 print:text-black">
               {group.name}
             </h3>
-            <div className="rounded-md border print:border-black">
+            <div className="rounded-[var(--r-lg)] border border-line print:border-black">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10 print:w-8" />
                     <TableHead>Item</TableHead>
                     <TableHead className="text-center w-16">Qty</TableHead>
-                    <TableHead>Asset Tag</TableHead>
+                    <TableHead>Asset tag</TableHead>
                     <TableHead>Location</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -245,31 +275,31 @@ export default function PullSheetPage({
 
                     return (
                       <TableBody key={item.id as string} className="print:[break-inside:avoid]">
-                        <TableRow className={isGroupParent ? "bg-bg-inset/30" : ""}>
+                        <TableRow className={isGroupParent ? "bg-paper-2/40" : ""}>
                           <TableCell className="text-center">
                             {isGroupParent
-                              ? <Container className="h-4 w-4 text-fg-3 print:text-black" />
-                              : <Square className="h-4 w-4 text-fg-3 print:text-black" />}
+                              ? <Container className="h-4 w-4 text-muted print:text-black" />
+                              : <Square className="h-4 w-4 text-muted print:text-black" />}
                           </TableCell>
                           <TableCell>
-                            <span className={isGroupParent ? "font-bold" : "font-medium"}>
+                            <span className={isGroupParent ? "font-bold text-ink" : "font-medium text-ink"}>
                               {isGroupParent ? `[Kit] ${itemName}` : itemName}
                             </span>
                             {isSubhire && (
-                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20 print:bg-transparent print:text-cyan-700 print:border-cyan-400">Subhire</Badge>
+                              <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue print:bg-transparent print:text-blue-700 print:border print:border-blue-400">Subhire</Badge>
                             )}
                             {overbookedInfo && <PullSheetOverbookedBadge info={overbookedInfo} />}
                             {isSubhire && supplier && (
-                              <p className="text-xs text-fg-3 mt-0.5">via {supplier.name}</p>
+                              <p className="text-caption text-muted mt-0.5">via {supplier.name}</p>
                             )}
                           </TableCell>
-                          <TableCell className="text-center">
+                          <TableCell className="text-center tabular-nums">
                             {isGroupParent ? children.length : qty}
                           </TableCell>
-                          <TableCell className="font-mono text-sm text-fg-3">
+                          <TableCell className="t-mono text-muted">
                             {isGroupParent ? (kit?.assetTag || "—") : (assetTag || "—")}
                           </TableCell>
-                          <TableCell className="text-sm text-fg-3">
+                          <TableCell className="text-table-cell text-muted">
                             {asset?.location?.name || "—"}
                           </TableCell>
                         </TableRow>
@@ -286,17 +316,17 @@ export default function PullSheetPage({
                             <React.Fragment key={child.id as string}>
                               <TableRow>
                                 <TableCell className="text-center">
-                                  <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
+                                  <Square className="h-3.5 w-3.5 text-muted print:text-black" />
                                 </TableCell>
                                 <TableCell className="pl-8">
-                                  <span className="text-sm text-fg-3">{childName}</span>
+                                  <span className="text-table-cell text-muted">{childName}</span>
                                   {childOverbookedInfo && <PullSheetOverbookedBadge info={childOverbookedInfo} />}
                                 </TableCell>
-                                <TableCell className="text-center text-sm">{childQty}</TableCell>
-                                <TableCell className="font-mono text-xs text-fg-3">
+                                <TableCell className="text-center text-table-cell tabular-nums">{childQty}</TableCell>
+                                <TableCell className="t-mono text-muted">
                                   {childAsset?.assetTag || childBulk?.assetTag || "—"}
                                 </TableCell>
-                                <TableCell className="text-xs text-fg-3">
+                                <TableCell className="text-caption text-muted">
                                   {childAsset?.location?.name || "—"}
                                 </TableCell>
                               </TableRow>
@@ -304,10 +334,10 @@ export default function PullSheetPage({
                               {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
                                 <TableRow key={`${child.id}-${i}`}>
                                   <TableCell className="text-center">
-                                    <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
+                                    <Square className="h-3 w-3 text-faint print:text-black" />
                                   </TableCell>
                                   <TableCell className="pl-12">
-                                    <span className="text-xs text-fg-3">{childName} - {i + 1}</span>
+                                    <span className="text-caption text-muted">{childName} - {i + 1}</span>
                                   </TableCell>
                                   <TableCell />
                                   <TableCell />
@@ -321,10 +351,10 @@ export default function PullSheetPage({
                         {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => (
                           <TableRow key={`${item.id}-sub-${i}`}>
                             <TableCell className="text-center">
-                              <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
+                              <Square className="h-3 w-3 text-faint print:text-black" />
                             </TableCell>
                             <TableCell className="pl-8">
-                              <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
+                              <span className="text-caption text-muted">{itemName} - {i + 1}</span>
                             </TableCell>
                             <TableCell />
                             <TableCell />
@@ -341,12 +371,13 @@ export default function PullSheetPage({
       )}
 
       {/* Print footer */}
-      <div className="hidden print:block text-xs text-fg-3 border-t pt-2 mt-8">
+      <div className="hidden print:block text-caption text-muted border-t pt-2 mt-8">
         <p>
           Printed {new Date().toLocaleDateString("en-AU")} — {project.name} (
           {project.projectNumber})
         </p>
       </div>
     </div>
+    </RequirePermission>
   );
 }

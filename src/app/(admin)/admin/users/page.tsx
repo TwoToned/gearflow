@@ -246,8 +246,8 @@ export default function AdminUsersPage() {
                             {user.email}
                           </div>
                           <div className="flex gap-1 mt-1 sm:hidden">
-                            {user.banned && <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Banned</Badge>}
-                            {user.twoFactorEnabled && <Badge variant="outline" className="text-[10px] px-1.5 py-0">2FA</Badge>}
+                            {user.banned && <Badge status="overbooked" className="text-[10px] px-1.5 py-0">Banned</Badge>}
+                            {user.twoFactorEnabled && <Badge status="neutral" className="text-[10px] px-1.5 py-0">2FA</Badge>}
                           </div>
                         </div>
                       </td>
@@ -257,7 +257,7 @@ export default function AdminUsersPage() {
                             Site Admin
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">User</Badge>
+                          <Badge status="neutral">User</Badge>
                         )}
                       </td>
                       <td className="p-3 hidden lg:table-cell">
@@ -275,7 +275,7 @@ export default function AdminUsersPage() {
                               ) => (
                                 <Badge
                                   key={i}
-                                  variant="outline"
+                                  status="neutral"
                                   className="text-xs"
                                 >
                                   {m.organization.name} ({m.role.charAt(0).toUpperCase() + m.role.slice(1)})
@@ -291,12 +291,12 @@ export default function AdminUsersPage() {
                             On
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">Off</Badge>
+                          <Badge status="neutral">Off</Badge>
                         )}
                       </td>
                       <td className="p-3 text-center hidden sm:table-cell">
                         {user.banned ? (
-                          <Badge variant="destructive">Banned</Badge>
+                          <Badge status="overbooked">Banned</Badge>
                         ) : (
                           <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
                             Active
@@ -308,12 +308,10 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="p-3 text-right">
                         <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button variant="ghost" size="icon" />
-                            }
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
@@ -389,7 +387,7 @@ export default function AdminUsersPage() {
             </p>
             <div className="flex gap-2">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
@@ -397,7 +395,7 @@ export default function AdminUsersPage() {
                 Previous
               </Button>
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 disabled={page >= data.totalPages}
                 onClick={() => setPage(page + 1)}
@@ -447,7 +445,7 @@ export default function AdminUsersPage() {
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="line"
                 onClick={() => {
                   setInviteOpen(false);
                   setInviteEmail("");
@@ -480,11 +478,11 @@ export default function AdminUsersPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+            <Button variant="line" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="primary"
               disabled={deleteMutation.isPending}
               onClick={() =>
                 deleteTarget && deleteMutation.mutate(deleteTarget.id)

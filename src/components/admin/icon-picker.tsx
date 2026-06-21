@@ -48,7 +48,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
       <div className="flex items-center gap-2">
         <Button
           type="button"
-          variant="outline"
+          variant="line"
           className="h-12 w-12 p-0"
           onClick={() => setOpen(true)}
         >

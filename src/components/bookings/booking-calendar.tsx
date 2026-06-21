@@ -222,7 +222,7 @@ export function BookingCalendar({
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          variant="outline"
+          variant="line"
           size="icon"
           onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
         >
@@ -232,14 +232,14 @@ export function BookingCalendar({
           {format(currentMonth, "MMMM yyyy")}
         </h3>
         <Button
-          variant="outline"
+          variant="line"
           size="icon"
           onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
         <Button
-          variant="outline"
+          variant="line"
           size="sm"
           onClick={() => {
             setCurrentMonth(startOfMonth(today));
@@ -256,7 +256,7 @@ export function BookingCalendar({
           />
           <div className="flex border rounded-md">
             <Button
-              variant={viewMode === "calendar" ? "default" : "ghost"}
+              variant={viewMode === "calendar" ? "primary" : "ghost"}
               size="icon"
               className="h-8 w-8 rounded-r-none"
               onClick={() => setViewMode("calendar")}
@@ -264,7 +264,7 @@ export function BookingCalendar({
               <LayoutGrid className="h-4 w-4" />
             </Button>
             <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
+              variant={viewMode === "list" ? "primary" : "ghost"}
               size="icon"
               className="h-8 w-8 rounded-l-none"
               onClick={() => setViewMode("list")}
@@ -527,7 +527,7 @@ export function BookingCalendar({
                                   {b.projectNumber}
                                 </span>
                                 <Badge
-                                  variant="outline"
+                                  status="neutral"
                                   className="text-[10px] bg-teal-500/10 text-teal-400 border-teal-500/20"
                                 >
                                   {statusLabels[b.projectStatus] || b.projectStatus}

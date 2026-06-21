@@ -5,16 +5,19 @@ import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus } from "lucide-react";
 
+import { focusRing } from "@/lib/utils";
+
 import { getCrewMemberExtras } from "@/server/crew";
 import { useCrewMembers, useCrewRoles } from "@/hooks/use-crew";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { crewMemberStatusLabels, crewMemberTypeLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,18 +36,17 @@ const columns: ColumnDef<AnyCrewMember>[] = [
       const subtitle = [row.crewRole?.name, row.department].filter(Boolean).join(" \u00b7 ");
       return (
         <div className="flex items-center gap-3">
-          <Avatar className="size-8">
-            {avatarSrc ? <AvatarImage src={avatarSrc} alt={displayName} /> : null}
-            <AvatarFallback className="text-[10px] font-medium bg-primary/10 text-primary">
-              {row.firstName?.[0]}{row.lastName?.[0]}
-            </AvatarFallback>
-          </Avatar>
+          <PersonAvatar name={displayName} src={avatarSrc || undefined} className="size-8" />
           <div className="min-w-0">
-            <Link href={`/crew/${row.id}`} className="font-medium text-sm hover:underline block truncate" onClick={(e) => e.stopPropagation()}>
+            <Link
+              href={`/crew/${row.id}`}
+              className={`block truncate font-medium text-table-cell text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+              onClick={(e) => e.stopPropagation()}
+            >
               {displayName}
             </Link>
             {subtitle && (
-              <p className="text-xs text-fg-3 truncate">{subtitle}</p>
+              <p className="text-caption text-muted truncate">{subtitle}</p>
             )}
           </div>
         </div>
@@ -57,7 +59,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortable: false,
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-fg-3">
+      <span className="text-muted">
         {row.crewRole?.name || "\u2014"}
       </span>
     ),
@@ -77,7 +79,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     ],
     responsiveHide: "md",
     cell: (row) => (
-      <Badge variant="outline">{crewMemberTypeLabels[row.type] || formatLabel(row.type)}</Badge>
+      <Badge status="neutral">{crewMemberTypeLabels[row.type] || formatLabel(row.type)}</Badge>
     ),
   },
   {
@@ -89,7 +91,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterType: "enum",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-fg-3">{row.department || "\u2014"}</span>
+      <span className="text-muted">{row.department || "\u2014"}</span>
     ),
   },
   {
@@ -99,7 +101,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortKey: "email",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-fg-3">{row.email || "\u2014"}</span>
+      <span className="text-muted">{row.email || "\u2014"}</span>
     ),
   },
   {
@@ -108,16 +110,16 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     accessorKey: "phone",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-fg-3">{row.phone || "\u2014"}</span>
+      <span className="text-muted">{row.phone || "\u2014"}</span>
     ),
   },
   {
     id: "dayRate",
-    header: "Day Rate",
+    header: "Day rate",
     align: "right",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="t-data">
+      <span className="font-mono text-table-cell tabular-nums text-ink-2">
         {row.defaultDayRate != null
           ? `$${Number(row.defaultDayRate).toFixed(2)}`
           : "\u2014"}
@@ -132,10 +134,10 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterable: true,
     filterType: "enum",
     filterOptions: [
-      { value: "ACTIVE", label: "Active" },
-      { value: "INACTIVE", label: "Inactive" },
-      { value: "ON_LEAVE", label: "On Leave" },
-      { value: "ARCHIVED", label: "Archived" },
+      { value: "ACTIVE", label: "Active", color: getStatusColor("crewMember", "ACTIVE").dot },
+      { value: "INACTIVE", label: "Inactive", color: getStatusColor("crewMember", "INACTIVE").dot },
+      { value: "ON_LEAVE", label: "On leave", color: getStatusColor("crewMember", "ON_LEAVE").dot },
+      { value: "ARCHIVED", label: "Archived", color: getStatusColor("crewMember", "ARCHIVED").dot },
     ],
     cell: (row) => (
       <StatusIndicator category="crewMember" value={row.status} label={crewMemberStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
@@ -150,7 +152,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <Badge key={tag} status="neutral">
             {tag}
           </Badge>
         ))}
@@ -237,9 +239,11 @@ export function CrewTable() {
 
   const toolbarActions = (
     <CanDo resource="crew" action="create">
-      <Button render={<Link href="/crew/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Crew Member
+      <Button asChild>
+        <Link href="/crew/new">
+          <Plus className="size-5" />
+          New crew member
+        </Link>
       </Button>
     </CanDo>
   );

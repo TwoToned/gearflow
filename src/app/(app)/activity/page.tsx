@@ -223,7 +223,7 @@ function ActivityLogContent() {
         emptyPreset="activity"
         toolbarActions={
           <Button
-            variant="outline"
+            variant="line"
             size="sm"
             className="h-8"
             onClick={handleExport}

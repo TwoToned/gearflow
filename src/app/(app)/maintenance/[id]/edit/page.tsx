@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -14,9 +15,30 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import type { MaintenanceFormValues } from "@/lib/validations/maintenance";
 
 export default function EditMaintenancePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  return (
+    <RequirePermission resource="maintenance" action="update">
+      <EditMaintenanceContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditMaintenanceContent({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -45,7 +67,17 @@ export default function EditMaintenancePage({
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!record) return <div className="py-20 text-center text-fg-3">Record not found.</div>;
+  if (!record) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Record not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/maintenance">Back to maintenance</Link>
+        </Button>
+      </div>
+    );
+  }
 
   const r = record as Record<string, unknown>;
   const assetLinks = (r.assets as Array<{ assetId: string }>) || [];
@@ -74,27 +106,34 @@ export default function EditMaintenancePage({
   };
 
   return (
-    <RequirePermission resource="maintenance" action="read">
-      <CanDo
-        resource="maintenance"
-        action="update"
-        fallback={
-          <div className="p-8 text-center text-fg-3">
-            You don&apos;t have permission to perform this action.
-          </div>
-        }
-      >
+    <>
+      <FadeIn>
         <div className="mx-auto max-w-3xl space-y-4">
-          <div className="flex items-center justify-between">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/maintenance" />}>Maintenance</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href={`/maintenance/${id}`} />}>{r.title as string}</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Edit</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="t-title text-fg">Edit Maintenance Record</h1>
-              <p className="t-body text-fg-3">{r.title as string}</p>
+              <h1 className="t-title text-ink">Edit maintenance record</h1>
+              <p className="t-body text-muted">{r.title as string}</p>
             </div>
             <CanDo resource="maintenance" action="delete">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
-                className="text-destructive hover:bg-destructive/10"
+                className="text-t-out hover:border-red hover:bg-red hover:text-white"
                 disabled={deleteMutation.isPending}
                 onClick={() => setDeleteOpen(true)}
               >
@@ -105,7 +144,7 @@ export default function EditMaintenancePage({
           </div>
           <MaintenanceForm initialData={initialData} />
         </div>
-      </CanDo>
+      </FadeIn>
       <DeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
@@ -118,6 +157,6 @@ export default function EditMaintenancePage({
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

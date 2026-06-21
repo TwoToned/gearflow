@@ -103,7 +103,7 @@ export function DuplicateProjectDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel

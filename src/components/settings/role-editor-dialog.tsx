@@ -219,7 +219,7 @@ export function RoleEditorDialog({
                   <Button
                     key={role}
                     type="button"
-                    variant="outline"
+                    variant="line"
                     size="sm"
                     onClick={() => handleStartFrom(role)}
                   >
@@ -240,7 +240,7 @@ export function RoleEditorDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

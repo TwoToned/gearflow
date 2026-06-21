@@ -235,7 +235,7 @@ export default function WooCommerceSettingsPage() {
                 <Input value={webhookUrl} readOnly className="font-mono text-xs" />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="icon"
                   onClick={() => {
                     navigator.clipboard.writeText(webhookUrl);
@@ -258,7 +258,7 @@ export default function WooCommerceSettingsPage() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="icon"
                   onClick={() => setShowSecret(!showSecret)}
                 >
@@ -266,7 +266,7 @@ export default function WooCommerceSettingsPage() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="icon"
                   onClick={() => {
                     if (integration?.webhookSecret) {
@@ -279,7 +279,7 @@ export default function WooCommerceSettingsPage() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="icon"
                   onClick={() => regenMutation.mutate()}
                   disabled={regenMutation.isPending}
@@ -644,7 +644,7 @@ export default function WooCommerceSettingsPage() {
                     </span>
                     {log.status === "FAILED" && (
                       <Button
-                        variant="outline"
+                        variant="line"
                         size="sm"
                         onClick={() => retryMutation.mutate(log.id)}
                         disabled={retryMutation.isPending}
@@ -688,10 +688,10 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const variant = status === "COMPLETED" ? "default"
-    : status === "FAILED" ? "destructive"
-    : "secondary";
-  return <Badge variant={variant}>{status}</Badge>;
+  const badgeStatus = status === "COMPLETED" ? "ok"
+    : status === "FAILED" ? "overbooked"
+    : "neutral";
+  return <Badge status={badgeStatus}>{status}</Badge>;
 }
 
 function MatchSummary({ results }: { results: MatchResult[] }) {

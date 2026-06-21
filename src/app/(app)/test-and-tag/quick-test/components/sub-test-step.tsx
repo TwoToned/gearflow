@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Minus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { evaluateReading } from "@/lib/test-tag/calculate-result";
 import type { WizardAction, WizardState } from "./wizard-reducer";
 
@@ -49,28 +50,28 @@ export function SubTestStep({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium text-fg-1">Sub-Tests</h3>
-          <p className="text-sm text-fg-3">
+          <h3 className="t-heading text-ink">Sub-tests</h3>
+          <p className="text-ui-text text-muted">
             Test each {subTestLabel.toLowerCase()} individually
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-fg-3">{subTestLabel}s:</Label>
+          <Label className="text-caption text-muted">{subTestLabel}s:</Label>
           <div className="flex items-center gap-1">
             <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
+              variant="line"
+              size="icon"
+              aria-label={`Remove ${subTestLabel.toLowerCase()}`}
               onClick={() => dispatch({ type: "SET_OUTLET_COUNT", count: state.outletCount - 1 })}
               disabled={state.outletCount <= 1}
             >
               <Minus className="h-4 w-4" />
             </Button>
-            <span className="w-8 text-center font-mono text-sm">{state.outletCount}</span>
+            <span className="w-8 text-center t-mono text-ui-text text-ink t-data">{state.outletCount}</span>
             <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
+              variant="line"
+              size="icon"
+              aria-label={`Add ${subTestLabel.toLowerCase()}`}
               onClick={() => dispatch({ type: "SET_OUTLET_COUNT", count: state.outletCount + 1 })}
               disabled={state.outletCount >= 50}
             >
@@ -81,15 +82,15 @@ export function SubTestStep({
       </div>
 
       {/* Sub-test rows — flat, separated by border */}
-      <div className="border rounded-lg divide-y">
+      <div className="rounded-[var(--r)] ring-1 ring-line divide-y divide-line">
         {state.subTests.map((st, idx) => (
-          <div key={idx} className="flex items-center gap-4 px-4 py-3 min-h-[48px]">
-            <span className="text-sm font-medium text-fg-2 w-20 shrink-0">{st.label}</span>
+          <div key={idx} className="flex items-center gap-4 px-4 py-3 min-h-12">
+            <span className="text-ui-text font-medium text-ink-2 w-20 shrink-0">{st.label}</span>
 
             <div className="flex items-center gap-3 flex-wrap flex-1">
               {showEarth && (
                 <div className="flex items-center gap-1">
-                  <Label className="text-xs text-fg-3 w-12">Earth:</Label>
+                  <Label className="text-caption text-muted w-12">Earth:</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -102,13 +103,13 @@ export function SubTestStep({
                     }}
                     placeholder="—"
                   />
-                  <span className="text-xs text-fg-3">Ω</span>
+                  <span className="text-caption text-muted">Ω</span>
                 </div>
               )}
 
               {showInsulation && (
                 <div className="flex items-center gap-1">
-                  <Label className="text-xs text-fg-3 w-12">Insul:</Label>
+                  <Label className="text-caption text-muted w-12">Insul:</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -121,13 +122,13 @@ export function SubTestStep({
                     }}
                     placeholder="—"
                   />
-                  <span className="text-xs text-fg-3">MΩ</span>
+                  <span className="text-caption text-muted">MΩ</span>
                 </div>
               )}
 
               {showLeakage && (
                 <div className="flex items-center gap-1">
-                  <Label className="text-xs text-fg-3 w-14">Leakage:</Label>
+                  <Label className="text-caption text-muted w-14">Leakage:</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -140,16 +141,16 @@ export function SubTestStep({
                     }}
                     placeholder="—"
                   />
-                  <span className="text-xs text-fg-3">mA</span>
+                  <span className="text-caption text-muted">mA</span>
                 </div>
               )}
             </div>
 
             {/* Result dot */}
             <div className="flex items-center gap-1 shrink-0">
-              <div className={`w-2.5 h-2.5 rounded-full ${st.result === "PASS" ? "bg-teal-500" : "bg-red-500"}`} />
-              <span className={`text-xs font-medium ${st.result === "PASS" ? "text-teal-600" : "text-red-600"}`}>
-                {st.result}
+              <div className={cn("w-2.5 h-2.5 rounded-full", st.result === "PASS" ? "bg-ok" : "bg-t-out")} />
+              <span className={cn("text-caption font-medium", st.result === "PASS" ? "text-ok" : "text-t-out")}>
+                {st.result === "PASS" ? "Pass" : "Fail"}
               </span>
             </div>
           </div>
@@ -160,24 +161,23 @@ export function SubTestStep({
       <Button
         variant="ghost"
         size="sm"
-        className="text-fg-3 hover:text-fg-2"
         onClick={() => dispatch({ type: "ADD_SUBTEST" })}
       >
         <Plus className="mr-2 h-4 w-4" />
-        Add {subTestLabel}
+        Add {subTestLabel.toLowerCase()}
       </Button>
 
       {/* Summary */}
       <div className="flex items-center gap-2">
-        <span className={`text-sm font-medium ${passCount === state.subTests.length ? "text-teal-600" : "text-red-600"}`}>
-          {passCount}/{state.subTests.length} PASS
+        <span className={cn("text-ui-text font-medium t-data", passCount === state.subTests.length ? "text-ok" : "text-t-out")}>
+          {passCount}/{state.subTests.length} pass
         </span>
       </div>
 
       <div className="flex justify-between pt-2">
-        <Button variant="outline" onClick={() => dispatch({ type: "PREV_STEP" })}>Back</Button>
+        <Button variant="line" onClick={() => dispatch({ type: "PREV_STEP" })}>Back</Button>
         <Button onClick={() => dispatch({ type: "NEXT_STEP" })}>
-          Next: Result
+          Next: result
         </Button>
       </div>
     </div>

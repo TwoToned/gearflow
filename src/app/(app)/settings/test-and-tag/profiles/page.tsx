@@ -176,7 +176,7 @@ export default function TestProfilesPage() {
               Seed AS/NZS 3760 Defaults
             </Button>
             {canEdit && (
-              <Button variant="outline" onClick={() => setIsCreating(true)}>
+              <Button variant="line" onClick={() => setIsCreating(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Custom
               </Button>
@@ -198,7 +198,7 @@ export default function TestProfilesPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} size="sm">
+            <Button variant="line" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} size="sm">
               {seedMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
               Seed Defaults
             </Button>
@@ -253,16 +253,18 @@ export default function TestProfilesPage() {
                     </TableCell>
                     <TableCell>
                       {profile.isActive ? (
-                        <Badge variant="outline" className="text-teal-600 border-teal-200 bg-teal-50">Active</Badge>
+                        <Badge status="neutral" className="text-teal-600 border-teal-200 bg-teal-50">Active</Badge>
                       ) : (
-                        <Badge variant="outline" className="text-fg-3">Inactive</Badge>
+                        <Badge status="neutral" className="text-fg-3">Inactive</Badge>
                       )}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
-                        <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()} />}>
-                          <span className="sr-only">Actions</span>
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+                            <span className="sr-only">Actions</span>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                          </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuGroup>
@@ -593,7 +595,7 @@ function ProfileEditDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="line" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={isPending || !name.trim()}>
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isNew ? "Create Profile" : "Save Changes"}

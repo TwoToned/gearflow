@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProfile } from "@/hooks/use-profile";
@@ -16,11 +17,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarMenuButton } from "@/components/ui/sidebar";
+import { useSidebar } from "@/components/ui/sidebar";
+
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper";
 
 export function UserNav() {
   const router = useRouter();
   const { data: session } = useSession();
+  const { state, isMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
 
   const user = session?.user;
   const isSiteAdmin = (user as Record<string, unknown>)?.role === "admin";
@@ -41,38 +47,43 @@ export function UserNav() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <SidebarMenuButton
-            size="lg"
-            className="data-[state=open]:bg-sidebar-accent"
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Account menu"
+          className={cn(
+            "flex w-full cursor-pointer items-center rounded-[var(--r)] transition-colors hover:bg-elev data-[state=open]:bg-elev",
+            FOCUS,
+            collapsed ? "justify-center py-1.5" : "gap-2.5 px-2 py-2",
+          )}
+        >
+          <UserAvatar
+            user={{ name: user?.name, image: userImage }}
+            size="sm"
+            className="rounded-lg"
           />
-        }
-      >
-        <UserAvatar
-          user={{ name: user?.name, image: userImage }}
-          size="sm"
-          className="rounded-lg"
-        />
-        <div className="grid flex-1 text-left text-sm leading-tight">
-          <span className="truncate font-medium">{user?.name || "User"}</span>
-          <span className="truncate text-xs text-fg-3">
-            {user?.email}
-          </span>
-        </div>
-        <ChevronsUpDown className="ml-auto size-4" />
+          {!collapsed && (
+            <>
+              <span className="grid flex-1 text-left leading-tight">
+                <span className="truncate text-[13px] font-medium text-ink">{user?.name || "User"}</span>
+                <span className="truncate text-[11px] text-muted">{user?.email}</span>
+              </span>
+              <ChevronsUpDown className="ml-auto size-4 shrink-0 text-muted" />
+            </>
+          )}
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="w-56"
-        align="end"
-        side="top"
-        sideOffset={4}
+        align={collapsed ? "end" : "start"}
+        side={collapsed ? "right" : "top"}
+        sideOffset={collapsed ? 8 : 4}
       >
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-1">
-              <p className="text-sm font-medium">{user?.name}</p>
-              <p className="text-xs text-fg-3">{user?.email}</p>
+              <p className="text-[13px] font-medium text-ink">{user?.name}</p>
+              <p className="text-[11px] text-muted">{user?.email}</p>
             </div>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
@@ -80,18 +91,18 @@ export function UserNav() {
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => router.push("/account")}>
             <User className="mr-2 h-4 w-4" />
-            Account Settings
+            Account settings
           </DropdownMenuItem>
           {myCrewId && (
             <DropdownMenuItem onClick={() => router.push(`/crew/${myCrewId}`)}>
               <HardHat className="mr-2 h-4 w-4" />
-              My Crew Profile
+              My crew profile
             </DropdownMenuItem>
           )}
           {isSiteAdmin && (
             <DropdownMenuItem onClick={() => router.push("/admin")}>
               <Shield className="mr-2 h-4 w-4" />
-              Admin Panel
+              Admin panel
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>

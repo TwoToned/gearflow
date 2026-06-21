@@ -33,17 +33,25 @@ import { PageMeta } from "@/components/layout/page-meta";
 import {
   maintenanceStatusLabels,
   maintenanceTypeLabels,
+  maintenanceResultLabels,
   formatLabel,
 } from "@/lib/status-labels";
-import { formatDate } from "@/lib/formatters";
-
-const resultLabels: Record<string, string> = {
-  PASS: "Pass",
-  FAIL: "Fail",
-  CONDITIONAL: "Conditional",
-};
+import { formatCurrency, formatDate } from "@/lib/formatters";
+import { cn, focusRing } from "@/lib/utils";
 
 export default function MaintenanceDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  return (
+    <RequirePermission resource="maintenance" action="read">
+      <MaintenanceDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function MaintenanceDetailContent({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -72,7 +80,17 @@ export default function MaintenanceDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!record) return <div className="py-20 text-center text-fg-3">Record not found.</div>;
+  if (!record) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Record not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/maintenance">Back to maintenance</Link>
+        </Button>
+      </div>
+    );
+  }
 
   const r = record as Record<string, unknown>;
   const assetLinks = (r.assets as Array<{ assetId: string; asset: { id: string; assetTag: string; customName?: string; model: { name: string } } }>) || [];
@@ -92,35 +110,35 @@ export default function MaintenanceDetailPage({
   const createdAt = r.createdAt as string;
 
   return (
-    <RequirePermission resource="maintenance" action="read">
+    <>
       <FadeIn>
         <PageMeta title={title} />
         <div className="space-y-6">
           {/* ── Header (full width) ────────────────────────────────── */}
           <div>
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/maintenance" className="hover:text-fg transition-colors">
+            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+              <Link href="/maintenance" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Maintenance
               </Link>
               <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg-2 truncate">{title}</span>
+              <span className="truncate text-ink-2">{title}</span>
             </nav>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-fg">{title}</h1>
+                  <h1 className="t-title text-ink">{title}</h1>
                   <StatusIndicator
                     category="maintenance"
                     value={status}
                     label={maintenanceStatusLabels[status] || formatLabel(status)}
                   />
-                  <Badge variant="secondary">
+                  <Badge status="neutral">
                     {maintenanceTypeLabels[type] || formatLabel(type)}
                   </Badge>
                 </div>
-                <p className="text-fg-3 text-sm mt-1">
+                <p className="mt-1 t-small text-muted">
                   Created {formatDate(createdAt)}
                   {reportedBy && <> &middot; Reported by {reportedBy.name}</>}
                 </p>
@@ -128,20 +146,18 @@ export default function MaintenanceDetailPage({
 
               <div className="flex flex-wrap gap-2">
                 <CanDo resource="maintenance" action="update">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    render={<Link href={`/maintenance/${id}/edit`} />}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/maintenance/${id}/edit`}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Link>
                   </Button>
                 </CanDo>
                 <CanDo resource="maintenance" action="delete">
                   <Button
-                    variant="outline"
+                    variant="line"
                     size="sm"
-                    className="text-destructive hover:bg-destructive/10"
+                    className="text-t-out hover:border-red hover:bg-red hover:text-white"
                     disabled={deleteMutation.isPending}
                     onClick={() => setDeleteOpen(true)}
                   >
@@ -159,9 +175,9 @@ export default function MaintenanceDetailPage({
             <DetailMain className="space-y-6">
               {/* Description */}
               {description && (
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
                   <SectionHeader label="Description" />
-                  <p className="mt-3 text-sm text-fg-2 whitespace-pre-wrap">
+                  <p className="mt-3 whitespace-pre-wrap text-ui-text text-ink-2">
                     {description}
                   </p>
                 </div>
@@ -169,7 +185,7 @@ export default function MaintenanceDetailPage({
 
               {/* Photos */}
               {Array.isArray(r.photos) && (r.photos as string[]).length > 0 && (
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
                   <SectionHeader label={`Photos (${(r.photos as string[]).length})`} />
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                     {(r.photos as string[]).map((url) => (
@@ -178,7 +194,7 @@ export default function MaintenanceDetailPage({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block aspect-square overflow-hidden rounded-md border bg-bg-inset hover:opacity-90 transition-opacity"
+                        className={cn("block aspect-square overflow-hidden rounded-[var(--r)] border border-line bg-paper-2 transition-opacity hover:opacity-90", focusRing)}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={url} alt="" className="h-full w-full object-cover" />
@@ -188,11 +204,11 @@ export default function MaintenanceDetailPage({
                 </div>
               )}
 
-              {/* Affected Assets */}
-              <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                <SectionHeader label={`Affected Assets (${assetLinks.length})`} />
+              {/* Affected assets */}
+              <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <SectionHeader label={`Affected assets (${assetLinks.length})`} />
                 {assetLinks.length === 0 ? (
-                  <p className="mt-3 py-4 text-center text-sm text-fg-3">
+                  <p className="mt-3 py-4 text-center text-ui-text text-muted">
                     No assets linked to this record.
                   </p>
                 ) : (
@@ -201,17 +217,17 @@ export default function MaintenanceDetailPage({
                       <Link
                         key={link.assetId}
                         href={`/assets/registry/${link.assetId}`}
-                        className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors"
+                        className={cn("flex items-center gap-3 rounded-[var(--r)] border border-line p-3 transition-colors hover:bg-elev", focusRing)}
                       >
-                        <Wrench className="h-4 w-4 text-fg-3 shrink-0" />
+                        <Wrench className="h-4 w-4 shrink-0 text-muted" />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            <span className="font-mono">{link.asset.assetTag}</span>
+                          <p className="truncate text-ui-text font-medium text-ink">
+                            <span className="t-mono">{link.asset.assetTag}</span>
                             {link.asset.customName && (
-                              <span className="text-fg-2"> &middot; {link.asset.customName}</span>
+                              <span className="text-ink-2"> &middot; {link.asset.customName}</span>
                             )}
                           </p>
-                          <p className="text-xs text-fg-3 truncate">{link.asset.model.name}</p>
+                          <p className="truncate text-caption text-muted">{link.asset.model.name}</p>
                         </div>
                       </Link>
                     ))}
@@ -219,40 +235,35 @@ export default function MaintenanceDetailPage({
                 )}
               </div>
 
-              {/* Work Details */}
+              {/* Work details */}
               {(partsUsed || cost != null || result) && (
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                  <SectionHeader label="Work Details" />
-                  <div className="mt-3 space-y-3 text-sm">
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <SectionHeader label="Work details" />
+                  <div className="mt-3 space-y-3 text-ui-text">
                     {result && (
                       <div className="flex items-center justify-between">
-                        <span className="text-fg-3">Result</span>
-                        <Badge
-                          variant={
-                            result === "PASS"
-                              ? "default"
-                              : result === "FAIL"
-                                ? "destructive"
-                                : "secondary"
-                          }
-                        >
-                          {resultLabels[result] || formatLabel(result)}
-                        </Badge>
+                        <span className="text-muted">Result</span>
+                        <StatusIndicator
+                          category="maintenanceResult"
+                          value={result}
+                          label={maintenanceResultLabels[result] || formatLabel(result)}
+                          variant="pill"
+                        />
                       </div>
                     )}
                     {cost != null && (
                       <div className="flex items-center justify-between">
-                        <span className="text-fg-3 flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5 text-muted">
                           <DollarSign className="h-3.5 w-3.5" />
                           Cost
                         </span>
-                        <span className="font-medium t-data">${Number(cost).toFixed(2)}</span>
+                        <span className="t-data font-medium text-ink tabular-nums">{formatCurrency(Number(cost))}</span>
                       </div>
                     )}
                     {partsUsed && (
                       <div>
-                        <span className="text-fg-3 block mb-1">Parts Used</span>
-                        <p className="text-fg-2 whitespace-pre-wrap">{partsUsed}</p>
+                        <span className="mb-1 block text-muted">Parts used</span>
+                        <p className="whitespace-pre-wrap text-ink-2">{partsUsed}</p>
                       </div>
                     )}
                   </div>
@@ -261,11 +272,11 @@ export default function MaintenanceDetailPage({
 
               {/* Tags */}
               {tags.length > 0 && (
-                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
                   <SectionHeader label="Tags" />
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {tags.map((tag) => (
-                      <Badge key={tag} variant="outline">
+                      <Badge key={tag} status="neutral">
                         <Tag className="mr-1 h-3 w-3" />
                         {tag}
                       </Badge>
@@ -290,67 +301,67 @@ export default function MaintenanceDetailPage({
 
                 {/* Type */}
                 <SidebarSection title="Type">
-                  <Badge variant="secondary">
+                  <Badge status="neutral">
                     {maintenanceTypeLabels[type] || formatLabel(type)}
                   </Badge>
                 </SidebarSection>
 
-                {/* Key Dates */}
-                <SidebarSection title="Key Dates">
-                  <div className="space-y-1 text-sm">
+                {/* Key dates */}
+                <SidebarSection title="Key dates">
+                  <div className="space-y-1 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-fg-3 flex items-center gap-1.5">
+                      <span className="flex items-center gap-1.5 text-muted">
                         <Calendar className="h-3.5 w-3.5" />
                         Scheduled
                       </span>
-                      <span className="font-medium">{formatDate(scheduledDate)}</span>
+                      <span className="font-medium text-ink tabular-nums">{formatDate(scheduledDate)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fg-3 flex items-center gap-1.5">
+                      <span className="flex items-center gap-1.5 text-muted">
                         <Calendar className="h-3.5 w-3.5" />
                         Completed
                       </span>
-                      <span className="font-medium">{formatDate(completedDate)}</span>
+                      <span className="font-medium text-ink tabular-nums">{formatDate(completedDate)}</span>
                     </div>
                     {nextDueDate && (
                       <div className="flex justify-between">
-                        <span className="text-fg-3 flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5 text-muted">
                           <Calendar className="h-3.5 w-3.5" />
-                          Next Due
+                          Next due
                         </span>
-                        <span className="font-medium">{formatDate(nextDueDate)}</span>
+                        <span className="font-medium text-ink tabular-nums">{formatDate(nextDueDate)}</span>
                       </div>
                     )}
                   </div>
                 </SidebarSection>
 
-                {/* Assigned To */}
-                <SidebarSection title="Assigned To">
-                  <div className="flex items-center gap-2 text-sm">
-                    <User className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                    <span className="font-medium">
+                {/* Assigned to */}
+                <SidebarSection title="Assigned to">
+                  <div className="flex items-center gap-2 text-ui-text">
+                    <User className="h-3.5 w-3.5 shrink-0 text-muted" />
+                    <span className="font-medium text-ink">
                       {assignedTo?.name || "Unassigned"}
                     </span>
                   </div>
                 </SidebarSection>
 
-                {/* Affected Assets Summary */}
-                <SidebarSection title="Affected Assets">
+                {/* Affected assets summary */}
+                <SidebarSection title="Affected assets">
                   {assetLinks.length === 0 ? (
-                    <p className="text-sm text-fg-3">None</p>
+                    <p className="text-ui-text text-muted">None</p>
                   ) : (
-                    <div className="space-y-1 text-sm">
+                    <div className="space-y-1 text-ui-text">
                       {assetLinks.slice(0, 5).map((link) => (
                         <Link
                           key={link.assetId}
                           href={`/assets/registry/${link.assetId}`}
-                          className="block truncate font-mono text-fg-2 hover:text-fg hover:underline"
+                          className={cn("block truncate rounded-sm t-mono text-ink-2 hover:text-ink hover:underline", focusRing)}
                         >
                           {link.asset.assetTag}
                         </Link>
                       ))}
                       {assetLinks.length > 5 && (
-                        <p className="text-fg-3">+{assetLinks.length - 5} more</p>
+                        <p className="text-muted">+{assetLinks.length - 5} more</p>
                       )}
                     </div>
                   )}
@@ -359,17 +370,12 @@ export default function MaintenanceDetailPage({
                 {/* Result (if present) */}
                 {result && (
                   <SidebarSection title="Result">
-                    <Badge
-                      variant={
-                        result === "PASS"
-                          ? "default"
-                          : result === "FAIL"
-                            ? "destructive"
-                            : "secondary"
-                      }
-                    >
-                      {resultLabels[result] || formatLabel(result)}
-                    </Badge>
+                    <StatusIndicator
+                      category="maintenanceResult"
+                      value={result}
+                      label={maintenanceResultLabels[result] || formatLabel(result)}
+                      variant="pill"
+                    />
                   </SidebarSection>
                 )}
 
@@ -393,6 +399,6 @@ export default function MaintenanceDetailPage({
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
   );
 }

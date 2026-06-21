@@ -29,9 +29,16 @@ describe("status-colors", () => {
 
     it("returns correct intent for maintenance statuses", () => {
       expect(getStatusIntent("maintenance", "COMPLETED")).toBe("success");
-      expect(getStatusIntent("maintenance", "IN_PROGRESS")).toBe("warning");
+      // DESIGN §1: active work-in-progress reads as live red (primary).
+      expect(getStatusIntent("maintenance", "IN_PROGRESS")).toBe("primary");
+      expect(getStatusIntent("maintenance", "AWAITING_PARTS")).toBe("warning");
+      expect(getStatusIntent("maintenance", "QA")).toBe("warning");
       expect(getStatusIntent("maintenance", "SCHEDULED")).toBe("info");
       expect(getStatusIntent("maintenance", "CANCELLED")).toBe("error");
+      // Work-order result category (added with the maintenance polish).
+      expect(getStatusIntent("maintenanceResult", "PASS")).toBe("success");
+      expect(getStatusIntent("maintenanceResult", "FAIL")).toBe("error");
+      expect(getStatusIntent("maintenanceResult", "CONDITIONAL")).toBe("warning");
     });
 
     it("returns 'neutral' for unknown status values", () => {
@@ -68,10 +75,10 @@ describe("status-colors", () => {
     it("returns full style object for a known status", () => {
       const styles = getStatusColor("asset", "AVAILABLE");
       expect(styles).toEqual(intentStyles.success);
-      expect(styles.dot).toBe("bg-success");
-      expect(styles.text).toBe("text-success");
-      expect(styles.pill).toContain("bg-success-subtle");
-      expect(styles.bg).toBe("bg-success-subtle");
+      expect(styles.dot).toBe("bg-ok");
+      expect(styles.text).toBe("text-ok");
+      expect(styles.pill).toContain("bg-ok-soft");
+      expect(styles.bg).toBe("bg-ok-soft");
     });
 
     it("returns neutral styles for unknown status", () => {
@@ -81,15 +88,15 @@ describe("status-colors", () => {
 
     it("returns correct styles for each intent type", () => {
       // success
-      expect(getStatusColor("asset", "AVAILABLE").text).toBe("text-success");
+      expect(getStatusColor("asset", "AVAILABLE").text).toBe("text-ok");
       // primary
-      expect(getStatusColor("asset", "CHECKED_OUT").text).toBe("text-primary");
+      expect(getStatusColor("asset", "CHECKED_OUT").text).toBe("text-red");
       // error
-      expect(getStatusColor("asset", "LOST").text).toBe("text-error");
+      expect(getStatusColor("asset", "LOST").text).toBe("text-t-out");
       // warning
-      expect(getStatusColor("asset", "IN_MAINTENANCE").text).toBe("text-warning");
+      expect(getStatusColor("asset", "IN_MAINTENANCE").text).toBe("text-warn");
       // info
-      expect(getStatusColor("asset", "RESERVED").text).toBe("text-info");
+      expect(getStatusColor("asset", "RESERVED").text).toBe("text-blue");
     });
   });
 

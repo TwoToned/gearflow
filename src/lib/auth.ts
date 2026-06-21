@@ -15,6 +15,14 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  // Cookie security follows the SERVE url (NEXT_PUBLIC_APP_URL), not the issuer
+  // (BETTER_AUTH_URL). Locally we serve over http (roger:3000) while the issuer
+  // is https://preview.lab.rvlt.app for Convex — without this, Better Auth would
+  // mark session cookies Secure and the browser would drop them over http,
+  // breaking login (set-active → 401). Prod serves https, so cookies stay Secure.
+  advanced: {
+    useSecureCookies: env.NEXT_PUBLIC_APP_URL.startsWith("https://"),
+  },
   account: {
     accountLinking: {
       enabled: true,

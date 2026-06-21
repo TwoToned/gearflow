@@ -51,8 +51,8 @@ export function ConfirmActionMenuItem({
 
   return (
     <DropdownMenuItem
-      variant="destructive"
-      onClick={(e) => {
+      onSelect={(e) => {
+        // Prevent the menu from auto-closing on select
         e.preventDefault();
         if (armed) {
           if (timerRef.current) clearTimeout(timerRef.current);
@@ -63,9 +63,11 @@ export function ConfirmActionMenuItem({
           timerRef.current = setTimeout(() => setArmed(false), timeoutMs);
         }
       }}
-      // Prevent base-ui from auto-closing on first click
-      closeOnClick={false}
-      className={cn(armed && "bg-destructive/10", className)}
+      className={cn(
+        "text-destructive focus:text-destructive",
+        armed && "bg-destructive/10",
+        className,
+      )}
       {...props}
     >
       {icon}

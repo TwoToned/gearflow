@@ -85,7 +85,7 @@ export function SSOPendingApprovals() {
             </div>
             <div className="flex items-center gap-2">
               {approval.suggestedRole && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge status="neutral" className="text-xs">
                   Suggested: {approval.suggestedRole}
                 </Badge>
               )}
@@ -118,7 +118,7 @@ export function SSOPendingApprovals() {
             </Select>
             <Button
               size="sm"
-              variant="outline"
+              variant="line"
               className="text-green-600 border-green-600/20 hover:bg-green-600/10"
               onClick={() =>
                 approveMut.mutate({
@@ -132,7 +132,7 @@ export function SSOPendingApprovals() {
             </Button>
             <Button
               size="sm"
-              variant="outline"
+              variant="line"
               className="text-red-600 border-red-600/20 hover:bg-red-600/10"
               onClick={() => rejectMut.mutate(approval.id)}
               disabled={rejectMut.isPending}

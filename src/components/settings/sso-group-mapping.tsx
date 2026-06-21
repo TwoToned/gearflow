@@ -198,7 +198,7 @@ export function SSOGroupMappingSection({
         <div className="flex items-center justify-between">
           <Label>Group Mappings</Label>
           {canUpdate && (
-            <Button variant="outline" size="sm" onClick={addMapping}>
+            <Button variant="line" size="sm" onClick={addMapping}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Add Mapping
             </Button>
@@ -271,7 +271,7 @@ export function SSOGroupMappingSection({
         {dirty && canUpdate && (
           <div className="flex justify-end gap-2 pt-2">
             <Button
-              variant="outline"
+              variant="line"
               size="sm"
               onClick={() => {
                 setLocalMappings(mappings);

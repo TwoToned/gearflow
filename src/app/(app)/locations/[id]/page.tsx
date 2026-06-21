@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -15,6 +15,10 @@ import {
   Container,
   FolderOpen,
   ChevronRight,
+  Briefcase,
+  Warehouse,
+  Building2,
+  Truck,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -24,6 +28,7 @@ import { toast } from "sonner";
 import { getLocation, deleteLocation, updateLocationNotes } from "@/server/locations";
 import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatusLabels, locationTypeLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -47,9 +52,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-
+/** Type → icon for the location hero chip / meta. */
+const locationTypeIcons: Record<string, typeof MapPin> = {
+  WAREHOUSE: Warehouse,
+  VENUE: Building2,
+  VEHICLE: Truck,
+  OFFSITE: MapPin,
+};
 
 export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="location" action="read">
+      <LocationDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -71,91 +90,178 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // ── "What's here" — derived client-side from data already loaded ──────
+  // Stored-here counts (serialised / bulk / kits) + how many of those units
+  // are currently out on a project (status CHECKED_OUT). All from getLocation.
+  const here = useMemo(() => {
+    const assets = location?.assets ?? [];
+    const bulk = location?.bulkAssets ?? [];
+    const kits = location?.kits ?? [];
+    const isOut = (s: string) => s === "CHECKED_OUT";
+    const deployedAssets = assets.filter((a: { status: string }) => isOut(a.status)).length;
+    const deployedBulk = bulk.filter((b: { status: string }) => isOut(b.status)).length;
+    const deployedKits = kits.filter((k: { status: string }) => isOut(k.status)).length;
+    const stored =
+      (location?._count?.assets ?? 0) +
+      (location?._count?.bulkAssets ?? 0) +
+      (location?._count?.kits ?? 0);
+    return {
+      serialised: location?._count?.assets ?? 0,
+      bulk: location?._count?.bulkAssets ?? 0,
+      kits: location?._count?.kits ?? 0,
+      stored,
+      deployed: deployedAssets + deployedBulk + deployedKits,
+      projects: location?._count?.projects ?? 0,
+    };
+  }, [location]);
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
 
   if (!location) {
-    return <div className="text-fg-3 py-12 text-center">Location not found.</div>;
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Location not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/locations">Back to locations</Link>
+        </Button>
+      </div>
+    );
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
+  const TypeIcon = locationTypeIcons[location.type] ?? MapPin;
+  const hasMap = location.latitude != null && location.longitude != null;
+  const mapsHref = location.address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.address)}`
+    : hasMap
+      ? `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`
+      : null;
 
   return (
-    <RequirePermission resource="location" action="read">
+    <>
       <PageMeta title={location.name} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity + actions) ──────────── */}
+          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/locations" className="hover:text-fg transition-colors">
+            <nav className="flex items-center gap-1 text-caption text-muted">
+              <Link href="/locations" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Locations
               </Link>
               {location.parent && (
                 <>
-                  <ChevronRight className="h-3.5 w-3.5" />
-                  <Link href={`/locations/${location.parent.id}`} className="hover:text-fg transition-colors">
+                  <ChevronRight className="h-3 w-3" />
+                  <Link href={`/locations/${location.parent.id}`} className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                     {location.parent.name}
                   </Link>
                 </>
               )}
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg font-medium truncate">{location.name}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="truncate text-ink-2">{location.name}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{location.name}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">{location.name}</h1>
                   <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
                   {location.isDefault && (
-                    <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-badge font-bold text-warn">
+                      <Star className="h-3 w-3 fill-warn" />
+                      Default
+                    </span>
                   )}
                 </div>
-                <p className="t-body text-fg-3">
-                  {location.address || "No address"}
-                  {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
-                </p>
+                {/* Meta line: type · address · parent */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  <span className="inline-flex items-center gap-1">
+                    <TypeIcon className="h-3.5 w-3.5" aria-hidden />
+                    {locationTypeLabels[location.type] || location.type}
+                  </span>
+                  {location.address && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      {mapsHref ? (
+                        <a
+                          href={mapsHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn("inline-flex items-center gap-1 rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                        >
+                          <MapPin className="h-3.5 w-3.5" aria-hidden />
+                          {location.address}
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" aria-hidden />
+                          {location.address}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {location.parent && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <span>
+                        Sub-location of{" "}
+                        <Link
+                          href={`/locations/${location.parent.id}`}
+                          className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                        >
+                          {location.parent.name}
+                        </Link>
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
-              <CanDo resource="location" action="update">
-                <div className="flex gap-2">
-                  <Button variant="outline" render={<Link href={`/locations/${id}/edit`} />}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <CanDo resource="location" action="update">
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/locations/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      <span className="hidden sm:inline">Edit</span>
+                    </Link>
                   </Button>
+                </CanDo>
+                <CanDo resource="location" action="delete">
                   <Button
-                    variant="outline"
-                    className="text-destructive"
+                    variant="line"
+                    size="sm"
+                    className="text-t-out hover:border-red hover:bg-red hover:text-white"
                     onClick={() => setDeleteOpen(true)}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    <Trash2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Delete</span>
                   </Button>
-                </div>
-              </CanDo>
+                </CanDo>
+              </div>
+            </div>
+
+            {/* "What's here" count strip — single surface, vertical dividers */}
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
+              <HereStat icon={Boxes} label="Stored here" figure={here.stored} bright />
+              <HereStat icon={Briefcase} label="Out on a project" figure={here.deployed} accent={here.deployed > 0} />
+              <HereStat icon={FolderOpen} label="Projects using" figure={here.projects} />
+              <HereStat icon={MapPin} label="Sub-locations" figure={location.children?.length ?? 0} />
             </div>
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <DetailLayout>
-            {/* Main content */}
+            {/* Main content — emphasises what's physically here */}
             <DetailMain>
-              {/* Address Map */}
-              <div className="mb-6">
-                <AddressDisplay
-                  address={location.address || location.parent?.address}
-                  latitude={location.latitude ?? location.parent?.latitude}
-                  longitude={location.longitude ?? location.parent?.longitude}
-                  label={location.name}
-                />
-              </div>
-
               <Tabs defaultValue="assets">
                 <TabsList>
                   <TabsTrigger value="assets">
-                    Assets ({assetCount})
+                    Stored here ({assetCount})
                   </TabsTrigger>
                   <TabsTrigger value="projects">
                     Projects ({location._count?.projects || 0})
@@ -168,14 +274,17 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
                 <TabsContent value="assets" className="mt-4">
                   {(location.assets?.length || 0) === 0 && (location.bulkAssets?.length || 0) === 0 && (location.kits?.length || 0) === 0 ? (
-                    <EmptyState preset="assets" heading="No assets here" description="Assets checked in to this location will appear here." />
+                    <EmptyState
+                      title="Nothing stored here yet"
+                      description="Assets, bulk stock, and kits checked in to this location will appear here — including anything currently out on a job."
+                    />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Asset Tag</TableHead>
-                            <TableHead>Name / Model</TableHead>
+                            <TableHead>Asset tag</TableHead>
+                            <TableHead>Name / model</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Status</TableHead>
                           </TableRow>
@@ -184,48 +293,48 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                           {location.assets?.map((asset: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => (
                             <TableRow key={asset.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${asset.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {asset.assetTag}
                                 </Link>
                               </TableCell>
-                              <TableCell>{asset.model?.name || "\u2014"}</TableCell>
+                              <TableCell>{asset.model?.name || "—"}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Serialized</Badge>
+                                <Badge status="neutral">Serialised</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{assetStatusLabels[asset.status] || formatLabel(asset.status)}</Badge>
+                                <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
                           {location.bulkAssets?.map((bulk: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => (
                             <TableRow key={bulk.id}>
                               <TableCell>
-                                <Link href={`/assets/registry/${bulk.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/assets/registry/${bulk.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {bulk.assetTag}
                                 </Link>
                               </TableCell>
-                              <TableCell>{bulk.model?.name || "\u2014"}</TableCell>
+                              <TableCell>{bulk.model?.name || "—"}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Bulk</Badge>
+                                <Badge status="neutral">Bulk</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{bulkAssetStatusLabels[bulk.status] || formatLabel(bulk.status)}</Badge>
+                                <StatusIndicator category="bulkAsset" value={bulk.status} label={bulkAssetStatusLabels[bulk.status] || formatLabel(bulk.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
                           {location.kits?.map((kit: { id: string; assetTag: string; name: string; status: string }) => (
                             <TableRow key={kit.id}>
                               <TableCell>
-                                <Link href={`/kits/${kit.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/kits/${kit.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {kit.assetTag}
                                 </Link>
                               </TableCell>
                               <TableCell>{kit.name}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">Kit</Badge>
+                                <Badge status="neutral">Kit</Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="text-xs">{kitStatusLabels[kit.status] || formatLabel(kit.status)}</Badge>
+                                <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} variant="pill" />
                               </TableCell>
                             </TableRow>
                           ))}
@@ -237,9 +346,9 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
                 <TabsContent value="projects" className="mt-4">
                   {(location.projects?.length || 0) === 0 ? (
-                    <EmptyState preset="projects" heading="No projects here" description="Projects using this as a venue or delivery address will appear here." />
+                    <EmptyState title="No projects here" description="Projects using this as a venue or delivery address will appear here." />
                   ) : (
-                    <div className="rounded-md border">
+                    <div className="rounded-[var(--r)] border border-line">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -254,16 +363,16 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                           {location.projects?.map((project: { id: string; projectNumber: string; name: string; status: string; client?: { name?: string } | null; createdAt: string | Date }) => (
                             <TableRow key={project.id}>
                               <TableCell>
-                                <Link href={`/projects/${project.id}`} className="font-mono text-sm font-medium hover:underline">
+                                <Link href={`/projects/${project.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
                                   {project.projectNumber}
                                 </Link>
                               </TableCell>
                               <TableCell>{project.name}</TableCell>
-                              <TableCell className="text-fg-3">{project.client?.name || "\u2014"}</TableCell>
+                              <TableCell className="text-muted">{project.client?.name || "—"}</TableCell>
                               <TableCell>
                                 <StatusIndicator category="project" value={project.status} label={projectStatusLabels[project.status] || formatLabel(project.status)} variant="pill" />
                               </TableCell>
-                              <TableCell className="text-fg-3">
+                              <TableCell className="text-muted">
                                 {new Date(project.createdAt).toLocaleDateString()}
                               </TableCell>
                             </TableRow>
@@ -304,45 +413,63 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
               </Tabs>
             </DetailMain>
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
+            {/* ── Sidebar (lean: Place · Inventory · Sub-locations · Activity) ─ */}
             <DetailSidebar>
-                {/* Location Info */}
-                <SidebarSection title="Location Info">
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Type</span>
-                      <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
+                {/* Place — map + address + directions */}
+                <SidebarSection title="Place">
+                  {hasMap || location.address || location.parent?.address ? (
+                    <div className="space-y-2">
+                      <AddressDisplay
+                        address={location.address || location.parent?.address}
+                        latitude={location.latitude ?? location.parent?.latitude}
+                        longitude={location.longitude ?? location.parent?.longitude}
+                        label={location.name}
+                        compact
+                      />
+                      {location.address && (
+                        <p className="text-table-cell text-ink-2">{location.address}</p>
+                      )}
                     </div>
-                    {location.isDefault && (
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Default</span>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                          <span className="font-medium">Yes</span>
-                        </div>
+                  ) : (
+                    <p className="text-table-cell text-faint">No address set</p>
+                  )}
+                </SidebarSection>
+
+                {/* Inventory — what lives here, by kind */}
+                <SidebarSection title="Inventory">
+                  <div className="space-y-1.5 text-ui-text">
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2 text-muted">
+                        <Package className="h-3.5 w-3.5" />
+                        <span>Serialised</span>
                       </div>
-                    )}
-                    {location.address && (
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Address</span>
-                        <span className="font-medium text-right max-w-[200px] truncate">{location.address}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.assets || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2 text-muted">
+                        <Boxes className="h-3.5 w-3.5" />
+                        <span>Bulk</span>
+                      </div>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.bulkAssets || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2 text-muted">
+                        <Container className="h-3.5 w-3.5" />
+                        <span>Kits</span>
+                      </div>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.kits || 0}</span>
+                    </div>
+                    {here.deployed > 0 && (
+                      <div className="flex justify-between border-t border-line pt-1.5">
+                        <div className="flex items-center gap-2 text-muted">
+                          <Briefcase className="h-3.5 w-3.5" />
+                          <span>Out on a project</span>
+                        </div>
+                        <span className="t-data font-medium text-red tabular-nums">{here.deployed}</span>
                       </div>
                     )}
                   </div>
                 </SidebarSection>
-
-                {/* Parent Location */}
-                {location.parent && (
-                  <SidebarSection title="Parent Location">
-                    <Link
-                      href={`/locations/${location.parent.id}`}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
-                    >
-                      <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                      <span className="font-medium">{location.parent.name}</span>
-                    </Link>
-                  </SidebarSection>
-                )}
 
                 {/* Sub-locations */}
                 {location.children && location.children.length > 0 && (
@@ -352,13 +479,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                         <Link
                           key={child.id}
                           href={`/locations/${child.id}`}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
+                          className={cn("flex items-center justify-between rounded-[var(--r)] px-2 py-1.5 text-ui-text transition-colors hover:bg-elev", focusRing)}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                            <span className="truncate">{child.name}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <MapPin className="h-3.5 w-3.5 shrink-0 text-muted" />
+                            <span className="truncate text-ink">{child.name}</span>
                           </div>
-                          <span className="text-xs text-fg-3 shrink-0">
+                          <span className="shrink-0 text-caption text-muted tabular-nums">
                             {(child._count?.assets || 0) + (child._count?.bulkAssets || 0)} assets
                           </span>
                         </Link>
@@ -366,40 +493,6 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                   </SidebarSection>
                 )}
-
-                {/* Asset Counts */}
-                <SidebarSection title="Inventory">
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <Package className="h-3.5 w-3.5" />
-                        <span>Serialized</span>
-                      </div>
-                      <span className="font-medium">{location._count?.assets || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <Boxes className="h-3.5 w-3.5" />
-                        <span>Bulk</span>
-                      </div>
-                      <span className="font-medium">{location._count?.bulkAssets || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <Container className="h-3.5 w-3.5" />
-                        <span>Kits</span>
-                      </div>
-                      <span className="font-medium">{location._count?.kits || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <FolderOpen className="h-3.5 w-3.5" />
-                        <span>Projects</span>
-                      </div>
-                      <span className="font-medium">{location._count?.projects || 0}</span>
-                    </div>
-                  </div>
-                </SidebarSection>
 
                 {/* Activity Timeline */}
                 <SidebarSection title="Activity" divider={false}>
@@ -421,6 +514,39 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
         }}
         pending={deleteMutation.isPending}
       />
-    </RequirePermission>
+    </>
+  );
+}
+
+/** One cell of the hero "what's here" count strip — calm-by-default. */
+function HereStat({
+  icon: Icon,
+  label,
+  figure,
+  bright = false,
+  accent = false,
+}: {
+  icon: typeof Boxes;
+  label: string;
+  figure: number;
+  bright?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1 bg-card p-3">
+      <div className="flex items-center gap-1.5 text-muted">
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="text-caption">{label}</span>
+      </div>
+      <span
+        className={cn(
+          "font-display font-extrabold leading-none tracking-tight tabular-nums",
+          bright ? "text-[24px] text-ink" : "text-[20px]",
+          accent ? "text-red" : bright ? "text-ink" : "text-ink-2",
+        )}
+      >
+        {figure}
+      </span>
+    </div>
   );
 }

@@ -305,7 +305,7 @@ export function CallSheetDialog({
                         </span>
                         {count > 0 && (
                           <Badge
-                            variant="secondary"
+                            status="neutral"
                             className="ml-auto text-xs tabular-nums"
                           >
                             {count}

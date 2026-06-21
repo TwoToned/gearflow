@@ -55,14 +55,16 @@ import {
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
+import { cn, focusRing } from "@/lib/utils";
 import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-picker";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -266,10 +268,10 @@ export function ServicesPanel({
           {[1, 2, 3].map((i) => (
             <div key={i} className="space-y-2">
               <div className="flex items-center gap-2">
-                <div className="h-3 w-20 rounded bg-bg-elevated animate-pulse" />
-                <div className="h-px flex-1 bg-border" />
+                <Skeleton className="h-3 w-20" />
+                <div className="h-px flex-1 bg-line" />
               </div>
-              <div className="h-16 rounded-lg bg-bg-elevated animate-pulse" />
+              <Skeleton className="h-16 rounded-[var(--r)]" />
             </div>
           ))}
         </div>
@@ -286,14 +288,16 @@ export function ServicesPanel({
             <div className="flex items-center gap-2 flex-wrap">
               {/* Quick Add */}
               <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="sm" />}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Service
-                  <ChevronDown className="ml-1 h-3 w-3" />
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="h-4 w-4" />
+                    Add service
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel>Service Type</DropdownMenuLabel>
+                    <DropdownMenuLabel>Service type</DropdownMenuLabel>
                   </DropdownMenuGroup>
                   {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
                     const Icon = SERVICE_TYPE_ICONS[type];
@@ -335,29 +339,29 @@ export function ServicesPanel({
               {hasProjectDates && (
                 <Button
                   size="sm"
-                  variant={hasServices ? "outline" : "default"}
+                  variant={hasServices ? "line" : "primary"}
                   onClick={() => generateMutation.mutate()}
                   disabled={generateMutation.isPending}
                 >
                   {generateMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : hasServices ? (
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <RefreshCw className="h-4 w-4" />
                   ) : (
-                    <Sparkles className="mr-2 h-4 w-4" />
+                    <Sparkles className="h-4 w-4" />
                   )}
-                  {hasServices ? "Regenerate" : "Generate Services"}
+                  {hasServices ? "Regenerate" : "Generate services"}
                 </Button>
               )}
 
               {/* Import from another project */}
               <Button
                 size="sm"
-                variant="outline"
+                variant="line"
                 onClick={() => setCloneDialogOpen(true)}
               >
-                <Copy className="mr-2 h-4 w-4" />
-                Import Services
+                <Copy className="h-4 w-4" />
+                Import services
               </Button>
             </div>
           </CanDo>
@@ -366,20 +370,24 @@ export function ServicesPanel({
         {/* Empty State */}
         {!hasServices && (
           <EmptyState
-            preset="calendar"
-            heading="No services yet"
+            title="No logistics yet"
             description={
               hasProjectDates
-                ? "Generate services from your project dates, or add them manually."
-                : "Set project dates first, then generate services automatically."
+                ? "Generate delivery, bump-in, and pickup from your project dates — or add them by hand."
+                : "Set project dates first, then generate the run automatically."
             }
             action={
-              hasProjectDates
-                ? {
-                    label: "Generate Services",
-                    onClick: () => generateMutation.mutate(),
-                  }
-                : undefined
+              hasProjectDates ? (
+                <Button
+                  variant="line"
+                  size="sm"
+                  onClick={() => generateMutation.mutate()}
+                  disabled={generateMutation.isPending}
+                >
+                  {generateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Generate services
+                </Button>
+              ) : undefined
             }
           />
         )}
@@ -390,14 +398,14 @@ export function ServicesPanel({
             {grouped.map(({ dateLabel, dateKey, dateLong, items }) => (
               <StaggerItem key={dateKey}>
                 <div className="space-y-2">
-                  {/* Date header — teal overline chip + extending line (D3) */}
+                  {/* Date header — red overline chip + extending line (D3) */}
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded bg-primary/8 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
+                    <span className="inline-flex items-center rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red">
                       {dateLabel}
                     </span>
-                    <div className="h-px flex-1 bg-border" />
+                    <div className="h-px flex-1 bg-line" />
                     {dateLong && (
-                      <span className="text-[10px] text-fg-4">{dateLong}</span>
+                      <span className="text-caption text-faint">{dateLong}</span>
                     )}
                   </div>
 
@@ -426,23 +434,23 @@ export function ServicesPanel({
 
         {/* Financial Summary */}
         {summary && summary.serviceCount > 0 && (
-          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-            <h4 className="text-sm font-medium text-fg-3 mb-2 flex items-center gap-1">
+          <div className="rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)]">
+            <h4 className="t-overline text-muted mb-2 flex items-center gap-1">
               <DollarSign className="h-3.5 w-3.5" />
-              Services Financial Summary
+              Services financial summary
             </h4>
-            <div className="grid gap-4 sm:grid-cols-3 text-sm">
+            <div className="grid gap-4 sm:grid-cols-3 text-ui-text">
               <div>
-                <span className="text-fg-3">On Documents</span>
-                <p className="font-medium">{formatCurrency(summary.onDocumentsTotal)}</p>
+                <span className="text-muted">On documents</span>
+                <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.onDocumentsTotal)}</p>
               </div>
               <div>
-                <span className="text-fg-3">Internal</span>
-                <p className="font-medium">{formatCurrency(summary.internalTotal)}</p>
+                <span className="text-muted">Internal</span>
+                <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.internalTotal)}</p>
               </div>
               <div>
-                <span className="text-fg-3">Total</span>
-                <p className="font-semibold">{formatCurrency(summary.totalCost)}</p>
+                <span className="text-muted">Total</span>
+                <p className="font-semibold tabular-nums text-ink">{formatCurrency(summary.totalCost)}</p>
               </div>
             </div>
           </div>
@@ -452,22 +460,23 @@ export function ServicesPanel({
         <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Delete Service</DialogTitle>
+              <DialogTitle>Delete service</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-fg-2">
+            <p className="text-ui-text text-ink-2">
               Are you sure you want to delete &ldquo;{deleteTarget?.title}&rdquo;? This will also
               remove any linked crew assignments.
             </p>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              <Button variant="line" onClick={() => setDeleteTarget(null)}>
                 Cancel
               </Button>
               <Button
-                variant="destructive"
+                variant="line"
+                className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
                 onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
                 disabled={deleteMutation.isPending}
               >
-                {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 Delete
               </Button>
             </DialogFooter>
@@ -539,19 +548,19 @@ function ServiceCard({
   ) ?? 0;
 
   return (
-    <div className={`rounded-lg bg-bg-surface p-4 surface-ring ${isCancelled ? "opacity-50" : ""}`}>
+    <div className={`rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)] ${isCancelled ? "opacity-50" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         {/* Left side */}
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <Icon className="h-4 w-4 text-fg-3 shrink-0" />
-            <span className={`font-medium ${isCancelled ? "line-through" : ""}`}>
+            <Icon className="h-4 w-4 text-muted shrink-0" />
+            <span className={`font-medium text-ink ${isCancelled ? "line-through" : ""}`}>
               {service.title}
             </span>
             {/* Status pill using StatusIndicator (D2) */}
             <StatusIndicator
-              category="assignment"
-              value={service.status.toLowerCase()}
+              category="service"
+              value={service.status}
               label={SERVICE_STATUS_LABELS[service.status]}
               variant="pill"
             />
@@ -559,13 +568,13 @@ function ServiceCard({
 
           {/* Time info */}
           {isMultiDay && (
-            <div className="flex items-center gap-1 text-sm text-fg-3">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Clock className="h-3 w-3" />
               <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
             </div>
           )}
           {!isMultiDay && (service.startTime || service.endTime) && (
-            <div className="flex items-center gap-1 text-sm text-fg-3">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Clock className="h-3 w-3" />
               <span>
                 {service.startTime}
@@ -574,7 +583,7 @@ function ServiceCard({
             </div>
           )}
           {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
-            <div className="flex items-center gap-1 text-sm text-fg-3">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <Truck className="h-3 w-3" />
               <span>
                 {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
@@ -584,7 +593,7 @@ function ServiceCard({
 
           {/* Address */}
           {service.address && (
-            <div className="flex items-center gap-1 text-sm text-fg-3">
+            <div className="flex items-center gap-1 text-ui-text text-muted">
               <MapPin className="h-3 w-3 shrink-0" />
               <span className="truncate">{service.address}</span>
               {service.latitude != null && service.longitude != null && (
@@ -592,7 +601,8 @@ function ServiceCard({
                   href={`https://www.google.com/maps/dir/?api=1&destination=${service.latitude},${service.longitude}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 shrink-0"
+                  className={cn("inline-flex items-center gap-1 text-caption text-link hover:underline shrink-0 rounded-sm", focusRing)}
+                  title="Get directions"
                 >
                   <Navigation className="h-3 w-3" />
                 </a>
@@ -602,19 +612,22 @@ function ServiceCard({
 
           {/* Vehicle */}
           {service.vehicleDescription && (
-            <div className="text-sm text-fg-3">
+            <div className="text-ui-text text-muted">
               Vehicle: {service.vehicleDescription}
             </div>
           )}
 
           {/* Crew — avatar stack with 3 max + overflow (D14) */}
           {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
-            <div className="flex items-center gap-1.5 text-sm text-fg-3 flex-wrap">
+            <div className="flex items-center gap-1.5 text-ui-text text-muted flex-wrap">
               <Users className="h-3 w-3 shrink-0" />
               {service.crewRole && (
-                <Badge variant="outline" className="text-xs py-0" style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}>
+                <span
+                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-badge font-medium"
+                  style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}
+                >
                   {service.crewRole.name}
-                </Badge>
+                </span>
               )}
               {service.crewAssignments?.length > 0 ? (
                 <div className="flex items-center gap-1">
@@ -624,38 +637,36 @@ function ServiceCard({
                       <button
                         key={a.id}
                         onClick={() => onCrewMessage(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`)}
-                        className="relative h-6 w-6 rounded-full border-2 border-bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                        className={cn("relative rounded-full", focusRing)}
                         title={`${a.crewMember.firstName} ${a.crewMember.lastName} — click to generate message`}
                       >
-                        {a.crewMember.image ? (
-                          <img src={a.crewMember.image} alt="" className="h-full w-full rounded-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center rounded-full bg-bg-inset text-[9px] font-medium">
-                            {a.crewMember.firstName[0]}{a.crewMember.lastName[0]}
-                          </span>
-                        )}
+                        <PersonAvatar
+                          name={`${a.crewMember.firstName} ${a.crewMember.lastName}`}
+                          src={a.crewMember.image ?? undefined}
+                          className="size-6 border-2 border-card"
+                        />
                       </button>
                     ))}
                     {service.crewAssignments.length > 3 && (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-bg-surface bg-bg-inset text-[9px] font-medium">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-paper-2 text-badge font-medium">
                         +{service.crewAssignments.length - 3}
                       </span>
                     )}
                   </div>
                   {/* Crew cost subtotal (D12) */}
                   {crewCostTotal > 0 && (
-                    <span className="text-xs text-fg-3 ml-1">
+                    <span className="text-caption text-muted ml-1">
                       {service.crewAssignments.length} crew · {formatCurrency(crewCostTotal)}
                     </span>
                   )}
                 </div>
               ) : service.crewCountRequired != null && service.crewCountRequired > 0 ? (
-                <span className="text-amber-500">
+                <span className="text-warn">
                   {service.crewCountRequired} needed — none assigned
                 </span>
               ) : null}
               {service.crewCountRequired != null && service.crewCountRequired > 0 && service.crewAssignments?.length > 0 && service.crewAssignments.length < service.crewCountRequired && (
-                <span className="text-amber-500 text-xs">
+                <span className="text-warn text-caption">
                   ({service.crewAssignments.length}/{service.crewCountRequired})
                 </span>
               )}
@@ -664,22 +675,22 @@ function ServiceCard({
 
           {/* Financial */}
           {(service.lineTotal != null || service.costTotal != null) && (
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-3 text-ui-text">
               {service.lineTotal != null && (
                 <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-fg-3" />
-                  <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
-                  <span className="text-fg-3 text-xs">charge</span>
+                  <DollarSign className="h-3 w-3 text-muted" />
+                  <span className="font-medium tabular-nums text-ink-2">{formatCurrency(service.lineTotal)}</span>
+                  <span className="text-muted text-caption">charge</span>
                 </div>
               )}
               {service.costTotal != null && Number(service.costTotal) > 0 && (
                 <div className="flex items-center gap-1">
-                  <span className="t-data text-fg-3">{formatCurrency(service.costTotal)}</span>
-                  <span className="text-fg-3 text-xs">cost</span>
+                  <span className="tabular-nums text-muted">{formatCurrency(service.costTotal)}</span>
+                  <span className="text-muted text-caption">cost</span>
                 </div>
               )}
               {service.showOnDocuments && (
-                <span className="text-fg-3 text-xs">· On quote</span>
+                <span className="text-muted text-caption">· On quote</span>
               )}
             </div>
           )}
@@ -689,12 +700,14 @@ function ServiceCard({
         <div className="flex items-center gap-1 shrink-0">
           <CanDo resource="project" action="update">
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
-                <ChevronDown className="h-3.5 w-3.5" />
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8" title="Change status">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+                  <DropdownMenuLabel>Change status</DropdownMenuLabel>
                 </DropdownMenuGroup>
                 {(
                   ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as ServiceStatus[]
@@ -710,14 +723,15 @@ function ServiceCard({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="ghost" size="sm" onClick={onEdit}>
+            <Button variant="ghost" size="icon" className="size-8" onClick={onEdit} title="Edit service">
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              className="text-destructive"
+              size="icon"
+              className="size-8 text-t-out"
               onClick={onDelete}
+              title="Delete service"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -812,13 +826,13 @@ function CloneServicesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Import Services</DialogTitle>
+          <DialogTitle>Import services</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-fg-2">
+        <p className="text-ui-text text-ink-2">
           Clone services from a previous project. Dates will be automatically adjusted to match this project.
         </p>
         <div className="space-y-1.5">
-          <Label>Source Project</Label>
+          <Label>Source project</Label>
           <ComboboxPicker
             value={sourceProjectId}
             onChange={setSourceProjectId}
@@ -829,7 +843,7 @@ function CloneServicesDialog({
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
@@ -838,7 +852,7 @@ function CloneServicesDialog({
           >
             {cloneMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <ArrowRightLeft className="mr-2 h-4 w-4" />
-            Clone Services
+            Clone services
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -889,36 +903,36 @@ function CrewMessageDialog({
         </DialogHeader>
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted" />
           </div>
         ) : msg ? (
           <div className="space-y-3">
             {(msg.crewMemberPhone || msg.crewMemberEmail) && (
-              <div className="flex items-center gap-3 text-sm text-fg-3">
+              <div className="flex items-center gap-3 text-ui-text text-muted">
                 {msg.crewMemberPhone && (
-                  <a href={`tel:${msg.crewMemberPhone}`} className="text-primary hover:underline">
+                  <a href={`tel:${msg.crewMemberPhone}`} className={cn("text-link hover:underline rounded-sm", focusRing)}>
                     {msg.crewMemberPhone}
                   </a>
                 )}
                 {msg.crewMemberEmail && (
-                  <a href={`mailto:${msg.crewMemberEmail}`} className="text-primary hover:underline">
+                  <a href={`mailto:${msg.crewMemberEmail}`} className={cn("text-link hover:underline rounded-sm", focusRing)}>
                     {msg.crewMemberEmail}
                   </a>
                 )}
               </div>
             )}
-            <pre className="whitespace-pre-wrap rounded-lg bg-bg-inset p-3 text-sm font-sans">
+            <pre className="whitespace-pre-wrap rounded-[var(--r)] border border-line bg-paper-2 p-3 text-ui-text text-ink-2 font-sans">
               {msg.message}
             </pre>
           </div>
         ) : null}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="line" onClick={() => onOpenChange(false)}>
             Close
           </Button>
           <Button onClick={copyToClipboard} disabled={!msg?.message}>
             <Copy className="mr-2 h-4 w-4" />
-            Copy Message
+            Copy message
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -942,7 +956,7 @@ function CrewMemberSelect({
   return (
     <div className="space-y-1.5">
       <Label className="flex items-center gap-2">
-        Assign Crew Members
+        Assign crew members
         <CrewCountBadge needed={needed} assigned={values.length} />
       </Label>
       <MultiComboboxPicker
@@ -960,14 +974,14 @@ function CrewMemberSelect({
 function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number }) {
   if (needed <= 0 && assigned <= 0) return null;
   const color = needed <= 0
-    ? "text-fg-3"
+    ? "text-muted"
     : assigned > needed
-      ? "text-red-500"
+      ? "text-t-out"
       : assigned === needed
-        ? "text-green-500"
-        : "text-amber-500";
+        ? "text-ok"
+        : "text-warn";
   return (
-    <span className={`text-xs font-normal ${color}`}>
+    <span className={`text-caption font-normal ${color}`}>
       ({assigned}/{needed || "?"})
     </span>
   );
@@ -1128,12 +1142,12 @@ function ServiceDialog({
     (crewMembers as { id: string; firstName: string; lastName: string; image: string | null }[]).map((m) => ({
       value: m.id,
       label: `${m.firstName} ${m.lastName}`,
-      icon: m.image ? (
-        <img src={m.image} alt="" className="h-5 w-5 rounded-full object-cover" />
-      ) : (
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-bg-inset text-[10px] font-medium">
-          {m.firstName[0]}{m.lastName[0]}
-        </span>
+      icon: (
+        <PersonAvatar
+          name={`${m.firstName} ${m.lastName}`}
+          src={m.image ?? undefined}
+          className="size-6"
+        />
       ),
     }));
 
@@ -1201,8 +1215,8 @@ function ServiceDialog({
         <DialogHeader>
           <DialogTitle>
             {isEditing
-              ? `Edit ${SERVICE_TYPE_LABELS[form.watch("type") as ServiceType]} Service`
-              : `Add ${SERVICE_TYPE_LABELS[watchType]} Service`}
+              ? `Edit ${SERVICE_TYPE_LABELS[form.watch("type") as ServiceType]} service`
+              : `Add ${SERVICE_TYPE_LABELS[watchType]} service`}
           </DialogTitle>
         </DialogHeader>
 
@@ -1212,7 +1226,7 @@ function ServiceDialog({
             <Label>Title</Label>
             <Input {...form.register("title")} placeholder="Service title" />
             {form.formState.errors.title && (
-              <p className="text-xs text-destructive">
+              <p className="text-caption text-t-out">
                 {form.formState.errors.title.message}
               </p>
             )}
@@ -1232,7 +1246,7 @@ function ServiceDialog({
           {canBeMultiDay ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Date</Label>
+                <Label>Start date</Label>
                 <Input
                   type="date"
                   {...form.register("date")}
@@ -1246,7 +1260,7 @@ function ServiceDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>End Date</Label>
+                <Label>End date</Label>
                 <Input
                   type="date"
                   {...form.register("endDate")}
@@ -1261,11 +1275,11 @@ function ServiceDialog({
                 <Input type="date" {...form.register("date")} />
               </div>
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start time</Label>
                 <Input type="time" {...form.register("startTime")} />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
+                <Label>End time</Label>
                 <Input type="time" {...form.register("endTime")} />
               </div>
             </div>
@@ -1274,11 +1288,11 @@ function ServiceDialog({
           {canBeMultiDay && !isCurrentlyMultiDay && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start time</Label>
                 <Input type="time" {...form.register("startTime")} />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
+                <Label>End time</Label>
                 <Input type="time" {...form.register("endTime")} />
               </div>
             </div>
@@ -1286,9 +1300,9 @@ function ServiceDialog({
 
           {(watchType === "DELIVERY" || watchType === "PICKUP") && (
             <div className="space-y-1.5">
-              <Label>{watchType === "DELIVERY" ? "Delivery Time" : "Pickup Time"}</Label>
+              <Label>{watchType === "DELIVERY" ? "Delivery time" : "Pickup time"}</Label>
               <Input type="time" {...form.register("scheduledTime")} />
-              <p className="text-xs text-fg-3">
+              <p className="text-caption text-muted">
                 The actual {watchType === "DELIVERY" ? "delivery" : "pickup"} time (separate from crew work window)
               </p>
             </div>
@@ -1299,9 +1313,9 @@ function ServiceDialog({
             <div className="space-y-1.5">
               <Label>
                 {watchType === "DELIVERY"
-                  ? "Delivery To"
+                  ? "Delivery to"
                   : watchType === "PICKUP"
-                    ? "Pickup From"
+                    ? "Pickup from"
                     : "Address"}
               </Label>
               <AddressInput
@@ -1352,11 +1366,11 @@ function ServiceDialog({
 
           {/* Crew Section */}
           <div className="border-t pt-4 space-y-3">
-            <h4 className="text-sm font-medium">Crew</h4>
+            <h4 className="text-card-title font-semibold text-ink">Crew</h4>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Crew Role</Label>
+                <Label>Crew role</Label>
                 <ComboboxPicker
                   value={form.watch("crewRoleId") || ""}
                   onChange={(v) => form.setValue("crewRoleId", v)}
@@ -1366,7 +1380,7 @@ function ServiceDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Crew Needed</Label>
+                <Label>Crew needed</Label>
                 <Input
                   type="number"
                   min={0}
@@ -1387,31 +1401,31 @@ function ServiceDialog({
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="sm"
                   disabled={!isEditing || crewStatusMutation.isPending}
                   title={!isEditing ? "Save the service first" : undefined}
                   onClick={() => crewStatusMutation.mutate({ status: "OFFERED" })}
                 >
                   <Send className="mr-1.5 h-3.5 w-3.5" />
-                  Send Offers
+                  Send offers
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="sm"
                   disabled={!isEditing || crewStatusMutation.isPending}
                   title={!isEditing ? "Save the service first" : undefined}
                   onClick={() => crewStatusMutation.mutate({ status: "CONFIRMED" })}
                 >
                   <UserCheck className="mr-1.5 h-3.5 w-3.5" />
-                  Confirm All
+                  Confirm all
                 </Button>
                 {crewStatusMutation.isPending && (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-fg-3" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
                 )}
                 {!isEditing && (
-                  <span className="text-xs text-fg-3">Save first to send offers</span>
+                  <span className="text-caption text-muted">Save first to send offers</span>
                 )}
               </div>
             )}
@@ -1419,12 +1433,12 @@ function ServiceDialog({
 
           {/* Financial Section */}
           <div className="border-t pt-4 space-y-4">
-            <h4 className="text-sm font-medium">Pricing</h4>
+            <h4 className="text-card-title font-semibold text-ink">Pricing</h4>
 
             {/* Charge to Client */}
-            <div className="space-y-3 rounded-md border border-border p-3">
-              <div className="t-overline text-fg-3">
-                Charge to Client
+            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
+              <div className="t-overline text-muted">
+                Charge to client
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -1454,26 +1468,26 @@ function ServiceDialog({
                     form.setValue("showOnDocuments", !!checked)
                   }
                 />
-                <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
+                <Label htmlFor="showOnDocuments" className="text-ui-text font-normal cursor-pointer">
                   Show on quote / invoice
                 </Label>
               </div>
             </div>
 
             {/* Cost to Business */}
-            <div className="space-y-3 rounded-md border border-border p-3">
-              <div className="t-overline text-fg-3">
+            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
+              <div className="t-overline text-muted">
                 Cost to Business
               </div>
               <div className="space-y-1.5">
-                <Label>Total Cost</Label>
+                <Label>Total cost</Label>
                 <Input
                   type="number"
                   step="0.01"
                   {...form.register("costTotal")}
                   placeholder="0.00"
                 />
-                <p className="text-[11px] text-fg-4">
+                <p className="text-[11px] text-faint">
                   What this service costs you (crew, transport, etc). Used for margin calculation.
                 </p>
               </div>
@@ -1482,7 +1496,7 @@ function ServiceDialog({
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <Label>Internal Notes</Label>
+            <Label>Internal notes</Label>
             <Textarea
               {...form.register("notes")}
               placeholder="Internal notes (not on client docs)..."
@@ -1493,14 +1507,14 @@ function ServiceDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Add Service"}
+              {isEditing ? "Update" : "Add service"}
             </Button>
           </DialogFooter>
         </form>

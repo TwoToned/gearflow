@@ -2,16 +2,32 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 import { useServerQuery } from "@/hooks/use-server-query";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { getModel } from "@/server/models";
 import { ModelForm } from "@/components/assets/model-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import type { ModelFormValues } from "@/lib/validations/model";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="model" action="update">
+      <EditModelContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -21,8 +37,15 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     queryFn: () => getModel(id),
   });
 
-  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
-  if (!model) return <div className="t-body text-fg-3">Model not found.</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-5xl"><FormSkeleton /></div></FadeIn>;
+  if (!model) {
+    return (
+      <div className="mx-auto max-w-5xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Model not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+      </div>
+    );
+  }
 
   const initialData: ModelFormValues & { id: string } = {
     id: model.id,
@@ -56,19 +79,25 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
 
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-          <Link href="/assets" className="hover:text-fg transition-colors">Assets</Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link href="/assets/models" className="hover:text-fg transition-colors">Models</Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link href={`/assets/models/${id}`} className="hover:text-fg transition-colors">{model.name}</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-fg">Edit</span>
-        </div>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/assets/models" />}>Models</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/assets/models/${id}`} />}>{model.name}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Edit</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">Edit Model</h1>
-          <p className="t-body text-fg-3">{model.name}</p>
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit model</h1>
+          <p className="mt-1 text-ui-text text-muted">{model.name}</p>
         </div>
         <ModelForm initialData={initialData} />
       </div>

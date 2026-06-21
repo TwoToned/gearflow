@@ -21,11 +21,11 @@ import {
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
-import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 /** 60-day window for the date range bar: today -7d to today +53d */
 function getDateRangeWindow() {
@@ -38,8 +38,8 @@ function getDateRangeWindow() {
 }
 
 const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry Hire",
-  WET_HIRE: "Wet Hire",
+  DRY_HIRE: "Dry hire",
+  WET_HIRE: "Wet hire",
   INSTALLATION: "Installation",
   TOUR: "Tour",
   CORPORATE: "Corporate",
@@ -49,16 +49,18 @@ const typeLabels: Record<string, string> = {
   OTHER: "Other",
 };
 
+// Type chip — RVLT soft module hues (no rainbow). Status carries the primary
+// signal; type is a calm secondary cue.
 const typeColors: Record<string, string> = {
-  DRY_HIRE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  WET_HIRE: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-  INSTALLATION: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  TOUR: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CORPORATE: "bg-slate-500/10 text-slate-500 border-slate-500/20",
-  THEATRE: "bg-rose-500/10 text-rose-500 border-rose-500/20",
-  FESTIVAL: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CONFERENCE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  OTHER: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  DRY_HIRE: "bg-blue-soft text-blue",
+  WET_HIRE: "bg-teal-soft text-teal",
+  INSTALLATION: "bg-coral-soft text-coral",
+  TOUR: "bg-purple-soft text-purple",
+  CORPORATE: "bg-rep-soft text-rep",
+  THEATRE: "bg-purple-soft text-purple",
+  FESTIVAL: "bg-amber-soft text-amber",
+  CONFERENCE: "bg-blue-soft text-blue",
+  OTHER: "bg-rep-soft text-rep",
 };
 
 function formatDateRange(
@@ -89,7 +91,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     cell: (row) => (
       <Link
         href={`/projects/${row.id}`}
-        className="font-mono text-xs text-fg-3 hover:underline"
+        className="font-mono text-xs text-muted hover:underline"
       >
         {row.projectNumber}
       </Link>
@@ -118,7 +120,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
           )}
         </div>
         {row.client?.name && (
-          <span className="text-xs text-fg-3">{row.client.name}</span>
+          <span className="text-xs text-muted">{row.client.name}</span>
         )}
       </div>
     ),
@@ -128,7 +130,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Client",
     sortKey: "client",
     cell: (row) => (
-      <span className="text-fg-3">
+      <span className="text-muted">
         {row.client?.name || "—"}
       </span>
     ),
@@ -140,21 +142,23 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "type",
     filterable: true,
     filterType: "enum",
+    // Filter-legend dots mirror the type chip module hues (RVLT tokens, no
+    // raw Tailwind palette / non-red accents).
     filterOptions: [
-      { value: "DRY_HIRE", label: "Dry Hire", color: "bg-blue-500" },
-      { value: "WET_HIRE", label: "Wet Hire", color: "bg-cyan-500" },
-      { value: "INSTALLATION", label: "Installation", color: "bg-orange-500" },
-      { value: "TOUR", label: "Tour", color: "bg-teal-500" },
-      { value: "CORPORATE", label: "Corporate", color: "bg-slate-500" },
-      { value: "THEATRE", label: "Theatre", color: "bg-rose-500" },
-      { value: "FESTIVAL", label: "Festival", color: "bg-amber-500" },
-      { value: "CONFERENCE", label: "Conference", color: "bg-blue-500" },
-      { value: "OTHER", label: "Other", color: "bg-gray-500" },
+      { value: "DRY_HIRE", label: "Dry hire", color: "bg-blue" },
+      { value: "WET_HIRE", label: "Wet hire", color: "bg-teal" },
+      { value: "INSTALLATION", label: "Installation", color: "bg-coral" },
+      { value: "TOUR", label: "Tour", color: "bg-purple" },
+      { value: "CORPORATE", label: "Corporate", color: "bg-rep" },
+      { value: "THEATRE", label: "Theatre", color: "bg-purple" },
+      { value: "FESTIVAL", label: "Festival", color: "bg-amber" },
+      { value: "CONFERENCE", label: "Conference", color: "bg-blue" },
+      { value: "OTHER", label: "Other", color: "bg-rep" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={typeColors[row.type] || ""}>
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${typeColors[row.type] || "bg-rep-soft text-rep"}`}>
         {typeLabels[row.type] || row.type}
-      </Badge>
+      </span>
     ),
   },
   {
@@ -164,18 +168,20 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "status",
     filterable: true,
     filterType: "enum",
+    // Dots derive from the status intent map (status-colors.ts) — the single
+    // source of truth — instead of hardcoded palette swatches.
     filterOptions: [
-      { value: "ENQUIRY", label: "Enquiry", color: "bg-gray-500" },
-      { value: "QUOTING", label: "Quoting", color: "bg-blue-500" },
-      { value: "QUOTED", label: "Quoted", color: "bg-blue-500" },
-      { value: "CONFIRMED", label: "Confirmed", color: "bg-green-500" },
-      { value: "PREPPING", label: "Prepping", color: "bg-amber-500" },
-      { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
-      { value: "ON_SITE", label: "On Site", color: "bg-teal-500" },
-      { value: "RETURNED", label: "Returned", color: "bg-teal-500" },
-      { value: "COMPLETED", label: "Completed", color: "bg-green-500" },
-      { value: "INVOICED", label: "Invoiced", color: "bg-green-500" },
-      { value: "CANCELLED", label: "Cancelled", color: "bg-red-500" },
+      { value: "ENQUIRY", label: "Enquiry", color: getStatusColor("project", "ENQUIRY").dot },
+      { value: "QUOTING", label: "Quoting", color: getStatusColor("project", "QUOTING").dot },
+      { value: "QUOTED", label: "Quoted", color: getStatusColor("project", "QUOTED").dot },
+      { value: "CONFIRMED", label: "Confirmed", color: getStatusColor("project", "CONFIRMED").dot },
+      { value: "PREPPING", label: "Prepping", color: getStatusColor("project", "PREPPING").dot },
+      { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("project", "CHECKED_OUT").dot },
+      { value: "ON_SITE", label: "On site", color: getStatusColor("project", "ON_SITE").dot },
+      { value: "RETURNED", label: "Returned", color: getStatusColor("project", "RETURNED").dot },
+      { value: "COMPLETED", label: "Completed", color: getStatusColor("project", "COMPLETED").dot },
+      { value: "INVOICED", label: "Invoiced", color: getStatusColor("project", "INVOICED").dot },
+      { value: "CANCELLED", label: "Cancelled", color: getStatusColor("project", "CANCELLED").dot },
     ],
     cell: (row) => (
       <StatusIndicator category="project" value={row.status} label={projectStatusLabels[row.status] || row.status} variant="pill" />
@@ -191,7 +197,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       const { rangeStart, rangeEnd } = getDateRangeWindow();
       return (
         <div className="flex flex-col gap-1 min-w-[120px]">
-          <span className="text-fg-3 text-sm">
+          <span className="text-muted text-sm">
             {formatDateRange(start, end)}
           </span>
           {start && end && (
@@ -228,9 +234,9 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (
-          <Badge key={tag} variant="secondary" className="text-xs">
+          <span key={tag} className="rounded-full bg-paper-2 px-2 py-0.5 text-[11px] text-muted">
             {tag}
-          </Badge>
+          </span>
         ))}
       </div>
     ),
@@ -354,9 +360,8 @@ export function ProjectTable() {
 
   const toolbarActions = (
     <CanDo resource="project" action="create">
-      <Button render={<Link href="/projects/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Project
+      <Button asChild>
+        <Link href="/projects/new"><Plus className="mr-2 h-4 w-4" /> New job</Link>
       </Button>
     </CanDo>
   );
@@ -393,7 +398,7 @@ function ProjectBlockingBadge({ count }: { count: number }) {
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[11px] font-medium text-red">
           <ShieldAlert className="h-3 w-3" />
           {count}
         </TooltipTrigger>
@@ -412,8 +417,8 @@ function ProjectIssueBadge({ issues }: { issues: { hasOverbooked: boolean; hasRe
   if (parts.length === 0) return null;
 
   const color = issues.hasOverbooked
-    ? "text-red-500"
-    : "text-blue-500";
+    ? "text-t-out"
+    : "text-blue";
 
   return (
     <TooltipProvider>

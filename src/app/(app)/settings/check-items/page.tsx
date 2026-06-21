@@ -229,7 +229,7 @@ export default function CheckItemsPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={TYPE_COLORS[type]}>
+                          <Badge status="neutral" className={TYPE_COLORS[type]}>
                             <Icon className="mr-1 h-3 w-3" />
                             {TYPE_LABELS[type]}
                           </Badge>
@@ -503,7 +503,7 @@ function CheckItemDialog({
                 <p className="text-xs font-medium text-fg-2">Dropdown Options</p>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="line"
                   size="sm"
                   onClick={() => append({ label: "", isFail: false })}
                 >
@@ -566,7 +566,7 @@ function CheckItemDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="line"
               onClick={() => onOpenChange(false)}
             >
               Cancel

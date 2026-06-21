@@ -42,7 +42,12 @@ export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTi
   }
 
   if (items.length === 0) {
-    return <EmptyState preset="activity" />;
+    return (
+      <EmptyState
+        title="No activity yet"
+        description="Nothing has moved. Suspiciously peaceful."
+      />
+    );
   }
 
   const viewAllHref = `/activity?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`;

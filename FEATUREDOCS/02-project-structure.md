@@ -21,7 +21,7 @@ src/
 │   ├── locations/        # Location forms, tables
 │   ├── maintenance/      # Maintenance form
 │   ├── media/            # MediaUploader, MediaThumbnail, MediaLightbox
-│   ├── projects/         # ProjectForm, LineItemsPanel, AddEquipmentDialog, documents
+│   ├── projects/         # ProjectWizard (create/edit/template), LineItemsPanel, AddEquipmentDialog, documents
 │   ├── providers/        # ThemeProvider, QueryProvider, BrandingProvider
 │   ├── settings/         # InviteMember, MemberList, RoleManager, PermissionMatrix, template-editor/, document-template-manager
 │   ├── suppliers/        # Supplier forms, tables

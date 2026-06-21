@@ -198,8 +198,10 @@ export default function AdminOrgDetailPage({
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/organizations" />}>
-              <ArrowLeft className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="shrink-0" asChild>
+              <Link href="/admin/organizations">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
             </Button>
             <div className="min-w-0">
               <h1 className="text-xl sm:t-title text-fg truncate">
@@ -215,7 +217,7 @@ export default function AdminOrgDetailPage({
           {org && (
             <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
               <Button
-                variant="outline"
+                variant="line"
                 size="sm"
                 onClick={() => {
                   setEditName(org.name);
@@ -358,7 +360,7 @@ export default function AdminOrgDetailPage({
                           </td>
                           <td className="p-3">
                             {isOwner ? (
-                              <Badge variant="outline">Owner</Badge>
+                              <Badge status="neutral">Owner</Badge>
                             ) : (
                               <Select
                                 value={m.role}
@@ -372,7 +374,7 @@ export default function AdminOrgDetailPage({
                                 <SelectTrigger className="h-8 w-[160px]">
                                   <SelectValue>
                                     <Badge
-                                      variant="secondary"
+                                      status="neutral"
                                       style={
                                         badgeColor
                                           ? { backgroundColor: badgeColor, color: "#fff" }
@@ -476,7 +478,7 @@ export default function AdminOrgDetailPage({
               {customRoles.map((cr: any) => (
                 <Badge
                   key={cr.id}
-                  variant="secondary"
+                  status="neutral"
                   style={
                     cr.color
                       ? { backgroundColor: cr.color, color: "#fff" }
@@ -554,7 +556,7 @@ export default function AdminOrgDetailPage({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
+            <Button variant="line" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -583,11 +585,11 @@ export default function AdminOrgDetailPage({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveTarget(null)}>
+            <Button variant="line" onClick={() => setRemoveTarget(null)}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="primary"
               disabled={removeMutation.isPending}
               onClick={() =>
                 removeTarget && removeMutation.mutate(removeTarget.id)
@@ -616,7 +618,7 @@ export default function AdminOrgDetailPage({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTransferTarget(null)}>
+            <Button variant="line" onClick={() => setTransferTarget(null)}>
               Cancel
             </Button>
             <Button
@@ -670,7 +672,7 @@ export default function AdminOrgDetailPage({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
+            <Button variant="line" onClick={() => setEditOpen(false)}>
               Cancel
             </Button>
             <Button

@@ -326,7 +326,7 @@ function LogoUpload({
           )}
         </div>
         <Button
-          variant="outline"
+          variant="line"
           size="sm"
           onClick={onUpload}
           disabled={uploading}

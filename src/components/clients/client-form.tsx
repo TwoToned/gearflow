@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Building2, Mail, User } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
 import { createClient, updateClient } from "@/server/clients";
+import { clientTypeLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
@@ -16,13 +18,22 @@ import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+} from "@/components/ui/smart-form";
 
 interface ClientFormProps {
   initialData?: ClientFormValues & { id: string };
 }
+
+const CLIENT_TYPE_ORDER = ["COMPANY", "INDIVIDUAL", "VENUE", "PRODUCTION_COMPANY"] as const;
 
 export function ClientForm({ initialData }: ClientFormProps) {
   const router = useRouter();
@@ -56,6 +67,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
     },
   });
 
+  const v = form.watch();
+
   const mutation = useServerMutation({
     mutationFn: (data: ClientFormValues) =>
       isEditing ? updateClient(initialData.id, data) : createClient(data),
@@ -66,57 +79,103 @@ export function ClientForm({ initialData }: ClientFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Live-preview derivations ──────────────────────────────────
+  const previewName = (v.name || "New client").trim();
+  const typeLabel = clientTypeLabels[v.type ?? "COMPANY"] ?? "Company";
+  const primaryContact = (v.contactName || v.contactEmail || "").trim();
+
+  const helperTip = !v.name
+    ? "A name puts them on the books. Wire up contacts and billing when there's actually a quote to send."
+    : !primaryContact
+      ? "Add a contact so quotes and dockets reach the right person."
+      : "Looking good. Address and billing details are optional — fill what you know.";
+
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <div className="space-y-8">
-          <SectionHeader label="Client Details" />
-          <FormSection>
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input id="name" {...form.register("name")} placeholder="e.g. Acme Productions" />
-              {form.formState.errors.name && (
-                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-              )}
+    <SmartFormLayout
+      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
+      aside={
+        <>
+          <SmartFormRail eyebrow={isEditing ? "Editing" : "New client"} tip={helperTip} />
+          <SmartFormPreview>
+            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                  {v.type === "INDIVIDUAL"
+                    ? <User className="h-4 w-4" strokeWidth={1.5} />
+                    : <Building2 className="h-4 w-4" strokeWidth={1.5} />}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New client" ? "text-faint" : "text-ink")}>
+                    {previewName}
+                  </p>
+                  <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                    {typeLabel}
+                  </span>
+                  <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-faint")}>
+                    <Mail className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+                    {primaryContact || "No contact yet"}
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="type">Type</Label>
-              <select
-                id="type"
-                {...form.register("type")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="COMPANY">Company</option>
-                <option value="INDIVIDUAL">Individual</option>
-                <option value="VENUE">Venue</option>
-                <option value="PRODUCTION_COMPANY">Production Company</option>
-              </select>
+          </SmartFormPreview>
+        </>
+      }
+    >
+      <div className="space-y-8">
+        {/* Identity */}
+        <SmartFormSection title="Identity" hint="Who they are and how to file them." divider={false}>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <SmartFormField label="Name" required error={form.formState.errors.name?.message}>
+                <Input
+                  {...form.register("name")}
+                  placeholder="e.g. Acme Productions"
+                  aria-invalid={!!form.formState.errors.name}
+                />
+              </SmartFormField>
             </div>
-          </FormSection>
+            <SmartFormField label="Type">
+              <Controller control={form.control} name="type" render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue>{clientTypeLabels[field.value ?? "COMPANY"] ?? "Company"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CLIENT_TYPE_ORDER.map((t) => (
+                      <SelectItem key={t} value={t}>{clientTypeLabels[t]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )} />
+            </SmartFormField>
+          </div>
+        </SmartFormSection>
 
-          <SectionHeader label="Contact Information" />
-          <FormSection>
-            <div className="space-y-2">
-              <Label htmlFor="contactName">Contact Name</Label>
-              <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="contactEmail">Contact Email</Label>
-              <Input id="contactEmail" type="email" {...form.register("contactEmail")} placeholder="email@example.com" />
-              {form.formState.errors.contactEmail && (
-                <p className="text-xs text-destructive">{form.formState.errors.contactEmail.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="contactPhone">Contact Phone</Label>
-              <Input id="contactPhone" {...form.register("contactPhone")} placeholder="+61 400 000 000" />
-            </div>
-          </FormSection>
+        {/* Contact */}
+        <SmartFormSection title="Contact" hint="Where quotes, dockets and invoices land.">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <SmartFormField label="Contact name">
+              <Input {...form.register("contactName")} placeholder="Primary contact person" />
+            </SmartFormField>
+            <SmartFormField label="Contact email" error={form.formState.errors.contactEmail?.message}>
+              <Input
+                type="email"
+                {...form.register("contactEmail")}
+                placeholder="email@example.com"
+                aria-invalid={!!form.formState.errors.contactEmail}
+              />
+            </SmartFormField>
+            <SmartFormField label="Contact phone">
+              <Input {...form.register("contactPhone")} placeholder="+61 400 000 000" />
+            </SmartFormField>
+          </div>
+        </SmartFormSection>
 
-          <SectionHeader label="Billing" />
-          <FormSection>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Billing Address</Label>
+        {/* Address */}
+        <SmartFormSection title="Address" hint="Billing and shipping — used on documents.">
+          <div className="space-y-5">
+            <SmartFormField label="Billing address">
               <Controller
                 name="billingAddress"
                 control={form.control}
@@ -134,8 +193,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
                       }
                     }}
                     initialCoordinates={
-                      form.watch("billingLatitude") != null && form.watch("billingLongitude") != null
-                        ? { latitude: form.watch("billingLatitude") as number, longitude: form.watch("billingLongitude") as number }
+                      v.billingLatitude != null && v.billingLongitude != null
+                        ? { latitude: v.billingLatitude as number, longitude: v.billingLongitude as number }
                         : null
                     }
                     placeholder="Billing address"
@@ -143,9 +202,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
                   />
                 )}
               />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Shipping Address</Label>
+            </SmartFormField>
+            <SmartFormField label="Shipping address" hint="Leave blank if same as billing.">
               <Controller
                 name="shippingAddress"
                 control={form.control}
@@ -163,8 +221,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
                       }
                     }}
                     initialCoordinates={
-                      form.watch("shippingLatitude") != null && form.watch("shippingLongitude") != null
-                        ? { latitude: form.watch("shippingLatitude") as number, longitude: form.watch("shippingLongitude") as number }
+                      v.shippingLatitude != null && v.shippingLongitude != null
+                        ? { latitude: v.shippingLatitude as number, longitude: v.shippingLongitude as number }
                         : null
                     }
                     placeholder="Shipping address (if different)"
@@ -172,63 +230,67 @@ export function ClientForm({ initialData }: ClientFormProps) {
                   />
                 )}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="taxId">ABN</Label>
-              <Input id="taxId" {...form.register("taxId")} placeholder="e.g. 12 345 678 901" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="paymentTerms">Payment Terms</Label>
-              <Input id="paymentTerms" {...form.register("paymentTerms")} placeholder="e.g. Net 30" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="defaultDiscount">Default Discount (%)</Label>
-              <Input
-                id="defaultDiscount"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                {...form.register("defaultDiscount")}
-                placeholder="0"
-              />
-            </div>
-          </FormSection>
+            </SmartFormField>
+          </div>
+        </SmartFormSection>
 
-          <SectionHeader label="Additional" />
-          <FormSection>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Tags</Label>
-              <Controller
-                name="tags"
-                control={form.control}
-                render={({ field }) => (
-                  <TagInput
-                    value={field.value ?? []}
-                    onChange={field.onChange}
-                    suggestions={orgTags}
-                    placeholder="Add tags..."
-                  />
-                )}
-              />
-            </div>
-          </FormSection>
-        </div>
-
-        <div className="mt-6 flex gap-3 border-t border-border pt-4">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Update Client" : "Create Client"}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => router.back()}>
-            Cancel
-          </Button>
-        </div>
+        {/* More details — progressive disclosure */}
+        <section className="border-t border-line pt-6">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="more" className="border-line">
+              <AccordionTrigger>More details</AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-5 pt-1">
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <SmartFormField label="ABN">
+                      <Input {...form.register("taxId")} placeholder="e.g. 12 345 678 901" />
+                    </SmartFormField>
+                    <SmartFormField label="Payment terms">
+                      <Input {...form.register("paymentTerms")} placeholder="e.g. Net 30" />
+                    </SmartFormField>
+                    <SmartFormField label="Default discount (%)">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        {...form.register("defaultDiscount")}
+                        placeholder="0"
+                      />
+                    </SmartFormField>
+                  </div>
+                  <SmartFormField label="Notes">
+                    <Textarea {...form.register("notes")} placeholder="Any additional notes" rows={3} />
+                  </SmartFormField>
+                  <SmartFormField label="Tags">
+                    <Controller
+                      name="tags"
+                      control={form.control}
+                      render={({ field }) => (
+                        <TagInput
+                          value={field.value ?? []}
+                          onChange={field.onChange}
+                          suggestions={orgTags}
+                          placeholder="Add tags…"
+                        />
+                      )}
+                    />
+                  </SmartFormField>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </section>
       </div>
-    </form>
+
+      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+        <Button type="button" variant="line" onClick={() => router.back()}>
+          Cancel
+        </Button>
+        <Button type="submit" loading={mutation.isPending}>
+          {isEditing ? "Update client" : "Create client"}
+        </Button>
+      </div>
+    </SmartFormLayout>
   );
 }

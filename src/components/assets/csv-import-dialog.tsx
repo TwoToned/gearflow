@@ -2,9 +2,10 @@
 
 import { useState, useRef } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Upload, Loader2, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
+import { Upload, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn, focusRing } from "@/lib/utils";
 import { importModelsCSV, importAssetsCSV, importModelRatesCSV } from "@/server/csv";
 import { Button } from "@/components/ui/button";
 import {
@@ -91,8 +92,9 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div
-            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 cursor-pointer hover:border-muted-foreground/50 transition-colors"
+          <button
+            type="button"
+            className={cn("flex w-full flex-col items-center justify-center gap-2 rounded-[var(--r)] border-2 border-dashed border-line-2 p-6 cursor-pointer motion-safe:transition-colors hover:border-muted", focusRing)}
             onClick={() => fileInputRef.current?.click()}
           >
             <input
@@ -104,23 +106,23 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
             />
             {file ? (
               <>
-                <FileText className="h-8 w-8 text-fg-3" />
-                <p className="text-sm font-medium">{file.name}</p>
-                <p className="text-xs text-fg-3">
-                  {(file.size / 1024).toFixed(1)} KB - Click to change
+                <FileText className="h-8 w-8 text-muted" />
+                <p className="text-ui-text font-medium text-ink">{file.name}</p>
+                <p className="text-caption text-muted">
+                  <span className="tabular-nums">{(file.size / 1024).toFixed(1)}</span> KB — click to change
                 </p>
               </>
             ) : (
               <>
-                <Upload className="h-8 w-8 text-fg-3" />
-                <p className="text-sm text-fg-3">
+                <Upload className="h-8 w-8 text-muted" />
+                <p className="text-ui-text text-muted">
                   Click to select a CSV file
                 </p>
               </>
             )}
-          </div>
+          </button>
 
-          <div className="text-xs text-fg-3 space-y-1">
+          <div className="text-caption text-muted space-y-1">
             {type === "models" ? (
               <>
                 <p className="font-medium">Expected columns:</p>
@@ -143,30 +145,35 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
           </div>
 
           {result && (
-            <div className="rounded-md border p-3 space-y-2">
-              <div className="flex items-center gap-4 text-sm">
+            <div
+              className={cn(
+                "rounded-[var(--r)] border-l-[3px] bg-card p-3 space-y-2",
+                result.errors.length === 0 ? "border-l-ok" : "border-l-t-out",
+              )}
+            >
+              <div className="flex items-center gap-4 text-ui-text text-ink">
                 {result.errors.length === 0 ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-ok" />
                 ) : (
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-t-out" />
                 )}
                 <span>
                   {type !== "rates" && (
                     <>
-                      <strong>{result.created}</strong> created,{" "}
+                      <strong className="tabular-nums">{result.created}</strong> created,{" "}
                     </>
                   )}
-                  <strong>{result.updated}</strong> updated
+                  <strong className="tabular-nums">{result.updated}</strong> updated
                   {result.errors.length > 0 && (
-                    <>, <strong className="text-red-500">{result.errors.length}</strong> errors</>
+                    <>, <strong className="tabular-nums text-t-out">{result.errors.length}</strong> errors</>
                   )}
                 </span>
               </div>
               {result.errors.length > 0 && (
-                <div className="max-h-32 overflow-y-auto text-xs space-y-1">
+                <div className="max-h-32 overflow-y-auto text-caption space-y-1">
                   {result.errors.map((err, idx) => (
-                    <p key={idx} className="text-red-500">
-                      Row {err.row}: {err.message}
+                    <p key={idx} className="text-t-out">
+                      Row <span className="tabular-nums">{err.row}</span>: {err.message}
                     </p>
                   ))}
                 </div>
@@ -176,17 +183,17 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
         </div>
 
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+          <DialogClose asChild>
+            <Button variant="line">Close</Button>
+          </DialogClose>
           {!result && (
             <Button
               onClick={handleImport}
-              disabled={!file || mutation.isPending}
+              disabled={!file}
+              loading={mutation.isPending}
             >
               {mutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importing...
-                </>
+                "Importing..."
               ) : (
                 <>
                   <Upload className="mr-2 h-4 w-4" />

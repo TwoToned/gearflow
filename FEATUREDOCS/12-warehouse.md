@@ -6,9 +6,45 @@
 - `CHECKED_OUT` status displays as **"Deployed"**
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
-## Three-Phase Warehouse Flow
+## Lifecycle Flow
 
-The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped** (packed) before being **deployed** (checked out).
+Gear moves strictly **left to right** through five stages — there is no reversing:
+
+```
+Pick/prep → Prepped → Deployed → Returned → De-prepped
+```
+
+The project warehouse page header renders a **lifecycle stepper** (`WarehouseLifecycle`,
+fed by `summarizeWarehouseStages` from `warehouse-stages.ts`) showing a live count of gear
+at each stage as a distribution — so returned gear sits in its own node and is never folded
+back into Prep or Deploy. The stage model is a single pure function, `deriveItemStage`,
+unit-tested in `warehouse-stages.test.ts`.
+
+**The cardinal rule: `status === "RETURNED"` always wins.** A returned piece of gear reads
+as *Returned* (still `prepStatus=PACKED`, awaiting de-prep) or *De-prepped* (`prepStatus`
+reset off PACKED), and can never be re-derived as "needs prepping". This fixes two confusing
+bugs where the flow appeared to run in reverse:
+- An early-returned item used to reappear in **Pick/Prep**, looking like it had never gone out.
+- A returned item used to show in the **Deploy** tab (because the de-prep action lived there),
+  so returning gear "went back to Deploy".
+
+**The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
+exactly like the lifecycle: **Pick → Prepped → Deployed → Returned → De-prepped** (then
+**Close-out** as a trailing utility). The primary button inside each tab
+performs the action that advances gear to the next stage:
+
+| Tab (stage gear is in) | Shows | Button → next stage |
+| --- | --- | --- |
+| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
+| Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed |
+| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned |
+| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped |
+| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | — (terminal, read-only) |
+
+(Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
+`check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
+**prepped** (packed) before being **deployed** (checked out), and **de-prepped** (return checks
+run, back into inventory) after being **returned**.
 
 ### Pick/Prep Tab
 - Scan or select items to prep
@@ -30,31 +66,31 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 
 ### Deploy Tab
 - Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
+- **Excludes `status === "RETURNED"`** (leaf, kit-child and grandchild filters) — returned gear belongs in the De-prep tab, not here
 - Split items (qty=1) flow through the serialized deploy path regardless of whether they have a `bulkAssetId`
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- Permanent accessories (`childKind === "ACCESSORY"`) of a scanned asset render as read-only indented rows under the parent via `AccessoryChildRows` (`deploy` mode shows not-yet-out accessories). They cascade atomically with the parent — no separate scan/verify. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). **There is no warehouse UI for accessories** — the "Include accessories" toggle was removed; `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
 - Split bulk items (qty=1 with bulkAssetId) use the serialized return path
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
-- Accessory children render as read-only indented rows via `AccessoryChildRows` (`return` mode shows currently-deployed accessories), mirroring the Deploy tab. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories cascade back with their parent automatically on return — no separate rows or toggle. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
-### Bulk Check-In Tab
-A project-wide accessory totals view for accessory-heavy jobs (50 lights = 100
-clamps + 50 TrueCons). Instead of returning each parent's accessories per
-parent, it aggregates every **deployed accessory child** (`childKind: ACCESSORY`)
-across the whole project into per-identity totals — bulk by `bulkAssetId`,
-serialised by `modelId` — and lets the operator check a counted quantity in with
-one action. The count is distributed deterministically back across the
-underlying child line items via the canonical `returnLineUnits` primitive (the
-same one the per-parent Return path uses). Over-return is rejected, empty/zero
-submits are no-ops, and repeated partial returns accumulate safely. Additive and
-parallel to the Return tab — the per-parent flow is unchanged. See
-[Bulk Check-In Totals](./52-bulk-checkin.md).
+### De-prep Tab
+- Shows gear at the **Returned** stage: `status === "RETURNED"` and `prepStatus === "PACKED"` (`returnedItems` filter; kit parents surface if any child/grandchild matches). Once de-prepped, `prepStatus` resets off PACKED and the item leaves this tab.
+- Renders by **reusing `DeployTab` with `mode="deprep"`** — identical grouping (`groupItems(returnedItems, "deploy")`), container sectioning (`deprepContainerGroups`) and selection keys (`allDeprepKeys` / `selectedDeprep`), so `handleDeprep` parses them exactly as before. Only the chrome differs: no deploy scanner, no accessories toggle, a single primary **Deprep** button, and the "remove container" action is hidden.
+- The **Deprep action moved here from the Deploy tab.** `handleDeprep` (lifted to a named callback in the page) runs RETURN checks where the model has check items (`fromDeprep: true` check queue), otherwise deprep straight back into inventory via `deprepItem`/`deprepKit`. Kits route through `startKitCheckFlow(..., "RETURN", "GOOD", true)`.
+
+### Bulk Check-In Tab — REMOVED
+The project-wide accessory-totals check-in tab was **removed from the warehouse UI**
+(accessories are no longer surfaced as a separate warehouse concern — they cascade
+silently with their parent). The backend (`src/server/bulk-checkin.ts`,
+`src/lib/bulk-checkin.ts` and their tests) is retained but no longer wired into any
+UI. See [Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly

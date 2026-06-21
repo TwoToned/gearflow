@@ -5,8 +5,6 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Trash2,
-  GripVertical,
-  Loader2,
   ClipboardCheck,
   CheckCircle2,
   FileText,
@@ -43,6 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn, focusRing, disabledState } from "@/lib/utils";
 
 type CheckItemType = "PASS_FAIL" | "NOTES" | "MEASUREMENT" | "DROPDOWN";
 
@@ -60,11 +59,11 @@ const TYPE_ICONS: Record<CheckItemType, typeof CheckCircle2> = {
   DROPDOWN: ListChecks,
 };
 
-const TYPE_COLORS: Record<CheckItemType, string> = {
-  PASS_FAIL: "bg-green-500/10 text-green-500 border-green-500/20",
-  NOTES: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  MEASUREMENT: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  DROPDOWN: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+const TYPE_STATUS: Record<CheckItemType, "ok" | "warn" | "neutral"> = {
+  PASS_FAIL: "ok",
+  NOTES: "neutral",
+  MEASUREMENT: "warn",
+  DROPDOWN: "neutral",
 };
 
 export function ModelChecksTab({ modelId }: { modelId: string }) {
@@ -111,47 +110,48 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-fg-3">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading...
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-12 w-full animate-pulse rounded-[var(--r)] bg-elev" />
+        ))}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-fg-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-table-cell text-muted">
           Check items assigned to this model will appear during warehouse prep &amp; return.
         </p>
         {canEdit && (
           <Button size="sm" onClick={() => setPickerOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Check
+            <Plus className="h-4 w-4" />
+            Add check
           </Button>
         )}
       </div>
 
       {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-fg-3">
-          <ClipboardCheck className="mb-2 h-8 w-8 opacity-50" />
-          <p className="font-medium">No check items assigned</p>
-          <p className="mt-1 text-xs">
+        <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-border py-12 text-center">
+          <ClipboardCheck className="mb-2 h-8 w-8 text-faint" />
+          <p className="text-ui-text font-medium text-ink-2">No check items assigned</p>
+          <p className="mt-1 text-caption text-muted">
             Add check items from the{" "}
-            <Link href="/settings/check-items" className="text-primary hover:underline">
+            <Link href="/settings/check-items" className={cn("text-link hover:underline rounded-sm", focusRing)}>
               library
             </Link>{" "}
             to enable quality checks for this model.
           </p>
         </div>
       ) : (
-        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+        <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
                 {canEdit && <TableHead className="w-10" />}
                 <TableHead className="w-8">#</TableHead>
-                <TableHead>Check Item</TableHead>
+                <TableHead>Check item</TableHead>
                 <TableHead>Type</TableHead>
                 {canEdit && <TableHead className="w-[60px]" />}
               </TableRow>
@@ -169,40 +169,42 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
                           <button
                             type="button"
                             disabled={index === 0}
-                            className="text-fg-3 hover:text-fg disabled:opacity-20 p-0.5"
+                            className={cn("text-muted hover:text-ink p-0.5 rounded-sm transition-colors", focusRing, disabledState)}
                             onClick={() => moveItem(index, "up")}
+                            aria-label="Move up"
                           >
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                               <path d="M6 3L10 8H2L6 3Z" fill="currentColor" />
                             </svg>
                           </button>
                           <button
                             type="button"
                             disabled={index === items.length - 1}
-                            className="text-fg-3 hover:text-fg disabled:opacity-20 p-0.5"
+                            className={cn("text-muted hover:text-ink p-0.5 rounded-sm transition-colors", focusRing, disabledState)}
                             onClick={() => moveItem(index, "down")}
+                            aria-label="Move down"
                           >
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                               <path d="M6 9L2 4H10L6 9Z" fill="currentColor" />
                             </svg>
                           </button>
                         </div>
                       </TableCell>
                     )}
-                    <TableCell className="text-fg-3 text-sm">{index + 1}</TableCell>
+                    <TableCell className="text-muted text-table-cell t-data">{index + 1}</TableCell>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{ci.label as string}</span>
+                        <span className="font-medium text-ink">{ci.label as string}</span>
                         {ci.description ? (
-                          <p className="mt-0.5 text-xs text-fg-3 line-clamp-1">
+                          <p className="mt-0.5 text-caption text-muted line-clamp-1">
                             {ci.description as string}
                           </p>
                         ) : null}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={TYPE_COLORS[type]}>
-                        <Icon className="mr-1 h-3 w-3" />
+                      <Badge status={TYPE_STATUS[type]} className="gap-1">
+                        <Icon className="h-3 w-3" />
                         {TYPE_LABELS[type]}
                       </Badge>
                     </TableCell>
@@ -211,7 +213,7 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive"
+                          className="text-t-out"
                           onClick={() =>
                             setRemoveTarget({
                               id: ci.id as string,
@@ -295,18 +297,19 @@ function CheckItemPicker({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add Check Items</DialogTitle>
+          <DialogTitle>Add check items</DialogTitle>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8 text-fg-3">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Loading...
+          <div className="space-y-2 py-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-12 w-full animate-pulse rounded-[var(--r)] bg-elev" />
+            ))}
           </div>
         ) : available.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-fg-3">
-            <ClipboardCheck className="mb-2 h-6 w-6 opacity-50" />
-            <p className="text-sm">
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <ClipboardCheck className="mb-2 h-6 w-6 text-faint" />
+            <p className="text-table-cell text-ink-2">
               {items.length === 0
                 ? "No check items in library yet."
                 : "All check items already assigned."}
@@ -314,7 +317,7 @@ function CheckItemPicker({
             {items.length === 0 && (
               <Link
                 href="/settings/check-items"
-                className="mt-2 text-xs text-primary hover:underline"
+                className={cn("mt-2 text-caption text-link hover:underline rounded-sm", focusRing)}
               >
                 Create check items in Settings
               </Link>
@@ -331,16 +334,16 @@ function CheckItemPicker({
                   type="button"
                   onClick={() => addMutation.mutate(item.id as string)}
                   disabled={addMutation.isPending}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-bg-elevated"
+                  className={cn("flex w-full items-center gap-3 rounded-[var(--r)] px-3 py-2.5 text-left transition-colors hover:bg-paper-2", focusRing, disabledState)}
                 >
-                  <Icon className="h-4 w-4 shrink-0 text-fg-3" />
+                  <Icon className="h-4 w-4 shrink-0 text-muted" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{item.label as string}</p>
+                    <p className="text-table-cell font-medium text-ink truncate">{item.label as string}</p>
                     {item.category ? (
-                      <p className="text-xs text-fg-3">{item.category as string}</p>
+                      <p className="text-caption text-muted">{item.category as string}</p>
                     ) : null}
                   </div>
-                  <Badge variant="outline" className={`shrink-0 text-[10px] ${TYPE_COLORS[type]}`}>
+                  <Badge status={TYPE_STATUS[type]} className="shrink-0">
                     {TYPE_LABELS[type]}
                   </Badge>
                 </button>

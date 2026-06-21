@@ -64,7 +64,7 @@ function FeedUrl({ token, feedKey }: { token: string; feedKey: string }) {
     <div className="flex gap-2">
       <Input readOnly value={url} className="font-mono text-xs" />
       <Button
-        variant="outline"
+        variant="line"
         size="icon"
         className="shrink-0"
         onClick={() => {
@@ -149,7 +149,7 @@ export default function CalendarSettingsPage() {
               {canEdit && (
                 <div className="flex gap-2 pt-2 border-t border-border">
                   <Button
-                    variant="outline"
+                    variant="line"
                     size="sm"
                     onClick={() => setRegenerateOpen(true)}
                     disabled={regenerateMutation.isPending}
@@ -158,7 +158,7 @@ export default function CalendarSettingsPage() {
                     Regenerate URLs
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="line"
                     size="sm"
                     className="text-destructive"
                     onClick={() => disableMutation.mutate()}
@@ -172,7 +172,7 @@ export default function CalendarSettingsPage() {
           ) : (
             canEdit && (
               <Button
-                variant="outline"
+                variant="line"
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending}
               >

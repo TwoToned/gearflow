@@ -7,6 +7,29 @@
 - `KitCheckItem[]`: check items assigned to the kit (used when `checkMode=KIT_LEVEL`)
 - Join tables use `addedAt` (not `createdAt`), plus `position`, `sortOrder`, `addedById`, `notes`
 
+## Kit Form (`KitForm`)
+`src/components/kits/kit-form.tsx` — the create/edit form (`/kits/new` +
+`/kits/[id]/edit`, edit pre-fills, both reuse the component), on the shared
+`SmartFormLayout` shell (see [08-assets § Shared shell](./08-assets.md)). Helper
+rail + live preview, single clean page, "More details" accordion.
+
+- **Sections:** Identity (name, asset tag — `AssetTagInput` mono, pre-filled via
+  `peekNextAssetTags(1)`; category + location `ComboboxPicker`, location with
+  inline `QuickCreateLocation`; status / condition / check-mode registry `Select`s
+  with explicit `SelectValue` children) → **Contents** (kit membership is managed
+  on the kit's detail page, NOT in this form — the section links there once the kit
+  exists; the create/edit form has never carried a member builder) → Case
+  information (case type / dimensions / weight) → "More details" accordion
+  (purchase date / price, description, notes, tags).
+- **Check mode** — the field-level hint switches copy between `KIT_LEVEL`
+  ("checked once, contents inherit") and `PER_ITEM` ("each asset gets its own model
+  checks"), preserving the original behaviour.
+- **Live preview** — kit card (`Boxes` icon + name + asset tag in mono + status
+  pill via `StatusIndicator category="kit"` + a check-mode chip).
+- **Preserved:** same `kitSchema`, `createKit` / `updateKit` actions, all fields,
+  and `kit` create/update permission gates on the route pages. Native `<select>`
+  for status / condition / checkMode swapped for registry `Select`.
+
 ## Line Item Representation
 - Parent line item: `kitId` set, `isKitChild: false`, `pricingMode` = `KIT_PRICE` or `ITEMIZED`
 - Child line items: `isKitChild: true`, `parentLineItemId` pointing to parent

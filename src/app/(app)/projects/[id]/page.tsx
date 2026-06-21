@@ -17,7 +17,6 @@ import {
   Phone,
   MapPin,
   CalendarDays,
-  DollarSign,
   FileText,
   ChevronDown,
   Copy,
@@ -53,8 +52,9 @@ import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { Badge } from "@/components/ui/badge";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn, focusRing } from "@/lib/utils";
 import {
   Tabs,
   TabsList,
@@ -69,6 +69,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { addProjectMedia, removeProjectMedia } from "@/server/project-media";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
@@ -80,7 +81,8 @@ import type { ProjectMediaType } from "@/generated/prisma/client";
 import { FadeIn } from "@/components/ui/motion";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
-import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
+import { useCanDo } from "@/lib/use-permissions";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 
@@ -91,7 +93,7 @@ const projectStatusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
-  ON_SITE: "On Site",
+  ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
   INVOICED: "Invoiced",
@@ -99,8 +101,8 @@ const projectStatusLabels: Record<string, string> = {
 };
 
 const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry Hire",
-  WET_HIRE: "Wet Hire",
+  DRY_HIRE: "Dry hire",
+  WET_HIRE: "Wet hire",
   INSTALLATION: "Installation",
   TOUR: "Tour",
   CORPORATE: "Corporate",
@@ -145,6 +147,10 @@ export default function ProjectDetailPage({
   const [callSheetOpen, setCallSheetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Slot on the tab row that the Equipment tab portals its "Add ▾" menu into,
+  // so the primary action sits inline with the tab selector. State-backed (not a
+  // plain ref) so EquipmentTab re-renders its portal once the node mounts.
+  const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
 
@@ -188,15 +194,27 @@ export default function ProjectDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const canUpdate = useCanDo("project", "update");
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
 
   if (!project) {
-    return <div className="text-fg-3 py-12 text-center">Project not found.</div>;
+    return (
+      <RequirePermission resource="project" action="read">
+        <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+          <p className="text-ui-text text-ink-2">Project not found.</p>
+          <p className="mt-1 text-caption text-muted">
+            It may have been deleted, or you don&apos;t have access to it.
+          </p>
+          <Button variant="line" size="sm" className="mt-4" asChild>
+            <Link href="/projects">Back to projects</Link>
+          </Button>
+        </div>
+      </RequirePermission>
+    );
   }
-
-  const currentStatus = project.status;
 
   // Compute date range bar reference window (1 week before start to 1 week after end)
   const rentalStart = project.rentalStartDate
@@ -217,51 +235,66 @@ export default function ProjectDetailPage({
       <PageMeta title={project ? `${project.projectNumber} ${project.name}` : undefined} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}
+          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/projects" className="hover:text-fg transition-colors">
+            <nav className="flex items-center gap-1 text-caption text-muted">
+              <Link href="/projects" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
                 Projects
               </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="font-mono text-fg-2">{project.projectNumber}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="t-mono text-ink-2">{project.projectNumber}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{project.name}</h1>
-                  <StatusIndicator
-                    category="project"
-                    value={project.status}
-                    label={projectStatusLabels[project.status] || formatLabel(project.status)}
-                  />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">
+                    {project.name}
+                  </h1>
                   {project.isTemplate && (
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-                      <BookTemplate className="mr-1 h-3 w-3" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
+                      <BookTemplate className="h-3 w-3" />
                       Template
-                    </Badge>
+                    </span>
                   )}
-                  {/* PM Avatars */}
+                  {/* Templates keep the status pill here (non-templates use the lifecycle ⋯) */}
+                  {project.isTemplate && (
+                    <StatusIndicator
+                      category="project"
+                      value={project.status}
+                      label={projectStatusLabels[project.status] || formatLabel(project.status)}
+                    />
+                  )}
+                </div>
+                {/* Meta line */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  <span className="t-mono text-ink-2">{project.projectNumber}</span>
+                  <span aria-hidden>&middot;</span>
+                  <span>{typeLabels[project.type] || formatLabel(project.type)}</span>
+                  {project.client && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <Link
+                        href={`/clients/${project.client.id}`}
+                        className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}
+                      >
+                        {project.client.name}
+                      </Link>
+                    </>
+                  )}
+                  {/* PM avatars */}
                   {project.projectManagers && (project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).length > 0 && (
-                    <div className="flex -space-x-1.5 ml-2">
+                    <div className="flex -space-x-1.5">
                       {(project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).map((pm) => (
-                        <div
+                        <PersonAvatar
                           key={pm.user.id}
-                          className="h-6 w-6 rounded-full bg-bg-inset ring-2 ring-bg-surface flex items-center justify-center text-[10px] font-medium text-fg-3"
+                          name={pm.user.name ?? pm.user.email}
+                          src={pm.user.image ?? undefined}
+                          className="size-6 ring-2 ring-card"
                           title={pm.user.name ?? pm.user.email}
-                        >
-                          {pm.user.image ? (
-                            <img
-                              src={pm.user.image}
-                              alt={pm.user.name ?? ""}
-                              className="h-6 w-6 rounded-full object-cover"
-                            />
-                          ) : (
-                            (pm.user.name ?? pm.user.email).charAt(0).toUpperCase()
-                          )}
-                        </div>
+                        />
                       ))}
                     </div>
                   )}
@@ -271,59 +304,40 @@ export default function ProjectDetailPage({
                       entityType="project"
                       entityId={id}
                       size="sm"
-                      className="ml-1"
                     />
                   )}
                 </div>
-                {(project.client || project.location) && (
-                  <p className="mt-1 text-sm text-fg-3">
-                    {project.client && (
-                      <Link
-                        href={`/clients/${project.client.id}`}
-                        className="hover:underline"
-                      >
-                        {project.client.name}
-                      </Link>
-                    )}
-                    {project.client && project.location && <> &middot; </>}
-                    {project.location && project.location.name}
-                  </p>
-                )}
               </div>
 
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-2">
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
                 {orgId && !project.isTemplate && (
                   <ProjectCommentsButton orgId={orgId} projectId={id} />
                 )}
                 {!project.isTemplate && (
-                  <Button variant="outline" size="sm" render={<Link href={`/warehouse/${id}`} />}>
-                    <Warehouse className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Warehouse</span>
-                  </Button>
-                )}
-                {!project.isTemplate && (
-                  <Button variant="outline" size="sm" render={<Link href={`/projects/${id}/runsheet`} />}>
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Runsheet</span>
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/warehouse/${id}`}>
+                      <Warehouse className="h-4 w-4" />
+                      <span className="hidden sm:inline">Warehouse</span>
+                    </Link>
                   </Button>
                 )}
                 {!project.isTemplate && (
                   <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button variant="outline" size="sm" />}
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <span className="hidden sm:inline">Documents</span>
-                      <ChevronDown className="ml-1 h-3 w-3" />
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="line" size="sm">
+                        <FileText className="h-4 w-4" />
+                        <span className="hidden sm:inline">Documents</span>
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {([
-                        { label: "Quote / Proposal", type: "quote", apiType: "quote" },
+                        { label: "Quote / proposal", type: "quote", apiType: "quote" },
                         { label: "Invoice", type: "invoice", apiType: "invoice" },
-                        { label: "Pull Slip", type: "packing-list", apiType: "pull-slip" },
-                        { label: "Delivery Docket", type: "delivery-docket", apiType: "delivery-docket" },
-                        { label: "Return Sheet", type: "return-sheet", apiType: "return-sheet" },
+                        { label: "Pull slip", type: "packing-list", apiType: "pull-slip" },
+                        { label: "Delivery docket", type: "delivery-docket", apiType: "delivery-docket" },
+                        { label: "Return sheet", type: "return-sheet", apiType: "return-sheet" },
                       ] as const).map(({ label, type, apiType }) => {
                         const templates = customTemplates?.filter((t: { type: string }) => t.type === type) || [];
                         if (templates.length === 0) {
@@ -358,79 +372,97 @@ export default function ProjectDetailPage({
                         );
                       })}
                       <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
-                        Call Sheet
+                        Call sheet
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => window.open(`/api/documents/timeline/${id}`, "_blank")}
                       >
-                        Project Timeline
+                        Project timeline
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
                 <CanDo resource="project" action="update">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    render={<Link href={`/projects/${id}/edit`} />}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/projects/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Link>
                   </Button>
                 </CanDo>
-                <CanDo resource="project" action="create">
-                  {project.isTemplate ? (
-                    <Button variant="outline" size="sm" onClick={() => setDupMode("duplicate")}>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Use Template
+                {project.isTemplate ? (
+                  <CanDo resource="project" action="create">
+                    <Button variant="line" size="sm" onClick={() => setDupMode("duplicate")}>
+                      <Copy className="h-4 w-4" />
+                      Use template
                     </Button>
-                  ) : (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+                  </CanDo>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="line" size="sm" aria-label="More actions">
                         <MoreHorizontal className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/projects/${id}/runsheet`}>
+                          <ClipboardList className="mr-2 h-4 w-4" />
+                          Runsheet
+                        </Link>
+                      </DropdownMenuItem>
+                      <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
-                          Duplicate Project
+                          Duplicate project
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setDupMode("template")}>
                           <BookTemplate className="mr-2 h-4 w-4" />
-                          Save as Template
+                          Save as template
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </CanDo>
-                {!project.isTemplate && (
-                  <CanDo resource="project" action="update">
-                    {project.status === "CANCELLED" ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => setDeleteOpen(true)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => setCancelOpen(true)}
-                        disabled={archiveMutation.isPending}
-                      >
-                        <Archive className="mr-2 h-4 w-4" />
-                        Cancel
-                      </Button>
-                    )}
-                  </CanDo>
+                      </CanDo>
+                      <CanDo resource="project" action="update">
+                        <DropdownMenuSeparator />
+                        {project.status === "CANCELLED" ? (
+                          <DropdownMenuItem
+                            onClick={() => setDeleteOpen(true)}
+                            disabled={deleteMutation.isPending}
+                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete project
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => setCancelOpen(true)}
+                            disabled={archiveMutation.isPending}
+                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                          >
+                            <Archive className="mr-2 h-4 w-4" />
+                            Cancel project
+                          </DropdownMenuItem>
+                        )}
+                      </CanDo>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             </div>
+
+            {/* Lifecycle stepper + controls */}
+            {!project.isTemplate && (
+              <ProjectLifecycle
+                status={project.status}
+                advancing={statusMutation.isPending}
+                canAdvance={canUpdate}
+                onAdvance={(next) => statusMutation.mutate(next)}
+                statuses={allStatuses.map((s) => ({
+                  value: s,
+                  label: projectStatusLabels[s] || formatLabel(s),
+                }))}
+                onStatusChange={(s) => statusMutation.mutate(s)}
+              />
+            )}
           </div>
 
           {/* ── Summary Strip ──────────────────────────────────────── */}
@@ -450,18 +482,28 @@ export default function ProjectDetailPage({
             {/* Main content */}
             <DetailMain>
               <Tabs defaultValue="equipment">
-                <TabsList>
-                  <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                  <TabsTrigger value="labour">Labour &amp; Logistics</TabsTrigger>
-                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
-                  <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
-                </TabsList>
+                {/* Tab selector + the active tab's primary action share one row.
+                    The Equipment tab portals its "Add ▾" menu into the right-hand
+                    slot (mirrors how the services panel places its action inline
+                    with the tabs). The slot stays empty for other tabs. */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <TabsList>
+                    <TabsTrigger value="equipment">Equipment</TabsTrigger>
+                    <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
+                    {!project.isTemplate && (
+                      <TabsTrigger value="financials">Financials</TabsTrigger>
+                    )}
+                    <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                    <TabsTrigger value="notes">Notes</TabsTrigger>
+                    <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
+                  </TabsList>
+                  <div ref={setEquipmentAddSlot} className="flex items-center gap-2" />
+                </div>
 
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} />
+                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
                   </div>
                 </TabsContent>
 
@@ -478,10 +520,56 @@ export default function ProjectDetailPage({
                       projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
                       projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
                     />
-                    <div className="h-px bg-border" />
+                    <div className="h-px bg-line" />
                     <CrewPanel projectId={id} />
                   </div>
                 </TabsContent>
+
+                {/* Financials Tab — financial summary + operational P&L */}
+                {!project.isTemplate && (
+                  <TabsContent value="financials">
+                    <div className="space-y-6 pt-4">
+                      {(() => {
+                        // Compute group pricing stats from categories
+                        const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
+                          ?.flatMap((c) => c.groups) ?? [];
+                        const totalGroupCount = allGroups.length;
+                        const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
+                        const groupBreakdown = allGroups
+                          .filter((g) => g.price != null && Number(g.price) > 0)
+                          .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
+
+                        return (
+                          <FinancialSummary
+                            equipmentRevenue={project.equipmentRevenue as number | null}
+                            serviceChargeTotal={
+                              project.subtotal != null && project.equipmentRevenue != null
+                                ? Number(project.subtotal) - Number(project.equipmentRevenue)
+                                : null
+                            }
+                            serviceCostTotal={project.serviceCostTotal as number | null}
+                            labourCostTotal={project.labourCostTotal as number | null}
+                            subHireCostTotal={project.subHireCostTotal as number | null}
+                            subtotal={project.subtotal as number | null}
+                            discountPercent={project.discountPercent as number | null}
+                            discountAmount={project.discountAmount as number | null}
+                            taxRate={project.taxRate as number | null}
+                            taxAmount={project.taxAmount as number | null}
+                            total={project.total as number | null}
+                            margin={project.margin as number | null}
+                            depositPercent={project.depositPercent as number | null}
+                            depositPaid={project.depositPaid as number | null}
+                            pricedGroupCount={pricedGroupCount}
+                            totalGroupCount={totalGroupCount}
+                            groupBreakdown={groupBreakdown}
+                          />
+                        );
+                      })()}
+                      <div className="h-px bg-line" />
+                      <ProjectCostsPanel projectId={project.id} />
+                    </div>
+                  </TabsContent>
+                )}
 
                 {/* Tasks Tab */}
                 <TabsContent value="tasks">
@@ -494,7 +582,7 @@ export default function ProjectDetailPage({
                 <TabsContent value="notes">
                   <div className="grid gap-4 pt-4">
                     <NotesEditor
-                      title="Crew Notes"
+                      title="Crew notes"
                       initialNotes={project.crewNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -504,7 +592,7 @@ export default function ProjectDetailPage({
                       rows={4}
                     />
                     <NotesEditor
-                      title="Internal Notes"
+                      title="Internal notes"
                       initialNotes={project.internalNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -514,7 +602,7 @@ export default function ProjectDetailPage({
                       rows={4}
                     />
                     <NotesEditor
-                      title="Client Notes"
+                      title="Client notes"
                       initialNotes={project.clientNotes || ""}
                       onChanged={() =>
                         refreshProjectDetail(id)
@@ -553,87 +641,11 @@ export default function ProjectDetailPage({
               </Tabs>
             </DetailMain>
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
+            {/* ── Sidebar (lean: Schedule · Location · Team · Activity) ─ */}
             <DetailSidebar>
-                {/* Status */}
+                {/* Schedule */}
                 {!project.isTemplate && (
-                  <SidebarSection title="Status">
-                    <CanDo
-                      resource="project"
-                      action="update"
-                      fallback={
-                        <div className="flex items-center gap-2">
-                          <StatusIndicator
-                            category="project"
-                            value={currentStatus}
-                            label={projectStatusLabels[currentStatus] || formatLabel(currentStatus)}
-                          />
-                        </div>
-                      }
-                    >
-                      <select
-                        value={currentStatus}
-                        onChange={(e) => statusMutation.mutate(e.target.value)}
-                        disabled={statusMutation.isPending}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        {allStatuses.map((s) => (
-                          <option key={s} value={s}>
-                            {projectStatusLabels[s] || s}
-                          </option>
-                        ))}
-                      </select>
-                    </CanDo>
-                  </SidebarSection>
-                )}
-
-                {/* Project Managers */}
-                <ProjectManagersPanel
-                  projectId={id}
-                  managers={
-                    (project.projectManagers as {
-                      userId: string;
-                      user: {
-                        id: string;
-                        name: string | null;
-                        email: string;
-                        image: string | null;
-                      };
-                    }[]) ?? []
-                  }
-                />
-
-                {/* Client */}
-                <SidebarSection title="Client">
-                  {project.client ? (
-                    <div className="space-y-1 text-sm">
-                      <Link
-                        href={`/clients/${project.client.id}`}
-                        className="font-medium text-fg hover:underline"
-                      >
-                        {project.client.name}
-                      </Link>
-                      {project.client.contactEmail && (
-                        <div className="flex items-center gap-2 text-fg-3">
-                          <Mail className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{project.client.contactEmail}</span>
-                        </div>
-                      )}
-                      {project.client.contactPhone && (
-                        <div className="flex items-center gap-2 text-fg-3">
-                          <Phone className="h-3.5 w-3.5 shrink-0" />
-                          <span>{project.client.contactPhone}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-fg-3">No client assigned</p>
-                  )}
-                </SidebarSection>
-
-                {/* Dates */}
-                {!project.isTemplate && (
-                  <SidebarSection title="Dates">
+                  <SidebarSection title="Schedule">
                     {rentalStart && rentalEnd && rangeStart && rangeEnd && (
                       <DateRangeBar
                         start={rentalStart}
@@ -643,87 +655,82 @@ export default function ProjectDetailPage({
                         className="mb-2"
                       />
                     )}
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-fg-3 flex items-center gap-1">
+                    <div className="space-y-1 text-ui-text">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted flex items-center gap-1">
                           <CalendarDays className="h-3.5 w-3.5" />
                           Rental
                         </span>
-                        <span className="font-medium">
+                        <span className="font-medium text-ink-2 tabular-nums text-right">
                           {formatDate(project.rentalStartDate as string | null)} &ndash;{" "}
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Load In</span>
-                        <span className="font-medium">
-                          {formatDate(project.loadInDate as string | null)}
-                          {project.loadInTime && ` ${project.loadInTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Load Out</span>
-                        <span className="font-medium">
-                          {formatDate(project.loadOutDate as string | null)}
-                          {project.loadOutTime && ` ${project.loadOutTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Event Start</span>
-                        <span className="font-medium">
-                          {formatDate(project.eventStartDate as string | null)}
-                          {project.eventStartTime && ` ${project.eventStartTime}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Event End</span>
-                        <span className="font-medium">
-                          {formatDate(project.eventEndDate as string | null)}
-                          {project.eventEndTime && ` ${project.eventEndTime}`}
-                        </span>
-                      </div>
+                      {/* Load in/out + event rows render only when set — no stack
+                          of "—" placeholders. If all four are unset, show one
+                          faint line instead. */}
+                      {(() => {
+                        const scheduleRows = [
+                          { label: "Load in", date: project.loadInDate, time: project.loadInTime },
+                          { label: "Load out", date: project.loadOutDate, time: project.loadOutTime },
+                          { label: "Event start", date: project.eventStartDate, time: project.eventStartTime },
+                          { label: "Event end", date: project.eventEndDate, time: project.eventEndTime },
+                        ].filter((r) => r.date != null);
+                        if (scheduleRows.length === 0) {
+                          return <p className="text-caption text-faint">No load-in/out times set</p>;
+                        }
+                        return scheduleRows.map((r) => (
+                          <div key={r.label} className="flex justify-between gap-2">
+                            <span className="text-muted">{r.label}</span>
+                            <span className="font-medium text-ink-2 tabular-nums text-right">
+                              {formatDate(r.date as string | null)}
+                              {r.time ? ` ${r.time as string}` : ""}
+                            </span>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   </SidebarSection>
                 )}
 
                 {/* Location & Site Contact */}
                 <SidebarSection title="Location">
-                  <div className="space-y-1 text-sm">
+                  <div className="space-y-1 text-ui-text">
                     {project.location ? (
                       <>
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
-                          <span className="font-medium">{project.location.name}</span>
+                          <MapPin className="h-3.5 w-3.5 text-muted shrink-0" />
+                          <span className="font-medium text-ink-2">{project.location.name}</span>
                         </div>
                         {project.location.address && (
-                          <p className="text-fg-3 pl-5.5">{project.location.address}</p>
+                          <p className="text-muted pl-5.5">{project.location.address}</p>
                         )}
                         {project.location.latitude != null && project.location.longitude != null && (
                           <a
                             href={`https://www.google.com/maps/dir/?api=1&destination=${project.location.latitude},${project.location.longitude}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-teal-500 hover:text-teal-400 pl-5.5"
+                            className={cn("inline-flex items-center gap-1.5 text-caption text-link hover:underline pl-5.5 rounded-sm", focusRing)}
                           >
                             <Navigation className="h-3 w-3" />
-                            Get Directions
+                            Get directions
                           </a>
                         )}
                       </>
                     ) : (
-                      <p className="text-fg-3">No location set</p>
+                      <p className="text-caption text-faint">No location set</p>
                     )}
                     {project.siteContactName && (
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <p className="font-medium">{project.siteContactName}</p>
+                      <div className="mt-2 pt-2 border-t border-line">
+                        <p className="font-medium text-ink-2">{project.siteContactName}</p>
                         {project.siteContactPhone && (
-                          <div className="flex items-center gap-2 text-fg-3">
+                          <div className="flex items-center gap-2 text-muted">
                             <Phone className="h-3.5 w-3.5 shrink-0" />
                             <span>{project.siteContactPhone}</span>
                           </div>
                         )}
                         {project.siteContactEmail && (
-                          <div className="flex items-center gap-2 text-fg-3">
+                          <div className="flex items-center gap-2 text-muted">
                             <Mail className="h-3.5 w-3.5 shrink-0" />
                             <span>{project.siteContactEmail}</span>
                           </div>
@@ -733,104 +740,38 @@ export default function ProjectDetailPage({
                   </div>
                 </SidebarSection>
 
-                {/* Financial Summary */}
-                {!project.isTemplate && (() => {
-                  // Compute group pricing stats from categories
-                  const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
-                    ?.flatMap((c) => c.groups) ?? [];
-                  const totalGroupCount = allGroups.length;
-                  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
-                  const groupBreakdown = allGroups
-                    .filter((g) => g.price != null && Number(g.price) > 0)
-                    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
-
-                  return (
-                    <div className="border-b border-border pb-4">
-                      <FinancialSummary
-                        equipmentRevenue={project.equipmentRevenue as number | null}
-                        serviceChargeTotal={
-                          project.subtotal != null && project.equipmentRevenue != null
-                            ? Number(project.subtotal) - Number(project.equipmentRevenue)
-                            : null
-                        }
-                        serviceCostTotal={project.serviceCostTotal as number | null}
-                        labourCostTotal={project.labourCostTotal as number | null}
-                        subHireCostTotal={project.subHireCostTotal as number | null}
-                        subtotal={project.subtotal as number | null}
-                        discountPercent={project.discountPercent as number | null}
-                        discountAmount={project.discountAmount as number | null}
-                        taxRate={project.taxRate as number | null}
-                        taxAmount={project.taxAmount as number | null}
-                        total={project.total as number | null}
-                        margin={project.margin as number | null}
-                        depositPercent={project.depositPercent as number | null}
-                        depositPaid={project.depositPaid as number | null}
-                        pricedGroupCount={pricedGroupCount}
-                        totalGroupCount={totalGroupCount}
-                        groupBreakdown={groupBreakdown}
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Operational P&L — costs roll-up beyond the financial summary.
-                    Hides itself when project has no revenue yet. */}
-                {!project.isTemplate && (
-                  <div className="border-b border-border pb-4">
-                    <ProjectCostsPanel projectId={project.id} />
-                  </div>
-                )}
-
-                {/* Quick Actions */}
-                {!project.isTemplate && (
-                  <SidebarSection title="Quick Actions">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => window.open(`/api/documents/${id}?type=quote`, "_blank")}
-                      >
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                        Generate Quote
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => window.open(`/api/documents/${id}?type=invoice`, "_blank")}
-                      >
-                        <DollarSign className="mr-1.5 h-3.5 w-3.5" />
-                        Send Invoice
-                      </Button>
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Project Info */}
-                <SidebarSection title="Details">
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Type</span>
-                      <span className="font-medium">{typeLabels[project.type] || project.type}</span>
-                    </div>
-                    {project.description && (
-                      <p className="text-sm text-fg-3 whitespace-pre-wrap pt-1">{project.description}</p>
-                    )}
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Created</span>
-                      <span className="font-medium">{formatDate(project.createdAt as unknown as string)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Updated</span>
-                      <span className="font-medium">{formatDate(project.updatedAt as unknown as string)}</span>
-                    </div>
-                  </div>
+                {/* Team — client + project managers (drop the nested PM panel's
+                    own divider so only the section rule shows) */}
+                <SidebarSection title="Team" className="[&_>div:last-child]:border-b-0 [&_>div:last-child]:pb-0">
+                  {project.client ? (
+                    <Link
+                      href={`/clients/${project.client.id}`}
+                      className={cn("font-medium text-ink hover:text-link hover:underline rounded-sm text-ui-text", focusRing)}
+                    >
+                      {project.client.name}
+                    </Link>
+                  ) : (
+                    <p className="text-caption text-faint">No client</p>
+                  )}
+                  <ProjectManagersPanel
+                    projectId={id}
+                    managers={
+                      (project.projectManagers as {
+                        userId: string;
+                        user: {
+                          id: string;
+                          name: string | null;
+                          email: string;
+                          image: string | null;
+                        };
+                      }[]) ?? []
+                    }
+                  />
                 </SidebarSection>
 
-                {/* Realtime collaboration feed (comments, blocking, reviews) */}
+                {/* Activity — realtime collaboration feed */}
                 {orgId && !project.isTemplate && (
-                  <SidebarSection title="Collaboration" divider={false}>
+                  <SidebarSection title="Activity" divider={false}>
                     <ProjectActivityFeed
                       orgId={orgId}
                       entityType="project"
@@ -840,11 +781,6 @@ export default function ProjectDetailPage({
                     />
                   </SidebarSection>
                 )}
-
-                {/* Legacy audit timeline */}
-                <SidebarSection title="Activity" divider={false}>
-                  <ActivityTimeline entityType="project" entityId={id} />
-                </SidebarSection>
             </DetailSidebar>
           </DetailLayout>
         </div>
@@ -883,7 +819,7 @@ export default function ProjectDetailPage({
         open={cancelOpen}
         onOpenChange={setCancelOpen}
         title="Cancel this project?"
-        description="The project will be marked CANCELLED. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
+        description="The project will be marked cancelled. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
         confirmLabel="Cancel project"
         cancelLabel="Keep project"
         onConfirm={() => {
@@ -896,17 +832,6 @@ export default function ProjectDetailPage({
   );
 }
 
-function LabourCostDisplay({ projectId }: { projectId: string }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const { data } = useProjectLabourCost(projectId);
-  return (
-    <span className="t-data font-medium">
-      {data ? formatCurrency(Number(data.totalLabourCost)) : "\u2014"}
-    </span>
-  );
-}
-
 function ProjectSummaryStrip({
   projectId,
   equipmentRevenue,
@@ -916,52 +841,68 @@ function ProjectSummaryStrip({
   equipmentRevenue: number | null;
   total: number | null;
 }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
   const { data: labourData } = useProjectLabourCost(projectId);
 
   const { data: serviceData } = useProjectServicesSummary(projectId);
 
-  const metrics = [
+  // A faint em-dash for an empty/placeholder metric — calm, not loud.
+  const emptyValue = <span className="text-faint">{"\u2014"}</span>;
+
+  const metrics: {
+    label: string;
+    value: React.ReactNode;
+    bold?: boolean;
+  }[] = [
     {
       label: "Equipment",
-      value: formatCurrency(equipmentRevenue),
+      value: equipmentRevenue != null ? formatCurrency(equipmentRevenue) : emptyValue,
     },
     {
+      // Lead with the charge; the cost rides along as a quiet muted sub-part.
       label: "Services",
-      value: serviceData
-        ? `${formatCurrency(serviceData.chargeTotal)} charge · ${formatCurrency(serviceData.costTotal)} cost`
-        : "\u2014",
+      value: serviceData ? (
+        <span>
+          {formatCurrency(serviceData.chargeTotal)}
+          <span className="font-normal text-muted"> · {formatCurrency(serviceData.costTotal)} cost</span>
+        </span>
+      ) : (
+        emptyValue
+      ),
     },
     {
       label: "Crew",
-      value: labourData
-        ? `${formatCurrency(Number(labourData.totalLabourCost))} · ${labourData.assignmentCount}`
-        : "\u2014",
+      value: labourData ? (
+        <span>
+          {formatCurrency(Number(labourData.totalLabourCost))}
+          <span className="font-normal text-muted"> · {labourData.assignmentCount}</span>
+        </span>
+      ) : (
+        emptyValue
+      ),
     },
     {
       label: "Total",
-      value: formatCurrency(total),
+      value: total != null ? formatCurrency(total) : emptyValue,
       bold: true,
     },
   ];
 
+  // Inline metrics strip (single surface, vertical dividers) per DESIGN dashboard rule.
   return (
-    <div className="grid grid-cols-2 gap-px sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border rounded-md border border-border bg-border sm:bg-transparent">
+    <div className="grid grid-cols-2 gap-px rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
       {metrics.map((m) => (
         <div
           key={m.label}
-          className="bg-bg-surface px-4 py-3 sm:first:rounded-l-md sm:last:rounded-r-md"
+          className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]"
         >
-          <div className="t-overline text-fg-3">
+          <div className="t-overline text-muted">
             {m.label}
           </div>
           <div
             className={
               m.bold
-                ? "text-base font-bold tabular-nums tracking-tight text-fg"
-                : "text-sm font-semibold tabular-nums text-fg-2"
+                ? "text-card-title font-bold tabular-nums tracking-tight text-ink"
+                : "text-ui-text font-semibold tabular-nums text-ink-2"
             }
           >
             {m.value}

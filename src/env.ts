@@ -32,11 +32,11 @@ const serverEnvSchema = z.object({
 
   // Auth / branding
   PASSKEY_RP_ID: z.string().default("localhost"),
-  PLATFORM_NAME: z.string().default("GearFlow"),
+  PLATFORM_NAME: z.string().default("RVLT Flow"),
 
   // Email (optional — logs to console if unset)
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default("GearFlow <noreply@gearflow.app>"),
+  EMAIL_FROM: z.string().default("RVLT Flow <noreply@gearflow.app>"),
 
   // S3 / storage (optional, defaults match storage.ts behavior)
   S3_REGION: z.string().default("ap-southeast-2"),

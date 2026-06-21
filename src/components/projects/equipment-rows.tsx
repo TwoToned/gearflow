@@ -41,7 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { useRowShortcuts } from "./use-row-shortcuts";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
@@ -213,7 +213,15 @@ function MoveButtons({
 }: MoveControls & { className?: string }) {
   if (!onMoveUp && !onMoveDown) return null;
   return (
-    <div className={cn("flex flex-col items-center", className)}>
+    // Hover/focus-reveal cluster (declutter): hidden by default on desktop,
+    // shown on row hover or keyboard focus. Stays visible on touch (no hover)
+    // by gating the hide behind `md:` — mirrors the category kebab pattern.
+    <div
+      className={cn(
+        "flex flex-col items-center transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+        className,
+      )}
+    >
       <button
         type="button"
         aria-label="Move up"
@@ -222,7 +230,10 @@ function MoveButtons({
           e.stopPropagation();
           onMoveUp?.();
         }}
-        className="text-fg-3 transition-colors hover:text-fg disabled:cursor-not-allowed disabled:opacity-25"
+        className={cn(
+          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
+          focusRing,
+        )}
       >
         <ChevronUp className="h-3.5 w-3.5" />
       </button>
@@ -234,7 +245,10 @@ function MoveButtons({
           e.stopPropagation();
           onMoveDown?.();
         }}
-        className="text-fg-3 transition-colors hover:text-fg disabled:cursor-not-allowed disabled:opacity-25"
+        className={cn(
+          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
+          focusRing,
+        )}
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
@@ -242,7 +256,10 @@ function MoveButtons({
   );
 }
 
-export const COL_COUNT = 6;
+// Column count used for category-row + empty-state colSpans. Spans every
+// column except the trailing actions column. Dropped the orphan
+// rental-quantity column (no header, rendered a bare "—") → 6 → 5.
+export const COL_COUNT = 5;
 
 // Kit children and sub-hire group children both have isKitChild=true —
 // filter them from flat rendering so they only appear nested under their parent.
@@ -345,25 +362,23 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
       <>
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-red-500/10 text-red-600 border-red-500/20">
-                  Overbooked
-                </Badge>
-              }
-            />
+            <TooltipTrigger asChild>
+              <Badge status="overbooked" className="ml-1.5 cursor-help">
+                Overbooked
+              </Badge>
+            </TooltipTrigger>
             <TooltipContent>Contains items that are over capacity</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
-                  Reduced Stock
-                </Badge>
-              }
-            />
+            <TooltipTrigger asChild>
+              {/* Reduced stock = info (blue). Badge has no info status, so this is
+                  a blue-soft override on a neutral pill (warehouse precedent). */}
+              <Badge status="neutral" className="ml-1.5 cursor-help bg-blue-soft text-blue">
+                Reduced stock
+              </Badge>
+            </TooltipTrigger>
             <TooltipContent>
               Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost
             </TooltipContent>
@@ -374,12 +389,11 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
   }
 
   const isReduced = info.reducedOnly;
-  const colorClass = isReduced
-    ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
-    : info.inherited
-      ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
-      : "bg-red-500/10 text-red-600 border-red-500/20";
-  const label = isReduced ? "Reduced Stock" : "Overbooked";
+  // Reduced = info (blue override on neutral); inherited-overbook = warn;
+  // direct overbook = error (t-out). Status §3 / §1.
+  const badgeStatus = isReduced ? "neutral" : info.inherited ? "warn" : "overbooked";
+  const colorClass = isReduced ? "bg-blue-soft text-blue" : "";
+  const label = isReduced ? "Reduced stock" : "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
@@ -396,13 +410,11 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <Badge variant="outline" className={`ml-1.5 cursor-help text-xs ${colorClass}`}>
-              {label}
-            </Badge>
-          }
-        />
+        <TooltipTrigger asChild>
+          <Badge status={badgeStatus} className={cn("ml-1.5 cursor-help", colorClass)}>
+            {label}
+          </Badge>
+        </TooltipTrigger>
         <TooltipContent>{getTooltip()}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -481,7 +493,7 @@ export function GroupRow({
             className="flex items-center gap-1.5 text-left"
           >
             <ChevronRight
-              className={`h-4 w-4 shrink-0 text-fg-3 transition-transform ${
+              className={`h-4 w-4 shrink-0 text-muted transition-transform ${
                 isExpanded ? "rotate-90" : ""
               }`}
             />
@@ -491,51 +503,105 @@ export function GroupRow({
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
-        {priceVal != null ? formatCurrency(priceVal) : "--"}
-      </TableCell>
-      <TableCell className="text-center hidden lg:table-cell t-data">
-        {group.rentalQuantity ?? "--"}
+        {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+        <TableCell className="text-right hidden md:table-cell t-data text-faint">
           —
         </TableCell>
       )}
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
-        {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
+        {priceVal != null ? formatCurrency(priceVal * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1">
-          {orgId && projectId && (
-            <CommentThreadPanel
-              orgId={orgId}
-              entityType="project"
-              entityId={projectId}
-              targetType="group"
-              targetId={group.id}
-              triggerLabel=""
-            >
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
-                className={cn("relative", commentBadge?.blocking && "text-red-600")}
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap">
+          {/* Hover/focus-reveal action cluster (declutter): hidden by default
+              on desktop, shown on row hover or keyboard focus. Stays visible
+              on touch (no hover) via the `md:` gate. Constrained to the w-32
+              actions cell (justify-end + flex-nowrap) so the icons stay
+              right-aligned and never overflow onto the Total column. */}
+          <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+            {orgId && projectId && (
+              <CommentThreadPanel
+                orgId={orgId}
+                entityType="project"
+                entityId={projectId}
+                targetType="group"
+                targetId={group.id}
+                triggerLabel=""
               >
-                <MessageCircle className="h-3.5 w-3.5" />
-                {commentBadge?.blocking ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-medium text-white">
-                    {commentBadge.blocking}
-                  </span>
-                ) : commentBadge?.open ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-bg-inset px-0.5 text-[8px] font-medium text-fg-2 ring-1 ring-border">
-                    {commentBadge.open}
-                  </span>
-                ) : null}
-              </Button>
-            </CommentThreadPanel>
-          )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
+                  className={cn("relative size-8", commentBadge?.blocking && "text-red")}
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  {commentBadge?.blocking ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                      {commentBadge.blocking}
+                    </span>
+                  ) : commentBadge?.open ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-paper-2 px-0.5 text-[8px] font-medium text-ink-2 ring-1 ring-line">
+                      {commentBadge.open}
+                    </span>
+                  ) : null}
+                </Button>
+              </CommentThreadPanel>
+            )}
+            <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8">
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Group</DropdownMenuLabel>
+                  {onEditPrice && (
+                    <DropdownMenuItem onClick={onEditPrice}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                      Edit price
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={onAddEquipment}>
+                    <Plus className="mr-2 h-3.5 w-3.5" />
+                    Add equipment
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onAddKit}>
+                    <Package className="mr-2 h-3.5 w-3.5" />
+                    Add kit
+                  </DropdownMenuItem>
+                  {onSaveAsTemplate && (
+                    <DropdownMenuItem onClick={onSaveAsTemplate}>
+                      <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
+                      Save as template
+                    </DropdownMenuItem>
+                  )}
+                  {onMove && (
+                    <DropdownMenuItem onClick={onMove}>
+                      <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                      Move to category
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={onDelete}
+                    className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                  >
+                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {/* Lock badge stays visible (not part of the hover cluster) — it
+              signals another editor and must always be seen. */}
           {lockedBy ? (
-            <Badge variant="secondary" className="gap-1 text-[10px]">
+            <Badge status="neutral" className="gap-1 text-[10px]">
               <span
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ backgroundColor: lockedBy.color }}
@@ -543,52 +609,6 @@ export function GroupRow({
               Editing: {lockedBy.name}
             </Badge>
           ) : null}
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Group</DropdownMenuLabel>
-                {onEditPrice && (
-                  <DropdownMenuItem onClick={onEditPrice}>
-                    <Pencil className="mr-2 h-3.5 w-3.5" />
-                    Edit price
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={onAddEquipment}>
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Add Equipment
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onAddKit}>
-                  <Package className="mr-2 h-3.5 w-3.5" />
-                  Add Kit
-                </DropdownMenuItem>
-                {onSaveAsTemplate && (
-                  <DropdownMenuItem onClick={onSaveAsTemplate}>
-                    <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
-                    Save as Template
-                  </DropdownMenuItem>
-                )}
-                {onMove && (
-                  <DropdownMenuItem onClick={onMove}>
-                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
-                    Move to category
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-[oklch(0.58_0.22_27)]"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </TableCell>
     </TableRow>
@@ -660,16 +680,16 @@ export function SubHireGroupRow({
             className="flex items-start gap-1.5 text-left"
           >
             <ChevronRight
-              className={`mt-0.5 h-4 w-4 shrink-0 text-fg-3 transition-transform ${
+              className={`mt-0.5 h-4 w-4 shrink-0 text-muted transition-transform ${
                 isExpanded ? "rotate-90" : ""
               }`}
             />
             <div className="flex flex-col">
               <span className="flex items-center gap-1.5 font-semibold">
-                <Handshake className="h-3.5 w-3.5 text-fg-3" />
+                <Handshake className="h-3.5 w-3.5 text-muted" />
                 {group.title}
               </span>
-              <span className="text-xs text-fg-3">
+              <span className="text-caption text-muted">
                 via {supplierName}
                 {margin != null && (
                   <>
@@ -684,25 +704,30 @@ export function SubHireGroupRow({
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
-        {charge != null ? formatCurrency(charge) : "--"}
+        {charge != null ? formatCurrency(charge) : <span className="text-faint">—</span>}
       </TableCell>
-      <TableCell className="text-center hidden lg:table-cell t-data">--</TableCell>
       {showCostColumn && (
         <TableCell className="text-right hidden md:table-cell t-data">
-          {cost != null ? formatCurrency(cost) : "--"}
+          {cost != null ? formatCurrency(cost) : <span className="text-faint">—</span>}
         </TableCell>
       )}
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
-        {charge != null ? formatCurrency(charge * group.quantity) : "--"}
+        {charge != null ? formatCurrency(charge * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+        {/* Constrained to the w-32 actions cell (justify-end + flex-nowrap) so
+            the icons stay right-aligned and never overflow onto the Total
+            column. Sub-hire groups carry no orgId/projectId, so they
+            legitimately have no comment affordance — edit + more only. */}
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+          <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -766,7 +791,7 @@ export function CategoryRow({
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
 
   return (
-    <TableRow className="group/cat border-b-0 bg-bg-inset/50">
+    <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
       <TableCell colSpan={COL_COUNT} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <MoveButtons
@@ -774,11 +799,11 @@ export function CategoryRow({
             onMoveDown={onMoveDown}
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
-            className="px-1"
+            className="px-1 md:group-hover/cat:opacity-100 md:group-focus-within/cat:opacity-100"
           />
-          <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
+          <h3 className="t-overline text-muted">{cat.name}</h3>
           {lockedBy ? (
-            <Badge variant="secondary" className="gap-1 text-[10px]">
+            <Badge status="neutral" className="gap-1 text-[10px]">
               <span
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ backgroundColor: lockedBy.color }}
@@ -787,8 +812,10 @@ export function CategoryRow({
             </Badge>
           ) : null}
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity group-hover/cat:opacity-100 focus-visible:opacity-100">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -798,19 +825,19 @@ export function CategoryRow({
                     {onAddEquipment && (
                       <DropdownMenuItem onClick={onAddEquipment}>
                         <Plus className="mr-2 h-3.5 w-3.5" />
-                        Add Equipment
+                        Add equipment
                       </DropdownMenuItem>
                     )}
                     {onAddKit && (
                       <DropdownMenuItem onClick={onAddKit}>
                         <Package className="mr-2 h-3.5 w-3.5" />
-                        Add Kit
+                        Add kit
                       </DropdownMenuItem>
                     )}
                     {onAddCustom && (
                       <DropdownMenuItem onClick={onAddCustom}>
                         <Sparkles className="mr-2 h-3.5 w-3.5" />
-                        Add Custom Item
+                        Add custom item
                       </DropdownMenuItem>
                     )}
                   </>
@@ -821,7 +848,7 @@ export function CategoryRow({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={onDelete}
-                  className="text-[oklch(0.58_0.22_27)]"
+                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
                 >
                   <Trash2 className="mr-2 h-3.5 w-3.5" />
                   Delete
@@ -955,7 +982,8 @@ export function LineItemRow({
     <TableRow
       style={style}
       className={cn(
-        isSelected && "bg-accent/20",
+        "group/row",
+        isSelected && "bg-select",
         hasActiveLock && "collab-editing",
         justChanged && "collab-changed",
       )}
@@ -975,7 +1003,7 @@ export function LineItemRow({
       <TableCell>
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
           {hasChildren && (
-            <button type="button" onClick={onToggle} className="shrink-0 text-fg-3 hover:text-fg transition-transform" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+            <button type="button" onClick={onToggle} className={cn("shrink-0 rounded-sm text-muted transition-transform hover:text-ink", focusRing)} style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           )}
@@ -983,7 +1011,7 @@ export function LineItemRow({
             {item.model?.name ?? item.description ?? "—"}
           </span>
           {hasChildren && (
-            <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
+            <span className="text-caption text-muted">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
           )}
           {(() => {
             // Show asset tags from per-unit fulfillment if present
@@ -994,67 +1022,69 @@ export function LineItemRow({
               .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
               .filter((t): t is string => !!t);
             if (unitTags.length === 1) {
-              return <span className="text-xs text-fg-3">({unitTags[0]})</span>;
+              return <span className="t-mono text-caption text-muted">({unitTags[0]})</span>;
             }
             if (unitTags.length > 1) {
               return (
-                <span className="text-xs text-fg-3">
+                <span className="t-mono text-caption text-muted">
                   ({unitTags.slice(0, 2).join(", ")}
                   {unitTags.length > 2 ? ` +${unitTags.length - 2}` : ""})
                 </span>
               );
             }
             if (item.asset?.assetTag) {
-              return <span className="text-xs text-fg-3">({item.asset.assetTag})</span>;
+              return <span className="t-mono text-caption text-muted">({item.asset.assetTag})</span>;
             }
             return null;
           })()}
           {desc.isKit && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
+            // Kit = info (blue) — Badge has no info status, so blue-soft override on neutral.
+            <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">
               Kit
             </Badge>
           )}
           {desc.isKit && item.pricingMode === "ITEMIZED" && (
-            <Badge variant="outline" className="ml-1 text-xs">
+            <Badge status="neutral" className="ml-1">
               Itemized
             </Badge>
           )}
           {item.isOptional && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+            <Badge status="warn" className="ml-1.5">
               Optional
             </Badge>
           )}
           {desc.isSubhire && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
+            // Sub-hire = info (blue) override on neutral (warehouse precedent).
+            <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">
               Subhire
             </Badge>
           )}
           {item.isCustomItem && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-muted text-fg-3 border-border/60">
+            <Badge status="neutral" className="ml-1.5">
               Custom
             </Badge>
           )}
           {isUnconfirmed && (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger render={
-                  <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded bg-amber-500/15">
-                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                <TooltipTrigger asChild>
+                  <span className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded bg-warn-soft">
+                    <AlertTriangle className="h-3 w-3 text-warn" />
                   </span>
-                } />
+                </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-xs">Sub-hire order not yet confirmed — costs and items may change</p>
+                  <p className="text-caption">Sub-hire order not yet confirmed — costs and items may change</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
           {item.status === "CANCELLED" && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-red-500/10 text-red-600 border-red-500/20">
+            <Badge status="overbooked" className="ml-1.5">
               Cancelled
             </Badge>
           )}
           {item.prepStatus === "PREPPED" && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-green-500/10 text-green-600 border-green-500/20">
+            <Badge status="ok" className="ml-1.5">
               Prepped
             </Badge>
           )}
@@ -1082,10 +1112,10 @@ export function LineItemRow({
           )}
         </div>
         {desc.isSubhire && item.supplier && (
-          <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
+          <p className={`text-caption text-muted mt-0.5 ${indent}`}>via {item.supplier.name}</p>
         )}
         {item.notes && (
-          <p className={`text-xs text-fg-3 mt-0.5 truncate max-w-[300px] ${indent}`} title={item.notes}>{item.notes}</p>
+          <p className={`text-caption text-muted mt-0.5 truncate max-w-[300px] ${indent}`} title={item.notes}>{item.notes}</p>
         )}
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
@@ -1093,15 +1123,15 @@ export function LineItemRow({
         <div className="flex items-center justify-end gap-1">
           {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
           {item.priceOverridden && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Manually set price" />
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Manually set price" />
           )}
         </div>
         {item.discount != null && Number(item.discount) > 0 && (
-          <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
+          <p className="text-micro text-ok">-{formatCurrency(Number(item.discount))} disc.</p>
         )}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+        <TableCell className="text-right hidden md:table-cell t-data text-faint">
           —
         </TableCell>
       )}
@@ -1109,7 +1139,12 @@ export function LineItemRow({
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1">
+        {/* Hover/focus-reveal action cluster (declutter): hidden by default on
+            desktop, shown on row hover or keyboard focus. Stays visible on touch
+            (no hover) via the `md:` gate. Constrained to the w-32 actions cell
+            (justify-end + flex-nowrap) so the comment/edit/more icons stay
+            right-aligned and never overflow onto the Total column. */}
+        <div className="flex items-center justify-end gap-0.5 flex-nowrap transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
           {orgId && projectId && (
             <CommentThreadPanel
               orgId={orgId}
@@ -1121,7 +1156,7 @@ export function LineItemRow({
             >
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 title={
                   blockingComments > 0
                     ? `${blockingComments} blocking comment${blockingComments === 1 ? "" : "s"}`
@@ -1129,11 +1164,11 @@ export function LineItemRow({
                       ? `${openComments} open comment${openComments === 1 ? "" : "s"}`
                       : "Comments"
                 }
-                className={cn("relative", blockingComments > 0 && "text-red-600")}
+                className={cn("relative size-8", blockingComments > 0 && "text-red")}
               >
                 <MessageCircle className="h-3.5 w-3.5" />
                 {blockingComments > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-medium text-white">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
                     {blockingComments}
                   </span>
                 ) : openComments > 0 ? (
@@ -1144,12 +1179,14 @@ export function LineItemRow({
               </Button>
             </CommentThreadPanel>
           )}
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+          <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
@@ -1178,7 +1215,7 @@ export function LineItemRow({
                 )}
                 <DropdownMenuItem
                   onClick={onRemove}
-                  className="text-[oklch(0.58_0.22_27)]"
+                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
                 >
                   <Trash2 className="mr-2 h-3.5 w-3.5" />
                   Delete
@@ -1191,30 +1228,34 @@ export function LineItemRow({
     </TableRow>
     {/* Expanded child items (kit children / sub-hire group children) */}
     {isExpanded && hasChildren && item.childLineItems!.map((child) => (
-      <TableRow key={child.id} className="bg-muted/30">
+      <TableRow key={child.id} className="bg-paper-2/40">
         <TableCell className="px-0" />
         <TableCell>
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+              <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
               {child.childKind === "ACCESSORY" && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3">
+                <Badge status="neutral" className="text-[10px] px-1.5 py-0">
                   Accessory
                 </Badge>
               )}
             </div>
             {child.notes && (
-              <p className="text-xs text-fg-3 mt-0.5 truncate max-w-[300px]">{child.notes}</p>
+              <p className="text-caption text-muted mt-0.5 truncate max-w-[300px]">{child.notes}</p>
             )}
           </div>
         </TableCell>
-        <TableCell className="text-center t-data text-fg-2">{child.quantity}</TableCell>
-        <TableCell className="text-right hidden md:table-cell t-data text-fg-2">
+        <TableCell className="text-center t-data text-ink-2">{child.quantity}</TableCell>
+        <TableCell className="text-right hidden md:table-cell t-data text-ink-2">
           {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
         </TableCell>
-        <TableCell className="text-right hidden sm:table-cell t-data text-fg-2">
+        {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
+        <TableCell className="text-right hidden sm:table-cell t-data text-ink-2">
           {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
         </TableCell>
+        {/* Child rows can't be price-edited or reordered independently, so the
+            actions cell renders empty — but the w-32 column is still reserved
+            so every row's columns align with the colgroup. */}
         <TableCell />
       </TableRow>
     ))}

@@ -2,14 +2,30 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 import { useSupplier } from "@/hooks/use-suppliers";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 export default function EditSupplierPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="supplier" action="update">
+      <EditSupplierContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function EditSupplierContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   // Reactive supplier (Convex) — the form only needs supplier fields, so a pure
@@ -17,21 +33,36 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
   const supplier = useSupplier(id);
 
   if (supplier === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
-  if (!supplier) return <div className="text-fg-3">Supplier not found.</div>;
+  if (!supplier) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Supplier not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
+      </div>
+    );
+  }
 
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
-          <Link href="/suppliers" className="hover:text-fg transition-colors">Suppliers</Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link href={`/suppliers/${id}`} className="hover:text-fg transition-colors">{supplier.name}</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-fg">Edit</span>
-        </div>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/suppliers" />}>Suppliers</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/suppliers/${id}`} />}>{supplier.name}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Edit</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <div>
-          <h1 className="t-title text-fg">Edit Supplier</h1>
-          <p className="text-fg-3">
+          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit supplier</h1>
+          <p className="mt-1 text-ui-text text-muted">
             Update supplier details.
           </p>
         </div>

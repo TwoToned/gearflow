@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/auth-client", () => ({
@@ -22,6 +22,24 @@ vi.mock("@/hooks/use-back-office", () => ({
 
 import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
 
+// The RVLT registry menu is Radix-based (@radix-ui/react-dropdown-menu). Radix
+// uses pointer-capture + scrollIntoView, which jsdom doesn't implement, and it
+// opens on keyboard/pointer events (not a bare click). Shim the missing APIs
+// and drive the trigger via keyboard so the menu actually mounts.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+});
+
+function openMenu() {
+  const trigger = screen.getByRole("button");
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  return trigger;
+}
+
 describe("SavedViewsMenu smoke", () => {
   it("renders the trigger without throwing", () => {
     expect(() =>
@@ -31,25 +49,25 @@ describe("SavedViewsMenu smoke", () => {
     ).not.toThrow();
   });
 
-  // Regression: clicking the "Views" button opens the menu, which mounts the
-  // DropdownMenuLabel. Base UI's GroupLabel throws if not inside a Group — that
-  // crashed every list page. The trigger-only smoke test above missed it.
-  it("opens the menu without throwing (DropdownMenuLabel must be in a Group)", async () => {
+  // Regression: opening the menu mounts the DropdownMenuLabel + items. Guards
+  // against the menu crashing on open. The menu must open and show its
+  // "Saved views" label.
+  it("opens the menu and renders its label", async () => {
     render(
       <SavedViewsMenu tableId="assets" currentConfig={{}} applyConfig={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button"));
+    openMenu();
     await waitFor(() => expect(screen.getByText("Saved views")).toBeTruthy());
   });
 
-  // Regression: Base UI Menu.Item fires onClick, NOT Radix's onSelect. Using
-  // onSelect made every menu action a dead button. Clicking "Save current view…"
-  // must open the save dialog.
-  it("'Save current view' opens the save dialog (items use onClick)", async () => {
+  // Regression: menu items must be live (a wrong onSelect/onClick wiring once
+  // made every action a dead button). Clicking "Save current view…" must open
+  // the save dialog.
+  it("'Save current view' opens the save dialog", async () => {
     render(
       <SavedViewsMenu tableId="assets" currentConfig={{ filters: { a: ["x"] } }} applyConfig={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button"));
+    openMenu();
     const item = await waitFor(() => screen.getByText("Save current view…"));
     fireEvent.click(item);
     // The dialog title is exactly "Save current view" (no ellipsis).

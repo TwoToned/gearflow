@@ -1,5 +1,11 @@
 # Bulk Check-In Totals
 
+> **⚠️ UI REMOVED.** The Bulk Check-In tab was removed from the warehouse project
+> page — accessories are no longer surfaced as a separate warehouse concern (they
+> cascade silently with their parent). The backend below (`src/server/bulk-checkin.ts`,
+> `src/lib/bulk-checkin.ts` and their tests) is **retained but dormant** — nothing in
+> the UI calls it. Re-wire a tab to bring it back.
+
 A project-wide check-in screen: instead of returning each parent's accessories
 one parent at a time, the operator sees the **total quantity of each item due
 back across the whole job** ("100 clamps", "50 TrueCons", "3 generators", "1

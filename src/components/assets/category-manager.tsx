@@ -29,6 +29,8 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export function CategoryManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -143,33 +145,41 @@ export function CategoryManager() {
   const childrenOf = (id: string) => categories.filter((c) => c.parentId === id);
 
   if (isLoading) {
-    return <div className="text-sm text-fg-3">Loading categories...</div>;
+    return (
+      <div className="space-y-1">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-[var(--r)]" />
+        ))}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Categories</h2>
+        <h2 className="text-section-header font-semibold text-ink">Categories</h2>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger render={<Button size="sm" onClick={() => openCreate()} />}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Category
+          <DialogTrigger asChild>
+            <Button size="sm" onClick={() => openCreate()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add category
+            </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{editingId ? "Edit Category" : "New Category"}</DialogTitle>
+              <DialogTitle>{editingId ? "Edit category" : "New category"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="cat-name">Name</Label>
-                <Input id="cat-name" {...form.register("name")} placeholder="e.g. Audio" />
+                <Input id="cat-name" {...form.register("name")} placeholder="e.g. Audio" aria-invalid={form.formState.errors.name ? true : undefined} />
                 {form.formState.errors.name && (
-                  <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                  <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cat-icon">Icon</Label>
-                <Input id="cat-icon" {...form.register("icon")} placeholder="e.g. 🎤" className="w-20" />
+                <Input id="cat-icon" {...form.register("icon")} placeholder="Emoji or short tag" className="w-32" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cat-desc">Description</Label>
@@ -191,19 +201,21 @@ export function CategoryManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cat-sort">Sort Order</Label>
+                <Label htmlFor="cat-sort">Sort order</Label>
                 <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
               </div>
               {parentId && (
-                <p className="text-xs text-fg-3">
+                <p className="text-caption text-muted">
                   Subcategory of: {categories.find((c) => c.id === parentId)?.name}
                 </p>
               )}
               <DialogFooter>
-                <DialogClose render={<Button variant="outline" type="button" onClick={resetForm} />}>
-                  Cancel
+                <DialogClose asChild>
+                  <Button variant="line" type="button" onClick={resetForm}>
+                    Cancel
+                  </Button>
                 </DialogClose>
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                   {editingId ? "Update" : "Create"}
                 </Button>
               </DialogFooter>
@@ -213,34 +225,48 @@ export function CategoryManager() {
       </div>
 
       {topLevel.length === 0 ? (
-        <p className="text-sm text-fg-3">No categories yet. Create one to get started.</p>
+        <EmptyState
+          title="No categories yet"
+          description="Create one to start organising your gear."
+          action={
+            <Button size="sm" variant="line" onClick={() => openCreate()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add category
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-1">
           {topLevel.map((cat) => {
             const children = childrenOf(cat.id);
             return (
               <div key={cat.id}>
-                <div className="flex items-center gap-2 rounded-md border p-2.5 hover:bg-accent/50">
-                  <span className="text-base">{cat.icon || "📁"}</span>
-                  <span className="font-medium text-sm flex-1">{cat.name}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {cat._count.models} models
+                <div className="flex items-center gap-2 rounded-[var(--r)] border-2 border-line-2 p-2.5 motion-safe:transition-colors hover:bg-elev">
+                  {cat.icon ? (
+                    <span className="text-base">{cat.icon}</span>
+                  ) : (
+                    <FolderOpen className="h-4 w-4 text-muted" />
+                  )}
+                  <span className="font-medium text-ui-text text-ink flex-1">{cat.name}</span>
+                  <Badge status="neutral">
+                    <span className="tabular-nums">{cat._count.models}</span> models
                   </Badge>
                   {children.length > 0 && (
-                    <Badge variant="outline" className="text-xs">
-                      {cat._count.children} sub
+                    <Badge status="neutral">
+                      <span className="tabular-nums">{cat._count.children}</span> sub
                     </Badge>
                   )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCreate(cat.id)}>
+                  <Button variant="ghost" size="icon" className="size-8" aria-label="Add subcategory" onClick={() => openCreate(cat.id)}>
                     <Plus className="h-3 w-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cat)}>
+                  <Button variant="ghost" size="icon" className="size-8" aria-label="Edit category" onClick={() => openEdit(cat)}>
                     <Pencil className="h-3 w-3" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-destructive"
+                    className="size-8 text-muted hover:text-t-out"
+                    aria-label="Delete category"
                     onClick={() => setDeleteId(cat.id)}
                   >
                     <Trash2 className="h-3 w-3" />
@@ -249,20 +275,25 @@ export function CategoryManager() {
                 {children.length > 0 && (
                   <div className="ml-6 mt-1 space-y-1">
                     {children.map((child) => (
-                      <div key={child.id} className="flex items-center gap-2 rounded-md border border-dashed p-2 hover:bg-accent/50">
-                        <ChevronRight className="h-3 w-3 text-fg-3" />
-                        <span className="text-base">{child.icon || "📂"}</span>
-                        <span className="text-sm flex-1">{child.name}</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {child._count.models} models
+                      <div key={child.id} className="flex items-center gap-2 rounded-[var(--r)] border-2 border-dashed border-line-2 p-2 motion-safe:transition-colors hover:bg-elev">
+                        <ChevronRight className="h-3 w-3 text-muted" />
+                        {child.icon ? (
+                          <span className="text-base">{child.icon}</span>
+                        ) : (
+                          <FolderOpen className="h-4 w-4 text-muted" />
+                        )}
+                        <span className="text-ui-text text-ink flex-1">{child.name}</span>
+                        <Badge status="neutral">
+                          <span className="tabular-nums">{child._count.models}</span> models
                         </Badge>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(child)}>
+                        <Button variant="ghost" size="icon" className="size-8" aria-label="Edit subcategory" onClick={() => openEdit(child)}>
                           <Pencil className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-destructive"
+                          className="size-8 text-muted hover:text-t-out"
+                          aria-label="Delete subcategory"
                           onClick={() => setDeleteId(child.id)}
                         >
                           <Trash2 className="h-3 w-3" />

@@ -52,7 +52,7 @@ function BuiltInRoleCard({ role }: { role: string }) {
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-fg-3" />
           <span className="font-medium text-sm">{roleLabels[role]}</span>
-          <Badge variant="outline" className="text-xs">Built-in</Badge>
+          <Badge status="neutral" className="text-xs">Built-in</Badge>
         </div>
         <Button
           variant="ghost"
@@ -158,7 +158,7 @@ export function RoleManager() {
               >
                 <div className="flex items-center gap-3">
                   <Badge
-                    variant="outline"
+                    status="neutral"
                     className={getRoleColorClasses(role.color)}
                   >
                     {role.name}
@@ -171,9 +171,11 @@ export function RoleManager() {
                 </div>
                 <NotViewer>
                   <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
-                      Actions
-                      <ChevronDown className="ml-1 h-3 w-3" />
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        Actions
+                        <ChevronDown className="ml-1 h-3 w-3" />
+                      </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleEdit(role)}>

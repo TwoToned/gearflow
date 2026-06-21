@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Plus, RotateCcw, Loader2 } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { cn, focusRing } from "@/lib/utils";
 
 import { getKitCounts } from "@/server/kits";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -26,6 +27,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 
 import { kitStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
+import { getStatusColor } from "@/lib/status-colors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyKit = Record<string, any>;
@@ -37,7 +39,7 @@ function useKitColumns(
   return [
     {
       id: "assetTag",
-      header: "Asset Tag",
+      header: "Asset tag",
       accessorKey: "assetTag",
       alwaysVisible: true,
       sortKey: "assetTag",
@@ -49,7 +51,7 @@ function useKitColumns(
             alt={row.assetTag}
             size={32}
           />
-          <Link href={`/kits/${row.id}`} className="font-mono font-medium text-sm hover:underline" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/kits/${row.id}`} className={cn("t-mono font-medium text-table-cell text-ink hover:underline rounded-sm", focusRing)} onClick={(e) => e.stopPropagation()}>
             {row.assetTag}
           </Link>
         </div>
@@ -60,7 +62,7 @@ function useKitColumns(
       header: "Name",
       accessorKey: "name",
       sortKey: "name",
-      cell: (row) => <span className="font-medium">{row.name}</span>,
+      cell: (row) => <span className="font-medium text-ink">{row.name}</span>,
     },
     {
       id: "categoryId",
@@ -69,7 +71,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: categories.map((c) => ({ value: c.id, label: c.name })),
-      cell: (row) => <span className="text-fg-3">{row.category?.name || "—"}</span>,
+      cell: (row) => <span className="text-muted">{row.category?.name || "—"}</span>,
     },
     {
       id: "status",
@@ -79,11 +81,11 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: [
-        { value: "AVAILABLE", label: "Available", color: "bg-green-500" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
-        { value: "IN_MAINTENANCE", label: "In Maintenance", color: "bg-amber-500" },
-        { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
-        { value: "INCOMPLETE", label: "Incomplete", color: "bg-red-500" },
+        { value: "AVAILABLE", label: "Available", color: getStatusColor("kit", "AVAILABLE").dot },
+        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("kit", "CHECKED_OUT").dot },
+        { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("kit", "IN_MAINTENANCE").dot },
+        { value: "RETIRED", label: "Retired", color: getStatusColor("kit", "RETIRED").dot },
+        { value: "INCOMPLETE", label: "Incomplete", color: getStatusColor("kit", "INCOMPLETE").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="kit" value={row.status} label={kitStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
@@ -98,11 +100,11 @@ function useKitColumns(
       filterType: "enum",
       defaultVisible: false,
       filterOptions: [
-        { value: "NEW", label: "New", color: "bg-green-500" },
-        { value: "GOOD", label: "Good", color: "bg-blue-500" },
-        { value: "FAIR", label: "Fair", color: "bg-amber-500" },
-        { value: "POOR", label: "Poor", color: "bg-orange-500" },
-        { value: "DAMAGED", label: "Damaged", color: "bg-red-500" },
+        { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
+        { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
+        { value: "FAIR", label: "Fair", color: getStatusColor("condition", "FAIR").dot },
+        { value: "POOR", label: "Poor", color: getStatusColor("condition", "POOR").dot },
+        { value: "DAMAGED", label: "Damaged", color: getStatusColor("condition", "DAMAGED").dot },
       ],
       cell: (row) => (
         <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition] || formatLabel(row.condition)} variant="pill" />
@@ -115,7 +117,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: locations.map((loc) => ({ value: loc.id, label: loc.name })),
-      cell: (row) => <span className="text-fg-3">{row.location?.name || "—"}</span>,
+      cell: (row) => <span className="text-muted">{row.location?.name || "—"}</span>,
     },
     {
       id: "items",
@@ -123,7 +125,7 @@ function useKitColumns(
       sortable: false,
       align: "right",
       cell: (row) => (
-        <span className="text-fg-3">
+        <span className="t-mono t-data text-muted">
           {(row._count?.serializedItems || 0) + (row._count?.bulkItems || 0)}
         </span>
       ),
@@ -137,7 +139,7 @@ function useKitColumns(
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
+            <Badge key={tag} status="neutral">
               {tag}
             </Badge>
           ))}
@@ -308,18 +310,18 @@ export default function KitsPage() {
         />
 
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
-            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <div className="flex items-center gap-3 rounded-[var(--r)] border border-line bg-paper-2 px-4 py-2">
+            <span className="text-ui-text font-medium text-ink">{selectedIds.size} selected</span>
             <CanDo resource="warehouse" action="check_in">
               <Button
                 size="sm"
-                variant="outline"
-                className="text-amber-500"
-                disabled={forceReturnMutation.isPending}
+                variant="line"
+                className="border-warn/40 text-warn hover:bg-warn-soft hover:border-warn"
+                loading={forceReturnMutation.isPending}
                 onClick={() => setBulkForceReturnOpen(true)}
               >
-                {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
-                Force Return
+                <RotateCcw className="h-4 w-4" />
+                Force return
               </Button>
             </CanDo>
             <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
@@ -349,15 +351,18 @@ export default function KitsPage() {
           onResetPreferences={resetPreferences}
           savedViews={{ tableId: "kits", currentConfig, applyConfig }}
           isLoading={isLoading}
-          emptyPreset="kits"
+          emptyTitle="No kits yet"
+          emptyDescription="Bundle gear that always travels together. Create your first kit with New kit."
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}
           toolbarActions={
             <CanDo resource="kit" action="create">
-              <Button size="sm" className="h-8" render={<Link href="/kits/new" />}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Kit
+              <Button size="sm" asChild>
+                <Link href="/kits/new">
+                  <Plus className="h-4 w-4" />
+                  New kit
+                </Link>
               </Button>
             </CanDo>
           }

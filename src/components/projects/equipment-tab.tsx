@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -19,7 +20,13 @@ import {
   useProjectSubHires,
   useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
-import { Plus, FolderPlus, Pencil } from "lucide-react";
+import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 import { useProjectServices } from "@/hooks/use-project-services";
@@ -49,6 +56,7 @@ import {
 import { applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -58,6 +66,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
+import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
+import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
@@ -100,11 +110,16 @@ interface EquipmentTabProps {
   projectId: string;
   rentalStartDate?: Date | null;
   rentalEndDate?: Date | null;
+  /** When provided, the primary "Add ▾" menu is portalled into this element
+   *  (the tab row) instead of the in-panel toolbar. The page renders an empty
+   *  slot inline with the Equipment/Labour/Tasks tabs and hands the node here so
+   *  the Add action sits on the tab row. */
+  addMenuSlot?: HTMLElement | null;
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -493,8 +508,23 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-fg-4">
-        Loading equipment...
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-16" />
+          <Skeleton className="h-9 w-28" />
+          <Skeleton className="h-9 w-28" />
+          <div className="flex-1" />
+          <Skeleton className="h-9 w-24" />
+        </div>
+        <div className="overflow-hidden rounded-[var(--r-lg)] border border-line">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0">
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-4 w-10" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -562,48 +592,54 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     }
   };
 
-  return (
-    <div className="space-y-3" data-shortcut-scope="equipment">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        {/* Single Add entry — opens UnifiedAddDialog. Tabs inside the
-            dialog (own-stock / kit / sub-hire / custom) replace the four
-            old toolbar buttons. Defaults to whichever kind was used last,
-            falling back to "own-stock". */}
-        <Button
-          size="sm"
-          className="gap-1.5"
+  // Primary "Add ▾" menu (item / group / category). The three add actions reuse
+  // the exact handlers the old three buttons triggered (UnifiedAddDialog,
+  // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
+  // either inline in the in-panel toolbar (fallback) or portalled onto the tab
+  // row when the page supplies `addMenuSlot`.
+  const addMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          Add
+          <ChevronDownIcon className="h-3 w-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
           onClick={() => {
             setUnifiedAddTarget({});
             setShowUnifiedAdd(true);
           }}
         >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddGroupFromToolbar(true)}
-        >
-          <FolderPlus className="h-3.5 w-3.5" />
-          Add Group
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddCategory(true)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Category
-        </Button>
+          <Plus className="mr-2 h-3.5 w-3.5" />
+          Add item
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
+          <FolderPlus className="mr-2 h-3.5 w-3.5" />
+          Add group
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
+          <FolderTree className="mr-2 h-3.5 w-3.5" />
+          Add category
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  return (
+    <div className="space-y-3" data-shortcut-scope="equipment">
+      {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
+          inline in this toolbar. The quiet margin toggle always stays here. */}
+      {addMenuSlot ? createPortal(addMenu, addMenuSlot) : null}
+      <div className="flex items-center gap-2">
+        {!addMenuSlot && addMenu}
         <div className="flex-1" />
         <Button
-          variant={showCostColumn ? "default" : "outline"}
+          variant="ghost"
           size="sm"
-          className="gap-1.5"
+          aria-pressed={showCostColumn}
           onClick={toggleShowCostColumn}
           title="Toggle the supplier-cost column so margin is visible at a glance"
         >
@@ -613,34 +649,33 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
       {/* Empty state */}
       {!hasCategories && !hasUncategorized && (
-        <div className="rounded-lg border border-dashed border-foreground/10 py-12 text-center">
-          <p className="text-sm text-fg-3">No categories yet.</p>
-          <p className="mt-1 text-xs text-fg-4">
-            Create a category (e.g. &quot;RF&quot;, &quot;IEM&quot;, &quot;PA&quot;) to organize your equipment.
+        <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 py-12 text-center">
+          <p className="text-ui-text font-medium text-ink-2">Nothing on the quote yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-caption text-muted">
+            Add gear, kits, or a sub-hire — or create a category (RF, IEM, PA) to organise the build.
           </p>
         </div>
       )}
 
       {/* Main table */}
       {(hasCategories || hasUncategorized) && (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="rounded-[var(--r)] border border-line overflow-x-auto">
           <Table className="table-fixed">
             <colgroup>
               <col className="w-10" />
               <col />
               <col className="w-16" />
               <col className="w-28 hidden md:table-column" />
-              <col className="w-20 hidden lg:table-column" />
               {showCostColumn && <col className="w-24 hidden md:table-column" />}
               <col className="w-28 hidden sm:table-column" />
-              <col className="w-20" />
+              <col className="w-32" />
             </colgroup>
             <TableHeader>
             <TableRow>
               <TableHead className="px-1" />
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
-              <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
+              <TableHead className="text-right hidden md:table-cell">Unit price</TableHead>
               {showCostColumn && (
                 <TableHead className="text-right hidden md:table-cell">Cost</TableHead>
               )}
@@ -732,7 +767,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               />
                               {isExpanded && childItems.length === 0 && (
                                 <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                                  <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
                                     No items in this sub-hire group yet.
                                   </TableCell>
                                 </TableRow>
@@ -820,7 +855,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
                               <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                                <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
                                   No items in this group yet. Add equipment to get started.
                                 </TableCell>
                               </TableRow>
@@ -895,11 +930,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
                 {/* Uncategorized items */}
                 {hasCategories && hasUncategorized && (
-                  <TableRow className="bg-bg-inset/30">
+                  <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
                     <TableCell colSpan={colCount} className="py-2 px-1">
                       <div className="flex items-center gap-1.5">
                         <div className="w-6" />
-                        <h3 className="text-sm font-semibold text-fg-4">Uncategorized</h3>
+                        <h3 className="t-overline text-muted">Uncategorised</h3>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -987,7 +1022,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       />
                       {isExpanded && groupItems.length === 0 && (
                         <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
                             No items in this group yet. Add equipment to get started.
                           </TableCell>
                         </TableRow>
@@ -1053,7 +1088,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       />
                       {isExpanded && childItems.length === 0 && (
                         <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
                             No items in this sub-hire group yet.
                           </TableCell>
                         </TableRow>
@@ -1093,15 +1128,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
       {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
       {projectSubHires.length > 0 && (
-        <div className="mt-6 rounded-lg border border-border/50 bg-card">
-          <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+        <div className="mt-6 rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <div className="flex items-center gap-2">
-              <ArrowLeftRight className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-medium text-fg-2">Sub-Hire Orders</h3>
-              <span className="text-xs text-fg-4">({projectSubHires.length})</span>
+              <ArrowLeftRight className="h-4 w-4 text-red" />
+              <h3 className="text-card-title font-semibold text-ink">Sub-hire orders</h3>
+              <span className="t-mono text-muted">({projectSubHires.length})</span>
             </div>
           </div>
-          <div className="divide-y divide-border/30">
+          <div className="divide-y divide-line">
             {projectSubHires.map((sh: Record<string, unknown>) => {
               const shId = sh.id as string;
               const isExpanded = expandedSubHires.has(shId);
@@ -1110,7 +1145,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               const itemCount = (sh._count as Record<string, number>)?.items || 0;
               return (
                 <div key={shId}>
-                  <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-bg-elevated/50 transition-colors">
+                  <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-elev/50 transition-colors">
                     <button
                       type="button"
                       onClick={() =>
@@ -1121,14 +1156,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           return next;
                         })
                       }
-                      className="text-fg-3 hover:text-fg transition-colors"
+                      className={cn("rounded-sm text-muted hover:text-ink transition-colors", focusRing)}
                     >
                       <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-medium">{sh.orderNumber as string}</span>
-                        <span className="text-sm text-fg-3">{(sh.supplier as Record<string, unknown>)?.name as string}</span>
+                        <span className="t-mono font-medium text-ink-2">{sh.orderNumber as string}</span>
+                        <span className="text-ui-text text-muted">{(sh.supplier as Record<string, unknown>)?.name as string}</span>
                         {isOverdue ? (
                           <StatusIndicator category="subHire" intent="error" label="Overdue" value="OVERDUE" />
                         ) : (
@@ -1138,25 +1173,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                             label={subHireStatusLabels[sh.status as string] || formatLabel(sh.status as string)}
                           />
                         )}
-                        <span className="text-xs text-fg-4">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+                        <span className="text-caption text-muted">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <div className="text-right">
-                        <div className="text-sm tabular-nums">{formatCurrency(Number(sh.totalCharge))}</div>
-                        <div className={`text-xs tabular-nums ${margin > 0 ? "text-success" : margin < 0 ? "text-error" : "text-fg-4"}`}>
+                        <div className="text-ui-text tabular-nums text-ink-2">{formatCurrency(Number(sh.totalCharge))}</div>
+                        <div className={`text-caption tabular-nums ${margin > 0 ? "text-ok" : margin < 0 ? "text-t-out" : "text-muted"}`}>
                           {margin > 0 ? "+" : ""}{formatCurrency(margin)}
                         </div>
                       </div>
                       <Button
-                        size="sm"
+                        size="icon"
                         variant="ghost"
+                        className="size-8"
+                        title="Edit sub-hire order"
                         onClick={() => {
                           setManagingSubHireId(shId);
                           setShowSubHireOrderDialog(true);
                         }}
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -1181,25 +1218,25 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         );
         if (billable.length === 0) return null;
         return (
-          <div className="mt-6 rounded-lg border border-border/50 bg-card">
-            <div className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
-              <h3 className="text-sm font-medium text-muted-foreground">Services on Documents</h3>
-              <span className="text-xs text-muted-foreground/60">({billable.length})</span>
+          <div className="mt-6 rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]">
+            <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+              <h3 className="text-card-title font-semibold text-ink">Services on documents</h3>
+              <span className="t-mono text-muted">({billable.length})</span>
             </div>
-            <div className="divide-y divide-border/30">
+            <div className="divide-y divide-line">
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {billable.map((svc: any) => (
                 <div key={svc.id} className="flex items-center justify-between px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm">{svc.title}</span>
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{svc.type.replace("_", " ")}</span>
+                    <span className="text-ui-text text-ink-2">{svc.title}</span>
+                    <span className="rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">{SERVICE_TYPE_LABELS[svc.type as keyof typeof SERVICE_TYPE_LABELS] ?? svc.type}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-4 text-ui-text">
                     {svc.lineTotal != null && Number(svc.lineTotal) > 0 && (
-                      <span className="text-foreground">{formatCurrency(Number(svc.lineTotal))}</span>
+                      <span className="tabular-nums text-ink">{formatCurrency(Number(svc.lineTotal))}</span>
                     )}
                     {svc.costTotal != null && Number(svc.costTotal) > 0 && (
-                      <span className="text-xs text-muted-foreground">Cost: {formatCurrency(Number(svc.costTotal))}</span>
+                      <span className="text-caption tabular-nums text-muted">Cost: {formatCurrency(Number(svc.costTotal))}</span>
                     )}
                   </div>
                 </div>

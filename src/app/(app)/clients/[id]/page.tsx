@@ -13,7 +13,7 @@ import {
   MapPin,
   FileText,
   ChevronRight,
-  DollarSign,
+  MoreHorizontal,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -34,10 +34,17 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
@@ -51,6 +58,14 @@ import {
 } from "@/components/ui/table";
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <RequirePermission resource="client" action="read">
+      <ClientDetailContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
@@ -76,73 +91,141 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   }
 
   if (!client) {
-    return <div className="text-fg-3 py-12 text-center">Client not found.</div>;
+    return (
+      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
+        <p className="text-ui-text text-ink-2">Client not found.</p>
+        <p className="mt-1 text-caption text-muted">It may have been archived, or you don&apos;t have access to it.</p>
+        <Button variant="line" size="sm" className="mt-4" asChild>
+          <Link href="/clients">Back to clients</Link>
+        </Button>
+      </div>
+    );
   }
 
-  // Compute financial summary from projects
+  // Compute financial / activity summary from the projects the page already loads.
   const totalProjects = client.projects.length;
   const activeProjects = client.projects.filter(
     (p) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status ?? "")
   );
+  const totalValue = client.projects.reduce(
+    (sum: number, p: { total?: number | null }) => sum + (p.total != null ? Number(p.total) : 0),
+    0,
+  );
+  const lastProjectAt = client.projects.reduce<number | null>((latest, p) => {
+    const t = (p.createdAt ?? p._creationTime) as number | undefined;
+    if (t == null) return latest;
+    return latest == null || t > latest ? t : latest;
+  }, null);
 
   return (
-    <RequirePermission resource="client" action="read">
+    <>
       <PageMeta title={client?.name} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity + compact actions) ── */}
+          <div className="space-y-4 rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
-              <Link href="/clients" className="hover:text-fg transition-colors">
+            <nav className="flex items-center gap-1 text-caption text-muted">
+              <Link href="/clients" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Clients
               </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-fg font-medium truncate">{client.name}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="truncate text-ink-2">{client.name}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-fg">{client.name}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate font-display text-page-title font-extrabold text-ink">
+                    {client.name}
+                  </h1>
                   <StatusIndicator
                     category="clientType"
                     value={client.type ?? "COMPANY"}
                     label={(client.type && clientTypeLabels[client.type]) || client.type || "Company"}
                   />
-                  {!client.isActive && <Badge variant="destructive">Archived</Badge>}
+                  {!client.isActive && <Badge status="overbooked">Archived</Badge>}
                 </div>
-                <p className="t-body text-fg-3">
-                  {client.contactName || "No primary contact"}
-                  {client.contactEmail && <> &middot; {client.contactEmail}</>}
-                </p>
+                {/* Meta line: primary contact · email · phone */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  {client.contactName ? (
+                    <span className="text-ink-2">{client.contactName}</span>
+                  ) : (
+                    <span>No primary contact</span>
+                  )}
+                  {client.contactEmail && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <a
+                        href={`mailto:${client.contactEmail}`}
+                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                      >
+                        {client.contactEmail}
+                      </a>
+                    </>
+                  )}
+                  {client.contactPhone && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <a
+                        href={`tel:${client.contactPhone}`}
+                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                      >
+                        {client.contactPhone}
+                      </a>
+                    </>
+                  )}
+                  {orgId && (
+                    <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {orgId && (
-                  <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
-                )}
+
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
                 {orgId && (
                   <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />
                 )}
                 <CanDo resource="client" action="update">
-                  <div className="flex gap-2">
-                    <Button variant="outline" render={<Link href={`/clients/${id}/edit`} />}>
-                      <Pencil className="mr-2 h-4 w-4" />
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/clients/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
                       Edit
-                    </Button>
-                    {client.isActive && (
-                      <Button
-                        variant="outline"
-                        className="text-destructive"
-                        onClick={() => setArchiveOpen(true)}
-                      >
-                        <Archive className="mr-2 h-4 w-4" />
-                        Archive
-                      </Button>
-                    )}
-                  </div>
+                    </Link>
+                  </Button>
+                  {client.isActive && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="line" size="sm" aria-label="More actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setArchiveOpen(true)}
+                          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                        >
+                          <Archive className="mr-2 h-4 w-4" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </CanDo>
               </div>
+            </div>
+
+            {/* At-a-glance stats strip */}
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
+              <HeroStat figure={String(totalProjects)} label="Total jobs" />
+              <HeroStat figure={String(activeProjects.length)} label="Active jobs" />
+              <HeroStat figure={formatCurrency(totalValue)} label="Total value" />
+              <HeroStat
+                figure={lastProjectAt ? new Date(lastProjectAt).toLocaleDateString() : "—"}
+                label="Last job"
+                muted={!lastProjectAt}
+              />
             </div>
           </div>
 
@@ -162,28 +245,27 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 </TabsList>
 
                 <TabsContent value="projects" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <h3 className="t-heading text-fg mb-4">
+                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                    <h3 className="t-heading mb-4 text-ink">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4" />
-                        All Projects
+                        All projects
                       </div>
                     </h3>
                     {client.projects.length === 0 ? (
                       <EmptyState
-                        preset="projects"
-                        heading="No projects yet"
+                        title="No projects yet"
                         description="Projects for this client will appear here."
                       />
                     ) : (
-                      <div className="rounded-md border">
+                      <div className="rounded-[var(--r)] border border-line">
                         <Table>
                           <TableHeader>
                             <TableRow>
                               <TableHead>Project #</TableHead>
                               <TableHead>Name</TableHead>
                               <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Line Items</TableHead>
+                              <TableHead className="text-right">Line items</TableHead>
                               <TableHead>Created</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -193,7 +275,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                                 <TableCell>
                                   <Link
                                     href={`/projects/${project.id}`}
-                                    className="font-mono text-sm font-medium hover:underline"
+                                    className={cn("rounded-sm t-mono text-ink hover:underline", focusRing)}
                                   >
                                     {project.projectNumber}
                                   </Link>
@@ -213,7 +295,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                                 <TableCell className="text-right t-data">
                                   {project._count.lineItems}
                                 </TableCell>
-                                <TableCell className="text-fg-3">
+                                <TableCell className="text-muted">
                                   {new Date((project.createdAt ?? project._creationTime) as number).toLocaleDateString()}
                                 </TableCell>
                               </TableRow>
@@ -235,8 +317,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 </TabsContent>
 
                 <TabsContent value="files" className="mt-4">
-                  <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-                    <h3 className="t-heading text-fg mb-4">Files</h3>
+                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                    <h3 className="t-heading mb-4 text-ink">Files</h3>
                     <MediaUploader
                       entityType="client"
                       entityId={id}
@@ -260,45 +342,44 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
             <DetailSidebar>
-                {/* Contact Info */}
+                {/* Contact */}
                 <SidebarSection title="Contact">
-                  <div className="space-y-2 text-sm">
-                    {client.contactName && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{client.contactName}</span>
-                      </div>
-                    )}
-                    {client.contactEmail && (
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        <a
-                          href={`mailto:${client.contactEmail}`}
-                          className="hover:underline truncate"
-                        >
-                          {client.contactEmail}
-                        </a>
-                      </div>
-                    )}
-                    {client.contactPhone && (
-                      <div className="flex items-center gap-2 text-fg-3">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${client.contactPhone}`} className="hover:underline">
-                          {client.contactPhone}
-                        </a>
-                      </div>
-                    )}
-                    {!client.contactName && !client.contactEmail && !client.contactPhone && (
-                      <p className="text-fg-3">No contact info</p>
-                    )}
-                  </div>
+                  {client.contactName || client.contactEmail || client.contactPhone ? (
+                    <div className="space-y-2 text-table-cell">
+                      {client.contactName && (
+                        <p className="font-medium text-ink">{client.contactName}</p>
+                      )}
+                      {client.contactEmail && (
+                        <div className="flex items-center gap-2 text-muted">
+                          <Mail className="h-3.5 w-3.5 shrink-0" />
+                          <a
+                            href={`mailto:${client.contactEmail}`}
+                            className={cn("truncate rounded-sm text-link hover:underline", focusRing)}
+                          >
+                            {client.contactEmail}
+                          </a>
+                        </div>
+                      )}
+                      {client.contactPhone && (
+                        <div className="flex items-center gap-2 text-muted">
+                          <Phone className="h-3.5 w-3.5 shrink-0" />
+                          <a href={`tel:${client.contactPhone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>
+                            {client.contactPhone}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-table-cell text-muted">No contact info yet</p>
+                  )}
                 </SidebarSection>
 
-                {/* Addresses */}
-                <SidebarSection title="Addresses">
-                  <div className="space-y-3 text-sm">
+                {/* Address & billing — merged: addresses + payment terms */}
+                <SidebarSection title="Address & billing">
+                  <div className="space-y-3 text-table-cell">
                     {client.billingAddress && (
                       <div>
-                        <div className="flex items-center gap-1 text-xs text-fg-3 mb-1">
+                        <div className="mb-1 flex items-center gap-1 text-caption text-muted">
                           <MapPin className="h-3 w-3" />
                           Billing
                         </div>
@@ -313,7 +394,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                     )}
                     {client.shippingAddress && (
                       <div>
-                        <div className="flex items-center gap-1 text-xs text-fg-3 mb-1">
+                        <div className="mb-1 flex items-center gap-1 text-caption text-muted">
                           <MapPin className="h-3 w-3" />
                           Shipping
                         </div>
@@ -326,72 +407,46 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                         />
                       </div>
                     )}
-                    {!client.billingAddress && !client.shippingAddress && (
-                      <p className="text-fg-3">No addresses</p>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Billing / Financial */}
-                <SidebarSection title="Billing">
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">ABN</span>
-                      <span className="font-medium">{client.taxId || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Payment Terms</span>
-                      <span className="font-medium">{client.paymentTerms || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Default Discount</span>
-                      <span className="font-medium">
-                        {client.defaultDiscount != null
-                          ? `${Number(client.defaultDiscount)}%`
-                          : "\u2014"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Total Projects</span>
-                      <span className="font-medium">{totalProjects}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-fg-3">Active</span>
-                      <span className="font-medium">{activeProjects.length}</span>
-                    </div>
-                  </div>
-                </SidebarSection>
-
-                {/* Recent Projects (compact) */}
-                {client.projects.length > 0 && (
-                  <SidebarSection title="Recent Projects">
-                    <div className="space-y-1">
-                      {client.projects.slice(0, 5).map((project) => (
-                        <Link
-                          key={project.id}
-                          href={`/projects/${project.id}`}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono text-xs text-fg-3 shrink-0">
-                              {project.projectNumber}
-                            </span>
-                            <span className="truncate">{project.name}</span>
+                    {/* Payment terms \u2014 only render rows that carry a value (calm-by-default) */}
+                    {(client.taxId || client.paymentTerms || client.defaultDiscount != null) && (
+                      <div
+                        className={cn(
+                          "space-y-1.5",
+                          (client.billingAddress || client.shippingAddress) && "border-t border-line pt-3",
+                        )}
+                      >
+                        {client.taxId && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">ABN</span>
+                            <span className="font-medium text-ink">{client.taxId}</span>
                           </div>
-                          <StatusIndicator
-                            category="project"
-                            value={project.status ?? ""}
-                            label={
-                              projectStatusLabels[project.status ?? ""] ||
-                              formatLabel(project.status ?? "")
-                            }
-                            variant="pill"
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  </SidebarSection>
-                )}
+                        )}
+                        {client.paymentTerms && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">Payment terms</span>
+                            <span className="font-medium text-ink">{client.paymentTerms}</span>
+                          </div>
+                        )}
+                        {client.defaultDiscount != null && (
+                          <div className="flex justify-between gap-2">
+                            <span className="text-muted">Default discount</span>
+                            <span className="font-medium text-ink t-data">
+                              {Number(client.defaultDiscount)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!client.billingAddress &&
+                      !client.shippingAddress &&
+                      !client.taxId &&
+                      !client.paymentTerms &&
+                      client.defaultDiscount == null && (
+                        <p className="text-muted">No address or billing details yet</p>
+                      )}
+                  </div>
+                </SidebarSection>
 
                 {/* Activity Timeline */}
                 <SidebarSection title="Activity" divider={false}>
@@ -413,6 +468,31 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }}
         pending={archiveMutation.isPending}
       />
-    </RequirePermission>
+    </>
+  );
+}
+
+/** One cell in the hero's at-a-glance stats strip. */
+function HeroStat({
+  figure,
+  label,
+  muted = false,
+}: {
+  figure: React.ReactNode;
+  label: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="bg-card px-3 py-2.5">
+      <p
+        className={cn(
+          "font-display font-extrabold leading-none tracking-tight tabular-nums",
+          muted ? "text-[18px] text-faint" : "text-[18px] text-ink",
+        )}
+      >
+        {figure}
+      </p>
+      <p className="mt-1 text-caption text-muted">{label}</p>
+    </div>
   );
 }

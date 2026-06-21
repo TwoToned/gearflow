@@ -259,6 +259,15 @@ export const checkoutItems = mutation({
   },
 });
 
+async function defaultLocationId(ctx: Ctx, organizationId: string): Promise<string | null> {
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect();
+  return locs.find((l) => l.isDefault)?.id ?? null;
+}
+async function linesByAsset(ctx: Ctx, assetId: string, organizationId: string) {
+  return (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect())
+    .filter((l) => l.organizationId === organizationId);
+}
+
 // ── Kit checkout / checkin helpers ───────────────────────────────────────────
 
 async function kitByCuid(ctx: Ctx, id: string) {
@@ -435,5 +444,185 @@ export const checkinItems = mutation({
       updated.add(item.lineItemId);
     }
     return { updatedLineIds: [...updated] };
+  },
+});
+
+// ── Force-return + container/quick-add (Group E3/E4) ──────────────────────────
+
+const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const, updatedAt: now });
+
+export const forceReturnAsset = mutation({
+  args: { organizationId: v.string(), assetId: v.string(), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const asset = await assetByCuid(ctx, a.assetId);
+    if (!asset || asset.organizationId !== a.organizationId) throw new ConvexError("Asset not found");
+    if (asset.status === "AVAILABLE") throw new ConvexError("Asset is already available");
+    const loc = await defaultLocationId(ctx, a.organizationId);
+    for (const li of await linesByAsset(ctx, a.assetId, a.organizationId)) {
+      if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
+    }
+    await setAssetsStatus(ctx, [a.assetId], "AVAILABLE", loc, true, a.now);
+    return { success: true };
+  },
+});
+
+export const bulkForceReturnAssets = mutation({
+  args: { organizationId: v.string(), assetIds: v.array(v.string()), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const loc = await defaultLocationId(ctx, a.organizationId);
+    let count = 0;
+    for (const assetId of a.assetIds) {
+      const asset = await assetByCuid(ctx, assetId);
+      if (!asset || asset.organizationId !== a.organizationId || asset.status !== "CHECKED_OUT") continue;
+      for (const li of await linesByAsset(ctx, assetId, a.organizationId)) {
+        if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
+      }
+      await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, a.now);
+      count++;
+    }
+    return { count };
+  },
+});
+
+async function restoreKitParentLine(
+  ctx: Ctx,
+  parent: { _id: import("./_generated/dataModel").Id<"projectLineItems">; id: string; status?: string },
+  organizationId: string,
+  loc: string | null,
+  now: number,
+  kitsToRestore: Set<string>,
+): Promise<void> {
+  const children = await childLines(ctx, parent.id, organizationId);
+  const nestedKitChildren = children.filter((c) => c.kitId);
+  for (const child of nestedKitChildren) {
+    const grandchildren = await childLines(ctx, child.id, organizationId);
+    for (const gc of grandchildren) if (gc.status === "CHECKED_OUT") await ctx.db.patch(gc._id, FORCE_RET(now));
+    await setAssetsStatus(ctx, grandchildren.filter((g) => g.assetId).map((g) => g.assetId!), "AVAILABLE", loc, true, now);
+  }
+  const childKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+  for (const nk of childKitIds) {
+    kitsToRestore.add(nk);
+    const k = await kitByCuid(ctx, nk);
+    if (k) {
+      if (loc != null) await ctx.db.patch(k._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
+      else { const { _id, _creationTime, locationId: _l, ...rest } = k; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+    }
+    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nk), "AVAILABLE", loc, true, now);
+  }
+  for (const c of children) if (c.status === "CHECKED_OUT") await ctx.db.patch(c._id, FORCE_RET(now));
+  await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", loc, true, now);
+  if (parent.status === "CHECKED_OUT") await ctx.db.patch(parent._id, FORCE_RET(now));
+}
+
+export const forceReturnKit = mutation({
+  args: { organizationId: v.string(), kitId: v.string(), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const kit = await kitByCuid(ctx, a.kitId);
+    if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
+    if (kit.status === "AVAILABLE") throw new ConvexError("Kit is already available");
+    const loc = await defaultLocationId(ctx, a.organizationId);
+    const kitsToRestore = new Set<string>([a.kitId]);
+
+    const parents = (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect())
+      .filter((l) => l.organizationId === a.organizationId && !l.isKitChild);
+    for (const p of parents) await restoreKitParentLine(ctx, p, a.organizationId, loc, a.now, kitsToRestore);
+
+    if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: a.now });
+    else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: a.now }); }
+    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "AVAILABLE", loc, true, a.now);
+
+    const adjustments: BulkAdjustment[] = [];
+    for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, a.organizationId, 1)));
+    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
+    return { success: true, affectedKitIds: [...kitsToRestore] };
+  },
+});
+
+export const quickAdd = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), modelId: v.string(),
+    assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()), prepContainer: v.optional(v.string()), userId: v.string(), now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    await assertTestTagAllowsCheckout(ctx, a.organizationId, {
+      assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
+    });
+    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((l) => l.organizationId === a.organizationId);
+    const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+    const id = createId();
+    await ctx.db.insert("projectLineItems", {
+      id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId,
+      assetId: a.assetId, bulkAssetId: a.bulkAssetId, quantity: a.quantity ?? 1, sortOrder, status: "CONFIRMED",
+      checkedOutQuantity: 0, prepStatus: "PENDING", prepContainer: a.prepContainer, createdAt: a.now, updatedAt: a.now,
+    });
+    await scanLog(ctx, { organizationId: a.organizationId, ...(a.assetId ? { assetId: a.assetId } : {}), ...(a.bulkAssetId ? { bulkAssetId: a.bulkAssetId } : {}), projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Added to project and prepped via warehouse scan" });
+    return { id };
+  },
+});
+
+export const ensureContainerOnProject = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), assetId: v.string(), modelId: v.string(), containerName: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const existing = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
+      .find((l) => l.projectId === a.projectId && l.organizationId === a.organizationId && l.isContainerLineItem);
+    if (existing) return { id: existing.id, created: false };
+    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((l) => l.organizationId === a.organizationId);
+    const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+    const id = createId();
+    await ctx.db.insert("projectLineItems", {
+      id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
+      quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
+      isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+    });
+    return { id, created: true };
+  },
+});
+
+export const clearPrepContainer = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), containerName: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
+    for (const l of lines) {
+      const { _id, _creationTime, prepContainer: _p, ...rest } = l;
+      await ctx.db.replace(_id, { ...rest, updatedAt: a.now });
+    }
+    return { success: true };
+  },
+});
+
+export const syncContainerStatus = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), containerName: v.string(), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
+    const containerLI = lines.find((l) => l.isContainerLineItem);
+    if (!containerLI) return { updated: false };
+    const contents = lines.filter((l) => !l.isContainerLineItem);
+    if (contents.length === 0) return { updated: false };
+    const allDeployed = contents.every((i) => i.status === "CHECKED_OUT");
+    const allReturned = contents.every((i) => i.status === "RETURNED");
+    const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
+    const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
+    if (!allDeployedFlag && !allReturnedFlag) return { updated: false };
+    if (allDeployedFlag) {
+      await ctx.db.patch(containerLI._id, { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
+    } else {
+      await ctx.db.patch(containerLI._id, { status: "RETURNED", returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD", updatedAt: a.now });
+    }
+    if (containerLI.assetId) {
+      await setAssetsStatus(ctx, [containerLI.assetId], allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE", null, false, a.now);
+    }
+    return { updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" };
   },
 });

@@ -48,10 +48,10 @@ describe("env validation", () => {
   it("applies sensible defaults for optional vars", async () => {
     const { env } = await loadEnv({});
     expect(env.PASSKEY_RP_ID).toBe("localhost");
-    expect(env.PLATFORM_NAME).toBe("GearFlow");
+    expect(env.PLATFORM_NAME).toBe("RVLT Flow");
     expect(env.S3_REGION).toBe("ap-southeast-2");
     expect(env.S3_BUCKET).toBe("gearflow-uploads");
-    expect(env.EMAIL_FROM).toBe("GearFlow <noreply@gearflow.app>");
+    expect(env.EMAIL_FROM).toBe("RVLT Flow <noreply@gearflow.app>");
     expect(env.UPLOAD_MAX_SIZE_MB).toBe(50);
   });
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useSupplierOrders, fingerprintSupplierOrders } from "@/hooks/use-back-office";
-import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
+import { Pencil, Mail, Phone, Globe, Trash2, Plus, ChevronRight, MoreHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
@@ -29,6 +29,12 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,6 +55,10 @@ const orderTypeLabels: Record<string, string> = {
   LABOUR: "Labour",
   OTHER: "Other",
 };
+
+// Order statuses that mean "money is still in motion" — open/live with this
+// supplier. Used for the at-a-glance "open orders" figure.
+const OPEN_ORDER_STATUSES = new Set(["DRAFT", "ORDERED", "PARTIAL"]);
 
 
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -112,6 +122,22 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  const orders = useMemo(() => ordersData?.orders || [], [ordersData]);
+  const assets = assetsData?.assets || [];
+  const subhires = subhiresData?.lineItems || [];
+
+  // At-a-glance strip — derived client-side from the orders this page already
+  // loads (total orders count, open orders, lifetime spend).
+  const atAGlance = useMemo(() => {
+    const totalOrders = supplier?._count?.orders ?? orders.length;
+    const openOrders = orders.filter((o) => OPEN_ORDER_STATUSES.has(o.status)).length;
+    const spend = orders.reduce(
+      (sum, o) => sum + (o.total != null ? Number(o.total) : 0),
+      0,
+    );
+    return { totalOrders, openOrders, spend };
+  }, [orders, supplier]);
+
   if (isLoading) return <DetailPageSkeleton />;
   if (!supplier) {
     return (
@@ -125,65 +151,103 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
     );
   }
 
-  const orders = ordersData?.orders || [];
-  const assets = assetsData?.assets || [];
-  const subhires = subhiresData?.lineItems || [];
+  const contactBits = [supplier.contactName, supplier.email, supplier.phone].filter(Boolean);
 
   return (
     <>
       <PageMeta title={supplier.name} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity + compact actions) ───── */}
+          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+            <nav className="flex items-center gap-1 text-caption text-muted">
               <Link href="/suppliers" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Suppliers
               </Link>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="truncate font-medium text-ink">{supplier.name}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="truncate text-ink-2">{supplier.name}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-ink">{supplier.name}</h1>
-                  {!supplier.isActive && <Badge status="overbooked">Archived</Badge>}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">
+                    {supplier.name}
+                  </h1>
+                  {supplier.isActive ? (
+                    <Badge status="ok">Active</Badge>
+                  ) : (
+                    <Badge status="overbooked">Archived</Badge>
+                  )}
+                  {orgId && (
+                    <PresenceAvatarStack entityType="supplier" entityId={id} size="sm" />
+                  )}
                 </div>
-                <p className="t-body text-muted">
-                  {supplier.contactName || "No primary contact"}
-                  {supplier.accountNumber && <> &middot; Acct: {supplier.accountNumber}</>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {orgId && (
-                  <PresenceAvatarStack entityType="supplier" entityId={id} size="sm" />
+                {/* Contact meta line — only render bits that exist (no "—" noise) */}
+                {contactBits.length > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
+                    {supplier.contactName && <span className="text-ink-2">{supplier.contactName}</span>}
+                    {supplier.email && (
+                      <a href={`mailto:${supplier.email}`} className={cn("inline-flex items-center gap-1 rounded-sm hover:text-ink", focusRing)}>
+                        <Mail className="h-3.5 w-3.5" aria-hidden />
+                        {supplier.email}
+                      </a>
+                    )}
+                    {supplier.phone && (
+                      <a href={`tel:${supplier.phone}`} className={cn("inline-flex items-center gap-1 rounded-sm hover:text-ink", focusRing)}>
+                        <Phone className="h-3.5 w-3.5" aria-hidden />
+                        {supplier.phone}
+                      </a>
+                    )}
+                    {supplier.accountNumber && (
+                      <span className="t-mono">Acct {supplier.accountNumber}</span>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* Compact actions */}
+              <div className="flex flex-wrap items-center gap-2">
                 {orgId && (
                   <EntityCommentsButton orgId={orgId} entityType="supplier" entityId={id} />
                 )}
                 <CanDo resource="supplier" action="update">
-                  <div className="flex gap-2">
-                    <Button variant="line" asChild>
-                      <Link href={`/suppliers/${id}/edit`}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </Link>
-                    </Button>
-                    <CanDo resource="supplier" action="delete">
-                      <Button
-                        variant="line"
-                        className="text-t-out hover:border-red hover:bg-red hover:text-white"
-                        onClick={() => setDeleteOpen(true)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </CanDo>
-                  </div>
+                  <Button variant="line" size="sm" asChild>
+                    <Link href={`/suppliers/${id}/edit`}>
+                      <Pencil className="h-4 w-4" />
+                      <span className="hidden sm:inline">Edit</span>
+                    </Link>
+                  </Button>
+                  <CanDo resource="supplier" action="delete">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="line" size="sm" aria-label="More actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setDeleteOpen(true)}
+                          disabled={deleteMutation.isPending}
+                          className="text-red data-[highlighted]:bg-red data-[highlighted]:text-white"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete supplier
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </CanDo>
                 </CanDo>
               </div>
+            </div>
+
+            {/* At-a-glance strip — single surface, vertical dividers */}
+            <div className="grid grid-cols-3 divide-x divide-line rounded-[var(--r)] border border-line bg-paper-2">
+              <GlanceCell figure={atAGlance.totalOrders} label="Total orders" />
+              <GlanceCell figure={atAGlance.openOrders} label="Open orders" />
+              <GlanceCell figure={formatCurrency(atAGlance.spend)} label="Spend" />
             </div>
           </div>
 
@@ -216,7 +280,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
                 <TabsContent value="orders" className="mt-4">
                   <div className="mb-4 flex items-center justify-between">
-                    <h3 className="t-heading text-ink">Purchase orders</h3>
+                    <h3 className="t-heading text-ink">Purchase &amp; subhire orders</h3>
                     <CanDo resource="supplier" action="create">
                       <Button size="sm" asChild>
                         <Link href={`/suppliers/${id}/orders/new`}>
@@ -259,16 +323,16 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                                   <Link href={`/projects/${order.project.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
                                     {order.project.projectNumber}
                                   </Link>
-                                ) : "\u2014"}
+                                ) : "—"}
                               </TableCell>
                               <TableCell className="hidden text-muted md:table-cell t-data">
                                 {order._count?.items ?? 0}
                               </TableCell>
                               <TableCell className="hidden text-right sm:table-cell t-data">
-                                {order.total != null ? formatCurrency(Number(order.total)) : "\u2014"}
+                                {order.total != null ? formatCurrency(Number(order.total)) : "—"}
                               </TableCell>
                               <TableCell className="hidden text-muted md:table-cell">
-                                {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "\u2014"}
+                                {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "—"}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -304,10 +368,10 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                               </TableCell>
                               <TableCell>{asset.model?.name}</TableCell>
                               <TableCell className="hidden text-muted md:table-cell">
-                                {asset.model?.manufacturer || "\u2014"}
+                                {asset.model?.manufacturer || "—"}
                               </TableCell>
                               <TableCell className="hidden text-muted md:table-cell t-mono">
-                                {asset.purchaseOrderNumber || "\u2014"}
+                                {asset.purchaseOrderNumber || "—"}
                               </TableCell>
                               <TableCell>
                                 <StatusIndicator category="asset" value={asset.status ?? ""} label={assetStatusLabels[asset.status ?? ""] || formatLabel(asset.status ?? "")} variant="pill" />
@@ -347,7 +411,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                               <TableCell>{item.model?.name || item.description}</TableCell>
                               <TableCell className="text-right t-data">{item.quantity}</TableCell>
                               <TableCell className="hidden text-muted md:table-cell t-mono">
-                                {item.subhireOrderNumber || "\u2014"}
+                                {item.subhireOrderNumber || "—"}
                               </TableCell>
                               <TableCell>
                                 {item.project?.status ? (
@@ -364,121 +428,83 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
               </Tabs>
             </DetailMain>
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
+            {/* ── Sidebar (lean: Contact · Address · Account · Activity) ─ */}
             <DetailSidebar>
-                {/* Contact Info */}
-                <SidebarSection title="Contact">
-                  <div className="space-y-2 text-ui-text">
-                    {supplier.contactName && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-ink">{supplier.contactName}</span>
-                      </div>
-                    )}
-                    {supplier.email && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`mailto:${supplier.email}`} className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.email}</a>
-                      </div>
-                    )}
-                    {supplier.phone && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${supplier.phone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>{supplier.phone}</a>
-                      </div>
-                    )}
-                    {supplier.website && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Globe className="h-3.5 w-3.5 shrink-0" />
-                        <a href={supplier.website} target="_blank" rel="noopener noreferrer" className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.website}</a>
-                      </div>
-                    )}
-                    {!supplier.contactName && !supplier.email && !supplier.phone && (
-                      <p className="text-muted">No contact info</p>
-                    )}
+              {/* Contact */}
+              <SidebarSection title="Contact">
+                <div className="space-y-2 text-ui-text">
+                  {supplier.contactName && (
+                    <p className="font-medium text-ink">{supplier.contactName}</p>
+                  )}
+                  {supplier.email && (
+                    <div className="flex items-center gap-2 text-muted">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <a href={`mailto:${supplier.email}`} className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.email}</a>
+                    </div>
+                  )}
+                  {supplier.phone && (
+                    <div className="flex items-center gap-2 text-muted">
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
+                      <a href={`tel:${supplier.phone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>{supplier.phone}</a>
+                    </div>
+                  )}
+                  {supplier.website && (
+                    <div className="flex items-center gap-2 text-muted">
+                      <Globe className="h-3.5 w-3.5 shrink-0" />
+                      <a href={supplier.website} target="_blank" rel="noopener noreferrer" className={cn("truncate rounded-sm text-link hover:underline", focusRing)}>{supplier.website}</a>
+                    </div>
+                  )}
+                  {!supplier.contactName && !supplier.email && !supplier.phone && !supplier.website && (
+                    <p className="text-muted">No contact details on file.</p>
+                  )}
+                </div>
+              </SidebarSection>
+
+              {/* Address */}
+              {supplier.address && (
+                <SidebarSection title="Address">
+                  <div className="text-ui-text">
+                    <AddressDisplay
+                      address={supplier.address}
+                      latitude={supplier.latitude}
+                      longitude={supplier.longitude}
+                      label={supplier.name}
+                      compact
+                    />
                   </div>
                 </SidebarSection>
+              )}
 
-                {/* Address */}
-                {supplier.address && (
-                  <SidebarSection title="Address">
-                    <div className="text-ui-text">
-                      <AddressDisplay
-                        address={supplier.address}
-                        latitude={supplier.latitude}
-                        longitude={supplier.longitude}
-                        label={supplier.name}
-                        compact
-                      />
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Account Details */}
+              {/* Account details — only when at least one value exists */}
+              {(supplier.accountNumber || supplier.paymentTerms || supplier.defaultLeadTime) && (
                 <SidebarSection title="Account details">
                   <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <span className="text-muted">Account #</span>
-                      <span className="font-medium text-ink">{supplier.accountNumber || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Payment terms</span>
-                      <span className="font-medium text-ink">{supplier.paymentTerms || "\u2014"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Lead time</span>
-                      <span className="font-medium text-ink">{supplier.defaultLeadTime || "\u2014"}</span>
-                    </div>
+                    {supplier.accountNumber && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted shrink-0">Account #</span>
+                        <span className="font-medium text-ink t-mono">{supplier.accountNumber}</span>
+                      </div>
+                    )}
+                    {supplier.paymentTerms && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted shrink-0">Payment terms</span>
+                        <span className="font-medium text-ink text-right">{supplier.paymentTerms}</span>
+                      </div>
+                    )}
+                    {supplier.defaultLeadTime && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted shrink-0">Lead time</span>
+                        <span className="font-medium text-ink text-right">{supplier.defaultLeadTime}</span>
+                      </div>
+                    )}
                   </div>
                 </SidebarSection>
+              )}
 
-                {/* Summary */}
-                <SidebarSection title="Summary">
-                  <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <span className="text-muted">Orders</span>
-                      <span className="font-medium text-ink t-data">{supplier._count?.orders ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Assets</span>
-                      <span className="font-medium text-ink t-data">{supplier._count?.assets ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Subhire items</span>
-                      <span className="font-medium text-ink t-data">{supplier._count?.lineItems ?? 0}</span>
-                    </div>
-                  </div>
-                </SidebarSection>
-
-                {/* Recent Orders (compact) */}
-                {orders.length > 0 && (
-                  <SidebarSection title="Recent orders">
-                    <div className="space-y-1">
-                      {orders.slice(0, 5).map((order) => (
-                        <div
-                          key={order.id}
-                          className="flex items-center justify-between py-1.5 text-ui-text"
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="shrink-0 t-mono text-muted">
-                              {order.orderNumber}
-                            </span>
-                            <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>
-                          </div>
-                          <StatusIndicator
-                            category="supplierOrder"
-                            value={order.status}
-                            label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Activity Timeline */}
-                <SidebarSection title="Activity" divider={false}>
-                  <ActivityTimeline entityType="supplier" entityId={id} />
-                </SidebarSection>
+              {/* Activity — realtime feed */}
+              <SidebarSection title="Activity" divider={false}>
+                <ActivityTimeline entityType="supplier" entityId={id} />
+              </SidebarSection>
             </DetailSidebar>
           </DetailLayout>
         </div>
@@ -496,5 +522,17 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
         pending={deleteMutation.isPending}
       />
     </>
+  );
+}
+
+/** At-a-glance metric cell for the hero strip — figure over a muted label. */
+function GlanceCell({ figure, label }: { figure: React.ReactNode; label: React.ReactNode }) {
+  return (
+    <div className="px-3 py-2.5 first:pl-4 last:pr-4">
+      <div className="font-display text-[18px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
+        {figure}
+      </div>
+      <div className="mt-1 text-caption text-muted">{label}</div>
+    </div>
   );
 }

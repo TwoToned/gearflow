@@ -2334,7 +2334,7 @@ function WarehouseProjectPage({
         <TabsList>
           <TabsTrigger value="pick-prep">
             <ScanBarcode className="mr-1.5 h-4 w-4" />
-            Pick prep ({pickPrepItems.length})
+            Pick ({pickPrepItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />

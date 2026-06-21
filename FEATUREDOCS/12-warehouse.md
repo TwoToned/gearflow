@@ -29,13 +29,13 @@ bugs where the flow appeared to run in reverse:
   so returning gear "went back to Deploy".
 
 **The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
-exactly like the lifecycle: **Pick prep → Prepped → Deployed → Returned → De-prepped** (then
+exactly like the lifecycle: **Pick → Prepped → Deployed → Returned → De-prepped** (then
 **Bulk check-in** and **Close-out** as trailing utilities). The primary button inside each tab
 performs the action that advances gear to the next stage:
 
 | Tab (stage gear is in) | Shows | Button → next stage |
 | --- | --- | --- |
-| Pick prep | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
+| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
 | Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed |
 | Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned |
 | Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped |

@@ -50,6 +50,25 @@ quick-create, RVLT tokens, fun microcopy) but as ONE clean page, not multi-step.
   `createAssets` / `updateAsset` server actions, same persisted fields, the
   bulk-create extra-rows path, and the permission gates on the route pages.
 
+### Shared shell — `SmartFormLayout`
+`src/components/ui/smart-form.tsx` extracts the asset-form scaffold into a
+reusable shell so other moderate forms get the same quality without
+reimplementing it. `asset-form.tsx` is intentionally **not** refactored onto it
+(the approved reference stays as-is); the shell is for the directory forms
+(client / supplier — see [22-suppliers](./22-suppliers.md) — and location) and
+future forms.
+
+- `SmartFormLayout` — owns the `grid gap-6 lg:grid-cols-[1fr_300px]`, the
+  left-hand card surface, and the sticky `hidden lg:block` rail. The rail content
+  is entity-specific, passed via the `aside` slot. Spreads remaining props onto
+  the `<form>` (e.g. `onSubmit`).
+- `SmartFormRail` — overline eyebrow + Kalam (`font-hand text-t-out`) tip.
+- `SmartFormPreview` — the "Preview" overline + divider wrapper for the live card.
+- `SmartFormSection` — flat section (title + hint, `border-t` divider; pass
+  `divider={false}` for the first one).
+- `SmartFormField` — `Label` + control + hint/error (`text-t-out`, no personality
+  copy per §9).
+
 ## Asset Registry List (`/assets/registry`)
 The list page (`page.tsx`) is a thin auth-gated wrapper that renders `<AssetsView />`.
 

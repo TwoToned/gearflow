@@ -102,29 +102,35 @@ type PendingAction = {
   warningMessage: string;
 };
 
-type UrgencyGroup = "overdue" | "today" | "upcoming";
+type UrgencyGroup = "overdue" | "today" | "out" | "upcoming" | "returned";
 
 function getProjectUrgency(project: Project): UrgencyGroup {
-  const startDate = project.rentalStartDate
-    ? new Date(project.rentalStartDate)
-    : null;
-  if (!startDate) return "upcoming";
-
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  // The "today" group is a 2-day prep window — it covers today AND
-  // tomorrow (the section header reads "Today / Tomorrow"). The cutoff is
-  // therefore the start of the day after tomorrow.
+  // The "today" prep window covers today AND tomorrow (header reads
+  // "Today / Tomorrow"); the cutoff is the start of the day after tomorrow.
   const dayAfterTomorrow = new Date(today);
   dayAfterTomorrow.setDate(today.getDate() + 2);
-  const projectDay = new Date(
-    startDate.getFullYear(),
-    startDate.getMonth(),
-    startDate.getDate()
-  );
+  const dayOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-  if (projectDay < today) return "overdue";
-  if (projectDay < dayAfterTomorrow) return "today";
+  // Gear is physically back — awaiting close-out (also surfaced in the
+  // close-out bar). Never "overdue" — it's already returned.
+  if (project.status === "RETURNED") return "returned";
+
+  const isOut = project.status === "CHECKED_OUT" || project.status === "ON_SITE";
+  if (isOut) {
+    // Deployed gear is OVERDUE only when it's past its due-back (in / end) date
+    // and still out — NOT just because the out date has passed. Otherwise it's
+    // out on site and on schedule.
+    const end = project.rentalEndDate ? dayOf(new Date(project.rentalEndDate)) : null;
+    if (end && end < today) return "overdue";
+    return "out";
+  }
+
+  // Not yet out (confirmed / prepping): the prep queue, ordered by the out date.
+  const start = project.rentalStartDate ? dayOf(new Date(project.rentalStartDate)) : null;
+  if (!start) return "upcoming";
+  if (start < dayAfterTomorrow) return "today";
   return "upcoming";
 }
 
@@ -214,10 +220,20 @@ const urgencyMeta: Record<
     dot: "bg-warn",
     chip: "bg-warn-soft text-warn",
   },
+  out: {
+    label: "Out on site",
+    dot: "bg-red",
+    chip: "bg-red-soft text-red",
+  },
   upcoming: {
     label: "Upcoming",
     dot: "bg-lime",
     chip: "bg-lime/15 text-lime",
+  },
+  returned: {
+    label: "Returned · to close out",
+    dot: "bg-rep",
+    chip: "bg-rep-soft text-rep",
   },
 };
 
@@ -304,7 +320,9 @@ export default function WarehousePage() {
     const groups: Record<UrgencyGroup, Project[]> = {
       overdue: [],
       today: [],
+      out: [],
       upcoming: [],
+      returned: [],
     };
     for (const p of projects) {
       groups[getProjectUrgency(p)].push(p);
@@ -524,7 +542,7 @@ export default function WarehousePage() {
           </FadeIn>
         ) : (
           <div className="space-y-9">
-            {(["overdue", "today", "upcoming"] as const).map((key, idx) => {
+            {(["overdue", "today", "out", "returned", "upcoming"] as const).map((key, idx) => {
               const list = grouped[key];
               if (list.length === 0) return null;
               const meta = urgencyMeta[key];
@@ -753,7 +771,9 @@ const urgencyCardClass: Record<UrgencyGroup, string> = {
   overdue:
     "border-l-[3px] border-l-t-out bg-out-soft/30 ring-1 ring-t-out/20",
   today: "border-l-[3px] border-l-warn ring-1 ring-line",
+  out: "border-l-[3px] border-l-red ring-1 ring-line",
   upcoming: "border-l-[3px] border-l-lime ring-1 ring-line",
+  returned: "border-l-[3px] border-l-rep ring-1 ring-line",
 };
 
 function ProjectCard({

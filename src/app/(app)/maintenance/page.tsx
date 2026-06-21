@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -9,6 +9,9 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  Wrench,
+  Activity,
+  CircleCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -21,6 +24,7 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -222,6 +226,54 @@ function useMaintenanceColumns(
   ];
 }
 
+/**
+ * Dashboard metric tile for the maintenance list header (Retool/Zoho pattern:
+ * a row of bordered metric cards above the table). Mirrors the crew dashboard's
+ * StatCard idiom. §1: `alert` (overdue/failed) tints the figure + ring t-out;
+ * `accent` (active/in-progress) tints the figure red (live work).
+ */
+function MaintenanceStatCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  alert,
+  accent,
+  loading,
+}: {
+  title: string;
+  value: string | number;
+  description?: string;
+  icon: ComponentType<{ className?: string }>;
+  alert?: boolean;
+  accent?: boolean;
+  loading?: boolean;
+}) {
+  const figureColor = alert ? "text-t-out" : accent ? "text-red" : "text-ink";
+  const iconColor = alert ? "text-t-out" : accent ? "text-red" : "text-muted";
+  return (
+    <div
+      className={cn(
+        "rounded-[var(--r-lg)] bg-card p-4 ring-1 shadow-[var(--sh-card)]",
+        alert ? "ring-t-out/50" : "ring-line",
+      )}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-ui-text font-medium text-ink-2">{title}</span>
+        <Icon className={cn("size-4", iconColor)} />
+      </div>
+      {loading ? (
+        <Skeleton className="h-9 w-14" />
+      ) : (
+        <div className={cn("text-section-header font-display font-extrabold tabular-nums", figureColor)}>
+          {value}
+        </div>
+      )}
+      {description && <p className="text-caption text-muted">{description}</p>}
+    </div>
+  );
+}
+
 export default function MaintenancePage() {
   const {
     sortBy, sortOrder, pageSize, page,
@@ -281,10 +333,33 @@ export default function MaintenancePage() {
 
   const columns = useMaintenanceColumns(now, (id) => setDeleteId(id));
 
-  const overdueMaintenance = records.filter((r) => {
-    if (r.status !== "SCHEDULED" && r.status !== "IN_PROGRESS") return false;
-    return r.scheduledDate && new Date(r.scheduledDate) < now;
-  }).length;
+  // Dashboard stats — derived CLIENT-SIDE from the full org-wide maintenance
+  // list streamed over Convex (maintenanceDocs), NOT the paginated table page,
+  // so the tiles reflect every record regardless of the current page/filter.
+  // While the subscription is loading (undefined), stats render a skeleton.
+  const statsLoading = maintenanceDocs === undefined;
+  const OPEN_STATUSES = ["SCHEDULED", "AWAITING_PARTS", "IN_PROGRESS", "QA"];
+  const nowMs = now.getTime();
+  const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const docs = maintenanceDocs ?? [];
+  const openCount = docs.filter((d) => OPEN_STATUSES.includes(d.status ?? "")).length;
+  const overdueCount = docs.filter(
+    (d) =>
+      (d.status === "SCHEDULED" || d.status === "IN_PROGRESS") &&
+      typeof d.scheduledDate === "number" &&
+      d.scheduledDate < nowMs,
+  ).length;
+  const inProgressCount = docs.filter((d) => d.status === "IN_PROGRESS").length;
+  const completedThisMonth = docs.filter(
+    (d) =>
+      d.status === "COMPLETED" &&
+      typeof d.completedDate === "number" &&
+      d.completedDate >= monthStartMs,
+  ).length;
+
+  // Banner reuses the same org-wide overdue count.
+  const overdueMaintenance = overdueCount;
 
   return (
     <FadeIn>
@@ -304,6 +379,40 @@ export default function MaintenancePage() {
             </span>
           </div>
         )}
+
+        {/* Dashboard stat tiles — org-wide metrics derived from maintenanceDocs */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MaintenanceStatCard
+            title="Open"
+            value={openCount}
+            description="Scheduled, awaiting parts, in progress and QA"
+            icon={Wrench}
+            loading={statsLoading}
+          />
+          <MaintenanceStatCard
+            title="Overdue"
+            value={overdueCount}
+            description="Past their scheduled date"
+            icon={AlertTriangle}
+            alert={overdueCount > 0}
+            loading={statsLoading}
+          />
+          <MaintenanceStatCard
+            title="In progress"
+            value={inProgressCount}
+            description="Active work right now"
+            icon={Activity}
+            accent={inProgressCount > 0}
+            loading={statsLoading}
+          />
+          <MaintenanceStatCard
+            title="Completed this month"
+            value={completedThisMonth}
+            description={format(now, "MMMM yyyy")}
+            icon={CircleCheck}
+            loading={statsLoading}
+          />
+        </div>
 
         <DataTable
           data={records}

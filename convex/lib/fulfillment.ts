@@ -517,6 +517,81 @@ export async function expandAccessoriesForAsset(
   return created;
 }
 
+/**
+ * Create-time accessory expansion (port of line-items.ts expandAccessoryChildren).
+ * Creates accessory CHILD LINES (no units — units materialise at prep) for a new
+ * parent line: a specific serialised asset expands its own serialised+bulk
+ * children unioned with its model defaults; a model-level line expands the
+ * model's default bulk accessories scaled by the line quantity.
+ */
+export async function expandAccessoryChildLines(
+  ctx: Ctx,
+  parentLine: {
+    id: string;
+    assetId: string | null | undefined;
+    modelId: string | null | undefined;
+    quantity: number;
+    categoryId: string | null | undefined;
+    groupId: string | null | undefined;
+    duration: number | null | undefined;
+    pricingType: string | null | undefined;
+    organizationId: string;
+    projectId: string;
+  },
+): Promise<void> {
+  const now = Date.now();
+  const base = {
+    organizationId: parentLine.organizationId,
+    projectId: parentLine.projectId,
+    type: "EQUIPMENT" as const,
+    isKitChild: true,
+    childKind: "ACCESSORY" as const,
+    parentLineItemId: parentLine.id,
+    categoryId: parentLine.categoryId ?? undefined,
+    groupId: parentLine.groupId ?? undefined,
+    pricingType: (parentLine.pricingType ?? undefined) as never,
+    duration: parentLine.duration ?? undefined,
+    status: "CONFIRMED" as const,
+  };
+  let sort = 0;
+
+  if (parentLine.assetId) {
+    const profile = await resolveAssetAccessories(ctx, parentLine.organizationId, parentLine.assetId);
+    if (profile.serialised.length === 0 && profile.bulks.length === 0) return;
+    for (const child of profile.serialised) {
+      await ctx.db.insert("projectLineItems", {
+        ...base, id: createId(), modelId: child.modelId ?? undefined, assetId: child.assetId,
+        quantity: 1, description: child.modelName ?? undefined, sortOrder: sort++, createdAt: now, updatedAt: now,
+      });
+    }
+    for (const b of profile.bulks) {
+      await ctx.db.insert("projectLineItems", {
+        ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
+        sortOrder: sort++, createdAt: now, updatedAt: now,
+      });
+    }
+    return;
+  }
+
+  if (parentLine.modelId) {
+    const modelBulks = await ctx.db
+      .query("modelBulkAccessories")
+      .withIndex("by_modelId", (q) => q.eq("modelId", parentLine.modelId!))
+      .collect();
+    if (modelBulks.length === 0) return;
+    for (const b of modelBulks) {
+      const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", b.bulkAssetId)).unique();
+      const qty = b.quantity * Math.max(parentLine.quantity, 1);
+      const name = await modelName(ctx, ba?.modelId);
+      await ctx.db.insert("projectLineItems", {
+        ...base, id: createId(), modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        quantity: qty, description: name ? `${qty}x ${name}` : undefined, sortOrder: sort++, createdAt: now, updatedAt: now,
+      });
+    }
+  }
+}
+
 /** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. */
 export async function prepUnit(
   ctx: Ctx,

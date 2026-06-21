@@ -23,10 +23,11 @@ function NewAssetContent() {
   const modelId = searchParams.get("modelId") || undefined;
 
   const title = type === "bulk" ? "New bulk asset" : "New asset";
+  const isBulk = type === "bulk";
 
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className={`mx-auto space-y-4 ${isBulk ? "max-w-3xl" : "max-w-5xl"}`}>
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>

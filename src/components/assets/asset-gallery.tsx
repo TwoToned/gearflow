@@ -154,9 +154,9 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
 
       {/* grid */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-64 w-full rounded-[var(--r-lg)]" />
+            <Skeleton key={i} className="h-44 w-full rounded-[var(--r-lg)]" />
           ))}
         </div>
       ) : !groups || groups.length === 0 ? (
@@ -177,7 +177,7 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
                 <span className="t-overline text-muted">{category}</span>
                 <span className="t-mono text-faint">{items.length}</span>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
                 {items.map((asset) => (
                   <AssetCard key={asset.id} asset={asset} />
                 ))}
@@ -228,7 +228,7 @@ function AssetCard({ asset }: { asset: AnyAsset }) {
         )}
       </div>
       {/* body */}
-      <div className="space-y-2 p-3">
+      <div className="space-y-1.5 p-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[14px] font-semibold text-ink">

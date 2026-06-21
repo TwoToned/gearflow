@@ -3,24 +3,29 @@
 import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
+import { Truck } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { supplierOrderSchema, type SupplierOrderFormValues } from "@/lib/validations/supplier-order";
 import { createSupplierOrder } from "@/server/supplier-orders";
 import { getSupplierById } from "@/server/suppliers";
+import { supplierOrderStatusLabels } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,6 +34,19 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+} from "@/components/ui/smart-form";
+
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  PURCHASE: "Purchase",
+  SUBHIRE: "Subhire",
+  REPAIR: "Repair",
+  LABOUR: "Labour",
+  OTHER: "Other",
+};
+const ORDER_TYPE_ORDER = ["PURCHASE", "SUBHIRE", "REPAIR", "LABOUR", "OTHER"] as const;
+const ORDER_STATUS_ORDER = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
 
 export default function NewSupplierOrderPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -91,9 +109,21 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
     );
   }
 
+  const v = form.watch();
+  const orderRef = (v.orderNumber || "").trim();
+  const typeLabel = ORDER_TYPE_LABELS[v.type ?? "PURCHASE"] ?? "Purchase";
+  const statusLabel = supplierOrderStatusLabels[v.status ?? "DRAFT"] ?? "Draft";
+  const expectedDate = v.expectedDate ? String(v.expectedDate) : "";
+
+  const helperTip = !orderRef
+    ? "Start with the order reference — that's all you need to save. Everything else can come later."
+    : !v.expectedDate
+      ? "Add an expected date so you can track what's still outstanding."
+      : "Looking good. You can add line items once the order is created.";
+
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-4">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -112,78 +142,117 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
         <div>
           <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New order</h1>
           <p className="mt-1 text-ui-text text-muted">
-            Create a purchase order for {supplier.name}
+            Create a purchase order for {supplier.name}.
           </p>
         </div>
 
-        <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
+        <SmartFormLayout
+          onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
+          aside={
+            <>
+              <SmartFormRail eyebrow="New order" tip={helperTip} />
+              <SmartFormPreview>
+                <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                      <Truck className="h-4 w-4" strokeWidth={1.5} />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <p className={cn("text-card-title font-semibold leading-tight", orderRef ? "text-ink" : "text-faint")}>
+                        {orderRef || "New order"}
+                      </p>
+                      <p className="truncate text-caption text-muted">{supplier.name}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                          {typeLabel}
+                        </span>
+                        <StatusIndicator category="supplierOrder" value={v.status ?? "DRAFT"} label={statusLabel} variant="pill" />
+                      </div>
+                      <p className={cn("text-caption", expectedDate ? "text-muted" : "text-faint")}>
+                        {expectedDate ? `Expected ${expectedDate}` : "No expected date"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </SmartFormPreview>
+            </>
+          }
+        >
           <input type="hidden" {...form.register("supplierId")} />
 
-          <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
-            <div className="space-y-6">
-              <FormSection title="Order details">
-                <div className="space-y-2">
-                  <Label htmlFor="orderNumber">Order / PO number *</Label>
-                  <Input id="orderNumber" {...form.register("orderNumber")} placeholder="e.g. PO-2024-001" aria-invalid={!!form.formState.errors.orderNumber} />
-                  {form.formState.errors.orderNumber && (
-                    <p className="text-caption text-t-out">{form.formState.errors.orderNumber.message}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="type">Type</Label>
-                  <select
-                    id="type"
-                    {...form.register("type")}
-                    className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <option value="PURCHASE">Purchase</option>
-                    <option value="SUBHIRE">Subhire</option>
-                    <option value="REPAIR">Repair</option>
-                    <option value="LABOUR">Labour</option>
-                    <option value="OTHER">Other</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
-                    {...form.register("status")}
-                    className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="ORDERED">Ordered</option>
-                    <option value="PARTIAL">Partial</option>
-                    <option value="RECEIVED">Received</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="orderDate">Order date</Label>
-                  <Input id="orderDate" type="date" {...form.register("orderDate")} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expectedDate">Expected date</Label>
-                  <Input id="expectedDate" type="date" {...form.register("expectedDate")} />
-                </div>
-              </FormSection>
-
-              <FormSection title="Notes">
+          <div className="space-y-8">
+            {/* Order */}
+            <SmartFormSection title="Order" hint={`Reference and classification for this ${supplier.name} order.`} divider={false}>
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Textarea {...form.register("notes")} placeholder="Order notes..." rows={3} />
+                  <SmartFormField label="Order / PO number" required error={form.formState.errors.orderNumber?.message}>
+                    <Input
+                      {...form.register("orderNumber")}
+                      placeholder="e.g. PO-2024-001"
+                      aria-invalid={!!form.formState.errors.orderNumber}
+                    />
+                  </SmartFormField>
                 </div>
-              </FormSection>
-            </div>
+                <SmartFormField label="Type">
+                  <Controller control={form.control} name="type" render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue>{ORDER_TYPE_LABELS[field.value ?? "PURCHASE"] ?? "Purchase"}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ORDER_TYPE_ORDER.map((t) => (
+                          <SelectItem key={t} value={t}>{ORDER_TYPE_LABELS[t]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )} />
+                </SmartFormField>
+                <SmartFormField label="Status">
+                  <Controller control={form.control} name="status" render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue>{supplierOrderStatusLabels[field.value ?? "DRAFT"] ?? "Draft"}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ORDER_STATUS_ORDER.map((s) => (
+                          <SelectItem key={s} value={s}>{supplierOrderStatusLabels[s]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )} />
+                </SmartFormField>
+              </div>
+            </SmartFormSection>
 
-            <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
-              <Button type="button" variant="line" onClick={() => router.back()}>
-                Cancel
-              </Button>
-              <Button type="submit" loading={mutation.isPending}>
-                Create order
-              </Button>
-            </div>
+            {/* Dates */}
+            <SmartFormSection title="Dates" hint="Track when it was ordered and when to expect it.">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <SmartFormField label="Order date">
+                  <Input type="date" {...form.register("orderDate")} />
+                </SmartFormField>
+                <SmartFormField label="Expected date">
+                  <Input type="date" {...form.register("expectedDate")} />
+                </SmartFormField>
+              </div>
+            </SmartFormSection>
+
+            {/* More details */}
+            <SmartFormSection title="More details" hint="Anything else worth recording.">
+              <SmartFormField label="Notes">
+                <Textarea {...form.register("notes")} placeholder="Order notes…" rows={3} />
+              </SmartFormField>
+            </SmartFormSection>
           </div>
-        </form>
+
+          <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+            <Button type="button" variant="line" onClick={() => router.back()}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={mutation.isPending}>
+              Create order
+            </Button>
+          </div>
+        </SmartFormLayout>
       </div>
     </FadeIn>
   );

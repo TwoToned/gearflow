@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
 import { adjustBulkAvailability, coalesceAdjustments, type BulkAdjustment } from "./lib/inventory";
+import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
 import {
   ensureSerialisedUnit,
   ensureBulkUnit,
@@ -624,5 +625,93 @@ export const syncContainerStatus = mutation({
       await setAssetsStatus(ctx, [containerLI.assetId], allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE", null, false, a.now);
     }
     return { updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" };
+  },
+});
+
+// ── Bulk check-in (Group G) ───────────────────────────────────────────────────
+
+export const checkInBulkTotals = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), userId: v.string(),
+    returns: v.array(v.object({ key: v.string(), quantity: v.number(), condition: v.optional(v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"))) })),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const wanted = a.returns.filter((r) => r && typeof r.quantity === "number" && r.quantity > 0);
+    if (wanted.length === 0) return { returned: [] as Array<{ key: string; quantity: number; condition: string }> };
+
+    const defaultLoc = await defaultLocationId(ctx, a.organizationId);
+    const rows = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((r) => r.organizationId === a.organizationId && r.status === "CHECKED_OUT" && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
+      .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
+
+    const toInput = async (child: typeof rows[number]): Promise<CheckInItem> => {
+      const units = await lineUnits(ctx, child.id);
+      let outstanding: number;
+      if (units.length > 0) {
+        outstanding = units.reduce((s, u) => u.status === "CHECKED_OUT" ? s + Math.max(0, (u.quantity ?? 0) - (u.returnedQuantity ?? 0)) : s, 0);
+      } else outstanding = child.status !== "CHECKED_OUT" ? 0 : Math.max(0, (child.checkedOutQuantity ?? 0) - (child.returnedQuantity ?? 0));
+      let itemType: CheckInItemType;
+      if (child.childKind === "ACCESSORY") itemType = "ACCESSORY";
+      else if (child.isCustomItem) itemType = "CUSTOM";
+      else if (child.subHireId) itemType = "SUBHIRE";
+      else if (child.bulkAssetId) itemType = "OWNED_BULK";
+      else itemType = "OWNED_SERIALISED";
+      const model = child.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", child.modelId!)).unique() : null;
+      return {
+        lineItemId: child.id, modelId: child.modelId ?? null, modelName: model?.name ?? null, modelNumber: model?.modelNumber ?? null,
+        assetId: child.assetId ?? null, bulkAssetId: child.bulkAssetId ?? null, subHireId: child.subHireId ?? null,
+        isCustomItem: !!child.isCustomItem, childKind: child.childKind ?? null, sortOrder: child.sortOrder ?? 0, outstanding, itemType,
+      };
+    };
+
+    const byKey = new Map<string, CheckInItem[]>();
+    const labelByKey = new Map<string, string>();
+    for (const r of rows) {
+      const input = await toInput(r);
+      const key = itemGroupKey(input);
+      if (!key) continue;
+      (byKey.get(key) ?? byKey.set(key, []).get(key)!).push(input);
+      if (!labelByKey.has(key)) labelByKey.set(key, input.modelName ?? (input.itemType === "ACCESSORY" ? "Accessory" : "Item"));
+    }
+
+    const summary: Array<{ key: string; quantity: number; condition: string }> = [];
+    for (const req of wanted) {
+      const condition = req.condition ?? "GOOD";
+      const groupChildren = byKey.get(req.key) ?? [];
+      const { allocations, distributed } = distributeReturn(groupChildren, req.quantity);
+      if (distributed < req.quantity) {
+        const available = groupChildren.reduce((s, c) => s + Math.max(0, c.outstanding), 0);
+        throw new ConvexError(`Cannot return ${req.quantity} of "${labelByKey.get(req.key) ?? req.key}" — only ${available} currently deployed.`);
+      }
+      const assetsTouched: string[] = [];
+      for (const alloc of allocations) {
+        if (alloc.itemType === "SUBHIRE" || alloc.itemType === "CUSTOM") {
+          const line = await lineByCuid(ctx, alloc.lineItemId);
+          if (!line) continue;
+          const newReturned = (line.returnedQuantity ?? 0) + alloc.quantity;
+          const fully = newReturned >= (line.checkedOutQuantity ?? 0);
+          await ctx.db.patch(line._id, {
+            status: fully ? "RETURNED" : "CHECKED_OUT", returnedQuantity: newReturned, returnCondition: condition,
+            ...(fully ? { returnedAt: a.now, returnedById: a.userId } : {}), updatedAt: a.now,
+          });
+          continue;
+        }
+        const { assetsTouched: touched } = await returnLineUnits(ctx, {
+          organizationId: a.organizationId, projectId: a.projectId, lineItemId: alloc.lineItemId,
+          assetId: alloc.assetId ?? undefined, bulkAssetId: alloc.bulkAssetId ?? undefined,
+          returnCondition: condition, quantity: alloc.quantity, userId: a.userId, defaultLocationId: defaultLoc,
+        });
+        await syncLineItemRollup(ctx, alloc.lineItemId);
+        assetsTouched.push(...touched);
+      }
+      for (const assetId of assetsTouched) {
+        await scanLog(ctx, { organizationId: a.organizationId, assetId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Bulk check-in (${condition})` });
+      }
+      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})` });
+      summary.push({ key: req.key, quantity: distributed, condition });
+    }
+    return { returned: summary };
   },
 });

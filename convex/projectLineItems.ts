@@ -3,7 +3,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
-import { expandAccessoryChildLines } from "./lib/fulfillment";
+import { expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
+import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 
 /**
@@ -570,5 +571,118 @@ export const reorderLineItems = mutation({
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
       if (doc) await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
     }
+  },
+});
+
+// ── Group G: asset reassignment (double-booking gate) + split-sibling merge ────
+
+const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
+
+/** Reassign a line's asset, re-checking free-in-window + writing in ONE mutation
+ *  (the double-booking TOCTOU guard — OCC makes the check+write race-safe). */
+export const swapLineItemAsset = mutation({
+  args: { organizationId: v.string(), lineItemId: v.string(), newAssetId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId)).unique();
+    if (!line || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found");
+    const newAsset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", a.newAssetId)).unique();
+    if (!newAsset || newAsset.organizationId !== a.organizationId) throw new ConvexError("Target asset not found");
+    if (line.modelId && newAsset.modelId !== line.modelId) throw new ConvexError("Target asset is a different model");
+    if (newAsset.kitId) throw new ConvexError(`Asset ${newAsset.assetTag} is part of a kit and can't be assigned directly`);
+    if (newAsset.status === "RETIRED" || newAsset.status === "LOST") throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).unique();
+    const startMs = project?.rentalStartDate ?? null;
+    const endMs = project?.rentalEndDate ?? null;
+    if (startMs != null && endMs != null) {
+      const projects = await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+      const overlapping = new Set<string>();
+      for (const p of projects) {
+        if (p.isTemplate) continue;
+        if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
+        const s = p.rentalStartDate ?? null;
+        const e = p.rentalEndDate ?? null;
+        if (s == null || e == null) continue;
+        if (s <= endMs && e >= startMs) overlapping.add(p.id);
+      }
+      if (overlapping.size > 0) {
+        const lineConflict = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.newAssetId)).collect())
+          .some((li) => li.organizationId === a.organizationId && li.status !== "CANCELLED" && li.id !== a.lineItemId && overlapping.has(li.projectId));
+        let unitConflict = false;
+        if (!lineConflict) {
+          const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_assetId", (q) => q.eq("assetId", a.newAssetId)).collect())
+            .filter((u) => u.organizationId === a.organizationId && u.status !== "RETURNED" && u.lineItemId !== a.lineItemId);
+          for (const u of units) {
+            const ul = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", u.lineItemId)).unique();
+            if (ul && ul.status !== "CANCELLED" && overlapping.has(ul.projectId)) { unitConflict = true; break; }
+          }
+        }
+        if (lineConflict || unitConflict) throw new ConvexError(`Asset ${newAsset.assetTag} is already booked during this window`);
+      }
+    }
+    await ctx.db.patch(line._id, { assetId: a.newAssetId, updatedAt: a.now });
+    return { lineItemId: a.lineItemId, assetId: a.newAssetId };
+  },
+});
+
+/** Split-sibling collapse: move a sibling's units to the canonical line, repoint
+ *  its check records, write the audit row, deactivate the sibling, bump canonical
+ *  quantity — all atomic. (projectService repoint stays Prisma in the action.) */
+export const mergeGroup = mutation({
+  args: {
+    organizationId: v.string(),
+    canonicalId: v.string(),
+    key: v.string(),
+    runId: v.string(),
+    moves: v.array(v.object({ siblingId: v.string(), assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()), quantity: v.number() })),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const canonicalUnits = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.canonicalId)).collect();
+    const usedOrdinals = new Set(canonicalUnits.map((u) => u.ordinal));
+    let quantityAdded = 0;
+
+    for (const move of a.moves) {
+      let unit: typeof canonicalUnits[number] | null = null;
+      if (move.assetId) {
+        unit = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", move.siblingId).eq("assetId", move.assetId!)).unique();
+      } else if (move.bulkAssetId) {
+        unit = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", move.siblingId)).collect()).find((u) => u.bulkAssetId === move.bulkAssetId) ?? null;
+      }
+      let movedUnitId: string | null = null;
+      if (unit) {
+        let ord = nextOrdinal([...usedOrdinals].map((o) => ({ ordinal: o })));
+        while (usedOrdinals.has(ord)) ord += 1;
+        usedOrdinals.add(ord);
+        await ctx.db.patch(unit._id, { lineItemId: a.canonicalId, ordinal: ord, updatedAt: a.now });
+        movedUnitId = unit.id;
+      }
+      // Repoint check records (Convex) — matched-asset/bulk rows also get lineItemUnitId.
+      const crs = await ctx.db.query("checkRecords").withIndex("by_lineItemId", (q) => q.eq("lineItemId", move.siblingId)).collect();
+      for (const cr of crs) {
+        const matched = !!movedUnitId && (move.assetId ? cr.assetId === move.assetId : cr.bulkAssetId === move.bulkAssetId);
+        await ctx.db.patch(cr._id, { lineItemId: a.canonicalId, ...(matched ? { lineItemUnitId: movedUnitId! } : {}) });
+      }
+      // Audit row (permanent).
+      await ctx.db.insert("lineItemMergeMaps", {
+        id: createId(), organizationId: a.organizationId, oldLineItemId: move.siblingId, canonicalLineItemId: a.canonicalId,
+        movedUnitId: movedUnitId ?? undefined, checkRecordsRepointed: crs.length, serviceRepointed: false,
+        notes: `${a.runId} | key=${a.key}`, mergedAt: a.now,
+      });
+      // Deactivate the sibling (keep row, drop booking footprint).
+      const sib = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", move.siblingId)).unique();
+      if (sib) {
+        const { _id, _creationTime, assetId: _a, bulkAssetId: _b, ...rest } = sib;
+        await ctx.db.replace(_id, { ...rest, quantity: 0, status: "CANCELLED", notes: `[merged into ${a.canonicalId} (${a.runId})]`, updatedAt: a.now });
+      }
+      quantityAdded += move.quantity;
+    }
+
+    const canon = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.canonicalId)).unique();
+    if (canon) await ctx.db.patch(canon._id, { quantity: (canon.quantity ?? 0) + quantityAdded, updatedAt: a.now });
+    await syncLineItemRollup(ctx, a.canonicalId);
+    return { canonicalId: a.canonicalId };
   },
 });

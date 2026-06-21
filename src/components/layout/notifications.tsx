@@ -128,15 +128,15 @@ export function Notifications() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Notifications" />}>
-        <span className="relative inline-flex items-center justify-center">
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
           <Bell className="h-4 w-4" />
           {count > 0 && (
-            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold leading-none text-white">
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold leading-none text-white">
               {count > 9 ? "9+" : count}
             </span>
           )}
-        </span>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuGroup>

@@ -14,8 +14,10 @@ import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn, focusRing } from "@/lib/utils";
 import { addKitLineItem, checkKitAvailability } from "@/server/line-items";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -110,91 +112,138 @@ export function KitAddForm({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const unavailable = !!selectedKitId && kitAvailability && !kitAvailability.available;
+
   return (
     <>
-      <div className="space-y-4 py-2">
+      <div className="space-y-6 py-2">
         {targetLabel && (
-          <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
-            Adding to <span className="font-medium text-fg">{targetLabel}</span>
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label>Kit</Label>
-          <ComboboxPicker
-            value={selectedKitId}
-            onChange={setSelectedKitId}
-            options={kitOptions}
-            placeholder="Select a kit..."
-            searchPlaceholder="Search kits..."
-            emptyMessage="No kits found."
-          />
-        </div>
-
-        {selectedKitId && kitAvailability && !kitAvailability.available && (
-          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            Kit is unavailable: {kitAvailability.conflictsWith}
+          <div className="rounded-[var(--r)] border border-line bg-paper-2/50 px-3 py-2 text-caption text-ink-2">
+            Adding to <span className="font-medium text-ink">{targetLabel}</span>
           </div>
         )}
 
-        <div className="space-y-2">
-          <Label>Pricing Mode</Label>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="kitPricingMode"
-                value="KIT_PRICE"
-                checked={kitPricingMode === "KIT_PRICE"}
-                onChange={() => setKitPricingMode("KIT_PRICE")}
-                className="accent-primary"
-              />
-              Kit Price
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="kitPricingMode"
-                value="ITEMIZED"
-                checked={kitPricingMode === "ITEMIZED"}
-                onChange={() => setKitPricingMode("ITEMIZED")}
-                className="accent-primary"
-              />
-              Itemized
-            </label>
-          </div>
-          <p className="text-xs text-fg-3">
-            {kitPricingMode === "KIT_PRICE"
-              ? "One price for the whole kit."
-              : "Each item in the kit priced individually."}
-          </p>
-        </div>
-
-        {kitPricingMode === "KIT_PRICE" && (
-          <div className="space-y-2">
-            <Label>Unit Price</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
-              value={kitUnitPrice}
-              onChange={(e) => setKitUnitPrice(e.target.value)}
+        {/* Kit */}
+        <section className="space-y-4">
+          <SectionTitle title="Kit" hint="Pick a kit to add to this project." />
+          <Field label="Kit" required>
+            <ComboboxPicker
+              value={selectedKitId}
+              onChange={setSelectedKitId}
+              options={kitOptions}
+              placeholder="Search kits…"
+              searchPlaceholder="Search by tag or name…"
+              emptyMessage="No kits found."
             />
-          </div>
-        )}
+          </Field>
+
+          {unavailable && (
+            <div className="flex items-start gap-2 rounded-[var(--r)] border-l-[3px] border-t-out bg-out-soft px-3 py-2 text-caption text-t-out">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>Kit is unavailable: {kitAvailability!.conflictsWith}</span>
+            </div>
+          )}
+        </section>
+
+        {/* Pricing */}
+        <section className="space-y-4 border-t border-line pt-5">
+          <SectionTitle title="Pricing" hint="Charge the kit as one line or itemise its contents." />
+          <Field label="Pricing mode">
+            <div className="grid grid-cols-2 gap-2">
+              <PricingModeOption
+                label="Kit price"
+                hint="One price for the whole kit."
+                selected={kitPricingMode === "KIT_PRICE"}
+                onSelect={() => setKitPricingMode("KIT_PRICE")}
+              />
+              <PricingModeOption
+                label="Itemized"
+                hint="Each item priced individually."
+                selected={kitPricingMode === "ITEMIZED"}
+                onSelect={() => setKitPricingMode("ITEMIZED")}
+              />
+            </div>
+          </Field>
+
+          {kitPricingMode === "KIT_PRICE" && (
+            <Field label="Unit price ($)">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={kitUnitPrice}
+                onChange={(e) => setKitUnitPrice(e.target.value)}
+              />
+            </Field>
+          )}
+        </section>
       </div>
+
       <DialogFooter>
+        <Button type="button" variant="line" onClick={onClose}>
+          Cancel
+        </Button>
         <Button
+          type="button"
           onClick={() => addKitMut.mutate()}
-          disabled={
-            !selectedKitId ||
-            addKitMut.isPending ||
-            (kitAvailability && !kitAvailability.available)
-          }
+          loading={addKitMut.isPending}
+          disabled={!selectedKitId || !!unavailable}
         >
-          {addKitMut.isPending ? "Adding..." : "Add Kit"}
+          Add kit
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+// ─── Local helpers ───────────────────────────────────────────────
+
+function SectionTitle({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <h3 className="text-card-title font-bold text-ink">{title}</h3>
+      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+function Field({
+  label, required, children,
+}: {
+  label: string; required?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
+      {children}
+    </div>
+  );
+}
+
+function PricingModeOption({
+  label, hint, selected, onSelect,
+}: {
+  label: string; hint: string; selected: boolean; onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex flex-col items-start gap-0.5 rounded-[var(--r)] border-2 px-3 py-2 text-left transition-colors",
+        focusRing,
+        selected
+          ? "border-red bg-red-soft"
+          : "border-line bg-paper-2/50 hover:border-line-2",
+      )}
+    >
+      <span className={cn("text-ui-text font-medium", selected ? "text-ink" : "text-ink-2")}>
+        {label}
+      </span>
+      <span className="t-micro text-muted">{hint}</span>
+    </button>
   );
 }

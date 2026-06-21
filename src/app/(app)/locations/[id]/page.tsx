@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -15,6 +15,10 @@ import {
   Container,
   FolderOpen,
   ChevronRight,
+  Briefcase,
+  Warehouse,
+  Building2,
+  Truck,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -48,7 +52,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-
+/** Type → icon for the location hero chip / meta. */
+const locationTypeIcons: Record<string, typeof MapPin> = {
+  WAREHOUSE: Warehouse,
+  VENUE: Building2,
+  VEHICLE: Truck,
+  OFFSITE: MapPin,
+};
 
 export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -80,6 +90,31 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // ── "What's here" — derived client-side from data already loaded ──────
+  // Stored-here counts (serialised / bulk / kits) + how many of those units
+  // are currently out on a project (status CHECKED_OUT). All from getLocation.
+  const here = useMemo(() => {
+    const assets = location?.assets ?? [];
+    const bulk = location?.bulkAssets ?? [];
+    const kits = location?.kits ?? [];
+    const isOut = (s: string) => s === "CHECKED_OUT";
+    const deployedAssets = assets.filter((a: { status: string }) => isOut(a.status)).length;
+    const deployedBulk = bulk.filter((b: { status: string }) => isOut(b.status)).length;
+    const deployedKits = kits.filter((k: { status: string }) => isOut(k.status)).length;
+    const stored =
+      (location?._count?.assets ?? 0) +
+      (location?._count?.bulkAssets ?? 0) +
+      (location?._count?.kits ?? 0);
+    return {
+      serialised: location?._count?.assets ?? 0,
+      bulk: location?._count?.bulkAssets ?? 0,
+      kits: location?._count?.kits ?? 0,
+      stored,
+      deployed: deployedAssets + deployedBulk + deployedKits,
+      projects: location?._count?.projects ?? 0,
+    };
+  }, [location]);
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
@@ -97,86 +132,136 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
+  const TypeIcon = locationTypeIcons[location.type] ?? MapPin;
+  const hasMap = location.latitude != null && location.longitude != null;
+  const mapsHref = location.address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.address)}`
+    : hasMap
+      ? `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`
+      : null;
 
   return (
     <>
       <PageMeta title={location.name} />
       <FadeIn>
         <div className="space-y-6">
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
+          {/* ── Hero card (breadcrumb + identity + actions) ──────────── */}
+          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
             {/* Breadcrumb */}
-            <nav className="mb-2 flex items-center gap-1 t-small text-muted">
+            <nav className="flex items-center gap-1 text-caption text-muted">
               <Link href="/locations" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                 Locations
               </Link>
               {location.parent && (
                 <>
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight className="h-3 w-3" />
                   <Link href={`/locations/${location.parent.id}`} className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
                     {location.parent.name}
                   </Link>
                 </>
               )}
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="truncate font-medium text-ink">{location.name}</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="truncate text-ink-2">{location.name}</span>
             </nav>
 
+            {/* Identity + actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="t-title text-ink">{location.name}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">{location.name}</h1>
                   <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
                   {location.isDefault && (
-                    <Star className="h-4 w-4 fill-warn text-warn" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-badge font-bold text-warn">
+                      <Star className="h-3 w-3 fill-warn" />
+                      Default
+                    </span>
                   )}
                 </div>
-                <p className="t-body text-muted">
-                  {location.address || "No address"}
-                  {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
-                </p>
+                {/* Meta line: type · address · parent */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
+                  <span className="inline-flex items-center gap-1">
+                    <TypeIcon className="h-3.5 w-3.5" aria-hidden />
+                    {locationTypeLabels[location.type] || location.type}
+                  </span>
+                  {location.address && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      {mapsHref ? (
+                        <a
+                          href={mapsHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn("inline-flex items-center gap-1 rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                        >
+                          <MapPin className="h-3.5 w-3.5" aria-hidden />
+                          {location.address}
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" aria-hidden />
+                          {location.address}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {location.parent && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <span>
+                        Sub-location of{" "}
+                        <Link
+                          href={`/locations/${location.parent.id}`}
+                          className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
+                        >
+                          {location.parent.name}
+                        </Link>
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2">
+
+              {/* Action buttons (compact) */}
+              <div className="flex flex-wrap items-center gap-2">
                 <CanDo resource="location" action="update">
-                  <Button variant="line" asChild>
+                  <Button variant="line" size="sm" asChild>
                     <Link href={`/locations/${id}/edit`}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
+                      <Pencil className="h-4 w-4" />
+                      <span className="hidden sm:inline">Edit</span>
                     </Link>
                   </Button>
                 </CanDo>
                 <CanDo resource="location" action="delete">
                   <Button
                     variant="line"
+                    size="sm"
                     className="text-t-out hover:border-red hover:bg-red hover:text-white"
                     onClick={() => setDeleteOpen(true)}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    <Trash2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Delete</span>
                   </Button>
                 </CanDo>
               </div>
+            </div>
+
+            {/* "What's here" count strip — single surface, vertical dividers */}
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
+              <HereStat icon={Boxes} label="Stored here" figure={here.stored} bright />
+              <HereStat icon={Briefcase} label="Out on a project" figure={here.deployed} accent={here.deployed > 0} />
+              <HereStat icon={FolderOpen} label="Projects using" figure={here.projects} />
+              <HereStat icon={MapPin} label="Sub-locations" figure={location.children?.length ?? 0} />
             </div>
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <DetailLayout>
-            {/* Main content */}
+            {/* Main content — emphasises what's physically here */}
             <DetailMain>
-              {/* Address Map */}
-              <div className="mb-6">
-                <AddressDisplay
-                  address={location.address || location.parent?.address}
-                  latitude={location.latitude ?? location.parent?.latitude}
-                  longitude={location.longitude ?? location.parent?.longitude}
-                  label={location.name}
-                />
-              </div>
-
               <Tabs defaultValue="assets">
                 <TabsList>
                   <TabsTrigger value="assets">
-                    Assets ({assetCount})
+                    Stored here ({assetCount})
                   </TabsTrigger>
                   <TabsTrigger value="projects">
                     Projects ({location._count?.projects || 0})
@@ -189,7 +274,10 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
                 <TabsContent value="assets" className="mt-4">
                   {(location.assets?.length || 0) === 0 && (location.bulkAssets?.length || 0) === 0 && (location.kits?.length || 0) === 0 ? (
-                    <EmptyState title="No assets here" description="Assets checked in to this location will appear here." />
+                    <EmptyState
+                      title="Nothing stored here yet"
+                      description="Assets, bulk stock, and kits checked in to this location will appear here — including anything currently out on a job."
+                    />
                   ) : (
                     <div className="rounded-[var(--r)] border border-line">
                       <Table>
@@ -209,7 +297,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                                   {asset.assetTag}
                                 </Link>
                               </TableCell>
-                              <TableCell>{asset.model?.name || "\u2014"}</TableCell>
+                              <TableCell>{asset.model?.name || "—"}</TableCell>
                               <TableCell>
                                 <Badge status="neutral">Serialised</Badge>
                               </TableCell>
@@ -225,7 +313,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                                   {bulk.assetTag}
                                 </Link>
                               </TableCell>
-                              <TableCell>{bulk.model?.name || "\u2014"}</TableCell>
+                              <TableCell>{bulk.model?.name || "—"}</TableCell>
                               <TableCell>
                                 <Badge status="neutral">Bulk</Badge>
                               </TableCell>
@@ -280,7 +368,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                                 </Link>
                               </TableCell>
                               <TableCell>{project.name}</TableCell>
-                              <TableCell className="text-muted">{project.client?.name || "\u2014"}</TableCell>
+                              <TableCell className="text-muted">{project.client?.name || "—"}</TableCell>
                               <TableCell>
                                 <StatusIndicator category="project" value={project.status} label={projectStatusLabels[project.status] || formatLabel(project.status)} variant="pill" />
                               </TableCell>
@@ -325,45 +413,63 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
               </Tabs>
             </DetailMain>
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
+            {/* ── Sidebar (lean: Place · Inventory · Sub-locations · Activity) ─ */}
             <DetailSidebar>
-                {/* Location info */}
-                <SidebarSection title="Location info">
+                {/* Place — map + address + directions */}
+                <SidebarSection title="Place">
+                  {hasMap || location.address || location.parent?.address ? (
+                    <div className="space-y-2">
+                      <AddressDisplay
+                        address={location.address || location.parent?.address}
+                        latitude={location.latitude ?? location.parent?.latitude}
+                        longitude={location.longitude ?? location.parent?.longitude}
+                        label={location.name}
+                        compact
+                      />
+                      {location.address && (
+                        <p className="text-table-cell text-ink-2">{location.address}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-table-cell text-faint">No address set</p>
+                  )}
+                </SidebarSection>
+
+                {/* Inventory — what lives here, by kind */}
+                <SidebarSection title="Inventory">
                   <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
-                      <span className="text-muted">Type</span>
-                      <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
-                    </div>
-                    {location.isDefault && (
-                      <div className="flex justify-between">
-                        <span className="text-muted">Default</span>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-3.5 w-3.5 fill-warn text-warn" />
-                          <span className="font-medium text-ink">Yes</span>
-                        </div>
+                      <div className="flex items-center gap-2 text-muted">
+                        <Package className="h-3.5 w-3.5" />
+                        <span>Serialised</span>
                       </div>
-                    )}
-                    {location.address && (
-                      <div className="flex justify-between">
-                        <span className="text-muted">Address</span>
-                        <span className="max-w-[200px] truncate text-right font-medium text-ink">{location.address}</span>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.assets || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2 text-muted">
+                        <Boxes className="h-3.5 w-3.5" />
+                        <span>Bulk</span>
+                      </div>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.bulkAssets || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2 text-muted">
+                        <Container className="h-3.5 w-3.5" />
+                        <span>Kits</span>
+                      </div>
+                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.kits || 0}</span>
+                    </div>
+                    {here.deployed > 0 && (
+                      <div className="flex justify-between border-t border-line pt-1.5">
+                        <div className="flex items-center gap-2 text-muted">
+                          <Briefcase className="h-3.5 w-3.5" />
+                          <span>Out on a project</span>
+                        </div>
+                        <span className="t-data font-medium text-red tabular-nums">{here.deployed}</span>
                       </div>
                     )}
                   </div>
                 </SidebarSection>
-
-                {/* Parent location */}
-                {location.parent && (
-                  <SidebarSection title="Parent location">
-                    <Link
-                      href={`/locations/${location.parent.id}`}
-                      className={cn("flex items-center gap-2 rounded-[var(--r)] px-2 py-1.5 text-ui-text transition-colors hover:bg-elev", focusRing)}
-                    >
-                      <MapPin className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      <span className="font-medium text-ink">{location.parent.name}</span>
-                    </Link>
-                  </SidebarSection>
-                )}
 
                 {/* Sub-locations */}
                 {location.children && location.children.length > 0 && (
@@ -388,40 +494,6 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   </SidebarSection>
                 )}
 
-                {/* Asset counts */}
-                <SidebarSection title="Inventory">
-                  <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-muted">
-                        <Package className="h-3.5 w-3.5" />
-                        <span>Serialised</span>
-                      </div>
-                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.assets || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-muted">
-                        <Boxes className="h-3.5 w-3.5" />
-                        <span>Bulk</span>
-                      </div>
-                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.bulkAssets || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-muted">
-                        <Container className="h-3.5 w-3.5" />
-                        <span>Kits</span>
-                      </div>
-                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.kits || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-2 text-muted">
-                        <FolderOpen className="h-3.5 w-3.5" />
-                        <span>Projects</span>
-                      </div>
-                      <span className="t-data font-medium text-ink tabular-nums">{location._count?.projects || 0}</span>
-                    </div>
-                  </div>
-                </SidebarSection>
-
                 {/* Activity Timeline */}
                 <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="location" entityId={id} />
@@ -443,5 +515,38 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
         pending={deleteMutation.isPending}
       />
     </>
+  );
+}
+
+/** One cell of the hero "what's here" count strip — calm-by-default. */
+function HereStat({
+  icon: Icon,
+  label,
+  figure,
+  bright = false,
+  accent = false,
+}: {
+  icon: typeof Boxes;
+  label: string;
+  figure: number;
+  bright?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1 bg-card p-3">
+      <div className="flex items-center gap-1.5 text-muted">
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="text-caption">{label}</span>
+      </div>
+      <span
+        className={cn(
+          "font-display font-extrabold leading-none tracking-tight tabular-nums",
+          bright ? "text-[24px] text-ink" : "text-[20px]",
+          accent ? "text-red" : bright ? "text-ink" : "text-ink-2",
+        )}
+      >
+        {figure}
+      </span>
+    </div>
   );
 }

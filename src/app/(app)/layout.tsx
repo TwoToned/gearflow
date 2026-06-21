@@ -34,9 +34,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <OrgActivator />
             <DynamicFavicon />
             <AppSidebar />
-            <SidebarInset className="min-h-0 min-w-0">
+            <SidebarInset className="min-h-0 min-w-0 overflow-x-clip">
               <TopBar />
-              <main className="min-w-0 flex-1 overflow-auto p-4 md:p-6 animate-page-enter">{children}</main>
+              {/* Vertical scroll only. Horizontal is CLIPPED so wide content
+                  (tables, etc.) can never shift the whole page left under the
+                  fixed sidebar / sticky top bar. Wide tables scroll inside their
+                  own overflow container (see ui/table.tsx). */}
+              <main className="min-w-0 flex-1 overflow-y-auto overflow-x-clip p-4 md:p-6 animate-page-enter">{children}</main>
             </SidebarInset>
           </MiraContextProvider>
         </BrandingProvider>

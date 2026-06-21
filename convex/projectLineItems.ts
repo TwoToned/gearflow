@@ -686,3 +686,13 @@ export const mergeGroup = mutation({
     return { canonicalId: a.canonicalId };
   },
 });
+
+// ── CUSTOM (Phase C H) — relation lookups for delete-guards ──
+export const listByAssetId = query({
+  args: { assetId: v.string(), orgId: v.string() },
+  handler: async (ctx, { assetId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect())
+      .filter((r) => r.organizationId === orgId);
+  },
+});

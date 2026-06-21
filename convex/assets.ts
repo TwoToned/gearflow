@@ -290,3 +290,13 @@ export const bulkUpdate = mutation({
     return n;
   },
 });
+
+// ── CUSTOM (Phase C H) — child-asset lookup ──
+export const listByParentAssetId = query({
+  args: { parentAssetId: v.string(), orgId: v.string() },
+  handler: async (ctx, { parentAssetId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("assets").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", parentAssetId)).collect())
+      .filter((r) => r.organizationId === orgId);
+  },
+});

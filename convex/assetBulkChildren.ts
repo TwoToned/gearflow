@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgRead } from "./lib/auth";
 import * as enums from "./lib/validators";
 
 /**
@@ -106,5 +106,15 @@ export const remove = mutation({
     const doc = await ctx.db.query("assetBulkChildren").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("assetBulkChildren not found: " + id);
     await ctx.db.delete(doc._id);
+  },
+});
+
+// ── CUSTOM (Phase C H) — relation lookup ──
+export const listByParentAssetId = query({
+  args: { parentAssetId: v.string(), orgId: v.string() },
+  handler: async (ctx, { parentAssetId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("assetBulkChildren").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", parentAssetId)).collect())
+      .filter((r) => r.organizationId === orgId);
   },
 });

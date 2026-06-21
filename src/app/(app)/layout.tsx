@@ -34,9 +34,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <OrgActivator />
             <DynamicFavicon />
             <AppSidebar />
-            <SidebarInset className="min-h-0">
+            <SidebarInset className="min-h-0 min-w-0">
               <TopBar />
-              <main className="flex-1 overflow-auto p-4 md:p-6 animate-page-enter">{children}</main>
+              <main className="min-w-0 flex-1 overflow-auto p-4 md:p-6 animate-page-enter">{children}</main>
             </SidebarInset>
           </MiraContextProvider>
         </BrandingProvider>

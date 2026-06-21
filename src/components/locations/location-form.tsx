@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { MapPin } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
@@ -12,6 +15,7 @@ import { createLocation, updateLocation } from "@/server/locations";
 import { useLocations } from "@/hooks/use-locations";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useOrgTags } from "@/hooks/use-org-tags";
+import { locationTypeLabels } from "@/lib/status-labels";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
@@ -19,23 +23,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
-import { locationTypeLabels } from "@/lib/status-labels";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+} from "@/components/ui/smart-form";
+import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 
 interface LocationFormProps {
   initialData?: LocationFormValues & { id: string };
 }
 
+const LOCATION_TYPE_ORDER = ["WAREHOUSE", "VENUE", "VEHICLE", "OFFSITE"] as const;
+
 export function LocationForm({ initialData }: LocationFormProps) {
   const router = useRouter();
   const isEditing = !!initialData?.id;
+  const [showCreateParent, setShowCreateParent] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
@@ -43,7 +52,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
   // Reactive location list from Convex (a sibling created elsewhere appears as a
   // selectable parent instantly). Exclude self — a location can't be its own parent.
   const allLocations = (useLocations(orgId) ?? []).filter(
-    (l) => l.id !== initialData?.id
+    (l) => l.id !== initialData?.id,
   );
 
   const orgTags = useOrgTags(orgId);
@@ -59,8 +68,11 @@ export function LocationForm({ initialData }: LocationFormProps) {
       isDefault: false,
       notes: "",
       parentId: null,
+      tags: [],
     },
   });
+
+  const v = form.watch();
 
   const mutation = useServerMutation({
     mutationFn: (data: LocationFormValues) =>
@@ -73,74 +85,112 @@ export function LocationForm({ initialData }: LocationFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Derivations ───────────────────────────────────────────────
+  const parentLoc = v.parentId ? allLocations.find((l) => l.id === v.parentId) : null;
+  const parentAddress = parentLoc?.address || undefined;
+
+  const previewName = (v.name || "New location").trim();
+  const typeLabel = locationTypeLabels[v.type ?? "WAREHOUSE"] ?? "Warehouse";
+  const previewAddress = (v.address || parentAddress || "").trim();
+
+  const helperTip = !v.name
+    ? "Start with a name — Main warehouse, Loading dock, Truck 2. That's enough to save."
+    : !previewAddress
+      ? "Add an address to map it and bias address search. Optional — name is all you need."
+      : "Looking good. Nest it under a parent or set it as the default for new assets.";
+
   return (
-    <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
-      <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))}>
-        <SectionHeader label="Details" />
-        <FormSection className="mt-4">
-          <div className="space-y-3.5 sm:col-span-2">
-          <div className="space-y-2">
-            <Label>Name *</Label>
-            <Input {...form.register("name")} placeholder="Main warehouse" aria-invalid={!!form.formState.errors.name} />
-            {form.formState.errors.name && (
-              <p className="text-caption text-t-out">{form.formState.errors.name.message}</p>
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select
-                value={form.watch("type")}
-                onValueChange={(v) => form.setValue("type", (v ?? "WAREHOUSE") as LocationFormValues["type"])}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {locationTypeLabels[form.watch("type") ?? "WAREHOUSE"]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
-                  <SelectItem value="VENUE">Venue</SelectItem>
-                  <SelectItem value="VEHICLE">Vehicle</SelectItem>
-                  <SelectItem value="OFFSITE">Offsite</SelectItem>
-                </SelectContent>
-              </Select>
+    <SmartFormLayout
+      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
+      aside={
+        <>
+          <SmartFormRail eyebrow={isEditing ? "Editing" : "New location"} tip={helperTip} />
+          <SmartFormPreview>
+            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                  <MapPin className="h-4 w-4" strokeWidth={1.5} />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New location" ? "text-faint" : "text-ink")}>
+                    {previewName}
+                  </p>
+                  <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                    {typeLabel}
+                  </span>
+                  <p className={cn("text-caption", previewAddress ? "text-muted" : "text-faint")}>
+                    {previewAddress || "No address yet"}
+                  </p>
+                </div>
+              </div>
             </div>
-
-            <div className="space-y-2">
-              <Label>Parent location</Label>
-              <Select
-                value={form.watch("parentId") || "__none__"}
-                onValueChange={(v) => form.setValue("parentId", v === "__none__" ? null : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {allLocations.find((l) => l.id === form.watch("parentId"))?.name || "None"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {allLocations.map((loc) => (
-                    <SelectItem key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          </SmartFormPreview>
+        </>
+      }
+    >
+      <div className="space-y-8">
+        {/* Identity */}
+        <SmartFormSection title="Identity" hint="What it is and what kind of place." divider={false}>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <SmartFormField label="Name" required error={form.formState.errors.name?.message}>
+                <Input
+                  {...form.register("name")}
+                  placeholder="Main warehouse"
+                  aria-invalid={!!form.formState.errors.name}
+                />
+              </SmartFormField>
             </div>
+            <SmartFormField label="Type">
+              <Controller control={form.control} name="type" render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={(val) => field.onChange((val ?? "WAREHOUSE") as LocationFormValues["type"])}
+                >
+                  <SelectTrigger>
+                    <SelectValue>{locationTypeLabels[field.value ?? "WAREHOUSE"] ?? "Warehouse"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOCATION_TYPE_ORDER.map((t) => (
+                      <SelectItem key={t} value={t}>{locationTypeLabels[t]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )} />
+            </SmartFormField>
           </div>
+        </SmartFormSection>
 
-          <div className="space-y-2">
-            <Label>Address</Label>
-            <Controller
-              name="address"
-              control={form.control}
-              render={({ field }) => {
-                const parentId = form.watch("parentId");
-                const parentLoc = parentId ? allLocations.find((l) => l.id === parentId) : null;
-                const parentAddress = parentLoc?.address || undefined;
-                return (
+        {/* Place */}
+        <SmartFormSection title="Place" hint="Where it sits and how it nests.">
+          <div className="space-y-5">
+            <SmartFormField label="Parent location" hint="Nest this under another location, e.g. a zone in a warehouse.">
+              <Controller control={form.control} name="parentId" render={({ field }) => (
+                <ComboboxPicker
+                  value={field.value || ""}
+                  onChange={(val) => field.onChange(val || null)}
+                  options={allLocations.map((loc) => ({
+                    value: loc.id,
+                    label: loc.name,
+                    description: locationTypeLabels[loc.type ?? "WAREHOUSE"] ?? loc.type,
+                  }))}
+                  placeholder="None (top-level)"
+                  searchPlaceholder="Search locations…"
+                  emptyMessage="No locations found."
+                  onCreateNew={() => setShowCreateParent(true)}
+                  createNewLabel="New location"
+                  allowClear
+                />
+              )} />
+            </SmartFormField>
+            <SmartFormField
+              label="Address"
+              hint={v.parentId && !v.address ? "Using the parent location's address. Type to set a custom one." : undefined}
+            >
+              <Controller
+                name="address"
+                control={form.control}
+                render={({ field }) => (
                   <AddressInput
                     value={field.value ?? ""}
                     onChange={field.onChange}
@@ -154,63 +204,71 @@ export function LocationForm({ initialData }: LocationFormProps) {
                       }
                     }}
                     initialCoordinates={
-                      form.watch("latitude") != null && form.watch("longitude") != null
-                        ? { latitude: form.watch("latitude") as number, longitude: form.watch("longitude") as number }
+                      v.latitude != null && v.longitude != null
+                        ? { latitude: v.latitude as number, longitude: v.longitude as number }
                         : null
                     }
                     placeholder={parentAddress ? `Inherited: ${parentAddress}` : "123 Main St, City"}
                     countryCode={orgCountry}
                   />
-                );
-              }}
-            />
-            {form.watch("parentId") && !form.watch("address") && (
-              <p className="text-caption text-muted">
-                Using parent location&apos;s address. Type to set a custom address.
-              </p>
-            )}
+                )}
+              />
+            </SmartFormField>
           </div>
+        </SmartFormSection>
 
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea {...form.register("notes")} rows={3} placeholder="Additional details about this location..." />
-          </div>
+        {/* More details — progressive disclosure */}
+        <section className="border-t border-line pt-6">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="more" className="border-line">
+              <AccordionTrigger>More details</AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-5 pt-1">
+                  <SmartFormField label="Notes">
+                    <Textarea {...form.register("notes")} rows={3} placeholder="Additional details about this location…" />
+                  </SmartFormField>
+                  <SmartFormField label="Tags">
+                    <Controller
+                      name="tags"
+                      control={form.control}
+                      render={({ field }) => (
+                        <TagInput
+                          value={field.value ?? []}
+                          onChange={field.onChange}
+                          suggestions={orgTags}
+                          placeholder="Add tags…"
+                        />
+                      )}
+                    />
+                  </SmartFormField>
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={v.isDefault}
+                      onCheckedChange={(checked) => form.setValue("isDefault", !!checked)}
+                    />
+                    <Label className="text-ui-text">Default location for new assets</Label>
+                  </label>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </section>
+      </div>
 
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <Controller
-              name="tags"
-              control={form.control}
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  suggestions={orgTags}
-                  placeholder="Add tags..."
-                />
-              )}
-            />
-          </div>
+      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+        <Button type="button" variant="line" onClick={() => router.back()}>
+          Cancel
+        </Button>
+        <Button type="submit" loading={mutation.isPending}>
+          {isEditing ? "Update location" : "Create location"}
+        </Button>
+      </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              checked={form.watch("isDefault")}
-              onCheckedChange={(checked) => form.setValue("isDefault", !!checked)}
-            />
-            <Label className="text-ui-text">Default location for new assets</Label>
-          </div>
-          </div>
-        </FormSection>
-
-        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
-          <Button type="button" variant="line" onClick={() => router.back()}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={mutation.isPending}>
-            {isEditing ? "Update location" : "Create location"}
-          </Button>
-        </div>
-      </form>
-    </div>
+      <QuickCreateLocation
+        open={showCreateParent}
+        onOpenChange={setShowCreateParent}
+        onCreated={(id) => form.setValue("parentId", id)}
+      />
+    </SmartFormLayout>
   );
 }

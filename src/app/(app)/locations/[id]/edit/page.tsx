@@ -61,7 +61,7 @@ function EditLocationContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>

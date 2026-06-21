@@ -14,6 +14,42 @@ Stored in `Organization.metadata` JSON:
 - `reserveAssetTags(count)` — Atomic increment, called ONLY after successful creation
 - Users can override suggested tags. Adding/removing form rows doesn't burn numbers
 
+## Smart Asset Form (`AssetForm`)
+`src/components/assets/asset-form.tsx` — the create/edit form for serialized
+assets, served by `/assets/registry/new` and `/assets/registry/[id]/edit` (the
+bulk path still routes to `BulkAssetForm`, unchanged). This is the **reference
+"smart single-page form"** that sets the bar for the app's moderate forms —
+modelled on the new-project wizard's quality (helper rail, smart inputs, inline
+quick-create, RVLT tokens, fun microcopy) but as ONE clean page, not multi-step.
+
+- **Layout** — two columns (`lg:grid-cols-[1fr_280px]`): the form card (`1fr`) +
+  a sticky **helper rail** (`hidden lg:block`, drops on mobile). The new/edit
+  pages widen the serialized container to `max-w-5xl` (bulk stays `max-w-3xl`).
+- **Sections** (flat, `border-t` separators, no per-section card):
+  1. **Identity** — Equipment model, asset tag / serial (+ multi-asset add-rows),
+     custom name.
+  2. **Condition & location** — status, condition, location.
+  3. **Purchase** — purchase date, price, supplier, PO# (revealed when a supplier
+     is set), warranty expiry.
+  4. **More details** — custom fields + notes + tags, collapsed by default in a
+     registry `Accordion` (progressive disclosure; the common case is fast).
+- **Smart inputs:**
+  - Model — `ComboboxPicker` (searchable). No quick-create-model component exists,
+    so the picker's "＋ New model" routes to `/assets/models/new`.
+  - Asset tag — `AssetTagInput` (mono), pre-filled via `peekNextAssetTags(1)`
+    (preview only, no counter burn). The `+`-button multi-asset branch is intact.
+  - Location / Supplier — `ComboboxPicker` with inline quick-create
+    (`QuickCreateLocation` / `QuickCreateSupplier`).
+  - Status / Condition — registry `Select` with explicit `SelectValue` children
+    from `assetStatusLabels` / `conditionLabels`.
+- **Helper rail** — a Kalam (`font-hand text-t-out`) contextual tip that changes
+  with progress, plus a **live preview**: a mini gear card that updates as you
+  type (model image or `Package` placeholder, model/custom name, asset tag in
+  mono, and a `StatusIndicator` pill driven by the chosen status).
+- **Preserved:** same `assetSchema` (unchanged), same `createAsset` /
+  `createAssets` / `updateAsset` server actions, same persisted fields, the
+  bulk-create extra-rows path, and the permission gates on the route pages.
+
 ## Asset Registry List (`/assets/registry`)
 The list page (`page.tsx`) is a thin auth-gated wrapper that renders `<AssetsView />`.
 

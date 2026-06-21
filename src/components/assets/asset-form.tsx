@@ -2,37 +2,47 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Package } from "lucide-react";
 import { toast } from "sonner";
 
-import { Controller } from "react-hook-form";
+import { cn } from "@/lib/utils";
 import { assetSchema, type AssetFormValues } from "@/lib/validations/asset";
 import { createAsset, createAssets, updateAsset } from "@/server/assets";
-import { useOrgTags } from "@/hooks/use-org-tags";
-import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
+import { assetStatusLabels, conditionLabels } from "@/lib/status-labels";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { useModels } from "@/hooks/use-models";
 import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
 import { CustomFieldsInput } from "@/components/custom-fields/custom-fields-input";
-import { useActiveOrganization } from "@/lib/auth-client";
 
 interface AssetFormProps {
   initialData?: AssetFormValues & { id: string };
   preselectedModelId?: string;
 }
+
+const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RESERVED", "RETIRED", "LOST"] as const;
+const CONDITION_ORDER = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 
 export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const router = useRouter();
@@ -87,6 +97,8 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
       images: [],
     },
   });
+
+  const v = form.watch();
 
   // Auto-populate asset tag for new assets (preview only, no counter increment)
   useEffect(() => {
@@ -149,38 +161,56 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
 
   const totalCount = 1 + extraAssets.length;
 
+  // ─── Live-preview derivations ──────────────────────────────────
+  const selectedModel = models.find((m) => m.id === v.modelId);
+  const modelLabel = selectedModel
+    ? `${selectedModel.manufacturer ? `${selectedModel.manufacturer} ` : ""}${selectedModel.name}`
+    : null;
+  const modelImage = selectedModel?.image || selectedModel?.images?.[0] || null;
+  const previewName = (v.customName || modelLabel || "New asset").trim();
+  const previewTag = (v.assetTag || "").trim();
+  const statusLabel = assetStatusLabels[v.status ?? "AVAILABLE"] ?? "Available";
+
+  const helperTip = !v.modelId
+    ? "Start with the model — everything else hangs off it. The rest can wait."
+    : !previewTag
+      ? "An asset tag is how the warehouse finds this on a shelf. We pre-filled the next one."
+      : "Looking good. Status, location and purchase details are all optional — fill what you know.";
+
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="grid gap-6 lg:grid-cols-[1fr_280px]">
+      {/* ─── Main form column ─────────────────────────────────── */}
+      <div className="rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
         <div className="space-y-8">
-      <SectionHeader label="Asset details" />
-      <FormSection>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label>Equipment model *</Label>
-            <ComboboxPicker
-              value={form.watch("modelId")}
-              onChange={(v) => form.setValue("modelId", v, { shouldValidate: true })}
-              options={models.map((m) => ({
-                value: m.id,
-                label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
-                description: m.modelNumber || undefined,
-              }))}
-              placeholder="Select a model"
-              searchPlaceholder="Search models..."
-            />
-            {form.formState.errors.modelId && (
-              <p className="text-caption text-t-out">{form.formState.errors.modelId.message}</p>
-            )}
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <div className="flex items-center gap-2">
-              <Label className="flex-none">Asset tag *</Label>
-              <Label className="flex-none text-muted">/ Serial number</Label>
-            </div>
-            <div className="space-y-2">
+          {/* Identity */}
+          <section className="space-y-5">
+            <SectionTitle title="Identity" hint="What it is and how you'll find it." />
+            <Field label="Equipment model" required error={form.formState.errors.modelId?.message}>
+              <Controller control={form.control} name="modelId" render={({ field }) => (
+                <ComboboxPicker
+                  value={field.value || ""}
+                  onChange={(val) => field.onChange(val)}
+                  options={models.map((m) => ({
+                    value: m.id,
+                    label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
+                    description: m.modelNumber || undefined,
+                  }))}
+                  placeholder="Select a model…"
+                  searchPlaceholder="Search models…"
+                  emptyMessage="No models found."
+                  onCreateNew={() => router.push("/assets/models/new")}
+                  createNewLabel="New model"
+                />
+              )} />
+            </Field>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Label className="flex-none">Asset tag<span className="text-red"> *</span></Label>
+                <Label className="flex-none text-muted">/ Serial number</Label>
+              </div>
               <div className="flex gap-2">
-                <AssetTagInput {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="Asset tag" className="flex-1" />
+                <AssetTagInput {...form.register("assetTag")} onScan={(val) => form.setValue("assetTag", val)} placeholder="Asset tag" className="flex-1 font-mono" />
                 <Input {...form.register("serialNumber")} placeholder="Serial number" className="flex-1" />
                 {!isEditing && (
                   <Button type="button" variant="line" size="icon" className="shrink-0" onClick={addExtraAsset} title="Add another asset">
@@ -189,16 +219,19 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                 )}
               </div>
               {form.formState.errors.assetTag && (
-                <p className="text-caption text-t-out">{form.formState.errors.assetTag.message}</p>
+                <p className="t-micro text-t-out">{form.formState.errors.assetTag.message}</p>
+              )}
+              {!isEditing && !form.formState.errors.assetTag && (
+                <p className="t-micro text-muted">Pre-filled from your next sequence — edit it or scan a label.</p>
               )}
               {extraAssets.map((asset, i) => (
                 <div key={i} className="flex gap-2">
                   <AssetTagInput
                     value={asset.tag}
                     onChange={(e) => updateExtraAsset(i, "tag", e.target.value)}
-                    onScan={(v) => updateExtraAsset(i, "tag", v)}
+                    onScan={(val) => updateExtraAsset(i, "tag", val)}
                     placeholder="Asset tag"
-                    className="flex-1"
+                    className="flex-1 font-mono"
                   />
                   <Input
                     value={asset.serialNumber}
@@ -206,151 +239,162 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                     placeholder="Serial number"
                     className="flex-1"
                   />
-                  <Button type="button" variant="line" size="icon" className="shrink-0" onClick={() => removeExtraAsset(i)}>
+                  <Button type="button" variant="line" size="icon" className="shrink-0" onClick={() => removeExtraAsset(i)} title="Remove">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
               {extraAssets.length > 0 && (
-                <p className="text-caption text-muted">
-                  Creating {totalCount} assets with the same details
+                <p className="t-micro text-muted">
+                  Creating {totalCount} assets with the same model & details.
                 </p>
               )}
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="customName">Custom name</Label>
-            <Input id="customName" {...form.register("customName")} placeholder="e.g. FOH Console 1" />
-          </div>
-          <div className="space-y-2">
-            <Label>Location</Label>
-            <ComboboxPicker
-              value={form.watch("locationId") || ""}
-              onChange={(v) => form.setValue("locationId", v)}
-              options={locations.map((loc) => ({
-                value: loc.id,
-                label: loc.parent ? `${loc.parent.name} → ${loc.name}` : loc.name,
-                description: loc.type,
-              }))}
-              placeholder="No location"
-              searchPlaceholder="Search locations..."
-              onCreateNew={() => setShowCreateLocation(true)}
-              createNewLabel="New location"
-              allowClear
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <select
-              id="status"
-              {...form.register("status")}
-              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <option value="AVAILABLE">Available</option>
-              <option value="CHECKED_OUT">Deployed</option>
-              <option value="IN_MAINTENANCE">In maintenance</option>
-              <option value="RESERVED">Reserved</option>
-              <option value="RETIRED">Retired</option>
-              <option value="LOST">Lost</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="condition">Condition</Label>
-            <select
-              id="condition"
-              {...form.register("condition")}
-              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <option value="NEW">New</option>
-              <option value="GOOD">Good</option>
-              <option value="FAIR">Fair</option>
-              <option value="POOR">Poor</option>
-              <option value="DAMAGED">Damaged</option>
-            </select>
-          </div>
-        </div>
-      </FormSection>
 
-      <SectionHeader label="Purchase information" />
-      <FormSection>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="purchaseDate">Purchase date</Label>
-            <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="purchasePrice">Purchase price ($)</Label>
-            <Input id="purchasePrice" type="number" step="0.01" {...form.register("purchasePrice")} />
-          </div>
-          <div className="space-y-2">
-            <Label>Supplier</Label>
-            <ComboboxPicker
-              value={form.watch("supplierId") || ""}
-              onChange={(v) => form.setValue("supplierId", v)}
-              options={(suppliers as Array<{ id: string; name: string; contactName?: string | null }>).map((s) => ({
-                value: s.id,
-                label: s.name,
-                description: s.contactName || undefined,
-              }))}
-              placeholder="No supplier"
-              searchPlaceholder="Search suppliers..."
-              onCreateNew={() => setShowCreateSupplier(true)}
-              createNewLabel="New supplier"
-              allowClear
-            />
-          </div>
-          {form.watch("supplierId") && (
-            <div className="space-y-2">
-              <Label htmlFor="purchaseOrderNumber">Purchase order #</Label>
-              <Input id="purchaseOrderNumber" {...form.register("purchaseOrderNumber")} placeholder="e.g. PO-2024-001" />
+            <Field label="Custom name" hint="An optional friendly name, e.g. FOH Console 1.">
+              <Input {...form.register("customName")} placeholder="e.g. FOH Console 1" />
+            </Field>
+          </section>
+
+          {/* Condition & location */}
+          <section className="space-y-5 border-t border-line pt-6">
+            <SectionTitle title="Condition & location" hint="Where it lives and what shape it's in." />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Status">
+                <Controller control={form.control} name="status" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue>{assetStatusLabels[field.value ?? "AVAILABLE"] ?? "Available"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_ORDER.map((s) => (
+                        <SelectItem key={s} value={s}>{assetStatusLabels[s]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )} />
+              </Field>
+              <Field label="Condition">
+                <Controller control={form.control} name="condition" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue>{conditionLabels[field.value ?? "NEW"] ?? "New"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONDITION_ORDER.map((c) => (
+                        <SelectItem key={c} value={c}>{conditionLabels[c]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )} />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Location">
+                  <Controller control={form.control} name="locationId" render={({ field }) => (
+                    <ComboboxPicker
+                      value={field.value || ""}
+                      onChange={field.onChange}
+                      options={locations.map((loc) => ({
+                        value: loc.id,
+                        label: loc.parent ? `${loc.parent.name} → ${loc.name}` : loc.name,
+                        description: loc.type,
+                      }))}
+                      placeholder="No location"
+                      searchPlaceholder="Search locations…"
+                      emptyMessage="No locations found."
+                      onCreateNew={() => setShowCreateLocation(true)}
+                      createNewLabel="New location"
+                      allowClear
+                    />
+                  )} />
+                </Field>
+              </div>
             </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="warrantyExpiry">Warranty expiry</Label>
-            <Input id="warrantyExpiry" type="date" {...form.register("warrantyExpiry")} />
-          </div>
-        </div>
-      </FormSection>
+          </section>
 
-      {/* Operator-defined custom fields — renders nothing if none configured */}
-      <Controller
-        name="customFieldValues"
-        control={form.control}
-        render={({ field }) => (
-          <CustomFieldsInput
-            entityType="ASSET"
-            values={(field.value as Record<string, string>) ?? {}}
-            onChange={field.onChange}
-          />
-        )}
-      />
-
-      <SectionHeader label="Notes" />
-      <FormSection>
-          <Label htmlFor="notes">Notes</Label>
-          <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} className="mt-2" />
-      </FormSection>
-
-      <SectionHeader label="Tags" />
-      <FormSection>
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <Controller
-              name="tags"
-              control={form.control}
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  suggestions={orgTags}
-                  placeholder="Add tags..."
-                />
+          {/* Purchase */}
+          <section className="space-y-5 border-t border-line pt-6">
+            <SectionTitle title="Purchase" hint="Optional — handy for warranty & depreciation." />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Purchase date">
+                <Input type="date" {...form.register("purchaseDate")} />
+              </Field>
+              <Field label="Purchase price ($)">
+                <Input type="number" step="0.01" {...form.register("purchasePrice")} placeholder="0.00" />
+              </Field>
+              <Field label="Supplier">
+                <Controller control={form.control} name="supplierId" render={({ field }) => (
+                  <ComboboxPicker
+                    value={field.value || ""}
+                    onChange={field.onChange}
+                    options={(suppliers as Array<{ id: string; name: string; contactName?: string | null }>).map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                      description: s.contactName || undefined,
+                    }))}
+                    placeholder="No supplier"
+                    searchPlaceholder="Search suppliers…"
+                    emptyMessage="No suppliers found."
+                    onCreateNew={() => setShowCreateSupplier(true)}
+                    createNewLabel="New supplier"
+                    allowClear
+                  />
+                )} />
+              </Field>
+              {v.supplierId && (
+                <Field label="Purchase order #">
+                  <Input {...form.register("purchaseOrderNumber")} placeholder="e.g. PO-2024-001" />
+                </Field>
               )}
-            />
-          </div>
-      </FormSection>
+              <Field label="Warranty expiry">
+                <Input type="date" {...form.register("warrantyExpiry")} />
+              </Field>
+            </div>
+          </section>
 
+          {/* More details — progressive disclosure */}
+          <section className="border-t border-line pt-6">
+            <Accordion type="single" collapsible>
+              <AccordionItem value="more" className="border-line">
+                <AccordionTrigger>More details</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-5 pt-1">
+                    {/* Operator-defined custom fields — renders nothing if none configured */}
+                    <Controller
+                      name="customFieldValues"
+                      control={form.control}
+                      render={({ field }) => (
+                        <CustomFieldsInput
+                          entityType="ASSET"
+                          values={(field.value as Record<string, string>) ?? {}}
+                          onChange={field.onChange}
+                        />
+                      )}
+                    />
+                    <Field label="Notes">
+                      <Textarea {...form.register("notes")} placeholder="Any additional notes" rows={3} />
+                    </Field>
+                    <Field label="Tags">
+                      <Controller
+                        name="tags"
+                        control={form.control}
+                        render={({ field }) => (
+                          <TagInput
+                            value={field.value ?? []}
+                            onChange={field.onChange}
+                            suggestions={orgTags}
+                            placeholder="Add tags…"
+                          />
+                        )}
+                      />
+                    </Field>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </section>
         </div>
+
         <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
           <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
@@ -360,6 +404,45 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           </Button>
         </div>
       </div>
+
+      {/* ─── Helper rail ──────────────────────────────────────── */}
+      <aside className="hidden lg:block">
+        <div className="sticky top-4 space-y-4 rounded-[var(--r-lg)] border border-line bg-paper-2/50 p-4">
+          <div>
+            <p className="t-overline text-faint">{isEditing ? "Editing" : "New asset"}</p>
+            <p className="mt-1 font-hand text-[15px] text-t-out">{helperTip}</p>
+          </div>
+
+          {/* Live preview — a mini gear card that fills in as you type */}
+          <div className="space-y-2 border-t border-line pt-3">
+            <p className="t-overline text-faint">Preview</p>
+            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
+              <div className="flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
+                {modelImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={modelImage} alt={modelLabel ?? "Asset"} className="h-full w-full object-cover" />
+                ) : (
+                  <Package className="h-8 w-8 text-faint" strokeWidth={1.5} />
+                )}
+              </div>
+              <div className="space-y-1.5 p-3">
+                <p className={cn("text-card-title font-semibold leading-tight", previewName === "New asset" ? "text-faint" : "text-ink")}>
+                  {previewName}
+                </p>
+                <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-faint")}>
+                  {previewTag || "No tag yet"}
+                </p>
+                <div className="pt-0.5">
+                  <StatusIndicator category="asset" value={v.status ?? "AVAILABLE"} label={statusLabel} variant="pill" />
+                </div>
+              </div>
+            </div>
+            {extraAssets.length > 0 && (
+              <p className="t-micro text-muted">+ {extraAssets.length} more with the same details.</p>
+            )}
+          </div>
+        </div>
+      </aside>
 
       <QuickCreateLocation
         open={showCreateLocation}
@@ -372,5 +455,31 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
         onCreated={(id) => form.setValue("supplierId", id)}
       />
     </form>
+  );
+}
+
+// ─── Local helpers ───────────────────────────────────────────────
+
+function SectionTitle({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <h2 className="text-card-title font-bold text-ink">{title}</h2>
+      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+function Field({
+  label, required, hint, error, children,
+}: {
+  label: string; required?: boolean; hint?: string; error?: string; children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
+      {children}
+      {hint && !error && <p className="t-micro text-muted">{hint}</p>}
+      {error && <p className="t-micro text-t-out">{error}</p>}
+    </div>
   );
 }

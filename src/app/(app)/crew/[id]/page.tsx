@@ -16,6 +16,8 @@ import {
   Briefcase,
   CalendarOff,
   CalendarSync,
+  CalendarDays,
+  DollarSign,
   Copy,
   RefreshCw,
   Clock,
@@ -134,12 +136,45 @@ import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/compo
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { getStatusColor } from "@/lib/status-colors";
 import { focusRing } from "@/lib/utils";
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatCurrency } from "@/lib/formatters";
 
 // Availability-block pill styling via status-colors (§3): UNAVAILABLE = error,
 // TENTATIVE = warn, PREFERRED = ok.
 function availabilityPill(type: string): string {
   return getStatusColor("availabilityType", type).pill;
+}
+
+// ─── At-a-glance tile ────────────────────────────────────────────────────────
+
+/**
+ * One tile in the crew profile's at-a-glance strip — mirrors the project
+ * detail summary strip (single surface, vertical dividers; DESIGN dashboard
+ * rule). Calm by default: callers pass a muted node for empty/zero values
+ * rather than a bare "—".
+ */
+function GlanceTile({
+  label,
+  icon: Icon,
+  value,
+  sub,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  value: React.ReactNode;
+  sub?: string;
+}) {
+  return (
+    <div className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]">
+      <div className="flex items-center gap-1.5 text-muted">
+        <Icon className="size-3.5" />
+        <span className="t-overline">{label}</span>
+      </div>
+      <div className="mt-0.5 text-card-title font-bold tabular-nums tracking-tight text-ink">
+        {value}
+      </div>
+      {sub && <p className="truncate text-caption text-muted">{sub}</p>}
+    </div>
+  );
 }
 
 
@@ -396,6 +431,50 @@ export default function CrewMemberDetailPage({
       new Date(av.endDate) >= now
   );
 
+  // ── At-a-glance metrics (calm-by-default — computed, not "—" noise) ────────
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  // Upcoming shifts: assignments that haven't ended yet, in a live state.
+  const upcomingAssignments = (assignments as any[]).filter((a) => {
+    if (["CANCELLED", "DECLINED", "COMPLETED"].includes(a.status)) return false;
+    const end = a.endDate ? new Date(a.endDate) : a.startDate ? new Date(a.startDate) : null;
+    return end ? end >= todayStart : true;
+  });
+  const nextAssignment = [...upcomingAssignments]
+    .filter((a) => a.startDate)
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
+
+  // Active assignments = currently live (not cancelled/declined/completed).
+  const activeAssignmentCount = (assignments as any[]).filter(
+    (a) => !["CANCELLED", "DECLINED", "COMPLETED"].includes(a.status)
+  ).length;
+
+  // Approved hours logged this calendar month.
+  const hoursThisMonth = (timeEntries ?? [])
+    .filter(
+      (e: { status: string; date: string | Date; totalHours: unknown }) =>
+        e.status === "APPROVED" &&
+        e.totalHours != null &&
+        new Date(e.date) >= monthStart
+    )
+    .reduce(
+      (sum: number, e: { totalHours: unknown }) => sum + Number(e.totalHours),
+      0
+    );
+  const hasApprovedHours = (timeEntries ?? []).some(
+    (e: { status: string }) => e.status === "APPROVED"
+  );
+
+  // Headline rate: prefer day rate, fall back to hourly.
+  const rate =
+    member.defaultDayRate != null
+      ? { value: Number(member.defaultDayRate), unit: "/day" }
+      : member.defaultHourlyRate != null
+        ? { value: Number(member.defaultHourlyRate), unit: "/hr" }
+        : null;
+
   return (
     <>
       <PageMeta title={fullName} />
@@ -475,8 +554,8 @@ export default function CrewMemberDetailPage({
                   )}
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-page-title font-display font-extrabold tracking-tight text-ink">{fullName}</h1>
                     <StatusIndicator
                       category="crewMember"
@@ -486,16 +565,50 @@ export default function CrewMemberDetailPage({
                     <Badge status="neutral">
                       {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
                     </Badge>
+                    {activeUnavailable ? (
+                      <Badge status="overbooked" className="gap-1">
+                        <CalendarOff className="h-3 w-3" />
+                        Unavailable
+                      </Badge>
+                    ) : (
+                      <Badge status="ok" className="gap-1">
+                        <CheckCircle className="h-3 w-3" />
+                        Available
+                      </Badge>
+                    )}
                   </div>
-                  <p className="text-ui-text text-muted">
+                  <p className="text-ui-text text-muted mt-0.5">
                     {member.crewRole?.name || "No role assigned"}
                     {member.department && <> &middot; {member.department}</>}
                   </p>
-                  {member.user && !isOwnProfile && (
-                    <p className="text-caption text-muted mt-1 flex items-center gap-1">
-                      <LinkIcon className="h-3 w-3" />
-                      Linked to {member.user.name || member.user.email}
-                    </p>
+                  {/* Contact quick-actions — only render what exists (no "—" noise) */}
+                  {(displayEmail || member.phone || (member.user && !isOwnProfile)) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-caption">
+                      {displayEmail && (
+                        <a
+                          href={`mailto:${displayEmail}`}
+                          className={`flex items-center gap-1.5 text-link hover:underline rounded-[var(--r)] ${focusRing}`}
+                        >
+                          <Mail className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{displayEmail}</span>
+                        </a>
+                      )}
+                      {member.phone && (
+                        <a
+                          href={`tel:${member.phone}`}
+                          className={`flex items-center gap-1.5 text-link hover:underline rounded-[var(--r)] ${focusRing}`}
+                        >
+                          <Phone className="h-3.5 w-3.5 shrink-0" />
+                          {member.phone}
+                        </a>
+                      )}
+                      {member.user && !isOwnProfile && (
+                        <span className="flex items-center gap-1 text-muted">
+                          <LinkIcon className="h-3 w-3" />
+                          Linked to {member.user.name || member.user.email}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -520,6 +633,69 @@ export default function CrewMemberDetailPage({
                 </div>
               </CanDo>
             </div>
+          </div>
+
+          {/* ── At-a-glance strip ──────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
+            <GlanceTile
+              label="Next shift"
+              icon={CalendarDays}
+              value={
+                nextAssignment?.startDate ? (
+                  formatDate(nextAssignment.startDate)
+                ) : (
+                  <span className="text-muted">None booked</span>
+                )
+              }
+              sub={
+                nextAssignment
+                  ? `${nextAssignment.project?.projectNumber ?? ""} ${nextAssignment.project?.name ?? ""}`.trim()
+                  : undefined
+              }
+            />
+            <GlanceTile
+              label="Hours this month"
+              icon={Clock}
+              value={
+                hasApprovedHours ? (
+                  `${hoursThisMonth.toFixed(1)}h`
+                ) : (
+                  <span className="text-muted">0h</span>
+                )
+              }
+              sub="Approved"
+            />
+            <GlanceTile
+              label="Active assignments"
+              icon={Briefcase}
+              value={
+                activeAssignmentCount > 0 ? (
+                  activeAssignmentCount
+                ) : (
+                  <span className="text-muted">0</span>
+                )
+              }
+              sub={`${assignments.length} total`}
+            />
+            <GlanceTile
+              label="Rate"
+              icon={DollarSign}
+              value={
+                rate ? (
+                  <span>
+                    {formatCurrency(rate.value)}
+                    <span className="text-caption font-normal text-muted">{rate.unit}</span>
+                  </span>
+                ) : (
+                  <span className="text-muted">Not set</span>
+                )
+              }
+              sub={
+                member.overtimeMultiplier != null
+                  ? `${Number(member.overtimeMultiplier)}× OT`
+                  : undefined
+              }
+            />
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
@@ -1162,11 +1338,19 @@ export default function CrewMemberDetailPage({
                   <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
                       <span className="text-muted">Role</span>
-                      <span className="font-medium text-ink">{member.crewRole?.name || "\u2014"}</span>
+                      {member.crewRole?.name ? (
+                        <span className="font-medium text-ink">{member.crewRole.name}</span>
+                      ) : (
+                        <span className="text-faint">{"\u2014"}</span>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">Department</span>
-                      <span className="font-medium text-ink">{member.department || "\u2014"}</span>
+                      {member.department ? (
+                        <span className="font-medium text-ink">{member.department}</span>
+                      ) : (
+                        <span className="text-faint">{"\u2014"}</span>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">Type</span>
@@ -1201,27 +1385,33 @@ export default function CrewMemberDetailPage({
                   <div className="space-y-1.5 text-ui-text">
                     <div className="flex justify-between">
                       <span className="text-muted">Day rate</span>
-                      <span className="font-medium font-mono tabular-nums text-ink">
-                        {member.defaultDayRate != null
-                          ? `$${Number(member.defaultDayRate).toFixed(2)}`
-                          : "\u2014"}
-                      </span>
+                      {member.defaultDayRate != null ? (
+                        <span className="font-medium font-mono tabular-nums text-ink">
+                          {`$${Number(member.defaultDayRate).toFixed(2)}`}
+                        </span>
+                      ) : (
+                        <span className="text-faint">{"\u2014"}</span>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">Hourly rate</span>
-                      <span className="font-medium font-mono tabular-nums text-ink">
-                        {member.defaultHourlyRate != null
-                          ? `$${Number(member.defaultHourlyRate).toFixed(2)}`
-                          : "\u2014"}
-                      </span>
+                      {member.defaultHourlyRate != null ? (
+                        <span className="font-medium font-mono tabular-nums text-ink">
+                          {`$${Number(member.defaultHourlyRate).toFixed(2)}`}
+                        </span>
+                      ) : (
+                        <span className="text-faint">{"\u2014"}</span>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">OT multiplier</span>
-                      <span className="font-medium font-mono tabular-nums text-ink">
-                        {member.overtimeMultiplier != null
-                          ? `${Number(member.overtimeMultiplier)}x`
-                          : "\u2014"}
-                      </span>
+                      {member.overtimeMultiplier != null ? (
+                        <span className="font-medium font-mono tabular-nums text-ink">
+                          {`${Number(member.overtimeMultiplier)}x`}
+                        </span>
+                      ) : (
+                        <span className="text-faint">{"\u2014"}</span>
+                      )}
                     </div>
                   </div>
                 </SidebarSection>

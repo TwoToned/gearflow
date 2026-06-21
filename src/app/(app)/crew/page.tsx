@@ -23,6 +23,7 @@ import {
 
 import { focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -285,10 +286,11 @@ function CrewDashboard() {
       {/* Two-column grid */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Pending timesheets */}
-        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-card-title font-bold text-ink">Pending timesheets</h3>
-            {pendingTime && pendingTime.length > 0 && (
+        <DashboardListCard
+          title="Pending timesheets"
+          count={pendingTime?.length}
+          action={
+            pendingTime && pendingTime.length > 0 ? (
               <Button
                 variant="line"
                 size="sm"
@@ -301,257 +303,232 @@ function CrewDashboard() {
                 <CheckCircle className="size-5" />
                 Approve all
               </Button>
-            )}
-          </div>
-          {pendingTimeError ? (
-            <CardErrorNotice
-              message="Couldn't load pending timesheets. Check your connection and try again."
-              onRetry={() => refetchPendingTime()}
-            />
-          ) : pendingTimeLoading ? (
-            <CardRowSkeleton count={3} />
-          ) : !pendingTime || pendingTime.length === 0 ? (
-            <p className="text-ui-text text-muted">
-              No timesheets awaiting approval.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {pendingTime.map((entry: any) => (
-                <div
-                  key={entry.id}
-                  className="flex items-center justify-between rounded-[var(--r)] border border-line p-3"
+            ) : null
+          }
+          error={pendingTimeError}
+          onRetry={() => refetchPendingTime()}
+          errorMessage="Couldn't load pending timesheets. Check your connection and try again."
+          loading={pendingTimeLoading}
+          isEmpty={!pendingTime || pendingTime.length === 0}
+          emptyText="No timesheets awaiting approval."
+        >
+          {pendingTime?.map((entry: any) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between rounded-[var(--r)] border border-line p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {entry.crewMember?.firstName}{" "}
+                  {entry.crewMember?.lastName}
+                </p>
+                <p className="text-caption text-muted">
+                  {entry.assignment
+                    ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
+                    : entry.description || "General"}
+                  {" · "}
+                  {formatDate(entry.date)}
+                  {" · "}
+                  {entry.startTime}–{entry.endTime}
+                  {entry.totalHours != null &&
+                    ` · ${Number(entry.totalHours).toFixed(1)}h`}
+                </p>
+              </div>
+              <div className="flex gap-1 ml-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-ok hover:bg-ok-soft"
+                  aria-label="Approve timesheet"
+                  title="Approve"
+                  onClick={() => approveMutation.mutate([entry.id])}
+                  disabled={approveMutation.isPending}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ui-text font-medium text-ink">
-                      {entry.crewMember?.firstName}{" "}
-                      {entry.crewMember?.lastName}
-                    </p>
-                    <p className="text-caption text-muted">
-                      {entry.assignment
-                        ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
-                        : entry.description || "General"}
-                      {" · "}
-                      {formatDate(entry.date)}
-                      {" · "}
-                      {entry.startTime}–{entry.endTime}
-                      {entry.totalHours != null &&
-                        ` · ${Number(entry.totalHours).toFixed(1)}h`}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 ml-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 text-ok hover:bg-ok-soft"
-                      aria-label="Approve timesheet"
-                      title="Approve"
-                      onClick={() => approveMutation.mutate([entry.id])}
-                      disabled={approveMutation.isPending}
-                    >
-                      <CheckCircle className="size-5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-9 text-warn hover:bg-warn-soft"
-                      aria-label="Dispute timesheet"
-                      title="Dispute"
-                      onClick={() => disputeMutation.mutate(entry.id)}
-                      disabled={disputeMutation.isPending}
-                    >
-                      <AlertTriangle className="size-5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                  <CheckCircle className="size-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-warn hover:bg-warn-soft"
+                  aria-label="Dispute timesheet"
+                  title="Dispute"
+                  onClick={() => disputeMutation.mutate(entry.id)}
+                  disabled={disputeMutation.isPending}
+                >
+                  <AlertTriangle className="size-5" />
+                </Button>
+              </div>
             </div>
-          )}
-        </div>
+          ))}
+        </DashboardListCard>
 
         {/* Active assignments */}
-        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-card-title font-bold text-ink">Active assignments</h3>
+        <DashboardListCard
+          title="Active assignments"
+          count={activeAssignments?.length}
+          action={
             <Link
               href="/crew/planner"
               className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </div>
-          {activeAssignmentsError ? (
-            <CardErrorNotice
-              message="Couldn't load active assignments. Check your connection and try again."
-              onRetry={() => refetchActiveAssignments()}
-            />
-          ) : activeAssignmentsLoading ? (
-            <CardRowSkeleton count={3} avatar />
-          ) : !activeAssignments || activeAssignments.length === 0 ? (
-            <p className="text-ui-text text-muted">
-              No active assignments.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {activeAssignments.map((a: any) => (
-                <Link
-                  key={a.id}
-                  href={`/projects/${a.project?.id}`}
-                  className={`flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:bg-elev transition-colors ${focusRing}`}
-                >
-                  <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ui-text font-medium text-ink">
-                      {a.crewMember?.firstName} {a.crewMember?.lastName}
-                      {a.crewRole && (
-                        <span className="text-muted font-normal">
-                          {" "}
-                          — {a.crewRole.name}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-caption text-muted">
-                      {a.project?.projectNumber} — {a.project?.name}
-                      {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
-                      {a.startDate && ` · ${formatDate(a.startDate)}`}
-                      {a.endDate && `–${formatDate(a.endDate)}`}
-                    </p>
-                  </div>
-                  <StatusIndicator
-                    category="assignment"
-                    value={a.status}
-                    label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                    variant="pill"
-                  />
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+          }
+          error={activeAssignmentsError}
+          onRetry={() => refetchActiveAssignments()}
+          errorMessage="Couldn't load active assignments. Check your connection and try again."
+          loading={activeAssignmentsLoading}
+          loadingAvatar
+          isEmpty={!activeAssignments || activeAssignments.length === 0}
+          emptyText="No active assignments."
+        >
+          {activeAssignments?.map((a: any) => (
+            <Link
+              key={a.id}
+              href={`/projects/${a.project?.id}`}
+              className={`flex items-center gap-3 rounded-[var(--r)] border border-line p-3 hover:bg-elev transition-colors ${focusRing}`}
+            >
+              <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {a.crewMember?.firstName} {a.crewMember?.lastName}
+                  {a.crewRole && (
+                    <span className="text-muted font-normal">
+                      {" "}
+                      — {a.crewRole.name}
+                    </span>
+                  )}
+                </p>
+                <p className="text-caption text-muted">
+                  {a.project?.projectNumber} — {a.project?.name}
+                  {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
+                  {a.startDate && ` · ${formatDate(a.startDate)}`}
+                  {a.endDate && `–${formatDate(a.endDate)}`}
+                </p>
+              </div>
+              <StatusIndicator
+                category="assignment"
+                value={a.status}
+                label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                variant="pill"
+              />
+            </Link>
+          ))}
+        </DashboardListCard>
       </div>
 
       {/* Second row */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Upcoming shifts */}
-        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-card-title font-bold text-ink">Upcoming shifts</h3>
+        <DashboardListCard
+          title="Upcoming shifts"
+          count={upcomingShifts ? groupShiftsByAssignment(upcomingShifts).length : undefined}
+          action={
             <Link
               href="/crew/planner"
               className={`text-caption text-muted hover:text-ink flex items-center gap-1 rounded-[var(--r)] ${focusRing}`}
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </div>
-          {upcomingShiftsError ? (
-            <CardErrorNotice
-              message="Couldn't load upcoming shifts. Check your connection and try again."
-              onRetry={() => refetchUpcomingShifts()}
-            />
-          ) : upcomingShiftsLoading ? (
-            <CardRowSkeleton count={3} avatar />
-          ) : !upcomingShifts || upcomingShifts.length === 0 ? (
-            <p className="text-ui-text text-muted">
-              No upcoming shifts scheduled.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {groupShiftsByAssignment(upcomingShifts).map((group: any) => (
-                <div
-                  key={group.key}
-                  className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
-                >
-                  <PersonAvatar name={group.crewMember || "?"} className="size-8" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ui-text font-medium text-ink">
-                      {group.crewMember}
-                      {group.crewRole && (
-                        <span className="text-muted font-normal">
-                          {" "}
-                          — {group.crewRole}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-caption text-muted">
-                      {group.projectNumber} — {group.projectName}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0 ml-2">
-                    <p className="font-mono text-caption tabular-nums text-ink-2">
-                      {group.startDate === group.endDate
-                        ? formatDate(group.startDate)
-                        : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
-                    </p>
-                    <p className="text-caption text-muted font-mono tabular-nums">
-                      {group.callTime || "—"}–{group.endTime || "—"}
-                      {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
-                    </p>
-                  </div>
+          }
+          error={upcomingShiftsError}
+          onRetry={() => refetchUpcomingShifts()}
+          errorMessage="Couldn't load upcoming shifts. Check your connection and try again."
+          loading={upcomingShiftsLoading}
+          loadingAvatar
+          isEmpty={!upcomingShifts || upcomingShifts.length === 0}
+          emptyText="No upcoming shifts scheduled."
+        >
+          {upcomingShifts &&
+            groupShiftsByAssignment(upcomingShifts).map((group: any) => (
+              <div
+                key={group.key}
+                className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+              >
+                <PersonAvatar name={group.crewMember || "?"} className="size-8" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-ui-text font-medium text-ink">
+                    {group.crewMember}
+                    {group.crewRole && (
+                      <span className="text-muted font-normal">
+                        {" "}
+                        — {group.crewRole}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-caption text-muted">
+                    {group.projectNumber} — {group.projectName}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div className="text-right shrink-0 ml-2">
+                  <p className="font-mono text-caption tabular-nums text-ink-2">
+                    {group.startDate === group.endDate
+                      ? formatDate(group.startDate)
+                      : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
+                  </p>
+                  <p className="text-caption text-muted font-mono tabular-nums">
+                    {group.callTime || "—"}–{group.endTime || "—"}
+                    {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
+                  </p>
+                </div>
+              </div>
+            ))}
+        </DashboardListCard>
 
         {/* Pending offers */}
-        <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-          <h3 className="text-card-title font-bold text-ink mb-4">Pending offers</h3>
-          {pendingOffersError ? (
-            <CardErrorNotice
-              message="Couldn't load pending offers. Check your connection and try again."
-              onRetry={() => refetchPendingOffers()}
-            />
-          ) : pendingOffersLoading ? (
-            <CardRowSkeleton count={3} avatar />
-          ) : !pendingOffers || pendingOffers.length === 0 ? (
-            <p className="text-ui-text text-muted">
-              No pending offers.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {pendingOffers.map((a: any) => (
-                <div
-                  key={a.id}
-                  className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
-                >
-                  <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ui-text font-medium text-ink">
-                      {a.crewMember?.firstName} {a.crewMember?.lastName}
-                      {a.crewRole && (
-                        <span className="text-muted font-normal">
-                          {" "}
-                          — {a.crewRole.name}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-caption text-muted">
-                      {a.project?.projectNumber} — {a.project?.name}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-2">
-                    <StatusIndicator
-                      category="assignment"
-                      value={a.status}
-                      label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                      variant="pill"
-                    />
-                    {a.status === "PENDING" && a.crewMember?.email && (
-                      <Button
-                        variant="line"
-                        size="sm"
-                        onClick={() => sendOfferMutation.mutate(a.id)}
-                        loading={sendOfferMutation.isPending}
-                      >
-                        <Send className="size-5" />
-                        Send
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+        <DashboardListCard
+          title="Pending offers"
+          count={pendingOffers?.length}
+          error={pendingOffersError}
+          onRetry={() => refetchPendingOffers()}
+          errorMessage="Couldn't load pending offers. Check your connection and try again."
+          loading={pendingOffersLoading}
+          loadingAvatar
+          isEmpty={!pendingOffers || pendingOffers.length === 0}
+          emptyText="No pending offers."
+        >
+          {pendingOffers?.map((a: any) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3"
+            >
+              <PersonAvatar name={`${a.crewMember?.firstName ?? ""} ${a.crewMember?.lastName ?? ""}`.trim()} className="size-8" />
+              <div className="min-w-0 flex-1">
+                <p className="text-ui-text font-medium text-ink">
+                  {a.crewMember?.firstName} {a.crewMember?.lastName}
+                  {a.crewRole && (
+                    <span className="text-muted font-normal">
+                      {" "}
+                      — {a.crewRole.name}
+                    </span>
+                  )}
+                </p>
+                <p className="text-caption text-muted">
+                  {a.project?.projectNumber} — {a.project?.name}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-2">
+                <StatusIndicator
+                  category="assignment"
+                  value={a.status}
+                  label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                  variant="pill"
+                />
+                {a.status === "PENDING" && a.crewMember?.email && (
+                  <Button
+                    variant="line"
+                    size="sm"
+                    onClick={() => sendOfferMutation.mutate(a.id)}
+                    loading={sendOfferMutation.isPending}
+                  >
+                    <Send className="size-5" />
+                    Send
+                  </Button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          ))}
+        </DashboardListCard>
       </div>
 
       {/* Crew list */}
@@ -625,6 +602,70 @@ function groupShiftsByAssignment(shifts: any[]) {
   }
 
   return groups;
+}
+
+// ─── Dashboard list card ────────────────────────────────────────────────────
+
+/**
+ * A dashboard list card with a fixed header (title + count chip + optional
+ * action) and a height-capped, internally scrollable body. Caps each of the
+ * four crew dashboard boxes so a long list (e.g. lots of pending offers) can't
+ * grow to swallow the page and hide its siblings. Handles the §8 error / loading
+ * / empty states inline so callers only pass their row markup as children.
+ */
+function DashboardListCard({
+  title,
+  count,
+  action,
+  error,
+  onRetry,
+  errorMessage,
+  loading,
+  loadingAvatar,
+  isEmpty,
+  emptyText,
+  children,
+}: {
+  title: string;
+  count?: number;
+  action?: React.ReactNode;
+  error?: unknown;
+  onRetry: () => void;
+  errorMessage: string;
+  loading?: boolean;
+  loadingAvatar?: boolean;
+  isEmpty: boolean;
+  emptyText: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+      <div className="flex items-center justify-between gap-2 mb-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-card-title font-bold text-ink truncate">{title}</h3>
+          {!loading && !error && count != null && count > 0 && (
+            <Badge status="neutral" className="font-mono tabular-nums">
+              {count}
+            </Badge>
+          )}
+        </div>
+        {action}
+      </div>
+      {error ? (
+        <CardErrorNotice message={errorMessage} onRetry={onRetry} />
+      ) : loading ? (
+        <CardRowSkeleton count={3} avatar={loadingAvatar} />
+      ) : isEmpty ? (
+        <p className="text-ui-text text-muted">{emptyText}</p>
+      ) : (
+        // Cap the list body and scroll internally so the four boxes stay
+        // balanced no matter how many rows each holds.
+        <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1 -mr-1 overscroll-contain">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Dashboard card states (§8 loading / error) ─────────────────────────────

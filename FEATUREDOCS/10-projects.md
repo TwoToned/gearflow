@@ -20,16 +20,34 @@ Project
   → ProjectManager (multi-PM via join table)
 ```
 
-## New Job Wizard (`src/components/projects/project-wizard.tsx`)
+## Project Wizard (`src/components/projects/project-wizard.tsx`)
 
-Creation flow is a 4-step wizard (Basics → Schedule → Site → Review), rendered by
-`/projects/new`. `ProjectWizard` is also reused for templates (`isTemplate` prop
-skips the project-code step). The flat `project-form.tsx` is kept only for the
-**edit** page.
+A single 4-step wizard (Basics → Schedule → Site → Review) backs **create, edit,
+and templates** — there is no separate flat form (the old `project-form.tsx` was
+retired). Routes:
+- `/projects/new` → `<ProjectWizard />` (create)
+- `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
+- `/projects/[id]/edit` → `<ProjectWizard project={project} />` (edit)
 
-- **Project code is required.** Pre-filled from `peekNextProjectNumber()`; the
-  user accepts or overrides. `next()` blocks step 0 if blank (the Zod schema
-  still allows blank for auto-gen, so the requirement is enforced in the wizard).
+**Edit mode** is engaged by passing the `project` prop (the `getProject`/
+`useProjectDetail` composite, typed loosely as `EditableProject`). In edit mode:
+- `defaultValues` are pre-filled from the project across all steps; stored dates
+  are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
+  `HH:mm`. Existing project managers seed `managerIds`.
+- Two edit-only fields appear that create mode hides: **Status** (basics step) and
+  the **Financial** block — discount %, deposit %, deposit paid, invoiced total
+  (site step). These carry the parity that the old flat edit form had.
+- Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
+  the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
+  on the delta only — no dupes, no accidental removals), then routes to
+  `/projects/{id}`. The final CTA reads "Save changes".
+- The next-project-number peek is skipped, and all steps are freely reachable
+  (every step is already valid). Create mode is unchanged.
+
+- **Project code is required.** Pre-filled from `peekNextProjectNumber()` (create
+  only); the user accepts or overrides. `next()` blocks step 0 if blank (the Zod
+  schema still allows blank for auto-gen, so the requirement is enforced in the
+  wizard).
 - **Schedule step — one calendar, not six pickers.** The hire window is a single
   date range chosen via `RangeCalendar` (`src/components/ui/range-calendar.tsx`,
   a custom date-fns range calendar — no external calendar dep) plus duration

@@ -510,7 +510,7 @@ update to every viewer — no `staleTime`, no manual `invalidateQueries`.
   function bundler never sees the React import.)
 - **Converted sites**:
   - `clients/[id]/edit/page.tsx` → `useClient(id)` (form only needs client fields).
-  - `components/projects/project-form.tsx` client dropdown → `useClients(orgId)`
+  - `components/projects/project-wizard.tsx` client dropdown → `useClients(orgId)`
     (a client added in the quick-create dialog now appears instantly).
   - `components/clients/client-table.tsx` → `useClients(orgId)` + **client-side**
     search / type-filter / sort / pagination over the reactive list. Project
@@ -561,7 +561,7 @@ every viewer.
     Asset+bulk+kit counts from a non-reactive `getLocationCounts()`; children
     counts derived from the flat reactive list.
   - Location dropdowns → `useLocations(orgId)`: `assets/asset-form`,
-    `assets/bulk-asset-form`, `kits/kit-form`, `projects/project-form`,
+    `assets/bulk-asset-form`, `kits/kit-form`, `projects/project-wizard`,
     `stocktake/stocktake-form`, `locations/location-form` (parent picker),
     `assets/quick-create-location` (parent picker). The Convex doc carries
     `parentId` not a `parent` relation, so `parent.name` labels resolve from the

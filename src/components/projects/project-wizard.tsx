@@ -17,8 +17,8 @@ import {
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
-import { createProject, peekNextProjectNumber } from "@/server/projects";
-import { addProjectManager } from "@/server/project-managers";
+import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
+import { addProjectManager, removeProjectManager } from "@/server/project-managers";
 import { useClients } from "@/hooks/use-clients";
 import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -44,6 +44,55 @@ const TYPE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ] as const;
 
+const STATUS_OPTIONS = [
+  { value: "ENQUIRY", label: "Enquiry" }, { value: "QUOTING", label: "Quoting" },
+  { value: "QUOTED", label: "Quoted" }, { value: "CONFIRMED", label: "Confirmed" },
+  { value: "PREPPING", label: "Prepping" }, { value: "CHECKED_OUT", label: "Checked out" },
+  { value: "ON_SITE", label: "On site" }, { value: "RETURNED", label: "Returned" },
+  { value: "COMPLETED", label: "Completed" }, { value: "INVOICED", label: "Invoiced" },
+  { value: "CANCELLED", label: "Cancelled" },
+] as const;
+
+/**
+ * The project detail shape the wizard needs in edit mode. Loosely typed (all
+ * optional, dates as `unknown`) so the page can pass its `useProjectDetail`
+ * composite straight through — the wizard normalises everything to the form's
+ * `yyyy-MM-dd` / `HH:mm` string shape itself.
+ */
+export interface EditableProject {
+  id: string;
+  projectNumber?: string | null;
+  name?: string | null;
+  clientId?: string | null;
+  status?: ProjectFormValues["status"] | null;
+  type?: ProjectFormValues["type"] | null;
+  description?: string | null;
+  locationId?: string | null;
+  siteContactName?: string | null;
+  siteContactPhone?: string | null;
+  siteContactEmail?: string | null;
+  loadInDate?: unknown;
+  loadInTime?: string | null;
+  eventStartDate?: unknown;
+  eventStartTime?: string | null;
+  eventEndDate?: unknown;
+  eventEndTime?: string | null;
+  loadOutDate?: unknown;
+  loadOutTime?: string | null;
+  rentalStartDate?: unknown;
+  rentalEndDate?: unknown;
+  crewNotes?: string | null;
+  internalNotes?: string | null;
+  clientNotes?: string | null;
+  discountPercent?: number | string | null;
+  depositPercent?: number | string | null;
+  depositPaid?: number | string | null;
+  invoicedTotal?: number | string | null;
+  tags?: string[] | null;
+  isTemplate?: boolean;
+  projectManagers?: { user: { id: string } }[];
+}
+
 type StepKey = "basics" | "schedule" | "site" | "review";
 const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
   { key: "basics", label: "Basics", tip: "Just the essentials — a name and (ideally) the client. Everything else can wait.", fields: ["name", "projectNumber", "clientId", "type", "description", "tags"] },
@@ -52,20 +101,32 @@ const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFor
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
 
-export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) {
+export function ProjectWizard({
+  isTemplate: isTemplateProp,
+  project,
+}: {
+  isTemplate?: boolean;
+  /** When present, the wizard runs in EDIT mode for this project. */
+  project?: EditableProject;
+}) {
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  const isEditing = !!project;
+  const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
+
+  const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);
+
   const [step, setStep] = useState(0);
   const [quickClient, setQuickClient] = useState(false);
   const [quickLocation, setQuickLocation] = useState(false);
-  const [managerIds, setManagerIds] = useState<string[]>([]);
+  const [managerIds, setManagerIds] = useState<string[]>(initialManagerIds);
 
   const { data: nextProjectNumber } = useServerQuery({
     queryKey: ["project-number-next", orgId],
     queryFn: () => peekNextProjectNumber(),
-    enabled: !isTemplate && !!orgId,
+    enabled: !isTemplate && !isEditing && !!orgId,
   });
 
   const clients = useClients(orgId);
@@ -79,14 +140,46 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
-    defaultValues: {
-      projectNumber: "", name: "", clientId: "", status: "ENQUIRY", type: "OTHER",
-      description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
-      loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
-      eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
-      rentalStartDate: undefined, rentalEndDate: undefined,
-      crewNotes: "", internalNotes: "", clientNotes: "", tags: [],
-    },
+    defaultValues: project
+      ? {
+          projectNumber: project.projectNumber ?? "",
+          name: project.name ?? "",
+          clientId: project.clientId ?? "",
+          status: project.status ?? "ENQUIRY",
+          type: project.type ?? "OTHER",
+          description: project.description ?? "",
+          locationId: project.locationId ?? "",
+          siteContactName: project.siteContactName ?? "",
+          siteContactPhone: project.siteContactPhone ?? "",
+          siteContactEmail: project.siteContactEmail ?? "",
+          // Dates → the form's "yyyy-MM-dd" string shape; times stay "HH:mm".
+          loadInDate: normalizeDate(project.loadInDate),
+          loadInTime: project.loadInTime ?? "",
+          eventStartDate: normalizeDate(project.eventStartDate),
+          eventStartTime: project.eventStartTime ?? "",
+          eventEndDate: normalizeDate(project.eventEndDate),
+          eventEndTime: project.eventEndTime ?? "",
+          loadOutDate: normalizeDate(project.loadOutDate),
+          loadOutTime: project.loadOutTime ?? "",
+          rentalStartDate: normalizeDate(project.rentalStartDate),
+          rentalEndDate: normalizeDate(project.rentalEndDate),
+          crewNotes: project.crewNotes ?? "",
+          internalNotes: project.internalNotes ?? "",
+          clientNotes: project.clientNotes ?? "",
+          discountPercent: project.discountPercent != null ? Number(project.discountPercent) : undefined,
+          depositPercent: project.depositPercent != null ? Number(project.depositPercent) : undefined,
+          depositPaid: project.depositPaid != null ? Number(project.depositPaid) : undefined,
+          invoicedTotal: project.invoicedTotal != null ? Number(project.invoicedTotal) : undefined,
+          tags: project.tags ?? [],
+        }
+      : {
+          projectNumber: "", name: "", clientId: "", status: "ENQUIRY", type: "OTHER",
+          description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
+          loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
+          eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
+          rentalStartDate: undefined, rentalEndDate: undefined,
+          crewNotes: "", internalNotes: "", clientNotes: "", tags: [],
+        },
   });
 
   const v = form.watch();
@@ -102,12 +195,27 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
 
   const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
-      const result = await createProject({ ...data, isTemplate });
-      await Promise.all(managerIds.map((userId) => addProjectManager(result.id, userId)));
+      const result = project
+        ? await updateProject(project.id, data)
+        : await createProject({ ...data, isTemplate });
+
+      // Reconcile managers: only touch the delta — never blindly re-add (which
+      // would dupe) or blindly remove. In create mode initialManagerIds is [],
+      // so this reduces to "add all selected".
+      const toAdd = managerIds.filter((id) => !initialManagerIds.includes(id));
+      const toRemove = initialManagerIds.filter((id) => !managerIds.includes(id));
+      await Promise.all([
+        ...toAdd.map((userId) => addProjectManager(result.id, userId)),
+        ...toRemove.map((userId) => removeProjectManager(result.id, userId)),
+      ]);
       return result;
     },
     onSuccess: (result) => {
-      toast.success(isTemplate ? "Template created" : "Job created");
+      toast.success(
+        isEditing
+          ? isTemplate ? "Template updated" : "Job updated"
+          : isTemplate ? "Template created" : "Job created",
+      );
       router.push(`/projects/${result.id}`);
     },
     onError: (e) => toast.error(e.message),
@@ -135,13 +243,15 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
         {STEPS.map((s, i) => {
           const done = i < step;
           const active = i === step;
+          // Edit mode: all steps are pre-validated, so any step is reachable.
+          const reachable = isEditing || i <= step;
           return (
             <li key={s.key} className="flex flex-1 items-center gap-2">
               <button
                 type="button"
-                onClick={() => i <= step && setStep(i)}
-                disabled={i > step}
-                className={cn("flex items-center gap-2 rounded-[var(--r)] px-1 py-1 transition-colors", focusRing, disabledState, i <= step && "cursor-pointer")}
+                onClick={() => reachable && setStep(i)}
+                disabled={!reachable}
+                className={cn("flex items-center gap-2 rounded-[var(--r)] px-1 py-1 transition-colors", focusRing, disabledState, reachable && "cursor-pointer")}
               >
                 <span className={cn(
                   "flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors",
@@ -202,6 +312,16 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                   </Select>
                 )} />
               </Field>
+              {isEditing && (
+                <Field label="Status">
+                  <Controller control={form.control} name="status" render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger><SelectValue>{STATUS_OPTIONS.find((o) => o.value === field.value)?.label ?? field.value}</SelectValue></SelectTrigger>
+                      <SelectContent>{STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  )} />
+                </Field>
+              )}
               <Field label="Description">
                 <Textarea {...form.register("description")} placeholder="Brief description of the job" rows={2} />
               </Field>
@@ -233,6 +353,17 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
                   <Input type="email" {...form.register("siteContactEmail")} placeholder="contact@example.com" />
                 </Field>
               </div>
+              {isEditing && (
+                <>
+                  <div className="space-y-3 border-t border-line pt-4 sm:col-span-2">
+                    <p className="t-overline text-faint">Financial</p>
+                  </div>
+                  <Field label="Discount (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("discountPercent")} placeholder="0" /></Field>
+                  <Field label="Deposit (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("depositPercent")} placeholder="0" /></Field>
+                  <Field label="Deposit paid ($)"><Input type="number" step="0.01" min="0" {...form.register("depositPaid")} placeholder="0.00" /></Field>
+                  <Field label="Invoiced total ($)"><Input type="number" step="0.01" min="0" {...form.register("invoicedTotal")} placeholder="0.00" /></Field>
+                </>
+              )}
             </div>
           )}
 
@@ -263,7 +394,7 @@ export function ProjectWizard({ isTemplate = false }: { isTemplate?: boolean }) 
             ) : (
               <Button type="submit" variant="halo" disabled={mutation.isPending}>
                 {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {isTemplate ? "Create template" : "Create job"}
+                {isEditing ? "Save changes" : isTemplate ? "Create template" : "Create job"}
               </Button>
             )}
           </div>
@@ -300,6 +431,15 @@ function fromDateStr(s?: unknown): Date | undefined {
   if (!s) return undefined;
   const d = typeof s === "string" ? parseISO(s) : new Date(String(s));
   return isValid(d) ? d : undefined;
+}
+
+/**
+ * Normalise a project's stored date (ISO string, Date, or null) to the form's
+ * "yyyy-MM-dd" string shape. `undefined` when absent so empty fields stay empty.
+ */
+function normalizeDate(value?: unknown): string | undefined {
+  const d = fromDateStr(value);
+  return d ? toDateStr(d) : undefined;
 }
 
 /**

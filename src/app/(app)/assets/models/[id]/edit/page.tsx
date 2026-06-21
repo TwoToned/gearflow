@@ -37,10 +37,10 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
     queryFn: () => getModel(id),
   });
 
-  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-5xl"><FormSkeleton /></div></FadeIn>;
   if (!model) {
     return (
-      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
+      <div className="mx-auto max-w-5xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
         <p className="text-ui-text text-ink-2">Model not found.</p>
         <p className="mt-1 text-caption text-muted">It may have been deleted, or you don&apos;t have access to it.</p>
       </div>
@@ -79,7 +79,7 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <FadeIn>
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>

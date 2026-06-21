@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { signUp } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Shield } from "lucide-react";
 import { Suspense } from "react";
-import { FadeIn } from "@/components/ui/motion";
+import { AuthShell } from "../../auth-playful";
 
 function AdminRegisterForm() {
   const router = useRouter();
@@ -45,15 +44,15 @@ function AdminRegisterForm() {
 
   if (checking) {
     return (
-      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      <div className="flex justify-center py-6 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted" />
       </div>
     );
   }
 
   if (!verified) {
     return (
-      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center text-fg-3">
+      <div className="py-6 text-center text-muted">
         Page not found.
       </div>
     );
@@ -90,17 +89,17 @@ function AdminRegisterForm() {
   };
 
   return (
-    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+    <>
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--r)] bg-red text-primary-foreground shadow-[var(--sh-stk)]">
           <Shield className="h-5 w-5" />
         </div>
-        <h2 className="t-title">Site Admin Registration</h2>
-        <p className="text-sm text-fg-3">
+        <h2 className="t-title text-ink">Site admin registration</h2>
+        <p className="mt-1 text-sm text-muted">
           Create a site administrator account.
         </p>
-        <Badge className="mx-auto mt-2 bg-red-500/10 text-red-500 border-red-500/20">
-          Site Admin Account
+        <Badge className="mx-auto mt-3 bg-red-soft text-red">
+          Site admin account
         </Badge>
       </div>
       <div>
@@ -141,26 +140,26 @@ function AdminRegisterForm() {
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Admin Account
+            Create admin account
           </Button>
         </form>
       </div>
-    </div>
+    </>
   );
 }
 
 export default function AdminRegisterPage() {
   return (
-    <FadeIn>
-    <Suspense
-      fallback={
-        <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
-        </div>
-      }
-    >
-      <AdminRegisterForm />
-    </Suspense>
-    </FadeIn>
+    <AuthShell accent="admin" annotation="with great power, etc.">
+      <Suspense
+        fallback={
+          <div className="flex justify-center py-6 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted" />
+          </div>
+        }
+      >
+        <AdminRegisterForm />
+      </Suspense>
+    </AuthShell>
   );
 }

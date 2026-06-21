@@ -44,3 +44,13 @@
 - **Status shortcuts**: Setting to RECEIVED auto-sets receivedDate
 - **Asset integration**: `purchaseOrderNumber` and `supplierOrderId` on Asset
 - **Line item integration**: `subhireOrderNumber` and `supplierOrderId` on ProjectLineItem
+- **New-order page** (`suppliers/[id]/orders/new/page.tsx`): a PAGE smart form on the
+  shared `SmartFormLayout` shell, modelled on `asset-form.tsx`/`client-form.tsx`. Order
+  (PO/reference + type + status via registry `Select` with explicit `SelectValue`
+  children, replacing the old raw `<select>` elements) → Dates (order + expected) →
+  More details (notes). Helper rail = contextual tip + a live order summary (reference,
+  supplier name, type chip, status pill via `StatusIndicator`, expected date). The
+  supplier-not-found / loading states, breadcrumb, hidden `supplierId` scoping field,
+  `supplierOrderSchema`, the create action and the `supplier:create` gate are
+  unchanged — markup/layout pass only. (This page exposes only the order header; line
+  items are added on the order after creation.)

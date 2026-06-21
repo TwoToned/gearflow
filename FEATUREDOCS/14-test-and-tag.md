@@ -149,3 +149,17 @@ Models can set:
   failure-details / retired-asset notice (alert contexts, §9).
 - `label-template.tsx` is a print template — intentionally left on its own print-CSS
   styling, not migrated to app tokens (mirrors the pull-sheet print exception).
+- The **new-item page** (`test-and-tag/new/page.tsx`) is a PAGE smart form on the
+  shared `SmartFormLayout` shell (`src/components/ui/smart-form.tsx`), modelled on
+  `asset-form.tsx`: Identity (bulk/serialized asset `ComboboxPicker` links that
+  auto-fill, test-tag `AssetTagInput`, description, make/model) → Test details (the
+  test-profile `ComboboxPicker` auto-fills equipment class + appliance type, both now
+  overridable via registry `Select` with explicit `SelectValue` children; interval +
+  location) → "More details" accordion (notes). Helper rail = contextual tip + a live
+  preview card (description, tag, equipment-class chip, retest interval). All auto-fill
+  / peek-tag / profile-sync behaviour, the `testTagAssetSchema`, the create action and
+  the `testTag:create` gate are unchanged — markup/layout pass only.
+- The **batch-create dialog** (`test-tag/batch-create-dialog.tsx`) binds its
+  equipment-class / appliance-type registry `Select`s via `Controller` (explicit
+  `SelectValue` children, label fallbacks) instead of `form.watch()`/`setValue` in
+  render. Behaviour unchanged.

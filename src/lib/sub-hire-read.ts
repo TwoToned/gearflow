@@ -11,7 +11,8 @@ import type {
 /**
  * Server-side read helpers for the sub-hire domain (Phase C read-rewiring of the
  * Convex domain-only decommission). `subHire` + `subHireItem` + `subHireGroup` are
- * dual-written (see src/lib/sub-hire-mirror.ts). These helpers read the Convex copy
+ * Convex-only (the family's writes were inverted in the Phase C sub-hire write-
+ * inversion; the old sub-hire-mirror.ts is deleted). These helpers read the Convex copy
  * and shape it back into the Prisma-row form the sub-hire pages expect (epoch-ms →
  * Date, Decimal → number, absent optionals → null).
  *

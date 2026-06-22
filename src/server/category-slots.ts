@@ -42,7 +42,6 @@ import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-rea
 import { indexChildren, reconstructScope } from "@/lib/project-line-item-tree-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
-import { syncSubHireToConvex } from "@/lib/sub-hire-mirror";
 import { getSubHiresByProject, getSubHireGroups, getSubHireItems } from "@/lib/sub-hire-read";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
@@ -301,16 +300,16 @@ export async function moveSubHireGroupToCategory(
     destCategoryId = category.id;
   }
 
-  // Prisma write: subHireGroup placement (subHireGroup is NOT flipped).
-  // No advisory lock needed (CategorySlot is Convex-only now).
-  await prisma.subHireGroup.update({
-    where: { id: parsed.groupId },
-    data: { targetCategoryId: destCategoryId },
+  // Convex write: subHireGroup placement (Convex-only now).
+  const client = await getConvexClient();
+  await client.mutation(api.subHireGroups.patchGroup, {
+    id: parsed.groupId,
+    set: destCategoryId != null ? { targetCategoryId: destCategoryId } : {},
+    clear: destCategoryId != null ? [] : ["targetCategoryId"],
   });
 
   // Convex write: synthetic parent line item categoryId on the sub-hire group's
   // top-level lines (line items are Convex-only now).
-  const client = await getConvexClient();
   if (group.subHire.projectId) {
     const liDocs = await client.query(api.projectLineItems.listByProject, {
       projectId: group.subHire.projectId,
@@ -338,7 +337,6 @@ export async function moveSubHireGroupToCategory(
     now,
   });
 
-  await syncSubHireToConvex(group.subHire.id);
   if (group.subHire.projectId) {
     await recalculateProjectTotals(group.subHire.projectId);
     await logActivity({
@@ -611,9 +609,9 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
       });
     }
   } else if (subHireGroupId) {
-    await prisma.subHireGroup.update({
-      where: { id: subHireGroupId },
-      data: { targetCategoryId: categoryId },
+    await client.mutation(api.subHireGroups.patchGroup, {
+      id: subHireGroupId,
+      set: { targetCategoryId: categoryId },
     });
     const targets = placementLiDocs.filter(
       (li) => li.subHireGroupId === subHireGroupId && !li.isKitChild && li.parentLineItemId == null,

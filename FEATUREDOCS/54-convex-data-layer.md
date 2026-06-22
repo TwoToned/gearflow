@@ -3143,6 +3143,44 @@ Convex. So the cluster reduced to inverting **crewMember** writes.
   exercise** (create with skillIds, patch set, patch CLEAR image, skillIds replace,
   remove) — all pass.
 
+### Phase C — sub-hire read-rewire (1/2)
+
+The `subHire` / `subHireItem` / `subHireGroup` family is still dual-written
+(Prisma-first + `sub-hire-mirror.ts`). Like the media keystone it's split:
+**read-rewire first, write-invert second.** This PR is the read-rewire — pure read
+swap, writes untouched, fully reversible. (The `supplierOrder` / `supplierOrderItem`
+family is already Convex-only writes from Phase A — no work there.)
+
+- **New `src/lib/sub-hire-read.ts`** (mirrors `supplier-order-read.ts`): `SubHireRow`
+  / `SubHireItemRow` / `SubHireGroupRow` mappers (epoch-ms → Date, Decimal → number,
+  absent → null/Prisma-default) + `getSubHiresByOrg` / `getSubHireById` /
+  `getSubHiresByProject` / `getSubHireItems` / `getSubHireGroups` /
+  `getSubHireItemCounts`. Cross-domain joins (supplier/model/project/target labels/
+  `createdBy`) composed by the caller as before.
+- **`sub-hires.ts` reads rewired:** `getSubHires` (list — filters/search/`_count`
+  re-applied in JS over the Convex list; project branch attaches items+groups with
+  model + target category/group labels resolved from `api.projectCategories.list` /
+  `api.projectGroups.list`), `getSubHire` (detail), `getSubHireDashboardStats`
+  (count/sum aggregated in JS). `createdBy` resolved from the kept Postgres `user`.
+- **Stale-read bug fixed (mega-flip fallout):** `projectLineItem` is Convex-only, but
+  several reads still pulled its rows through the Prisma `subHire.lineItems` /
+  `subHireGroup.lineItems` relation include — a **frozen table** → stale data. Moved
+  the checkout-guard reads in `deleteSubHire` / `removeSubHireItem` and the
+  equipment-tab category reads (`category-slots.getUncategorizedSubHireGroups`,
+  `project-categories.getProjectCategories`) to read Convex `projectLineItems`
+  (filtered by `subHireId` / `subHireGroupId`) + attach via the existing
+  `attachScopeRows` machinery.
+- **`line-items.recalculateProjectTotals`** sub-hire cost sum moved off
+  `prisma.subHire.findMany` to `getSubHiresByProject` (filter CANCELLED/DRAFT in JS).
+- **Next (2/2):** invert the sub-hire writes to Convex-only — re-implement the
+  order-number reservation (org.metadata counter stays Prisma), sortOrder max+1,
+  cascade delete, and the `generateSubHireLineItemsTx` regeneration (delete-all +
+  recreate-with-fresh-ids); then delete `sub-hire-mirror.ts`.
+- **Validation:** `npm run build` exit 0 + lint (0 errors) + 2391 tests (3 unrelated
+  component-test files fail on a stale-worktree `@radix-ui/react-slot` resolve, green
+  on CI). Convex data-correctness human-gated on the Coolify PR preview (sub-hire
+  tables already backfilled + dual-written into prod).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

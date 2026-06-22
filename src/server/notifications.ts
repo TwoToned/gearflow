@@ -8,6 +8,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
 import {
   getDismissedKeysForUser,
   getDismissalsForUser,
@@ -163,12 +164,17 @@ export async function getNotifications(): Promise<AppNotification[]> {
 
   if (overdueProjectCandidates.length > 0) {
     const overdueIds = overdueProjectCandidates.map((p) => p.id);
-    const checkedOutCounts = await prisma.projectLineItem.groupBy({
-      by: ["projectId"],
-      where: { organizationId, projectId: { in: overdueIds }, status: "CHECKED_OUT" },
-      _count: { _all: true },
-    });
-    const countMap = new Map(checkedOutCounts.map((g) => [g.projectId, g._count._all]));
+    // projectLineItem is Convex-only — fetch the candidate projects' lines and
+    // group CHECKED_OUT counts by projectId in JS (replicates the groupBy).
+    const checkedOutLines = await (await getConvexClient()).query(
+      api.projectLineItems.listByProjectIds,
+      { orgId: organizationId, projectIds: overdueIds },
+    );
+    const countMap = new Map<string, number>();
+    for (const li of checkedOutLines) {
+      if (li.status !== "CHECKED_OUT") continue;
+      countMap.set(li.projectId, (countMap.get(li.projectId) ?? 0) + 1);
+    }
     for (const p of overdueProjectCandidates) {
       const lineItemCount = countMap.get(p.id) ?? 0;
       if (lineItemCount > 0) {
@@ -276,32 +282,40 @@ export async function getNotifications(): Promise<AppNotification[]> {
     });
   }
 
-  // 9. Flagged assets from warehouse checks
-  const flaggedItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      prepStatus: { in: ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] },
-    },
-    include: {
-      asset: { select: { assetTag: true } },
-      project: { select: { id: true, name: true, projectNumber: true } },
-    },
-    take: 10,
-  });
+  // 9. Flagged assets from warehouse checks.
+  // projectLineItem is Convex-only — read the org's lines, filter by prepStatus
+  // in JS, take 10. Asset tags + project headers are resolved from Convex.
+  const allLines = await (await getConvexClient()).query(
+    api.projectLineItems.list,
+    { orgId: organizationId },
+  );
+  const flaggedItems = allLines
+    .filter(
+      (li) =>
+        li.prepStatus === "FLAGGED_FAULTY" || li.prepStatus === "FLAGGED_TT_OVERDUE",
+    )
+    .slice(0, 10);
 
-  for (const li of flaggedItems) {
-    const liModelName = li.modelId ? modelMap.get(li.modelId)?.name : undefined;
-    const tag = li.asset?.assetTag || liModelName || "Unknown";
-    const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
-    notifications.push({
-      id: `flagged-${li.id}`,
-      type: "flagged_asset",
-      title: `Flagged: ${tag}`,
-      description: `${liModelName || "Item"} flagged as ${reason} on ${li.project.projectNumber} — ${li.project.name}`,
-      href: `/warehouse/${li.project.id}`,
-      severity: "warning",
-      timestamp: li.updatedAt.toISOString(),
-    });
+  if (flaggedItems.length > 0) {
+    const assets = await getAssetsByOrg(organizationId);
+    const assetTagMap = new Map(assets.map((a) => [a.id, a.assetTag]));
+    const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+
+    for (const li of flaggedItems) {
+      const liModelName = li.modelId ? modelMap.get(li.modelId)?.name : undefined;
+      const tag = (li.assetId ? assetTagMap.get(li.assetId) : undefined) || liModelName || "Unknown";
+      const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
+      const proj = projectMap.get(li.projectId);
+      notifications.push({
+        id: `flagged-${li.id}`,
+        type: "flagged_asset",
+        title: `Flagged: ${tag}`,
+        description: `${liModelName || "Item"} flagged as ${reason} on ${proj?.projectNumber ?? ""} — ${proj?.name ?? ""}`,
+        href: `/warehouse/${li.projectId}`,
+        severity: "warning",
+        timestamp: li.updatedAt ? new Date(li.updatedAt as number).toISOString() : now.toISOString(),
+      });
+    }
   }
 
   // Sort by severity (errors first) then timestamp

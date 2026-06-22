@@ -9,22 +9,22 @@ import { serialize } from "@/lib/serialize";
 import { reserveAssetTags, getOrgTestTagSettings } from "@/server/settings";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorAssetCreate,
-  patchAssetInConvex,
-  removeAssetFromConvex,
-  syncAssetsToConvex,
-} from "@/lib/asset-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps, getAssetMediaFromConvex, getModelMediaFromConvex, withResolvedFile } from "@/lib/media-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 import { type FilterValue } from "@/lib/table-utils";
 import {
   getMappedAssetsByOrg,
   filterAssets,
   sortAssets,
   paginate,
+  getAssetById,
+  getAssetByAssetTag,
+  getBulkAssetById,
+  mapConvexAssetToPrisma,
 } from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
@@ -131,83 +131,198 @@ export async function getAssets(params?: {
 
 export async function getAsset(id: string) {
   const { organizationId } = await getOrgContext();
-  const asset = await prisma.asset.findUnique({
-    where: { id, organizationId },
-    include: {
-      maintenanceLinks: {
-        include: { maintenanceRecord: true },
-        orderBy: { maintenanceRecord: { createdAt: "desc" } },
-        take: 20,
-      },
-      scanLogs: {
-        orderBy: { scannedAt: "desc" },
-        take: 20,
-        include: { scannedBy: true, project: true },
-      },
-      lineItems: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        include: { project: true },
-      },
-      testTagAsset: {
-        select: {
-          id: true,
-          testTagId: true,
-          status: true,
-          lastTestDate: true,
-          nextDueDate: true,
-          testIntervalMonths: true,
-        },
-      },
-      // Child assets / accessories
-      parentAsset: { select: { id: true, assetTag: true, customName: true } },
-      childAssets: { orderBy: { assetTag: "asc" } },
-      childBulkItems: {
-        include: { bulkAsset: true },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-  });
 
-  if (!asset) return serialize(asset);
-
-  // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
-  // Asset + model media galleries now read from the Convex mirror (dual-written →
-  // identical data); bulkAccessories from Convex. See media-read.ts.
-  const modelMediaPromise = asset.modelId
-    ? getModelMediaFromConvex(asset.modelId)
-    : Promise.resolve([]);
+  // Base asset (asset table is Convex-only now — Phase C mega-flip).
+  const assetDoc = await getAssetById(id);
+  if (!assetDoc || assetDoc.organizationId !== organizationId) return serialize(null);
+  const asset = mapConvexAssetToPrisma(assetDoc);
 
   const convex = await getConvexClient();
-  const modelBulkAccessoriesPromise = asset.modelId
-    ? convex.query(api.modelBulkAccessories.listByModelId, {
-        modelId: asset.modelId,
-        organizationId,
-      })
-    : Promise.resolve([]);
 
-  const [modelMap, modelMediaRows, assetMediaRows, supplier] = await Promise.all([
-    getModelWithCategoryMap(organizationId),
-    modelMediaPromise,
+  // Composite sub-reads — all from Convex (asset/projectLineItem/assetBulkChild
+  // are Convex-only; media/maintenance/testTag/scanLog already mirrored).
+  const [
+    media,
+    childAssetDocs,
+    childBulkDocs,
+    lineItemDocs,
+    scanLogDocs,
+    testTagDocs,
+    maintenanceLinks,
+    parentAssetDoc,
+  ] = await Promise.all([
     getAssetMediaFromConvex(id),
-    asset.supplierId ? getSupplierById(asset.supplierId) : null,
+    convex.query(api.assets.listByParentAssetId, { parentAssetId: id, orgId: organizationId }),
+    convex.query(api.assetBulkChildren.listByParentAssetId, { parentAssetId: id, orgId: organizationId }),
+    convex.query(api.projectLineItems.listByAssetId, { assetId: id, orgId: organizationId }),
+    convex.query(api.assetScanLogs.listByOrgAndAsset, { orgId: organizationId, assetId: id }),
+    convex.query(api.testTagAssets.listByAssetId, { assetId: id }),
+    convex.query(api.maintenanceRecordAssets.listByAssetIds, { assetIds: [id] }),
+    asset.parentAssetId ? getAssetById(asset.parentAssetId) : Promise.resolve(null),
   ]);
-  const modelBulkAccessoriesRaw = await modelBulkAccessoriesPromise;
+
+  // Model (+ category) + supplier + projects + maintenance records live in Convex.
+  const [modelMap, supplier, projects, maintenanceRecords] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    asset.supplierId ? getSupplierById(asset.supplierId) : null,
+    getProjectsByOrg(organizationId),
+    getMaintenanceRecordsByOrg(organizationId),
+  ]);
+
+  // Model media (gallery) + the model's bulk accessories — both Convex.
+  const [modelMediaRows, modelBulkAccessoriesRaw] = await Promise.all([
+    asset.modelId ? getModelMediaFromConvex(asset.modelId) : Promise.resolve([]),
+    asset.modelId
+      ? convex.query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
+      : Promise.resolve([]),
+  ]);
 
   const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
 
-  const childAssetsWithModel = asset.childAssets.map((child) => ({
-    ...child,
-    model: child.modelId ? modelMap.get(child.modelId) ?? null : null,
-  }));
+  // Gallery rows (asset_media / model_media) carry a nullable `file`; the prior
+  // Prisma read had a non-null `file` join. Reshape to the page's MediaItem shape
+  // (drop rows whose mirror file is missing — same as a broken join rendering empty).
+  type MediaItemShape = {
+    id: string;
+    fileId: string;
+    type: string;
+    isPrimary: boolean;
+    displayName: string | null;
+    sortOrder: number;
+    file: {
+      id: string;
+      fileName: string;
+      fileSize: number;
+      mimeType: string;
+      url: string;
+      thumbnailUrl: string | null;
+    };
+  };
+  const toMediaItem = (
+    m: { id: string; fileId: string; type: string; isPrimary: boolean; displayName: string | null; sortOrder: number; file: import("@/lib/media-read").GalleryFile | null },
+  ): MediaItemShape | null =>
+    m.file
+      ? {
+          id: m.id,
+          fileId: m.fileId,
+          type: m.type,
+          isPrimary: m.isPrimary,
+          displayName: m.displayName,
+          sortOrder: m.sortOrder,
+          file: {
+            id: m.file.id,
+            fileName: m.file.fileName,
+            fileSize: m.file.fileSize,
+            mimeType: m.file.mimeType,
+            url: m.file.url,
+            thumbnailUrl: m.file.thumbnailUrl,
+          },
+        }
+      : null;
+  const mediaItems = media.map(toMediaItem).filter((m): m is MediaItemShape => m != null);
+  const modelMediaItems = modelMediaRows.map(toMediaItem).filter((m): m is MediaItemShape => m != null);
 
-  const childBulkItemsWithModel = asset.childBulkItems.map((item) => ({
-    ...item,
-    bulkAsset: {
-      ...item.bulkAsset,
-      model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null,
-    },
-  }));
+  // ── parentAsset (id/assetTag/customName) ──
+  const parentAsset = parentAssetDoc
+    ? { id: parentAssetDoc.id, assetTag: parentAssetDoc.assetTag, customName: parentAssetDoc.customName ?? null }
+    : null;
+
+  // ── childAssets (ordered by assetTag asc) + grafted model ──
+  const childAssetsWithModel = childAssetDocs
+    .map(mapConvexAssetToPrisma)
+    .sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0))
+    .map((child) => ({
+      ...child,
+      model: child.modelId ? modelMap.get(child.modelId) ?? null : null,
+    }));
+
+  // ── childBulkItems (ordered by sortOrder asc) + nested bulkAsset + model ──
+  // assetBulkChildren docs carry only bulkAssetId — resolve each child's bulk
+  // asset to recover assetTag / modelId (no denormalised columns on the join).
+  const childBulkAssetDocs = await Promise.all(
+    childBulkDocs.map((item) => getBulkAssetById(item.bulkAssetId)),
+  );
+  const childBulkAssetMap = new Map(
+    childBulkAssetDocs.filter((d): d is NonNullable<typeof d> => d != null).map((d) => [d.id, d]),
+  );
+  const childBulkItemsWithModel = [...childBulkDocs]
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((item) => {
+      const ba = childBulkAssetMap.get(item.bulkAssetId) ?? null;
+      const bulkModelId = ba?.modelId ?? null;
+      return {
+        id: item.id,
+        organizationId: item.organizationId,
+        parentAssetId: item.parentAssetId,
+        bulkAssetId: item.bulkAssetId,
+        quantity: item.quantity,
+        allocationMode: (item.allocationMode ?? "SHIPS_WITH") as "SHIPS_WITH" | "DEDICATED",
+        sortOrder: item.sortOrder ?? null,
+        notes: item.notes ?? null,
+        addedAt: item.addedAt ? new Date(item.addedAt) : null,
+        addedById: item.addedById ?? null,
+        bulkAsset: {
+          id: item.bulkAssetId,
+          assetTag: ba?.assetTag ?? "",
+          modelId: bulkModelId,
+          model: bulkModelId ? modelMap.get(bulkModelId) ?? null : null,
+        },
+      };
+    });
+
+  // ── lineItems (project history; createdAt desc, take 20) + project ──
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+  const lineItems = [...lineItemDocs]
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 20)
+    .map((li) => {
+      const project = li.projectId ? projectMap.get(li.projectId) ?? null : null;
+      return {
+        ...li,
+        status: li.status ?? "CONFIRMED",
+        checkedOutAt: li.checkedOutAt != null ? new Date(li.checkedOutAt) : null,
+        returnedAt: li.returnedAt != null ? new Date(li.returnedAt) : null,
+        createdAt: li.createdAt != null ? new Date(li.createdAt) : null,
+        updatedAt: li.updatedAt != null ? new Date(li.updatedAt) : null,
+        project: project
+          ? { ...project, name: project.name, projectNumber: project.projectNumber }
+          : { name: "", projectNumber: "" },
+      };
+    });
+
+  // ── scanLogs (scannedAt desc, take 20). No page consumer reads scannedBy /
+  //    project joins; the scan-log doc's scannedById / projectId are retained. ──
+  const scanLogs = [...scanLogDocs]
+    .sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0))
+    .slice(0, 20)
+    .map((s) => ({
+      ...s,
+      scannedAt: s.scannedAt != null ? new Date(s.scannedAt) : null,
+    }));
+
+  // ── testTagAsset (first) ──
+  const tt = testTagDocs[0] ?? null;
+  const testTagAsset = tt
+    ? {
+        id: tt.id,
+        testTagId: tt.testTagId,
+        status: tt.status ?? null,
+        lastTestDate: tt.lastTestDate != null ? new Date(tt.lastTestDate) : null,
+        nextDueDate: tt.nextDueDate != null ? new Date(tt.nextDueDate) : null,
+        testIntervalMonths: tt.testIntervalMonths ?? null,
+      }
+    : null;
+
+  // ── maintenanceLinks (maintenanceRecord.createdAt desc, take 20) ──
+  const maintenanceRecordMap = new Map(maintenanceRecords.map((m) => [m.id, m]));
+  const maintenanceLinksMapped = maintenanceLinks
+    .map((link) => ({
+      ...link,
+      maintenanceRecord: maintenanceRecordMap.get(link.maintenanceRecordId) ?? null,
+    }))
+    .filter((l): l is typeof l & { maintenanceRecord: NonNullable<typeof l.maintenanceRecord> } => l.maintenanceRecord != null)
+    .sort((a, b) => b.maintenanceRecord.createdAt.getTime() - a.maintenanceRecord.createdAt.getTime())
+    .slice(0, 20);
 
   const bulkAccessoriesWithModel = modelBulkAccessoriesRaw.map((ba) => ({
     id: ba.id,
@@ -234,10 +349,15 @@ export async function getAsset(id: string) {
 
   return serialize({
     ...asset,
-    media: withResolvedFile(assetMediaRows),
+    media: mediaItems,
+    maintenanceLinks: maintenanceLinksMapped,
+    scanLogs,
+    lineItems,
+    testTagAsset,
+    parentAsset,
     location,
     model: assetModel
-      ? { ...assetModel, media: withResolvedFile(modelMediaRows), bulkAccessories: bulkAccessoriesWithModel }
+      ? { ...assetModel, media: modelMediaItems, bulkAccessories: bulkAccessoriesWithModel }
       : null,
     childAssets: childAssetsWithModel,
     childBulkItems: childBulkItemsWithModel,
@@ -280,34 +400,52 @@ export async function createAsset(data: AssetFormValues) {
   const model = await getModelById(parsed.modelId);
 
   try {
-    const result = await prisma.asset.create({
-      data: {
-        organizationId,
-        modelId: parsed.modelId,
-        assetTag: parsed.assetTag,
-        serialNumber: parsed.serialNumber,
-        customName: parsed.customName,
-        status: parsed.status,
-        condition: parsed.condition,
-        purchaseDate: parsed.purchaseDate,
-        purchasePrice: parsed.purchasePrice,
-        purchaseSupplier: parsed.purchaseSupplier,
-        supplierId: parsed.supplierId || null,
-        purchaseOrderNumber: parsed.purchaseOrderNumber || null,
-        warrantyExpiry: parsed.warrantyExpiry,
-        notes: parsed.notes,
-        locationId: parsed.locationId || null,
-        customFieldValues,
-        barcode: parsed.barcode || parsed.assetTag,
-        qrCode: parsed.assetTag,
-        images: parsed.images,
-        isActive: parsed.isActive,
-        tags: parsed.tags,
-      },
+    // DUP GUARD: Convex has no unique index — reject a duplicate tag up front.
+    const dup = await getAssetByAssetTag(organizationId, parsed.assetTag);
+    if (dup) {
+      throw new UserFacingError({
+        code: "DUPLICATE_ASSET_TAG",
+        title: "Duplicate asset tag",
+        message: `Asset tag "${parsed.assetTag}" already exists.`,
+        hint: "Use a different asset tag.",
+      });
+    }
+
+    const convex = await getConvexClient();
+    const newId = createId();
+    const now = Date.now();
+    await convex.mutation(api.assets.create, {
+      id: newId,
+      organizationId,
+      modelId: parsed.modelId,
+      assetTag: parsed.assetTag,
+      serialNumber: parsed.serialNumber || undefined,
+      customName: parsed.customName || undefined,
+      status: parsed.status,
+      condition: parsed.condition,
+      purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
+      purchasePrice: parsed.purchasePrice != null ? Number(parsed.purchasePrice) : undefined,
+      purchaseSupplier: parsed.purchaseSupplier || undefined,
+      supplierId: parsed.supplierId || undefined,
+      purchaseOrderNumber: parsed.purchaseOrderNumber || undefined,
+      warrantyExpiry: parsed.warrantyExpiry ? new Date(parsed.warrantyExpiry).getTime() : undefined,
+      notes: parsed.notes || undefined,
+      locationId: parsed.locationId || undefined,
+      customFieldValues,
+      barcode: parsed.barcode || parsed.assetTag,
+      qrCode: parsed.assetTag,
+      images: parsed.images || undefined,
+      isActive: parsed.isActive,
+      tags: parsed.tags || undefined,
+      createdAt: now,
+      updatedAt: now,
     });
+    // Read back the persisted row in the Prisma shape callers expect.
+    const created = await getAssetById(newId);
+    if (!created) throw new Error("Asset create read-back failed: " + newId);
+    const result = mapConvexAssetToPrisma(created);
     // Advance the counter now that the asset is actually created
     await reserveAssetTags(1);
-    await mirrorAssetCreate(result);
 
     // Auto-register in T&T registry if model requires it (Convex-only write).
     if (model?.requiresTestAndTag) {
@@ -375,34 +513,51 @@ export async function createAssets(
 
   let results;
   try {
-    results = await prisma.$transaction(
-      assets.map(({ tag, serialNumber }) =>
-        prisma.asset.create({
-          data: {
-            organizationId,
-            modelId: parsed.modelId,
-            assetTag: tag,
-            serialNumber: serialNumber || parsed.serialNumber,
-            customName: parsed.customName,
-            status: parsed.status,
-            condition: parsed.condition,
-            purchaseDate: parsed.purchaseDate,
-            purchasePrice: parsed.purchasePrice,
-            purchaseSupplier: parsed.purchaseSupplier,
-            supplierId: parsed.supplierId || null,
-            warrantyExpiry: parsed.warrantyExpiry,
-            notes: parsed.notes,
-            locationId: parsed.locationId || null,
-            customFieldValues,
-            barcode: parsed.barcode || tag,
-            qrCode: tag,
-            images: parsed.images,
-            isActive: parsed.isActive,
-            tags: parsed.tags,
-          },
-        })
-      )
-    );
+    const convex = await getConvexClient();
+    const now = Date.now();
+    const createdRows = [];
+    for (const { tag, serialNumber } of assets) {
+      // DUP GUARD per tag (no Convex unique index).
+      const dup = await getAssetByAssetTag(organizationId, tag);
+      if (dup) {
+        throw new UserFacingError({
+          code: "DUPLICATE_ASSET_TAG",
+          title: "Duplicate asset tag",
+          message: `Asset tag "${tag}" already exists.`,
+          hint: "Use a different asset tag.",
+        });
+      }
+      const newId = createId();
+      await convex.mutation(api.assets.create, {
+        id: newId,
+        organizationId,
+        modelId: parsed.modelId,
+        assetTag: tag,
+        serialNumber: serialNumber || parsed.serialNumber || undefined,
+        customName: parsed.customName || undefined,
+        status: parsed.status,
+        condition: parsed.condition,
+        purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
+        purchasePrice: parsed.purchasePrice != null ? Number(parsed.purchasePrice) : undefined,
+        purchaseSupplier: parsed.purchaseSupplier || undefined,
+        supplierId: parsed.supplierId || undefined,
+        warrantyExpiry: parsed.warrantyExpiry ? new Date(parsed.warrantyExpiry).getTime() : undefined,
+        notes: parsed.notes || undefined,
+        locationId: parsed.locationId || undefined,
+        customFieldValues,
+        barcode: parsed.barcode || tag,
+        qrCode: tag,
+        images: parsed.images || undefined,
+        isActive: parsed.isActive,
+        tags: parsed.tags || undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const created = await getAssetById(newId);
+      if (!created) throw new Error("Asset create read-back failed: " + newId);
+      createdRows.push(mapConvexAssetToPrisma(created));
+    }
+    results = createdRows;
   } catch (e: unknown) {
     const translated = translatePrismaError(e);
     if (translated) throw translated;
@@ -411,7 +566,6 @@ export async function createAssets(
 
   // Advance the counter now that assets are actually created
   await reserveAssetTags(assets.length);
-  for (const result of results) await mirrorAssetCreate(result);
 
   // Auto-register in T&T registry if model requires it (Convex-only write).
   if (model?.requiresTestAndTag) {
@@ -469,39 +623,69 @@ export async function updateAsset(id: string, data: AssetFormValues) {
     parsed.customFieldValues,
   );
 
-  const before = await prisma.asset.findUnique({ where: { id, organizationId } });
+  const beforeDoc = await getAssetById(id);
+  if (!beforeDoc) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Asset not found",
+      message: "This asset was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
+  const before = mapConvexAssetToPrisma(beforeDoc);
 
   let updated;
   try {
-    updated = await prisma.asset.update({
-      where: { id, organizationId },
-      data: {
-        modelId: parsed.modelId,
-        assetTag: parsed.assetTag,
-        serialNumber: parsed.serialNumber,
-        customName: parsed.customName,
-        status: parsed.status,
-        condition: parsed.condition,
-        purchaseDate: parsed.purchaseDate,
-        purchasePrice: parsed.purchasePrice,
-        purchaseSupplier: parsed.purchaseSupplier,
-        supplierId: parsed.supplierId || null,
-        warrantyExpiry: parsed.warrantyExpiry,
-        notes: parsed.notes,
-        locationId: parsed.locationId || null,
-        customFieldValues,
-        barcode: parsed.barcode || parsed.assetTag,
-        images: parsed.images,
-        isActive: parsed.isActive,
-        tags: parsed.tags,
-      },
-    });
+    // DUP GUARD only when the tag changed.
+    if (parsed.assetTag !== before.assetTag) {
+      const dup = await getAssetByAssetTag(organizationId, parsed.assetTag);
+      if (dup && dup.id !== id) {
+        throw new UserFacingError({
+          code: "DUPLICATE_ASSET_TAG",
+          title: "Duplicate asset tag",
+          message: `Asset tag "${parsed.assetTag}" already exists.`,
+          hint: "Use a different asset tag.",
+        });
+      }
+    }
+
+    // set = provided non-null fields; clear = optional fields being unset.
+    const set: Record<string, unknown> = {
+      modelId: parsed.modelId,
+      assetTag: parsed.assetTag,
+      status: parsed.status,
+      condition: parsed.condition,
+      customFieldValues,
+      barcode: parsed.barcode || parsed.assetTag,
+      isActive: parsed.isActive,
+      tags: parsed.tags ?? [],
+      images: parsed.images ?? [],
+      updatedAt: Date.now(),
+    };
+    const clear: string[] = [];
+    const setOrClear = (field: string, value: unknown) => {
+      if (value == null || value === "") clear.push(field);
+      else set[field] = value;
+    };
+    setOrClear("serialNumber", parsed.serialNumber);
+    setOrClear("customName", parsed.customName);
+    setOrClear("purchaseDate", parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : null);
+    setOrClear("purchasePrice", parsed.purchasePrice != null ? Number(parsed.purchasePrice) : null);
+    setOrClear("purchaseSupplier", parsed.purchaseSupplier);
+    setOrClear("supplierId", parsed.supplierId);
+    setOrClear("warrantyExpiry", parsed.warrantyExpiry ? new Date(parsed.warrantyExpiry).getTime() : null);
+    setOrClear("notes", parsed.notes);
+    setOrClear("locationId", parsed.locationId);
+
+    const convex = await getConvexClient();
+    await convex.mutation(api.assets.patchAsset, { id, set, clear });
+    const updatedDoc = await getAssetById(id);
+    if (!updatedDoc) throw new Error("Asset update read-back failed: " + id);
+    updated = mapConvexAssetToPrisma(updatedDoc);
   } catch (e: unknown) {
     const translated = translatePrismaError(e);
     if (translated) throw translated;
     throw e;
   }
-  await patchAssetInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -542,12 +726,16 @@ export async function bulkUpdateAssets(
     });
   }
 
-  const updateData: Record<string, unknown> = {};
-  if (data.status) updateData.status = data.status;
-  if (data.condition) updateData.condition = data.condition;
-  if (data.locationId !== undefined) updateData.locationId = data.locationId || null;
+  const set: Record<string, unknown> = {};
+  const clear: string[] = [];
+  if (data.status) set.status = data.status;
+  if (data.condition) set.condition = data.condition;
+  if (data.locationId !== undefined) {
+    if (data.locationId) set.locationId = data.locationId;
+    else clear.push("locationId");
+  }
 
-  if (Object.keys(updateData).length === 0) {
+  if (Object.keys(set).length === 0 && clear.length === 0) {
     throw new UserFacingError({
       code: "NO_CHANGES",
       title: "No changes specified",
@@ -555,34 +743,34 @@ export async function bulkUpdateAssets(
     });
   }
 
-  const result = await prisma.asset.updateMany({
-    where: { id: { in: ids }, organizationId },
-    data: updateData,
+  set.updatedAt = Date.now();
+  const convex = await getConvexClient();
+  const count = await convex.mutation(api.assets.bulkUpdate, {
+    organizationId,
+    ids,
+    set,
+    clear: clear.length > 0 ? clear : undefined,
   });
-  await syncAssetsToConvex(ids);
 
-  return { count: result.count };
+  return { count };
 }
 
 export async function deleteAsset(id: string) {
   const { organizationId, userId, userName } = await requirePermission("asset", "delete");
 
-  const asset = await prisma.asset.findUnique({
-    where: { id, organizationId },
-    include: {
-      _count: { select: { lineItems: true, maintenanceLinks: true, childAssets: true, childBulkItems: true } },
-      kitItem: true,
-    },
-  });
-  if (!asset) {
+  const convex = await getConvexClient();
+  const assetDoc = await getAssetById(id);
+  if (!assetDoc || assetDoc.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Asset not found",
       message: "This asset was deleted or moved. Refresh the page to see the latest state.",
     });
   }
+  const asset = mapConvexAssetToPrisma(assetDoc);
 
-  if (asset._count.lineItems > 0) {
+  const lineItemCount = (await convex.query(api.projectLineItems.listByAssetId, { assetId: id, orgId: organizationId })).length;
+  if (lineItemCount > 0) {
     throw new UserFacingError({
       code: "ASSET_IN_USE",
       title: "Cannot delete",
@@ -590,7 +778,8 @@ export async function deleteAsset(id: string) {
       hint: "Archive it instead so the history stays intact.",
     });
   }
-  if (asset.kitItem) {
+  const kitMembership = await convex.query(api.kitSerializedItems.getByAssetId, { assetId: id, orgId: organizationId });
+  if (kitMembership) {
     throw new UserFacingError({
       code: "ASSET_IN_KIT",
       title: "Cannot delete",
@@ -600,7 +789,9 @@ export async function deleteAsset(id: string) {
   }
   // Deleting a parent would silently orphan/destroy its accessories
   // (serialised children SetNull, bulk-child rows cascade). Block it.
-  if (asset._count.childAssets > 0 || asset._count.childBulkItems > 0) {
+  const childAssetCount = (await convex.query(api.assets.listByParentAssetId, { parentAssetId: id, orgId: organizationId })).length;
+  const childBulkCount = (await convex.query(api.assetBulkChildren.listByParentAssetId, { parentAssetId: id, orgId: organizationId })).length;
+  if (childAssetCount > 0 || childBulkCount > 0) {
     throw new UserFacingError({
       code: "ASSET_HAS_ACCESSORIES",
       title: "Cannot delete",
@@ -609,19 +800,16 @@ export async function deleteAsset(id: string) {
     });
   }
 
-  // Retire linked T&T entry if one exists
   // Retire linked T&T entry if one exists (Convex-only write).
-  const convexForTT = await getConvexClient();
-  const linkedTTList = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId: id });
+  const linkedTTList = await convex.query(api.testTagAssets.listByAssetId, { assetId: id });
   for (const linkedTT of linkedTTList) {
-    await convexForTT.mutation(api.testTagAssets.update, {
+    await convex.mutation(api.testTagAssets.update, {
       id: linkedTT.id,
       patch: { status: "RETIRED", isActive: false, updatedAt: Date.now() },
     });
   }
 
-  await prisma.asset.delete({ where: { id, organizationId } });
-  await removeAssetFromConvex(id);
+  await convex.mutation(api.assets.remove, { id });
 
   await logActivity({
     organizationId,
@@ -640,32 +828,49 @@ export async function deleteAsset(id: string) {
 
 export async function updateAssetNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("asset", "update");
-  const updated = await prisma.asset.update({
-    where: { id, organizationId },
-    data: { notes: notes || null },
-  });
-  await patchAssetInConvex(updated.id, updated);
-  return serialize(updated);
+  const convex = await getConvexClient();
+  if (notes) {
+    await convex.mutation(api.assets.patchAsset, {
+      id,
+      set: { notes, updatedAt: Date.now() },
+      clear: [],
+    });
+  } else {
+    await convex.mutation(api.assets.patchAsset, {
+      id,
+      set: { updatedAt: Date.now() },
+      clear: ["notes"],
+    });
+  }
+  const updatedDoc = await getAssetById(id);
+  if (!updatedDoc || updatedDoc.organizationId !== organizationId) {
+    throw new Error("Asset notes update read-back failed: " + id);
+  }
+  return serialize(mapConvexAssetToPrisma(updatedDoc));
 }
 
 export async function archiveAsset(id: string) {
   const { organizationId } = await requirePermission("asset", "update");
 
   // Retire linked T&T entries (Convex-only write).
-  const convexForTT = await getConvexClient();
-  const linkedTTList = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId: id });
+  const convex = await getConvexClient();
+  const linkedTTList = await convex.query(api.testTagAssets.listByAssetId, { assetId: id });
   const archiveNow = Date.now();
   for (const tt of linkedTTList) {
-    await convexForTT.mutation(api.testTagAssets.update, {
+    await convex.mutation(api.testTagAssets.update, {
       id: tt.id,
       patch: { status: "RETIRED", isActive: false, updatedAt: archiveNow },
     });
   }
 
-  const updated = await prisma.asset.update({
-    where: { id, organizationId },
-    data: { isActive: false, status: "RETIRED" },
+  await convex.mutation(api.assets.patchAsset, {
+    id,
+    set: { isActive: false, status: "RETIRED", updatedAt: archiveNow },
+    clear: [],
   });
-  await patchAssetInConvex(updated.id, updated);
-  return serialize(updated);
+  const updatedDoc = await getAssetById(id);
+  if (!updatedDoc || updatedDoc.organizationId !== organizationId) {
+    throw new Error("Asset archive read-back failed: " + id);
+  }
+  return serialize(mapConvexAssetToPrisma(updatedDoc));
 }

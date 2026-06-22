@@ -6,7 +6,6 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import type { OrgSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
-import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { createMaintenanceAssetLinks } from "@/lib/maintenance-record-asset-read";
@@ -289,19 +288,17 @@ export async function createTestTagRecord(data: {
         updatedAt: now,
       });
       await createMaintenanceAssetLinks(maintenanceId, [testTagAsset.assetId]);
-      // Mark the linked asset as in maintenance (asset still dual-written via Prisma).
-      await prisma.asset.update({
-        where: { id: testTagAsset.assetId },
-        data: { status: "IN_MAINTENANCE" },
+      // Mark the linked asset as in maintenance (asset is Convex-only now).
+      await convex.mutation(api.assets.patchAsset, {
+        id: testTagAsset.assetId,
+        set: { status: "IN_MAINTENANCE", updatedAt: Date.now() },
+        clear: [],
       });
     }
   }
 
   // Recalculate status using the freshly-written Convex state.
   await recalculateStatus(data.testTagAssetId, organizationId);
-
-  // A FAIL referral may have flipped the linked asset to IN_MAINTENANCE — mirror it.
-  if (testTagAsset.assetId) await syncAssetsToConvex([testTagAsset.assetId]);
 
   await logActivity({
     organizationId,

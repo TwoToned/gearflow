@@ -2,12 +2,13 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/org-context";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getWarehouseCloseByProject } from "@/lib/warehouse-close-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -25,29 +26,27 @@ export async function getCloseOutSummary(projectId: string) {
     throw new Error("Project not found");
   }
 
-  // Get all equipment line items (top-level only, excluding kit children)
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      organizationId,
-      type: "EQUIPMENT",
-      isKitChild: false,
-    },
-    select: {
-      id: true,
-      status: true,
-      returnCondition: true,
-      returnStatus: true,
-      quantity: true,
-      returnedQuantity: true,
-      checkedOutQuantity: true,
-      modelId: true,
-      asset: { select: { assetTag: true } },
-      bulkAsset: { select: { assetTag: true } },
-    },
+  // Get all equipment line items (top-level only, excluding kit children).
+  // projectLineItem is Convex-only — read by project then replicate the
+  // type/isKitChild where-filter in JS.
+  const convex = await getConvexClient();
+  const allLines = await convex.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
+  const lineItems = allLines.filter(
+    (li) => li.type === "EQUIPMENT" && li.isKitChild !== true,
+  );
   // model name lives in Convex — resolve from the map, not a Prisma join.
   const modelMap = await getModelMap(organizationId);
+  // asset tags live on Convex assets — resolve assetId/bulkAssetId → assetTag
+  // (replaces the old Prisma asset/bulkAsset joins).
+  const [assets, bulkAssets] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+  ]);
+  const assetTagMap = new Map(assets.map((a) => [a.id, a.assetTag]));
+  const bulkAssetTagMap = new Map(bulkAssets.map((b) => [b.id, b.assetTag]));
 
   // Categorize items
   let storedCount = 0;
@@ -66,7 +65,15 @@ export async function getCloseOutSummary(projectId: string) {
   for (const item of lineItems) {
     const isReturned = item.status === "RETURNED";
     const modelName = (item.modelId ? modelMap.get(item.modelId)?.name : null) || "Unknown";
-    const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
+    const assetTag =
+      (item.assetId ? assetTagMap.get(item.assetId) : null) ||
+      (item.bulkAssetId ? bulkAssetTagMap.get(item.bulkAssetId) : null) ||
+      null;
+    // Convex fields are optional; normalize for the exceptions shape (status was a
+    // non-null Prisma column — default to PENDING when absent).
+    const status = item.status ?? "PENDING";
+    const returnCondition = item.returnCondition ?? null;
+    const returnStatus = item.returnStatus ?? null;
 
     if (!isReturned) {
       pendingCount++;
@@ -74,9 +81,9 @@ export async function getCloseOutSummary(projectId: string) {
         lineItemId: item.id,
         modelName,
         assetTag,
-        status: item.status,
-        returnCondition: item.returnCondition,
-        returnStatus: item.returnStatus,
+        status,
+        returnCondition,
+        returnStatus,
       });
       continue;
     }
@@ -88,9 +95,9 @@ export async function getCloseOutSummary(projectId: string) {
           lineItemId: item.id,
           modelName,
           assetTag,
-          status: item.status,
-          returnCondition: item.returnCondition,
-          returnStatus: item.returnStatus,
+          status,
+          returnCondition,
+          returnStatus,
         });
         break;
       case "LOST":
@@ -99,9 +106,9 @@ export async function getCloseOutSummary(projectId: string) {
           lineItemId: item.id,
           modelName,
           assetTag,
-          status: item.status,
-          returnCondition: item.returnCondition,
-          returnStatus: item.returnStatus,
+          status,
+          returnCondition,
+          returnStatus,
         });
         break;
       case "STORED":
@@ -117,9 +124,9 @@ export async function getCloseOutSummary(projectId: string) {
             lineItemId: item.id,
             modelName,
             assetTag,
-            status: item.status,
-            returnCondition: item.returnCondition,
-            returnStatus: item.returnStatus,
+            status,
+            returnCondition,
+            returnStatus,
           });
         } else if (item.returnCondition === "MISSING") {
           lostCount++;
@@ -127,9 +134,9 @@ export async function getCloseOutSummary(projectId: string) {
             lineItemId: item.id,
             modelName,
             assetTag,
-            status: item.status,
-            returnCondition: item.returnCondition,
-            returnStatus: item.returnStatus,
+            status,
+            returnCondition,
+            returnStatus,
           });
         } else {
           pendingCount++;
@@ -137,9 +144,9 @@ export async function getCloseOutSummary(projectId: string) {
             lineItemId: item.id,
             modelName,
             assetTag,
-            status: item.status,
-            returnCondition: item.returnCondition,
-            returnStatus: item.returnStatus,
+            status,
+            returnCondition,
+            returnStatus,
           });
         }
         break;
@@ -189,16 +196,20 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     throw new Error("Project not found");
   }
 
-  // Verify all items are in a terminal state (returned)
-  const pendingItems = await prisma.projectLineItem.count({
-    where: {
+  // projectLineItem is Convex-only — read this project's lines once and apply
+  // the type/isKitChild/status where-filters in JS.
+  const convex = await getConvexClient();
+  const projectLines = (
+    await convex.query(api.projectLineItems.listByProject, {
       projectId: parsed.projectId,
-      organizationId,
-      type: "EQUIPMENT",
-      isKitChild: false,
-      status: { notIn: ["RETURNED", "CANCELLED"] },
-    },
-  });
+      orgId: organizationId,
+    })
+  ).filter((li) => li.type === "EQUIPMENT" && li.isKitChild !== true);
+
+  // Verify all items are in a terminal state (returned)
+  const pendingItems = projectLines.filter(
+    (li) => li.status !== "RETURNED" && li.status !== "CANCELLED",
+  ).length;
 
   if (pendingItems > 0) {
     throw new Error(
@@ -207,16 +218,7 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
   }
 
   // Get counts for the close record
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId: parsed.projectId,
-      organizationId,
-      type: "EQUIPMENT",
-      isKitChild: false,
-      status: "RETURNED",
-    },
-    select: { returnCondition: true },
-  });
+  const lineItems = projectLines.filter((li) => li.status === "RETURNED");
 
   const storedCount = lineItems.filter(
     (i) => !i.returnCondition || i.returnCondition === "GOOD"

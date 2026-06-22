@@ -16,17 +16,122 @@ import {
   attachLineItemTree,
   resolveAttachedSupplier,
 } from "@/lib/line-item-tree-read";
+import {
+  mapLineItemDoc,
+  type MappedLineItem,
+} from "@/lib/project-line-item-read";
+import {
+  indexChildren,
+  reconstructScope,
+} from "@/lib/project-line-item-tree-read";
+import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
+import type { LineItemAttachMaps } from "@/lib/line-item-tree-read";
 
 // ── Reads ────────────────────────────────────────────────────────────────────
+
+/** epoch-ms → Date; absent/null → null. */
+function msToDateOrNull(n: number | null | undefined): Date | null {
+  return n == null ? null : new Date(n);
+}
+
+const ASSET_DATE_KEYS = [
+  "purchaseDate",
+  "warrantyExpiry",
+  "lastTestAndTagDate",
+  "nextTestAndTagDate",
+  "createdAt",
+  "updatedAt",
+] as const;
+const BULK_ASSET_DATE_KEYS = ["lastReorderedAt", "createdAt", "updatedAt"] as const;
+const KIT_DATE_KEYS = ["purchaseDate", "createdAt", "updatedAt"] as const;
+
+function stripMetaDates<T extends Record<string, unknown>>(doc: T, dateKeys: readonly string[]): Record<string, unknown> {
+  const { _id, _creationTime, ...rest } = doc as Record<string, unknown>;
+  void _id;
+  void _creationTime;
+  for (const k of dateKeys) {
+    if (rest[k] != null) rest[k] = new Date(rest[k] as number);
+  }
+  return rest;
+}
+
+/**
+ * Attach `asset` / `bulkAsset` / `kit` (full Convex docs, meta stripped, dates →
+ * Date) onto every node of a model/supplier-attached tree, recursing into
+ * `childLineItems`. Mirrors the plain attach in project-line-item-read.ts
+ * (getProject shape — plain kit, no `_count`). A miss → null (no Prisma fallback).
+ */
+function attachAssetBulkKitPlain<T extends { assetId?: string | null; bulkAssetId?: string | null; kitId?: string | null; childLineItems?: unknown }>(
+  rows: T[],
+  assetMap: Map<string, ConvexAsset>,
+  bulkAssetMap: Map<string, ConvexBulkAsset>,
+  kitMap: Map<string, ConvexKit>,
+): T[] {
+  return rows.map((row) => {
+    const children = row.childLineItems;
+    const assetDoc = row.assetId ? assetMap.get(row.assetId) : undefined;
+    const bulkDoc = row.bulkAssetId ? bulkAssetMap.get(row.bulkAssetId) : undefined;
+    const kitDoc = row.kitId ? kitMap.get(row.kitId) : undefined;
+    return {
+      ...row,
+      asset: assetDoc ? stripMetaDates(assetDoc, ASSET_DATE_KEYS) : null,
+      bulkAsset: bulkDoc ? stripMetaDates(bulkDoc, BULK_ASSET_DATE_KEYS) : null,
+      kit: kitDoc ? stripMetaDates(kitDoc, KIT_DATE_KEYS) : null,
+      ...(Array.isArray(children)
+        ? { childLineItems: attachAssetBulkKitPlain(children as T[], assetMap, bulkAssetMap, kitMap) }
+        : {}),
+    };
+  }) as T[];
+}
+
+interface AttachContext {
+  attachMaps: LineItemAttachMaps;
+  assetMap: Map<string, ConvexAsset>;
+  bulkAssetMap: Map<string, ConvexBulkAsset>;
+  kitMap: Map<string, ConvexKit>;
+}
+
+/** Load the org-scoped maps the line-item tree attach needs (one round trip). */
+async function loadAttachContext(orgId: string): Promise<AttachContext> {
+  const [attachMaps, assetArr, bulkArr, kitArr] = await Promise.all([
+    buildLineItemAttachMaps(orgId),
+    getAssetsByOrg(orgId),
+    getBulkAssetsByOrg(orgId),
+    getKitsByOrg(orgId),
+  ]);
+  return {
+    attachMaps,
+    assetMap: new Map(assetArr.map((a) => [a.id, a])),
+    bulkAssetMap: new Map(bulkArr.map((b) => [b.id, b])),
+    kitMap: new Map(kitArr.map((k) => [k.id, k])),
+  };
+}
+
+/** Reconstruct (childLineItems depth 1, no units) + fully attach a scope of
+ *  mapped line items — matching the old Prisma include shape used by these reads. */
+function attachScopeRows(
+  scopeRows: MappedLineItem[],
+  byParent: Map<string, MappedLineItem[]>,
+  ctx: AttachContext,
+) {
+  const reconstructed = reconstructScope(scopeRows, byParent, {
+    unitsByLineItem: new Map(),
+    depth: 1,
+  });
+  const withModelSupplier = attachLineItemTree(reconstructed, ctx.attachMaps);
+  return attachAssetBulkKitPlain(withModelSupplier as never[], ctx.assetMap, ctx.bulkAssetMap, ctx.kitMap);
+}
 
 export async function getProjectCategories(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
   const client = await getConvexClient();
 
-  // 1. Convex: categories + groups + slots
-  const [convexCategories, convexGroups] = await Promise.all([
+  // 1. Convex: categories + groups + slots + line items
+  const [convexCategories, convexGroups, liDocs] = await Promise.all([
     client.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
     client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
+    client.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
   ]);
 
   // Fetch all category slots in parallel (one call per category, typically ≤10)
@@ -37,7 +142,7 @@ export async function getProjectCategories(projectId: string) {
   const slotByGroupId = new Map(allSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
   const slotBySubHireGroupId = new Map(allSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
 
-  // 2. Prisma: line items + sub-hire groups (still Prisma domain)
+  // 2. Convex line items → mapped rows; Prisma sub-hire groups (NOT flipped)
   const lineItemInclude = {
     asset: true,
     bulkAsset: true,
@@ -48,37 +153,38 @@ export async function getProjectCategories(projectId: string) {
     },
   };
 
-  const [allLineItems, subHireGroups] = await Promise.all([
-    prisma.projectLineItem.findMany({
-      where: { projectId, organizationId },
-      include: lineItemInclude,
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.subHireGroup.findMany({
-      where: {
-        subHire: { projectId, organizationId },
-        targetCategoryId: { not: null },
-      },
-      include: {
-        subHire: { select: { id: true, orderNumber: true, status: true, supplierId: true } },
-        items: true,
-        lineItems: {
-          where: { isKitChild: false, parentLineItemId: null },
-          include: lineItemInclude,
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-      orderBy: { sortOrder: "asc" },
-    }),
-  ]);
+  const mappedLineItems = liDocs.map(mapLineItemDoc);
 
-  // 3. Build lookup maps
-  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const subHireGroups = await prisma.subHireGroup.findMany({
+    where: {
+      subHire: { projectId, organizationId },
+      targetCategoryId: { not: null },
+    },
+    include: {
+      subHire: { select: { id: true, orderNumber: true, status: true, supplierId: true } },
+      items: true,
+      lineItems: {
+        where: { isKitChild: false, parentLineItemId: null },
+        include: lineItemInclude,
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
 
-  const lineItemsByGroupId = new Map<string, typeof allLineItems[number][]>();
-  const lineItemsByCatId = new Map<string, typeof allLineItems[number][]>();
-  for (const li of allLineItems) {
-    if (li.isKitChild || li.parentLineItemId) continue;
+  // 3. Build lookup maps + tree-attach helpers
+  const ctx = await loadAttachContext(organizationId);
+  const attachMaps = ctx.attachMaps;
+
+  // childLineItems matched globally by parentLineItemId (depth 1, no units —
+  // matching the old Prisma include shape used by this read).
+  const byParent = indexChildren(mappedLineItems);
+  const attachScope = (scopeRows: MappedLineItem[]) => attachScopeRows(scopeRows, byParent, ctx);
+
+  const topLevel = mappedLineItems.filter((li) => !li.isKitChild && !li.parentLineItemId);
+  const lineItemsByGroupId = new Map<string, MappedLineItem[]>();
+  const lineItemsByCatId = new Map<string, MappedLineItem[]>();
+  for (const li of topLevel) {
     if (li.groupId) {
       const arr = lineItemsByGroupId.get(li.groupId) ?? [];
       arr.push(li);
@@ -130,7 +236,7 @@ export async function getProjectCategories(projectId: string) {
             slot: slot
               ? { ...slot, createdAt: new Date(slot.createdAt ?? 0), updatedAt: new Date(slot.updatedAt ?? 0) }
               : null,
-            lineItems: attachLineItemTree(lineItemsByGroupId.get(g.id) ?? [], attachMaps),
+            lineItems: attachScope(lineItemsByGroupId.get(g.id) ?? []),
           };
         });
 
@@ -168,7 +274,7 @@ export async function getProjectCategories(projectId: string) {
         updatedAt: new Date(cat.updatedAt ?? 0),
         groups: catGroups,
         subHireGroupTargets: catSubHireGroups,
-        lineItems: attachLineItemTree(lineItemsByCatId.get(cat.id) ?? [], attachMaps),
+        lineItems: attachScope(lineItemsByCatId.get(cat.id) ?? []),
         mixedGroups,
       };
     });
@@ -178,27 +284,22 @@ export async function getProjectCategories(projectId: string) {
 
 export async function getUncategorizedLineItems(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  // Line items are still Prisma-primary
-  const items = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      organizationId,
-      categoryId: null,
-      groupId: null,
-    },
-    include: {
-      asset: true,
-      bulkAsset: true,
-      kit: true,
-      childLineItems: {
-        include: { asset: true, bulkAsset: true, kit: true },
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-    orderBy: { sortOrder: "asc" },
+  const client = await getConvexClient();
+
+  const liDocs = await client.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
-  const attachMaps = await buildLineItemAttachMaps(organizationId);
-  return serialize(attachLineItemTree(items, attachMaps));
+  const mappedLineItems = liDocs.map(mapLineItemDoc);
+
+  // Top-level items with no category AND no group (childLineItems matched globally).
+  const byParent = indexChildren(mappedLineItems);
+  const scope = mappedLineItems.filter(
+    (li) => !li.isKitChild && !li.parentLineItemId && li.categoryId == null && li.groupId == null,
+  );
+
+  const ctx = await loadAttachContext(organizationId);
+  return serialize(attachScopeRows(scope, byParent, ctx));
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -294,25 +395,26 @@ export async function deleteProjectCategory(categoryId: string) {
   // 1. Get all groups in this category from Convex
   const categoryGroups = await client.query(api.projectGroups.listByCategoryId, { categoryId });
 
-  // 2. Get IDs of all line items in this category (for cascade null-out)
-  const groupIds = categoryGroups.map((g) => g.id);
-  const allLineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      OR: [
-        { groupId: { in: groupIds.length > 0 ? groupIds : ["__none__"] } },
-        { categoryId, groupId: null },
-      ],
-    },
-    select: { id: true },
+  // 2. Get IDs of all line items in this category (for cascade null-out), from Convex.
+  const groupIdSet = new Set(categoryGroups.map((g) => g.id));
+  const projectLineItems = await client.query(api.projectLineItems.listByProject, {
+    projectId: category.projectId,
+    orgId: organizationId,
   });
-  const lineItemIds = allLineItems.map((li) => li.id);
+  const affected = projectLineItems.filter(
+    (li) =>
+      (li.groupId != null && groupIdSet.has(li.groupId)) ||
+      (li.categoryId === categoryId && li.groupId == null),
+  );
+  const lineItemIds = affected.map((li) => li.id);
 
-  // 3. Null out categoryId/groupId on line items (Prisma - line items still Prisma-primary)
-  if (lineItemIds.length > 0) {
-    await prisma.projectLineItem.updateMany({
-      where: { id: { in: lineItemIds } },
-      data: { categoryId: null, groupId: null },
+  // 3. Null out categoryId/groupId on the affected line items (Convex).
+  const nowClear = Date.now();
+  for (const li of affected) {
+    await client.mutation(api.projectLineItems.patchLineItem, {
+      id: li.id,
+      set: { updatedAt: nowClear },
+      clear: ["categoryId", "groupId"],
     });
   }
 
@@ -358,19 +460,14 @@ export async function getProjectOverbookedStatus(projectId: string) {
     return serialize({});
   }
 
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: { projectId, status: { not: "CANCELLED" } },
-    select: {
-      id: true,
-      modelId: true,
-      kitId: true,
-      quantity: true,
-      isKitChild: true,
-      parentLineItemId: true,
-      status: true,
-      subHireId: true,
-    },
+  const client = await getConvexClient();
+  const liDocs = await client.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
+  const lineItems = liDocs
+    .map(mapLineItemDoc)
+    .filter((li) => li.status !== "CANCELLED");
 
   const overbookedMap = await computeOverbookedStatus(
     organizationId,

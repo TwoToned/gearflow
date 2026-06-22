@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgRead } from "./lib/auth";
 
 /**
  * Thin CRUD for KitSerializedItem (Convex table "kitSerializedItems"). GENERATED — Phase 2/5.
@@ -102,5 +102,15 @@ export const remove = mutation({
     const doc = await ctx.db.query("kitSerializedItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("kitSerializedItems not found: " + id);
     await ctx.db.delete(doc._id);
+  },
+});
+
+// ── CUSTOM (Phase C H) — relation lookup ──
+export const getByAssetId = query({
+  args: { assetId: v.string(), orgId: v.string() },
+  handler: async (ctx, { assetId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("kitSerializedItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect())
+      .find((r) => r.organizationId === orgId) ?? null;
   },
 });

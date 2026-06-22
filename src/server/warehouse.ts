@@ -4,133 +4,18 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
-import { getLocationMap, getDefaultLocation } from "@/lib/locations-read";
+import { getLocationMap } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
-import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
-import {
-  syncLineItemRollup,
-  ensureSerialisedUnit,
-  expandAccessoriesForAsset,
-  ensureBulkUnit,
-  returnLineUnits,
-  checkinAccessoryChildren,
-} from "@/lib/line-item-fulfillment";
-import {
-  adjustBulkAvailability,
-  coalesceAdjustments,
-  type BulkAdjustment,
-  type TxClient,
-} from "@/lib/inventory-mutations";
-import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
-import { syncKitsToConvex } from "@/lib/kit-mirror";
-import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
-import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { createId } from "@paralleldrive/cuid2";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
-import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
-import { getProjectsByOrg } from "@/lib/projects-read";
-
-type ScanLogDoc = {
-  id: string;
-  organizationId: string;
-  assetId?: string;
-  bulkAssetId?: string;
-  kitId?: string;
-  projectId?: string;
-  action: string;
-  scannedById: string;
-  scannedAt: number;
-  notes?: string;
-};
-
-// ---------------------------------------------------------------------------
-// Kit bulk-content traversal
-// ---------------------------------------------------------------------------
-
-/**
- * Returns bulk-quantity adjustments for one kit's permanent composition
- * (KitBulkItem rows). Nested kits are NOT recursed here — the caller is
- * already iterating the project line-item tree and calls this once per
- * kit id encountered.
- *
- * @param sign -1 to consume (kit checkout), +1 to release (kit check-in)
- */
-async function collectKitBulkAdjustments(
-  tx: TxClient,
-  kitId: string,
-  organizationId: string,
-  sign: -1 | 1,
-): Promise<BulkAdjustment[]> {
-  const bulks = await tx.kitBulkItem.findMany({
-    where: { kitId, organizationId },
-    select: { bulkAssetId: true, quantity: true },
-  });
-  return bulks.map((b) => ({
-    bulkAssetId: b.bulkAssetId,
-    delta: sign * b.quantity,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Test & Tag (AS/NZS 3760:2022) compliance gate
-// ---------------------------------------------------------------------------
-
-// TestTagBlockError lives in src/lib/errors/test-tag-block-error.ts because
-// "use server" files can only export async functions.
-
-/**
- * Asserts that none of the given assets are blocked by failed/overdue
- * Test & Tag status. Throws TestTagBlockError on block.
- *
- * Must be called OUTSIDE a Prisma transaction (uses Convex HTTP queries).
- * Pass at least one of assetIds or bulkAssetIds. Empty input is a no-op.
- */
-async function assertTestTagAllowsCheckout(
-  organizationId: string,
-  options: {
-    assetIds?: string[];
-    bulkAssetIds?: string[];
-  },
-): Promise<void> {
-  const assetIds = (options.assetIds ?? []).filter(Boolean);
-  const bulkAssetIds = (options.bulkAssetIds ?? []).filter(Boolean);
-  if (assetIds.length === 0 && bulkAssetIds.length === 0) return;
-
-  const convex = await getConvexClient();
-  const blocked = await convex.query(api.testTagAssets.listBlockedForCheckout, {
-    orgId: organizationId,
-    assetIds,
-    bulkAssetIds,
-  });
-
-  if (blocked.length === 0) return;
-
-  // Attach asset tags from the Convex asset/bulkAsset mirrors for the error message.
-  const [allAssets, allBulkAssets] = await Promise.all([
-    assetIds.length > 0 ? getAssetsByOrg(organizationId) : Promise.resolve([]),
-    bulkAssetIds.length > 0 ? getBulkAssetsByOrg(organizationId) : Promise.resolve([]),
-  ]);
-  const assetTagMap = new Map(allAssets.map((a) => [a.id, a.assetTag]));
-  const bulkTagMap = new Map(allBulkAssets.map((b) => [b.id, b.assetTag]));
-
-  throw new TestTagBlockError(
-    blocked.map((b) => ({
-      assetTag:
-        (b.assetId ? assetTagMap.get(b.assetId) : null) ??
-        (b.bulkAssetId ? bulkTagMap.get(b.bulkAssetId) : null) ??
-        b.testTagId,
-      status: b.status as "FAILED" | "OVERDUE",
-      nextDueDate: b.nextDueDate != null ? new Date(b.nextDueDate) : null,
-    })),
-  );
-}
+import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
@@ -183,11 +68,17 @@ export async function lookupAssetForScan(
   const asset = rawAsset ? { ...rawAsset, model: assetModel } : null;
   const bulkAsset = rawBulkAsset ? { ...rawBulkAsset, model: bulkAssetModel } : null;
 
+  // The project's line-item tree lives in Convex — fetch once and resolve
+  // every "which line does this scan apply to" question in JS below.
+  const convexScan = await getConvexClient();
+  const projectLines = (
+    await convexScan.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId })
+  ).filter((li) => li.status !== "CANCELLED");
+
   // If it's a Kit barcode
   if (kit) {
-    const kitLineItem = await prisma.projectLineItem.findFirst({
-      where: { projectId, organizationId, kitId: kit.id, isKitChild: false, status: { notIn: ["CANCELLED"] } },
-    });
+    const kitLineItem =
+      projectLines.find((li) => li.kitId === kit.id && !li.isKitChild) ?? null;
     if (!kitLineItem) {
       return serialize({
         found: true as const, type: "kit" as const, lineItemId: null, assetId: null,
@@ -269,21 +160,24 @@ export async function lookupAssetForScan(
 
   // ── Resolve which order line this scan applies to ─────────────────────
   // A deployed/assigned serialised asset is pinned to a line by a
-  // ProjectLineItemUnit, not by ProjectLineItem.assetId.
-  let lineItem = null;
+  // ProjectLineItemUnit, not by ProjectLineItem.assetId. Units live in Convex —
+  // pull the org's units once and resolve in JS (line-item → project mapping is
+  // local since the unit carries only lineItemId).
+  let lineItem: (typeof projectLines)[number] | null = null;
+  const projectLineIds = new Set(projectLines.map((li) => li.id));
+  // Map of every line item in the org keyed by id → {projectId, status}, so a
+  // unit's line can be located on any project (for the "out elsewhere" check).
+  const orgUnits = asset
+    ? ((await convexScan.query(api.projectLineItemUnits.list, { orgId: organizationId })) as Array<{
+        assetId?: string | null;
+        lineItemId: string;
+        status: string;
+      }>).filter((u) => u.assetId === asset.id)
+    : [];
 
   if (asset) {
-    const unit = await prisma.projectLineItemUnit.findFirst({
-      where: {
-        assetId: asset.id,
-        lineItem: {
-          projectId,
-          organizationId,
-          status: { notIn: ["CANCELLED"] },
-        },
-      },
-      select: { lineItemId: true, status: true },
-    });
+    // Unit pinned to a line on THIS project (its line must not be CANCELLED).
+    const unit = orgUnits.find((u) => projectLineIds.has(u.lineItemId)) ?? null;
 
     if (mode === "checkin") {
       // Check-in must target a unit that is still out.
@@ -318,22 +212,22 @@ export async function lookupAssetForScan(
 
     // Not on this project yet — block if it is out on another job.
     if (asset.status === "CHECKED_OUT") {
-      const otherUnit = await prisma.projectLineItemUnit.findFirst({
-        where: {
-          assetId: asset.id,
-          status: "CHECKED_OUT",
-          lineItem: { projectId: { not: projectId }, organizationId },
-        },
-        select: {
-          lineItem: {
-            select: { project: { select: { name: true, projectNumber: true } } },
-          },
-        },
-      });
-      const otherProject = otherUnit?.lineItem.project;
-      const detail = otherProject
-        ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
-        : "";
+      // A CHECKED_OUT unit for this asset whose line lives on another project.
+      const otherUnit = orgUnits.find(
+        (u) => u.status === "CHECKED_OUT" && !projectLineIds.has(u.lineItemId),
+      );
+      let detail = "";
+      if (otherUnit) {
+        const otherLine = await convexScan.query(api.projectLineItems.getById, {
+          id: otherUnit.lineItemId,
+        });
+        const otherProject = otherLine?.projectId
+          ? await getProjectById(otherLine.projectId)
+          : null;
+        detail = otherProject
+          ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
+          : "";
+      }
       return serialize({
         found: true as const, type: "serialized" as const,
         lineItemId: null, assetId: null, assetName,
@@ -342,30 +236,17 @@ export async function lookupAssetForScan(
     }
 
     // Find an order line of this model with spare capacity.
-    const candidates = await prisma.projectLineItem.findMany({
-      where: {
-        projectId,
-        organizationId,
-        modelId,
-        isKitChild: false,
-        status: { notIn: ["CANCELLED"] },
-      },
-      orderBy: { sortOrder: "asc" },
-    });
+    const candidates = projectLines
+      .filter((li) => li.modelId === modelId && !li.isKitChild)
+      .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
     lineItem =
-      candidates.find((li) => li.assignedQuantity < li.quantity) ?? null;
+      candidates.find((li) => (li.assignedQuantity ?? 0) < (li.quantity ?? 0)) ?? null;
   } else {
     // Bulk asset — find its order line on the project.
-    lineItem = await prisma.projectLineItem.findFirst({
-      where: {
-        projectId,
-        organizationId,
-        modelId,
-        isKitChild: false,
-        status: { notIn: ["CANCELLED"] },
-      },
-      orderBy: { sortOrder: "asc" },
-    });
+    lineItem =
+      projectLines
+        .filter((li) => li.modelId === modelId && !li.isKitChild)
+        .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))[0] ?? null;
   }
 
   if (!lineItem) {
@@ -390,10 +271,10 @@ export async function lookupAssetForScan(
   // Bulk scan
   if (!asset) {
     if (mode === "checkin") {
-      const outUnit = await prisma.projectLineItemUnit.findFirst({
-        where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
-        select: { id: true },
+      const lineUnits = await convexScan.query(api.projectLineItemUnits.listByLineItem, {
+        lineItemId: lineItem.id,
       });
+      const outUnit = lineUnits.find((u) => u.status === "CHECKED_OUT") ?? null;
       if (!outUnit) {
         return serialize({
           found: true as const, type: "bulk" as const, lineItemId: null,
@@ -412,387 +293,6 @@ export async function lookupAssetForScan(
     found: true as const, type: "serialized" as const,
     lineItemId: lineItem.id, assetId: asset.id, assetName, reason: null,
   });
-}
-
-// ---------------------------------------------------------------------------
-// Accessory cascade — permanent accessories (child assets) move with their
-// parent through the warehouse. They are separate child line items
-// (childKind: ACCESSORY, parentLineItemId set), so the parent's checkout /
-// checkin must flip the children through the SAME unit path as any other line
-// (ensureSerialisedUnit / ensureBulkUnit / returnLineUnits) — never a parallel
-// cascade. No-op when the parent has no accessories.
-// ---------------------------------------------------------------------------
-
-async function checkoutAccessoryChildren(
-  tx: Prisma.TransactionClient,
-  args: {
-    organizationId: string;
-    projectId: string;
-    parentLineItemId: string;
-    /** The specific parent unit being deployed. Null = whole-line checkout
-     *  (flip every still-out accessory unit). */
-    parentUnitAssetId?: string | null;
-    userId: string;
-    projectLocationId: string | null;
-  },
-  // Collects created scan-log rows so the caller can mirror them to Convex
-  // AFTER the tx commits (Convex calls can't run inside a Prisma tx).
-  scanLogSink: ScanLogDoc[],
-) {
-  const { organizationId, projectId, parentLineItemId, userId, projectLocationId } = args;
-  const parentUnitAssetId = args.parentUnitAssetId ?? null;
-  const children = await tx.projectLineItem.findMany({
-    where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
-    select: { id: true },
-  });
-  if (children.length === 0) return { assetsTouched: [] as string[] };
-  const childIds = children.map((c) => c.id);
-
-  // The accessory UNITS to deploy now: the per-parent-unit rows tied to the
-  // handheld being deployed (parentUnitAssetId), or every still-out unit on a
-  // whole-line checkout. Units are materialised at prep / scan-expansion, so by
-  // here they exist; we flip the matching ones, never an aggregate row.
-  const units = await tx.projectLineItemUnit.findMany({
-    where: {
-      lineItemId: { in: childIds },
-      organizationId,
-      status: { not: "CHECKED_OUT" },
-      ...(parentUnitAssetId ? { parentUnitAssetId } : {}),
-    },
-    select: { id: true, assetId: true, bulkAssetId: true },
-  });
-
-  // SECURITY/COMPLIANCE (unchanged intent, now unit-scoped): accessory children
-  // are SEPARATE line items the top-level preflight can't see, so gate them here.
-  // Scope to the units ACTUALLY flipping now (the deployed parent unit's share),
-  // so an already-shipped sibling whose T&T lapsed can't block a later partial
-  // deploy of the same multi-quantity parent line.
-  await assertTestTagAllowsCheckout(organizationId, {
-    assetIds: units.map((u) => u.assetId).filter((x): x is string => !!x),
-    bulkAssetIds: units.map((u) => u.bulkAssetId).filter((x): x is string => !!x),
-  });
-
-  const assetsTouched: string[] = [];
-  for (const u of units) {
-    await tx.projectLineItemUnit.updateMany({
-      where: { id: u.id, status: { not: "CHECKED_OUT" } },
-      data: { status: "CHECKED_OUT", checkedOutAt: new Date(), checkedOutById: userId },
-    });
-    if (u.assetId) {
-      await tx.asset.updateMany({
-        where: { id: u.assetId, organizationId },
-        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-      });
-      assetsTouched.push(u.assetId);
-      scanLogSink.push({ id: createId(), organizationId, assetId: u.assetId, projectId, action: "CHECK_OUT", scannedById: userId, scannedAt: Date.now(), notes: "Accessory — moved with parent" });
-    } else if (u.bulkAssetId) {
-      scanLogSink.push({ id: createId(), organizationId, bulkAssetId: u.bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, scannedAt: Date.now(), notes: "Accessory — moved with parent" });
-    }
-  }
-  for (const id of childIds) await syncLineItemRollup(tx, id);
-  return { assetsTouched };
-}
-
-// ── checkOutItems helpers ─────────────────────────────────────────────────
-
-/** Return value from checkOutSerializedItem: signals whether the caller should
- *  `continue` (skip post-checkout finalization for this item). */
-type CheckoutItemResult = { kind: "continue" } | { kind: "done" };
-
-/**
- * Gather every serialized and bulk asset id that will be affected by the
- * checkout batch and assert none have a failed/overdue Test & Tag record.
- * Returns the preflight line items (needed by the prep-unit expansion step).
- */
-async function gatherTestTagAssetsAndAssert(
-  tx: TxClient,
-  organizationId: string,
-  userId: string,
-  projectId: string,
-  items: Array<{ lineItemId: string; assetId?: string }>,
-): Promise<Array<{ id: string; assetId: string | null; bulkAssetId: string | null }>> {
-  const lineItemIds = items.map((i) => i.lineItemId);
-  const [preflightLineItems, preflightUnits] = await Promise.all([
-    tx.projectLineItem.findMany({
-      where: { id: { in: lineItemIds }, organizationId, projectId },
-      select: { id: true, assetId: true, bulkAssetId: true },
-    }),
-    tx.projectLineItemUnit.findMany({
-      where: { lineItemId: { in: lineItemIds }, organizationId },
-      select: { assetId: true, bulkAssetId: true },
-    }),
-  ]);
-  const preflightAssetIds = [
-    ...(preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[]),
-    ...(preflightUnits.map((u) => u.assetId).filter(Boolean) as string[]),
-    ...(items.map((i) => i.assetId).filter(Boolean) as string[]),
-  ];
-  const preflightBulkIds = [
-    ...(preflightLineItems.map((li) => li.bulkAssetId).filter(Boolean) as string[]),
-    ...(preflightUnits.map((u) => u.bulkAssetId).filter(Boolean) as string[]),
-  ];
-  await assertTestTagAllowsCheckout(organizationId, {
-    assetIds: preflightAssetIds,
-    bulkAssetIds: preflightBulkIds,
-  });
-  return preflightLineItems;
-}
-
-/**
- * Expand "deploy the whole prepped line" items into one item per prepped
- * unit so that each prep assignment materializes as a real checkout.
- */
-async function expandPrepUnitAssignments(
-  tx: TxClient,
-  organizationId: string,
-  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
-  preflightLineItems: Array<{ id: string; assetId: string | null; bulkAssetId: string | null }>,
-): Promise<typeof items> {
-  const expandedItems: typeof items = [];
-  for (const item of items) {
-    if (item.assetId) {
-      expandedItems.push(item);
-      continue;
-    }
-    const lineItemRow = preflightLineItems.find((l) => l.id === item.lineItemId);
-    if (lineItemRow?.assetId || lineItemRow?.bulkAssetId) {
-      expandedItems.push(item);
-      continue;
-    }
-    const lineUnits = await tx.projectLineItemUnit.findMany({
-      where: {
-        lineItemId: item.lineItemId,
-        organizationId,
-        status: { not: "CHECKED_OUT" },
-        OR: [
-          { assetId: { not: null } },
-          { bulkAssetId: { not: null } },
-        ],
-      },
-      select: { assetId: true, bulkAssetId: true, quantity: true },
-      orderBy: { ordinal: "asc" },
-    });
-    if (lineUnits.length === 0) {
-      expandedItems.push(item);
-      continue;
-    }
-    const want = item.quantity ?? lineUnits.length;
-    const toDeploy = lineUnits.slice(0, Math.max(1, Math.min(want, lineUnits.length)));
-    for (const u of toDeploy) {
-      expandedItems.push({
-        lineItemId: item.lineItemId,
-        ...(u.assetId
-          ? { assetId: u.assetId }
-          : { quantity: u.quantity }),
-        notes: item.notes,
-      });
-    }
-  }
-  return expandedItems;
-}
-
-/**
- * Validate and execute a serialised-asset checkout: scope the asset to the
- * caller's org, guard against double-deploy / unavailable statuses, create or
- * update the unit row, flip asset status, and write a scan log.
- *
- * @returns `{ kind: "continue" }` when the asset is already deployed on its
- *          own unit (caller should skip post-checkout finalization).
- *          `{ kind: "done" }` on a successful fresh checkout.
- */
-async function checkOutSerializedItem(
-  tx: TxClient,
-  params: {
-    organizationId: string;
-    lineItemId: string;
-    targetAssetId: string;
-    userId: string;
-    projectLocationId: string | null;
-    projectId: string;
-    notes?: string;
-  },
-  scanLogSink: ScanLogDoc[],
-): Promise<CheckoutItemResult> {
-  const { organizationId, lineItemId, targetAssetId, userId, projectLocationId, projectId, notes } = params;
-
-  const assetRecord = await tx.asset.findFirst({
-    where: { id: targetAssetId, organizationId },
-    select: { status: true, assetTag: true },
-  });
-  if (!assetRecord) {
-    throw new Error(`Asset not found in this organization`);
-  }
-  if (assetRecord.status === "CHECKED_OUT") {
-    const ownUnit = await tx.projectLineItemUnit.findUnique({
-      where: {
-        lineItemId_assetId: {
-          lineItemId,
-          assetId: targetAssetId,
-        },
-      },
-      select: { status: true },
-    });
-    if (ownUnit && ownUnit.status === "CHECKED_OUT") return { kind: "continue" };
-    throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
-  }
-  if (
-    assetRecord.status === "RETIRED" ||
-    assetRecord.status === "IN_MAINTENANCE" ||
-    assetRecord.status === "LOST"
-  ) {
-    throw new Error(
-      `Asset ${assetRecord.assetTag} is ${assetRecord.status
-        .replace("_", " ")
-        .toLowerCase()} and cannot be deployed`,
-    );
-  }
-
-  const { id: unitId } = await ensureSerialisedUnit(tx, {
-    organizationId,
-    lineItemId,
-    assetId: targetAssetId,
-  });
-  await tx.projectLineItemUnit.updateMany({
-    where: { id: unitId, status: { not: "CHECKED_OUT" } },
-    data: {
-      status: "CHECKED_OUT",
-      checkedOutAt: new Date(),
-      checkedOutById: userId,
-    },
-  });
-
-  await tx.asset.updateMany({
-    where: { id: targetAssetId, organizationId },
-    data: {
-      status: "CHECKED_OUT",
-      ...(projectLocationId && { locationId: projectLocationId }),
-    },
-  });
-  scanLogSink.push({ id: createId(), organizationId, assetId: targetAssetId, projectId, action: "CHECK_OUT", scannedById: userId, scannedAt: Date.now(), notes: notes ?? undefined });
-  return { kind: "done" };
-}
-
-/**
- * Execute a bulk-asset checkout: create or update a unit row carrying the
- * checkout quantity and write a scan log.
- */
-async function checkOutBulkItem(
-  tx: TxClient,
-  params: {
-    organizationId: string;
-    lineItemId: string;
-    lineItemQuantity: number;
-    bulkAssetId: string;
-    checkoutQty: number;
-    userId: string;
-    projectId: string;
-    notes?: string;
-  },
-  scanLogSink: ScanLogDoc[],
-): Promise<void> {
-  const { organizationId, lineItemId, lineItemQuantity, bulkAssetId, checkoutQty, userId, projectId, notes } = params;
-
-  const { id: unitId } = await ensureBulkUnit(tx, {
-    organizationId,
-    lineItemId,
-    bulkAssetId,
-    quantity: checkoutQty,
-  });
-  await tx.projectLineItemUnit.update({
-    where: { id: unitId },
-    data: {
-      status: "CHECKED_OUT",
-      quantity: checkoutQty,
-      checkedOutAt: new Date(),
-      checkedOutById: userId,
-    },
-  });
-  scanLogSink.push({ id: createId(), organizationId, bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, scannedAt: Date.now(), notes: notes || `Checked out ${checkoutQty} of ${lineItemQuantity}` });
-}
-
-/**
- * Deploy-whole-line edge: flip the line directly (no physical unit to track).
- * Pushes the updated line into the results array and signals the caller to
- * `continue` (skip post-checkout finalization).
- */
-async function checkOutDeployWholeLine(
-  tx: TxClient,
-  params: {
-    lineItemId: string;
-    lineItemQuantity: number;
-    userId: string;
-  },
-  updated: unknown[],
-): Promise<void> {
-  const { lineItemId, lineItemQuantity, userId } = params;
-  await tx.projectLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      status: "CHECKED_OUT",
-      checkedOutQuantity: lineItemQuantity,
-      checkedOutAt: new Date(),
-      checkedOutBy: { connect: { id: userId } },
-    },
-  });
-  updated.push(
-    await tx.projectLineItem.findUnique({
-      where: { id: lineItemId },
-      // model lives in Convex — attached after the tx (see attachModelToResults).
-      include: { asset: true, bulkAsset: true },
-    }),
-  );
-}
-
-/**
- * Post-checkout finalization: expand accessories, roll up the unit onto the
- * order line, cascade checkout to accessory children, and push the updated
- * line into the results array.
- */
-async function finalizeCheckoutItem(
-  tx: TxClient,
-  params: {
-    organizationId: string;
-    lineItemId: string;
-    targetAssetId: string | null;
-    projectId: string;
-    userId: string;
-    projectLocationId: string | null;
-    includeAccessories?: boolean;
-  },
-  updated: unknown[],
-  scanLogSink: ScanLogDoc[],
-): Promise<{ assetsTouched: string[] }> {
-  const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId, includeAccessories } = params;
-
-  let assetsTouched: string[] = [];
-  if (includeAccessories !== false) {
-    if (targetAssetId) {
-      await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
-    }
-
-    const r = await checkoutAccessoryChildren(tx, {
-      organizationId,
-      projectId,
-      parentLineItemId: lineItemId,
-      // Deploy only THIS parent unit's accessories (the handheld being checked
-      // out). Null for a whole-line/bulk checkout → flips every still-out unit.
-      parentUnitAssetId: targetAssetId,
-      userId,
-      projectLocationId,
-    }, scanLogSink);
-    assetsTouched = r.assetsTouched;
-  }
-
-  await syncLineItemRollup(tx, lineItemId);
-
-  updated.push(
-    await tx.projectLineItem.findUnique({
-      where: { id: lineItemId },
-      // model lives in Convex — attached after the tx (see attachModelToResults).
-      include: { asset: true, bulkAsset: true },
-    }),
-  );
-  return { assetsTouched };
 }
 
 /**
@@ -829,108 +329,27 @@ export async function checkOutItems(
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 
   // Block send-out while any blocking comment on the project is unresolved.
-  // Do this before opening the Prisma transaction so a Convex read never holds
-  // a database connection hostage.
   await assertNoBlockingComments(organizationId, projectId, {
     actionLabel: "check out items",
   });
 
-  const touchedAssetIds = new Set<string>();
-  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits.
-  const scanLogSink: ScanLogDoc[] = [];
-  const results = await prisma.$transaction(async (tx) => {
-    const updated: unknown[] = [];
-
-    // Fetch the project's location to update asset locations on checkout
-    const project = await tx.project.findUnique({
-      where: { id: projectId, organizationId },
-      select: { locationId: true },
-    });
-    const projectLocationId = project?.locationId || null;
-
-    // Pre-flight T&T compliance block
-    const preflightLineItems = await gatherTestTagAssetsAndAssert(
-      tx, organizationId, userId, projectId, items,
-    );
-
-    // Expand deploy-whole-prep items into one item per prepped unit
-    const expandedItems = await expandPrepUnitAssignments(
-      tx, organizationId, items, preflightLineItems,
-    );
-
-    for (const item of expandedItems) {
-      // Verify line item belongs to this project and org
-      const lineItem = await tx.projectLineItem.findFirst({
-        where: {
-          id: item.lineItemId,
-          projectId,
-          organizationId,
-        },
-      });
-
-      if (!lineItem) {
-        throw new Error(`Line item ${item.lineItemId} not found in project`);
-      }
-
-      const targetAssetId = item.assetId || lineItem.assetId || null;
-
-      if (targetAssetId) {
-        const result = await checkOutSerializedItem(tx, {
-          organizationId,
-          lineItemId: lineItem.id,
-          targetAssetId,
-          userId,
-          projectLocationId,
-          projectId,
-          notes: item.notes,
-        }, scanLogSink);
-        if (result.kind === "continue") continue;
-        touchedAssetIds.add(targetAssetId);
-      } else if (lineItem.bulkAssetId) {
-        const checkoutQty = item.quantity || lineItem.quantity;
-        await checkOutBulkItem(tx, {
-          organizationId,
-          lineItemId: lineItem.id,
-          lineItemQuantity: lineItem.quantity,
-          bulkAssetId: lineItem.bulkAssetId,
-          checkoutQty,
-          userId,
-          projectId,
-          notes: item.notes,
-        }, scanLogSink);
-      } else {
-        await checkOutDeployWholeLine(tx, {
-          lineItemId: lineItem.id,
-          lineItemQuantity: lineItem.quantity,
-          userId,
-        }, updated);
-        continue;
-      }
-
-      const fin = await finalizeCheckoutItem(tx, {
-        organizationId,
-        lineItemId: lineItem.id,
-        targetAssetId,
-        projectId,
-        userId,
-        projectLocationId,
-        includeAccessories,
-      }, updated, scanLogSink);
-      for (const id of fin.assetsTouched) touchedAssetIds.add(id);
-    }
-
-    return updated;
+  // The whole atomic checkout (T&T preflight, prep-unit expansion, status flips,
+  // unit/asset/bulk mutations, accessory cascade, scan logs) runs inside one
+  // Convex mutation. We re-read the affected lines for the return payload.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.checkoutItems, {
+    organizationId,
+    projectId,
+    userId,
+    items: items.map((i) => ({
+      lineItemId: i.lineItemId,
+      assetId: i.assetId,
+      quantity: i.quantity,
+      notes: i.notes,
+    })),
+    includeAccessories,
+    now: Date.now(),
   });
-
-  // Mirror the checked-out asset status/location changes (scanned assets +
-  // cascaded accessories) + the project's line-item status flips / scan-time
-  // accessory expansions to Convex.
-  await syncAssetsToConvex([...touchedAssetIds]);
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan-log rows to Convex after the tx commits.
-  const convexForScanLog = await getConvexClient();
-  for (const doc of scanLogSink) await convexForScanLog.mutation(api.assetScanLogs.createIfMissing, doc as never);
 
   for (const item of items) {
     await logActivity({
@@ -947,82 +366,12 @@ export async function checkOutItems(
     });
   }
 
-  // model lives in Convex — graft it onto the result rows (the tx dropped the join).
-  return serialize(await attachModelToResults(organizationId, results));
-}
-
-// ── checkInItems helper ─────────────────────────────────────────────────
-
-/**
- * Process a single check-in item: call returnLineUnits, write scan log,
- * sync the line rollup, cascade to accessory children, and push the
- * updated line item into the results array.
- */
-async function processItemCheckIn(
-  tx: TxClient,
-  params: {
-    organizationId: string;
-    projectId: string;
-    userId: string;
-    defaultLocationId: string | null;
-  },
-  item: {
-    lineItemId: string;
-    assetId?: string;
-    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
-    quantity?: number;
-    notes?: string;
-  },
-  updated: unknown[],
-  scanLogSink: ScanLogDoc[],
-): Promise<{ assetsTouched: string[] }> {
-  const { organizationId, projectId, userId, defaultLocationId } = params;
-
-  const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
-    organizationId,
-    projectId,
-    lineItemId: item.lineItemId,
-    assetId: item.assetId,
-    returnCondition: item.returnCondition,
-    quantity: item.quantity,
-    notes: item.notes,
-    userId,
-    defaultLocationId,
-  });
-
-  if (assetsTouched.length === 1) {
-    scanLogSink.push({ id: createId(), organizationId, assetId: assetsTouched[0], projectId, action: "CHECK_IN", scannedById: userId, scannedAt: Date.now(), notes: item.notes ?? undefined });
-  } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
-    scanLogSink.push({ id: createId(), organizationId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: Date.now(), notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
-  }
-
-  await syncLineItemRollup(tx, item.lineItemId);
-
-  const touched = [...assetsTouched];
-  if (unitsFlipped > 0) {
-    const acc = await checkinAccessoryChildren(tx, {
-      organizationId,
-      projectId,
-      parentLineItemId: item.lineItemId,
-      returnCondition: item.returnCondition ?? "GOOD",
-      userId,
-      defaultLocationId,
-      returnedAssetId: item.assetId ?? null,
-    });
-    touched.push(...acc.assetsTouched);
-  }
-
-  updated.push(
-    await tx.projectLineItem.findUnique({
-      where: { id: item.lineItemId },
-      // model lives in Convex — attached after the tx (see attachModelToResults).
-      include: { asset: true, bulkAsset: true },
-    }),
+  // Re-read the updated lines and graft the Convex model doc for the return.
+  const rows = await Promise.all(
+    res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
   );
-  return { assetsTouched: touched };
+  return serialize(await attachModelToResults(organizationId, rows));
 }
-
-// ── checkInItems (refactored) ───────────────────────────────────────────
 
 export async function checkInItems(
   projectId: string,
@@ -1037,40 +386,16 @@ export async function checkInItems(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const touchedAssetIds = new Set<string>();
-  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits.
-  const scanLogSink: ScanLogDoc[] = [];
-  const results = await prisma.$transaction(async (tx) => {
-    const updated: unknown[] = [];
-
-    // Find the org's default location to restore assets to on return
-    const defaultLocation = await tx.location.findFirst({
-      where: { organizationId, isDefault: true },
-      select: { id: true },
-    });
-    const defaultLocationId = defaultLocation?.id || null;
-
-    for (const item of items) {
-      const r = await processItemCheckIn(tx, {
-        organizationId,
-        projectId,
-        userId,
-        defaultLocationId,
-      }, item, updated, scanLogSink);
-      for (const id of r.assetsTouched) touchedAssetIds.add(id);
-    }
-
-    return updated;
+  // The whole atomic check-in (unit returns, asset/bulk restores, scan logs,
+  // accessory cascade, line rollups) runs inside one Convex mutation.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.checkinItems, {
+    organizationId,
+    projectId,
+    userId,
+    items,
+    now: Date.now(),
   });
-
-  // Mirror the returned asset status/location changes + the project's line-item
-  // status flips to Convex.
-  await syncAssetsToConvex([...touchedAssetIds]);
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan-log rows to Convex after the tx commits.
-  const convexForCheckIn = await getConvexClient();
-  for (const doc of scanLogSink) await convexForCheckIn.mutation(api.assetScanLogs.createIfMissing, doc as never);
 
   for (const item of items) {
     await logActivity({
@@ -1086,8 +411,11 @@ export async function checkInItems(
     });
   }
 
-  // model lives in Convex — graft it onto the result rows (the tx dropped the join).
-  return serialize(await attachModelToResults(organizationId, results));
+  // Re-read the updated lines and graft the Convex model doc for the return.
+  const rows = await Promise.all(
+    res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
+  );
+  return serialize(await attachModelToResults(organizationId, rows));
 }
 
 export async function checkOutKit(projectId: string, kitId: string) {
@@ -1098,191 +426,17 @@ export async function checkOutKit(projectId: string, kitId: string) {
     actionLabel: "check out this kit",
   });
 
-  const result = await prisma.$transaction(async (tx) => {
-    // Find the kit parent line item on this project
-    const kitLineItem = await tx.projectLineItem.findFirst({
-      where: { projectId, organizationId, kitId, isKitChild: false },
-    });
-    if (!kitLineItem) throw new Error("Kit not found on this project");
-
-    // Fetch the project's location to update kit/asset locations
-    const project = await tx.project.findUnique({
-      where: { id: projectId },
-      select: { locationId: true },
-    });
-    const projectLocationId = project?.locationId || null;
-
-    // Pre-flight T&T compliance block — gather every asset id reachable
-    // through the kit's permanent composition (KitSerializedItem and
-    // KitBulkItem) plus any nested kit's composition. If any asset has
-    // FAILED/OVERDUE T&T status, throw and roll back. Mirror of the
-    // bulk-availability gathering pattern from Wave 1.5.
-    const kitSerializedItems = await tx.kitSerializedItem.findMany({
-      where: { kitId },
-      select: { assetId: true },
-    });
-    const kitBulkItems = await tx.kitBulkItem.findMany({
-      where: { kitId, organizationId },
-      select: { bulkAssetId: true },
-    });
-    // Find nested kits via child line items so we can include their composition
-    const kitChildren = await tx.projectLineItem.findMany({
-      where: { parentLineItemId: kitLineItem.id, organizationId },
-      select: { kitId: true },
-    });
-    const nestedKitIds = kitChildren
-      .map((c) => c.kitId)
-      .filter(Boolean) as string[];
-    const nestedSerializedItems = nestedKitIds.length
-      ? await tx.kitSerializedItem.findMany({
-          where: { kitId: { in: nestedKitIds } },
-          select: { assetId: true },
-        })
-      : [];
-    const nestedBulkItems = nestedKitIds.length
-      ? await tx.kitBulkItem.findMany({
-          where: { kitId: { in: nestedKitIds }, organizationId },
-          select: { bulkAssetId: true },
-        })
-      : [];
-    await assertTestTagAllowsCheckout(organizationId, {
-      assetIds: [
-        ...kitSerializedItems.map((k) => k.assetId),
-        ...nestedSerializedItems.map((k) => k.assetId),
-      ],
-      bulkAssetIds: [
-        ...kitBulkItems.map((k) => k.bulkAssetId),
-        ...nestedBulkItems.map((k) => k.bulkAssetId),
-      ],
-    });
-
-    // Accumulate every asset/bulk id whose row this checkout mutates, for the
-    // Convex mirror (both dual-written) after the transaction commits.
-    const txTouchedAssets = new Set<string>();
-    const txTouchedBulk = new Set<string>();
-
-    // Update kit parent line item
-    await tx.projectLineItem.update({
-      where: { id: kitLineItem.id },
-      data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
-    });
-
-    // Update all child line items (direct children)
-    const children = await tx.projectLineItem.findMany({
-      where: { parentLineItemId: kitLineItem.id, organizationId },
-      select: { id: true, assetId: true, kitId: true },
-    });
-    if (children.length > 0) {
-      await tx.projectLineItem.updateMany({
-        where: { id: { in: children.map((c) => c.id) } },
-        data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
-      });
-    }
-
-    // Handle grandchildren: children of nested kits inside this kit
-    const nestedKitChildren = children.filter((c) => c.kitId);
-    for (const nestedChild of nestedKitChildren) {
-      // Update grandchild line items
-      await tx.projectLineItem.updateMany({
-        where: { parentLineItemId: nestedChild.id, organizationId },
-        data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
-      });
-      // Update the nested kit entity status
-      await tx.kit.update({
-        where: { id: nestedChild.kitId! },
-        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-      });
-      // Update serialized assets inside the nested kit
-      const nestedKitItems = await tx.kitSerializedItem.findMany({ where: { kitId: nestedChild.kitId! } });
-      if (nestedKitItems.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
-          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-        });
-        for (const ki of nestedKitItems) txTouchedAssets.add(ki.assetId);
-      }
-    }
-
-    // Update child assets referenced by line items (for prep-kits whose contents are line item references, not KitSerializedItem)
-    const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-    if (childAssetIds.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: childAssetIds } },
-        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-      });
-      for (const id of childAssetIds) txTouchedAssets.add(id);
-    }
-    // Also update grandchild assets
-    if (nestedKitChildren.length > 0) {
-      const grandchildren = await tx.projectLineItem.findMany({
-        where: { parentLineItemId: { in: nestedKitChildren.map((c) => c.id) }, organizationId },
-        select: { assetId: true },
-      });
-      const grandchildAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
-      if (grandchildAssetIds.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: grandchildAssetIds } },
-          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-        });
-        for (const id of grandchildAssetIds) txTouchedAssets.add(id);
-      }
-    }
-
-    // Update Kit status and location
-    await tx.kit.update({
-      where: { id: kitId },
-      data: {
-        status: "CHECKED_OUT",
-        ...(projectLocationId && { locationId: projectLocationId }),
-      },
-    });
-
-    // Update all serialized assets inside the kit (KitSerializedItem records — for regular kits)
-    const kitItems = await tx.kitSerializedItem.findMany({ where: { kitId } });
-    if (kitItems.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
-        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-      });
-      for (const ki of kitItems) txTouchedAssets.add(ki.assetId);
-    }
-
-    // Decrement BulkAsset.availableQuantity for every KitBulkItem in this kit
-    // AND every nested kit. Concurrency-safe via the shared helper: if any
-    // bulk has insufficient stock under concurrent writes, throws and rolls
-    // back the entire transaction (no partial checkout).
-    const bulkAdjustments: BulkAdjustment[] = [
-      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, -1)),
-    ];
-    for (const nestedChild of nestedKitChildren) {
-      bulkAdjustments.push(
-        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, -1)),
-      );
-    }
-    if (bulkAdjustments.length > 0) {
-      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
-      for (const a of bulkAdjustments) txTouchedBulk.add(a.bulkAssetId);
-    }
-
-    return {
-      success: true,
-      kitId,
-      affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
-      touchedAssets: [...txTouchedAssets],
-      touchedBulk: [...txTouchedBulk],
-    };
+  // The whole atomic kit checkout (T&T preflight over this kit + nested kits,
+  // line/asset/kit status flips, bulk decrements, scan log) runs in one Convex
+  // mutation.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.checkoutKit, {
+    organizationId,
+    projectId,
+    userId,
+    kitId,
+    now: Date.now(),
   });
-
-  // Mirror the kit status/location changes (this kit + any nested kits) + the
-  // affected serialized assets + bulk quantity changes to Convex.
-  await syncKitsToConvex(result.affectedKitIds);
-  await syncAssetsToConvex(result.touchedAssets);
-  await syncBulkAssetsToConvex(result.touchedBulk);
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan-log row to Convex after the tx commits.
-  const convexForKitOut = await getConvexClient();
-  await convexForKitOut.mutation(api.assetScanLogs.createIfMissing, { id: createId(), organizationId, kitId, projectId, action: "CHECK_OUT", scannedById: userId, scannedAt: Date.now(), notes: "Kit deployed with all contents" } as never);
 
   await logActivity({
     organizationId,
@@ -1297,7 +451,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
     kitId,
   });
 
-  return serialize(result);
+  return serialize({ success: true, ...res });
 }
 
 export async function checkInKit(
@@ -1307,146 +461,17 @@ export async function checkInKit(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const result = await prisma.$transaction(async (tx) => {
-    const kitLineItem = await tx.projectLineItem.findFirst({
-      where: { projectId, organizationId, kitId, isKitChild: false },
-    });
-    if (!kitLineItem) throw new Error("Kit not found on this project");
-
-    // Find the org's default location to restore kit/assets to
-    const defaultLocation = await tx.location.findFirst({
-      where: { organizationId, isDefault: true },
-      select: { id: true },
-    });
-    const defaultLocationId = defaultLocation?.id || null;
-
-    // Accumulate every asset/bulk id whose row this check-in mutates, for the
-    // Convex mirror (both dual-written) after the transaction commits.
-    const txTouchedAssets = new Set<string>();
-    const txTouchedBulk = new Set<string>();
-
-    // Update kit parent line item
-    await tx.projectLineItem.update({
-      where: { id: kitLineItem.id },
-      data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
-    });
-
-    const newKitStatus = returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : returnCondition === "MISSING" ? "INCOMPLETE" : "AVAILABLE";
-    const assetStatus = returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
-
-    // Update all child line items (direct children)
-    const children = await tx.projectLineItem.findMany({
-      where: { parentLineItemId: kitLineItem.id, organizationId, status: "CHECKED_OUT" },
-      select: { id: true, assetId: true, kitId: true },
-    });
-    if (children.length > 0) {
-      await tx.projectLineItem.updateMany({
-        where: { id: { in: children.map((c) => c.id) } },
-        data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
-      });
-    }
-
-    // Handle grandchildren: children of nested kits inside this kit
-    const nestedKitChildren = children.filter((c) => c.kitId);
-    for (const nestedChild of nestedKitChildren) {
-      // Return grandchild line items
-      await tx.projectLineItem.updateMany({
-        where: { parentLineItemId: nestedChild.id, organizationId, status: "CHECKED_OUT" },
-        data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
-      });
-      // Reset the nested kit entity
-      await tx.kit.update({
-        where: { id: nestedChild.kitId! },
-        data: { status: newKitStatus, locationId: defaultLocationId },
-      });
-      // Reset serialized assets inside the nested kit
-      const nestedKitItems = await tx.kitSerializedItem.findMany({ where: { kitId: nestedChild.kitId! } });
-      if (nestedKitItems.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
-          data: { status: assetStatus, locationId: defaultLocationId },
-        });
-        for (const ki of nestedKitItems) txTouchedAssets.add(ki.assetId);
-      }
-    }
-
-    // Reset child assets referenced by line items (for prep-kits)
-    const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-    if (childAssetIds.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: childAssetIds } },
-        data: { status: assetStatus, locationId: defaultLocationId },
-      });
-      for (const id of childAssetIds) txTouchedAssets.add(id);
-    }
-    // Also reset grandchild assets
-    if (nestedKitChildren.length > 0) {
-      const grandchildren = await tx.projectLineItem.findMany({
-        where: { parentLineItemId: { in: nestedKitChildren.map((c) => c.id) }, organizationId },
-        select: { assetId: true },
-      });
-      const grandchildAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
-      if (grandchildAssetIds.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: grandchildAssetIds } },
-          data: { status: assetStatus, locationId: defaultLocationId },
-        });
-        for (const id of grandchildAssetIds) txTouchedAssets.add(id);
-      }
-    }
-
-    // Update Kit status and restore location
-    await tx.kit.update({
-      where: { id: kitId },
-      data: { status: newKitStatus, locationId: defaultLocationId },
-    });
-
-    // Update all serialized assets inside the kit (KitSerializedItem — for regular kits)
-    const kitItems = await tx.kitSerializedItem.findMany({ where: { kitId } });
-    if (kitItems.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
-        data: { status: assetStatus, locationId: defaultLocationId },
-      });
-      for (const ki of kitItems) txTouchedAssets.add(ki.assetId);
-    }
-
-    // Restore BulkAsset.availableQuantity for every KitBulkItem in this kit
-    // AND every nested kit. Returns always release stock back to available
-    // regardless of condition — bulk damage/loss tracking is a Wave 3 concern
-    // (DamageEvent model). For now: stock returns, period.
-    const bulkAdjustments: BulkAdjustment[] = [
-      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, +1)),
-    ];
-    for (const nestedChild of nestedKitChildren) {
-      bulkAdjustments.push(
-        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, +1)),
-      );
-    }
-    if (bulkAdjustments.length > 0) {
-      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
-      for (const a of bulkAdjustments) txTouchedBulk.add(a.bulkAssetId);
-    }
-
-    return {
-      success: true,
-      kitId,
-      affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
-      touchedAssets: [...txTouchedAssets],
-      touchedBulk: [...txTouchedBulk],
-    };
+  // The whole atomic kit check-in (line/asset/kit status resets, bulk restores,
+  // scan log) runs in one Convex mutation.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.checkinKit, {
+    organizationId,
+    projectId,
+    userId,
+    kitId,
+    returnCondition,
+    now: Date.now(),
   });
-
-  // Mirror the kit status/location changes (this kit + any nested kits) + the
-  // affected serialized assets + bulk quantity changes to Convex.
-  await syncKitsToConvex(result.affectedKitIds);
-  await syncAssetsToConvex(result.touchedAssets);
-  await syncBulkAssetsToConvex(result.touchedBulk);
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan-log row to Convex after the tx commits.
-  const convexForKitIn = await getConvexClient();
-  await convexForKitIn.mutation(api.assetScanLogs.createIfMissing, { id: createId(), organizationId, kitId, projectId, action: "CHECK_IN", scannedById: userId, scannedAt: Date.now(), notes: `Kit returned — condition: ${returnCondition}` } as never);
 
   await logActivity({
     organizationId,
@@ -1461,7 +486,7 @@ export async function checkInKit(
     kitId,
   });
 
-  return serialize(result);
+  return serialize({ success: true, ...res });
 }
 
 export async function getScanLog(params?: {
@@ -1541,80 +566,29 @@ export async function quickAddAndCheckOut(
     actionLabel: "check out items",
   });
 
-  const result = await prisma.$transaction(async (tx) => {
-    // T&T compliance block — refuse to add an asset to a project if its
-    // electrical-safety test is failed or overdue.
-    await assertTestTagAllowsCheckout(organizationId, {
-      assetIds: data.assetId ? [data.assetId] : [],
-      bulkAssetIds: data.bulkAssetId ? [data.bulkAssetId] : [],
-    });
-
-    // Get next sort order
-    const maxSort = await tx.projectLineItem.aggregate({
-      where: { projectId, organizationId },
-      _max: { sortOrder: true },
-    });
-    const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
-
-    const qty = data.quantity || 1;
-
-    // Create the line item — starts as PENDING so the client can route through
-    // the check queue if the model has check items assigned
-    const lineItem = await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId,
-        type: "EQUIPMENT",
-        modelId: data.modelId,
-        assetId: data.assetId || null,
-        bulkAssetId: data.bulkAssetId || null,
-        quantity: qty,
-        sortOrder: nextSort,
-        status: "CONFIRMED",
-        checkedOutQuantity: 0,
-        prepStatus: "PENDING",
-        prepContainer: data.prepContainer || null,
-      },
-      // `model` is attached from the Convex mirror after the tx (dual-written);
-      // its `_count.modelCheckItems` is grafted from the dual-written
-      // model_check_item mirror. asset/bulkAsset stay Prisma joins.
-      include: {
-        asset: true,
-        bulkAsset: true,
-      },
-    });
-
-    return { lineItem };
+  // The atomic add (T&T preflight, line-item create, scan log) runs in one
+  // Convex mutation; it returns the new line id which we re-read for the return.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.quickAdd, {
+    organizationId,
+    projectId,
+    modelId: data.modelId,
+    assetId: data.assetId ?? undefined,
+    bulkAssetId: data.bulkAssetId ?? undefined,
+    quantity: data.quantity ?? undefined,
+    prepContainer: data.prepContainer ?? undefined,
+    userId,
+    now: Date.now(),
   });
 
-  // Mirror the newly-created line item to Convex (dual-write — this scan-add path
-  // previously missed it, leaving the Convex projectLineItems mirror short a row
-  // until a resync).
-  await upsertProjectLineItemsToConvex(projectId);
-
-  // Write scan-log row to Convex after the tx commits.
-  const convexForQuickAdd = await getConvexClient();
-  await convexForQuickAdd.mutation(api.assetScanLogs.createIfMissing, {
-    id: createId(),
-    organizationId,
-    ...(data.assetId ? { assetId: data.assetId } : {}),
-    ...(data.bulkAssetId ? { bulkAssetId: data.bulkAssetId } : {}),
-    projectId,
-    action: "CHECK_OUT",
-    scannedById: userId,
-    scannedAt: Date.now(),
-    notes: "Added to project and prepped via warehouse scan",
-  } as never);
-
-  const lineItem = result.lineItem;
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: res.id });
 
   // Attach `model` + `_count.modelCheckItems` from the Convex mirror, matching
   // the old `model: { include: { _count: { modelCheckItems } } }` include shape
   // (model scalars + the check-item count — no category/supplier). The client
-  // routes the line through the check queue when the count is non-zero. No Prisma
-  // fallback on a mirror miss.
+  // routes the line through the check queue when the count is non-zero.
   const [model, modelCheckCounts] = await Promise.all([
-    lineItem.modelId ? getModelById(lineItem.modelId) : Promise.resolve(null),
+    lineItem?.modelId ? getModelById(lineItem.modelId) : Promise.resolve(null),
     getModelCheckItemCountMap(organizationId),
   ]);
   const modelWithCount = model
@@ -1627,9 +601,12 @@ export async function quickAddAndCheckOut(
 export async function clearPrepContainer(projectId: string, containerName: string) {
   const { organizationId } = await requirePermission("warehouse", "check_out");
 
-  await prisma.projectLineItem.updateMany({
-    where: { projectId, organizationId, prepContainer: containerName },
-    data: { prepContainer: null },
+  const convex = await getConvexClient();
+  await convex.mutation(api.warehouseOps.clearPrepContainer, {
+    organizationId,
+    projectId,
+    containerName,
+    now: Date.now(),
   });
 
   return serialize({ success: true });
@@ -1641,117 +618,42 @@ export async function ensureContainerOnProject(
   modelId: string,
   containerName: string
 ) {
-  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+  const { organizationId } = await requirePermission("warehouse", "check_out");
 
-  // Atomic check-then-create inside a transaction to prevent duplicates
-  const lineItem = await prisma.$transaction(async (tx) => {
-    const existing = await tx.projectLineItem.findFirst({
-      where: { projectId, organizationId, assetId, isContainerLineItem: true },
-      // model lives in Convex — attached after the tx, not joined.
-      include: { asset: true },
-    });
-    if (existing) return existing;
-
-    // Get next sort order
-    const maxSort = await tx.projectLineItem.aggregate({
-      where: { projectId, organizationId },
-      _max: { sortOrder: true },
-    });
-    const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
-
-    return tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId,
-        type: "EQUIPMENT",
-        modelId,
-        assetId,
-        quantity: 1,
-        sortOrder: nextSort,
-        status: "CONFIRMED",
-        checkedOutQuantity: 0,
-        prepStatus: "PACKED",
-        prepContainer: containerName,
-        isContainerLineItem: true,
-      },
-      // model lives in Convex — attached after the tx, not joined.
-      include: { asset: true },
-    });
+  // Atomic check-then-create inside one Convex mutation to prevent duplicates.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.ensureContainerOnProject, {
+    organizationId,
+    projectId,
+    assetId,
+    modelId,
+    containerName,
+    now: Date.now(),
   });
+
+  const lineItem = await convex.query(api.projectLineItems.getById, { id: res.id });
 
   // Graft the Convex model doc onto the line item (replaces the `model: true` join).
   const modelMap = await getModelMap(organizationId);
-  const model = lineItem.modelId ? modelMap.get(lineItem.modelId) ?? null : null;
+  const model = lineItem?.modelId ? modelMap.get(lineItem.modelId) ?? null : null;
   return serialize({ ...lineItem, model });
 }
 
 export async function syncContainerStatus(projectId: string, containerName: string) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
 
-  // Find the container line item
-  const containerLI = await prisma.projectLineItem.findFirst({
-    where: { projectId, organizationId, isContainerLineItem: true, prepContainer: containerName },
-  });
-  if (!containerLI) return serialize({ updated: false });
-
-  // Get all non-container items in this container
-  const contentItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      organizationId,
-      prepContainer: containerName,
-      isContainerLineItem: false,
-    },
-    select: { status: true },
+  // The container roll-up (read contents, flip the container line + its asset)
+  // runs in one Convex mutation.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.syncContainerStatus, {
+    organizationId,
+    projectId,
+    containerName,
+    userId,
+    now: Date.now(),
   });
 
-  if (contentItems.length === 0) return serialize({ updated: false });
-
-  const allDeployed = contentItems.every((i) => i.status === "CHECKED_OUT");
-  const allReturned = contentItems.every((i) => i.status === "RETURNED");
-
-  const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
-  const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
-
-  if (!allDeployedFlag && !allReturnedFlag) return serialize({ updated: false });
-
-  if (allDeployedFlag) {
-    await prisma.projectLineItem.update({
-      where: { id: containerLI.id },
-      data: {
-        status: "CHECKED_OUT",
-        checkedOutQuantity: 1,
-        checkedOutAt: new Date(),
-        checkedOutBy: { connect: { id: userId } },
-      },
-    });
-  } else {
-    await prisma.projectLineItem.update({
-      where: { id: containerLI.id },
-      data: {
-        status: "RETURNED",
-        returnedQuantity: 1,
-        returnedAt: new Date(),
-        returnedBy: { connect: { id: userId } },
-        returnCondition: "GOOD",
-      },
-    });
-  }
-
-  // Update the container asset status too
-  if (containerLI.assetId) {
-    const updatedAsset = await prisma.asset.update({
-      where: { id: containerLI.assetId },
-      data: {
-        status: allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE",
-      },
-    });
-    await syncAssetsToConvex([updatedAsset.id]);
-  }
-  // Mirror the container line item's status flip to Convex.
-  await upsertProjectLineItemsToConvex(projectId);
-
-  return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
+  return serialize(res);
 }
 
 export async function getAvailableAssetsForModel(modelId: string) {
@@ -1764,33 +666,51 @@ export async function getAvailableAssetsForModel(modelId: string) {
   //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
   // Active project IDs come from Convex (source of truth for project status).
   const allProjects = await getProjectsByOrg(organizationId);
-  const activeProjectIds = allProjects
-    .filter(
-      (p) =>
-        !p.isTemplate &&
-        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? ""),
-    )
-    .map((p) => p.id);
+  const activeProjectIds = new Set(
+    allProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? ""),
+      )
+      .map((p) => p.id),
+  );
 
-  const available = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      modelId,
-      status: "AVAILABLE",
-      isActive: true,
-      lineItems: {
-        none: {
-          projectId: { in: activeProjectIds },
-          OR: [
-            { status: { notIn: ["RETURNED", "CANCELLED"] } },
-            { prepStatus: "PACKED" },
-          ],
-        },
-      },
-    },
-    select: { id: true, assetTag: true, serialNumber: true, customName: true },
-    orderBy: { assetTag: "asc" },
-  });
+  // Assets of this model live in Convex; the "none active line item" NOT EXISTS
+  // filter is replicated in JS — an asset is in use if any of its line items is
+  // on an active project AND (status not RETURNED/CANCELLED OR prepStatus PACKED).
+  const convex = await getConvexClient();
+  const modelAssets = (await getActiveAssetsByModel(modelId, organizationId)).filter(
+    (a) => a.status === "AVAILABLE",
+  );
+
+  const available: Array<{
+    id: string;
+    assetTag: string;
+    serialNumber: string | null;
+    customName: string | null;
+  }> = [];
+  for (const a of modelAssets) {
+    const lines = await convex.query(api.projectLineItems.listByAssetId, {
+      assetId: a.id,
+      orgId: organizationId,
+    });
+    const inUse = lines.some(
+      (li) =>
+        li.projectId != null &&
+        activeProjectIds.has(li.projectId) &&
+        ((li.status !== "RETURNED" && li.status !== "CANCELLED") || li.prepStatus === "PACKED"),
+    );
+    if (!inUse) {
+      available.push({
+        id: a.id,
+        assetTag: a.assetTag,
+        serialNumber: a.serialNumber ?? null,
+        customName: a.customName ?? null,
+      });
+    }
+  }
+  available.sort((x, y) => x.assetTag.localeCompare(y.assetTag));
 
   return serialize(available);
 }
@@ -1876,35 +796,15 @@ export async function forceReturnAsset(assetId: string) {
   if (!asset || asset.organizationId !== organizationId) throw new Error("Asset not found");
   if (asset.status === "AVAILABLE") throw new Error("Asset is already available");
 
-  const defaultLocation = await getDefaultLocation(organizationId);
-
-  await prisma.$transaction(async (tx) => {
-    // Return all checked-out line items for this asset across all projects
-    await tx.projectLineItem.updateMany({
-      where: { assetId, organizationId, status: "CHECKED_OUT" },
-      data: {
-        status: "RETURNED",
-        returnedQuantity: 1,
-        returnedAt: new Date(),
-        returnCondition: "GOOD",
-      },
-    });
-
-    // Reset asset status and location
-    await tx.asset.update({
-      where: { id: assetId },
-      data: {
-        status: "AVAILABLE",
-        locationId: defaultLocation?.id ?? null,
-      },
-    });
+  // The atomic force-return (return every CHECKED_OUT line for this asset across
+  // all projects + reset the asset) runs in one Convex mutation.
+  const convex = await getConvexClient();
+  await convex.mutation(api.warehouseOps.forceReturnAsset, {
+    organizationId,
+    assetId,
+    userId,
+    now: Date.now(),
   });
-  await syncAssetsToConvex([assetId]);
-  // Mirror the returned line items across every affected project.
-  const farProjects = await prisma.projectLineItem.findMany({
-    where: { assetId, organizationId }, select: { projectId: true }, distinct: ["projectId"],
-  });
-  for (const p of farProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,
@@ -1920,104 +820,6 @@ export async function forceReturnAsset(assetId: string) {
   return serialize({ success: true });
 }
 
-// ── forceReturnKit helper ───────────────────────────────────────────────
-
-/**
- * Restore a single kit parent line item: return all children/grandchildren,
- * reset nested kits and their assets, reset child assets, and return the
- * parent. Collects nested kit ids into `kitsToRestore` for later bulk
- * restoration.
- */
-async function restoreKitParentLineItem(
-  tx: TxClient,
-  parent: { id: string; status: string },
-  params: {
-    organizationId: string;
-    returnData: { status: "RETURNED"; returnedQuantity: number; returnedAt: Date; returnCondition: "GOOD" };
-    resetData: { status: "AVAILABLE"; locationId: string | null };
-  },
-  kitsToRestore: Set<string>,
-  assetsTouched: Set<string>,
-): Promise<void> {
-  const { organizationId, returnData, resetData } = params;
-
-  const children = await tx.projectLineItem.findMany({
-    where: { parentLineItemId: parent.id, organizationId },
-    select: { id: true, assetId: true, kitId: true, status: true },
-  });
-
-  // Handle grandchildren first (children of nested kits)
-  const nestedKitChildren = children.filter((c) => c.kitId);
-  for (const child of nestedKitChildren) {
-    const grandchildren = await tx.projectLineItem.findMany({
-      where: { parentLineItemId: child.id, organizationId },
-      select: { id: true, assetId: true },
-    });
-    if (grandchildren.length > 0) {
-      await tx.projectLineItem.updateMany({
-        where: { id: { in: grandchildren.map((gc) => gc.id) }, status: "CHECKED_OUT" },
-        data: returnData,
-      });
-      const gcAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
-      if (gcAssetIds.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: gcAssetIds } },
-          data: resetData,
-        });
-        for (const id of gcAssetIds) assetsTouched.add(id);
-      }
-    }
-  }
-
-  // Reset nested child kits to AVAILABLE + their serialized assets
-  const childKitIds = nestedKitChildren.map((c) => c.kitId!);
-  for (const nestedKitId of childKitIds) kitsToRestore.add(nestedKitId);
-  if (childKitIds.length > 0) {
-    await tx.kit.updateMany({
-      where: { id: { in: childKitIds }, organizationId },
-      data: resetData,
-    });
-    const nestedKitAssets = await tx.kitSerializedItem.findMany({
-      where: { kitId: { in: childKitIds } },
-      select: { assetId: true },
-    });
-    if (nestedKitAssets.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: nestedKitAssets.map((a) => a.assetId) } },
-        data: resetData,
-      });
-      for (const a of nestedKitAssets) assetsTouched.add(a.assetId);
-    }
-  }
-
-  // Return all children
-  const checkedOutChildren = children.filter((c) => c.status === "CHECKED_OUT");
-  if (checkedOutChildren.length > 0) {
-    await tx.projectLineItem.updateMany({
-      where: { id: { in: checkedOutChildren.map((c) => c.id) } },
-      data: returnData,
-    });
-  }
-
-  // Reset child assets to AVAILABLE
-  const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-  if (childAssetIds.length > 0) {
-    await tx.asset.updateMany({
-      where: { id: { in: childAssetIds } },
-      data: resetData,
-    });
-    for (const id of childAssetIds) assetsTouched.add(id);
-  }
-
-  // Return parent line item
-  if (parent.status === "CHECKED_OUT") {
-    await tx.projectLineItem.update({
-      where: { id: parent.id },
-      data: returnData,
-    });
-  }
-}
-
 // ── forceReturnKit (refactored) ─────────────────────────────────────────
 
 export async function forceReturnKit(kitId: string) {
@@ -2027,75 +829,16 @@ export async function forceReturnKit(kitId: string) {
   if (!kit || kit.organizationId !== organizationId) throw new Error("Kit not found");
   if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
-  const defaultLocation = await getDefaultLocation(organizationId);
-
-  const affectedKitIds = await prisma.$transaction(async (tx) => {
-    const now = new Date();
-    const returnData = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const };
-    const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
-
-    // Track every kit id that needs bulk restoration (this kit + every unique
-    // nested kit encountered across all parent line items), plus every asset/
-    // bulk row whose status/quantity this force-return mutates (Convex mirror).
-    const kitsToRestore = new Set<string>([kitId]);
-    const assetsTouched = new Set<string>();
-    const bulkTouched = new Set<string>();
-
-    // Find all parent line items for this kit across all projects
-    const kitParentItems = await tx.projectLineItem.findMany({
-      where: { kitId, organizationId, isKitChild: false },
-      select: { id: true, status: true },
-    });
-
-    for (const parent of kitParentItems) {
-      await restoreKitParentLineItem(tx, parent, { organizationId, returnData, resetData }, kitsToRestore, assetsTouched);
-    }
-
-    // Reset kit status
-    await tx.kit.update({
-      where: { id: kitId },
-      data: resetData,
-    });
-
-    // Reset all serialized assets inside this kit (KitSerializedItem records)
-    const kitItems = await tx.kitSerializedItem.findMany({
-      where: { kitId },
-      select: { assetId: true },
-    });
-    if (kitItems.length > 0) {
-      await tx.asset.updateMany({
-        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
-        data: resetData,
-      });
-      for (const ki of kitItems) assetsTouched.add(ki.assetId);
-    }
-
-    // Restore BulkAsset.availableQuantity for the root kit and every unique
-    // nested kit that was encountered.
-    const bulkAdjustments: BulkAdjustment[] = [];
-    for (const kid of kitsToRestore) {
-      bulkAdjustments.push(
-        ...(await collectKitBulkAdjustments(tx, kid, organizationId, +1)),
-      );
-    }
-    if (bulkAdjustments.length > 0) {
-      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
-      for (const a of bulkAdjustments) bulkTouched.add(a.bulkAssetId);
-    }
-
-    return { kitIds: [...kitsToRestore], assets: [...assetsTouched], bulk: [...bulkTouched] };
+  // The atomic force-return (restore every parent line + children/grandchildren,
+  // nested kits + their assets, bulk quantities, root kit) runs in one Convex
+  // mutation.
+  const convex = await getConvexClient();
+  await convex.mutation(api.warehouseOps.forceReturnKit, {
+    organizationId,
+    kitId,
+    userId,
+    now: Date.now(),
   });
-
-  // Mirror the kit status/location resets (root kit + every nested kit) + the
-  // affected assets + bulk quantity restores to Convex.
-  await syncKitsToConvex(affectedKitIds.kitIds);
-  await syncAssetsToConvex(affectedKitIds.assets);
-  await syncBulkAssetsToConvex(affectedKitIds.bulk);
-  // Mirror the returned line items across every project this kit appears on.
-  const frkProjects = await prisma.projectLineItem.findMany({
-    where: { kitId, organizationId }, select: { projectId: true }, distinct: ["projectId"],
-  });
-  for (const p of frkProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,
@@ -2116,6 +859,7 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
 
   if (assetIds.length === 0) throw new Error("No assets selected");
 
+  // "checked-out only" filter via the Convex asset mirror.
   const allOrgAssets = await getAssetsByOrg(organizationId);
   const assets = allOrgAssets
     .filter((a) => assetIds.includes(a.id) && a.status === "CHECKED_OUT")
@@ -2123,37 +867,17 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
 
   if (assets.length === 0) throw new Error("No checked-out assets found in selection");
 
-  const defaultLocation = await getDefaultLocation(organizationId);
-
   const ids = assets.map((a) => a.id);
 
-  await prisma.$transaction(async (tx) => {
-    // Return all checked-out line items for these assets
-    await tx.projectLineItem.updateMany({
-      where: { assetId: { in: ids }, organizationId, status: "CHECKED_OUT" },
-      data: {
-        status: "RETURNED",
-        returnedQuantity: 1,
-        returnedAt: new Date(),
-        returnCondition: "GOOD",
-      },
-    });
-
-    // Reset all assets
-    await tx.asset.updateMany({
-      where: { id: { in: ids } },
-      data: {
-        status: "AVAILABLE",
-        locationId: defaultLocation?.id ?? null,
-      },
-    });
+  // The atomic bulk force-return (return CHECKED_OUT lines + reset each asset)
+  // runs in one Convex mutation.
+  const convex = await getConvexClient();
+  await convex.mutation(api.warehouseOps.bulkForceReturnAssets, {
+    organizationId,
+    assetIds: ids,
+    userId,
+    now: Date.now(),
   });
-  await syncAssetsToConvex(ids);
-  // Mirror the returned line items across every affected project.
-  const bfrProjects = await prisma.projectLineItem.findMany({
-    where: { assetId: { in: ids }, organizationId }, select: { projectId: true }, distinct: ["projectId"],
-  });
-  for (const p of bfrProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,

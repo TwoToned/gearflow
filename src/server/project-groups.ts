@@ -12,7 +12,7 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
-import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { getModelMap } from "@/lib/models-read";
@@ -35,9 +35,13 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     select: { defaultRentalPeriod: true, defaultRentalQuantity: true },
   });
 
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: { groupId, isKitChild: false },
+  const allLineItems = await client.query(api.projectLineItems.listByProject, {
+    projectId: group.projectId,
+    orgId: group.organizationId,
   });
+  const lineItems = allLineItems
+    .map(mapLineItemDoc)
+    .filter((li) => li.groupId === groupId && !li.isKitChild);
 
   let total = 0;
   const modelMap = await getModelMap(group.organizationId);
@@ -310,17 +314,22 @@ export async function deleteProjectGroup(groupId: string) {
     throw new Error("Group not found");
   }
 
-  // Count line items for log message
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: { groupId, organizationId },
-    select: { id: true },
+  // Line items in this group (Convex), for the log count + cascade null-out.
+  const allLineItems = await client.query(api.projectLineItems.listByProject, {
+    projectId: group.projectId,
+    orgId: organizationId,
   });
+  const lineItems = allLineItems.filter((li) => li.groupId === groupId);
 
-  // Cascade: move line items to standalone in same category
-  await prisma.projectLineItem.updateMany({
-    where: { groupId, organizationId },
-    data: { groupId: null },
-  });
+  // Cascade: move line items to standalone in same category (clear groupId only).
+  const nowClear = Date.now();
+  for (const li of lineItems) {
+    await client.mutation(api.projectLineItems.patchLineItem, {
+      id: li.id,
+      set: { updatedAt: nowClear },
+      clear: ["groupId"],
+    });
+  }
 
   // Atomic Convex cascade: the group's slots + the group itself, one transaction.
   await client.mutation(api.projectGroups.deleteCascade, { groupId });
@@ -347,22 +356,29 @@ export async function moveLineItemToGroup(
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = moveLineItemSchema.parse(data);
 
-  const lineItem = await prisma.projectLineItem.findUniqueOrThrow({
-    where: { id: parsed.lineItemId, organizationId },
-  });
+  const client = await getConvexClient();
 
-  const oldGroupId = lineItem.groupId;
+  const lineItem = await client.query(api.projectLineItems.getById, { id: parsed.lineItemId });
+  if (!lineItem || lineItem.organizationId !== organizationId) {
+    throw new Error("Line item not found");
+  }
 
-  await prisma.projectLineItem.update({
-    where: { id: parsed.lineItemId },
-    data: {
-      groupId: parsed.targetGroupId,
-      categoryId: parsed.targetCategoryId,
-    },
+  const oldGroupId = lineItem.groupId ?? null;
+
+  // Apply the move on the line item (Convex): groupId + categoryId, null → clear.
+  const moveSet: Record<string, unknown> = { updatedAt: Date.now() };
+  const moveClear: string[] = [];
+  if (parsed.targetGroupId != null) moveSet.groupId = parsed.targetGroupId;
+  else moveClear.push("groupId");
+  if (parsed.targetCategoryId != null) moveSet.categoryId = parsed.targetCategoryId;
+  else moveClear.push("categoryId");
+  await client.mutation(api.projectLineItems.patchLineItem, {
+    id: parsed.lineItemId,
+    set: moveSet,
+    clear: moveClear,
   });
 
   // Recalculate suggestions for both old and new groups in Convex
-  const client = await getConvexClient();
   const now = Date.now();
   if (oldGroupId) {
     const suggested = await calculateSuggestedPrice(oldGroupId);
@@ -378,9 +394,6 @@ export async function moveLineItemToGroup(
       patch: { suggestedPrice: suggested, updatedAt: now },
     });
   }
-  // Mirror the moved line item's new groupId/categoryId to Convex.
-  await syncLineItemsToConvex([parsed.lineItemId]);
-
   await logActivity({
     organizationId,
     userId,

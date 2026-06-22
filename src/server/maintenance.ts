@@ -7,10 +7,9 @@ import {
   maintenanceSchema,
   type MaintenanceFormValues,
 } from "@/lib/validations/maintenance";
-import type { Prisma, MaintenanceStatus } from "@/generated/prisma/client";
+import type { MaintenanceStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getModelMap } from "@/lib/models-read";
@@ -194,8 +193,6 @@ export async function getMaintenanceRecord(id: string) {
  * accidentally returning an asset to AVAILABLE mid-repair.
  */
 
-type TxClient = Prisma.TransactionClient;
-
 /** Statuses where the asset is physically in the workshop's hands. */
 const HOLDING_STATUSES: MaintenanceStatus[] = [
   "AWAITING_PARTS",
@@ -208,12 +205,22 @@ function isHoldingStatus(status: MaintenanceStatus): boolean {
   return HOLDING_STATUSES.includes(status);
 }
 
-/** Mark assets as IN_MAINTENANCE only if currently AVAILABLE. */
-async function holdAssets(tx: TxClient, assetIds: string[]) {
+/**
+ * Mark assets as IN_MAINTENANCE only if currently AVAILABLE. Assets are
+ * Convex-only (core mega-flip) — read each asset's current status and patch only
+ * the ones that are AVAILABLE (replicates the Prisma `where: { status: AVAILABLE }`
+ * guard, which `bulkUpdate` can't express).
+ */
+async function holdAssets(organizationId: string, assetIds: string[]) {
   if (assetIds.length === 0) return;
-  await tx.asset.updateMany({
-    where: { id: { in: assetIds }, status: "AVAILABLE" },
-    data: { status: "IN_MAINTENANCE" },
+  const assets = await getAssetsByOrg(organizationId);
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  const toHold = assetIds.filter((id) => (byId.get(id)?.status ?? "AVAILABLE") === "AVAILABLE");
+  if (toHold.length === 0) return;
+  await (await getConvexClient()).mutation(api.assets.bulkUpdate, {
+    organizationId,
+    ids: toHold,
+    set: { status: "IN_MAINTENANCE", updatedAt: Date.now() },
   });
 }
 
@@ -250,20 +257,26 @@ async function computeStillHeldIds(
 /**
  * Release assets back to AVAILABLE — but only if currently IN_MAINTENANCE AND not
  * still held by another active holding record. The "still held" set is computed
- * from Convex by the caller (the join is Convex-only) and passed in; this only
- * runs the Prisma `asset.updateMany` inside the tx.
+ * from Convex by the caller (the join is Convex-only) and passed in. Assets are
+ * Convex-only — read current status to replicate the Prisma
+ * `where: { status: IN_MAINTENANCE }` guard, then `bulkUpdate` the survivors.
  */
 async function releaseAssets(
-  tx: TxClient,
+  organizationId: string,
   assetIds: string[],
   stillHeldIds: Set<string>,
 ) {
   if (assetIds.length === 0) return;
-  const toRelease = assetIds.filter((id) => !stillHeldIds.has(id));
+  const candidates = assetIds.filter((id) => !stillHeldIds.has(id));
+  if (candidates.length === 0) return;
+  const assets = await getAssetsByOrg(organizationId);
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  const toRelease = candidates.filter((id) => (byId.get(id)?.status ?? "AVAILABLE") === "IN_MAINTENANCE");
   if (toRelease.length === 0) return;
-  await tx.asset.updateMany({
-    where: { id: { in: toRelease }, status: "IN_MAINTENANCE" },
-    data: { status: "AVAILABLE" },
+  await (await getConvexClient()).mutation(api.assets.bulkUpdate, {
+    organizationId,
+    ids: toRelease,
+    set: { status: "AVAILABLE", updatedAt: Date.now() },
   });
 }
 
@@ -289,14 +302,12 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
       ? await computeStillHeldIds(organizationId, assetIds, newRecordId)
       : new Set<string>();
 
-  // Asset state-machine transitions in a Prisma tx (asset.status still Prisma).
-  await prisma.$transaction(async (tx) => {
-    if (isHoldingStatus(parsed.status)) {
-      await holdAssets(tx, assetIds);
-    } else if (parsed.status === "COMPLETED" && parsed.result !== "FAIL") {
-      await releaseAssets(tx, assetIds, stillHeld);
-    }
-  });
+  // Asset state-machine transitions (asset.status is Convex-only now).
+  if (isHoldingStatus(parsed.status)) {
+    await holdAssets(organizationId, assetIds);
+  } else if (parsed.status === "COMPLETED" && parsed.result !== "FAIL") {
+    await releaseAssets(organizationId, assetIds, stillHeld);
+  }
 
   const now = Date.now();
   const convex = await getConvexClient();
@@ -323,8 +334,6 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
 
   // Convex-only join write (Phase B): link the assets to the new record.
   await createMaintenanceAssetLinks(newRecordId, assetIds);
-  // Mirror any asset status flips (hold/release) to Convex.
-  await syncAssetsToConvex(assetIds);
 
   const record = await getMaintenanceRecordById(newRecordId);
 
@@ -387,20 +396,18 @@ export async function updateMaintenanceRecord(
       : Promise.resolve(new Set<string>()),
   ]);
 
-  // Asset state-machine transitions in a Prisma tx (asset.status still Prisma).
-  await prisma.$transaction(async (tx) => {
-    if (toRemove.length > 0) {
-      await releaseAssets(tx, toRemove, removeStillHeld);
+  // Asset state-machine transitions (asset.status is Convex-only now).
+  if (toRemove.length > 0) {
+    await releaseAssets(organizationId, toRemove, removeStillHeld);
+  }
+  if (newAssetIds.length > 0) {
+    if (isHolding && !wasHolding) {
+      await holdAssets(organizationId, newAssetIds);
     }
-    if (newAssetIds.length > 0) {
-      if (isHolding && !wasHolding) {
-        await holdAssets(tx, newAssetIds);
-      }
-      if (willReleaseRemaining) {
-        await releaseAssets(tx, newAssetIds, remainingStillHeld);
-      }
+    if (willReleaseRemaining) {
+      await releaseAssets(organizationId, newAssetIds, remainingStillHeld);
     }
-  });
+  }
 
   const convex = await getConvexClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -429,8 +436,6 @@ export async function updateMaintenanceRecord(
     id,
     newAssetIds.filter((aId) => !existingAssetIds.includes(aId)),
   );
-  // Mirror any asset status flips (removed-asset release + remaining hold/release).
-  await syncAssetsToConvex([...toRemove, ...newAssetIds]);
 
   const record = await getMaintenanceRecordById(id);
 
@@ -465,19 +470,15 @@ export async function deleteMaintenanceRecord(id: string) {
       ? await computeStillHeldIds(organizationId, linkedAssetIds, record.id)
       : new Set<string>();
 
-  // Release held assets in a Prisma tx (asset.status still Prisma).
+  // Release held assets (asset.status is Convex-only now).
   if (isHoldingStatus(record.status) && linkedAssetIds.length > 0) {
-    await prisma.$transaction(async (tx) => {
-      await releaseAssets(tx, linkedAssetIds, stillHeld);
-    });
+    await releaseAssets(organizationId, linkedAssetIds, stillHeld);
   }
   const convex = await getConvexClient();
   await convex.mutation(api.maintenanceRecords.remove, { id });
   // Re-implement the maintenanceRecord → maintenanceRecordAsset Cascade
   // (Convex-only join, Phase B): delete this record's links.
   await removeAllMaintenanceAssetLinks(id);
-  // Mirror any released asset status flips to Convex.
-  await syncAssetsToConvex(linkedAssetIds);
 
   await logActivity({
     organizationId,

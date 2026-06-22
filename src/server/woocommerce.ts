@@ -13,7 +13,6 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate } from "@/lib/project-mirror";
 import { flexibleDateParse } from "@/lib/woocommerce-utils";
 import {
@@ -316,33 +315,37 @@ export async function processWooCommerceOrder(
     });
     await mirrorProjectCreate(project);
 
-    // 7. Add line items for matched and unmatched products
+    // 7. Add line items for matched and unmatched products.
+    // projectLineItem is Convex-only — write each line via api.projectLineItems.create
+    // (full-field generated mutation) with an explicit cuid + sortOrder.
+    const duration = dates.rentalStart && dates.rentalEnd
+      ? Math.max(1, Math.ceil((dates.rentalEnd.getTime() - dates.rentalStart.getTime()) / (1000 * 60 * 60 * 24)))
+      : 1;
+    const nowMs = Date.now();
     let sortOrder = 0;
     for (const match of matchResults) {
-      await prisma.projectLineItem.create({
-        data: {
-          organizationId: orgId,
-          projectId: project.id,
-          type: match.modelId ? "EQUIPMENT" : "MISC",
-          modelId: match.modelId || null,
-          description: match.modelId
-            ? null
-            : `[WooCommerce] ${match.wooProductName}${match.wooSku ? ` (SKU: ${match.wooSku})` : ""}`,
-          quantity: match.wooQuantity,
-          unitPrice: match.wooPrice,
-          pricingType: "PER_DAY",
-          duration: dates.rentalStart && dates.rentalEnd
-            ? Math.max(1, Math.ceil((dates.rentalEnd.getTime() - dates.rentalStart.getTime()) / (1000 * 60 * 60 * 24)))
-            : 1,
-          lineTotal: match.wooPrice * match.wooQuantity,
-          sortOrder: sortOrder++,
-        },
+      await convex.mutation(api.projectLineItems.create, {
+        id: createId(),
+        organizationId: orgId,
+        projectId: project.id,
+        type: match.modelId ? "EQUIPMENT" : "MISC",
+        modelId: match.modelId || undefined,
+        description: match.modelId
+          ? undefined
+          : `[WooCommerce] ${match.wooProductName}${match.wooSku ? ` (SKU: ${match.wooSku})` : ""}`,
+        quantity: match.wooQuantity,
+        unitPrice: match.wooPrice,
+        pricingType: "PER_DAY",
+        duration,
+        lineTotal: match.wooPrice * match.wooQuantity,
+        sortOrder: sortOrder++,
+        createdAt: nowMs,
+        updatedAt: nowMs,
       });
     }
 
     // 8. Recalculate project totals
     await recalculateProjectTotals(project.id);
-    await upsertProjectLineItemsToConvex(project.id);
 
     // 9. Log success
     const matchedCount = matchResults.filter((m) => m.matched).length;

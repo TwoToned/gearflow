@@ -1,7 +1,6 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getAssetById, getAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
@@ -15,8 +14,6 @@ import {
 } from "@/lib/validations/asset";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { adjustBulkAvailability } from "@/lib/inventory-mutations";
-import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { UserFacingError } from "@/lib/errors";
 
 /**
@@ -142,24 +139,33 @@ export async function addSerializedChildToAsset(
     throw new UserFacingError({ code: "ACCESSORY_IS_PARENT", title: "Asset has its own accessories", message: `${child.assetTag} has accessories of its own. Detach them first, or attach a different asset.` });
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    // Guarded write: re-assert the pre-check conditions in the WHERE so two
-    // concurrent attaches of the same child (to different parents) can't both
-    // win — the second sees count 0 and rolls back.
-    const guarded = await tx.asset.updateMany({
-      where: { id: child.id, organizationId, parentAssetId: null, kitId: null, status: "AVAILABLE" },
-      // Child physically lives with the parent → inherit its location.
-      data: { parentAssetId, locationId: parent.locationId, notes: parsed.notes ? parsed.notes : undefined },
-    });
-    if (guarded.count === 0) {
-      throw new UserFacingError({ code: "ACCESSORY_TAKEN", title: "Already attached", message: `${child.assetTag} was just attached elsewhere. Refresh and try again.` });
-    }
-    return tx.asset.findUniqueOrThrow({ where: { id: child.id } });
+  // Guarded write: re-read the child immediately before patching and re-assert
+  // the pre-check conditions so two concurrent attaches of the same child (to
+  // different parents) can't both win — the loser sees the conditions fail.
+  const fresh = await getAssetById(child.id);
+  if (
+    !fresh ||
+    fresh.organizationId !== organizationId ||
+    fresh.parentAssetId ||
+    fresh.kitId ||
+    (fresh.status ?? "AVAILABLE") !== "AVAILABLE"
+  ) {
+    throw new UserFacingError({ code: "ACCESSORY_TAKEN", title: "Already attached", message: `${child.assetTag} was just attached elsewhere. Refresh and try again.` });
+  }
+  const convex = await getConvexClient();
+  await convex.mutation(api.assets.patchAsset, {
+    id: child.id,
+    // Child physically lives with the parent → inherit its location.
+    set: {
+      parentAssetId,
+      ...(parent.locationId ? { locationId: parent.locationId } : {}),
+      ...(parsed.notes ? { notes: parsed.notes } : {}),
+      updatedAt: Date.now(),
+    },
+    clear: [],
   });
-  const [, model] = await Promise.all([
-    syncAssetsToConvex([child.id]),
-    getModelById(result.modelId),
-  ]);
+  const result = (await getAssetById(child.id))!;
+  const model = await getModelById(result.modelId);
 
   await logActivity({
     organizationId,
@@ -220,13 +226,12 @@ export async function addBulkChildToAsset(
   const bulkChildId = createId();
   const now = Date.now();
 
-  // DEDICATED mode: deduct from the shared pool atomically in Prisma (bulkAsset
-  // is still dual-written). Convex quantity mirror follows after.
+  // DEDICATED mode: deduct from the shared pool atomically in Convex (bulkAsset
+  // is Convex-only). Guarded — throws on insufficient stock.
   if (parsed.allocationMode === "DEDICATED") {
-    await prisma.$transaction(async (tx) => {
-      await adjustBulkAvailability(tx, organizationId, [
-        { bulkAssetId: parsed.bulkAssetId, delta: -parsed.quantity },
-      ]);
+    await convex.mutation(api.bulkAssets.adjustAvailability, {
+      organizationId,
+      adjustments: [{ bulkAssetId: parsed.bulkAssetId, delta: -parsed.quantity }],
     });
   }
 
@@ -243,10 +248,7 @@ export async function addBulkChildToAsset(
     addedById: userId,
   });
 
-  const [, bulkModel] = await Promise.all([
-    parsed.allocationMode === "DEDICATED" ? syncBulkAssetsToConvex([parsed.bulkAssetId]) : Promise.resolve(),
-    getModelById(bulkAsset.modelId),
-  ]);
+  const bulkModel = await getModelById(bulkAsset.modelId);
 
   await logActivity({
     organizationId,
@@ -298,16 +300,12 @@ export async function removeSerializedChildFromAsset(
     throw new UserFacingError({ code: "ACCESSORY_DEPLOYED", title: "Accessory is in use", message: `${child.assetTag} is ${(child.status ?? "unavailable").replace("_", " ").toLowerCase()} — return it before detaching.` });
   }
 
-  await prisma.asset.update({
-    where: { id: childAssetId },
-    data: { parentAssetId: null },
+  // Unlink the accessory from its parent in Convex — clear parentAssetId.
+  await (await getConvexClient()).mutation(api.assets.patchAsset, {
+    id: childAssetId,
+    set: { updatedAt: Date.now() },
+    clear: ["parentAssetId"],
   });
-  // Mirror to Convex. NB: clearing parentAssetId→null is a no-op in Convex
-  // (toConvexDoc drops null→absent and the patch validator is v.optional, which
-  // rejects null) — the documented clear-to-null limitation. The Convex doc keeps
-  // its stale parentAssetId until the next non-null write or a backfill run. The
-  // reactive registry tolerates this; see src/lib/asset-mirror.ts + FEATUREDOCS/54.
-  await syncAssetsToConvex([childAssetId]);
 
   await logActivity({
     organizationId,
@@ -347,16 +345,13 @@ export async function removeBulkChildFromAsset(
   const bulkAssetDoc = await getBulkAssetById(bulkChild.bulkAssetId);
 
   if (bulkChild.allocationMode === "DEDICATED") {
-    // Return the dedicated quantity to the shared pool atomically in Prisma.
-    await prisma.$transaction(async (tx) => {
-      await adjustBulkAvailability(tx, organizationId, [
-        { bulkAssetId: bulkChild.bulkAssetId, delta: bulkChild.quantity },
-      ]);
+    // Return the dedicated quantity to the shared pool atomically in Convex.
+    await convex.mutation(api.bulkAssets.adjustAvailability, {
+      organizationId,
+      adjustments: [{ bulkAssetId: bulkChild.bulkAssetId, delta: bulkChild.quantity }],
     });
   }
   await convex.mutation(api.assetBulkChildren.remove, { id: bulkChildId });
-  // DEDICATED allocation returned stock to the shared pool — mirror the quantity.
-  if (bulkChild.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([bulkChild.bulkAssetId]);
 
   await logActivity({
     organizationId,

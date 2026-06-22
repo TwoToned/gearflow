@@ -18,6 +18,7 @@ import type * as bulkAssets from "../bulkAssets.js";
 import type * as categories from "../categories.js";
 import type * as categorySlots from "../categorySlots.js";
 import type * as checkItems from "../checkItems.js";
+import type * as checkRecordOps from "../checkRecordOps.js";
 import type * as checkRecords from "../checkRecords.js";
 import type * as clientMedia from "../clientMedia.js";
 import type * as clients from "../clients.js";
@@ -41,6 +42,11 @@ import type * as kitMedia from "../kitMedia.js";
 import type * as kitSerializedItems from "../kitSerializedItems.js";
 import type * as kits from "../kits.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_bulkCheckin from "../lib/bulkCheckin.js";
+import type * as lib_fulfillment from "../lib/fulfillment.js";
+import type * as lib_inventory from "../lib/inventory.js";
+import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
+import type * as lib_testtag from "../lib/testtag.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lineItemMergeMaps from "../lineItemMergeMaps.js";
 import type * as locationMedia from "../locationMedia.js";
@@ -86,6 +92,7 @@ import type * as userNotificationPreferences from "../userNotificationPreference
 import type * as warehouseCloses from "../warehouseCloses.js";
 import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
 import type * as warehouseDetail from "../warehouseDetail.js";
+import type * as warehouseOps from "../warehouseOps.js";
 import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
 
@@ -106,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   categorySlots: typeof categorySlots;
   checkItems: typeof checkItems;
+  checkRecordOps: typeof checkRecordOps;
   checkRecords: typeof checkRecords;
   clientMedia: typeof clientMedia;
   clients: typeof clients;
@@ -129,6 +137,11 @@ declare const fullApi: ApiFromModules<{
   kitSerializedItems: typeof kitSerializedItems;
   kits: typeof kits;
   "lib/auth": typeof lib_auth;
+  "lib/bulkCheckin": typeof lib_bulkCheckin;
+  "lib/fulfillment": typeof lib_fulfillment;
+  "lib/inventory": typeof lib_inventory;
+  "lib/lineItemUnits": typeof lib_lineItemUnits;
+  "lib/testtag": typeof lib_testtag;
   "lib/validators": typeof lib_validators;
   lineItemMergeMaps: typeof lineItemMergeMaps;
   locationMedia: typeof locationMedia;
@@ -174,6 +187,7 @@ declare const fullApi: ApiFromModules<{
   warehouseCloses: typeof warehouseCloses;
   warehouseDashboardTokens: typeof warehouseDashboardTokens;
   warehouseDetail: typeof warehouseDetail;
+  warehouseOps: typeof warehouseOps;
   wooCommerceIntegrations: typeof wooCommerceIntegrations;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;
 }>;

@@ -1,7 +1,7 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/generated/prisma/client";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
   lineItemSchema,
@@ -13,7 +13,6 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { patchProjectInConvex } from "@/lib/project-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
@@ -22,147 +21,26 @@ import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
-import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
-import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getModelById, getModelWithCategoryMap } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getBulkAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
-import { getKitById } from "@/lib/kits-read";
+import { getKitById, getKitSerializedItemsByOrg, getKitBulkItemsByOrg } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
 
 /**
- * Expand a serialised asset's permanent accessories into child line items.
- *
- * Called inside the same transaction that creates the parent line. Each
- * accessory becomes a child ProjectLineItem with `isKitChild: true` (the
- * structural "is a child" flag that the ~40 totals/count filters key off) and
- * `childKind: ACCESSORY` (the behaviour discriminator). No units are created
- * here — like every other line, units materialise lazily at prep. SHIPS_WITH
- * bulk demand is counted live by availability; DEDICATED was already reserved
- * against the pool when the accessory was attached to the asset.
+ * Read back a created/updated line from Convex and attach the asset/bulkAsset
+ * joins the old Prisma `include: { asset, bulkAsset }` returned, so callers that
+ * read `result.asset` / `result.bulkAsset` keep working.
  */
-async function expandAccessoryChildren(
-  tx: Prisma.TransactionClient,
-  organizationId: string,
-  projectId: string,
-  parentLine: {
-    id: string;
-    assetId: string | null;
-    modelId: string | null;
-    quantity: number;
-    categoryId: string | null;
-    groupId: string | null;
-    duration: number;
-    pricingType: import("@/generated/prisma/client").PricingType;
-  },
-  modelMap: Map<string, { name: string }>,
-) {
-  const base = {
-    organizationId,
-    projectId,
-    type: "EQUIPMENT" as const,
-    isKitChild: true,
-    childKind: "ACCESSORY" as const,
-    parentLineItemId: parentLine.id,
-    categoryId: parentLine.categoryId,
-    groupId: parentLine.groupId,
-    unitPrice: null,
-    pricingType: parentLine.pricingType,
-    duration: parentLine.duration,
-  };
-
-  if (parentLine.assetId) {
-    // A specific serialised asset was added: expand its own serialised + bulk
-    // accessories, unioned with its model's defaults (asset wins by bulkAssetId).
-    const asset = await tx.asset.findUnique({
-      where: { id: parentLine.assetId },
-      select: {
-        modelId: true,
-        childAssets: {
-          select: { id: true, modelId: true },
-          orderBy: { assetTag: "asc" },
-        },
-        childBulkItems: {
-          select: {
-            bulkAssetId: true,
-            quantity: true,
-            bulkAsset: { select: { modelId: true } },
-          },
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-    });
-    if (!asset) return;
-
-    const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-    const modelBulksRaw = asset.modelId
-      ? await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
-          modelId: asset.modelId,
-          organizationId,
-        })
-      : [];
-    const inheritedBulks = modelBulksRaw.filter((m) => !assetBulkIds.has(m.bulkAssetId));
-
-    if (asset.childAssets.length === 0 && asset.childBulkItems.length === 0 && inheritedBulks.length === 0) {
-      return;
-    }
-
-    // Normalise both sources to a common shape for the createLoop below.
-    type BulkItem = { bulkAssetId: string; quantity: number; modelId: string | null };
-    const allBulks: BulkItem[] = [
-      ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId })),
-      ...inheritedBulks.map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAssetModelId })),
-    ];
-
-    let sort = 0;
-    for (const child of asset.childAssets) {
-      await tx.projectLineItem.create({
-        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: modelMap.get(child.modelId)?.name ?? null, sortOrder: sort++ },
-      });
-    }
-    for (const bi of allBulks) {
-      const modelName = modelMap.get(bi.modelId ?? "")?.name ?? null;
-      await tx.projectLineItem.create({
-        data: {
-          ...base,
-          modelId: bi.modelId,
-          bulkAssetId: bi.bulkAssetId,
-          quantity: bi.quantity,
-          description: modelName ? `${bi.quantity}x ${modelName}` : null,
-          sortOrder: sort++,
-        },
-      });
-    }
-    return;
-  }
-
-  // Model-level line (no specific asset chosen — the common quoting flow). Expand
-  // the MODEL's default bulk accessories now, scaled by the line quantity, so the
-  // accessory shows on the project + documents immediately. Serialised asset-level
-  // accessories can't expand here (no specific asset picked); they materialise at
-  // warehouse prep when a unit is assigned (expandAccessoriesForAsset, which
-  // reconciles this row's quantity to the units actually assigned).
-  if (parentLine.modelId) {
-    const modelBulks = await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, {
-      modelId: parentLine.modelId,
-      organizationId,
-    });
-    if (modelBulks.length === 0) return;
-
-    let sort = 0;
-    for (const bi of modelBulks) {
-      const qty = bi.quantity * Math.max(parentLine.quantity, 1);
-      const modelName = modelMap.get(bi.bulkAssetModelId ?? "")?.name ?? null;
-      await tx.projectLineItem.create({
-        data: {
-          ...base,
-          modelId: bi.bulkAssetModelId ?? null,
-          bulkAssetId: bi.bulkAssetId,
-          quantity: qty,
-          description: modelName ? `${qty}x ${modelName}` : null,
-          sortOrder: sort++,
-        },
-      });
-    }
-  }
+async function readBackLine(id: string) {
+  const convex = await getConvexClient();
+  const line = await convex.query(api.projectLineItems.getById, { id });
+  if (!line) return null;
+  const [asset, bulkAsset] = await Promise.all([
+    line.assetId ? getAssetById(line.assetId) : Promise.resolve(null),
+    line.bulkAssetId ? getBulkAssetById(line.bulkAssetId) : Promise.resolve(null),
+  ]);
+  return { ...line, asset, bulkAsset };
 }
 
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false, includeAccessories = true) {
@@ -225,34 +103,28 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           )
           .map((p) => p.id);
         const projectMap = new Map(allProjects.map((p) => [p.id, p]));
-        const [lineConflict, unitConflict] = await Promise.all([
-          prisma.projectLineItem.findFirst({
-            where: {
-              organizationId,
-              assetId: parsed.assetId,
-              status: { not: "CANCELLED" },
-              projectId: { in: conflictProjectIds },
-            },
-            select: { projectId: true },
-          }),
-          prisma.projectLineItemUnit.findFirst({
-            where: {
-              organizationId,
-              assetId: parsed.assetId,
-              status: { not: "RETURNED" },
-              lineItem: {
-                status: { not: "CANCELLED" },
-                projectId: { in: conflictProjectIds },
-              },
-            },
-            select: {
-              lineItem: {
-                select: { projectId: true },
-              },
-            },
-          }),
+        const conflictSet = new Set(conflictProjectIds);
+        const convex = await getConvexClient();
+        // Asset may be booked via a legacy line.assetId row OR via a unit — check
+        // both in Convex (the flipped tables).
+        const [assetLines, allUnits] = await Promise.all([
+          convex.query(api.projectLineItems.listByAssetId, { assetId: parsed.assetId, orgId: organizationId }),
+          convex.query(api.projectLineItemUnits.list, { orgId: organizationId }),
         ]);
-        const conflictProjId = lineConflict?.projectId ?? unitConflict?.lineItem.projectId;
+        const lineConflict = assetLines.find(
+          (li) => li.status !== "CANCELLED" && conflictSet.has(li.projectId),
+        );
+        const assetUnits = allUnits.filter((u) => u.assetId === parsed.assetId);
+        let unitConflictProjId: string | undefined;
+        for (const u of assetUnits) {
+          if (u.status === "RETURNED") continue;
+          const ul = await convex.query(api.projectLineItems.getById, { id: u.lineItemId });
+          if (ul && ul.status !== "CANCELLED" && conflictSet.has(ul.projectId)) {
+            unitConflictProjId = ul.projectId;
+            break;
+          }
+        }
+        const conflictProjId = lineConflict?.projectId ?? unitConflictProjId;
         const conflictProject = conflictProjId ? projectMap.get(conflictProjId) : null;
         if (conflictProject) {
           throw new UserFacingError({
@@ -300,44 +172,43 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
+        const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
         let overlapping;
         if (hasDates) {
           const projStartMs = convexProject.rentalStartDate as number;
           const projEndMs = convexProject.rentalEndDate as number;
           const modelAllProjects = await getProjectsByOrg(organizationId);
-          const modelConflictProjectIds = modelAllProjects
-            .filter(
-              (p) =>
-                !p.isTemplate &&
-                !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-                p.rentalStartDate != null &&
-                p.rentalEndDate != null &&
-                (p.rentalStartDate as number) <= projEndMs &&
-                (p.rentalEndDate as number) >= projStartMs,
-            )
-            .map((p) => p.id);
-          overlapping = await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              projectId: { in: modelConflictProjectIds },
-            },
-          });
+          const modelConflictProjectIds = new Set(
+            modelAllProjects
+              .filter(
+                (p) =>
+                  !p.isTemplate &&
+                  !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+                  p.rentalStartDate != null &&
+                  p.rentalEndDate != null &&
+                  (p.rentalStartDate as number) <= projEndMs &&
+                  (p.rentalEndDate as number) >= projStartMs,
+              )
+              .map((p) => p.id),
+          );
+          overlapping = allOrgLines.filter(
+            (li) =>
+              li.modelId === parsed.modelId &&
+              li.status !== "CANCELLED" &&
+              li.subHireId == null &&
+              modelConflictProjectIds.has(li.projectId),
+          );
         } else {
-          overlapping = await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              projectId,
-            },
-          });
+          overlapping = allOrgLines.filter(
+            (li) =>
+              li.modelId === parsed.modelId &&
+              li.status !== "CANCELLED" &&
+              li.subHireId == null &&
+              li.projectId === projectId,
+          );
         }
 
-        const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
+        const booked = overlapping.reduce((sum, li) => sum + (li.quantity ?? 0), 0);
         // Enforce against effectiveStock — in-maintenance/lost/retired assets
         // cannot be booked even though they still exist in the model.
         const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
@@ -371,55 +242,59 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // the customer and complicate warehouse picking. Sub-hire items must never merge
   // with owned stock because they have different costs and availability rules.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId && !forceSeparate) {
-    const existing = await prisma.projectLineItem.findFirst({
-      where: {
-        projectId,
-        organizationId,
-        modelId: parsed.modelId,
-        assetId: null,
-        groupId: parsed.groupId ?? null,
-        categoryId: parsed.categoryId ?? null,
-        isKitChild: false,
+    const convex = await getConvexClient();
+    const projectLines = await convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId });
+    const existing = projectLines.find(
+      (li) =>
+        li.modelId === parsed.modelId &&
+        li.assetId == null &&
+        (li.groupId ?? null) === (parsed.groupId ?? null) &&
+        (li.categoryId ?? null) === (parsed.categoryId ?? null) &&
+        !li.isKitChild &&
         // Merge only among non-sub-hire items. Sub-hire items always live in
         // their own SubHire-managed rows and shouldn't merge with manual adds.
-        subHireId: null,
-        status: { not: "CANCELLED" },
-      },
-    });
+        li.subHireId == null &&
+        li.status !== "CANCELLED",
+    );
 
     if (existing) {
-      const oldQuantity = existing.quantity;
-      const newQuantity = existing.quantity + parsed.quantity;
+      const oldQuantity = existing.quantity ?? 0;
+      const newQuantity = (existing.quantity ?? 0) + parsed.quantity;
       const newLineTotal = calculateLineTotal(
-        parsed.unitPrice ?? (existing.unitPrice ? Number(existing.unitPrice) : undefined),
+        parsed.unitPrice ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined),
         newQuantity,
-        parsed.duration || existing.duration,
-        parsed.discount ?? (existing.discount ? Number(existing.discount) : undefined),
+        parsed.duration || existing.duration || 1,
+        parsed.discount ?? (existing.discount != null ? Number(existing.discount) : undefined),
       );
 
-      const result = await prisma.projectLineItem.update({
-        where: { id: existing.id },
-        data: {
+      const mergedNotes = parsed.notes
+        ? existing.notes
+          ? `${existing.notes}; ${parsed.notes}`
+          : parsed.notes
+        : existing.notes;
+
+      await convex.mutation(api.projectLineItems.patchLineItem, {
+        id: existing.id,
+        set: {
           quantity: newQuantity,
-          unitPrice: parsed.unitPrice ?? existing.unitPrice,
+          unitPrice: parsed.unitPrice ?? existing.unitPrice ?? undefined,
           pricingType: parsed.pricingType || existing.pricingType,
-          duration: parsed.duration || existing.duration,
-          discount: parsed.discount ?? existing.discount,
-          lineTotal: newLineTotal,
-          groupName: parsed.groupName || existing.groupName,
-          notes: parsed.notes
-            ? existing.notes
-              ? `${existing.notes}; ${parsed.notes}`
-              : parsed.notes
-            : existing.notes,
+          duration: parsed.duration || existing.duration || undefined,
+          discount: parsed.discount ?? existing.discount ?? undefined,
+          lineTotal: newLineTotal ?? undefined,
+          groupName: parsed.groupName || existing.groupName || undefined,
+          notes: mergedNotes || undefined,
+          updatedAt: Date.now(),
         },
-        include: { asset: true, bulkAsset: true },
+        clear: [],
       });
+
+      const result = await readBackLine(existing.id);
 
       await recalculateProjectTotals(projectId);
 
       // Model lives in Convex — enrich after update.
-      const mergedModel = result.modelId ? await getModelById(result.modelId) : null;
+      const mergedModel = result?.modelId ? await getModelById(result.modelId) : null;
 
       await logActivity({
         organizationId,
@@ -427,13 +302,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         userName,
         action: "UPDATE",
         entityType: "lineItem",
-        entityId: result.id,
-        entityName: result.description || `Line item`,
+        entityId: existing.id,
+        entityName: result?.description || `Line item`,
         summary: `Merged line item into existing on project (qty ${oldQuantity} -> ${newQuantity})`,
         projectId,
       });
 
-      await upsertProjectLineItemsToConvex(projectId);
       return serialize({ ...result, model: mergedModel, _merged: true, _newQuantity: newQuantity });
     }
   }
@@ -480,65 +354,43 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     parsed.discount
   );
 
-  const [maxSortAgg, accessoryModelMap] = await Promise.all([
-    prisma.projectLineItem.aggregate({
-      where: { projectId, organizationId },
-      _max: { sortOrder: true },
-    }),
-    // Model names for accessory description text — fetched before the transaction
-    // so we avoid a cross-domain Prisma join inside expandAccessoryChildren.
-    getModelMap(organizationId),
-  ]);
-  const nextSort = (maxSortAgg._max.sortOrder ?? -1) + 1;
+  void priceBreakdown;
+  void priceOverridden;
 
-  const result = await prisma.$transaction(async (tx) => {
-    const line = await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId,
-        categoryId: parsed.categoryId || null,
-        groupId: parsed.groupId || null,
-        type: parsed.type,
-        modelId: parsed.modelId || null,
-        assetId: parsed.assetId || null,
-        bulkAssetId: parsed.bulkAssetId || null,
-        description: parsed.description || null,
-        quantity: parsed.quantity,
-        unitPrice: autoUnitPrice ?? null,
-        pricingType: autoPricingType,
-        duration: autoDuration,
-        discount: parsed.discount ?? null,
-        lineTotal,
-        priceBreakdown,
-        priceOverridden,
-        sortOrder: nextSort,
-        groupName: parsed.groupName || null,
-        notes: parsed.notes || null,
-        isOptional: parsed.isOptional,
-        showSubhireOnDocs: parsed.showSubhireOnDocs,
-        supplierId: parsed.supplierId || null,
-        subhireOrderNumber: parsed.subhireOrderNumber || null,
-      },
-      include: {
-        asset: true,
-        bulkAsset: true,
-      },
-    });
-
-    // Auto-expand permanent accessories as child lines (atomic with the parent):
-    // a specific serialised asset expands its own + its model's; a model-level
-    // line expands the model's default accessories so they appear on the quote.
-    // Sub-hire lines are third-party stock — never expand.
-    // WHY: Permanent accessories (cases, cables, mounts) must travel with the
-    // parent on every booking. Expanding them as child lines ensures the
-    // warehouse includes them during prep and the quote shows what's included.
-    // includeAccessories=false lets callers suppress this (e.g. return-only flow).
-    if (includeAccessories && !line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
-      await expandAccessoryChildren(tx, organizationId, projectId, line, accessoryModelMap);
-    }
-
-    return line;
+  // Create the line in Convex. The mutation computes sortOrder in-mutation (no
+  // TOCTOU) and expands permanent accessories as child lines atomically.
+  const newLineId = createId();
+  const convex = await getConvexClient();
+  await convex.mutation(api.projectLineItems.createLineItem, {
+    id: newLineId,
+    organizationId,
+    projectId,
+    fields: {
+      type: parsed.type,
+      modelId: parsed.modelId || undefined,
+      assetId: parsed.assetId || undefined,
+      bulkAssetId: parsed.bulkAssetId || undefined,
+      description: parsed.description || undefined,
+      quantity: parsed.quantity,
+      unitPrice: autoUnitPrice ?? undefined,
+      pricingType: autoPricingType,
+      duration: autoDuration ?? undefined,
+      discount: parsed.discount ?? undefined,
+      lineTotal: lineTotal ?? undefined,
+      groupName: parsed.groupName || undefined,
+      notes: parsed.notes || undefined,
+      isOptional: parsed.isOptional,
+      showSubhireOnDocs: parsed.showSubhireOnDocs,
+      supplierId: parsed.supplierId || undefined,
+      subhireOrderNumber: parsed.subhireOrderNumber || undefined,
+      categoryId: parsed.categoryId || undefined,
+      groupId: parsed.groupId || undefined,
+    },
+    includeAccessories,
+    now: Date.now(),
   });
+
+  const result = (await readBackLine(newLineId))!;
 
   // Recalculate group suggested price if item was added to a group
   if (result.groupId) {
@@ -576,8 +428,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     },
   );
 
-  await upsertProjectLineItemsToConvex(projectId);
-
   // Supplier lives in Convex — attach instead of a Prisma join.
   const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
   return serialize({ ...result, supplier });
@@ -598,18 +448,19 @@ export async function updateLineItem(
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
-  const existing = await prisma.projectLineItem.findUnique({
-    where: { id, organizationId },
-    select: {
-      unitPrice: true,
-      pricingType: true,
-      projectId: true,
-      quantity: true,
-      modelId: true,
-      subHireId: true,
-      updatedAt: true,
-    },
-  });
+  const existingDoc = await (await getConvexClient()).query(api.projectLineItems.getById, { id });
+  const existing =
+    existingDoc && existingDoc.organizationId === organizationId
+      ? {
+          unitPrice: existingDoc.unitPrice ?? null,
+          pricingType: existingDoc.pricingType,
+          projectId: existingDoc.projectId,
+          quantity: existingDoc.quantity ?? 0,
+          modelId: existingDoc.modelId ?? null,
+          subHireId: existingDoc.subHireId ?? null,
+          updatedAt: existingDoc.updatedAt ?? null,
+        }
+      : null;
 
   // Optimistic-concurrency guard: reject stale saves even when the edit lock
   // has lapsed. The editor sends the `updatedAt` it opened with; if the row is
@@ -654,46 +505,45 @@ export async function updateLineItem(
         assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
         bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
       };
+      const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
       let overlapping;
       if (hasDates) {
         const projStartMs = updateConvexProject!.rentalStartDate as number;
         const projEndMs = updateConvexProject!.rentalEndDate as number;
         const updateAllProjects = await getProjectsByOrg(organizationId);
-        const updateConflictProjectIds = updateAllProjects
-          .filter(
-            (p) =>
-              !p.isTemplate &&
-              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-              p.rentalStartDate != null &&
-              p.rentalEndDate != null &&
-              (p.rentalStartDate as number) <= projEndMs &&
-              (p.rentalEndDate as number) >= projStartMs,
-          )
-          .map((p) => p.id);
-        overlapping = await prisma.projectLineItem.findMany({
-          where: {
-            organizationId,
-            modelId: parsed.modelId,
-            status: { not: "CANCELLED" },
-            subHireId: null,
-            id: { not: id },
-            projectId: { in: updateConflictProjectIds },
-          },
-        });
+        const updateConflictProjectIds = new Set(
+          updateAllProjects
+            .filter(
+              (p) =>
+                !p.isTemplate &&
+                !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+                p.rentalStartDate != null &&
+                p.rentalEndDate != null &&
+                (p.rentalStartDate as number) <= projEndMs &&
+                (p.rentalEndDate as number) >= projStartMs,
+            )
+            .map((p) => p.id),
+        );
+        overlapping = allOrgLines.filter(
+          (li) =>
+            li.modelId === parsed.modelId &&
+            li.status !== "CANCELLED" &&
+            li.subHireId == null &&
+            li.id !== id &&
+            updateConflictProjectIds.has(li.projectId),
+        );
       } else {
-        overlapping = await prisma.projectLineItem.findMany({
-          where: {
-            organizationId,
-            modelId: parsed.modelId,
-            status: { not: "CANCELLED" },
-            subHireId: null,
-            id: { not: id },
-            projectId: existing.projectId,
-          },
-        });
+        overlapping = allOrgLines.filter(
+          (li) =>
+            li.modelId === parsed.modelId &&
+            li.status !== "CANCELLED" &&
+            li.subHireId == null &&
+            li.id !== id &&
+            li.projectId === existing.projectId,
+        );
       }
 
-      const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
+      const booked = overlapping.reduce((sum, li) => sum + (li.quantity ?? 0), 0);
       // Enforce against effectiveStock — matches checkAvailability and the badge.
       const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
       const available = Math.max(0, effectiveStock - booked);
@@ -719,35 +569,69 @@ export async function updateLineItem(
     parsed.discount
   );
 
-  const result = await prisma.projectLineItem.update({
-    where: { id, organizationId },
-    data: {
-      type: parsed.type,
-      // Only update association fields when explicitly provided — the edit
-      // dialog doesn't send modelId/assetId/bulkAssetId, so undefined here
-      // means "keep the existing value", not "clear it".
-      ...(parsed.modelId !== undefined && { modelId: parsed.modelId || null }),
-      ...(parsed.assetId !== undefined && { assetId: parsed.assetId || null }),
-      ...(parsed.bulkAssetId !== undefined && { bulkAssetId: parsed.bulkAssetId || null }),
-      description: parsed.description || null,
-      quantity: parsed.quantity,
-      unitPrice: parsed.unitPrice ?? null,
-      pricingType: parsed.pricingType,
-      duration: parsed.duration,
-      discount: parsed.discount ?? null,
-      lineTotal,
-      groupName: parsed.groupName || null,
-      notes: parsed.notes || null,
-      isOptional: parsed.isOptional,
-      showSubhireOnDocs: parsed.showSubhireOnDocs,
-      ...(parsed.supplierId !== undefined && { supplierId: parsed.supplierId || null }),
-      subhireOrderNumber: parsed.subhireOrderNumber || null,
-    },
-    include: {
-      asset: true,
-      bulkAsset: true,
-    },
+  // Build the Convex patch. Scalar fields that the old code wrote `|| null` /
+  // `?? null` are CLEARED to undefined when empty; association fields are only
+  // touched when explicitly provided (undefined ⇒ keep existing), and clear when
+  // provided-but-empty (matching the old `field || null`).
+  const set: {
+    type?: typeof parsed.type;
+    quantity?: number;
+    pricingType?: typeof parsed.pricingType;
+    duration?: number;
+    isOptional?: boolean;
+    showSubhireOnDocs?: boolean;
+    description?: string;
+    unitPrice?: number;
+    discount?: number;
+    lineTotal?: number;
+    groupName?: string;
+    notes?: string;
+    subhireOrderNumber?: string;
+    modelId?: string;
+    assetId?: string;
+    bulkAssetId?: string;
+    supplierId?: string;
+    updatedAt?: number;
+  } = {
+    type: parsed.type,
+    quantity: parsed.quantity,
+    pricingType: parsed.pricingType,
+    duration: parsed.duration,
+    isOptional: parsed.isOptional,
+    showSubhireOnDocs: parsed.showSubhireOnDocs,
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+
+  const setStr = (key: "description" | "groupName" | "notes" | "subhireOrderNumber" | "modelId" | "assetId" | "bulkAssetId" | "supplierId", value: string | null | undefined) => {
+    if (value === undefined || value === null || value === "") clear.push(key);
+    else set[key] = value;
+  };
+  const setNum = (key: "unitPrice" | "discount" | "lineTotal", value: number | null | undefined) => {
+    if (value === undefined || value === null) clear.push(key);
+    else set[key] = value;
+  };
+  setStr("description", parsed.description);
+  setNum("unitPrice", parsed.unitPrice ?? null);
+  setNum("discount", parsed.discount ?? null);
+  setNum("lineTotal", lineTotal);
+  setStr("groupName", parsed.groupName);
+  setStr("notes", parsed.notes);
+  setStr("subhireOrderNumber", parsed.subhireOrderNumber);
+
+  // Association fields: only when explicitly provided.
+  if (parsed.modelId !== undefined) setStr("modelId", parsed.modelId);
+  if (parsed.assetId !== undefined) setStr("assetId", parsed.assetId);
+  if (parsed.bulkAssetId !== undefined) setStr("bulkAssetId", parsed.bulkAssetId);
+  if (parsed.supplierId !== undefined) setStr("supplierId", parsed.supplierId);
+
+  await (await getConvexClient()).mutation(api.projectLineItems.patchLineItem, {
+    id,
+    set,
+    clear,
   });
+
+  const result = (await readBackLine(id))!;
 
   await recalculateProjectTotals(result.projectId);
 
@@ -774,12 +658,11 @@ export async function updateLineItem(
       targetId: result.id,
       metadata: {
         quantity: result.quantity,
-        lineTotal: result.lineTotal?.toString?.() ?? null,
+        lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
       },
     },
   );
 
-  await upsertProjectLineItemsToConvex(result.projectId);
   // Supplier lives in Convex — attach instead of a Prisma join.
   const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
   return serialize({ ...result, supplier });
@@ -807,18 +690,14 @@ export async function addKitLineItem(
       message: "This kit was deleted or moved. Refresh and try again.",
     });
   }
-  const [serializedItems, bulkItems] = await Promise.all([
-    prisma.kitSerializedItem.findMany({
-      where: { kitId },
-      include: { asset: { select: { modelId: true } } },
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.kitBulkItem.findMany({
-      where: { kitId },
-      include: { bulkAsset: { select: { modelId: true } } },
-      orderBy: { sortOrder: "asc" },
-    }),
+  // Member counts (for the activity-feed summary) — read from Convex; the actual
+  // child-line creation reads the same members in-mutation.
+  const [allSerialized, allBulk] = await Promise.all([
+    getKitSerializedItemsByOrg(organizationId),
+    getKitBulkItemsByOrg(organizationId),
   ]);
+  const serializedItems = allSerialized.filter((s) => s.kitId === kitId);
+  const bulkItems = allBulk.filter((b) => b.kitId === kitId);
   const kit = { ...convexKit, serializedItems, bulkItems };
   // Block truly unavailable kits but allow checked-out ones — date overlap check below handles real conflicts
   if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
@@ -851,13 +730,15 @@ export async function addKitLineItem(
       )
       .map((p) => p.id);
     const kitProjectMap = new Map(kitAddAllProjects.map((p) => [p.id, p]));
-    const conflict = await prisma.projectLineItem.findFirst({
-      where: {
-        organizationId, kitId, isKitChild: false, status: { not: "CANCELLED" },
-        projectId: { in: kitConflictProjectIds },
-      },
-      select: { projectId: true },
-    });
+    const kitConflictSet = new Set(kitConflictProjectIds);
+    const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
+    const conflict = allOrgLines.find(
+      (li) =>
+        li.kitId === kitId &&
+        !li.isKitChild &&
+        li.status !== "CANCELLED" &&
+        kitConflictSet.has(li.projectId),
+    );
     if (conflict) {
       const conflictKitProject = kitProjectMap.get(conflict.projectId);
       throw new UserFacingError({
@@ -869,67 +750,26 @@ export async function addKitLineItem(
     }
   }
 
-  const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
-  let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
-
-  // Model lives in Convex — load map before the transaction.
-  const modelMap = await getModelMap(organizationId);
-
-  const result = await prisma.$transaction(async (tx) => {
-    // Create parent kit line item — holds the kit-level pricing and serves
-    // as the anchor for all child items. Each serialized and bulk item from
-    // the kit becomes a child ProjectLineItem so the warehouse can track and
-    // deploy each piece individually while the parent maintains the kit-level
-    // unit price for quoting.
-    const parentItem = await tx.projectLineItem.create({
-      data: {
-        organizationId, projectId, type: "EQUIPMENT", kitId,
-        description: `${kit.assetTag} - ${kit.name}`,
-        quantity: 1, unitPrice: unitPrice ?? null, pricingType: "PER_DAY", duration: 1,
-        lineTotal: unitPrice ?? null, sortOrder: nextSort++, pricingMode,
-        groupName: groupName || null,
-        categoryId: categoryId || null,
-        groupId: groupId || null,
-      },
-    });
-
-    // Create child line items for serialized items
-    for (const si of kit.serializedItems) {
-      const siModel = si.asset.modelId ? modelMap.get(si.asset.modelId) ?? null : null;
-      const childPrice = pricingMode === "ITEMIZED" ? (siModel?.defaultRentalPrice ? Number(siModel.defaultRentalPrice) : null) : null;
-      await tx.projectLineItem.create({
-        data: {
-          organizationId, projectId, type: "EQUIPMENT",
-          modelId: si.asset.modelId, assetId: si.assetId,
-          description: siModel?.name ?? si.asset.modelId ?? "",
-          quantity: 1, unitPrice: childPrice, pricingType: "PER_DAY", duration: 1,
-          lineTotal: childPrice, sortOrder: nextSort++,
-          isKitChild: true, parentLineItemId: parentItem.id,
-        },
-      });
-    }
-
-    // Create child line items for bulk items
-    for (const bi of kit.bulkItems) {
-      const biModel = bi.bulkAsset.modelId ? modelMap.get(bi.bulkAsset.modelId) ?? null : null;
-      const childPrice = pricingMode === "ITEMIZED" ? (biModel?.defaultRentalPrice ? Number(biModel.defaultRentalPrice) * bi.quantity : null) : null;
-      await tx.projectLineItem.create({
-        data: {
-          organizationId, projectId, type: "EQUIPMENT",
-          modelId: bi.bulkAsset.modelId, bulkAssetId: bi.bulkAssetId,
-          description: `${bi.quantity}x ${biModel?.name ?? bi.bulkAsset.modelId ?? ""}`,
-          quantity: bi.quantity, unitPrice: childPrice ? childPrice / bi.quantity : null,
-          pricingType: "PER_DAY", duration: 1, lineTotal: childPrice, sortOrder: nextSort++,
-          isKitChild: true, parentLineItemId: parentItem.id,
-        },
-      });
-    }
-
-    return { parentItem, nextSort };
+  // Create parent + children in one Convex mutation. The mutation reads the
+  // kit's Convex members, computes sortOrder in-mutation, and applies ITEMIZED
+  // child pricing from each member model's defaultRentalPrice.
+  const parentId = createId();
+  await (await getConvexClient()).mutation(api.projectLineItems.createKitLineItem, {
+    id: parentId,
+    organizationId,
+    projectId,
+    kitId,
+    unitPrice: unitPrice ?? undefined,
+    pricingMode,
+    groupName: groupName || undefined,
+    categoryId: categoryId || undefined,
+    groupId: groupId || undefined,
+    now: Date.now(),
   });
 
+  const parentItem = (await readBackLine(parentId))!;
+
   await recalculateProjectTotals(projectId);
-  await upsertProjectLineItemsToConvex(projectId);
 
   if (emitActivity) {
     const memberCount = kit.serializedItems.length + kit.bulkItems.length;
@@ -939,14 +779,14 @@ export async function addKitLineItem(
         entityType: "project",
         entityId: projectId,
         action: "kit_added",
-        summary: `added kit "${result.parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
+        summary: `added kit "${parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
         targetType: "lineItem",
-        targetId: result.parentItem.id,
+        targetId: parentItem.id,
       },
     );
   }
 
-  return serialize(result.parentItem);
+  return serialize(parentItem);
 }
 
 export async function addCustomLineItem(projectId: string, data: CustomLineItemFormValues) {
@@ -966,39 +806,39 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
   // Resolve groupName from groupId if provided (groups are Convex-only now)
   let groupName: string | undefined;
   if (parsed.groupId) {
-    const groupConvex = await getConvexClient();
-    const group = await groupConvex.query(api.projectGroups.getById, { id: parsed.groupId });
-    if (group && group.projectId === projectId && group.organizationId === organizationId) {
-      groupName = group.title;
-    }
+    const group = await (await getConvexClient()).query(api.projectGroups.getById, { id: parsed.groupId });
+    groupName =
+      group && group.projectId === projectId && group.organizationId === organizationId
+        ? group.title ?? undefined
+        : undefined;
   }
 
-  // Compute lineTotal and sortOrder so revenue and ordering are correct
+  // Compute lineTotal — the mutation computes sortOrder in-mutation.
   const lineTotal = calculateLineTotal(parsed.unitPrice, parsed.quantity, parsed.duration, parsed.discount);
-  const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
-  const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const result = await prisma.projectLineItem.create({
-    data: {
-      organizationId,
-      projectId,
-      type: "EQUIPMENT",
-      isCustomItem: true,
+  const customId = createId();
+  await (await getConvexClient()).mutation(api.projectLineItems.createCustomLineItem, {
+    id: customId,
+    organizationId,
+    projectId,
+    fields: {
       description: parsed.description,
       quantity: parsed.quantity,
-      unitPrice: parsed.unitPrice ?? null,
+      unitPrice: parsed.unitPrice ?? undefined,
       pricingType: parsed.pricingType,
       duration: parsed.duration,
-      discount: parsed.discount ?? null,
-      notes: parsed.notes ?? null,
+      discount: parsed.discount ?? undefined,
+      notes: parsed.notes ?? undefined,
       isOptional: parsed.isOptional,
-      categoryId: parsed.categoryId ?? null,
-      groupId: parsed.groupId ?? null,
-      groupName: groupName ?? null,
-      lineTotal,
-      sortOrder,
+      categoryId: parsed.categoryId ?? undefined,
+      groupId: parsed.groupId ?? undefined,
+      groupName: groupName ?? undefined,
+      lineTotal: lineTotal ?? undefined,
     },
+    now: Date.now(),
   });
+
+  const result = (await readBackLine(customId))!;
 
   await recalculateProjectTotals(projectId);
 
@@ -1026,16 +866,15 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     },
   );
 
-  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
 export async function removeLineItem(id: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
 
-  const item = await prisma.projectLineItem.findFirst({
-    where: { id, organizationId },
-  });
+  const convex = await getConvexClient();
+  const itemDoc = await convex.query(api.projectLineItems.getById, { id });
+  const item = itemDoc && itemDoc.organizationId === organizationId ? itemDoc : null;
   if (!item) {
     throw new UserFacingError({
       code: "NOT_FOUND",
@@ -1062,20 +901,9 @@ export async function removeLineItem(id: string) {
   }
 
   // Parent line (kit parent OR accessory parent): cascade-delete its children
-  // atomically with the parent.
-  const children = await prisma.projectLineItem.findMany({
-    where: { parentLineItemId: item.id, organizationId },
-    select: { id: true },
-  });
-  await prisma.$transaction(async (tx) => {
-    await tx.projectLineItem.deleteMany({
-      where: { parentLineItemId: item.id, organizationId },
-    });
-    await tx.projectLineItem.delete({ where: { id } });
-  });
-  // Mirror the cascade delete to Convex (children first, then the parent).
-  for (const c of children) await removeLineItemFromConvex(c.id);
-  await removeLineItemFromConvex(id);
+  // (+ their units) and the parent (+ its units) atomically in one Convex
+  // mutation.
+  await convex.mutation(api.projectLineItems.removeLineItemCascade, { id });
   await recalculateProjectTotals(item.projectId);
 
   await logActivity({
@@ -1110,28 +938,29 @@ export async function reorderLineItems(
   itemIds: string[],
   groupUpdates?: { id: string; groupName: string | null }[],
 ) {
-  const { organizationId } = await requirePermission("project", "manage_line_items");
+  await requirePermission("project", "manage_line_items");
 
-  const updates = itemIds.map((id, index) =>
-    prisma.projectLineItem.update({
-      where: { id, organizationId },
-      data: { sortOrder: index },
-    })
-  );
-
-  if (groupUpdates?.length) {
-    for (const { id, groupName } of groupUpdates) {
-      updates.push(
-        prisma.projectLineItem.update({
-          where: { id, organizationId },
-          data: { groupName: groupName || null },
-        })
-      );
-    }
+  // Build the reorder payload: each id gets sortOrder = its index. groupUpdates
+  // (id -> groupName) are merged in; ids that only appear in groupUpdates are
+  // appended after the ordered ids (keeping their groupName change). The mutation
+  // sets sortOrder + groupName atomically per row. `groupName: ""`/null clears.
+  const groupNameById = new Map((groupUpdates ?? []).map((g) => [g.id, g.groupName]));
+  const orderedSet = new Set(itemIds);
+  const items: { id: string; sortOrder: number; groupName?: string }[] = itemIds.map((id, index) => ({
+    id,
+    sortOrder: index,
+    ...(groupNameById.has(id) ? { groupName: groupNameById.get(id) || undefined } : {}),
+  }));
+  let extraSort = itemIds.length;
+  for (const { id, groupName } of groupUpdates ?? []) {
+    if (orderedSet.has(id)) continue;
+    items.push({ id, sortOrder: extraSort++, groupName: groupName || undefined });
   }
 
-  await prisma.$transaction(updates);
-  await upsertProjectLineItemsToConvex(projectId);
+  await (await getConvexClient()).mutation(api.projectLineItems.reorderLineItems, {
+    items,
+    now: Date.now(),
+  });
 
   return serialize({ success: true });
 }
@@ -1169,38 +998,49 @@ export async function checkAvailability(
   // Include both regular items AND kit children — they all consume stock
   // Sub-hire items represent third-party stock and are excluded.
   // When no dates: only count bookings on the current project (stock-only check)
-  const overlappingLineItems = hasDates
-    ? await prisma.projectLineItem.findMany({
-        where: {
-          organizationId,
-          modelId,
-          status: { not: "CANCELLED" },
-          subHireId: null,
-          project: {
-            isTemplate: false,
-            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-            rentalStartDate: { lte: endDate! },
-            rentalEndDate: { gte: startDate! },
-          },
-        },
-        include: {
-          project: { select: { id: true, name: true, projectNumber: true } },
-        },
-      })
-    : excludeProjectId
-      ? await prisma.projectLineItem.findMany({
-          where: {
-            organizationId,
-            modelId,
-            status: { not: "CANCELLED" },
-            subHireId: null,
-            projectId: excludeProjectId,
-          },
-          include: {
-            project: { select: { id: true, name: true, projectNumber: true } },
-          },
-        })
-      : [];
+  // Line items + projects both live in Convex — read both, filter/join in JS.
+  const convex = await getConvexClient();
+  const [allOrgLines, allProjects] = await Promise.all([
+    convex.query(api.projectLineItems.list, { orgId: organizationId }),
+    getProjectsByOrg(organizationId),
+  ]);
+  const projectById = new Map(allProjects.map((p) => [p.id, p]));
+
+  const overlappingLineItems: Array<{
+    quantity: number;
+    project: { id: string; name: string | null; projectNumber: string | null };
+  }> = [];
+  if (hasDates) {
+    const endMs = endDate!.getTime();
+    const startMs = startDate!.getTime();
+    for (const li of allOrgLines) {
+      if (li.modelId !== modelId) continue;
+      if (li.status === "CANCELLED") continue;
+      if (li.subHireId != null) continue;
+      const p = projectById.get(li.projectId);
+      if (!p) continue;
+      if (p.isTemplate) continue;
+      if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) continue;
+      if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
+      if ((p.rentalStartDate as number) > endMs || (p.rentalEndDate as number) < startMs) continue;
+      overlappingLineItems.push({
+        quantity: li.quantity ?? 0,
+        project: { id: p.id, name: p.name ?? null, projectNumber: p.projectNumber ?? null },
+      });
+    }
+  } else if (excludeProjectId) {
+    for (const li of allOrgLines) {
+      if (li.modelId !== modelId) continue;
+      if (li.status === "CANCELLED") continue;
+      if (li.subHireId != null) continue;
+      if (li.projectId !== excludeProjectId) continue;
+      const p = projectById.get(li.projectId);
+      overlappingLineItems.push({
+        quantity: li.quantity ?? 0,
+        project: { id: li.projectId, name: p?.name ?? null, projectNumber: p?.projectNumber ?? null },
+      });
+    }
+  }
 
   const bookedOnThisProject = excludeProjectId
     ? overlappingLineItems
@@ -1298,16 +1138,12 @@ export async function lookupAssetByTag(
       )
       .map((p) => p.id);
     const lookupProjectMap = new Map(lookupAllProjects.map((p) => [p.id, p]));
+    const lookupConflictSet = new Set(lookupConflictProjectIds);
 
-    const overlapping = await prisma.projectLineItem.findFirst({
-      where: {
-        organizationId,
-        assetId: asset.id,
-        status: { not: "CANCELLED" },
-        projectId: { in: lookupConflictProjectIds },
-      },
-      select: { projectId: true },
-    });
+    const assetLines = await (await getConvexClient()).query(api.projectLineItems.listByAssetId, { assetId: asset.id, orgId: organizationId });
+    const overlapping = assetLines.find(
+      (li) => li.status !== "CANCELLED" && lookupConflictSet.has(li.projectId),
+    );
 
     if (overlapping) {
       available = false;
@@ -1381,17 +1217,16 @@ export async function checkKitAvailability(
     )
     .map((p) => p.id);
   const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
+  const kitAvailConflictSet = new Set(kitAvailConflictProjectIds);
 
-  const conflict = await prisma.projectLineItem.findFirst({
-    where: {
-      organizationId,
-      kitId,
-      isKitChild: false,
-      status: { not: "CANCELLED" },
-      projectId: { in: kitAvailConflictProjectIds },
-    },
-    select: { projectId: true },
-  });
+  const kitAvailOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
+  const conflict = kitAvailOrgLines.find(
+    (li) =>
+      li.kitId === kitId &&
+      !li.isKitChild &&
+      li.status !== "CANCELLED" &&
+      kitAvailConflictSet.has(li.projectId),
+  );
 
   if (conflict) {
     const conflictKitAvailProject = kitAvailProjectMap.get(conflict.projectId);
@@ -1443,64 +1278,44 @@ export async function recalculateProjectTotals(projectId: string) {
   const project = await getProjectById(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
 
+  const convex = await getConvexClient();
+  // Groups + line items both live in Convex — read both, compute revenue in JS.
+  const [groups, projectLines] = await Promise.all([
+    convex.query(api.projectGroups.listByProject, { projectId, orgId: project.organizationId }),
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId: project.organizationId }),
+  ]);
+
   // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
   // custom items placed inside the group. Custom items live outside the
   // model-rate optimizer, so their lineTotal doesn't roll into the bundle
   // price — they're "extras on top." Without this addition, a custom item
   // added to a group is invisible to the project total.
-  // Groups (price/quantity) are Convex-only now; their custom-item "extras"
-  // still live in Prisma line items. Read both and join in JS.
-  const groupsConvex = await getConvexClient();
-  const convexGroups = await groupsConvex.query(api.projectGroups.listByProject, {
-    projectId,
-    orgId: project.organizationId,
-  });
-  const groupIds = convexGroups.map((g) => g.id);
-  const customGroupItems = groupIds.length
-    ? await prisma.projectLineItem.findMany({
-        where: {
-          groupId: { in: groupIds },
-          isCustomItem: true,
-          isOptional: false,
-          isKitChild: false,
-          status: { not: "CANCELLED" },
-        },
-        select: { groupId: true, lineTotal: true },
-      })
-    : [];
-  const customExtrasByGroup = new Map<string, number>();
-  for (const li of customGroupItems) {
-    if (!li.groupId) continue;
-    customExtrasByGroup.set(
-      li.groupId,
-      (customExtrasByGroup.get(li.groupId) ?? 0) + (li.lineTotal != null ? Number(li.lineTotal) : 0),
-    );
-  }
-
-  const groupRevenue = convexGroups.reduce((sum, g) => {
+  const groupRevenue = groups.reduce((sum, g) => {
     const bundlePrice = g.price != null ? Number(g.price) : 0;
-    const qty = g.quantity ?? 1;
-    const customExtras = customExtrasByGroup.get(g.id) ?? 0;
-    return sum + bundlePrice * qty + customExtras;
+    const customExtras = projectLines
+      .filter(
+        (li) =>
+          li.groupId === g.id &&
+          li.isCustomItem === true &&
+          !li.isOptional &&
+          !li.isKitChild &&
+          li.status !== "CANCELLED",
+      )
+      .reduce((s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
+    return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
   }, 0);
 
   // 2. Equipment revenue from standalone (ungrouped) line items —
   // this naturally includes ungrouped custom items via their lineTotal.
-  const standaloneItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      groupId: null,
-      isOptional: false,
-      isKitChild: false,
-      status: { not: "CANCELLED" },
-    },
-    select: { lineTotal: true },
-  });
-
-  const standaloneRevenue = standaloneItems.reduce((sum, li) => {
-    const lt = li.lineTotal != null ? Number(li.lineTotal) : 0;
-    return sum + lt;
-  }, 0);
+  const standaloneRevenue = projectLines
+    .filter(
+      (li) =>
+        li.groupId == null &&
+        !li.isOptional &&
+        !li.isKitChild &&
+        li.status !== "CANCELLED",
+    )
+    .reduce((sum, li) => sum + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
 
   const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
 

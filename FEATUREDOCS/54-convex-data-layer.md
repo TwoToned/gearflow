@@ -3235,11 +3235,40 @@ crew row would go stale the moment writes flip).
   the respond-route by-`responseToken` lookup (no Convex by-token query yet).
 - **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests pass. Reads
   only — dual-write untouched, fully reversible.
-- **Next (2/2):** invert the crew-scheduling writes to Convex-only — re-implement the
-  partial-unique `(projectId, crewMemberId, serviceId)` guard, the cascade deletes
-  (assignment→shifts+timeEntries, project/member→assignments), the assignment +
-  time-entry status machines, and the rate/estimatedCost cascade; then delete
-  `crew-scheduling-mirror.ts`.
+### Phase C — crew-scheduling write-inversion (2/2) — DONE
+
+All crew-scheduling writes (`crewAssignment` / `crewShift` / `crewTimeEntry` /
+`crewAvailability`) are now **Convex-only**; `crew-scheduling-mirror.ts` is deleted.
+The family (read + write) is fully migrated.
+
+- **Custom Convex mutations** (CUSTOM banner, inline in the generated modules):
+  `crewAssignments.patchAssignment(id,set,clear)` + `deleteCascade(id)` (assignment →
+  shifts + linked time-entries) + `createServiceAssignment(...)` (enforces the
+  partial-unique `(projectId,crewMemberId,serviceId)` invariant — the Prisma
+  `crew_assignment_project_member_service_key`, which Convex can't express, via a
+  race-safe check-then-insert on `by_serviceId`) + `getByResponseToken` query;
+  `crewShifts.patchShift` + `removeScheduledByAssignment` (generateShifts regen —
+  delete only SCHEDULED, preserve the rest); `crewTimeEntries.patchTimeEntry`. The
+  `patch*` take an explicit `clear` list (the generated `update` can't unset a field).
+- **Status machines stay in the action** (Convex persists the computed result):
+  assignment PENDING→OFFERED(token+offeredAt)→ACCEPTED/DECLINED(respondedAt, token
+  cleared)→CONFIRMED(confirmedAt+confirmedById)→CANCELLED/COMPLETED; time-entry
+  DRAFT→SUBMITTED→APPROVED→EXPORTED/DISPUTED (EXPORTED immutable; edit resets to DRAFT
+  clearing approval). Rate cascade + estimatedCost unchanged.
+- **Cascades re-implemented** (no Prisma FK left): `deleteAssignment` → `deleteCascade`;
+  `deleteProject` / `deleteCrewMember` query the Convex assignments (by project / by
+  member) and `deleteCascade` each (+ the member's standalone time-entries +
+  availability); `project-services` service-crew reconcile (add/remove/role-change)
+  and `deleteProjectService` cascade run Convex-only after the projectService tx.
+- **Behavioural delta:** crew writes that previously shared a Prisma `$transaction`
+  with projectService (add/update/delete/clone service) are no longer one DB tx —
+  each Convex mutation is atomic on its own, ordered around the projectService write
+  (same trade-off as the mega-flip).
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests, AND a **live
+  dev-Convex exercise (12/12)**: createServiceAssignment + dup-reject, patchAssignment
+  set + CLEAR responseToken, getByResponseToken, patchShift clear +
+  removeScheduledByAssignment (preserves non-SCHEDULED), patchTimeEntry approval-reset,
+  deleteCascade (assignment + shifts + linked time-entry).
 
 ## Conventions
 

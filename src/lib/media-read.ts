@@ -155,6 +155,8 @@ export type AssetGalleryMedia = GalleryMediaBase & { assetId: string; type: Medi
 export type ModelGalleryMedia = GalleryMediaBase & { modelId: string; type: MediaType; isPrimary: boolean };
 export type KitGalleryMedia = GalleryMediaBase & { kitId: string; type: MediaType; isPrimary: boolean };
 export type ProjectGalleryMedia = GalleryMediaBase & { projectId: string; type: ProjectMediaType };
+export type ClientGalleryMedia = GalleryMediaBase & { clientId: string; type: ProjectMediaType };
+export type SubHireGalleryMedia = GalleryMediaBase & { subHireId: string; type: ProjectMediaType };
 
 /** Map a Convex `fileUploads` doc to the nested `file` shape (epoch-ms → Date,
  * absent → null for the nullable columns). */
@@ -193,6 +195,19 @@ function mapGalleryBase(
   };
 }
 
+/**
+ * Narrow a gallery list to rows whose `file` resolved (non-null), matching the
+ * old Prisma `include: { file }` on a REQUIRED FK (every row always had a file).
+ * Detail-page composites consume `media` with a non-null `file`; a mirror row
+ * whose file id doesn't resolve is unrenderable, so drop it (same as a Prisma
+ * join against a since-deleted row would have excluded it).
+ */
+export function withResolvedFile<T extends { file: GalleryFile | null }>(
+  rows: T[],
+): Array<T & { file: GalleryFile }> {
+  return rows.filter((m): m is T & { file: GalleryFile } => m.file !== null);
+}
+
 /** Pure sort replicating Prisma `orderBy: { sortOrder: "asc" }` (coercing the
  * Prisma-defaulted `sortOrder` to 0). Stable so ties keep input order. */
 export function sortGalleryBySortOrder<T extends { sortOrder?: number | null }>(rows: T[]): T[] {
@@ -218,16 +233,22 @@ async function fetchGalleryFiles(fileIds: string[]): Promise<Map<string, Gallery
   return out;
 }
 
+type AnyMediaDoc =
+  | Doc<"assetMedia">
+  | Doc<"modelMedia">
+  | Doc<"kitMedia">
+  | Doc<"projectMedia">
+  | Doc<"clientMedia">
+  | Doc<"subHireMedia">;
+
 async function getGalleryRows<K extends MediaKind>(
   kind: K,
   parentId: string,
-): Promise<Array<Doc<"assetMedia"> | Doc<"modelMedia"> | Doc<"kitMedia"> | Doc<"projectMedia">>> {
+): Promise<AnyMediaDoc[]> {
   const convex = await getConvexClient();
   return withConvexReadRetry(
     async () =>
-      (await convex.query(MEDIA_SPECS[kind].convex.listByParent, { parentId })) as Array<
-        Doc<"assetMedia"> | Doc<"modelMedia"> | Doc<"kitMedia"> | Doc<"projectMedia">
-      >,
+      (await convex.query(MEDIA_SPECS[kind].convex.listByParent, { parentId })) as AnyMediaDoc[],
   );
 }
 
@@ -276,6 +297,30 @@ export async function getProjectMediaFromConvex(projectId: string): Promise<Proj
   return rows.map((m) => ({
     ...mapGalleryBase(m, files.get(m.fileId) ?? null),
     projectId: m.projectId,
+    type: (m.type ?? "OTHER") as ProjectMediaType,
+  }));
+}
+
+/** Client gallery — Convex equivalent of the old `prisma.clientMedia` getter.
+ * Like project media, no `isPrimary`. */
+export async function getClientMediaFromConvex(clientId: string): Promise<ClientGalleryMedia[]> {
+  const rows = sortGalleryBySortOrder((await getGalleryRows("client", clientId)) as Doc<"clientMedia">[]);
+  const files = await fetchGalleryFiles(rows.map((r) => r.fileId));
+  return rows.map((m) => ({
+    ...mapGalleryBase(m, files.get(m.fileId) ?? null),
+    clientId: m.clientId,
+    type: (m.type ?? "OTHER") as ProjectMediaType,
+  }));
+}
+
+/** Sub-hire gallery — Convex equivalent of the old `prisma.subHireMedia` getter.
+ * Like project media, no `isPrimary`. */
+export async function getSubHireMediaFromConvex(subHireId: string): Promise<SubHireGalleryMedia[]> {
+  const rows = sortGalleryBySortOrder((await getGalleryRows("subHire", subHireId)) as Doc<"subHireMedia">[]);
+  const files = await fetchGalleryFiles(rows.map((r) => r.fileId));
+  return rows.map((m) => ({
+    ...mapGalleryBase(m, files.get(m.fileId) ?? null),
+    subHireId: m.subHireId,
     type: (m.type ?? "OTHER") as ProjectMediaType,
   }));
 }

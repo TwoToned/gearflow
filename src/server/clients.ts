@@ -1,8 +1,8 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
+import { getClientMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getClientById, getClientsByOrg, type ConvexClient } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
@@ -130,11 +130,9 @@ export async function getClient(id: string) {
 
   const [allOrgProjects, media] = await Promise.all([
     getProjectsByOrg(organizationId),
-    prisma.clientMedia.findMany({
-      where: { clientId: id },
-      include: { file: true },
-      orderBy: { sortOrder: "asc" },
-    }),
+    // clientMedia gallery now read from the Convex mirror (was a Prisma
+    // clientMedia + file join). Dual-written, so identical data. See media-read.ts.
+    getClientMediaFromConvex(id),
   ]);
 
   const clientProjects = allOrgProjects
@@ -155,7 +153,7 @@ export async function getClient(id: string) {
     _count: { lineItems: lineItemCountMap.get(p.id) ?? 0 },
   }));
 
-  return serialize({ ...client, projects, media });
+  return serialize({ ...client, projects, media: withResolvedFile(media) });
 }
 
 export async function createClient(data: ClientFormValues) {

@@ -26,7 +26,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { syncMediaForParent } from "@/lib/media-mirror";
-import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { getPrimaryPhotoMap, getKitMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getCategoryMap } from "@/lib/categories-read";
@@ -94,13 +94,11 @@ export async function getKit(id: string) {
         take: 20,
         orderBy: { createdAt: "desc" },
       },
-      media: {
-        include: { file: true },
-        orderBy: { sortOrder: "asc" },
-      },
     },
   });
   if (!kit) return serialize(null);
+  // kit media gallery now from the Convex mirror (dual-written → identical data).
+  const media = withResolvedFile(await getKitMediaFromConvex(id));
   const modelMap = await getModelMap(organizationId);
   // Location + Category FKs were dropped (Phase B); attach both from the Convex mirror.
   const location = kit.locationId
@@ -111,6 +109,7 @@ export async function getKit(id: string) {
     : null;
   return serialize({
     ...kit,
+    media,
     location,
     category,
     serializedItems: kit.serializedItems.map((si) => ({

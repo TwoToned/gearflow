@@ -2939,6 +2939,7 @@ off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
   Coolify PR preview against prod Convex (per the deploy-ordering gate above:
   testTagRecord/subTestRecord are already backfilled into prod).
 
+<<<<<<< HEAD
 ## Phase C — FK-anchor mirror inversion + domain-table drop
 
 Phase B inverted only safely-invertible (leaf / no-inbound-FK) tables; the 12
@@ -3016,6 +3017,43 @@ hard-cutover: backfill the one row, then flip all reads + the write.
 - **Validation:** tsc + 2433 tests + `npm run build` green. Preview-gated; the
   backfill must run in prod (`npx tsx scripts/convex-backfill-site-settings.ts`)
   so the existing policies carry over — until then reads fall back to defaults.
+
+### Phase C — file-upload + media cluster (keystone-class)
+
+`fileUpload` + the 7 `*_media` tables are referenced by detail-page composites
+across **six domains** (getAsset, getKit, getProject, getSubHire, getClient, the
+model/kit count grafts) — the same cross-cutting risk as the line-item keystone.
+So it's split, like the keystone: **read-rewire first, write-invert second.**
+
+#### Read-rewire — DONE (PR #258)
+
+Every remaining Prisma `*_media` / `file_upload` READ moves to the Convex mirror.
+**Pure read swap — media is still dual-written, so Convex data is identical; no FK
+or write change; fully reversible; doesn't depend on the FK-drop (#254).**
+
+- **New Convex gallery getters** `getClientMediaFromConvex` / `getSubHireMediaFromConvex`
+  added to `media-read.ts` (the asset/model/kit/project ones already existed from
+  Phase A). `getGalleryRows` broadened to the client/subHire media docs.
+- **`withResolvedFile`** helper narrows a gallery to rows whose `file` resolved
+  (non-null) — matching the old `include: { file }` on a REQUIRED FK (every row
+  always had a file). Applied at every detail-composite injection so the consumer's
+  non-null-`file` contract holds; an unresolvable mirror row is dropped (same as a
+  Prisma join against a since-deleted row).
+- **Rewired composites:** `assets.getAsset` (own `media` + `model.media`),
+  `kits.getKit`, `projects.getProject`, `sub-hires.getSubHire` (dropped the
+  `media: { include: { file } }` relational include, attach from Convex),
+  `clients.getClient`, `models.getModel`, and the standalone `sub-hires.getSubHireMedia`.
+  `clients.ts` no longer imports `prisma` (removed).
+- Validation: tsc + lint (0 errors) + 2433 tests + `npm run build` green.
+
+#### Write-inversion — DONE (PR #259)
+
+Invert the 7 media write paths + the upload route's `fileUpload.create` to
+Convex-only; re-implement the invariants (sortOrder, single-primary +
+promote-next, set-primary/reorder atomically via custom Convex mutations,
+fileUpload cascade w/ the sub-hire ref-count); rewire the parent-delete media
+cleanups (kit/location); extract `MEDIA_SPECS` out of `media-mirror.ts`; delete
+`file-upload-mirror.ts` + `media-mirror.ts`. Needs #254 (FK drops) deployed.
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

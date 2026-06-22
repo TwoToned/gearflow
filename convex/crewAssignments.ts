@@ -45,6 +45,21 @@ export const listByProject = query({
 });
 
 /**
+ * Look up a single assignment by its (single-use) responseToken. Service-only —
+ * used by the public crew-offer respond route (token IS the bearer credential).
+ */
+export const getByResponseToken = query({
+  args: { responseToken: v.string() },
+  handler: async (ctx, { responseToken }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("crewAssignments")
+      .withIndex("by_responseToken", (q) => q.eq("responseToken", responseToken))
+      .first();
+  },
+});
+
+/**
  * All crew assignments for a set of service ids (one round trip), org-scoped.
  * Used to attach assignment summaries onto project services without N+1 reads.
  */

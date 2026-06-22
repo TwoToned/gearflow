@@ -3073,6 +3073,36 @@ Convex-only; both mirrors deleted.
 - **Validation:** tsc + lint (0 errors) + 2429 tests + build green, AND a **live
   dev-Convex exercise** of every invariant (first-primary, sortOrder, setPrimary
   flip, remove-promote-next, file cascade, ref-count true/false) — all pass.
+
+### Phase C — crew roster → Convex-only (PR #260)
+
+`crewMember`/`crewRole`/`crewSkill` are now Convex-only; `crew-mirror.ts` deleted.
+Key findings that made this safe: **crewRole, crewSkill, and the member↔skill m2m
+are never mutated in app code** (only seed/import) — read-only, already served from
+Convex. So the cluster reduced to inverting **crewMember** writes.
+
+- **Skill m2m → `skillIds`.** The implicit `_CrewMemberToCrewSkill` join (no Convex
+  representation) is now a `skillIds: string[]` array on the crewMember Convex doc,
+  backfilled from Prisma by `convex-backfill-crew.ts` (patches every member; **must
+  run in prod**). The 4 skill-composing reads (`getCrewMembers`, `getCrewMemberById`,
+  `getCrewMemberExtras`, `getCrewSkills`'s per-skill member count) resolve `skillIds`
+  against the Convex skill map instead of the Prisma m2m.
+- **Writes inverted:** `createCrewMember` / `updateCrewMember` / `deleteCrewMember`
+  (crew.ts), the 3 iCal mutations (crew-calendar.ts), and the avatar route
+  (POST/DELETE). The linked Better Auth `user` join stays Prisma (kept table);
+  `getCrewMemberById`'s assignments read from the still-Prisma `crewAssignment` with
+  project (Convex) + crewRole (Convex) attached. The delete cascade to the
+  crew-scheduling children is unchanged (already Convex-mirror-reconciled; their
+  Prisma FK cascade was dropped in #254).
+- **Clear-to-null fix.** A new custom mutation `crewMembers.patchMember(id, set,
+  clear)` removes the `clear` fields (`undefined` = field removal) — the generated
+  `update` couldn't clear, because `toConvexDoc` drops nulls before the wire. All
+  crew updates route through it, so clearing image / unlinking a user / blanking an
+  optional field now persists (previously a latent migration-wide limitation).
+- **Validation:** tsc + lint (0 errors) + 2433 tests + build, AND a **live dev-Convex
+  exercise** (create with skillIds, patch set, patch CLEAR image, skillIds replace,
+  remove) — all pass.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

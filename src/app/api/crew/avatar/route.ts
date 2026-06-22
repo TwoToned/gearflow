@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth-server";
 import { validateCsrfOrigin } from "@/lib/csrf";
-import { prisma } from "@/lib/prisma";
 import { uploadToS3, deleteFromS3, ensureBucket, storageKeyFromUrl } from "@/lib/storage";
 import { getOrgContext } from "@/lib/org-context";
-import { patchCrewMemberInConvex } from "@/lib/crew-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../../../convex/_generated/api";
+import { getCrewMemberById } from "@/lib/crew-read";
 import sharp from "sharp";
 import { fileTypeFromBuffer } from "file-type";
 
@@ -40,11 +41,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify crew member belongs to this org
-    const member = await prisma.crewMember.findUnique({
-      where: { id: crewMemberId, organizationId },
-      select: { id: true, image: true },
-    });
-    if (!member) {
+    const member = await getCrewMemberById(crewMemberId);
+    if (!member || member.organizationId !== organizationId) {
       return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
     }
 
@@ -88,11 +86,10 @@ export async function POST(request: NextRequest) {
       mimeType: "image/jpeg",
     });
 
-    await prisma.crewMember.update({
-      where: { id: crewMemberId, organizationId },
-      data: { image: url },
+    await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+      id: crewMemberId,
+      set: { image: url, updatedAt: Date.now() },
     });
-    await patchCrewMemberInConvex(crewMemberId, { image: url });
 
     return NextResponse.json({ url });
   } catch (error) {
@@ -120,11 +117,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "No crew member ID provided" }, { status: 400 });
     }
 
-    const member = await prisma.crewMember.findUnique({
-      where: { id: crewMemberId, organizationId },
-      select: { id: true, image: true },
-    });
-    if (!member) {
+    const member = await getCrewMemberById(crewMemberId);
+    if (!member || member.organizationId !== organizationId) {
       return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
     }
 
@@ -135,11 +129,11 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    await prisma.crewMember.update({
-      where: { id: crewMemberId, organizationId },
-      data: { image: null },
+    await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+      id: crewMemberId,
+      set: { updatedAt: Date.now() },
+      clear: ["image"],
     });
-    await patchCrewMemberInConvex(crewMemberId, { image: null });
 
     return NextResponse.json({ success: true });
   } catch (error) {

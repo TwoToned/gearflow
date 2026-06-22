@@ -66,6 +66,7 @@ export const create = mutation({
     icalEnabled: v.optional(v.boolean()),
     icalToken: v.optional(v.string()),
     crewRoleId: v.optional(v.string()),
+    skillIds: v.optional(v.array(v.string())),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
@@ -105,6 +106,7 @@ export const createIfMissing = mutation({
     icalEnabled: v.optional(v.boolean()),
     icalToken: v.optional(v.string()),
     crewRoleId: v.optional(v.string()),
+    skillIds: v.optional(v.array(v.string())),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
@@ -148,6 +150,7 @@ export const update = mutation({
       icalEnabled: v.optional(v.boolean()),
       icalToken: v.optional(v.string()),
       crewRoleId: v.optional(v.string()),
+      skillIds: v.optional(v.array(v.string())),
       createdAt: v.optional(v.number()),
       updatedAt: v.optional(v.number()),
       isActive: v.optional(v.boolean()),
@@ -171,5 +174,28 @@ export const remove = mutation({
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("crewMembers not found: " + id);
     await ctx.db.delete(doc._id);
+  },
+});
+
+// ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
+// Patch with explicit field CLEARING. `set` applies non-null values; every name
+// in `clear` is set to undefined → Convex removes the optional field (the
+// generated `update` can't clear, because toConvexDoc drops nulls before the wire).
+export const patchMember = mutation({
+  args: {
+    id: v.string(),
+    set: v.any(),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("crewMembers not found: " + id);
+    const patch: Record<string, unknown> = { ...(set ?? {}) };
+    delete patch.organizationId;
+    delete patch.id;
+    for (const f of clear ?? []) patch[f] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
   },
 });

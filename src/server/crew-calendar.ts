@@ -1,11 +1,11 @@
 "use server";
 
 import { randomBytes } from "crypto";
-import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { patchCrewMemberInConvex } from "@/lib/crew-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
@@ -26,20 +26,16 @@ export async function enableIcalFeed(crewMemberId: string) {
     "update"
   );
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true, firstName: true, lastName: true, icalToken: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const member = await getCrewMemberById(crewMemberId);
+  if (!member || member.organizationId !== organizationId) throw new Error("Crew member not found");
 
   const token = member.icalToken || generateToken();
 
-  const updated = await prisma.crewMember.update({
-    where: { id: crewMemberId },
-    data: { icalEnabled: true, icalToken: token },
-    select: { icalEnabled: true, icalToken: true },
+  // crewMember is Convex-only (Phase C).
+  await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+    id: crewMemberId,
+    set: { icalEnabled: true, icalToken: token, updatedAt: Date.now() },
   });
-  await patchCrewMemberInConvex(crewMemberId, updated);
 
   await logActivity({
     organizationId,
@@ -52,7 +48,7 @@ export async function enableIcalFeed(crewMemberId: string) {
     summary: `Enabled iCal feed for ${member.firstName} ${member.lastName}`,
   });
 
-  return serialize(updated);
+  return serialize({ icalEnabled: true, icalToken: token });
 }
 
 export async function disableIcalFeed(crewMemberId: string) {
@@ -61,17 +57,13 @@ export async function disableIcalFeed(crewMemberId: string) {
     "update"
   );
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true, firstName: true, lastName: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const member = await getCrewMemberById(crewMemberId);
+  if (!member || member.organizationId !== organizationId) throw new Error("Crew member not found");
 
-  await prisma.crewMember.update({
-    where: { id: crewMemberId },
-    data: { icalEnabled: false },
+  await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+    id: crewMemberId,
+    set: { icalEnabled: false, updatedAt: Date.now() },
   });
-  await patchCrewMemberInConvex(crewMemberId, { icalEnabled: false });
 
   await logActivity({
     organizationId,
@@ -93,20 +85,15 @@ export async function regenerateIcalToken(crewMemberId: string) {
     "update"
   );
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true, firstName: true, lastName: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const member = await getCrewMemberById(crewMemberId);
+  if (!member || member.organizationId !== organizationId) throw new Error("Crew member not found");
 
   const token = generateToken();
 
-  const updated = await prisma.crewMember.update({
-    where: { id: crewMemberId },
-    data: { icalToken: token, icalEnabled: true },
-    select: { icalEnabled: true, icalToken: true },
+  await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+    id: crewMemberId,
+    set: { icalToken: token, icalEnabled: true, updatedAt: Date.now() },
   });
-  await patchCrewMemberInConvex(crewMemberId, updated);
 
   await logActivity({
     organizationId,
@@ -119,7 +106,7 @@ export async function regenerateIcalToken(crewMemberId: string) {
     summary: `Regenerated iCal token for ${member.firstName} ${member.lastName}`,
   });
 
-  return serialize(updated);
+  return serialize({ icalEnabled: true, icalToken: token });
 }
 
 export async function getIcalSettings(crewMemberId: string) {

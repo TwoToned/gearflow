@@ -8,9 +8,9 @@
  *
  * SCOPE: only the roster trio (role/skill/member) is mirrored — the project-coupled
  * scheduling/timesheet sub-tables (assignment/shift/availability/time_entry)
- * stay Prisma-only until their UIs go reactive. See src/lib/crew-mirror.ts
- * and FEATUREDOCS/54. The implicit m2m `_CrewMemberToCrewSkill` has no Convex
- * representation, so a member's skills are NOT copied (composed on the Prisma mirror).
+ * stay Prisma-only until their UIs go reactive. See FEATUREDOCS/54. The implicit
+ * m2m `_CrewMemberToCrewSkill` is copied as a `skillIds` array on each member doc
+ * (Phase C — crewMember is now Convex-only).
  *
  *   pnpm tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew.ts
  */
@@ -34,9 +34,14 @@ async function main() {
     { const __res = await convex.mutation(api.crewSkills.createIfMissing, toConvexDoc(s) as FunctionArgs<typeof api.crewSkills.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
-  const members = await prisma.crewMember.findMany();
+  const members = await prisma.crewMember.findMany({
+    include: { skills: { select: { id: true } } },
+  });
   for (const m of members) {
-    { const __res = await convex.mutation(api.crewMembers.createIfMissing, toConvexDoc(m) as FunctionArgs<typeof api.crewMembers.createIfMissing>); if (__res.created) created++; else skipped++; }
+    const { skills: memberSkills, ...scalar } = m;
+    { const __res = await convex.mutation(api.crewMembers.createIfMissing, toConvexDoc(scalar) as FunctionArgs<typeof api.crewMembers.createIfMissing>); if (__res.created) created++; else skipped++; }
+    // Always patch skillIds (createIfMissing won't update an existing member doc).
+    await convex.mutation(api.crewMembers.patchMember, { id: m.id, set: { skillIds: memberSkills.map((s) => s.id) } });
   }
 
   console.log(

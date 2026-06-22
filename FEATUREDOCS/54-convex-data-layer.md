@@ -2939,7 +2939,6 @@ off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
   Coolify PR preview against prod Convex (per the deploy-ordering gate above:
   testTagRecord/subTestRecord are already backfilled into prod).
 
-<<<<<<< HEAD
 ## Phase C — FK-anchor mirror inversion + domain-table drop
 
 Phase B inverted only safely-invertible (leaf / no-inbound-FK) tables; the 12

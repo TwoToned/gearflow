@@ -476,6 +476,34 @@ from Convex.
   the stale #207 whose diff was mostly against now-deleted code). Verified: tsc clean,
   `vitest run document-template-read.test.ts` green, eslint clean, `pnpm build` exit 0.
 
+### Residual stale-read audit — Phase C (fixed)
+
+When a table is inverted to **Convex-only writes** (Phase B/C), its Prisma table
+**freezes** — any leftover Prisma *read* of it then silently serves stale data.
+A systematic scan (tables with zero `prisma.X.{create,update,…}` / `tx.X.…` in
+app code but a surviving `prisma.X.{findMany,…}`) found three live bugs, now
+rewired to Convex:
+
+- **`customFieldDefinition`** → `assets.ts` `resolveAssetCustomFields` validated
+  asset custom fields against frozen defs (post-cutover field add/edit/deactivate
+  ignored). Now `getActiveCustomFieldsForOrg` (Convex).
+- **`serviceTemplate`** → `project-services.ts` `generateServices` auto-added
+  from frozen templates. Now `api.serviceTemplates.list` + map. (The #411
+  "dual-write" note is itself stale — service_template is Convex-only now.)
+- **`projectManager`** → `build-document-data.ts` call-sheet PM name/email read
+  the frozen join. Now `api.projectManagers.listByProject` + a Prisma `user`
+  lookup (Better Auth, kept).
+- **`assetBulkChild`** → `line-items.ts` `lookupAssetByTag` `hasAccessories`
+  flag counted DEDICATED bulk accessories from the frozen table (added after
+  cutover were invisible). Now `api.assetBulkChildren.list` filtered by
+  `parentAssetId` (the inline "stays on Prisma" comment was itself stale).
+
+**Not stale (deliberately left on Prisma):** `crewRole` / `crewSkill` reads —
+seed-only reference tables (no app writes ⇒ Prisma == Convex), and `crew.ts`'s
+`_count.crewMembers` is the `_CrewMemberToCrewSkill` m2m which has no Convex
+representation. The earlier grouping cluster's stale reads were fixed in the
+core-grouping PR. Re-run this scan after each future write-inversion.
+
 ### Central graph — analysis & recommended sequencing (NOT yet migrated)
 
 The remaining domains (`asset`, `bulk_asset`, `kit`, `project`, `project_line_item`,

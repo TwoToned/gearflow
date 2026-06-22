@@ -4,6 +4,8 @@
  * plus complex data arrays for custom plugins.
  */
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../convex/_generated/api";
 import { getClientById } from "@/lib/clients-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
@@ -353,18 +355,24 @@ export async function buildDocumentData(
   let pmEmail = "";
 
   if (docType === "call-sheet") {
-    // Primary source: ProjectManager join table
-    const projectManagers = await prisma.projectManager.findMany({
-      where: { projectId, organizationId },
-      include: { user: { select: { name: true, email: true } } },
-      orderBy: { addedAt: "asc" },
-      take: 1,
+    // Primary source: ProjectManager join table (Convex-only now); the linked
+    // user (name/email) stays Prisma (Better Auth — kept forever).
+    const convex = await getConvexClient();
+    const pmRows = await convex.query(api.projectManagers.listByProject, {
+      projectId,
+      orgId: organizationId,
     });
+    const firstPm = pmRows
+      .slice()
+      .sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0))[0];
 
-    if (projectManagers.length > 0) {
-      const pm = projectManagers[0];
-      pmName = pm.user.name || "";
-      pmEmail = pm.user.email || "";
+    if (firstPm) {
+      const user = await prisma.user.findUnique({
+        where: { id: firstPm.userId },
+        select: { name: true, email: true },
+      });
+      pmName = user?.name || "";
+      pmEmail = user?.email || "";
       pmPhone = (orgSettings.phone as string) || ""; // User has no phone field
     }
   }

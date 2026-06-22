@@ -1326,18 +1326,20 @@ export async function lookupAssetByTag(
     }
   }
 
-  // Serialized children live in Convex — count from the org asset mirror by
-  // parentAssetId (no dedicated by-parent index, so filter the org list).
-  // assetBulkChild stays on Prisma; modelBulkAccessory is now Convex-only (Phase B).
-  const [orgAssetsForChildren, childBulkCount, modelBulksForCount] = await Promise.all([
+  // Serialized children + assetBulkChild + modelBulkAccessory all live in Convex
+  // now (Phase B). None has a by-parent index, so filter the org list. (The old
+  // prisma.assetBulkChild.count read a frozen table — DEDICATED bulk accessories
+  // added after cutover were invisible to the hasAccessories flag.)
+  const [orgAssetsForChildren, allBulkChildren, modelBulksForCount] = await Promise.all([
     getAssetsByOrg(organizationId),
-    prisma.assetBulkChild.count({ where: { parentAssetId: asset.id } }),
+    (await getConvexClient()).query(api.assetBulkChildren.list, { orgId: organizationId }),
     asset.modelId
       ? (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
       : Promise.resolve([]),
   ]);
   const modelBulksCount = modelBulksForCount.length;
   const childAssetCount = orgAssetsForChildren.filter((a) => a.parentAssetId === asset.id).length;
+  const childBulkCount = allBulkChildren.filter((c) => c.parentAssetId === asset.id).length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 
   return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories });

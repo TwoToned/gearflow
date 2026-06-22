@@ -618,11 +618,26 @@ export async function generateProjectServices(projectId: string) {
     throw new Error("Project must have at least one date (load in, load out, or event start) to generate services");
   }
 
-  // Get auto-added templates + all active templates as fallback
-  const templates = await prisma.serviceTemplate.findMany({
-    where: { organizationId, isActive: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Get auto-added templates + all active templates as fallback. Service
+  // templates are Convex-only (this file writes them to Convex); the Prisma
+  // table is frozen, so read + map from Convex (defaults for optional fields).
+  const convex = await getConvexClient();
+  const rawTemplates = await convex.query(api.serviceTemplates.list, { orgId: organizationId });
+  const templates = rawTemplates
+    .filter((t) => t.isActive ?? true)
+    .map((t) => ({
+      type: t.type,
+      title: t.title,
+      description: t.description ?? null,
+      defaultCrewCount: t.defaultCrewCount ?? null,
+      defaultVehicle: t.defaultVehicle ?? null,
+      defaultPricingType: t.defaultPricingType ?? null,
+      defaultUnitPrice: t.defaultUnitPrice ?? null,
+      showOnDocuments: t.showOnDocuments ?? false,
+      isAutoAdded: t.isAutoAdded ?? false,
+      sortOrder: t.sortOrder ?? 0,
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   // Use only isAutoAdded templates; if none exist, use all active templates
   const autoTemplates = templates.filter((t) => t.isAutoAdded);

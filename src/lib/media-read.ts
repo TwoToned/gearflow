@@ -1,5 +1,5 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
-import { MEDIA_SPECS, type MediaKind } from "@/lib/media-mirror";
+import { MEDIA_SPECS, type MediaKind } from "@/lib/media-specs";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { MediaType, ProjectMediaType } from "@/generated/prisma/client";

@@ -116,3 +116,38 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
+// Atomic single-primary-photo invariant (replaces the Prisma updateMany+update tx).
+export const setPrimary = mutation({
+  args: { parentId: v.string(), mediaId: v.string() },
+  handler: async (ctx, { parentId, mediaId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("modelMedia")
+      .withIndex("by_modelId", (q) => q.eq("modelId", parentId))
+      .collect();
+    for (const r of rows) {
+      if (r.id === mediaId) {
+        if (!r.isPrimary) await ctx.db.patch(r._id, { isPrimary: true });
+      } else if (r.type === "PHOTO" && r.isPrimary) {
+        await ctx.db.patch(r._id, { isPrimary: false });
+      }
+    }
+  },
+});
+
+// Atomic reorder: set sortOrder = array index (replaces the Prisma update-per-id tx).
+export const reorder = mutation({
+  args: { orderedIds: v.array(v.string()) },
+  handler: async (ctx, { orderedIds }) => {
+    await requireService(ctx);
+    for (let i = 0; i < orderedIds.length; i++) {
+      const doc = await ctx.db
+        .query("modelMedia")
+        .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
+        .unique();
+      if (doc) await ctx.db.patch(doc._id, { sortOrder: i });
+    }
+  },
+});

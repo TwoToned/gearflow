@@ -25,7 +25,6 @@ import {
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
-import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap, getKitMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
@@ -396,7 +395,6 @@ export async function deleteKit(id: string) {
     // files). Full media cleanup can be layered on later if it becomes a
     // concern; hard delete is a rarely-used path.
     await tx.kitCheckItem.deleteMany({ where: { kitId: id } });
-    await tx.kitMedia.deleteMany({ where: { kitId: id } });
 
     // Finally, remove the kit row. Cascades handle the remaining child relations.
     await tx.kit.delete({ where: { id, organizationId } });
@@ -409,7 +407,11 @@ export async function deleteKit(id: string) {
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
   for (const row of kitCheckItemRows) await convexKits.mutation(api.kitCheckItems.remove, { id: row.id });
-  await syncMediaForParent("kit", organizationId, id);
+  // kitMedia is Convex-only (Phase C); remove the kit's media rows directly (the
+  // old syncMediaForParent reconcile is gone with the mirror). Files are left, as
+  // the prior cascade did.
+  const kitMediaRows = await getKitMediaFromConvex(id);
+  for (const m of kitMediaRows) await convexKits.mutation(api.kitMedia.remove, { id: m.id });
   await removeKitFromConvex(id);
   await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));
   await syncBulkAssetsToConvex(kit.bulkItems.map((i) => i.bulkAssetId));

@@ -1,8 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
-import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
+import { addMediaConvex, removeMediaConvex } from "@/lib/media-write";
 import {
   syncSubHireToConvex,
   removeSubHireFromConvex,
@@ -27,7 +26,6 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema, subHirePlacementSchema } from "@/lib/validations/sub-hire";
 import type { SubHireStatus, SubHirePricingMode, SubHirePaymentStatus, PricingType, Prisma, MediaType } from "@/generated/prisma/client";
-import { deleteFromS3 } from "@/lib/storage";
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
 
@@ -1858,29 +1856,14 @@ export async function addSubHireMedia(data: {
   });
   if (!subHire) throw new Error("Sub-hire not found");
 
-  const file = await prisma.fileUpload.findFirst({
-    where: { id: data.fileId, organizationId },
+  // subHireMedia + its file_upload are Convex-only (Phase C). See media-write.ts.
+  const media = await addMediaConvex("subHire", {
+    organizationId,
+    parentId: data.subHireId,
+    fileId: data.fileId,
+    type: data.type || "DOCUMENT",
+    displayName: data.displayName,
   });
-  if (!file) throw new Error("File not found");
-
-  const maxSort = await prisma.subHireMedia.aggregate({
-    where: { subHireId: data.subHireId },
-    _max: { sortOrder: true },
-  });
-
-  const media = await prisma.subHireMedia.create({
-    data: {
-      organizationId,
-      subHireId: data.subHireId,
-      fileId: data.fileId,
-      type: data.type || "DOCUMENT",
-      displayName: data.displayName,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
-    include: { file: true },
-  });
-
-  await mirrorMediaCreate("subHire", media);
 
   return serialize(media);
 }
@@ -1888,41 +1871,10 @@ export async function addSubHireMedia(data: {
 export async function removeSubHireMedia(mediaId: string) {
   const { organizationId } = await requirePermission("subHire", "update");
 
-  const media = await prisma.subHireMedia.findFirst({
-    where: { id: mediaId, organizationId },
-    include: { file: true },
-  });
-  if (!media) throw new Error("Media not found");
-
-  await prisma.subHireMedia.delete({ where: { id: mediaId } });
-
-  try {
-    await deleteFromS3(media.file.storageKey);
-    if (media.file.thumbnailUrl) {
-      const thumbKey = media.file.thumbnailUrl.split("/").slice(-2).join("/");
-      await deleteFromS3(thumbKey);
-    }
-  } catch {
-    // S3 deletion is best-effort
-  }
-
-  // Clean up the file upload record
-  const otherUsages = await prisma.$queryRaw`
-    SELECT 1 FROM model_media WHERE "fileId" = ${media.fileId}
-    UNION ALL SELECT 1 FROM asset_media WHERE "fileId" = ${media.fileId}
-    UNION ALL SELECT 1 FROM kit_media WHERE "fileId" = ${media.fileId}
-    UNION ALL SELECT 1 FROM project_media WHERE "fileId" = ${media.fileId}
-    UNION ALL SELECT 1 FROM client_media WHERE "fileId" = ${media.fileId}
-    UNION ALL SELECT 1 FROM location_media WHERE "fileId" = ${media.fileId}
-    LIMIT 1
-  ` as unknown[];
-
-  if (otherUsages.length === 0) {
-    await prisma.fileUpload.delete({ where: { id: media.fileId } });
-    await mirrorFileUploadDelete(media.fileId);
-  }
-
-  await syncMediaForParent("subHire", organizationId, media.subHireId);
+  // Convex-only (Phase C). refCountFile re-implements the old cross-table UNION
+  // guard (api.fileUploads.isReferencedByMedia) — only delete the file if no
+  // other media row references it.
+  await removeMediaConvex("subHire", { organizationId, mediaId, refCountFile: true });
 
   return serialize({ success: true });
 }

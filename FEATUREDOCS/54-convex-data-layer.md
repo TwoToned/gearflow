@@ -3047,12 +3047,32 @@ or write change; fully reversible; doesn't depend on the FK-drop (#254).**
 
 #### Write-inversion — DONE (PR #259)
 
-Invert the 7 media write paths + the upload route's `fileUpload.create` to
-Convex-only; re-implement the invariants (sortOrder, single-primary +
-promote-next, set-primary/reorder atomically via custom Convex mutations,
-fileUpload cascade w/ the sub-hire ref-count); rewire the parent-delete media
-cleanups (kit/location); extract `MEDIA_SPECS` out of `media-mirror.ts`; delete
-`file-upload-mirror.ts` + `media-mirror.ts`. Needs #254 (FK drops) deployed.
+The 7 media write paths + the upload route's `fileUpload.create` are now
+Convex-only; both mirrors deleted.
+
+- **`MEDIA_SPECS` extracted** to `src/lib/media-specs.ts` (fk + photo flag + Convex
+  module refs) so the readers survive the mirror deletion.
+- **`src/lib/media-write.ts`** — generic-over-kind Convex write helpers
+  (`addMediaConvex` / `removeMediaConvex` / `setPrimaryPhotoConvex` /
+  `reorderMediaConvex`). The 7 `*-media` server actions are thin wrappers;
+  per-domain parent-ownership checks stay in the caller.
+- **Invariants re-implemented:** sortOrder = max+1 and first-PHOTO-primary computed
+  from the Convex gallery (same non-atomic read-then-insert window the Prisma
+  aggregate+create had); **atomic** `setPrimary` (model/asset/kitMedia) +
+  `reorder` (modelMedia) as custom Convex mutations; remove-primary promotes the
+  next PHOTO; removing a media row deletes its `fileUpload` (1:1), with subHire
+  ref-counting across all 7 media tables first via the new
+  `fileUploads.isReferencedByMedia` query (replaces the raw-SQL UNION).
+- **Parent-delete cleanup:** `kits.deleteKit` now removes the kit's Convex media
+  directly (the `syncMediaForParent` reconcile is gone); `locations.deleteLocation`
+  already removed Convex media + leaves files (unchanged).
+- **Upload route** writes the `fileUpload` straight to Convex (cuid in the route).
+- Deleted `media-mirror.ts` (+ its test) + `file-upload-mirror.ts` and the obsolete
+  `convex-backfill-media.ts` / `convex-roundtrip-media.ts` (+ deregistered `media`
+  from backfill-all + package.json — media is Convex-only, already in prod).
+- **Validation:** tsc + lint (0 errors) + 2429 tests + build green, AND a **live
+  dev-Convex exercise** of every invariant (first-primary, sortOrder, setPrimary
+  flip, remove-promote-next, file cascade, ref-count true/false) — all pass.
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

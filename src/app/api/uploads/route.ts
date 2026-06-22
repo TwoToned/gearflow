@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { requireOrganization } from "@/lib/auth-server";
 import { validateCsrfOrigin } from "@/lib/csrf";
-import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../../../convex/_generated/api";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
 import { generateThumbnail, isImageMimeType, thumbExtension } from "@/lib/thumbnails";
 import { fileTypeFromBuffer } from "file-type";
-import { mirrorFileUploadCreate } from "@/lib/file-upload-mirror";
 import { env } from "@/env";
 
 export const runtime = "nodejs";
@@ -115,22 +117,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create database record
-    const fileUpload = await prisma.fileUpload.create({
-      data: {
-        organizationId,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        storageKey,
-        url,
-        thumbnailUrl,
-        width,
-        height,
-        uploadedById: userId,
-      },
-    });
-    await mirrorFileUploadCreate(fileUpload);
+    // Create the file record (Convex-only since Phase C).
+    const now = Date.now();
+    const fileUpload = {
+      id: createId(),
+      organizationId,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      storageKey,
+      url,
+      thumbnailUrl: thumbnailUrl ?? null,
+      width: width ?? null,
+      height: height ?? null,
+      uploadedById: userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await (await getConvexClient()).mutation(
+      api.fileUploads.createIfMissing,
+      toConvexDoc(fileUpload) as FunctionArgs<typeof api.fileUploads.createIfMissing>,
+    );
 
     return NextResponse.json(fileUpload);
   } catch (error) {

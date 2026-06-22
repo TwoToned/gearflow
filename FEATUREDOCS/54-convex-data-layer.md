@@ -3143,6 +3143,76 @@ Convex. So the cluster reduced to inverting **crewMember** writes.
   exercise** (create with skillIds, patch set, patch CLEAR image, skillIds replace,
   remove) — all pass.
 
+### Phase C — sub-hire read-rewire (1/2)
+
+The `subHire` / `subHireItem` / `subHireGroup` family is still dual-written
+(Prisma-first + `sub-hire-mirror.ts`). Like the media keystone it's split:
+**read-rewire first, write-invert second.** This PR is the read-rewire — pure read
+swap, writes untouched, fully reversible. (The `supplierOrder` / `supplierOrderItem`
+family is already Convex-only writes from Phase A — no work there.)
+
+- **New `src/lib/sub-hire-read.ts`** (mirrors `supplier-order-read.ts`): `SubHireRow`
+  / `SubHireItemRow` / `SubHireGroupRow` mappers (epoch-ms → Date, Decimal → number,
+  absent → null/Prisma-default) + `getSubHiresByOrg` / `getSubHireById` /
+  `getSubHiresByProject` / `getSubHireItems` / `getSubHireGroups` /
+  `getSubHireItemCounts`. Cross-domain joins (supplier/model/project/target labels/
+  `createdBy`) composed by the caller as before.
+- **`sub-hires.ts` reads rewired:** `getSubHires` (list — filters/search/`_count`
+  re-applied in JS over the Convex list; project branch attaches items+groups with
+  model + target category/group labels resolved from `api.projectCategories.list` /
+  `api.projectGroups.list`), `getSubHire` (detail), `getSubHireDashboardStats`
+  (count/sum aggregated in JS). `createdBy` resolved from the kept Postgres `user`.
+- **Stale-read bug fixed (mega-flip fallout):** `projectLineItem` is Convex-only, but
+  several reads still pulled its rows through the Prisma `subHire.lineItems` /
+  `subHireGroup.lineItems` relation include — a **frozen table** → stale data. Moved
+  the checkout-guard reads in `deleteSubHire` / `removeSubHireItem` and the
+  equipment-tab category reads (`category-slots.getUncategorizedSubHireGroups`,
+  `project-categories.getProjectCategories`) to read Convex `projectLineItems`
+  (filtered by `subHireId` / `subHireGroupId`) + attach via the existing
+  `attachScopeRows` machinery.
+- **`line-items.recalculateProjectTotals`** sub-hire cost sum moved off
+  `prisma.subHire.findMany` to `getSubHiresByProject` (filter CANCELLED/DRAFT in JS).
+- **Validation:** `npm run build` exit 0 + lint (0 errors) + 2391 tests (3 unrelated
+  component-test files fail on a stale-worktree `@radix-ui/react-slot` resolve, green
+  on CI). Convex data-correctness human-gated on the Coolify PR preview (sub-hire
+  tables already backfilled + dual-written into prod).
+
+### Phase C — sub-hire write-inversion (2/2) — DONE
+
+The `subHire` / `subHireItem` / `subHireGroup` writes are now **Convex-only**;
+`sub-hire-mirror.ts` is deleted. The family (read + write) is fully migrated.
+
+- **Custom Convex mutations** (inline in the generated modules, CUSTOM banner):
+  `subHires.patchSubHire(id, set, clear)` + `deleteCascade(id)`,
+  `subHireItems.patchItem(id, set, clear)`, `subHireGroups.patchGroup(id, set, clear)`
+  + `deleteWithUngroup(id)`. The `patch*` take an explicit `clear` list because the
+  generated `update` can't unset a field (the action's `toConvexDoc` dropped nulls) —
+  so projectId / supplierReference / defaultTarget* / groupId / target* clears work.
+  `deleteCascade` / `deleteWithUngroup` re-implement the dropped Prisma FK cascades
+  atomically (one mutation).
+- **`sub-hires.ts`** — every write rewired: cuids minted in the action, dates →
+  epoch-ms, nulls omitted, clear-to-null via `patch*`. **Order-number reservation
+  stays in a `prisma.$transaction`** (it's a read-modify-write of the
+  `organization.metadata` counter — `organization` is a kept auth table). `sortOrder`
+  max+1 computed from the Convex item/group list. `generateSubHireLineItemsTx` →
+  `generateSubHireLineItems`: reads the sub-hire structure from Convex, drops the
+  Prisma `tx` param; the `$transaction` wrappers (updateSubHireStatus /
+  changeSubHireProject / regenerateSubHireLineItems) are unwrapped (line-item writes
+  were already Convex). `deleteSubHire` → `deleteCascade`; `deleteSubHireGroup` →
+  `deleteWithUngroup`; `duplicateSubHire` rebuilt with fresh cuids + old→new group-id
+  remap.
+- **`category-slots.ts`** — the two `prisma.subHireGroup.update` placement writes
+  (`moveSubHireGroupToCategory`, `createCategoryAndPlaceGroup`) → `patchGroup` (clear
+  `targetCategoryId` when moving to uncategorised).
+- **Behavioural delta:** cross-mutation sequences (status+regen, duplicate,
+  changeProject) are no longer one DB transaction — each Convex mutation is atomic on
+  its own, ordered around its side effects (same trade-off as the mega-flip).
+- **Validation:** `npm run build` exit 0 + lint (0 errors) + **2431 tests pass**, AND
+  a **live dev-Convex exercise** (10/10): create → patchSubHire set+CLEAR projectId →
+  patchItem CLEAR targetGroupId → patchGroup CLEAR targetCategoryId → deleteWithUngroup
+  (child kept + ungrouped) → deleteCascade (head + items gone). `supplierOrder` was
+  already Convex-only (Phase A); both families now fully Convex.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

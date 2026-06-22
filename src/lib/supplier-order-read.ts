@@ -5,7 +5,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
 /**
  * Server-side read helpers for the supplier-order domain (Phase A read-rewiring of
  * the Convex domain-only decommission). `supplierOrder` + `supplierOrderItem` are
- * dual-written (see src/lib/sub-hire-mirror.ts). These helpers read the Convex
+ * Convex-only (writes were inverted in Phase A/C). These helpers read the Convex
  * copy and shape it back into the Prisma-row form the supplier-order pages expect
  * (epoch-ms → Date, Decimal → number, absent optionals → null).
  *

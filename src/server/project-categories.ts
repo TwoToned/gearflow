@@ -1,7 +1,6 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
@@ -26,14 +25,10 @@ import {
 } from "@/lib/project-line-item-tree-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
+import { getSubHiresByProject, getSubHireGroups, getSubHireItems } from "@/lib/sub-hire-read";
 import type { LineItemAttachMaps } from "@/lib/line-item-tree-read";
 
 // ── Reads ────────────────────────────────────────────────────────────────────
-
-/** epoch-ms → Date; absent/null → null. */
-function msToDateOrNull(n: number | null | undefined): Date | null {
-  return n == null ? null : new Date(n);
-}
 
 const ASSET_DATE_KEYS = [
   "purchaseDate",
@@ -142,34 +137,54 @@ export async function getProjectCategories(projectId: string) {
   const slotByGroupId = new Map(allSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
   const slotBySubHireGroupId = new Map(allSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
 
-  // 2. Convex line items → mapped rows; Prisma sub-hire groups (NOT flipped)
-  const lineItemInclude = {
-    asset: true,
-    bulkAsset: true,
-    kit: true,
-    childLineItems: {
-      include: { asset: true, bulkAsset: true, kit: true },
-      orderBy: { sortOrder: "asc" as const },
-    },
-  };
-
+  // 2. Convex line items → mapped rows; sub-hire groups also from Convex
+  // (dual-written). Their `lineItems` are Convex-only — the old Prisma include
+  // returned stale `project_line_item` rows after the mega-flip froze that table.
   const mappedLineItems = liDocs.map(mapLineItemDoc);
 
-  const subHireGroups = await prisma.subHireGroup.findMany({
-    where: {
-      subHire: { projectId, organizationId },
-      targetCategoryId: { not: null },
-    },
-    include: {
-      subHire: { select: { id: true, orderNumber: true, status: true, supplierId: true } },
-      items: true,
-      lineItems: {
-        where: { isKitChild: false, parentLineItemId: null },
-        include: lineItemInclude,
-        orderBy: { sortOrder: "asc" },
+  // Categorized sub-hire groups across all the project's sub-hires.
+  const projectSubHires = await getSubHiresByProject(projectId, organizationId);
+  const subHireById = new Map(projectSubHires.map((sh) => [sh.id, sh]));
+  const subHireGroupRows = (
+    await Promise.all(projectSubHires.map((sh) => getSubHireGroups(sh.id)))
+  )
+    .flat()
+    .filter((g) => g.targetCategoryId != null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const subHireGroupIdSet = new Set(subHireGroupRows.map((g) => g.id));
+
+  // Items for each sub-hire group (filtered from its sub-hire's item list).
+  const subHireItemsBySubHire = new Map(
+    await Promise.all(
+      projectSubHires.map(async (sh) => [sh.id, await getSubHireItems(sh.id)] as const),
+    ),
+  );
+
+  // Convex line items for the sub-hire groups: top-level lines keyed by `subHireGroupId`.
+  const subHireGroupLineItems = new Map<string, MappedLineItem[]>();
+  for (const li of mappedLineItems) {
+    if (li.isKitChild || li.parentLineItemId) continue;
+    if (li.subHireGroupId && subHireGroupIdSet.has(li.subHireGroupId)) {
+      const arr = subHireGroupLineItems.get(li.subHireGroupId) ?? [];
+      arr.push(li);
+      subHireGroupLineItems.set(li.subHireGroupId, arr);
+    }
+  }
+
+  // Compose the Prisma-include shape this read previously returned.
+  const subHireGroups = subHireGroupRows.map((g) => {
+    const subHire = subHireById.get(g.subHireId)!;
+    const items = (subHireItemsBySubHire.get(g.subHireId) ?? []).filter((i) => i.groupId === g.id);
+    return {
+      ...g,
+      items,
+      subHire: {
+        id: subHire.id,
+        orderNumber: subHire.orderNumber,
+        status: subHire.status,
+        supplierId: subHire.supplierId,
       },
-    },
-    orderBy: { sortOrder: "asc" },
+    };
   });
 
   // 3. Build lookup maps + tree-attach helpers
@@ -251,7 +266,7 @@ export async function getProjectCategories(projectId: string) {
             ...sg.subHire,
             supplier: resolveAttachedSupplier(sg.subHire.supplierId, attachMaps),
           },
-          lineItems: attachLineItemTree(sg.lineItems, attachMaps),
+          lineItems: attachScope(subHireGroupLineItems.get(sg.id) ?? []),
         };
       });
 

@@ -108,3 +108,47 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (sub-hire write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
+
+/** Patch a sub-hire group with explicit field clears (target* → unset). See the note
+ *  on subHires.patchSubHire — `toConvexDoc` drops nulls, so clears need this. */
+export const patchGroup = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      title: v.optional(v.string()),
+      sortOrder: v.optional(v.number()),
+      quantity: v.optional(v.number()),
+      cost: v.optional(v.number()),
+      charge: v.optional(v.number()),
+      showOnQuote: v.optional(v.boolean()),
+      showOnDocs: v.optional(v.boolean()),
+      targetCategoryId: v.optional(v.string()),
+      targetGroupId: v.optional(v.string()),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("subHireGroups not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});
+
+/** Ungroup all child items (clear their `groupId`) then delete the group — atomic. */
+export const deleteWithUngroup = mutation({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("subHireGroups not found: " + id);
+    const children = await ctx.db.query("subHireItems").withIndex("by_groupId", (q) => q.eq("groupId", id)).collect();
+    for (const c of children) await ctx.db.patch(c._id, { groupId: undefined });
+    await ctx.db.delete(doc._id);
+  },
+});

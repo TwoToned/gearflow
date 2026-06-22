@@ -42,7 +42,7 @@ import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-rea
 import { indexChildren, reconstructScope } from "@/lib/project-line-item-tree-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
-import { syncSubHireToConvex } from "@/lib/sub-hire-mirror";
+import { getSubHiresByProject, getSubHireGroups, getSubHireItems } from "@/lib/sub-hire-read";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
@@ -151,51 +151,67 @@ function attachScopeRows(
  */
 export async function getUncategorizedSubHireGroups(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
-  const lineItemInclude = {
-    asset: true,
-    bulkAsset: true,
-    kit: true,
-    childLineItems: {
-      include: {
-        asset: true,
-        bulkAsset: true,
-        kit: true,
-      },
-      orderBy: { sortOrder: "asc" as const },
-    },
-  };
-  const groups = await prisma.subHireGroup.findMany({
-    where: {
-      targetCategoryId: null,
-      subHire: { projectId, organizationId },
-    },
-    include: {
-      subHire: {
-        select: {
-          id: true,
-          orderNumber: true,
-          status: true,
-          supplierId: true,
-        },
-      },
-      items: true,
-      lineItems: {
-        where: { isKitChild: false, parentLineItemId: null },
-        include: lineItemInclude,
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-    orderBy: { sortOrder: "asc" },
+  const client = await getConvexClient();
+
+  // Sub-hires (+ their groups/items) live in Convex (dual-written); line items
+  // are Convex-only. Read everything from Convex — the Prisma relation includes
+  // returned stale `project_line_item` rows (frozen table) after the mega-flip.
+  const subHires = await getSubHiresByProject(projectId, organizationId);
+  if (subHires.length === 0) return serialize([]);
+
+  // Uncategorized groups across all the project's sub-hires, sorted by sortOrder.
+  const groupArrays = await Promise.all(subHires.map((sh) => getSubHireGroups(sh.id)));
+  const groups = groupArrays
+    .flat()
+    .filter((g) => g.targetCategoryId == null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  if (groups.length === 0) return serialize([]);
+
+  const subHireById = new Map(subHires.map((sh) => [sh.id, sh]));
+  const groupIdSet = new Set(groups.map((g) => g.id));
+
+  // Items for each group (filtered to that group from its sub-hire's item list).
+  const itemsBySubHire = new Map(
+    await Promise.all(
+      subHires.map(async (sh) => [sh.id, await getSubHireItems(sh.id)] as const),
+    ),
+  );
+
+  // Line items from Convex: top-level lines whose `subHireGroupId` is in our set.
+  const liDocs = await client.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
   });
+  const mappedLineItems = liDocs.map(mapLineItemDoc);
+  const byParent = indexChildren(mappedLineItems);
+  const lineItemsByGroupId = new Map<string, MappedLineItem[]>();
+  for (const li of mappedLineItems) {
+    if (li.isKitChild || li.parentLineItemId) continue;
+    if (li.subHireGroupId && groupIdSet.has(li.subHireGroupId)) {
+      const arr = lineItemsByGroupId.get(li.subHireGroupId) ?? [];
+      arr.push(li);
+      lineItemsByGroupId.set(li.subHireGroupId, arr);
+    }
+  }
+
   const attachMaps = await buildLineItemAttachMaps(organizationId);
-  const attached = groups.map((g) => ({
-    ...g,
-    subHire: {
-      ...g.subHire,
-      supplier: resolveAttachedSupplier(g.subHire.supplierId, attachMaps),
-    },
-    lineItems: attachLineItemTree(g.lineItems, attachMaps),
-  }));
+  const ctx = await loadAttachContext(organizationId);
+  const attached = groups.map((g) => {
+    const subHire = subHireById.get(g.subHireId)!;
+    const items = (itemsBySubHire.get(g.subHireId) ?? []).filter((i) => i.groupId === g.id);
+    return {
+      ...g,
+      items,
+      subHire: {
+        id: subHire.id,
+        orderNumber: subHire.orderNumber,
+        status: subHire.status,
+        supplierId: subHire.supplierId,
+        supplier: resolveAttachedSupplier(subHire.supplierId, attachMaps),
+      },
+      lineItems: attachScopeRows(lineItemsByGroupId.get(g.id) ?? [], byParent, ctx),
+    };
+  });
   return serialize(attached);
 }
 
@@ -284,16 +300,16 @@ export async function moveSubHireGroupToCategory(
     destCategoryId = category.id;
   }
 
-  // Prisma write: subHireGroup placement (subHireGroup is NOT flipped).
-  // No advisory lock needed (CategorySlot is Convex-only now).
-  await prisma.subHireGroup.update({
-    where: { id: parsed.groupId },
-    data: { targetCategoryId: destCategoryId },
+  // Convex write: subHireGroup placement (Convex-only now).
+  const client = await getConvexClient();
+  await client.mutation(api.subHireGroups.patchGroup, {
+    id: parsed.groupId,
+    set: destCategoryId != null ? { targetCategoryId: destCategoryId } : {},
+    clear: destCategoryId != null ? [] : ["targetCategoryId"],
   });
 
   // Convex write: synthetic parent line item categoryId on the sub-hire group's
   // top-level lines (line items are Convex-only now).
-  const client = await getConvexClient();
   if (group.subHire.projectId) {
     const liDocs = await client.query(api.projectLineItems.listByProject, {
       projectId: group.subHire.projectId,
@@ -321,7 +337,6 @@ export async function moveSubHireGroupToCategory(
     now,
   });
 
-  await syncSubHireToConvex(group.subHire.id);
   if (group.subHire.projectId) {
     await recalculateProjectTotals(group.subHire.projectId);
     await logActivity({
@@ -594,9 +609,9 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
       });
     }
   } else if (subHireGroupId) {
-    await prisma.subHireGroup.update({
-      where: { id: subHireGroupId },
-      data: { targetCategoryId: categoryId },
+    await client.mutation(api.subHireGroups.patchGroup, {
+      id: subHireGroupId,
+      set: { targetCategoryId: categoryId },
     });
     const targets = placementLiDocs.filter(
       (li) => li.subHireGroupId === subHireGroupId && !li.isKitChild && li.parentLineItemId == null,

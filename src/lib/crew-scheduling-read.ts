@@ -5,8 +5,8 @@ import type { Doc } from "../../convex/_generated/dataModel";
 /**
  * Server-side read helpers for the crew SCHEDULING tables (Phase A read-rewiring).
  *
- * crewAssignment / crewShift / crewAvailability / crewTimeEntry are dual-written
- * (Prisma FK anchor + Convex reactive doc — see src/lib/crew-scheduling-mirror.ts)
+ * crewAssignment / crewShift / crewAvailability / crewTimeEntry are Convex-only
+ * (since the Phase C crew-scheduling write-inversion; the mirror is deleted)
  * and backfilled (scripts/convex-backfill-crew-scheduling.ts +
  * convex-backfill-crew-availability-org.ts). The pure read-only server actions in
  * server/crew-dashboard.ts, crew-time.ts, crew-assignments.ts, crew-availability.ts

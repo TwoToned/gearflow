@@ -24,19 +24,13 @@ import {
 } from "@/lib/project-service-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
-import { getCrewRoleMap } from "@/lib/crew-read";
+import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
 import {
   getAssignmentsByProject,
   compareAscNullsLast,
 } from "@/lib/crew-scheduling-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
-import {
-  syncCrewAssignmentsForServiceToConvex,
-  syncCrewAssignmentsForProjectToConvex,
-  snapshotServiceCrew,
-  removeCrewAssignmentCascadeFromConvex,
-} from "@/lib/crew-scheduling-mirror";
 import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
@@ -176,40 +170,39 @@ export async function createProjectService(
       },
     });
 
-    // Create crew assignments for selected crew members
-    if (parsed.crewMemberIds && parsed.crewMemberIds.length > 0) {
-      const phase = serviceTypeToPhase(parsed.type);
-      const { crewStart, crewEnd } = deriveCrewTimes(
-        parsed.startTime,
-        parsed.endTime,
-        parsed.scheduledTime,
-        parsed.type,
-      );
-      for (const crewMemberId of parsed.crewMemberIds) {
-        await tx.crewAssignment.create({
-          data: {
-            organizationId,
-            projectId,
-            crewMemberId,
-            crewRoleId: parsed.crewRoleId || null,
-            serviceId: svc.id,
-            phase,
-            status: "PENDING",
-            startDate: serviceDate,
-            startTime: crewStart,
-            endDate: serviceEndDate,
-            endTime: crewEnd,
-          },
-        });
-      }
-    }
-
     return svc;
   });
 
-  // Mirror any crew assignments created with the service (dual-write).
+  // Crew assignments (Convex-only) — created after the service tx commits, with the
+  // partial-unique (projectId, crewMemberId, serviceId) invariant enforced in Convex.
   if (parsed.crewMemberIds && parsed.crewMemberIds.length > 0) {
-    await syncCrewAssignmentsForServiceToConvex(service.id);
+    const phase = serviceTypeToPhase(parsed.type);
+    const { crewStart, crewEnd } = deriveCrewTimes(
+      parsed.startTime,
+      parsed.endTime,
+      parsed.scheduledTime,
+      parsed.type,
+    );
+    const convex = await getConvexClient();
+    const now = Date.now();
+    for (const crewMemberId of parsed.crewMemberIds) {
+      await convex.mutation(api.crewAssignments.createServiceAssignment, {
+        id: createId(),
+        organizationId,
+        projectId,
+        crewMemberId,
+        serviceId: service.id,
+        phase,
+        status: "PENDING",
+        ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
+        ...(serviceDate ? { startDate: serviceDate.getTime() } : {}),
+        ...(crewStart ? { startTime: crewStart } : {}),
+        ...(serviceEndDate ? { endDate: serviceEndDate.getTime() } : {}),
+        ...(crewEnd ? { endTime: crewEnd } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 
   // Always recalculate project totals — service charge/cost affects financials
@@ -248,71 +241,12 @@ export async function updateProjectService(
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
 
-  // Capture the service's crew cascade before the tx may delete assignments, so
-  // removed assignments (+ their shifts/time-entries) can be dropped from Convex.
-  const crewBefore = parsed.crewMemberIds != null ? await snapshotServiceCrew(id) : [];
-
   // Wrap in transaction (Arch fix #1)
   const service = await prisma.$transaction(async (tx) => {
     const svc = await tx.projectService.update({
       where: { id },
       data: fields,
     });
-
-    // Sync crew assignments — reconcile with crewMemberIds
-    if (parsed.crewMemberIds != null) {
-      const phase = serviceTypeToPhase(parsed.type);
-      const existingAssignments = await tx.crewAssignment.findMany({
-        where: { serviceId: id },
-        select: { id: true, crewMemberId: true },
-      });
-      const existingMemberIds = new Set(existingAssignments.map((a) => a.crewMemberId));
-      const desiredMemberIds = new Set(parsed.crewMemberIds);
-
-      // Remove assignments for crew no longer selected
-      const toRemove = existingAssignments.filter((a) => !desiredMemberIds.has(a.crewMemberId));
-      if (toRemove.length > 0) {
-        await tx.crewAssignment.deleteMany({
-          where: { id: { in: toRemove.map((a) => a.id) } },
-        });
-      }
-
-      // Add assignments for newly selected crew
-      const { crewStart, crewEnd } = deriveCrewTimes(
-        parsed.startTime,
-        parsed.endTime,
-        parsed.scheduledTime,
-        parsed.type,
-      );
-      const toAdd = parsed.crewMemberIds.filter((memberId) => !existingMemberIds.has(memberId));
-      for (const crewMemberId of toAdd) {
-        await tx.crewAssignment.create({
-          data: {
-            organizationId,
-            projectId: existing.projectId,
-            crewMemberId,
-            crewRoleId: parsed.crewRoleId || null,
-            serviceId: id,
-            phase,
-            status: "PENDING",
-            startDate: serviceDate,
-            startTime: crewStart,
-            endDate: serviceEndDate,
-            endTime: crewEnd,
-          },
-        });
-      }
-
-      // Update role on existing assignments if role changed
-      const toUpdateRole = existingAssignments.filter((a) => desiredMemberIds.has(a.crewMemberId));
-      if (toUpdateRole.length > 0 && parsed.crewRoleId !== existing.crewRoleId) {
-        await tx.crewAssignment.updateMany({
-          where: { id: { in: toUpdateRole.map((a) => a.id) } },
-          data: { crewRoleId: parsed.crewRoleId || null },
-        });
-      }
-    }
-
     return svc;
   });
 
@@ -328,15 +262,57 @@ export async function updateProjectService(
     });
   }
 
-  // Reconcile the service's crew assignments in Convex: drop the ones removed by
-  // the tx (cascade their shifts/time-entries), then upsert the survivors + adds.
+  // Reconcile the service's crew assignments (Convex-only): remove de-selected
+  // members (cascade their shifts/time-entries), add newly-selected, and patch the
+  // role on survivors when it changed. Partial-unique enforced in createServiceAssignment.
   if (parsed.crewMemberIds != null) {
-    const currentIds = new Set(
-      (await snapshotServiceCrew(id)).map((c) => c.assignmentId),
+    const convex = await getConvexClient();
+    const phase = serviceTypeToPhase(parsed.type);
+    const existingAssignments = (await getAssignmentsByProject(existing.projectId, organizationId)).filter(
+      (a) => a.serviceId === id,
     );
-    const removed = crewBefore.filter((c) => !currentIds.has(c.assignmentId));
-    await removeCrewAssignmentCascadeFromConvex(removed);
-    await syncCrewAssignmentsForServiceToConvex(id);
+    const existingMemberIds = new Set(existingAssignments.map((a) => a.crewMemberId));
+    const desiredMemberIds = new Set(parsed.crewMemberIds);
+
+    for (const a of existingAssignments.filter((a) => !desiredMemberIds.has(a.crewMemberId))) {
+      await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+    }
+
+    const { crewStart, crewEnd } = deriveCrewTimes(
+      parsed.startTime,
+      parsed.endTime,
+      parsed.scheduledTime,
+      parsed.type,
+    );
+    const now = Date.now();
+    for (const crewMemberId of parsed.crewMemberIds.filter((m) => !existingMemberIds.has(m))) {
+      await convex.mutation(api.crewAssignments.createServiceAssignment, {
+        id: createId(),
+        organizationId,
+        projectId: existing.projectId,
+        crewMemberId,
+        serviceId: id,
+        phase,
+        status: "PENDING",
+        ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
+        ...(serviceDate ? { startDate: serviceDate.getTime() } : {}),
+        ...(crewStart ? { startTime: crewStart } : {}),
+        ...(serviceEndDate ? { endDate: serviceEndDate.getTime() } : {}),
+        ...(crewEnd ? { endTime: crewEnd } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (parsed.crewRoleId !== existing.crewRoleId) {
+      for (const a of existingAssignments.filter((a) => desiredMemberIds.has(a.crewMemberId))) {
+        await convex.mutation(api.crewAssignments.patchAssignment, {
+          id: a.id,
+          set: parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {},
+          clear: parsed.crewRoleId ? [] : ["crewRoleId"],
+        });
+      }
+    }
   }
 
   // Always recalculate project totals — service charge/cost affects financials
@@ -369,8 +345,12 @@ export async function deleteProjectService(id: string) {
   });
   if (!service) throw new Error("Service not found");
 
-  // Capture the service's crew cascade before the deleteMany removes it.
-  const crewCascade = await snapshotServiceCrew(id);
+  // The service's crew assignments (Convex-only) — captured before the delete so
+  // their cascade (shifts + linked time-entries) can be removed from Convex after.
+  const convex = await getConvexClient();
+  const serviceAssignments = (await getAssignmentsByProject(service.projectId, organizationId)).filter(
+    (a) => a.serviceId === id,
+  );
 
   // Wrap in transaction (Arch fix #1). The line item is Convex-only now (Phase C),
   // so it can't be deleted inside the Prisma tx — unlink it here, then cascade-
@@ -384,20 +364,16 @@ export async function deleteProjectService(id: string) {
       });
     }
 
-    // Remove crew assignments linked to this service
-    await tx.crewAssignment.deleteMany({
-      where: { serviceId: id },
-    });
-
     await tx.projectService.delete({ where: { id } });
   });
   if (service.lineItemId) {
-    const convex = await getConvexClient();
     await convex
       .mutation(api.projectLineItems.removeLineItemCascade, { id: service.lineItemId })
       .catch(() => {});
   }
-  await removeCrewAssignmentCascadeFromConvex(crewCascade);
+  for (const a of serviceAssignments) {
+    await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+  }
 
   await recalculateProjectTotals(service.projectId);
   await syncProjectServicesToConvex(organizationId, service.projectId);
@@ -506,15 +482,17 @@ export async function updateServiceCrewStatus(
 
   let updatedCount: number;
 
+  // crewAssignment is Convex-only — read the service's assignments there.
+  const convex = await getConvexClient();
+  const serviceAssignments = (await getAssignmentsByProject(service.projectId, organizationId)).filter(
+    (a) => a.serviceId === serviceId,
+  );
+
   if (status === "OFFERED") {
-    const pendingAssignments = await prisma.crewAssignment.findMany({
-      where: {
-        serviceId,
-        status: "PENDING",
-        crewMember: { email: { not: null } },
-      },
-      select: { id: true },
-    });
+    const memberMap = await getCrewMemberMap(organizationId);
+    const pendingAssignments = serviceAssignments.filter(
+      (a) => a.status === "PENDING" && (memberMap.get(a.crewMemberId)?.email ?? null) != null,
+    );
 
     let sent = 0;
     for (const a of pendingAssignments) {
@@ -527,18 +505,15 @@ export async function updateServiceCrewStatus(
     }
     updatedCount = sent;
   } else {
-    const result = await prisma.crewAssignment.updateMany({
-      where: {
-        serviceId,
-        ...(status === "CONFIRMED" ? { status: { in: ["PENDING", "OFFERED", "ACCEPTED"] } } : {}),
-        ...(status === "CANCELLED" ? { status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
-      },
-      data: { status },
+    const targets = serviceAssignments.filter((a) => {
+      if (status === "CONFIRMED") return ["PENDING", "OFFERED", "ACCEPTED"].includes(a.status);
+      if (status === "CANCELLED") return !["COMPLETED", "CANCELLED"].includes(a.status);
+      return true;
     });
-    updatedCount = result.count;
-    // Mirror the bulk status change to Convex (the OFFERED branch mirrors per-offer
-    // via sendCrewOffer).
-    await syncCrewAssignmentsForServiceToConvex(serviceId);
+    for (const a of targets) {
+      await convex.mutation(api.crewAssignments.patchAssignment, { id: a.id, set: { status } });
+    }
+    updatedCount = targets.length;
   }
 
   const statusLabels: Record<string, string> = {
@@ -893,23 +868,23 @@ export async function cloneServicesFromProject(
     eventStartDate: convexSource.eventStartDate != null ? new Date(convexSource.eventStartDate) : null,
   };
 
-  const sourceServices = await prisma.projectService.findMany({
+  const sourceServicesRaw = await prisma.projectService.findMany({
     where: { projectId: sourceProjectId, status: { not: "CANCELLED" } },
-    include: {
-      crewAssignments: {
-        select: {
-          crewMemberId: true,
-          crewRoleId: true,
-          phase: true,
-          startDate: true,
-          startTime: true,
-          endDate: true,
-          endTime: true,
-        },
-      },
-    },
     orderBy: { sortOrder: "asc" },
   });
+
+  // Crew assignments live in Convex — group the source project's by serviceId.
+  const sourceAssignmentsByService = new Map<string, Awaited<ReturnType<typeof getAssignmentsByProject>>>();
+  for (const a of await getAssignmentsByProject(sourceProjectId, organizationId)) {
+    if (!a.serviceId) continue;
+    const arr = sourceAssignmentsByService.get(a.serviceId) ?? [];
+    arr.push(a);
+    sourceAssignmentsByService.set(a.serviceId, arr);
+  }
+  const sourceServices = sourceServicesRaw.map((svc) => ({
+    ...svc,
+    crewAssignments: sourceAssignmentsByService.get(svc.id) ?? [],
+  }));
 
   if (sourceServices.length === 0) {
     return serialize({ cloned: 0 });
@@ -935,6 +910,7 @@ export async function cloneServicesFromProject(
   });
   let sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
 
+  const clonedCrew: { newServiceId: string; source: Awaited<ReturnType<typeof getAssignmentsByProject>> }[] = [];
   const created = await prisma.$transaction(async (tx) => {
     const results = [];
     for (const svc of sourceServices) {
@@ -973,32 +949,40 @@ export async function cloneServicesFromProject(
         },
       });
 
-      // Copy crew assignments from source service
-      for (const a of svc.crewAssignments) {
-        await tx.crewAssignment.create({
-          data: {
-            organizationId,
-            projectId: targetProjectId,
-            crewMemberId: a.crewMemberId,
-            crewRoleId: a.crewRoleId,
-            serviceId: service.id,
-            phase: a.phase,
-            status: "PENDING",
-            startDate: offsetDate(a.startDate),
-            startTime: a.startTime,
-            endDate: offsetDate(a.endDate),
-            endTime: a.endTime,
-          },
-        });
-      }
+      // Defer crew-assignment clone to Convex (after the service tx commits).
+      clonedCrew.push({ newServiceId: service.id, source: svc.crewAssignments });
 
       results.push(service);
     }
     return results;
   });
 
-  // Mirror the cloned crew assignments (across all cloned services) to Convex.
-  await syncCrewAssignmentsForProjectToConvex(targetProjectId);
+  // Clone crew assignments (Convex-only) for every cloned service, partial-unique
+  // enforced. Dates offset to the target project's timeline.
+  const cloneConvex = await getConvexClient();
+  const cloneNow = Date.now();
+  for (const { newServiceId, source: sourceAssignments } of clonedCrew) {
+    for (const a of sourceAssignments) {
+      const startDate = offsetDate(a.startDate);
+      const endDate = offsetDate(a.endDate);
+      await cloneConvex.mutation(api.crewAssignments.createServiceAssignment, {
+        id: createId(),
+        organizationId,
+        projectId: targetProjectId,
+        crewMemberId: a.crewMemberId,
+        serviceId: newServiceId,
+        status: "PENDING",
+        ...(a.crewRoleId ? { crewRoleId: a.crewRoleId } : {}),
+        ...(a.phase ? { phase: a.phase as ProjectPhase } : {}),
+        ...(startDate ? { startDate: startDate.getTime() } : {}),
+        ...(a.startTime ? { startTime: a.startTime } : {}),
+        ...(endDate ? { endDate: endDate.getTime() } : {}),
+        ...(a.endTime ? { endTime: a.endTime } : {}),
+        createdAt: cloneNow,
+        updatedAt: cloneNow,
+      });
+    }
+  }
 
   await recalculateProjectTotals(targetProjectId);
   await syncProjectServicesToConvex(organizationId, targetProjectId);

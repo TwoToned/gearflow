@@ -25,6 +25,7 @@ import { getModelById, getModelWithCategoryMap } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getBulkAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById, getKitSerializedItemsByOrg, getKitBulkItemsByOrg } from "@/lib/kits-read";
+import { getSubHiresByProject } from "@/lib/sub-hire-read";
 import { getLocationById } from "@/lib/locations-read";
 
 /**
@@ -1347,14 +1348,11 @@ export async function recalculateProjectTotals(projectId: string) {
     assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
   );
 
-  // 5. Sub-hire costs (what we pay suppliers)
-  const subHires = await prisma.subHire.findMany({
-    where: {
-      projectId,
-      status: { notIn: ["CANCELLED", "DRAFT"] },
-    },
-    select: { totalCost: true },
-  });
+  // 5. Sub-hire costs (what we pay suppliers) — sub-hires are dual-written; read
+  // from Convex and filter out CANCELLED/DRAFT in JS.
+  const subHires = (await getSubHiresByProject(projectId, project.organizationId)).filter(
+    (sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT",
+  );
 
   const subHireCostTotal = roundCurrency(
     subHires.reduce((sum, sh) => sum + (sh.totalCost != null ? Number(sh.totalCost) : 0), 0)

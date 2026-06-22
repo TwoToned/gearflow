@@ -124,3 +124,39 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (sub-hire write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
+
+/** Patch a sub-hire item with explicit field clears (groupId/target* → unset). See
+ *  the note on subHires.patchSubHire — `toConvexDoc` drops nulls, so clears need this. */
+export const patchItem = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      groupId: v.optional(v.string()),
+      modelId: v.optional(v.string()),
+      description: v.optional(v.string()),
+      quantity: v.optional(v.number()),
+      unitCost: v.optional(v.number()),
+      unitCharge: v.optional(v.number()),
+      pricingType: v.optional(enums.PricingType),
+      duration: v.optional(v.number()),
+      discount: v.optional(v.number()),
+      showOnQuote: v.optional(v.boolean()),
+      showOnDocs: v.optional(v.boolean()),
+      sortOrder: v.optional(v.number()),
+      targetCategoryId: v.optional(v.string()),
+      targetGroupId: v.optional(v.string()),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("subHireItems not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});

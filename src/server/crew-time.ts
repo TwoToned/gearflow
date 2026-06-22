@@ -8,21 +8,20 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorCrewTimeEntryCreate,
-  patchCrewTimeEntryInConvex,
-  removeCrewTimeEntryFromConvex,
-  syncCrewTimeEntriesToConvex,
-} from "@/lib/crew-scheduling-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
   getTimeEntriesByOrg,
+  getAssignmentById,
   getAssignmentsByOrg,
   filterTimeEntries,
   sortTimeEntries,
   paginate,
   sortTimeEntriesDateThenStartDesc,
+  mapTimeEntry,
   type MappedCrewTimeEntry,
 } from "@/lib/crew-scheduling-read";
 
@@ -219,25 +218,23 @@ export async function createTimeEntry(data: CrewTimeEntryFormValues) {
   const parsed = crewTimeEntrySchema.parse(data);
   const assignmentId = parsed.assignmentId || null;
 
-  // Verify crew member belongs to org
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: parsed.crewMemberId, organizationId },
-    select: { firstName: true, lastName: true },
-  });
+  // Verify crew member belongs to org (Convex read).
+  const members = await getCrewMembersByOrg(organizationId);
+  const crewMember = members.find((m) => m.id === parsed.crewMemberId);
   if (!crewMember) throw new Error("Crew member not found");
 
-  // If linked to an assignment, verify it
+  // If linked to an assignment, verify it (Convex read; org-scope + member match).
   let projectName = parsed.description || "General";
   if (assignmentId) {
-    const assignment = await prisma.crewAssignment.findUnique({
-      where: { id: assignmentId, organizationId },
-      include: { project: { select: { name: true } } },
-    });
-    if (!assignment) throw new Error("Assignment not found");
+    const assignment = await getAssignmentById(assignmentId);
+    if (!assignment || assignment.organizationId !== organizationId) {
+      throw new Error("Assignment not found");
+    }
     if (assignment.crewMemberId !== parsed.crewMemberId) {
       throw new Error("Crew member does not match assignment");
     }
-    projectName = assignment.project.name;
+    const projects = await getProjectsByOrg(organizationId);
+    projectName = projects.find((p) => p.id === assignment.projectId)?.name ?? projectName;
   }
 
   const totalHours = calculateTotalHours(
@@ -246,31 +243,26 @@ export async function createTimeEntry(data: CrewTimeEntryFormValues) {
     parsed.breakMinutes ?? 0
   );
 
-  const entry = await prisma.crewTimeEntry.create({
-    data: {
-      organizationId,
-      assignmentId,
-      crewMemberId: parsed.crewMemberId,
-      description: parsed.description || null,
-      date: new Date(parsed.date as unknown as string),
-      startTime: parsed.startTime,
-      endTime: parsed.endTime,
-      breakMinutes: parsed.breakMinutes ?? 0,
-      totalHours,
-      notes: parsed.notes || null,
-    },
-    include: {
-      assignment: {
-        include: {
-          project: { select: { name: true, projectNumber: true } },
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
+  // Convex-only write: cuid minted here, dates → epoch-ms, nulls omitted.
+  const convex = await getConvexClient();
+  const id = createId();
+  const now = Date.now();
+  await convex.mutation(api.crewTimeEntries.create, {
+    id,
+    organizationId,
+    ...(assignmentId ? { assignmentId } : {}),
+    crewMemberId: parsed.crewMemberId,
+    ...(parsed.description ? { description: parsed.description } : {}),
+    date: new Date(parsed.date as unknown as string).getTime(),
+    startTime: parsed.startTime,
+    endTime: parsed.endTime,
+    breakMinutes: parsed.breakMinutes ?? 0,
+    totalHours,
+    status: "DRAFT",
+    ...(parsed.notes ? { notes: parsed.notes } : {}),
+    createdAt: now,
+    updatedAt: now,
   });
-
-  await mirrorCrewTimeEntryCreate(entry as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -278,12 +270,13 @@ export async function createTimeEntry(data: CrewTimeEntryFormValues) {
     userName,
     action: "CREATE",
     entityType: "crew_time_entry",
-    entityId: entry.id,
+    entityId: id,
     entityName: `${crewMember.firstName} ${crewMember.lastName}`,
     summary: `Logged time for ${crewMember.firstName} ${crewMember.lastName} on ${projectName}`,
   });
 
-  return serialize(entry);
+  const created = await convex.query(api.crewTimeEntries.getById, { id });
+  return serialize(created ? mapTimeEntry(created) : null);
 }
 
 export async function updateTimeEntry(
@@ -296,12 +289,9 @@ export async function updateTimeEntry(
   );
   const parsed = crewTimeEntrySchema.parse(data);
 
-  const existing = await prisma.crewTimeEntry.findUnique({
-    where: { id },
-    include: {
-      crewMember: { select: { organizationId: true, firstName: true, lastName: true } },
-    },
-  });
+  // Read-before-write guard from Convex (org-scope on the entry's organizationId).
+  const allEntries = await getTimeEntriesByOrg(organizationId);
+  const existing = allEntries.find((e) => e.id === id);
   if (!existing || existing.organizationId !== organizationId) {
     throw new Error("Time entry not found");
   }
@@ -309,40 +299,43 @@ export async function updateTimeEntry(
     throw new Error("Cannot edit exported time entries");
   }
 
+  const members = await getCrewMembersByOrg(organizationId);
+  const crewMember = members.find((m) => m.id === existing.crewMemberId);
+  const crewName = crewMember
+    ? `${crewMember.firstName} ${crewMember.lastName}`
+    : "crew member";
+
   const totalHours = calculateTotalHours(
     parsed.startTime,
     parsed.endTime,
     parsed.breakMinutes ?? 0
   );
 
-  const entry = await prisma.crewTimeEntry.update({
-    where: { id },
-    data: {
-      assignmentId: parsed.assignmentId || null,
-      description: parsed.description || null,
-      date: new Date(parsed.date as unknown as string),
+  // Convex-only write. Editing always resets to DRAFT and clears any approval
+  // (Convex optionals can't hold null → unset via `clear`).
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
+    id,
+    set: {
+      ...(parsed.assignmentId ? { assignmentId: parsed.assignmentId } : {}),
+      ...(parsed.description ? { description: parsed.description } : {}),
+      date: new Date(parsed.date as unknown as string).getTime(),
       startTime: parsed.startTime,
       endTime: parsed.endTime,
       breakMinutes: parsed.breakMinutes ?? 0,
       totalHours,
-      notes: parsed.notes || null,
-      // Reset to draft if edited from a non-draft state
-      status: existing.status !== "DRAFT" ? "DRAFT" : "DRAFT",
-      approvedById: null,
-      approvedAt: null,
+      ...(parsed.notes ? { notes: parsed.notes } : {}),
+      status: "DRAFT",
+      updatedAt: Date.now(),
     },
-    include: {
-      assignment: {
-        include: {
-          project: { select: { name: true, projectNumber: true } },
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
+    clear: [
+      "approvedById",
+      "approvedAt",
+      ...(parsed.assignmentId ? [] : ["assignmentId"]),
+      ...(parsed.description ? [] : ["description"]),
+      ...(parsed.notes ? [] : ["notes"]),
+    ],
   });
-
-  await patchCrewTimeEntryInConvex(id, entry as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -351,11 +344,12 @@ export async function updateTimeEntry(
     action: "UPDATE",
     entityType: "crew_time_entry",
     entityId: id,
-    entityName: `${existing.crewMember.firstName} ${existing.crewMember.lastName}`,
-    summary: `Updated time entry for ${existing.crewMember.firstName} ${existing.crewMember.lastName}`,
+    entityName: crewName,
+    summary: `Updated time entry for ${crewName}`,
   });
 
-  return serialize(entry);
+  const updated = await convex.query(api.crewTimeEntries.getById, { id });
+  return serialize(updated ? mapTimeEntry(updated) : null);
 }
 
 export async function deleteTimeEntry(id: string) {
@@ -364,12 +358,9 @@ export async function deleteTimeEntry(id: string) {
     "delete"
   );
 
-  const entry = await prisma.crewTimeEntry.findUnique({
-    where: { id },
-    include: {
-      crewMember: { select: { organizationId: true, firstName: true, lastName: true } },
-    },
-  });
+  // Read-before-write guard from Convex (org-scope on the entry's organizationId).
+  const allEntries = await getTimeEntriesByOrg(organizationId);
+  const entry = allEntries.find((e) => e.id === id);
   if (!entry || entry.organizationId !== organizationId) {
     throw new Error("Time entry not found");
   }
@@ -377,8 +368,14 @@ export async function deleteTimeEntry(id: string) {
     throw new Error("Cannot delete exported time entries");
   }
 
-  await prisma.crewTimeEntry.delete({ where: { id } });
-  await removeCrewTimeEntryFromConvex(id);
+  const members = await getCrewMembersByOrg(organizationId);
+  const crewMember = members.find((m) => m.id === entry.crewMemberId);
+  const crewName = crewMember
+    ? `${crewMember.firstName} ${crewMember.lastName}`
+    : "crew member";
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewTimeEntries.remove, { id });
 
   await logActivity({
     organizationId,
@@ -387,8 +384,8 @@ export async function deleteTimeEntry(id: string) {
     action: "DELETE",
     entityType: "crew_time_entry",
     entityId: id,
-    entityName: `${entry.crewMember.firstName} ${entry.crewMember.lastName}`,
-    summary: `Deleted time entry for ${entry.crewMember.firstName} ${entry.crewMember.lastName}`,
+    entityName: crewName,
+    summary: `Deleted time entry for ${crewName}`,
   });
 
   return { success: true };
@@ -402,21 +399,26 @@ export async function submitTimeEntries(ids: string[]) {
     "update"
   );
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: { id: { in: ids }, organizationId, status: { in: ["DRAFT", "DISPUTED"] } },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-    },
-  });
+  // Read eligible entries from Convex, apply the DRAFT|DISPUTED → SUBMITTED guard.
+  const idSet = new Set(ids);
+  const allEntries = await getTimeEntriesByOrg(organizationId);
+  const entries = allEntries.filter(
+    (e) =>
+      idSet.has(e.id) &&
+      e.organizationId === organizationId &&
+      ["DRAFT", "DISPUTED"].includes(e.status),
+  );
 
   if (entries.length === 0) throw new Error("No eligible entries found");
 
-  await prisma.crewTimeEntry.updateMany({
-    where: { id: { in: entries.map((e) => e.id) } },
-    data: { status: "SUBMITTED" },
-  });
-
-  await syncCrewTimeEntriesToConvex(entries.map((e) => e.id));
+  const convex = await getConvexClient();
+  const now = Date.now();
+  for (const e of entries) {
+    await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
+      id: e.id,
+      set: { status: "SUBMITTED", updatedAt: now },
+    });
+  }
 
   await logActivity({
     organizationId,
@@ -438,22 +440,32 @@ export async function approveTimeEntries(ids: string[]) {
     "update"
   );
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: { id: { in: ids }, organizationId, status: { in: ["SUBMITTED", "DISPUTED"] } },
-  });
+  // Read eligible entries from Convex, apply the SUBMITTED|DISPUTED → APPROVED
+  // guard, stamping approvedById + approvedAt.
+  const idSet = new Set(ids);
+  const allEntries = await getTimeEntriesByOrg(organizationId);
+  const entries = allEntries.filter(
+    (e) =>
+      idSet.has(e.id) &&
+      e.organizationId === organizationId &&
+      ["SUBMITTED", "DISPUTED"].includes(e.status),
+  );
 
   if (entries.length === 0) throw new Error("No eligible entries found");
 
-  await prisma.crewTimeEntry.updateMany({
-    where: { id: { in: entries.map((e) => e.id) } },
-    data: {
-      status: "APPROVED",
-      approvedById: userId,
-      approvedAt: new Date(),
-    },
-  });
-
-  await syncCrewTimeEntriesToConvex(entries.map((e) => e.id));
+  const convex = await getConvexClient();
+  const now = Date.now();
+  for (const e of entries) {
+    await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
+      id: e.id,
+      set: {
+        status: "APPROVED",
+        approvedById: userId,
+        approvedAt: now,
+        updatedAt: now,
+      },
+    });
+  }
 
   await logActivity({
     organizationId,
@@ -475,12 +487,9 @@ export async function disputeTimeEntry(id: string, reason?: string) {
     "update"
   );
 
-  const entry = await prisma.crewTimeEntry.findUnique({
-    where: { id },
-    include: {
-      crewMember: { select: { organizationId: true, firstName: true, lastName: true } },
-    },
-  });
+  // Read-before-write guard from Convex; apply the SUBMITTED|APPROVED → DISPUTED guard.
+  const allEntries = await getTimeEntriesByOrg(organizationId);
+  const entry = allEntries.find((e) => e.id === id);
   if (!entry || entry.organizationId !== organizationId) {
     throw new Error("Time entry not found");
   }
@@ -488,15 +497,23 @@ export async function disputeTimeEntry(id: string, reason?: string) {
     throw new Error("Can only dispute submitted or approved time entries");
   }
 
-  await prisma.crewTimeEntry.update({
-    where: { id },
-    data: {
-      status: "DISPUTED",
-      notes: reason || entry.notes,
-    },
-  });
+  const members = await getCrewMembersByOrg(organizationId);
+  const crewMember = members.find((m) => m.id === entry.crewMemberId);
+  const crewName = crewMember
+    ? `${crewMember.firstName} ${crewMember.lastName}`
+    : "crew member";
 
-  await syncCrewTimeEntriesToConvex([id]);
+  const convex = await getConvexClient();
+  const nextNotes = reason || entry.notes;
+  await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
+    id,
+    set: {
+      status: "DISPUTED",
+      ...(nextNotes ? { notes: nextNotes } : {}),
+      updatedAt: Date.now(),
+    },
+    ...(nextNotes ? {} : { clear: ["notes"] }),
+  });
 
   await logActivity({
     organizationId,
@@ -505,8 +522,8 @@ export async function disputeTimeEntry(id: string, reason?: string) {
     action: "UPDATE",
     entityType: "crew_time_entry",
     entityId: id,
-    entityName: `${entry.crewMember.firstName} ${entry.crewMember.lastName}`,
-    summary: `Disputed time entry for ${entry.crewMember.firstName} ${entry.crewMember.lastName}`,
+    entityName: crewName,
+    summary: `Disputed time entry for ${crewName}`,
   });
 
   return { success: true };

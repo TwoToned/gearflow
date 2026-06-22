@@ -269,32 +269,33 @@ Key routing rules:
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
 
-## Deploy Configuration (configured by /setup-deploy)
+## Deploy Configuration
 
-- **Platform:** Self-hosted (GitHub Actions on a self-hosted runner)
-- **Production URL:** https://home.twotoned.com.au
-- **Deploy workflow:** `.github/workflows/main.yml` ("Deploy GearFlow") — triggers on push to `main`
-- **Deploy status command:** poll the GitHub Actions run via `gh run list --workflow main.yml --branch main --limit 1 --json status,conclusion,headSha`
-- **Merge method:** merge commit (matches existing git history; not squash)
-- **Project type:** Next.js 16 web app with PostgreSQL + Prisma
-- **Post-deploy health check:** `curl -s https://home.twotoned.com.au -o /dev/null -w "%{http_code}"` — expect 200 or 307 (root redirects to login). 502 on first hit can be a cold-start; retry after 5s before treating as a failure.
+- **Platform:** Docker image → GHCR → **Coolify** (NOT the old self-hosted pm2 box).
+- **Production URL:** **https://flow.rvlt.app** (the old `home.twotoned.com.au` is dead — returns Cloudflare 530).
+- **Deploy workflow:** `.github/workflows/build-image.yml` ("Build & Deploy (GHCR + Coolify)") — triggers on push to `main`.
+- **Deploy status command:** `gh run list --workflow build-image.yml --branch main --limit 1 --json status,conclusion,headSha`
+- **Merge method:** merge commit (matches existing git history; not squash).
+- **Project type:** Next.js 16 web app + PostgreSQL/Prisma + Convex Cloud.
+- **Post-deploy health check:** `curl -s https://flow.rvlt.app -o /dev/null -w "%{http_code}"` — expect 200 or 307 (root redirects to login).
 
-### Deploy pipeline (self-hosted, sequential)
-1. `git pull origin main` in `$APP_DIR`
-2. `npm ci --ignore-scripts --legacy-peer-deps`
-3. `npx prisma generate`
-4. `npm test` (full vitest suite runs again on the runner)
-5. `npx prisma migrate deploy`
-6. `npm run build`
-7. `pm2 restart gearflow` + `pm2 save`
+### Deploy pipeline (GHCR + Coolify)
+The workflow (`build-image.yml`) does, in order:
+1. `pnpm install --frozen-lockfile` (for the Convex CLI)
+2. `pnpm exec convex deploy -y` — pushes Convex functions to **prod Convex Cloud** (`useful-cuttlefish-334`)
+3. Log in to GHCR, `docker build` + push the app image
+4. **Trigger Coolify deploy** via webhook (`curl` to `COOLIFY_DEPLOY_WEBHOOK`)
 
-15-minute total timeout. Typical green run is ~5-8 minutes; longer means a migration or build hiccup. A failed `pm2 restart` leaves the previous build serving — rolling back means reverting the merge commit and letting the workflow redeploy.
+**Prisma migrations run at container START** (`docker-entrypoint.sh`), NOT in the runner — the runner can't reach the prod DB. (`migrate.yml` is a manual one-off migration workflow, not part of the normal deploy.)
+
+### ⚠️ Coolify deploy is ASYNC
+A green workflow run only means the image was pushed and the Coolify webhook **fired** — the "Trigger Coolify deploy" step succeeding does NOT mean the new container is live. Coolify pulls the image + restarts asynchronously (and runs migrations on boot). **Confirm a deploy by polling `https://flow.rvlt.app` for 200/307**, not by the workflow status alone. A failed container start leaves the previous image serving.
 
 ### Custom deploy hooks
-- **Pre-merge:** none (CI handles lint + typecheck + tests on the PR)
-- **Deploy trigger:** automatic on push to `main` (no manual step)
-- **Deploy status:** `gh run watch <run-id>` or poll `gh run view --json status,conclusion`
-- **Health check:** GET `https://home.twotoned.com.au` returns 200 or 307 (root redirects to `/login`). Retry once after 5s if you get 502 — the runner can be cold-starting from the pm2 restart.
+- **Pre-merge:** none (CI — `ci.yml` — handles lint + typecheck + tests on the PR).
+- **Deploy trigger:** automatic on push to `main`.
+- **Deploy status:** `gh run watch <run-id>`, then poll the prod URL (async — see above).
+- **Health check:** GET `https://flow.rvlt.app` returns 200 or 307 (root redirects to `/login`).
 
 <!-- convex-ai-start -->
 

@@ -12,12 +12,14 @@ import {
   type CrewMemberFormValues,
 } from "@/lib/validations/crew";
 import { logActivity, buildChanges } from "@/lib/activity-log";
-import {
-  snapshotCrewMemberCascade,
-  removeCrewMemberCascadeFromConvex,
-} from "@/lib/crew-scheduling-mirror";
 import { type FilterValue } from "@/lib/table-utils";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getAssignmentsByOrg,
+  getTimeEntriesByOrg,
+  getAvailabilityByCrewMemberIds,
+  compareDescNullsFirst,
+} from "@/lib/crew-scheduling-read";
 import {
   getCrewMembersByOrg,
   getCrewMemberById as getConvexCrewMemberById,
@@ -109,7 +111,7 @@ export async function getCrewMemberById(id: string) {
   // map; the linked Better Auth user from Prisma (kept table); assignments from the
   // still-Prisma crewAssignment table with project (Convex) + crewRole (Convex)
   // attached.
-  const [roleRows, skillRows, user, assignmentRows, projects] = await Promise.all([
+  const [roleRows, skillRows, user, allAssignments, projects] = await Promise.all([
     getCrewRolesByOrg(organizationId),
     getCrewSkillsByOrg(organizationId),
     crewMember.userId
@@ -118,12 +120,14 @@ export async function getCrewMemberById(id: string) {
           select: { id: true, name: true, email: true, image: true },
         })
       : Promise.resolve(null),
-    prisma.crewAssignment.findMany({
-      where: { crewMemberId: id, organizationId },
-      orderBy: { startDate: "desc" },
-    }),
+    // Assignments for this member from Convex (org-scoped), startDate desc —
+    // replaces the Prisma crewAssignment.findMany.
+    getAssignmentsByOrg(organizationId),
     getProjectsByOrg(organizationId),
   ]);
+  const assignmentRows = allAssignments
+    .filter((a) => a.crewMemberId === id)
+    .sort((a, b) => compareDescNullsFirst(a.startDate?.getTime(), b.startDate?.getTime()));
 
   const role = crewMember.crewRoleId
     ? roleRows.map(mapCrewRole).find((r) => r.id === crewMember.crewRoleId) ?? null
@@ -352,15 +356,21 @@ export async function deleteCrewMember(id: string) {
   if (!memberDoc || memberDoc.organizationId !== organizationId) throw new Error("Crew member not found");
   const member = mapCrewMember(memberDoc);
 
-  // Capture cascade children (assignments → shifts/time-entries, plus standalone
-  // time entries and availability — still Prisma+Convex-mirrored) before delete.
-  const cascade = await snapshotCrewMemberCascade(id);
+  // Cascade children all live in Convex (Convex-only). Delete the member's
+  // assignments (each cascades to its shifts + linked time-entries), its standalone
+  // time entries, and its availability — replacing the dropped Prisma FK cascade.
+  const convex = await getConvexClient();
+  const [memberAssignments, orgTimeEntries, memberAvailability] = await Promise.all([
+    getAssignmentsByOrg(organizationId).then((rows) => rows.filter((a) => a.crewMemberId === id)),
+    getTimeEntriesByOrg(organizationId).then((rows) => rows.filter((t) => t.crewMemberId === id && t.assignmentId == null)),
+    getAvailabilityByCrewMemberIds([id]),
+  ]);
 
-  // crewMember is Convex-only (Phase C); remove it from Convex + reconcile the
-  // scheduling children's Convex mirrors. Their Prisma rows are left (the FK
-  // cascade was dropped in #254 — already orphaned post-#254; reads are Convex).
-  await (await getConvexClient()).mutation(api.crewMembers.remove, { id });
-  await removeCrewMemberCascadeFromConvex(cascade);
+  // crewMember is Convex-only (Phase C); remove it + cascade its scheduling children.
+  await convex.mutation(api.crewMembers.remove, { id });
+  for (const a of memberAssignments) await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+  for (const t of orgTimeEntries) await convex.mutation(api.crewTimeEntries.remove, { id: t.id });
+  for (const av of memberAvailability) await convex.mutation(api.crewAvailabilities.remove, { id: av.id });
 
   await logActivity({
     organizationId,

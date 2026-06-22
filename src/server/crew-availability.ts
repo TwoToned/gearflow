@@ -1,6 +1,5 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import {
@@ -8,20 +7,22 @@ import {
   type CrewAvailabilityFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
-import {
-  mirrorCrewAvailabilityCreate,
-  removeCrewAvailabilityFromConvex,
-} from "@/lib/crew-scheduling-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
   getAvailabilityByCrewMemberIds,
   getAssignmentsByOrg,
+  mapAvailability,
   selectMemberAvailability,
   selectPlannerAssignments,
   selectPlannerAvailability,
   computeAvailabilityStatus,
+  assignmentOverlapsRange,
   compareAscNullsLast,
+  EXCLUDED_ASSIGNMENT_STATUSES,
   type MappedCrewAssignment,
 } from "@/lib/crew-scheduling-read";
 
@@ -53,28 +54,31 @@ export async function addAvailability(data: CrewAvailabilityFormValues) {
   );
   const parsed = crewAvailabilitySchema.parse(data);
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: parsed.crewMemberId, organizationId },
-    select: { id: true, firstName: true, lastName: true },
-  });
+  // Verify crew member belongs to org (Convex read).
+  const members = await getCrewMembersByOrg(organizationId);
+  const member = members.find((m) => m.id === parsed.crewMemberId);
   if (!member) throw new Error("Crew member not found");
 
-  const record = await prisma.crewAvailability.create({
-    data: {
-      crewMemberId: parsed.crewMemberId,
-      startDate: new Date(parsed.startDate as unknown as string),
-      endDate: new Date(parsed.endDate as unknown as string),
-      type: parsed.type,
-      reason: parsed.reason || null,
-      isAllDay: parsed.isAllDay,
-      startTime: parsed.startTime || null,
-      endTime: parsed.endTime || null,
-    },
+  // Convex-only write: cuid minted here, dates → epoch-ms, nulls omitted.
+  // organizationId is denormalized onto the Convex row (not a Prisma column) so
+  // the crew planner can subscribe org-wide for reactive availability reads.
+  const convex = await getConvexClient();
+  const id = createId();
+  const now = Date.now();
+  await convex.mutation(api.crewAvailabilities.create, {
+    id,
+    crewMemberId: parsed.crewMemberId,
+    organizationId,
+    startDate: new Date(parsed.startDate as unknown as string).getTime(),
+    endDate: new Date(parsed.endDate as unknown as string).getTime(),
+    type: parsed.type,
+    ...(parsed.reason ? { reason: parsed.reason } : {}),
+    isAllDay: parsed.isAllDay,
+    ...(parsed.startTime ? { startTime: parsed.startTime } : {}),
+    ...(parsed.endTime ? { endTime: parsed.endTime } : {}),
+    createdAt: now,
+    updatedAt: now,
   });
-
-  // Denormalize organizationId onto the Convex row (not a Prisma column) so the
-  // crew planner can subscribe org-wide for reactive availability reads.
-  await mirrorCrewAvailabilityCreate({ ...record, organizationId } as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -87,26 +91,25 @@ export async function addAvailability(data: CrewAvailabilityFormValues) {
     summary: `Added ${parsed.type.toLowerCase()} availability for ${member.firstName} ${member.lastName}`,
   });
 
-  return serialize(record);
+  const created = await convex.query(api.crewAvailabilities.getById, { id });
+  return serialize(created ? mapAvailability(created) : null);
 }
 
 export async function removeAvailability(id: string) {
   const { organizationId } = await requirePermission("crew", "update");
 
-  const record = await prisma.crewAvailability.findUnique({
-    where: { id },
-    include: {
-      crewMember: {
-        select: { organizationId: true },
-      },
-    },
-  });
-  if (!record || record.crewMember.organizationId !== organizationId) {
+  // Read-before-write guard from Convex. Availability scopes via crewMember, so
+  // confirm both the record exists and its member belongs to this org.
+  const convex = await getConvexClient();
+  const record = await convex.query(api.crewAvailabilities.getById, { id });
+  if (!record) throw new Error("Availability record not found");
+
+  const members = await getCrewMembersByOrg(organizationId);
+  if (!members.some((m) => m.id === record.crewMemberId)) {
     throw new Error("Availability record not found");
   }
 
-  await prisma.crewAvailability.delete({ where: { id } });
-  await removeCrewAvailabilityFromConvex(id);
+  await convex.mutation(api.crewAvailabilities.remove, { id });
   return { success: true };
 }
 
@@ -130,17 +133,19 @@ export async function checkCrewConflicts(
 
   const start = new Date(startDate);
   const end = new Date(endDate);
+  const range = { start, end };
   const conflicts: CrewConflict[] = [];
 
-  // Check availability blocks
-  const blocks = await prisma.crewAvailability.findMany({
-    where: {
-      crewMemberId,
-      startDate: { lte: end },
-      endDate: { gte: start },
-      crewMember: { organizationId },
-    },
-  });
+  // Scope availability blocks to members in this org (crewMember.organizationId
+  // — replaces the Prisma `crewMember: { organizationId }` relational filter).
+  const members = await getCrewMembersByOrg(organizationId);
+  const inOrg = members.some((m) => m.id === crewMemberId);
+
+  // Check availability blocks (Convex read; replicates the Prisma overlap where).
+  const allBlocks = inOrg ? await getAvailabilityByCrewMemberIds([crewMemberId]) : [];
+  const blocks = allBlocks.filter(
+    (b) => b.startDate.getTime() <= end.getTime() && b.endDate.getTime() >= start.getTime(),
+  );
 
   for (const b of blocks) {
     conflicts.push({
@@ -157,26 +162,30 @@ export async function checkCrewConflicts(
     });
   }
 
-  // Check overlapping assignments (double-booking)
-  const overlapping = await prisma.crewAssignment.findMany({
-    where: {
-      crewMemberId,
-      organizationId,
-      status: { notIn: ["CANCELLED", "DECLINED"] },
-      startDate: { lte: end },
-      endDate: { gte: start },
-      ...(excludeAssignmentId ? { id: { not: excludeAssignmentId } } : {}),
-    },
-    include: {
-      project: { select: { name: true, projectNumber: true } },
-    },
-  });
+  // Check overlapping assignments (double-booking). selectMemberConflicts excludes
+  // the same project; here we want ALL other assignments for the member, so filter
+  // inline to mirror the Prisma where (member + org + status notIn + overlap +
+  // optional id exclusion). project name/number resolved from the Convex map.
+  const [allAssignments, projects] = await Promise.all([
+    getAssignmentsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+
+  const overlapping = allAssignments.filter(
+    (a) =>
+      a.crewMemberId === crewMemberId &&
+      !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status) &&
+      assignmentOverlapsRange(a, range.start, range.end) &&
+      (excludeAssignmentId ? a.id !== excludeAssignmentId : true),
+  );
 
   for (const a of overlapping) {
+    const p = projectsById.get(a.projectId);
     conflicts.push({
       type: "assignment",
       severity: "soft",
-      label: `Already on ${a.project.projectNumber} - ${a.project.name}`,
+      label: `Already on ${p?.projectNumber ?? ""} - ${p?.name ?? ""}`,
       startDate: a.startDate?.toISOString() || start.toISOString(),
       endDate: a.endDate?.toISOString() || end.toISOString(),
     });

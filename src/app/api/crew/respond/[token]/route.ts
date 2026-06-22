@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { syncCrewAssignmentToConvex } from "@/lib/crew-scheduling-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../../../../convex/_generated/api";
+import { getProjectById } from "@/lib/projects-read";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline
@@ -23,13 +25,10 @@ export async function GET(
     );
   }
 
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { responseToken: token },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      project: { select: { name: true, projectNumber: true } },
-      crewRole: { select: { name: true } },
-    },
+  // Token IS the bearer credential — service-only Convex lookup by responseToken.
+  const convex = await getConvexClient();
+  const assignment = await convex.query(api.crewAssignments.getByResponseToken, {
+    responseToken: token,
   });
 
   if (!assignment) {
@@ -39,6 +38,20 @@ export async function GET(
       "error"
     );
   }
+
+  // Resolve the project (Convex) + crew member / role (still-Prisma) for display.
+  const project = await getProjectById(assignment.projectId);
+  const crewMember = await prisma.crewMember.findUnique({
+    where: { id: assignment.crewMemberId },
+    select: { firstName: true, lastName: true },
+  });
+  const crewRole = assignment.crewRoleId
+    ? await prisma.crewRole.findUnique({
+        where: { id: assignment.crewRoleId },
+        select: { name: true },
+      })
+    : null;
+  const projectDisplayName = project?.name ?? "this project";
 
   // Check if already responded
   if (assignment.respondedAt) {
@@ -50,7 +63,7 @@ export async function GET(
           : assignment.status;
     return htmlResponse(
       "Already Responded",
-      `You have already ${statusText} this offer for <strong>${assignment.project.name}</strong>.`,
+      `You have already ${statusText} this offer for <strong>${projectDisplayName}</strong>.`,
       "info"
     );
   }
@@ -64,22 +77,22 @@ export async function GET(
     );
   }
 
-  // Update assignment
+  // Status-machine: ACCEPTED / DECLINED, stamp respondedAt, clear the single-use
+  // token. Convex-only write (responseToken cleared via `clear`, not set).
   const newStatus = action === "accept" ? "ACCEPTED" : "DECLINED";
-  await prisma.crewAssignment.update({
-    where: { id: assignment.id },
-    data: {
+  await convex.mutation(api.crewAssignments.patchAssignment, {
+    id: assignment.id,
+    set: {
       status: newStatus,
-      respondedAt: new Date(),
-      responseToken: null, // Invalidate token after use
+      respondedAt: Date.now(),
+      updatedAt: Date.now(),
     },
+    clear: ["responseToken"], // Invalidate token after use
   });
 
-  await syncCrewAssignmentToConvex(assignment.id);
-
-  const crewName = `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`;
-  const projectName = `${assignment.project.projectNumber} — ${assignment.project.name}`;
-  const roleName = assignment.crewRole?.name || "Crew";
+  const crewName = `${crewMember?.firstName ?? ""} ${crewMember?.lastName ?? ""}`.trim();
+  const projectName = `${project?.projectNumber ?? ""} — ${projectDisplayName}`;
+  const roleName = crewRole?.name || "Crew";
 
   if (action === "accept") {
     return htmlResponse(

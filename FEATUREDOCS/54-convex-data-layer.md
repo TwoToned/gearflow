@@ -384,14 +384,11 @@ inbound FKs cross the cluster boundary from tables that stay in Prisma —
 `_CrewMemberToCrewSkill` (which has **no Convex representation** — a member's skills
 stay composed on the Prisma mirror).
 
-- **Scope decision:** the project-coupled scheduling/timesheet sub-tables
-  (`crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
-  `crew_time_entry`) are **deliberately left Prisma-only** for now. They are
-  leaf/child tables with cascade-delete semantics Convex can't cheaply replicate,
-  and they are only ever composed inside project-joining or member-detail views
-  that stay on the Prisma mirror (the crew dashboard, planner, timesheets, member
-  detail). Their Convex CRUD + schema already exist (Phase 2); they get dual-written
-  when those UIs go reactive alongside the project/central-graph migration.
+- **Scope decision (superseded):** at roster-migration time the project-coupled
+  scheduling/timesheet sub-tables (`crew_assignment`, `crew_shift`,
+  `crew_availability`, `crew_time_entry`; `crew_certification` was later dropped)
+  were left out of *this* PR. They are **now dual-written + Convex-read** — see
+  "Crew scheduling / timesheet sub-tables" + the Phase C read-cleanup below.
 - **Writes** (Prisma first, then mirror via `src/lib/crew-mirror.ts`): `server/crew.ts`
   (member/role/skill create/update/delete + image + user-link), `server/crew-calendar.ts`
   (iCal enable/disable/regenerate → member patch), `app/api/crew/avatar/route.ts`
@@ -3212,6 +3209,66 @@ The `subHire` / `subHireItem` / `subHireGroup` writes are now **Convex-only**;
   patchItem CLEAR targetGroupId → patchGroup CLEAR targetCategoryId → deleteWithUngroup
   (child kept + ungrouped) → deleteCascade (head + items gone). `supplierOrder` was
   already Convex-only (Phase A); both families now fully Convex.
+
+### Phase C — crew-scheduling read-cleanup (1/2)
+
+The scheduling sub-tables (`crewAssignment` / `crewShift` / `crewTimeEntry` /
+`crewAvailability` — `crewCertification` was dropped) are dual-written + Convex-read
+already (Phase A). Before inverting their writes, this PR moves the **last
+data-serving Prisma reads** to Convex — same split as media/sub-hire (read-cleanup
+first, write-invert next), and it pre-empts the projectLineItem-class stale-read bug
+(reads that pulled `crewMember`/`crewRole` through a Prisma relational include off a
+crew row would go stale the moment writes flip).
+
+- **Stale-read landmines fixed:** `line-items.recalculateProjectTotals` labour-cost
+  sum (→ `getAssignmentsByProject`, all-status sum preserved) and the
+  `call-sheet-services` PDF (services + assignments from Convex, crewMember/crewRole
+  from the Convex maps) — both read crew through Convex-only parents.
+- **Other reads rewired:** the calendar ical feed + single-assignment ics routes,
+  `crew-availability.checkCrewConflicts` (availability + double-booking overlap via
+  `getAvailabilityByCrewMemberIds` + `getAssignmentsByOrg` + `assignmentOverlapsRange`),
+  `crew.getCrewMemberById`, `project-services.generateCrewMessage`,
+  `crew-time.exportTimesheetCSV`, and the notification OFFERED/SUBMITTED counts.
+- **Deliberately left on Prisma (flip with write-inversion 2/2):** the
+  read-before-write guards inside the write actions (crew-time submit/approve/edit
+  guards, project-services pending-assignment guard, availability remove guard) and
+  the respond-route by-`responseToken` lookup (no Convex by-token query yet).
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests pass. Reads
+  only — dual-write untouched, fully reversible.
+### Phase C — crew-scheduling write-inversion (2/2) — DONE
+
+All crew-scheduling writes (`crewAssignment` / `crewShift` / `crewTimeEntry` /
+`crewAvailability`) are now **Convex-only**; `crew-scheduling-mirror.ts` is deleted.
+The family (read + write) is fully migrated.
+
+- **Custom Convex mutations** (CUSTOM banner, inline in the generated modules):
+  `crewAssignments.patchAssignment(id,set,clear)` + `deleteCascade(id)` (assignment →
+  shifts + linked time-entries) + `createServiceAssignment(...)` (enforces the
+  partial-unique `(projectId,crewMemberId,serviceId)` invariant — the Prisma
+  `crew_assignment_project_member_service_key`, which Convex can't express, via a
+  race-safe check-then-insert on `by_serviceId`) + `getByResponseToken` query;
+  `crewShifts.patchShift` + `removeScheduledByAssignment` (generateShifts regen —
+  delete only SCHEDULED, preserve the rest); `crewTimeEntries.patchTimeEntry`. The
+  `patch*` take an explicit `clear` list (the generated `update` can't unset a field).
+- **Status machines stay in the action** (Convex persists the computed result):
+  assignment PENDING→OFFERED(token+offeredAt)→ACCEPTED/DECLINED(respondedAt, token
+  cleared)→CONFIRMED(confirmedAt+confirmedById)→CANCELLED/COMPLETED; time-entry
+  DRAFT→SUBMITTED→APPROVED→EXPORTED/DISPUTED (EXPORTED immutable; edit resets to DRAFT
+  clearing approval). Rate cascade + estimatedCost unchanged.
+- **Cascades re-implemented** (no Prisma FK left): `deleteAssignment` → `deleteCascade`;
+  `deleteProject` / `deleteCrewMember` query the Convex assignments (by project / by
+  member) and `deleteCascade` each (+ the member's standalone time-entries +
+  availability); `project-services` service-crew reconcile (add/remove/role-change)
+  and `deleteProjectService` cascade run Convex-only after the projectService tx.
+- **Behavioural delta:** crew writes that previously shared a Prisma `$transaction`
+  with projectService (add/update/delete/clone service) are no longer one DB tx —
+  each Convex mutation is atomic on its own, ordered around the projectService write
+  (same trade-off as the mega-flip).
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests, AND a **live
+  dev-Convex exercise (12/12)**: createServiceAssignment + dup-reject, patchAssignment
+  set + CLEAR responseToken, getByResponseToken, patchShift clear +
+  removeScheduledByAssignment (preserves non-SCHEDULED), patchTimeEntry approval-reset,
+  deleteCascade (assignment + shifts + linked time-entry).
 
 ## Conventions
 

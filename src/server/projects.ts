@@ -26,7 +26,7 @@ import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
-import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
+import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
@@ -1198,9 +1198,10 @@ export async function deleteProject(id: string) {
   const defaultLocation = await getDefaultLocation(organizationId);
   const now = Date.now();
 
-  // Capture the project's crew cascade (assignments → shifts/time-entries) before
-  // the project delete cascades them away, so they can be dropped from Convex.
-  const crewCascade = await snapshotProjectCrew(id);
+  // The project's crew assignments (Convex-only) — captured so their cascade
+  // (assignment → shifts + linked time-entries) can be deleted from Convex after
+  // the project row goes (no Prisma FK cascade remains — dropped in #254).
+  const crewAssignmentIds = (await getAssignmentsByProject(id, organizationId)).map((a) => a.id);
 
   // Reset checked-out assets to AVAILABLE (Convex). Clear locationId when there
   // is no default location.
@@ -1254,7 +1255,9 @@ export async function deleteProject(id: string) {
   // Mirror the freed kits' status (kit table is Convex — already patched above,
   // but keep the mirror reconcile for any kit-mirror-derived projections), and
   // tidy the remaining Convex sub-tables / crew cascade / project doc.
-  await removeCrewAssignmentCascadeFromConvex(crewCascade);
+  for (const aid of crewAssignmentIds) {
+    await convex.mutation(api.crewAssignments.deleteCascade, { id: aid });
+  }
   await removeProjectFromConvex(id);
   // Delete Convex-only sub-table rows (PM/tasks) and reconcile Prisma-cascade ones (services).
   const [pmRows, taskRows] = await Promise.all([

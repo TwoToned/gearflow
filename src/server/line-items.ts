@@ -27,6 +27,7 @@ import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById, getKitSerializedItemsByOrg, getKitBulkItemsByOrg } from "@/lib/kits-read";
 import { getSubHiresByProject } from "@/lib/sub-hire-read";
 import { getLocationById } from "@/lib/locations-read";
+import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
 
 /**
  * Read back a created/updated line from Convex and attach the asset/bulkAsset
@@ -1338,11 +1339,8 @@ export async function recalculateProjectTotals(projectId: string) {
       .reduce((sum, s) => sum + (s.lineTotal != null ? Number(s.lineTotal) : 0), 0)
   );
 
-  // 4. Labour costs from crew assignments
-  const assignments = await prisma.crewAssignment.findMany({
-    where: { projectId },
-    select: { estimatedCost: true },
-  });
+  // 4. Labour costs from crew assignments (read from Convex — dual-written)
+  const assignments = await getAssignmentsByProject(projectId, project.organizationId);
 
   const labourCostTotal = roundCurrency(
     assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)

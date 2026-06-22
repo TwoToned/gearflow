@@ -125,3 +125,49 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (crew-scheduling write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
+
+/** Patch a shift with explicit field clears (location/notes/callTime/endTime). */
+export const patchShift = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      date: v.optional(v.number()),
+      callTime: v.optional(v.string()),
+      endTime: v.optional(v.string()),
+      breakMinutes: v.optional(v.number()),
+      location: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      status: v.optional(enums.ShiftStatus),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewShifts").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("crewShifts not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});
+
+/** Delete all SCHEDULED shifts for an assignment (generateShifts regen — preserves
+ *  non-SCHEDULED shifts), returning the deleted cuids for any external cleanup. */
+export const removeScheduledByAssignment = mutation({
+  args: { assignmentId: v.string() },
+  handler: async (ctx, { assignmentId }) => {
+    await requireService(ctx);
+    const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", assignmentId)).collect();
+    const removed: string[] = [];
+    for (const s of shifts) {
+      if ((s.status ?? "SCHEDULED") === "SCHEDULED") {
+        removed.push(s.id);
+        await ctx.db.delete(s._id);
+      }
+    }
+    return removed;
+  },
+});

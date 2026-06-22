@@ -127,3 +127,37 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (crew-scheduling write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
+
+/** Patch a time entry with explicit field clears — the edit-resets-to-DRAFT path
+ *  clears `approvedById`/`approvedAt`, which the generated `update` can't express. */
+export const patchTimeEntry = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      assignmentId: v.optional(v.string()),
+      description: v.optional(v.string()),
+      date: v.optional(v.number()),
+      startTime: v.optional(v.string()),
+      endTime: v.optional(v.string()),
+      breakMinutes: v.optional(v.number()),
+      totalHours: v.optional(v.number()),
+      status: v.optional(enums.TimeEntryStatus),
+      approvedById: v.optional(v.string()),
+      approvedAt: v.optional(v.number()),
+      notes: v.optional(v.string()),
+      updatedAt: v.optional(v.number()),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("crewTimeEntries not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});

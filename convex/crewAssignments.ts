@@ -191,3 +191,114 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (crew-scheduling write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
+
+const assignmentPatchFields = {
+  projectId: v.optional(v.string()),
+  crewMemberId: v.optional(v.string()),
+  crewRoleId: v.optional(v.string()),
+  status: v.optional(enums.AssignmentStatus),
+  phase: v.optional(enums.ProjectPhase),
+  isProjectManager: v.optional(v.boolean()),
+  startDate: v.optional(v.number()),
+  startTime: v.optional(v.string()),
+  endDate: v.optional(v.number()),
+  endTime: v.optional(v.string()),
+  rateOverride: v.optional(v.number()),
+  rateType: v.optional(enums.CrewRateType),
+  estimatedHours: v.optional(v.number()),
+  estimatedCost: v.optional(v.number()),
+  notes: v.optional(v.string()),
+  internalNotes: v.optional(v.string()),
+  responseToken: v.optional(v.string()),
+  offeredAt: v.optional(v.number()),
+  respondedAt: v.optional(v.number()),
+  responseNote: v.optional(v.string()),
+  confirmedAt: v.optional(v.number()),
+  confirmedById: v.optional(v.string()),
+  serviceId: v.optional(v.string()),
+  updatedAt: v.optional(v.number()),
+};
+
+/**
+ * Patch an assignment with explicit field clears. `clear` names are removed
+ * (`undefined` in a Convex patch deletes the field) — needed for the status-machine
+ * transitions that null `responseToken` (single-use) / `confirmedAt`/`confirmedById`
+ * / `crewRoleId`, which the generated `update` can't express (toConvexDoc drops nulls).
+ */
+export const patchAssignment = mutation({
+  args: {
+    id: v.string(),
+    set: v.object(assignmentPatchFields),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("crewAssignments not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});
+
+/** Delete an assignment + its shifts + its (linked) time entries — atomic. Replaces
+ *  the dropped Prisma FK cascade. Standalone time entries (no assignmentId) are kept. */
+export const deleteCascade = mutation({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("crewAssignments not found: " + id);
+    const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+    for (const s of shifts) await ctx.db.delete(s._id);
+    const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+    for (const e of entries) await ctx.db.delete(e._id);
+    await ctx.db.delete(doc._id);
+  },
+});
+
+/**
+ * Create a service-derived assignment, enforcing the partial-unique invariant
+ * `(projectId, crewMemberId, serviceId)` (the Prisma
+ * `crew_assignment_project_member_service_key` WHERE serviceId IS NOT NULL).
+ * Race-safe: Convex mutations are serializable, so a concurrent insert conflicts on
+ * the by_serviceId read range. Returns `{ created, id }` — `created:false` if a row
+ * for the same (project, member, service) already exists.
+ */
+export const createServiceAssignment = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    crewMemberId: v.string(),
+    serviceId: v.string(),
+    crewRoleId: v.optional(v.string()),
+    status: v.optional(enums.AssignmentStatus),
+    phase: v.optional(enums.ProjectPhase),
+    startDate: v.optional(v.number()),
+    startTime: v.optional(v.string()),
+    endDate: v.optional(v.number()),
+    endTime: v.optional(v.string()),
+    rateOverride: v.optional(v.number()),
+    rateType: v.optional(enums.CrewRateType),
+    estimatedHours: v.optional(v.number()),
+    estimatedCost: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const dupe = await ctx.db
+      .query("crewAssignments")
+      .withIndex("by_serviceId", (q) => q.eq("serviceId", args.serviceId))
+      .filter((q) => q.and(q.eq(q.field("projectId"), args.projectId), q.eq(q.field("crewMemberId"), args.crewMemberId)))
+      .first();
+    if (dupe) return { created: false, id: dupe.id };
+    await ctx.db.insert("crewAssignments", args);
+    return { created: true, id: args.id };
+  },
+});

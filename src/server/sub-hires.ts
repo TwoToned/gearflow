@@ -2,12 +2,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { addMediaConvex, removeMediaConvex } from "@/lib/media-write";
-import {
-  syncSubHireToConvex,
-  removeSubHireFromConvex,
-  removeSubHireItemFromConvex,
-  removeSubHireGroupFromConvex,
-} from "@/lib/sub-hire-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { getSubHireMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import {
@@ -16,7 +10,11 @@ import {
   getSubHireItems,
   getSubHireGroups,
   getSubHireItemCounts,
+  mapSubHireItem,
+  mapSubHireGroup,
   type SubHireRow,
+  type SubHireItemRow,
+  type SubHireGroupRow,
 } from "@/lib/sub-hire-read";
 import { api } from "../../convex/_generated/api";
 import { createId } from "@paralleldrive/cuid2";
@@ -33,6 +31,20 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema, subHirePlacementSchema } from "@/lib/validations/sub-hire";
 import type { SubHireStatus, SubHirePricingMode, SubHirePaymentStatus, PricingType, Prisma, MediaType } from "@/generated/prisma/client";
+
+// ─── Convex single-row read helpers (write-path lookups) ─────────────────────
+
+/** Fetch a single sub-hire item by id from Convex, Prisma-row-shaped, or null. */
+async function findSubHireItemById(itemId: string): Promise<SubHireItemRow | null> {
+  const row = await (await getConvexClient()).query(api.subHireItems.getById, { id: itemId });
+  return row ? mapSubHireItem(row) : null;
+}
+
+/** Fetch a single sub-hire group by id from Convex, Prisma-row-shaped, or null. */
+async function findSubHireGroupById(groupId: string): Promise<SubHireGroupRow | null> {
+  const row = await (await getConvexClient()).query(api.subHireGroups.getById, { id: groupId });
+  return row ? mapSubHireGroup(row) : null;
+}
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
 
@@ -279,30 +291,37 @@ export async function createSubHire(input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "create");
   const data = subHireSchema.parse(input);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const orderNumber = await reserveSubHireOrderNumber(tx, organizationId);
+  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
+  // JSON counter, and `organization` stays Prisma forever.
+  const orderNumber = await prisma.$transaction((tx) =>
+    reserveSubHireOrderNumber(tx, organizationId),
+  );
 
-    const subHire = await tx.subHire.create({
-      data: {
-        organizationId,
-        supplierId: data.supplierId,
-        projectId: data.projectId || null,
-        createdById: userId,
-        orderNumber,
-        supplierReference: data.supplierReference || null,
-        status: "DRAFT",
-        hireStart: data.hireStart || null,
-        hireEnd: data.hireEnd || null,
-        showOnDocs: data.showOnDocs,
-        notes: data.notes || null,
-        defaultTargetCategoryId: data.defaultTargetCategoryId || null,
-        defaultTargetGroupId: data.defaultTargetGroupId || null,
-      },
-    });
-
-    return subHire;
+  const id = createId();
+  const now = Date.now();
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHires.create, {
+    id,
+    organizationId,
+    supplierId: data.supplierId,
+    projectId: data.projectId || undefined,
+    createdById: userId,
+    orderNumber,
+    supplierReference: data.supplierReference || undefined,
+    status: "DRAFT",
+    hireStart: data.hireStart ? data.hireStart.getTime() : undefined,
+    hireEnd: data.hireEnd ? data.hireEnd.getTime() : undefined,
+    showOnDocs: data.showOnDocs,
+    notes: data.notes || undefined,
+    defaultTargetCategoryId: data.defaultTargetCategoryId || undefined,
+    defaultTargetGroupId: data.defaultTargetGroupId || undefined,
+    createdAt: now,
+    updatedAt: now,
   });
-  await syncSubHireToConvex(result.id);
+
+  // Read back the written head (Prisma-row-shaped) for the return value.
+  const result = await getSubHireById(id);
+  if (!result) throw new Error("Sub-hire not found after create");
 
   // Supplier lives in Convex — fetch for the log label / return shape.
   const supplier = await getSupplierById(result.supplierId);
@@ -325,27 +344,49 @@ export async function updateSubHire(id: string, input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireSchema.parse(input);
 
-  const existing = await prisma.subHire.findUnique({
-    where: { id, organizationId },
-    select: { orderNumber: true, status: true },
-  });
-  if (!existing) throw new Error("Sub-hire not found");
+  const existing = await getSubHireById(id);
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
-  const subHire = await prisma.subHire.update({
-    where: { id, organizationId },
-    data: {
-      supplierId: data.supplierId,
-      projectId: data.projectId || null,
-      supplierReference: data.supplierReference !== undefined ? (data.supplierReference || null) : undefined,
-      hireStart: data.hireStart || null,
-      hireEnd: data.hireEnd || null,
-      showOnDocs: data.showOnDocs,
-      notes: data.notes || null,
-      defaultTargetCategoryId: data.defaultTargetCategoryId !== undefined ? (data.defaultTargetCategoryId || null) : undefined,
-      defaultTargetGroupId: data.defaultTargetGroupId !== undefined ? (data.defaultTargetGroupId || null) : undefined,
-    },
-  });
-  await syncSubHireToConvex(id);
+  // Build the Convex patch. projectId/hireStart/hireEnd/notes mirror the prior
+  // Prisma "value or null" behaviour → set when present, clear when empty.
+  // supplierReference/defaultTarget* respect undefined ("don't touch").
+  const set: Record<string, unknown> = {
+    supplierId: data.supplierId,
+    showOnDocs: data.showOnDocs,
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+
+  if (data.projectId) set.projectId = data.projectId;
+  else clear.push("projectId");
+
+  if (data.hireStart) set.hireStart = data.hireStart.getTime();
+  else clear.push("hireStart");
+
+  if (data.hireEnd) set.hireEnd = data.hireEnd.getTime();
+  else clear.push("hireEnd");
+
+  if (data.notes) set.notes = data.notes;
+  else clear.push("notes");
+
+  if (data.supplierReference !== undefined) {
+    if (data.supplierReference) set.supplierReference = data.supplierReference;
+    else clear.push("supplierReference");
+  }
+  if (data.defaultTargetCategoryId !== undefined) {
+    if (data.defaultTargetCategoryId) set.defaultTargetCategoryId = data.defaultTargetCategoryId;
+    else clear.push("defaultTargetCategoryId");
+  }
+  if (data.defaultTargetGroupId !== undefined) {
+    if (data.defaultTargetGroupId) set.defaultTargetGroupId = data.defaultTargetGroupId;
+    else clear.push("defaultTargetGroupId");
+  }
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHires.patchSubHire, { id, set, clear });
+
+  const subHire = await getSubHireById(id);
+  if (!subHire) throw new Error("Sub-hire not found after update");
 
   // Supplier lives in Convex — fetch for the log label / return shape.
   const supplier = await getSupplierById(subHire.supplierId);
@@ -373,11 +414,7 @@ export async function deleteSubHire(id: string) {
   const projectId = subHire.projectId;
 
   const convex = await getConvexClient();
-  const [items, groups, supplierName] = await Promise.all([
-    getSubHireItems(id),
-    getSubHireGroups(id),
-    getSupplierById(subHire.supplierId).then((s) => s?.name ?? ""),
-  ]);
+  const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
   // Linked project line items live in Convex — filter the project's lines by this
   // sub-hire id (top-level + children resolved by the cascade mutation).
@@ -398,16 +435,8 @@ export async function deleteSubHire(id: string) {
     await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
   }
 
-  // Delete sub-hire (cascades to SubHireItems)
-  await prisma.subHire.delete({
-    where: { id, organizationId },
-  });
-
-  // Mirror the cascade delete to Convex (sub-hire items + groups + the head).
-  // sub_hire_media stays Prisma-only.
-  for (const it of items) await removeSubHireItemFromConvex(it.id);
-  for (const g of groups) await removeSubHireGroupFromConvex(g.id);
-  await removeSubHireFromConvex(id);
+  // Delete sub-hire head + all items + groups in one atomic Convex mutation.
+  await convex.mutation(api.subHires.deleteCascade, { id });
 
   // Recalculate project totals if linked to a project
   if (projectId) {
@@ -430,13 +459,8 @@ export async function deleteSubHire(id: string) {
 export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id, organizationId },
-    include: {
-      items: true,
-    },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(id);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
   // Supplier lives in Convex — fetch for the log label.
   const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
@@ -451,24 +475,24 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
     throw new Error("Assign a project before confirming");
   }
 
-  // When confirming, wrap status change + line item generation in single transaction
+  const convex = await getConvexClient();
+
   if (newStatus === "CONFIRMED") {
-    await prisma.$transaction(async (tx) => {
-      await tx.subHire.update({
-        where: { id, organizationId },
-        data: { status: "CONFIRMED" },
-      });
-
-      await generateSubHireLineItemsTx(tx, subHire.id, organizationId);
+    // Status change + line item generation. (Convex mutations are per-call atomic;
+    // the old Prisma $transaction wrapper no longer applies.)
+    await convex.mutation(api.subHires.patchSubHire, {
+      id,
+      set: { status: "CONFIRMED", updatedAt: Date.now() },
     });
+    await generateSubHireLineItems(subHire.id, organizationId);
 
-    // Recalculate project totals after transaction
+    // Recalculate project totals after generation
     const { recalculateProjectTotals } = await import("@/server/line-items");
     await recalculateProjectTotals(subHire.projectId!);
   } else {
-    await prisma.subHire.update({
-      where: { id, organizationId },
-      data: { status: newStatus },
+    await convex.mutation(api.subHires.patchSubHire, {
+      id,
+      set: { status: newStatus, updatedAt: Date.now() },
     });
 
     // Recalculate project totals — status changes affect which sub-hires count as costs
@@ -477,10 +501,6 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
       await recalculateProjectTotals(subHire.projectId);
     }
   }
-
-  // Mirror the status change to Convex. (Generated line items are written
-  // directly to Convex by generateSubHireLineItemsTx — no mirror needed.)
-  await syncSubHireToConvex(id);
 
   await logActivity({
     organizationId,
@@ -494,15 +514,9 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
     details: { previousStatus: subHire.status, newStatus },
   });
 
-  const updatedSubHire = await prisma.subHire.findUnique({
-    where: { id, organizationId },
-    include: {
-      items: {
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-  });
+  const updatedSubHire = await getSubHireById(id);
   if (!updatedSubHire) return serialize(null);
+  const updatedItems = await getSubHireItems(id);
   // Model + supplier + project live in Convex — enrich after query.
   const [modelMap, supplier, convexProject] = await Promise.all([
     getModelMap(organizationId),
@@ -512,7 +526,7 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
   const project = convexProject
     ? { id: convexProject.id, name: convexProject.name, projectNumber: convexProject.projectNumber }
     : null;
-  const enrichedItems = updatedSubHire.items.map((item) => ({
+  const enrichedItems = updatedItems.map((item) => ({
     ...item,
     model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
   }));
@@ -525,38 +539,34 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireItemSchema.parse(input);
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true, status: true, supplierId: true, projectId: true, showOnDocs: true, defaultTargetGroupId: true, defaultTargetCategoryId: true },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
-  // Get next sort order
-  const maxSort = await prisma.subHireItem.aggregate({
-    where: { subHireId },
-    _max: { sortOrder: true },
-  });
-  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+  // Get next sort order from the existing Convex items.
+  const existingItems = await getSubHireItems(subHireId);
+  const nextSort = Math.max(-1, ...existingItems.map((r) => r.sortOrder)) + 1;
 
-  const item = await prisma.subHireItem.create({
-    data: {
-      subHireId,
-      groupId: data.groupId || null,
-      modelId: data.modelId || null,
-      description: data.description,
-      quantity: data.quantity,
-      unitCost: data.unitCost,
-      unitCharge: data.unitCharge,
-      pricingType: data.pricingType as PricingType,
-      duration: data.duration,
-      discount: data.discount,
-      showOnQuote: data.showOnQuote ?? true,
-      showOnDocs: data.showOnDocs ?? subHire.showOnDocs ?? false,
-      targetCategoryId: data.targetCategoryId || null,
-      targetGroupId: data.targetGroupId || null,
-      sortOrder: nextSort,
-    },
+  const id = createId();
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHireItems.create, {
+    id,
+    subHireId,
+    groupId: data.groupId || undefined,
+    modelId: data.modelId || undefined,
+    description: data.description,
+    quantity: data.quantity,
+    unitCost: data.unitCost,
+    unitCharge: data.unitCharge,
+    pricingType: data.pricingType as PricingType,
+    duration: data.duration,
+    discount: data.discount,
+    showOnQuote: data.showOnQuote ?? true,
+    showOnDocs: data.showOnDocs ?? subHire.showOnDocs ?? false,
+    targetCategoryId: data.targetCategoryId || undefined,
+    targetGroupId: data.targetGroupId || undefined,
+    sortOrder: nextSort,
   });
+  const item = (await getSubHireItems(subHireId)).find((it) => it.id === id)!;
   // Model lives in Convex — attach after create.
   const model = item.modelId ? await getModelById(item.modelId) : null;
 
@@ -569,7 +579,6 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
 
   // Sync line items to project (works for any status including DRAFT)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
-  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -589,36 +598,46 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireItemSchema.parse(input);
 
-  const existing = await prisma.subHireItem.findUnique({
-    where: { id: itemId },
-    include: {
-      subHire: {
-        select: { id: true, organizationId: true, orderNumber: true, status: true, supplierId: true, projectId: true },
-      },
-    },
-  });
-  if (!existing || existing.subHire.organizationId !== organizationId) {
+  // Find the item + its sub-hire (org-scope via the head) — all in Convex.
+  const existingItem = await findSubHireItemById(itemId);
+  if (!existingItem) throw new Error("Sub-hire item not found");
+  const parentSubHire = await getSubHireById(existingItem.subHireId);
+  if (!parentSubHire || parentSubHire.organizationId !== organizationId) {
     throw new Error("Sub-hire item not found");
   }
+  const existing = { subHire: parentSubHire };
 
-  const item = await prisma.subHireItem.update({
-    where: { id: itemId },
-    data: {
-      groupId: data.groupId !== undefined ? (data.groupId || null) : undefined,
-      modelId: data.modelId || null,
-      description: data.description,
-      quantity: data.quantity,
-      unitCost: data.unitCost,
-      unitCharge: data.unitCharge,
-      pricingType: data.pricingType as PricingType,
-      duration: data.duration,
-      discount: data.discount,
-      showOnQuote: data.showOnQuote,
-      showOnDocs: data.showOnDocs,
-      targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
-      targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
-    },
-  });
+  const set: Record<string, unknown> = {
+    description: data.description,
+    quantity: data.quantity,
+    unitCost: data.unitCost,
+    unitCharge: data.unitCharge,
+    pricingType: data.pricingType as PricingType,
+    duration: data.duration,
+    discount: data.discount,
+    showOnQuote: data.showOnQuote,
+    showOnDocs: data.showOnDocs,
+  };
+  const clear: string[] = [];
+  // modelId mirrors the prior `data.modelId || null` — set or clear unconditionally.
+  if (data.modelId) set.modelId = data.modelId;
+  else clear.push("modelId");
+  if (data.groupId !== undefined) {
+    if (data.groupId) set.groupId = data.groupId;
+    else clear.push("groupId");
+  }
+  if (data.targetCategoryId !== undefined) {
+    if (data.targetCategoryId) set.targetCategoryId = data.targetCategoryId;
+    else clear.push("targetCategoryId");
+  }
+  if (data.targetGroupId !== undefined) {
+    if (data.targetGroupId) set.targetGroupId = data.targetGroupId;
+    else clear.push("targetGroupId");
+  }
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHireItems.patchItem, { id: itemId, set, clear });
+  const item = (await getSubHireItems(existing.subHire.id)).find((it) => it.id === itemId)!;
   // Model lives in Convex — attach after update.
   const model = item.modelId ? await getModelById(item.modelId) : null;
 
@@ -631,7 +650,6 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
 
   // Sync line items to project
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
-  await syncSubHireToConvex(existing.subHire.id);
 
   await logActivity({
     organizationId,
@@ -650,22 +668,19 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
 export async function removeSubHireItem(itemId: string) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
 
-  const existing = await prisma.subHireItem.findUnique({
-    where: { id: itemId },
-    include: {
-      subHire: {
-        select: { id: true, organizationId: true, orderNumber: true, projectId: true },
-      },
-    },
-  });
-  if (!existing || existing.subHire.organizationId !== organizationId) {
+  const existingItem = await findSubHireItemById(itemId);
+  if (!existingItem) throw new Error("Sub-hire item not found");
+  const parentSubHire = await getSubHireById(existingItem.subHireId);
+  if (!parentSubHire || parentSubHire.organizationId !== organizationId) {
     throw new Error("Sub-hire item not found");
   }
+  const existing = { subHire: parentSubHire };
 
   // Reject if linked line items are checked out. projectLineItem lives in Convex —
   // filter the project's lines by this sub-hire item id.
+  const convex = await getConvexClient();
   if (existing.subHire.projectId) {
-    const lines = await (await getConvexClient()).query(api.projectLineItems.listByProject, {
+    const lines = await convex.query(api.projectLineItems.listByProject, {
       projectId: existing.subHire.projectId,
       orgId: organizationId,
     });
@@ -674,15 +689,14 @@ export async function removeSubHireItem(itemId: string) {
     }
   }
 
-  // Delete the item (linked line items are cleaned up by regenerate)
-  await prisma.subHireItem.delete({ where: { id: itemId } });
+  // Delete the item from Convex first (so the regenerate below reads it as gone),
+  // then recalc + regenerate the project line items.
+  await convex.mutation(api.subHireItems.remove, { id: itemId });
 
   await recalculateSubHireTotals(existing.subHire.id);
 
   // Regenerate project line items (removes orphaned items, recalculates totals)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
-  await removeSubHireItemFromConvex(itemId);
-  await syncSubHireToConvex(existing.subHire.id);
 
   await logActivity({
     organizationId,
@@ -699,51 +713,29 @@ export async function removeSubHireItem(itemId: string) {
 export async function reorderSubHireItems(subHireId: string, itemIds: string[]) {
   const { organizationId } = await requirePermission("subHire", "update");
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId, organizationId },
-    select: { id: true },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
-  await prisma.$transaction(
-    itemIds.map((id, index) =>
-      prisma.subHireItem.update({
-        where: { id, subHireId: subHire.id },
-        data: { sortOrder: index },
-      }),
-    ),
-  );
-  await syncSubHireToConvex(subHireId);
+  const convex = await getConvexClient();
+  for (let index = 0; index < itemIds.length; index++) {
+    await convex.mutation(api.subHireItems.patchItem, {
+      id: itemIds[index],
+      set: { sortOrder: index },
+    });
+  }
 }
 
 // ─── Totals ──────────────────────────────────────────────────────────────────
 
 async function recalculateSubHireTotals(subHireId: string) {
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId },
-    select: { pricingMode: true, orderTotalCost: true, orderTotalCharge: true },
-  });
+  const subHire = await getSubHireById(subHireId);
   if (!subHire) return;
 
-  // Fetch groups with their pricing overrides
-  const groups = await prisma.subHireGroup.findMany({
-    where: { subHireId },
-    select: { id: true, quantity: true, cost: true, charge: true },
-  });
+  // Fetch groups + items (with pricing overrides) from Convex.
+  const groups = await getSubHireGroups(subHireId);
   const groupMap = new Map(groups.map((g) => [g.id, g]));
 
-  const items = await prisma.subHireItem.findMany({
-    where: { subHireId },
-    select: {
-      groupId: true,
-      quantity: true,
-      unitCost: true,
-      unitCharge: true,
-      pricingType: true,
-      duration: true,
-      discount: true,
-    },
-  });
+  const items = await getSubHireItems(subHireId);
 
   let totalCost = 0;
   let totalCharge = 0;
@@ -802,11 +794,12 @@ async function recalculateSubHireTotals(subHireId: string) {
     }
   }
 
-  await prisma.subHire.update({
-    where: { id: subHireId },
-    data: {
+  await (await getConvexClient()).mutation(api.subHires.patchSubHire, {
+    id: subHireId,
+    set: {
       totalCost: roundCurrency(totalCost),
       totalCharge: roundCurrency(totalCharge),
+      updatedAt: Date.now(),
     },
   });
 }
@@ -829,21 +822,26 @@ function resolvePlacement(
   return { groupId: null, categoryId: cId };
 }
 
-async function generateSubHireLineItemsTx(
-  tx: Prisma.TransactionClient,
+async function generateSubHireLineItems(
   subHireId: string,
   organizationId: string,
 ) {
-  const subHire = await tx.subHire.findUniqueOrThrow({
-    where: { id: subHireId },
-    include: {
-      groups: {
-        include: { items: { orderBy: { sortOrder: "asc" } } },
-        orderBy: { sortOrder: "asc" },
-      },
-      items: { orderBy: { sortOrder: "asc" } },
-    },
-  });
+  // subHire + groups + items live in Convex — read each, then reconstruct the
+  // `groups[].items` nesting the body below expects (filter items on groupId).
+  const head = await getSubHireById(subHireId);
+  if (!head) throw new Error("Sub-hire not found");
+  const [allGroups, allItems] = await Promise.all([
+    getSubHireGroups(subHireId),
+    getSubHireItems(subHireId),
+  ]);
+  const subHire = {
+    ...head,
+    groups: allGroups.map((g) => ({
+      ...g,
+      items: allItems.filter((it) => it.groupId === g.id),
+    })),
+    items: allItems,
+  };
 
   if (!subHire.projectId) {
     throw new Error("Cannot generate line items without a project");
@@ -1141,19 +1139,7 @@ async function syncNewSubHireLineItem(
 async function syncSubHireLineItem(subHireItemId: string, projectId: string | null) {
   if (!projectId) return;
 
-  const item = await prisma.subHireItem.findUnique({
-    where: { id: subHireItemId },
-    select: {
-      description: true,
-      quantity: true,
-      unitCharge: true,
-      pricingType: true,
-      duration: true,
-      discount: true,
-      modelId: true,
-      showOnDocs: true,
-    },
-  });
+  const item = await findSubHireItemById(subHireItemId);
   if (!item) return;
 
   // projectLineItem lives in Convex — find the linked line + patch it there.
@@ -1194,13 +1180,8 @@ async function syncSubHireLineItem(subHireItemId: string, projectId: string | nu
 export async function changeSubHireProject(subHireId: string, newProjectId: string) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId, organizationId },
-    include: {
-      items: { orderBy: { sortOrder: "asc" } },
-    },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
   // Supplier lives in Convex — fetch for the log label.
   const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
@@ -1225,19 +1206,18 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Update project FK
-    await tx.subHire.update({
-      where: { id: subHireId },
-      data: { projectId: newProjectId },
-    });
-
-    // Generate new line items if confirmed or on-hire (writes to Convex; reads
-    // the new projectId from the just-updated sub-hire row).
-    if (subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") {
-      await generateSubHireLineItemsTx(tx, subHireId, organizationId);
-    }
+  // Update project FK in Convex.
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHires.patchSubHire, {
+    id: subHireId,
+    set: { projectId: newProjectId, updatedAt: Date.now() },
   });
+
+  // Generate new line items if confirmed or on-hire (reads the new projectId from
+  // the just-updated sub-hire row).
+  if (subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") {
+    await generateSubHireLineItems(subHireId, organizationId);
+  }
 
   // Recalculate totals on both projects
   const { recalculateProjectTotals } = await import("@/server/line-items");
@@ -1245,11 +1225,6 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
     await recalculateProjectTotals(oldProjectId);
   }
   await recalculateProjectTotals(newProjectId);
-
-  // Mirror the sub-hire head move. (Line items are written directly to Convex
-  // by generateSubHireLineItemsTx; the deleteMany on the old project clears the
-  // pre-move rows there.)
-  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -1262,9 +1237,7 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
     summary: `Moved sub-hire ${subHire.orderNumber} to project ${newProject.projectNumber}`,
   });
 
-  const movedSubHire = await prisma.subHire.findUnique({
-    where: { id: subHireId },
-  });
+  const movedSubHire = await getSubHireById(subHireId);
   // Supplier + project live in Convex — attach instead of Prisma joins.
   const [supplier, convexProject] = movedSubHire
     ? await Promise.all([
@@ -1284,40 +1257,32 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireGroupSchema.parse(input);
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true, projectId: true },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
-  const maxSort = await prisma.subHireGroup.aggregate({
-    where: { subHireId },
-    _max: { sortOrder: true },
-  });
+  // Next sort order from existing Convex groups.
+  const existingGroups = await getSubHireGroups(subHireId);
+  const nextSort = data.sortOrder ?? (Math.max(-1, ...existingGroups.map((g) => g.sortOrder)) + 1);
 
-  const group = await prisma.subHireGroup.create({
-    data: {
-      subHireId,
-      title: data.title,
-      quantity: data.quantity ?? 1,
-      cost: data.cost != null ? data.cost : null,
-      charge: data.charge != null ? data.charge : null,
-      showOnQuote: data.showOnQuote ?? true,
-      showOnDocs: data.showOnDocs ?? false,
-      sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
-      targetCategoryId: data.targetCategoryId || null,
-      targetGroupId: data.targetGroupId || null,
-    },
-    include: {
-      items: {
-        orderBy: { sortOrder: "asc" },
-      },
-    },
+  const id = createId();
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHireGroups.create, {
+    id,
+    subHireId,
+    title: data.title,
+    quantity: data.quantity ?? 1,
+    cost: data.cost != null ? data.cost : undefined,
+    charge: data.charge != null ? data.charge : undefined,
+    showOnQuote: data.showOnQuote ?? true,
+    showOnDocs: data.showOnDocs ?? false,
+    sortOrder: nextSort,
+    targetCategoryId: data.targetCategoryId || undefined,
+    targetGroupId: data.targetGroupId || undefined,
   });
+  const group = (await getSubHireGroups(subHireId)).find((g) => g.id === id)!;
 
   // Sync line items to project (group structure may have changed)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
-  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -1330,15 +1295,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     summary: `Created group "${data.title}" on ${subHire.orderNumber}`,
   });
 
-  // Model lives in Convex — enrich group items after create.
-  const modelMap = await getModelMap(organizationId);
-  const enrichedGroup = {
-    ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
-    })),
-  };
+  // A freshly-created group has no items yet.
+  const enrichedGroup = { ...group, items: [] as unknown[] };
   return serialize(enrichedGroup);
 }
 
@@ -1346,42 +1304,48 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireGroupSchema.parse(input);
 
-  const existing = await prisma.subHireGroup.findUnique({
-    where: { id: groupId },
-    include: {
-      subHire: { select: { id: true, organizationId: true, orderNumber: true, status: true, projectId: true } },
-    },
-  });
-  if (!existing || existing.subHire.organizationId !== organizationId) {
+  const existingGroup = await findSubHireGroupById(groupId);
+  if (!existingGroup) throw new Error("Sub-hire group not found");
+  const parentSubHire = await getSubHireById(existingGroup.subHireId);
+  if (!parentSubHire || parentSubHire.organizationId !== organizationId) {
     throw new Error("Sub-hire group not found");
   }
+  const existing = { subHire: parentSubHire };
 
-  const group = await prisma.subHireGroup.update({
-    where: { id: groupId },
-    data: {
-      title: data.title,
-      quantity: data.quantity ?? undefined,
-      cost: data.cost !== undefined ? (data.cost != null ? data.cost : null) : undefined,
-      charge: data.charge !== undefined ? (data.charge != null ? data.charge : null) : undefined,
-      showOnQuote: data.showOnQuote,
-      showOnDocs: data.showOnDocs,
-      sortOrder: data.sortOrder,
-      targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
-      targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
-    },
-    include: {
-      items: {
-        orderBy: { sortOrder: "asc" },
-      },
-    },
-  });
+  const set: Record<string, unknown> = {
+    title: data.title,
+    showOnQuote: data.showOnQuote,
+    showOnDocs: data.showOnDocs,
+  };
+  const clear: string[] = [];
+  if (data.quantity != null) set.quantity = data.quantity;
+  if (data.sortOrder !== undefined) set.sortOrder = data.sortOrder;
+  if (data.cost !== undefined) {
+    if (data.cost != null) set.cost = data.cost;
+    else clear.push("cost");
+  }
+  if (data.charge !== undefined) {
+    if (data.charge != null) set.charge = data.charge;
+    else clear.push("charge");
+  }
+  if (data.targetCategoryId !== undefined) {
+    if (data.targetCategoryId) set.targetCategoryId = data.targetCategoryId;
+    else clear.push("targetCategoryId");
+  }
+  if (data.targetGroupId !== undefined) {
+    if (data.targetGroupId) set.targetGroupId = data.targetGroupId;
+    else clear.push("targetGroupId");
+  }
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.subHireGroups.patchGroup, { id: groupId, set, clear });
+  const group = (await getSubHireGroups(existing.subHire.id)).find((g) => g.id === groupId)!;
 
   // Recalculate sub-hire totals (group cost/charge may have changed)
   await recalculateSubHireTotals(existing.subHire.id);
 
   // Sync line items to project (title, placement, pricing may have changed)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
-  await syncSubHireToConvex(existing.subHire.id);
 
   await logActivity({
     organizationId,
@@ -1394,14 +1358,19 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     summary: `Updated group "${data.title}" on ${existing.subHire.orderNumber}`,
   });
 
-  // Model lives in Convex — enrich group items after update.
-  const modelMap = await getModelMap(organizationId);
+  // Model lives in Convex — enrich the group's items after update.
+  const [groupItems, modelMap] = await Promise.all([
+    getSubHireItems(existing.subHire.id),
+    getModelMap(organizationId),
+  ]);
   const enrichedGroup = {
     ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
-    })),
+    items: groupItems
+      .filter((item) => item.groupId === groupId)
+      .map((item) => ({
+        ...item,
+        model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+      })),
   };
   return serialize(enrichedGroup);
 }
@@ -1409,31 +1378,19 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
 export async function deleteSubHireGroup(groupId: string) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
 
-  const existing = await prisma.subHireGroup.findUnique({
-    where: { id: groupId },
-    include: {
-      subHire: { select: { id: true, organizationId: true, orderNumber: true, status: true, projectId: true } },
-      items: { select: { id: true } },
-    },
-  });
-  if (!existing || existing.subHire.organizationId !== organizationId) {
+  const existingGroup = await findSubHireGroupById(groupId);
+  if (!existingGroup) throw new Error("Sub-hire group not found");
+  const parentSubHire = await getSubHireById(existingGroup.subHireId);
+  if (!parentSubHire || parentSubHire.organizationId !== organizationId) {
     throw new Error("Sub-hire group not found");
   }
+  const existing = { subHire: parentSubHire };
 
-  await prisma.$transaction(async (tx) => {
-    // Ungroup all items (they become ungrouped within the sub-hire)
-    await tx.subHireItem.updateMany({
-      where: { groupId },
-      data: { groupId: null },
-    });
-    // Delete the group
-    await tx.subHireGroup.delete({ where: { id: groupId } });
-  });
+  // Ungroup all child items then delete the group in one atomic Convex mutation.
+  await (await getConvexClient()).mutation(api.subHireGroups.deleteWithUngroup, { id: groupId });
 
   // Regenerate line items (handles parent cleanup + ungrouped restructure)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
-  await removeSubHireGroupFromConvex(groupId);
-  await syncSubHireToConvex(existing.subHire.id);
 
   await logActivity({
     organizationId,
@@ -1450,25 +1407,23 @@ export async function deleteSubHireGroup(groupId: string) {
 export async function setItemGroup(itemId: string, groupId: string | null) {
   const { organizationId } = await requirePermission("subHire", "update");
 
-  const existing = await prisma.subHireItem.findUnique({
-    where: { id: itemId },
-    include: {
-      subHire: { select: { id: true, organizationId: true, projectId: true } },
-    },
-  });
-  if (!existing || existing.subHire.organizationId !== organizationId) {
+  const existingItem = await findSubHireItemById(itemId);
+  if (!existingItem) throw new Error("Sub-hire item not found");
+  const parentSubHire = await getSubHireById(existingItem.subHireId);
+  if (!parentSubHire || parentSubHire.organizationId !== organizationId) {
     throw new Error("Sub-hire item not found");
   }
+  const existing = { subHire: parentSubHire };
 
-  // Update the item's group
-  await prisma.subHireItem.update({
-    where: { id: itemId },
-    data: { groupId },
+  // Update the item's group (null → clear groupId).
+  await (await getConvexClient()).mutation(api.subHireItems.patchItem, {
+    id: itemId,
+    set: groupId ? { groupId } : {},
+    clear: groupId ? [] : ["groupId"],
   });
 
   // Regenerate line items (handles parent-child restructuring)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
-  await syncSubHireToConvex(existing.subHire.id);
 
   return serialize({ success: true });
 }
@@ -1477,20 +1432,21 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
   const data = subHireOrderPricingSchema.parse(input);
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true, projectId: true },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
-  await prisma.subHire.update({
-    where: { id: subHireId },
-    data: {
-      pricingMode: data.pricingMode as SubHirePricingMode,
-      orderTotalCost: data.orderTotalCost != null ? data.orderTotalCost : null,
-      orderTotalCharge: data.orderTotalCharge != null ? data.orderTotalCharge : null,
-    },
-  });
+  // pricingMode always set; orderTotalCost/Charge set when present, else cleared.
+  const set: Record<string, unknown> = {
+    pricingMode: data.pricingMode as SubHirePricingMode,
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+  if (data.orderTotalCost != null) set.orderTotalCost = data.orderTotalCost;
+  else clear.push("orderTotalCost");
+  if (data.orderTotalCharge != null) set.orderTotalCharge = data.orderTotalCharge;
+  else clear.push("orderTotalCharge");
+
+  await (await getConvexClient()).mutation(api.subHires.patchSubHire, { id: subHireId, set, clear });
 
   await recalculateSubHireTotals(subHireId);
 
@@ -1499,7 +1455,6 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
     const { recalculateProjectTotals } = await import("@/server/line-items");
     await recalculateProjectTotals(subHire.projectId);
   }
-  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -1528,63 +1483,55 @@ export async function updateSubHirePlacement(
   let subHireId: string;
   let projectId: string | null;
 
+  const convex = await getConvexClient();
+
   if (entityType === "order") {
-    const subHire = await prisma.subHire.findUnique({
-      where: { id: entityId, organizationId },
-      select: { id: true, projectId: true },
-    });
-    if (!subHire) throw new Error("Sub-hire not found");
+    const subHire = await getSubHireById(entityId);
+    if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
     subHireId = subHire.id;
     projectId = subHire.projectId;
 
-    await prisma.subHire.update({
-      where: { id: entityId },
-      data: {
-        defaultTargetCategoryId: data.targetCategoryId || null,
-        defaultTargetGroupId: data.targetGroupId || null,
-      },
-    });
+    const set: Record<string, unknown> = { updatedAt: Date.now() };
+    const clear: string[] = [];
+    if (data.targetCategoryId) set.defaultTargetCategoryId = data.targetCategoryId;
+    else clear.push("defaultTargetCategoryId");
+    if (data.targetGroupId) set.defaultTargetGroupId = data.targetGroupId;
+    else clear.push("defaultTargetGroupId");
+    await convex.mutation(api.subHires.patchSubHire, { id: entityId, set, clear });
   } else if (entityType === "group") {
-    const group = await prisma.subHireGroup.findUnique({
-      where: { id: entityId },
-      include: { subHire: { select: { id: true, organizationId: true, projectId: true } } },
-    });
-    if (!group || group.subHire.organizationId !== organizationId) {
-      throw new Error("Sub-hire group not found");
-    }
-    subHireId = group.subHire.id;
-    projectId = group.subHire.projectId;
+    const group = await findSubHireGroupById(entityId);
+    if (!group) throw new Error("Sub-hire group not found");
+    const head = await getSubHireById(group.subHireId);
+    if (!head || head.organizationId !== organizationId) throw new Error("Sub-hire group not found");
+    subHireId = head.id;
+    projectId = head.projectId;
 
-    await prisma.subHireGroup.update({
-      where: { id: entityId },
-      data: {
-        targetCategoryId: data.targetCategoryId || null,
-        targetGroupId: data.targetGroupId || null,
-      },
-    });
+    const set: Record<string, unknown> = {};
+    const clear: string[] = [];
+    if (data.targetCategoryId) set.targetCategoryId = data.targetCategoryId;
+    else clear.push("targetCategoryId");
+    if (data.targetGroupId) set.targetGroupId = data.targetGroupId;
+    else clear.push("targetGroupId");
+    await convex.mutation(api.subHireGroups.patchGroup, { id: entityId, set, clear });
   } else {
-    const item = await prisma.subHireItem.findUnique({
-      where: { id: entityId },
-      include: { subHire: { select: { id: true, organizationId: true, projectId: true } } },
-    });
-    if (!item || item.subHire.organizationId !== organizationId) {
-      throw new Error("Sub-hire item not found");
-    }
-    subHireId = item.subHire.id;
-    projectId = item.subHire.projectId;
+    const item = await findSubHireItemById(entityId);
+    if (!item) throw new Error("Sub-hire item not found");
+    const head = await getSubHireById(item.subHireId);
+    if (!head || head.organizationId !== organizationId) throw new Error("Sub-hire item not found");
+    subHireId = head.id;
+    projectId = head.projectId;
 
-    await prisma.subHireItem.update({
-      where: { id: entityId },
-      data: {
-        targetCategoryId: data.targetCategoryId || null,
-        targetGroupId: data.targetGroupId || null,
-      },
-    });
+    const set: Record<string, unknown> = {};
+    const clear: string[] = [];
+    if (data.targetCategoryId) set.targetCategoryId = data.targetCategoryId;
+    else clear.push("targetCategoryId");
+    if (data.targetGroupId) set.targetGroupId = data.targetGroupId;
+    else clear.push("targetGroupId");
+    await convex.mutation(api.subHireItems.patchItem, { id: entityId, set, clear });
   }
 
   // Regenerate line items with new placements
   await syncSubHireToProject(subHireId, organizationId, projectId);
-  await syncSubHireToConvex(subHireId);
 
   return serialize({ success: true });
 }
@@ -1600,10 +1547,8 @@ async function syncSubHireToProject(subHireId: string, organizationId: string, p
 }
 
 async function regenerateSubHireLineItems(subHireId: string, organizationId: string, projectId: string) {
-  await prisma.$transaction(async (tx) => {
-    // generateSubHireLineItemsTx handles cleanup internally
-    await generateSubHireLineItemsTx(tx, subHireId, organizationId);
-  });
+  // generateSubHireLineItems handles cleanup internally (all Convex now).
+  await generateSubHireLineItems(subHireId, organizationId);
 
   const { recalculateProjectTotals } = await import("@/server/line-items");
   await recalculateProjectTotals(projectId);
@@ -1693,83 +1638,82 @@ export async function getSupplierRateHistory(modelId: string) {
 export async function duplicateSubHire(sourceId: string) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "create");
 
-  const source = await prisma.subHire.findUnique({
-    where: { id: sourceId, organizationId },
-    include: {
-      groups: { orderBy: { sortOrder: "asc" } },
-      items: { orderBy: { sortOrder: "asc" } },
-    },
+  const source = await getSubHireById(sourceId);
+  if (!source || source.organizationId !== organizationId) throw new Error("Sub-hire not found");
+  const [sourceGroups, sourceItems] = await Promise.all([
+    getSubHireGroups(sourceId),
+    getSubHireItems(sourceId),
+  ]);
+
+  // Order-number reservation stays Prisma (org metadata counter).
+  const orderNumber = await prisma.$transaction((tx) =>
+    reserveSubHireOrderNumber(tx, organizationId),
+  );
+
+  const convex = await getConvexClient();
+  const newId = createId();
+  const now = Date.now();
+  await convex.mutation(api.subHires.create, {
+    id: newId,
+    organizationId,
+    supplierId: source.supplierId,
+    createdById: userId,
+    orderNumber,
+    status: "DRAFT",
+    pricingMode: source.pricingMode,
+    orderTotalCost: source.orderTotalCost ?? undefined,
+    orderTotalCharge: source.orderTotalCharge ?? undefined,
+    showOnDocs: source.showOnDocs,
+    notes: source.notes ?? undefined,
+    totalCost: source.totalCost,
+    totalCharge: source.totalCharge,
+    createdAt: now,
+    updatedAt: now,
   });
-  if (!source) throw new Error("Sub-hire not found");
 
-  const result = await prisma.$transaction(async (tx) => {
-    const orderNumber = await reserveSubHireOrderNumber(tx, organizationId);
-
-    const newSubHire = await tx.subHire.create({
-      data: {
-        organizationId,
-        supplierId: source.supplierId,
-        projectId: null,
-        createdById: userId,
-        orderNumber,
-        status: "DRAFT",
-        hireStart: null,
-        hireEnd: null,
-        pricingMode: source.pricingMode,
-        orderTotalCost: source.orderTotalCost,
-        orderTotalCharge: source.orderTotalCharge,
-        showOnDocs: source.showOnDocs,
-        notes: source.notes,
-        totalCost: source.totalCost,
-        totalCharge: source.totalCharge,
-      },
+  // Copy groups with fresh ids, building the old→new id map.
+  const groupIdMap = new Map<string, string>();
+  for (const group of sourceGroups) {
+    const newGroupId = createId();
+    await convex.mutation(api.subHireGroups.create, {
+      id: newGroupId,
+      subHireId: newId,
+      title: group.title,
+      quantity: group.quantity,
+      cost: group.cost ?? undefined,
+      charge: group.charge ?? undefined,
+      showOnQuote: group.showOnQuote,
+      showOnDocs: group.showOnDocs,
+      sortOrder: group.sortOrder,
+      // Placement targets are NOT copied (new DRAFT starts uncategorized)
     });
+    groupIdMap.set(group.id, newGroupId);
+  }
 
-    // Copy groups and build old→new ID mapping
-    const groupIdMap = new Map<string, string>();
-    for (const group of source.groups) {
-      const newGroup = await tx.subHireGroup.create({
-        data: {
-          subHireId: newSubHire.id,
-          title: group.title,
-          quantity: group.quantity,
-          cost: group.cost,
-          charge: group.charge,
-          showOnQuote: group.showOnQuote,
-          showOnDocs: group.showOnDocs,
-          sortOrder: group.sortOrder,
-          // Placement targets are NOT copied (new DRAFT starts uncategorized)
-        },
-      });
-      groupIdMap.set(group.id, newGroup.id);
-    }
+  // Copy items with mapped groupIds.
+  for (const item of sourceItems) {
+    const mappedGroupId = item.groupId ? groupIdMap.get(item.groupId) : undefined;
+    await convex.mutation(api.subHireItems.create, {
+      id: createId(),
+      subHireId: newId,
+      groupId: mappedGroupId || undefined,
+      modelId: item.modelId ?? undefined,
+      description: item.description,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      unitCharge: item.unitCharge,
+      pricingType: item.pricingType,
+      duration: item.duration,
+      discount: item.discount,
+      showOnQuote: item.showOnQuote,
+      showOnDocs: item.showOnDocs,
+      sortOrder: item.sortOrder,
+      // Placement targets are NOT copied (new DRAFT starts uncategorized)
+    });
+  }
 
-    // Copy items with mapped groupIds
-    for (const item of source.items) {
-      await tx.subHireItem.create({
-        data: {
-          subHireId: newSubHire.id,
-          groupId: item.groupId ? groupIdMap.get(item.groupId) || null : null,
-          modelId: item.modelId,
-          description: item.description,
-          quantity: item.quantity,
-          unitCost: item.unitCost,
-          unitCharge: item.unitCharge,
-          pricingType: item.pricingType,
-          duration: item.duration,
-          discount: item.discount,
-          showOnQuote: item.showOnQuote,
-          showOnDocs: item.showOnDocs,
-          sortOrder: item.sortOrder,
-          // Placement targets are NOT copied (new DRAFT starts uncategorized)
-        },
-      });
-    }
-
-    return newSubHire;
-  });
-  // Mirror the duplicated sub-hire (head + copied groups + items) to Convex.
-  await syncSubHireToConvex(result.id);
+  const result = await getSubHireById(newId);
+  if (!result) throw new Error("Sub-hire not found after duplicate");
 
   await logActivity({
     organizationId,
@@ -1855,18 +1799,15 @@ export async function checkSubHireOpportunity(
 export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubHirePaymentStatus) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "update");
 
-  const subHire = await prisma.subHire.findUnique({
-    where: { id, organizationId },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(id);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
   // Supplier lives in Convex — fetch for the log label.
   const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
-  await prisma.subHire.update({
-    where: { id, organizationId },
-    data: { paymentStatus },
+  await (await getConvexClient()).mutation(api.subHires.patchSubHire, {
+    id,
+    set: { paymentStatus, updatedAt: Date.now() },
   });
-  await syncSubHireToConvex(id);
 
   await logActivity({
     organizationId,
@@ -1904,10 +1845,8 @@ export async function addSubHireMedia(data: {
 }) {
   const { organizationId } = await requirePermission("subHire", "update");
 
-  const subHire = await prisma.subHire.findFirst({
-    where: { id: data.subHireId, organizationId },
-  });
-  if (!subHire) throw new Error("Sub-hire not found");
+  const subHire = await getSubHireById(data.subHireId);
+  if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
   // subHireMedia + its file_upload are Convex-only (Phase C). See media-write.ts.
   const media = await addMediaConvex("subHire", {

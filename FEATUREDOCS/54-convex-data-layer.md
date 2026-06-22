@@ -2987,6 +2987,35 @@ unchanged.
   already backfilled into prod; the preview workflow deploys the two new Convex
   functions to shared dev).
 
+### Stage 2, `siteSettings` — Convex-only (hard cutover w/ backfill) — DONE
+
+`siteSettings` had a generated Convex CRUD module but the app still read/wrote
+`prisma.siteSettings`. Now Convex-only (independent of the FK web — a
+relation-isolated platform-global singleton). Pattern follows the clients
+hard-cutover: backfill the one row, then flip all reads + the write.
+
+- **Backfill:** `scripts/convex-backfill-site-settings.ts` (`createIfMissing`,
+  idempotent) copies the singleton; registered in `convex-backfill-all.ts` +
+  `package.json` + the parity check (`["siteSettings","siteSettings"]`).
+- **Reads rewired:** the Better Auth registration-policy hook (`auth.ts`), the
+  admin `getSiteSettings`, and the public `/api/registration-policy` route all
+  read the new `src/lib/site-settings-read.ts` `getSiteSettingsFromConvex()`
+  (custom Convex query `siteSettings.getSingleton`). Returns `DEFAULT_SITE_SETTINGS`
+  (mirroring the Prisma `@default(...)`) when no row exists; numeric `createdAt`/
+  `updatedAt` → `Date`. Note: `platform.ts` and `/api/platform-name` are
+  env-driven (`PLATFORM_NAME`) since the RVLT rebrand — they do not read
+  `siteSettings`.
+- **Write inverted:** `updateSiteSettings` calls the custom mutation
+  `siteSettings.upsertSingleton` — patch the (≤1) row else insert one seeded with
+  the Prisma-equivalent defaults, in a single serializable mutation (no duplicate
+  singletons under concurrent first saves). `null` on `platformIcon`/`platformLogo`
+  clears the field (translated to `undefined` so `db.patch` removes it). No more
+  create-on-read; the row is created on first save.
+- **Custom Convex fns** (`getSingleton`, `upsertSingleton`) added inline to the
+  generated `convex/siteSettings.ts` with a CUSTOM banner (token-module precedent).
+- **Validation:** tsc + 2433 tests + `npm run build` green. Preview-gated; the
+  backfill must run in prod (`npx tsx scripts/convex-backfill-site-settings.ts`)
+  so the existing policies carry over — until then reads fall back to defaults.
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

@@ -22,6 +22,7 @@ import { api } from "../convex/_generated/api";
 // [Prisma client accessor, Convex table name]
 const PAIRS: Array<[string, string]> = [
   // reference / config
+  ["siteSettings", "siteSettings"],
   ["client", "clients"],
   ["supplier", "suppliers"],
   ["location", "locations"],

@@ -24,6 +24,7 @@
     "seed:test-tag": "tsx --env-file=.env scripts/seed-test-tag-dev.ts",
     "convex:schema": "node scripts/generate-convex-schema.cjs .",
     "convex:crud": "node scripts/generate-convex-crud.cjs .",
+    "convex:backfill:site-settings": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-site-settings.ts",
     "convex:backfill:clients": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-clients.ts",
     "convex:backfill:suppliers": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-suppliers.ts",
     "convex:backfill:locations": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-locations.ts",

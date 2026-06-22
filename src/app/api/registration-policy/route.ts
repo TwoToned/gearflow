@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const settings = await prisma.siteSettings.findFirst();
-  const policy = settings?.registrationPolicy ?? "OPEN";
-  return NextResponse.json({ policy });
+  const settings = await getSiteSettingsFromConvex();
+  return NextResponse.json({ policy: settings.registrationPolicy });
 }

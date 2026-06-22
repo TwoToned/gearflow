@@ -13,7 +13,8 @@ import {
   crewCancellationEmail,
   crewBulkMessageEmail,
 } from "@/lib/crew-emails";
-import { syncCrewAssignmentToConvex } from "@/lib/crew-scheduling-mirror";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getLocationById } from "@/lib/locations-read";
 
 function generateToken(): string {
@@ -98,17 +99,18 @@ export async function sendCrewOffer(assignmentId: string) {
   // Generate response token
   const token = generateToken();
 
-  // Update assignment status and token
-  await prisma.crewAssignment.update({
-    where: { id: assignmentId },
-    data: {
+  // Status-machine: → OFFERED, stamp a fresh single-use token + offeredAt.
+  // Convex-only write (dates → epoch-ms).
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewAssignments.patchAssignment, {
+    id: assignmentId,
+    set: {
       status: "OFFERED",
       responseToken: token,
-      offeredAt: new Date(),
+      offeredAt: Date.now(),
+      updatedAt: Date.now(),
     },
   });
-
-  await syncCrewAssignmentToConvex(assignmentId);
 
   // Build accept/decline URLs
   const baseUrl = env.NEXT_PUBLIC_APP_URL;

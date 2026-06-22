@@ -6,6 +6,7 @@ import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { createId } from "@paralleldrive/cuid2";
 import { serialize } from "@/lib/serialize";
 import {
   crewAssignmentSchema,
@@ -15,18 +16,12 @@ import {
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
 import {
-  syncCrewAssignmentToConvex,
-  patchCrewAssignmentInConvex,
-  snapshotAssignmentCascade,
-  removeCrewAssignmentCascadeFromConvex,
-  patchCrewShiftInConvex,
-  removeCrewShiftFromConvex,
-} from "@/lib/crew-scheduling-mirror";
-import {
+  getAssignmentById,
   getAssignmentsByProject,
   getAssignmentsByOrg,
   getShiftsByAssignmentIds,
   getAvailabilityByCrewMemberIds,
+  mapShift,
   sortProjectCrew,
   aggregateProjectLabourCost,
   shiftsForAssignmentSortedAsc,
@@ -195,54 +190,50 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
     parsed.estimatedHours as number | undefined,
   );
 
-  const assignment = await prisma.$transaction(async (tx) => {
-    const created = await tx.crewAssignment.create({
-    data: {
-      organizationId,
-      projectId,
-      crewMemberId: parsed.crewMemberId,
-      crewRoleId: parsed.crewRoleId || null,
-      serviceId: parsed.serviceId || null,
-      status: parsed.status,
-      phase: parsed.phase || null,
-      isProjectManager: parsed.isProjectManager,
-      startDate,
-      startTime: parsed.startTime || null,
-      endDate,
-      endTime: parsed.endTime || null,
-      rateOverride: parsed.rateOverride ?? null,
-      rateType: parsed.rateType || null,
-      estimatedHours: parsed.estimatedHours ?? null,
-      estimatedCost,
-      notes: parsed.notes || null,
-      internalNotes: parsed.internalNotes || null,
-    },
-    });
+  const convex = await getConvexClient();
+  const id = createId();
+  const now = Date.now();
 
-    return created;
+  // Convex-only write: cuid minted here, dates → epoch-ms, nulls omitted.
+  await convex.mutation(api.crewAssignments.create, {
+    id,
+    organizationId,
+    projectId,
+    crewMemberId: parsed.crewMemberId,
+    ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
+    ...(parsed.serviceId ? { serviceId: parsed.serviceId } : {}),
+    status: parsed.status,
+    ...(parsed.phase ? { phase: parsed.phase } : {}),
+    isProjectManager: parsed.isProjectManager,
+    ...(startDate ? { startDate: startDate.getTime() } : {}),
+    ...(parsed.startTime ? { startTime: parsed.startTime } : {}),
+    ...(endDate ? { endDate: endDate.getTime() } : {}),
+    ...(parsed.endTime ? { endTime: parsed.endTime } : {}),
+    ...(parsed.rateOverride != null ? { rateOverride: parsed.rateOverride } : {}),
+    ...(parsed.rateType ? { rateType: parsed.rateType } : {}),
+    ...(parsed.estimatedHours != null ? { estimatedHours: parsed.estimatedHours } : {}),
+    estimatedCost,
+    ...(parsed.notes ? { notes: parsed.notes } : {}),
+    ...(parsed.internalNotes ? { internalNotes: parsed.internalNotes } : {}),
+    createdAt: now,
+    updatedAt: now,
   });
 
-  // Auto-generate shifts if requested
+  // Auto-generate shifts if requested (one Convex shift per day in [start,end]).
   if (parsed.generateShifts && startDate && endDate) {
-    const shifts = [];
     const current = new Date(startDate);
     while (current <= endDate) {
-      shifts.push({
-        assignmentId: assignment.id,
-        date: new Date(current),
-        callTime: parsed.startTime || null,
-        endTime: parsed.endTime || null,
-        status: "SCHEDULED" as const,
+      await convex.mutation(api.crewShifts.create, {
+        id: createId(),
+        assignmentId: id,
+        date: current.getTime(),
+        ...(parsed.startTime ? { callTime: parsed.startTime } : {}),
+        ...(parsed.endTime ? { endTime: parsed.endTime } : {}),
+        status: "SCHEDULED",
       });
       current.setDate(current.getDate() + 1);
     }
-    if (shifts.length > 0) {
-      await prisma.crewShift.createMany({ data: shifts });
-    }
   }
-
-  // Mirror the assignment + any auto-generated shifts to Convex (dual-write).
-  await syncCrewAssignmentToConvex(assignment.id);
 
   await logActivity({
     organizationId,
@@ -250,27 +241,34 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
     userName,
     action: "CREATE",
     entityType: "crew_assignment",
-    entityId: assignment.id,
+    entityId: id,
     entityName: `${crewMember.firstName} ${crewMember.lastName}`,
     summary: `Assigned ${crewMember.firstName} ${crewMember.lastName} to ${project.projectNumber}`,
     projectId,
   });
 
-  return serialize(assignment);
+  const created = await getAssignmentById(id);
+  return serialize(created);
 }
 
 export async function updateAssignment(id: string, data: CrewAssignmentFormValues) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
   const parsed = crewAssignmentSchema.parse(data);
 
-  const existing = await prisma.crewAssignment.findUnique({
-    where: { id, organizationId },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true, defaultDayRate: true, defaultHourlyRate: true } },
-      project: { select: { projectNumber: true } },
-    },
+  const existing = await getAssignmentById(id);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Assignment not found");
+  }
+
+  // crewMember (rate cascade inputs) + project (audit label) live in still-Prisma
+  // tables — read them directly; only the assignment WRITE inverts to Convex.
+  const crewMember = await prisma.crewMember.findUnique({
+    where: { id: existing.crewMemberId, organizationId },
+    select: { firstName: true, lastName: true, defaultDayRate: true, defaultHourlyRate: true },
   });
-  if (!existing) throw new Error("Assignment not found");
+  if (!crewMember) throw new Error("Crew member not found");
+
+  const project = await getProjectById(existing.projectId);
 
   const crewRole = parsed.crewRoleId
     ? await prisma.crewRole.findUnique({
@@ -285,7 +283,7 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
   const { rate, rateType: resolvedRateType } = resolveRate(
     parsed.rateOverride as number | undefined,
     parsed.rateType || null,
-    existing.crewMember,
+    crewMember,
     crewRole,
   );
 
@@ -294,31 +292,50 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
     parsed.estimatedHours as number | undefined,
   );
 
-  const updated = await prisma.crewAssignment.update({
-    where: { id, organizationId },
-    data: {
-      crewRoleId: parsed.crewRoleId || null,
-      serviceId: parsed.serviceId || null,
-      status: parsed.status,
-      phase: parsed.phase || null,
-      isProjectManager: parsed.isProjectManager,
-      startDate,
-      startTime: parsed.startTime || null,
-      endDate,
-      endTime: parsed.endTime || null,
-      rateOverride: parsed.rateOverride ?? null,
-      rateType: parsed.rateType || null,
-      estimatedHours: parsed.estimatedHours ?? null,
-      estimatedCost,
-      notes: parsed.notes || null,
-      internalNotes: parsed.internalNotes || null,
-      ...(parsed.status === "CONFIRMED" && !existing.confirmedAt
-        ? { confirmedAt: new Date(), confirmedById: userId }
-        : {}),
-    },
-  });
+  // CONFIRMED status-machine stamp (only on the PENDING/OFFERED → CONFIRMED edge).
+  const stampConfirmed = parsed.status === "CONFIRMED" && !existing.confirmedAt;
 
-  await patchCrewAssignmentInConvex(id, updated as unknown as Record<string, unknown>);
+  // Build set/clear: fields the input nulls go in `clear` (Convex optionals can't
+  // hold null), everything present goes in `set`.
+  const set: Record<string, unknown> = {
+    status: parsed.status,
+    isProjectManager: parsed.isProjectManager,
+    estimatedCost,
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+
+  if (parsed.crewRoleId) set.crewRoleId = parsed.crewRoleId;
+  else clear.push("crewRoleId");
+  if (parsed.serviceId) set.serviceId = parsed.serviceId;
+  else clear.push("serviceId");
+  if (parsed.phase) set.phase = parsed.phase;
+  else clear.push("phase");
+  if (startDate) set.startDate = startDate.getTime();
+  else clear.push("startDate");
+  if (parsed.startTime) set.startTime = parsed.startTime;
+  else clear.push("startTime");
+  if (endDate) set.endDate = endDate.getTime();
+  else clear.push("endDate");
+  if (parsed.endTime) set.endTime = parsed.endTime;
+  else clear.push("endTime");
+  if (parsed.rateOverride != null) set.rateOverride = parsed.rateOverride;
+  else clear.push("rateOverride");
+  if (parsed.rateType) set.rateType = parsed.rateType;
+  else clear.push("rateType");
+  if (parsed.estimatedHours != null) set.estimatedHours = parsed.estimatedHours;
+  else clear.push("estimatedHours");
+  if (parsed.notes) set.notes = parsed.notes;
+  else clear.push("notes");
+  if (parsed.internalNotes) set.internalNotes = parsed.internalNotes;
+  else clear.push("internalNotes");
+  if (stampConfirmed) {
+    set.confirmedAt = Date.now();
+    set.confirmedById = userId;
+  }
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewAssignments.patchAssignment, { id, set, clear });
 
   await logActivity({
     organizationId,
@@ -327,34 +344,32 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
     action: "UPDATE",
     entityType: "crew_assignment",
     entityId: id,
-    entityName: `${existing.crewMember.firstName} ${existing.crewMember.lastName}`,
-    summary: `Updated assignment for ${existing.crewMember.firstName} ${existing.crewMember.lastName} on ${existing.project.projectNumber}`,
+    entityName: `${crewMember.firstName} ${crewMember.lastName}`,
+    summary: `Updated assignment for ${crewMember.firstName} ${crewMember.lastName} on ${project?.projectNumber ?? ""}`,
     projectId: existing.projectId,
   });
 
+  const updated = await getAssignmentById(id);
   return serialize(updated);
 }
 
 export async function deleteAssignment(id: string) {
   const { organizationId, userId, userName } = await requirePermission("crew", "delete");
 
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { id, organizationId },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      project: { select: { projectNumber: true } },
-    },
+  const assignment = await getAssignmentById(id);
+  if (!assignment || assignment.organizationId !== organizationId) {
+    throw new Error("Assignment not found");
+  }
+
+  const crewMember = await prisma.crewMember.findUnique({
+    where: { id: assignment.crewMemberId, organizationId },
+    select: { firstName: true, lastName: true },
   });
-  if (!assignment) throw new Error("Assignment not found");
+  const project = await getProjectById(assignment.projectId);
 
-  // Capture the cascade (shifts + time entries) before the delete removes them.
-  const cascade = await snapshotAssignmentCascade(id);
-
-  await prisma.$transaction(async (tx) => {
-    await tx.crewAssignment.delete({ where: { id, organizationId } });
-  });
-
-  await removeCrewAssignmentCascadeFromConvex(cascade);
+  // Convex-only cascade delete: assignment + its shifts + its linked time entries.
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewAssignments.deleteCascade, { id });
 
   await logActivity({
     organizationId,
@@ -363,8 +378,8 @@ export async function deleteAssignment(id: string) {
     action: "DELETE",
     entityType: "crew_assignment",
     entityId: id,
-    entityName: `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`,
-    summary: `Removed ${assignment.crewMember.firstName} ${assignment.crewMember.lastName} from ${assignment.project.projectNumber}`,
+    entityName: `${crewMember?.firstName ?? ""} ${crewMember?.lastName ?? ""}`.trim(),
+    summary: `Removed ${crewMember?.firstName ?? ""} ${crewMember?.lastName ?? ""} from ${project?.projectNumber ?? ""}`,
     projectId: assignment.projectId,
   });
 
@@ -374,27 +389,27 @@ export async function deleteAssignment(id: string) {
 export async function updateAssignmentStatus(id: string, status: string) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
 
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { id, organizationId },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      project: { select: { projectNumber: true } },
-    },
-  });
-  if (!assignment) throw new Error("Assignment not found");
-
-  const updateData: Record<string, unknown> = { status };
-  if (status === "CONFIRMED" && !assignment.confirmedAt) {
-    updateData.confirmedAt = new Date();
-    updateData.confirmedById = userId;
+  const assignment = await getAssignmentById(id);
+  if (!assignment || assignment.organizationId !== organizationId) {
+    throw new Error("Assignment not found");
   }
 
-  const updated = await prisma.crewAssignment.update({
-    where: { id, organizationId },
-    data: updateData,
+  const crewMember = await prisma.crewMember.findUnique({
+    where: { id: assignment.crewMemberId, organizationId },
+    select: { firstName: true, lastName: true },
   });
+  if (!crewMember) throw new Error("Crew member not found");
+  const project = await getProjectById(assignment.projectId);
 
-  await patchCrewAssignmentInConvex(id, updated as unknown as Record<string, unknown>);
+  const set: Record<string, unknown> = { status, updatedAt: Date.now() };
+  // CONFIRMED status-machine stamp (only on the first transition to CONFIRMED).
+  if (status === "CONFIRMED" && !assignment.confirmedAt) {
+    set.confirmedAt = Date.now();
+    set.confirmedById = userId;
+  }
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.crewAssignments.patchAssignment, { id, set });
 
   await logActivity({
     organizationId,
@@ -403,11 +418,12 @@ export async function updateAssignmentStatus(id: string, status: string) {
     action: "STATUS_CHANGE",
     entityType: "crew_assignment",
     entityId: id,
-    entityName: `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`,
-    summary: `Changed ${assignment.crewMember.firstName} ${assignment.crewMember.lastName} status to ${status} on ${assignment.project.projectNumber}`,
+    entityName: `${crewMember.firstName} ${crewMember.lastName}`,
+    summary: `Changed ${crewMember.firstName} ${crewMember.lastName} status to ${status} on ${project?.projectNumber ?? ""}`,
     projectId: assignment.projectId,
   });
 
+  const updated = await getAssignmentById(id);
   return serialize(updated);
 }
 
@@ -416,94 +432,87 @@ export async function updateAssignmentStatus(id: string, status: string) {
 export async function generateShifts(assignmentId: string) {
   const { organizationId } = await requirePermission("crew", "update");
 
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { id: assignmentId, organizationId },
-  });
-  if (!assignment) throw new Error("Assignment not found");
+  const assignment = await getAssignmentById(assignmentId);
+  if (!assignment || assignment.organizationId !== organizationId) {
+    throw new Error("Assignment not found");
+  }
   if (!assignment.startDate || !assignment.endDate) {
     throw new Error("Assignment must have start and end dates to generate shifts");
   }
 
-  // Delete existing SCHEDULED shifts (preserve completed ones). Capture their ids
-  // first so we can drop the regenerated-orphaned rows from Convex.
-  const oldShiftIds = (
-    await prisma.crewShift.findMany({
-      where: { assignmentId, status: "SCHEDULED" },
-      select: { id: true },
-    })
-  ).map((s) => s.id);
-  await prisma.crewShift.deleteMany({
-    where: { assignmentId, status: "SCHEDULED" },
-  });
+  const convex = await getConvexClient();
 
-  const shifts = [];
+  // Delete existing SCHEDULED shifts (preserves non-SCHEDULED ones), Convex-only.
+  await convex.mutation(api.crewShifts.removeScheduledByAssignment, { assignmentId });
+
+  // Regenerate one fresh SCHEDULED shift per day in [startDate, endDate].
+  let count = 0;
   const current = new Date(assignment.startDate);
   const end = new Date(assignment.endDate);
   while (current <= end) {
-    shifts.push({
+    await convex.mutation(api.crewShifts.create, {
+      id: createId(),
       assignmentId,
-      date: new Date(current),
-      callTime: assignment.startTime || null,
-      endTime: assignment.endTime || null,
-      status: "SCHEDULED" as const,
+      date: current.getTime(),
+      ...(assignment.startTime ? { callTime: assignment.startTime } : {}),
+      ...(assignment.endTime ? { endTime: assignment.endTime } : {}),
+      status: "SCHEDULED",
     });
+    count++;
     current.setDate(current.getDate() + 1);
   }
 
-  if (shifts.length > 0) {
-    await prisma.crewShift.createMany({ data: shifts });
-  }
-
-  // Drop the deleted-and-regenerated shifts, then mirror the fresh ones.
-  for (const sid of oldShiftIds) await removeCrewShiftFromConvex(sid);
-  await syncCrewAssignmentToConvex(assignmentId);
-
-  return serialize({ count: shifts.length });
+  return serialize({ count });
 }
 
 export async function updateShift(shiftId: string, data: CrewShiftFormValues) {
   const { organizationId } = await requirePermission("crew", "update");
   const parsed = crewShiftSchema.parse(data);
 
-  const shift = await prisma.crewShift.findUnique({
-    where: { id: shiftId },
-    include: { assignment: { select: { organizationId: true } } },
-  });
-  if (!shift || shift.assignment.organizationId !== organizationId) {
+  const convex = await getConvexClient();
+  const shift = await convex.query(api.crewShifts.getById, { id: shiftId });
+  if (!shift) throw new Error("Shift not found");
+  // Org-scope via the parent assignment.
+  const parent = await getAssignmentById(shift.assignmentId);
+  if (!parent || parent.organizationId !== organizationId) {
     throw new Error("Shift not found");
   }
 
-  const updated = await prisma.crewShift.update({
-    where: { id: shiftId },
-    data: {
-      date: new Date(parsed.date),
-      callTime: parsed.callTime || null,
-      endTime: parsed.endTime || null,
-      breakMinutes: parsed.breakMinutes ?? null,
-      location: parsed.location || null,
-      notes: parsed.notes || null,
-      status: parsed.status,
-    },
-  });
+  const set: Record<string, unknown> = {
+    date: new Date(parsed.date).getTime(),
+    status: parsed.status,
+  };
+  const clear: string[] = [];
+  if (parsed.callTime) set.callTime = parsed.callTime;
+  else clear.push("callTime");
+  if (parsed.endTime) set.endTime = parsed.endTime;
+  else clear.push("endTime");
+  if (parsed.breakMinutes != null) set.breakMinutes = parsed.breakMinutes;
+  else clear.push("breakMinutes");
+  if (parsed.location) set.location = parsed.location;
+  else clear.push("location");
+  if (parsed.notes) set.notes = parsed.notes;
+  else clear.push("notes");
 
-  await patchCrewShiftInConvex(shiftId, updated as unknown as Record<string, unknown>);
+  await convex.mutation(api.crewShifts.patchShift, { id: shiftId, set, clear });
 
-  return serialize(updated);
+  const updated = await convex.query(api.crewShifts.getById, { id: shiftId });
+  return serialize(updated ? mapShift(updated) : null);
 }
 
 export async function deleteShift(shiftId: string) {
   const { organizationId } = await requirePermission("crew", "update");
 
-  const shift = await prisma.crewShift.findUnique({
-    where: { id: shiftId },
-    include: { assignment: { select: { organizationId: true } } },
-  });
-  if (!shift || shift.assignment.organizationId !== organizationId) {
+  const convex = await getConvexClient();
+  const shift = await convex.query(api.crewShifts.getById, { id: shiftId });
+  if (!shift) throw new Error("Shift not found");
+  // Org-scope via the parent assignment.
+  const parent = await getAssignmentById(shift.assignmentId);
+  if (!parent || parent.organizationId !== organizationId) {
     throw new Error("Shift not found");
   }
 
-  await prisma.crewShift.delete({ where: { id: shiftId } });
-  await removeCrewShiftFromConvex(shiftId);
+  await convex.mutation(api.crewShifts.remove, { id: shiftId });
   return { success: true };
 }
 

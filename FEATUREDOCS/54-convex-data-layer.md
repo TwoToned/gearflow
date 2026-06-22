@@ -2939,6 +2939,54 @@ off Prisma, **extending** the same `src/lib/test-tag-read.ts` helper.
   Coolify PR preview against prod Convex (per the deploy-ordering gate above:
   testTagRecord/subTestRecord are already backfilled into prod).
 
+## Phase C — FK-anchor mirror inversion + domain-table drop
+
+Phase B inverted only safely-invertible (leaf / no-inbound-FK) tables; the 12
+remaining mirror clusters still dual-write Prisma-first because they are FK
+anchors. Phase C drops the domain↔domain FK constraints, inverts those 12 to
+Convex-only, then strips + drops the Prisma domain tables. Full sequenced plan:
+`docs/designs/convex-domain-only-decommission.md` (Phase C section). One surface
+per PR, leaf→root, preview-validated. FK boundary verified clean — no kept table
+(auth / `customRole` / `activityLog`) references any domain table.
+
+### Stage 1 — drop domain↔domain FK constraints (PR #254)
+
+Migration `20260618110000_drop_domain_domain_fk_constraints`: self-discovering
+`pg_constraint` scan drops every FK where both endpoints are domain tables;
+preserves domain→`user`/`organization` (those drop with the table in Stage 4).
+
+### Stage 2, cluster 1/12 — `warehouseClose` inverted Convex-only — DONE
+
+`src/server/warehouse-close.ts` no longer writes `prisma.warehouseClose`; the
+close-out record is written directly to Convex and the mirror
+(`src/lib/warehouse-close-mirror.ts`) is **deleted**. The reactive consumer
+(`close-out-tab.tsx` via `useWarehouseCloses`) already read Convex, so it is
+unchanged.
+
+- **Write invariant re-implemented:** the dropped Prisma `@@unique([projectId,
+  organizationId])` (duplicate-close guard) now lives in the custom Convex
+  mutation `warehouseCloses.closeOutIfNotClosed` — a check-then-insert on the
+  `by_projectId_organizationId` index. Race-safe: Convex mutations are
+  serializable, so a concurrent close conflicts on the read range the insert
+  writes and retries, observing the existing row. It returns `{ alreadyClosed }`
+  and the server action maps `true` to the existing "Project has already been
+  closed out" error (preserving UX). cuid generated in the action; `closedAt =
+  Date.now()` (epoch ms).
+- **Residual read rewired:** `getCloseOutSummary`'s `alreadyClosed` lookup moved
+  from `prisma.warehouseClose.findFirst` to `getWarehouseCloseByProject` (new
+  `src/lib/warehouse-close-read.ts` → custom Convex query
+  `warehouseCloses.getByProject`). The closer's display name is resolved from the
+  kept Postgres `user` table (auth stays Prisma), not a Convex join. `closedAt`
+  converted `number → Date`.
+- **Custom Convex fns** added inline to the generated `convex/warehouseCloses.ts`
+  with a CUSTOM banner (matches the token-module precedent; re-add on a
+  `pnpm convex:crud` regen). The `projectLineItem` reads in this file stay Prisma
+  — line-items are still dual-written (fresh), inverted later in their own PR.
+- **Validation:** tsc + 2433 unit tests + `npm run build` all green. Convex
+  data-correctness human-gated on the Coolify PR preview (`warehouseClose` is
+  already backfilled into prod; the preview workflow deploys the two new Convex
+  functions to shared dev).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

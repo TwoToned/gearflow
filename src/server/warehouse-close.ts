@@ -1,12 +1,15 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectById } from "@/lib/projects-read";
+import { getWarehouseCloseByProject } from "@/lib/warehouse-close-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { mirrorWarehouseCloseCreate } from "@/lib/warehouse-close-mirror";
 import {
   warehouseCloseSchema,
   type WarehouseCloseFormValues,
@@ -143,11 +146,18 @@ export async function getCloseOutSummary(projectId: string) {
     }
   }
 
-  // Check if already closed
-  const existingClose = await prisma.warehouseClose.findFirst({
-    where: { projectId, organizationId },
-    select: { id: true, closedAt: true, closedBy: { select: { name: true } } },
-  });
+  // Check if already closed — warehouseCloses is Convex-only since Phase C. The
+  // closer's display name comes from the kept Postgres `user` table (auth stays
+  // on Prisma), not a Convex join.
+  const existingClose = await getWarehouseCloseByProject(organizationId, projectId);
+  const closedByName = existingClose
+    ? (
+        await prisma.user.findUnique({
+          where: { id: existingClose.closedById },
+          select: { name: true },
+        })
+      )?.name ?? null
+    : null;
 
   return serialize({
     project,
@@ -159,8 +169,9 @@ export async function getCloseOutSummary(projectId: string) {
     exceptions,
     canClose: pendingCount === 0,
     alreadyClosed: !!existingClose,
-    closedAt: existingClose?.closedAt || null,
-    closedBy: existingClose?.closedBy?.name || null,
+    closedAt:
+      existingClose?.closedAt != null ? new Date(existingClose.closedAt) : null,
+    closedBy: closedByName,
   });
 }
 
@@ -217,35 +228,40 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     (i) => i.returnCondition === "MISSING"
   ).length;
 
-  // Unique constraint on [projectId, organizationId] prevents duplicate close-outs
-  let result;
-  try {
-    result = await prisma.warehouseClose.create({
-      data: {
-        organizationId,
-        projectId: parsed.projectId,
-        closedById: userId,
-        storedCount,
-        damagedCount,
-        lostCount,
-      },
-      include: {
-        project: { select: { name: true, projectNumber: true } },
-        closedBy: { select: { name: true } },
-      },
-    });
-  } catch (err) {
-    // Handle unique constraint violation (concurrent close-out)
-    if (
-      err instanceof Error &&
-      err.message.includes("Unique constraint failed")
-    ) {
-      throw new Error("Project has already been closed out");
-    }
-    throw err;
+  // warehouseCloses is Convex-only (Phase C). The [projectId, organizationId]
+  // uniqueness invariant the old Prisma unique constraint enforced now lives in
+  // the closeOutIfNotClosed mutation (race-safe via Convex serializable OCC).
+  const id = createId();
+  const closedAt = Date.now();
+  const { alreadyClosed } = await (await getConvexClient()).mutation(
+    api.warehouseCloses.closeOutIfNotClosed,
+    {
+      id,
+      organizationId,
+      projectId: parsed.projectId,
+      closedById: userId,
+      closedAt,
+      storedCount,
+      damagedCount,
+      lostCount,
+    },
+  );
+  if (alreadyClosed) {
+    throw new Error("Project has already been closed out");
   }
 
-  await mirrorWarehouseCloseCreate(result as unknown as Record<string, unknown>);
+  const result = {
+    id,
+    organizationId,
+    projectId: parsed.projectId,
+    closedById: userId,
+    closedAt: new Date(closedAt),
+    storedCount,
+    damagedCount,
+    lostCount,
+    project: { name: project.name, projectNumber: project.projectNumber },
+    closedBy: { name: userName },
+  };
 
   await logActivity({
     organizationId,

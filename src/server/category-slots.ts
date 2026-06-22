@@ -437,13 +437,6 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     if (!shg) throw new Error("Sub-hire group not found in this project");
   }
 
-  // New category goes to end of project's category list.
-  const existingCategories = await client.query(api.projectCategories.listByProject, {
-    projectId: parsed.projectId,
-    orgId: organizationId,
-  });
-  const maxSort = existingCategories.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
-
   const categoryId = createId();
   const now = Date.now();
 
@@ -461,15 +454,13 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     }
   }
 
-  // Create category and slot in Convex.
-  await client.mutation(api.projectCategories.create, {
+  // Create category (atomic create-at-end) and slot in Convex.
+  const { sortOrder: categorySortOrder } = await client.mutation(api.projectCategories.createAtEnd, {
     id: categoryId,
     organizationId,
     projectId: parsed.projectId,
     name: parsed.name,
-    sortOrder: maxSort + 1,
-    createdAt: now,
-    updatedAt: now,
+    now,
   });
 
   await client.mutation(api.categorySlots.create, {
@@ -528,7 +519,7 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     organizationId,
     projectId: parsed.projectId,
     name: parsed.name,
-    sortOrder: maxSort + 1,
+    sortOrder: categorySortOrder,
     createdAt: new Date(now),
     updatedAt: new Date(now),
   });

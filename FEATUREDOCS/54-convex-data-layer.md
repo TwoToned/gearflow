@@ -712,29 +712,41 @@ asset_bulk_child / model_bulk_accessory) plus many nullable refs → dual-write.
 - **Backfill**: `pnpm convex:backfill:asset` (134 rows; counts verified P==C).
   Live patch round-trip verified against the running backend.
 
-### Project grouping substructure — DONE (central-graph step 3, infra-only)
+### Project grouping substructure — CONVEX-ONLY (Phase C core step 1, DONE)
 
-`project_category` (12 rows) + `project_group` (17 rows) are **dual-written
-infra-only** — there is **no Phase 4**. They are composed only inside the
-cross-domain equipment editor (project ↔ line_item ↔ category ↔ group ↔
-category_slot ↔ sub_hire_group, read as the equipment tab's mixed-ordered list),
-which stays on Prisma reads. The mirror keeps the Convex graph complete for the
-eventual decommission. `category_slot` (the cross-type ordering layer) stays
-Prisma-only.
+`projectCategory` + `projectGroup` + `categorySlot` are **Convex-only** (reads
+since Phase A, writes inverted in Phase B `e625763a`, no mirror). They compose
+the equipment editor's mixed-ordered list (project ↔ line_item ↔ category ↔
+group ↔ category_slot ↔ sub_hire_group). Line items + sub_hire_group are still
+Prisma (keystone = a later core step), so cross-store edits (e.g. category
+delete null-ing line-item `categoryId`) keep the Prisma write in the server
+action and the grouping write in Convex.
 
-- **Mirror**: [`src/lib/project-grouping-mirror.ts`](../src/lib/project-grouping-mirror.ts)
-  — create/patch/remove for both + `syncProjectGroupsToConvex` /
-  `syncProjectCategoriesToConvex` for the reorder/split/merge/move transactions.
-- **Write sites** (6 files): `project-categories.ts` (create/update/reorder/delete
-  — delete cascades its groups out of Convex), `project-groups.ts`
-  (create/update/price/accept/move/reorder/delete), `category-slots.ts`
-  (move-to-category + create-category-and-move; reorder stays on category_slot),
-  `group-templates.ts` (applyGroupTemplate), `line-items.ts` (group suggestedPrice
-  recalc on add), `projects.ts` (duplicateProject copies categories + groups).
-- **Clear-to-null**: moving a group to the Uncategorised zone clears
-  `categoryId`→null — a no-op in Convex (documented); tolerable for a
-  consumer-less substructure, heals on next non-null write or backfill.
-- **Backfill**: `pnpm convex:backfill:project-grouping` (29 rows; P==C).
+**Atomicity (Phase C core step 1):** the multi-table $transactions are ported to
+purpose-built atomic Convex mutations — a single mutation is fully ACID +
+serializable (OCC retries the loser), so cascade/reorder/create-at-end are
+race-free in one transaction instead of split across N network calls.
+
+- **Custom mutations** (inline in `convex/projectCategories.ts` /
+  `convex/projectGroups.ts`, `// ── CUSTOM (Phase C)` banner — re-add on CRUD
+  regen): `createAtEnd` (max(sortOrder)+1 computed in-mutation, no TOCTOU),
+  `reorder` (contiguous sortOrder in one tx), `deleteCascade`
+  (category → its groups+slots+cat-slots+category, returns deleted groupIds;
+  group → its slots+group), `projectCategories.deleteAllForProject`
+  (full project grouping purge). `categorySlots.ts` already has atomic
+  `reorderSlots` / `upsertSlotFor{Project,SubHire}Group`.
+- **Write sites**: `project-categories.ts`, `project-groups.ts`,
+  `category-slots.ts`, `group-templates.ts` (applyGroupTemplate), `line-items.ts`
+  (group suggestedPrice recalc on add), `projects.ts` (duplicateProject copies +
+  `deleteProject` now calls `deleteAllForProject` — the Prisma FK cascade that
+  used to clean these up was dropped in Phase C #254).
+- **Stale-read fixes (this PR)**: 3 residual `prisma.projectGroup` reads (which
+  read a frozen Prisma table post-cutover) rewired to Convex — `line-items.ts`
+  groupName lookup + `recalculateProjectTotals` group price/quantity (was a
+  silent revenue bug), `sub-hires.ts` group→category resolution.
+- **Clear-to-null**: `projectGroups.update` uses the `categoryId: null` sentinel
+  to clear (move group to Uncategorised) — `ctx.db.replace` drops the field.
+- **Backfill**: `pnpm convex:backfill:project-grouping` (already in prod).
 
 ### Project line items — DONE (central-graph step 4, infra-only)
 

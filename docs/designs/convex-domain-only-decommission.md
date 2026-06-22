@@ -290,6 +290,33 @@ schema edits on kept models are deleting Prisma back-relation array fields.
   is dropped. Order: **warehouse-close** → file-upload+media → crew → crew-scheduling
   → project-subtable → asset → kit → sub-hire → **project+line-item (keystone, last;
   full-pipeline PDF integration test)**.
+  - **Refined core plan** — the entangled remainder (line-items+units, asset
+    allocation, kit, sub-hire, crew-scheduling, grouping, project scalars) is
+    bound by shared Prisma `$transaction`s and is sequenced separately in
+    [`convex-core-inversion-design.md`](./convex-core-inversion-design.md): each
+    `$transaction` → ONE purpose-built atomic Convex mutation (a single mutation
+    is fully ACID + serializable). Steps: **(1) grouping ✅ DONE** →
+    (2) line-item+asset checkout mega-flip → (3) kit → (4) sub-hire →
+    (5) projectService+crew-scheduling → (6) project scalars.
+  - **Core step 1 — grouping ✅ DONE** (`phase-c/core-grouping`). Writes were
+    already Convex-only (Phase B `e625763a`) but via non-atomic sequenced
+    `client.mutation` calls. This PR ports cascade/reorder/create into atomic
+    custom mutations (`createAtEnd`/`reorder`/`deleteCascade`/`deleteAllForProject`),
+    fixes 3 residual stale `prisma.projectGroup` reads (incl. a silent revenue
+    bug in `recalculateProjectTotals`), and fixes the **`deleteProject` Convex
+    orphan** (categories/groups/slots were leaked after #254 dropped the FK
+    cascade). Dev-validated live: 13/13 invariant checks.
+  - **Finding (broader, NOT grouping-scoped) — INERT, no action needed now:**
+    #254 dropped *all* domain↔domain FKs, so `tx.project.delete` no longer
+    cascades **any** Prisma child (line-items, units, services, tasks, media, …).
+    Grouping's Convex rows are purged explicitly (above). The remaining
+    still-Prisma children are **orphaned dead-weight, not an active bug**: every
+    org-wide reader joins each row to a live project (`availability-read.ts`
+    `if (!p || !projectMatchesWindow(...)) continue` — an orphan has no entry in
+    the Convex-built `projectsById`, so it's skipped), and Stage 4's
+    `DROP TABLE … CASCADE` removes the rows. As each project-child cluster
+    inverts to Convex its `deleteProject` cleanup becomes Convex-native anyway.
+    No stopgap `deleteMany` sweep — it would be misleading (partial) busywork.
 - **Stage 3 — schema removal** (1 PR): delete the 71 domain models + orphaned
   `User`/`Organization` back-relation arrays from `schema.prisma`; `prisma validate`
   + `generate` clean; grep-gate zero `prisma.<domainModel>.` remaining.

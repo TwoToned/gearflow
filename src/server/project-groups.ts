@@ -68,14 +68,11 @@ export async function createProjectGroup(
   const parsed = projectGroupSchema.parse(data);
   const client = await getConvexClient();
 
-  // Get next sort order within the (project, category) bucket from Convex.
-  const existing = await client.query(api.projectGroups.listByProject, { projectId, orgId: organizationId });
-  const inBucket = existing.filter((g) => (g.categoryId ?? null) === (parsed.categoryId ?? null));
-  const maxSort = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
-
+  // Atomic create-at-end within the (project, category) bucket — sortOrder
+  // computed inside the mutation (no read-max-then-insert TOCTOU).
   const id = createId();
   const now = Date.now();
-  await client.mutation(api.projectGroups.create, {
+  const { sortOrder } = await client.mutation(api.projectGroups.createAtEnd, {
     id,
     organizationId,
     projectId,
@@ -86,10 +83,8 @@ export async function createProjectGroup(
     price: parsed.price != null ? parsed.price : undefined,
     rentalPeriod: parsed.rentalPeriod || undefined,
     rentalQuantity: parsed.rentalQuantity || undefined,
-    sortOrder: maxSort + 1,
     suggestedPrice: 0,
-    createdAt: now,
-    updatedAt: now,
+    now,
   });
 
   await logActivity({
@@ -114,7 +109,7 @@ export async function createProjectGroup(
     price: parsed.price != null ? parsed.price : null,
     rentalPeriod: parsed.rentalPeriod || null,
     rentalQuantity: parsed.rentalQuantity || null,
-    sortOrder: maxSort + 1,
+    sortOrder,
     suggestedPrice: 0,
     createdAt: new Date(now),
     updatedAt: new Date(now),
@@ -327,14 +322,8 @@ export async function deleteProjectGroup(groupId: string) {
     data: { groupId: null },
   });
 
-  // Delete the group's slot from Convex
-  const groupSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: groupId });
-  for (const slot of groupSlots) {
-    await client.mutation(api.categorySlots.remove, { id: slot.id });
-  }
-
-  // Delete the group from Convex
-  await client.mutation(api.projectGroups.remove, { id: groupId });
+  // Atomic Convex cascade: the group's slots + the group itself, one transaction.
+  await client.mutation(api.projectGroups.deleteCascade, { groupId });
 
   await logActivity({
     organizationId,
@@ -415,13 +404,8 @@ export async function reorderProjectGroups(
   await requirePermission("project", "manage_line_items");
   const client = await getConvexClient();
 
-  const now = Date.now();
-  for (let i = 0; i < orderedIds.length; i++) {
-    await client.mutation(api.projectGroups.update, {
-      id: orderedIds[i],
-      patch: { sortOrder: i, updatedAt: now },
-    });
-  }
+  // Atomic reorder within the category: contiguous sortOrder in one transaction.
+  await client.mutation(api.projectGroups.reorder, { orderedIds, now: Date.now() });
 
   return serialize({ success: true });
 }

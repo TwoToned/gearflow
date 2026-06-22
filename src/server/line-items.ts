@@ -963,14 +963,14 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     });
   }
 
-  // Resolve groupName from groupId if provided
+  // Resolve groupName from groupId if provided (groups are Convex-only now)
   let groupName: string | undefined;
   if (parsed.groupId) {
-    const group = await prisma.projectGroup.findFirst({
-      where: { id: parsed.groupId, projectId, organizationId },
-      select: { title: true },
-    });
-    groupName = group?.title ?? undefined;
+    const groupConvex = await getConvexClient();
+    const group = await groupConvex.query(api.projectGroups.getById, { id: parsed.groupId });
+    if (group && group.projectId === projectId && group.organizationId === organizationId) {
+      groupName = group.title;
+    }
   }
 
   // Compute lineTotal and sortOrder so revenue and ordering are correct
@@ -1446,30 +1446,40 @@ export async function recalculateProjectTotals(projectId: string) {
   // model-rate optimizer, so their lineTotal doesn't roll into the bundle
   // price — they're "extras on top." Without this addition, a custom item
   // added to a group is invisible to the project total.
-  const groups = await prisma.projectGroup.findMany({
-    where: { projectId },
-    select: {
-      price: true,
-      quantity: true,
-      lineItems: {
+  // Groups (price/quantity) are Convex-only now; their custom-item "extras"
+  // still live in Prisma line items. Read both and join in JS.
+  const groupsConvex = await getConvexClient();
+  const convexGroups = await groupsConvex.query(api.projectGroups.listByProject, {
+    projectId,
+    orgId: project.organizationId,
+  });
+  const groupIds = convexGroups.map((g) => g.id);
+  const customGroupItems = groupIds.length
+    ? await prisma.projectLineItem.findMany({
         where: {
+          groupId: { in: groupIds },
           isCustomItem: true,
           isOptional: false,
           isKitChild: false,
           status: { not: "CANCELLED" },
         },
-        select: { lineTotal: true },
-      },
-    },
-  });
-
-  const groupRevenue = groups.reduce((sum, g) => {
-    const bundlePrice = g.price != null ? Number(g.price) : 0;
-    const customExtras = g.lineItems.reduce(
-      (s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0),
-      0,
+        select: { groupId: true, lineTotal: true },
+      })
+    : [];
+  const customExtrasByGroup = new Map<string, number>();
+  for (const li of customGroupItems) {
+    if (!li.groupId) continue;
+    customExtrasByGroup.set(
+      li.groupId,
+      (customExtrasByGroup.get(li.groupId) ?? 0) + (li.lineTotal != null ? Number(li.lineTotal) : 0),
     );
-    return sum + bundlePrice * g.quantity + customExtras;
+  }
+
+  const groupRevenue = convexGroups.reduce((sum, g) => {
+    const bundlePrice = g.price != null ? Number(g.price) : 0;
+    const qty = g.quantity ?? 1;
+    const customExtras = customExtrasByGroup.get(g.id) ?? 0;
+    return sum + bundlePrice * qty + customExtras;
   }, 0);
 
   // 2. Equipment revenue from standalone (ungrouped) line items —

@@ -149,3 +149,80 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── CUSTOM (Phase C — core grouping inversion) — re-add on regen ─────────────
+// See projectCategories.ts banner. Atomic create-at-end / reorder / cascade.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Atomic create-at-end within the (projectId, categoryId) bucket: compute
+ * max(sortOrder)+1 and insert in one transaction. Caller supplies the cuid.
+ */
+export const createAtEnd = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    categoryId: v.optional(v.string()),
+    title: v.string(),
+    description: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    price: v.optional(v.number()),
+    suggestedPrice: v.optional(v.number()),
+    rentalPeriod: v.optional(enums.RentalPeriod),
+    rentalQuantity: v.optional(v.number()),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const { now, ...fields } = args;
+    const bucket = fields.categoryId ?? null;
+    const existing = await ctx.db
+      .query("projectGroups")
+      .withIndex("by_projectId", (q) => q.eq("projectId", fields.projectId))
+      .collect();
+    const inBucket = existing.filter((g) => (g.categoryId ?? null) === bucket);
+    const maxSort = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
+    const sortOrder = maxSort + 1;
+    await ctx.db.insert("projectGroups", { ...fields, sortOrder, createdAt: now, updatedAt: now });
+    return { id: fields.id, sortOrder };
+  },
+});
+
+/**
+ * Atomic reorder within a category: sortOrder = index for each id, one transaction.
+ */
+export const reorder = mutation({
+  args: { orderedIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orderedIds, now }) => {
+    await requireService(ctx);
+    for (let i = 0; i < orderedIds.length; i++) {
+      const doc = await ctx.db
+        .query("projectGroups")
+        .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
+        .unique();
+      if (doc) await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
+    }
+  },
+});
+
+/**
+ * Atomic cascade delete of a group: its category slots, then the group itself.
+ */
+export const deleteCascade = mutation({
+  args: { groupId: v.string() },
+  handler: async (ctx, { groupId }) => {
+    await requireService(ctx);
+    const slots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", groupId))
+      .collect();
+    for (const s of slots) await ctx.db.delete(s._id);
+    const doc = await ctx.db
+      .query("projectGroups")
+      .withIndex("by_cuid", (q) => q.eq("id", groupId))
+      .unique();
+    if (doc) await ctx.db.delete(doc._id);
+  },
+});

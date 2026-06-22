@@ -1276,6 +1276,9 @@ export async function deleteProject(id: string) {
     ...pmRows.map((pm) => convex.mutation(api.projectManagers.remove, { id: pm.id })),
     ...taskRows.map((t) => convex.mutation(api.projectTasks.remove, { id: t.id })),
   ]);
+  // Grouping (category/group/slot) lives in Convex only; the Prisma FK cascade
+  // that used to clean these up was dropped in Phase C #254, so purge them here.
+  await convex.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
   await syncProjectServicesToConvex(organizationId, id);
 
   await logActivity({

@@ -211,20 +211,15 @@ export async function createProjectCategory(
   const parsed = projectCategorySchema.parse(data);
   const client = await getConvexClient();
 
-  // Get next sort order from Convex
-  const existing = await client.query(api.projectCategories.listByProject, { projectId, orgId: organizationId });
-  const maxSort = existing.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
-
+  // Atomic create-at-end: max(sortOrder)+1 computed inside the mutation (no TOCTOU).
   const id = createId();
   const now = Date.now();
-  await client.mutation(api.projectCategories.create, {
+  const { sortOrder } = await client.mutation(api.projectCategories.createAtEnd, {
     id,
     organizationId,
     projectId,
     name: parsed.name,
-    sortOrder: maxSort + 1,
-    createdAt: now,
-    updatedAt: now,
+    now,
   });
 
   await logActivity({
@@ -238,7 +233,7 @@ export async function createProjectCategory(
     summary: `Created category "${parsed.name}"`,
   });
 
-  return serialize({ id, organizationId, projectId, name: parsed.name, sortOrder: maxSort + 1, createdAt: new Date(now), updatedAt: new Date(now) });
+  return serialize({ id, organizationId, projectId, name: parsed.name, sortOrder, createdAt: new Date(now), updatedAt: new Date(now) });
 }
 
 export async function updateProjectCategory(
@@ -321,23 +316,9 @@ export async function deleteProjectCategory(categoryId: string) {
     });
   }
 
-  // 4. Delete each group's slot + the group itself from Convex
-  for (const g of categoryGroups) {
-    const groupSlots = await client.query(api.categorySlots.listByProjectGroupId, { projectGroupId: g.id });
-    for (const slot of groupSlots) {
-      await client.mutation(api.categorySlots.remove, { id: slot.id });
-    }
-    await client.mutation(api.projectGroups.remove, { id: g.id });
-  }
-
-  // 5. Delete remaining category slots (sub-hire group slots)
-  const catSlots = await client.query(api.categorySlots.list, { projectCategoryId: categoryId });
-  for (const slot of catSlots) {
-    await client.mutation(api.categorySlots.remove, { id: slot.id });
-  }
-
-  // 6. Delete the category from Convex
-  await client.mutation(api.projectCategories.remove, { id: categoryId });
+  // 4. Atomic Convex cascade: all groups (+ their slots), all category slots,
+  //    then the category — one transaction, no partial-cascade on mid-failure.
+  await client.mutation(api.projectCategories.deleteCascade, { categoryId });
 
   await logActivity({
     organizationId,
@@ -357,16 +338,11 @@ export async function reorderProjectCategories(
   projectId: string,
   orderedIds: string[],
 ) {
-  const { organizationId } = await requirePermission("project", "manage_line_items");
+  await requirePermission("project", "manage_line_items");
   const client = await getConvexClient();
 
-  const now = Date.now();
-  for (let i = 0; i < orderedIds.length; i++) {
-    await client.mutation(api.projectCategories.update, {
-      id: orderedIds[i],
-      patch: { sortOrder: i, updatedAt: now },
-    });
-  }
+  // Atomic reorder: contiguous sortOrder guaranteed in one transaction.
+  await client.mutation(api.projectCategories.reorder, { orderedIds, now: Date.now() });
 
   return serialize({ success: true });
 }

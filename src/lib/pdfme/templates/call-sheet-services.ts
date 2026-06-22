@@ -7,7 +7,12 @@
  */
 import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
-import { prisma } from "@/lib/prisma";
+import { getProjectServicesFromConvex } from "@/lib/project-service-read";
+import {
+  getAssignmentsByProject,
+  type MappedCrewAssignment,
+} from "@/lib/crew-scheduling-read";
+import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { gearflowPlugins } from "../plugins";
 import { getPdfmeFonts } from "../fonts";
 import { buildDocumentData } from "../build-document-data";
@@ -230,30 +235,55 @@ export async function buildCallSheetFromServices(
   // 1. Get org/project data for header/footer
   const data = await buildDocumentData(projectId, organizationId, "quote");
 
-  // 2. Query services with crew assignments
-  const services = await prisma.projectService.findMany({
-    where: {
-      organizationId,
-      projectId,
-      status: { not: "CANCELLED" },
-    },
-    include: {
-      crewAssignments: {
-        where: {
-          status: { notIn: ["CANCELLED", "DECLINED"] },
-          ...(options.crewMemberId ? { crewMemberId: options.crewMemberId } : {}),
-          ...(options.crewRoleId ? { crewRoleId: options.crewRoleId } : {}),
-        },
-        include: {
+  // 2. Read services + crew assignments from Convex (both dual-written).
+  //    Services come back ordered by [date asc NULLS LAST, sortOrder asc] and are
+  //    filtered to non-CANCELLED here (matching the old `status: { not: CANCELLED }`).
+  //    Assignments are read for the project, filtered to non-CANCELLED/DECLINED
+  //    plus the optional crewMember/crewRole filters, then grouped by serviceId.
+  //    crewMember (id/firstName/lastName/phone) + crewRole (name) resolve from the
+  //    crew maps. The resulting `services[].crewAssignments[]` shape mirrors the
+  //    old Prisma include exactly so the rest of the function is unchanged.
+  const [baseServices, rawAssignments, memberMap, roleMap] = await Promise.all([
+    getProjectServicesFromConvex(organizationId, projectId),
+    getAssignmentsByProject(projectId, organizationId),
+    getCrewMemberMap(organizationId),
+    getCrewRoleMap(organizationId),
+  ]);
+
+  const assignmentsByService = new Map<string, MappedCrewAssignment[]>();
+  for (const a of rawAssignments) {
+    if (a.status === "CANCELLED" || a.status === "DECLINED") continue;
+    if (options.crewMemberId && a.crewMemberId !== options.crewMemberId) continue;
+    if (options.crewRoleId && a.crewRoleId !== options.crewRoleId) continue;
+    if (a.serviceId == null) continue;
+    const arr = assignmentsByService.get(a.serviceId);
+    if (arr) arr.push(a);
+    else assignmentsByService.set(a.serviceId, [a]);
+  }
+
+  const services = baseServices
+    .filter((s) => s.status !== "CANCELLED")
+    .map((s) => ({
+      date: s.date,
+      title: s.title,
+      type: s.type,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      notes: s.notes,
+      crewAssignments: (assignmentsByService.get(s.id) ?? []).map((a) => {
+        const member = memberMap.get(a.crewMemberId);
+        const role = a.crewRoleId ? roleMap.get(a.crewRoleId) : undefined;
+        return {
           crewMember: {
-            select: { id: true, firstName: true, lastName: true, phone: true },
+            id: a.crewMemberId,
+            firstName: member?.firstName ?? "",
+            lastName: member?.lastName ?? "",
+            phone: member?.phone ?? null,
           },
-          crewRole: { select: { name: true } },
-        },
-      },
-    },
-    orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
-  });
+          crewRole: role ? { name: role.name } : null,
+        };
+      }),
+    }));
 
   // 3. Group by date, build rows
   const groups = new Map<string, { dateLabel: string; rows: ServiceRow[] }>();

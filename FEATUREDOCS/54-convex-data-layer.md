@@ -384,14 +384,11 @@ inbound FKs cross the cluster boundary from tables that stay in Prisma —
 `_CrewMemberToCrewSkill` (which has **no Convex representation** — a member's skills
 stay composed on the Prisma mirror).
 
-- **Scope decision:** the project-coupled scheduling/timesheet sub-tables
-  (`crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
-  `crew_time_entry`) are **deliberately left Prisma-only** for now. They are
-  leaf/child tables with cascade-delete semantics Convex can't cheaply replicate,
-  and they are only ever composed inside project-joining or member-detail views
-  that stay on the Prisma mirror (the crew dashboard, planner, timesheets, member
-  detail). Their Convex CRUD + schema already exist (Phase 2); they get dual-written
-  when those UIs go reactive alongside the project/central-graph migration.
+- **Scope decision (superseded):** at roster-migration time the project-coupled
+  scheduling/timesheet sub-tables (`crew_assignment`, `crew_shift`,
+  `crew_availability`, `crew_time_entry`; `crew_certification` was later dropped)
+  were left out of *this* PR. They are **now dual-written + Convex-read** — see
+  "Crew scheduling / timesheet sub-tables" + the Phase C read-cleanup below.
 - **Writes** (Prisma first, then mirror via `src/lib/crew-mirror.ts`): `server/crew.ts`
   (member/role/skill create/update/delete + image + user-link), `server/crew-calendar.ts`
   (iCal enable/disable/regenerate → member patch), `app/api/crew/avatar/route.ts`
@@ -3212,6 +3209,37 @@ The `subHire` / `subHireItem` / `subHireGroup` writes are now **Convex-only**;
   patchItem CLEAR targetGroupId → patchGroup CLEAR targetCategoryId → deleteWithUngroup
   (child kept + ungrouped) → deleteCascade (head + items gone). `supplierOrder` was
   already Convex-only (Phase A); both families now fully Convex.
+
+### Phase C — crew-scheduling read-cleanup (1/2)
+
+The scheduling sub-tables (`crewAssignment` / `crewShift` / `crewTimeEntry` /
+`crewAvailability` — `crewCertification` was dropped) are dual-written + Convex-read
+already (Phase A). Before inverting their writes, this PR moves the **last
+data-serving Prisma reads** to Convex — same split as media/sub-hire (read-cleanup
+first, write-invert next), and it pre-empts the projectLineItem-class stale-read bug
+(reads that pulled `crewMember`/`crewRole` through a Prisma relational include off a
+crew row would go stale the moment writes flip).
+
+- **Stale-read landmines fixed:** `line-items.recalculateProjectTotals` labour-cost
+  sum (→ `getAssignmentsByProject`, all-status sum preserved) and the
+  `call-sheet-services` PDF (services + assignments from Convex, crewMember/crewRole
+  from the Convex maps) — both read crew through Convex-only parents.
+- **Other reads rewired:** the calendar ical feed + single-assignment ics routes,
+  `crew-availability.checkCrewConflicts` (availability + double-booking overlap via
+  `getAvailabilityByCrewMemberIds` + `getAssignmentsByOrg` + `assignmentOverlapsRange`),
+  `crew.getCrewMemberById`, `project-services.generateCrewMessage`,
+  `crew-time.exportTimesheetCSV`, and the notification OFFERED/SUBMITTED counts.
+- **Deliberately left on Prisma (flip with write-inversion 2/2):** the
+  read-before-write guards inside the write actions (crew-time submit/approve/edit
+  guards, project-services pending-assignment guard, availability remove guard) and
+  the respond-route by-`responseToken` lookup (no Convex by-token query yet).
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests pass. Reads
+  only — dual-write untouched, fully reversible.
+- **Next (2/2):** invert the crew-scheduling writes to Convex-only — re-implement the
+  partial-unique `(projectId, crewMemberId, serviceId)` guard, the cascade deletes
+  (assignment→shifts+timeEntries, project/member→assignments), the assignment +
+  time-entry status machines, and the rate/estimatedCost cascade; then delete
+  `crew-scheduling-mirror.ts`.
 
 ## Conventions
 

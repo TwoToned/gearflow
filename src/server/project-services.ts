@@ -24,6 +24,11 @@ import {
 } from "@/lib/project-service-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
+import { getCrewRoleMap } from "@/lib/crew-read";
+import {
+  getAssignmentsByProject,
+  compareAscNullsLast,
+} from "@/lib/crew-scheduling-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
@@ -1229,18 +1234,29 @@ export async function generateCrewMessage(
   });
   if (!member) throw new Error("Crew member not found");
 
-  const assignments = await prisma.crewAssignment.findMany({
-    where: {
-      projectId,
-      crewMemberId,
-      status: { notIn: ["CANCELLED", "DECLINED"] },
-    },
-    include: {
-      service: { select: { title: true, type: true, date: true, startTime: true, endTime: true, address: true } },
-      crewRole: { select: { name: true } },
-    },
-    orderBy: { startDate: "asc" },
-  });
+  // Assignments + their service / crewRole come from Convex (the assignment,
+  // projectService and crewRole tables are dual-written). Mirrors the Prisma
+  // where (project + member + status notIn CANCELLED/DECLINED) and startDate asc;
+  // `service` resolves from the project's services map, `crewRole` from the map.
+  const [allAssignments, services, crewRoleMap] = await Promise.all([
+    getAssignmentsByProject(projectId, organizationId),
+    getProjectServicesFromConvex(organizationId, projectId),
+    getCrewRoleMap(organizationId),
+  ]);
+  const serviceById = new Map(services.map((s) => [s.id, s]));
+  const assignments = allAssignments
+    .filter(
+      (a) =>
+        a.crewMemberId === crewMemberId &&
+        a.status !== "CANCELLED" &&
+        a.status !== "DECLINED",
+    )
+    .sort((a, b) => compareAscNullsLast(a.startDate?.getTime(), b.startDate?.getTime()))
+    .map((a) => ({
+      ...a,
+      service: a.serviceId ? serviceById.get(a.serviceId) ?? null : null,
+      crewRole: a.crewRoleId ? crewRoleMap.get(a.crewRoleId) ?? null : null,
+    }));
 
   // Build message
   const lines: string[] = [];

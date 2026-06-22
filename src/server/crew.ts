@@ -19,6 +19,10 @@ import {
 import { type FilterValue } from "@/lib/table-utils";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
+  getAssignmentsByOrg,
+  compareDescNullsFirst,
+} from "@/lib/crew-scheduling-read";
+import {
   getCrewMembersByOrg,
   getCrewMemberById as getConvexCrewMemberById,
   getCrewRolesByOrg,
@@ -109,7 +113,7 @@ export async function getCrewMemberById(id: string) {
   // map; the linked Better Auth user from Prisma (kept table); assignments from the
   // still-Prisma crewAssignment table with project (Convex) + crewRole (Convex)
   // attached.
-  const [roleRows, skillRows, user, assignmentRows, projects] = await Promise.all([
+  const [roleRows, skillRows, user, allAssignments, projects] = await Promise.all([
     getCrewRolesByOrg(organizationId),
     getCrewSkillsByOrg(organizationId),
     crewMember.userId
@@ -118,12 +122,14 @@ export async function getCrewMemberById(id: string) {
           select: { id: true, name: true, email: true, image: true },
         })
       : Promise.resolve(null),
-    prisma.crewAssignment.findMany({
-      where: { crewMemberId: id, organizationId },
-      orderBy: { startDate: "desc" },
-    }),
+    // Assignments for this member from Convex (org-scoped), startDate desc —
+    // replaces the Prisma crewAssignment.findMany.
+    getAssignmentsByOrg(organizationId),
     getProjectsByOrg(organizationId),
   ]);
+  const assignmentRows = allAssignments
+    .filter((a) => a.crewMemberId === id)
+    .sort((a, b) => compareDescNullsFirst(a.startDate?.getTime(), b.startDate?.getTime()));
 
   const role = crewMember.crewRoleId
     ? roleRows.map(mapCrewRole).find((r) => r.id === crewMember.crewRoleId) ?? null

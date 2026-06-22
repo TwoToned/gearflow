@@ -8,6 +8,9 @@ import {
 } from "@/lib/ical";
 import type { OrgSettings } from "@/server/settings";
 import { getLocationById } from "@/lib/locations-read";
+import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
+import { getAssignmentById, getShiftsByAssignmentIds } from "@/lib/crew-scheduling-read";
+import { getProjectById } from "@/lib/projects-read";
 
 /**
  * GET /api/crew/calendar/assignment/[id]
@@ -37,37 +40,41 @@ export async function GET(
       }
     }
 
-    const assignment = await prisma.crewAssignment.findUnique({
-      where: { id, organizationId },
-      include: {
-        crewMember: { select: { firstName: true, lastName: true } },
-        crewRole: { select: { name: true } },
-        project: {
-          select: {
-            name: true,
-            projectNumber: true,
-            locationId: true,
-            siteContactName: true,
-            siteContactPhone: true,
-          },
-        },
-        shifts: {
-          where: { status: { not: "CANCELLED" } },
-          orderBy: { date: "asc" },
-        },
-      },
-    });
-
-    if (!assignment) {
+    const assignment = await getAssignmentById(id);
+    // Org-scope (replaces the Prisma `where: { id, organizationId }`).
+    if (!assignment || assignment.organizationId !== organizationId) {
       return NextResponse.json(
         { error: "Assignment not found" },
         { status: 404 }
       );
     }
 
-    const roleName = assignment.crewRole?.name || "Crew";
-    const project = assignment.project;
-    const crew = assignment.crewMember;
+    // crewMember / crewRole / project were Prisma includes; resolve from Convex.
+    const [crewMemberMap, crewRoleMap, project, allShifts] = await Promise.all([
+      getCrewMemberMap(organizationId),
+      getCrewRoleMap(organizationId),
+      getProjectById(assignment.projectId),
+      getShiftsByAssignmentIds([assignment.id]),
+    ]);
+
+    if (!project) {
+      return NextResponse.json(
+        { error: "Assignment not found" },
+        { status: 404 }
+      );
+    }
+
+    const member = crewMemberMap.get(assignment.crewMemberId);
+    const crew = {
+      firstName: member?.firstName ?? "",
+      lastName: member?.lastName ?? "",
+    };
+    const roleName =
+      (assignment.crewRoleId ? crewRoleMap.get(assignment.crewRoleId)?.name : null) || "Crew";
+    // shifts: status != CANCELLED, date asc (replaces the Prisma include where/orderBy).
+    const shifts = allShifts
+      .filter((s) => s.status !== "CANCELLED")
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
     // Location FK was dropped (Phase B); resolve from the Convex mirror.
     const projLocation = project.locationId ? await getLocationById(project.locationId) : null;
     const locationName = projLocation?.name || "";
@@ -93,8 +100,8 @@ export async function GET(
     const events: ICalEvent[] = [];
     const calName = `${project.name} - ${crew.firstName} ${crew.lastName}`;
 
-    if (assignment.shifts.length > 0) {
-      for (const shift of assignment.shifts) {
+    if (shifts.length > 0) {
+      for (const shift of shifts) {
         const dtstart = buildDateTime(shift.date, shift.callTime, tzid);
         const dtend = shift.endTime
           ? buildDateTime(shift.date, shift.endTime, tzid)

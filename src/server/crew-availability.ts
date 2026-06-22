@@ -21,7 +21,9 @@ import {
   selectPlannerAssignments,
   selectPlannerAvailability,
   computeAvailabilityStatus,
+  assignmentOverlapsRange,
   compareAscNullsLast,
+  EXCLUDED_ASSIGNMENT_STATUSES,
   type MappedCrewAssignment,
 } from "@/lib/crew-scheduling-read";
 
@@ -130,17 +132,19 @@ export async function checkCrewConflicts(
 
   const start = new Date(startDate);
   const end = new Date(endDate);
+  const range = { start, end };
   const conflicts: CrewConflict[] = [];
 
-  // Check availability blocks
-  const blocks = await prisma.crewAvailability.findMany({
-    where: {
-      crewMemberId,
-      startDate: { lte: end },
-      endDate: { gte: start },
-      crewMember: { organizationId },
-    },
-  });
+  // Scope availability blocks to members in this org (crewMember.organizationId
+  // — replaces the Prisma `crewMember: { organizationId }` relational filter).
+  const members = await getCrewMembersByOrg(organizationId);
+  const inOrg = members.some((m) => m.id === crewMemberId);
+
+  // Check availability blocks (Convex read; replicates the Prisma overlap where).
+  const allBlocks = inOrg ? await getAvailabilityByCrewMemberIds([crewMemberId]) : [];
+  const blocks = allBlocks.filter(
+    (b) => b.startDate.getTime() <= end.getTime() && b.endDate.getTime() >= start.getTime(),
+  );
 
   for (const b of blocks) {
     conflicts.push({
@@ -157,26 +161,30 @@ export async function checkCrewConflicts(
     });
   }
 
-  // Check overlapping assignments (double-booking)
-  const overlapping = await prisma.crewAssignment.findMany({
-    where: {
-      crewMemberId,
-      organizationId,
-      status: { notIn: ["CANCELLED", "DECLINED"] },
-      startDate: { lte: end },
-      endDate: { gte: start },
-      ...(excludeAssignmentId ? { id: { not: excludeAssignmentId } } : {}),
-    },
-    include: {
-      project: { select: { name: true, projectNumber: true } },
-    },
-  });
+  // Check overlapping assignments (double-booking). selectMemberConflicts excludes
+  // the same project; here we want ALL other assignments for the member, so filter
+  // inline to mirror the Prisma where (member + org + status notIn + overlap +
+  // optional id exclusion). project name/number resolved from the Convex map.
+  const [allAssignments, projects] = await Promise.all([
+    getAssignmentsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+
+  const overlapping = allAssignments.filter(
+    (a) =>
+      a.crewMemberId === crewMemberId &&
+      !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status) &&
+      assignmentOverlapsRange(a, range.start, range.end) &&
+      (excludeAssignmentId ? a.id !== excludeAssignmentId : true),
+  );
 
   for (const a of overlapping) {
+    const p = projectsById.get(a.projectId);
     conflicts.push({
       type: "assignment",
       severity: "soft",
-      label: `Already on ${a.project.projectNumber} - ${a.project.name}`,
+      label: `Already on ${p?.projectNumber ?? ""} - ${p?.name ?? ""}`,
       startDate: a.startDate?.toISOString() || start.toISOString(),
       endDate: a.endDate?.toISOString() || end.toISOString(),
     });

@@ -4,6 +4,11 @@ import { getClientMap } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getModelMap } from "@/lib/models-read";
+import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
+import {
+  getAssignmentsByOrg,
+  getShiftsByAssignmentIds,
+} from "@/lib/crew-scheduling-read";
 import {
   generateVCalendar,
   buildDateTime,
@@ -310,24 +315,32 @@ async function buildCrewOverviewFeed(
   orgName: string,
   tzid: string
 ): Promise<string> {
-  const [allProjects, allLocations, assignments] = await Promise.all([
-    getProjectsByOrg(orgId),
-    getLocationsByOrg(orgId),
-    prisma.crewAssignment.findMany({
-      where: {
-        organizationId: orgId,
-        status: { in: ["CONFIRMED", "ACCEPTED"] },
-      },
-      include: {
-        crewMember: { select: { firstName: true, lastName: true } },
-        crewRole: { select: { name: true } },
-        shifts: {
-          where: { status: { not: "CANCELLED" } },
-          orderBy: { date: "asc" },
-        },
-      },
-    }),
-  ]);
+  const [allProjects, allLocations, allAssignments, crewMemberMap, crewRoleMap] =
+    await Promise.all([
+      getProjectsByOrg(orgId),
+      getLocationsByOrg(orgId),
+      getAssignmentsByOrg(orgId),
+      getCrewMemberMap(orgId),
+      getCrewRoleMap(orgId),
+    ]);
+
+  // Replicates the Prisma `status: { in: ["CONFIRMED", "ACCEPTED"] }` where.
+  const assignments = allAssignments.filter(
+    (a) => a.status === "CONFIRMED" || a.status === "ACCEPTED",
+  );
+
+  // Shifts for those assignments (status != CANCELLED, date asc), from Convex.
+  const allShifts = await getShiftsByAssignmentIds(assignments.map((a) => a.id));
+  const shiftsByAssignment = new Map<string, typeof allShifts>();
+  for (const s of allShifts) {
+    if (s.status === "CANCELLED") continue;
+    const list = shiftsByAssignment.get(s.assignmentId) ?? [];
+    list.push(s);
+    shiftsByAssignment.set(s.assignmentId, list);
+  }
+  for (const list of shiftsByAssignment.values()) {
+    list.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
 
   const projectMap = new Map(allProjects.map((p) => [p.id, p]));
   const locationMap = new Map(allLocations.map((l) => [l.id, l]));
@@ -335,8 +348,10 @@ async function buildCrewOverviewFeed(
   const events: ICalEvent[] = [];
 
   for (const a of assignments) {
-    const crewName = `${a.crewMember.firstName} ${a.crewMember.lastName}`;
-    const roleName = a.crewRole?.name || "Crew";
+    const member = crewMemberMap.get(a.crewMemberId);
+    const crewName = member ? `${member.firstName} ${member.lastName}` : "Crew";
+    const roleName = (a.crewRoleId ? crewRoleMap.get(a.crewRoleId)?.name : null) || "Crew";
+    const shifts = shiftsByAssignment.get(a.id) ?? [];
     const project = projectMap.get(a.projectId);
     if (!project) continue;
     const loc = project.locationId ? locationMap.get(project.locationId) : null;
@@ -358,8 +373,8 @@ async function buildCrewOverviewFeed(
     }
     if (a.notes) descLines.push(`Notes: ${a.notes}`);
 
-    if (a.shifts.length > 0) {
-      for (const shift of a.shifts) {
+    if (shifts.length > 0) {
+      for (const shift of shifts) {
         const dtstart = buildDateTime(shift.date, shift.callTime, tzid);
         const dtend = shift.endTime
           ? buildDateTime(shift.date, shift.endTime, tzid)

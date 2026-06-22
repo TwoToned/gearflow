@@ -24,6 +24,12 @@ import { sendEmail } from "@/lib/email";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
+import {
+  getCrewAssignmentsByOrg,
+  getCrewTimeEntriesByOrg,
+  countAssignmentsByStatus,
+  countTimeEntriesByStatus,
+} from "@/lib/crew-scheduling-read";
 import { env } from "@/env";
 import {
   flaggedAssetEmail,
@@ -224,9 +230,10 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
   }
 
     // 6. Pending crew offers — aggregate, one email per day-bucket.
-  const pendingOffers = await prisma.crewAssignment.count({
-    where: { organizationId, status: "OFFERED" },
-  });
+  const pendingOffers = countAssignmentsByStatus(
+    await getCrewAssignmentsByOrg(organizationId),
+    ["OFFERED"],
+  );
   if (pendingOffers > 0) {
     const dayKey = now.toISOString().slice(0, 10);
     out.push({
@@ -245,9 +252,10 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
   }
 
   // 7. Pending timesheets — aggregate, one email per day-bucket.
-  const submittedTimesheets = await prisma.crewTimeEntry.count({
-    where: { organizationId, status: "SUBMITTED" },
-  });
+  const submittedTimesheets = countTimeEntriesByStatus(
+    await getCrewTimeEntriesByOrg(organizationId),
+    ["SUBMITTED"],
+  );
   if (submittedTimesheets > 0) {
     const dayKey = now.toISOString().slice(0, 10);
     out.push({

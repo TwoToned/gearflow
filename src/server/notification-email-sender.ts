@@ -17,6 +17,7 @@
  * Re-emailing pending invitations from here would just be noise.
  */
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -372,13 +373,13 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
     if (notifications.length === 0 || recipients.length === 0) continue;
 
     // Pre-fetch existing log rows for these keys to avoid one query per pair.
-    const existing = await prisma.notificationEmailLog.findMany({
-      where: {
-        organizationId: org.id,
-        notificationKey: { in: notifications.map((n) => n.key) },
-      },
-      select: { userId: true, notificationKey: true },
-    });
+    // notificationEmailLog is Convex-only (Phase C): list the org's logs and apply
+    // the `notificationKey IN [...]` filter in JS.
+    const keySet = new Set(notifications.map((n) => n.key));
+    const existing = (await (await getConvexClient()).query(
+      api.notificationEmailLogs.list,
+      { orgId: org.id },
+    )).filter((e) => keySet.has(e.notificationKey));
     const alreadySent = new Set(existing.map((e) => `${e.userId}::${e.notificationKey}`));
 
     for (const notif of notifications) {
@@ -400,12 +401,12 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
         try {
           const { subject, html } = notif.build(recipient, ctx);
           await sendEmail({ to: recipient.email, subject, html });
-          await prisma.notificationEmailLog.create({
-            data: {
-              organizationId: org.id,
-              userId: recipient.userId,
-              notificationKey: notif.key,
-            },
+          await (await getConvexClient()).mutation(api.notificationEmailLogs.create, {
+            id: createId(),
+            organizationId: org.id,
+            userId: recipient.userId,
+            notificationKey: notif.key,
+            sentAt: Date.now(),
           });
           alreadySent.add(dedupeKey);
           result.sent += 1;
@@ -429,9 +430,22 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
  * see in the active set anymore eventually fall out.
  */
 export async function pruneStaleNotificationEmailLogs(): Promise<number> {
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const result = await prisma.notificationEmailLog.deleteMany({
-    where: { sentAt: { lt: cutoff } },
-  });
-  return result.count;
+  // notificationEmailLog is Convex-only (Phase C). The old deleteMany spanned every
+  // org; the Convex `list` query is org-scoped, so iterate orgs (still in Postgres —
+  // Better Auth), list each org's logs, and remove the ones older than the cutoff.
+  const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const convex = await getConvexClient();
+  const orgs = await prisma.organization.findMany({ select: { id: true } });
+
+  let count = 0;
+  for (const org of orgs) {
+    const logs = await convex.query(api.notificationEmailLogs.list, { orgId: org.id });
+    for (const log of logs) {
+      if ((log.sentAt ?? 0) < cutoffMs) {
+        await convex.mutation(api.notificationEmailLogs.remove, { id: log.id });
+        count += 1;
+      }
+    }
+  }
+  return count;
 }

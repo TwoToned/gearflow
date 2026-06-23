@@ -11,8 +11,8 @@
  */
 import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
-import { prisma } from "@/lib/prisma";
 import { getBrandTemplateForOrg } from "@/lib/brand-templates-read";
+import { listDocumentTemplates, getDocumentTemplateById, type DocumentTemplateRow } from "@/lib/document-template-read";
 import { gearflowPlugins } from "./plugins";
 import { getPdfmeFonts } from "./fonts";
 import { buildDocumentData } from "./build-document-data";
@@ -52,14 +52,16 @@ async function loadTemplate(
   templateId?: string,
 ): Promise<LoadedTemplate> {
   try {
-    // Build query for the specific template or org default
-    const where = templateId
-      ? { id: templateId, organizationId, isDraft: false }
-      : { organizationId, type: docType, isDefault: true, isDraft: false };
-
-    const record = await prisma.documentTemplate.findFirst({
-      where,
-    });
+    // documentTemplate is Convex-only — load via the Convex read helper (replaces
+    // the dead Prisma read; Postgres documentTemplate is no longer authoritative).
+    let record: DocumentTemplateRow | null;
+    if (templateId) {
+      const t = await getDocumentTemplateById(templateId);
+      record = t && t.organizationId === organizationId && !t.isDraft ? t : null;
+    } else {
+      const all = await listDocumentTemplates(organizationId);
+      record = all.find((t) => t.type === docType && t.isDefault && !t.isDraft) ?? null;
+    }
 
     if (!record) {
       return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };

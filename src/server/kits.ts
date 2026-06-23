@@ -106,12 +106,23 @@ export async function getKit(id: string) {
           return [{ ...mapLineItemDoc(r), project }];
         });
     })(),
-    prisma.assetScanLog.findMany({
-      where: { kitId: id },
-      take: 20,
-      orderBy: { scannedAt: "desc" },
-      include: { scannedBy: true, project: true },
-    }),
+    // assetScanLog is still Prisma; scannedBy is a Better-Auth User (Prisma, kept).
+    // `project` is dual-written to Convex — resolve it from a Convex project map by
+    // projectId instead of a Prisma `include: { project: true }`.
+    (async () => {
+      const logs = await prisma.assetScanLog.findMany({
+        where: { kitId: id },
+        take: 20,
+        orderBy: { scannedAt: "desc" },
+        include: { scannedBy: true },
+      });
+      const logProjects = await getProjectsByOrg(organizationId);
+      const logProjectMap = new Map(logProjects.map((p) => [p.id, p]));
+      return logs.map((l) => ({
+        ...l,
+        project: l.projectId ? logProjectMap.get(l.projectId) ?? null : null,
+      }));
+    })(),
     // maintenanceRecord is Convex-only (Phase C). Read the org's records, filter
     // to this kit, then replicate `orderBy: { createdAt: "desc" }` + `take: 20`.
     getMaintenanceRecordsByOrg(organizationId).then((records) =>

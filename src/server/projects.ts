@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
-import { getCallSheetData } from "@/lib/projects-read";
+import {
+  getCallSheetData,
+  getProjectsByOrgMapped,
+  getProjectByIdMapped,
+  type ProjectRow,
+} from "@/lib/projects-read";
 import {
   getLineItemsByProjectIds,
   buildIncludeLineItemsByProject,
@@ -27,7 +32,7 @@ import { api } from "../../convex/_generated/api";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { type FilterValue } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
@@ -180,10 +185,24 @@ export async function peekNextProjectNumber(override?: {
   return renderProjectNumber(config.format, { parts, sequence: startSeq, padding: config.padding });
 }
 
-const projectFilterColumns: FilterColumnDef[] = [
-  { id: "status", filterType: "enum" },
-  { id: "type", filterType: "enum" },
-];
+/**
+ * Compare two mapped project rows on a scalar `sortBy` column, returning the
+ * ASCENDING ordering (the caller multiplies by -1 for desc). Mirrors the dropped
+ * Prisma `orderBy: { [sortBy]: sortOrder }`: NULLs sort LAST under ASC (so they
+ * compare "greater" here, then the desc multiply flips them to first, matching
+ * Postgres NULLS FIRST under DESC). Dates compare by epoch, numbers numerically,
+ * everything else lexicographically.
+ */
+function compareProjectField(a: ProjectRow, b: ProjectRow, sortBy: string): number {
+  const av = (a as unknown as Record<string, unknown>)[sortBy] ?? null;
+  const bv = (b as unknown as Record<string, unknown>)[sortBy] ?? null;
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1; // nulls last under ASC
+  if (bv == null) return -1;
+  if (av instanceof Date && bv instanceof Date) return av.getTime() - bv.getTime();
+  if (typeof av === "number" && typeof bv === "number") return av - bv;
+  return String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0;
+}
 
 async function generateTemplateCode(organizationId: string): Promise<string> {
   const count = await prisma.project.count({
@@ -230,64 +249,78 @@ export async function getProjects(params?: {
     filters,
   } = params || {};
 
-  // Build filter where from DataTable filters
-  const filterWhere = buildFilterWhere(filters, projectFilterColumns);
+  // The `project` row is dual-written to Convex — read all org projects from the
+  // Convex mirror (Prisma-row-shaped) and replicate the old Prisma `where` / sort /
+  // pagination in JS. Pure, reversible read swap (Phase C keystone read-cleanup).
+  const allProjects = await getProjectsByOrgMapped(organizationId);
 
   // The location FK was dropped (Phase B) — the search-by-location-name clause
   // can no longer be a Prisma relational filter. Resolve matching location ids
   // from the Convex mirror and match projects by `locationId in [...]` instead.
-  const searchLocationIds = search
-    ? (await getMappedLocationsByOrg(organizationId))
-        .filter((l) => l.name.toLowerCase().includes(search.toLowerCase()))
-        .map((l) => l.id)
-    : [];
+  const searchLocationIdSet = search
+    ? new Set(
+        (await getMappedLocationsByOrg(organizationId))
+          .filter((l) => l.name.toLowerCase().includes(search.toLowerCase()))
+          .map((l) => l.id),
+      )
+    : null;
 
-  const where: Prisma.ProjectWhereInput = {
-    organizationId,
-    isTemplate: false,
-    ...(status && {
-      status: status as Prisma.EnumProjectStatusFilter,
-    }),
-    ...(type && {
-      type: type as Prisma.EnumProjectTypeFilter,
-    }),
-    ...(clientId && { clientId }),
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { projectNumber: { contains: search, mode: "insensitive" } },
-        ...(searchLocationIds.length > 0 ? [{ locationId: { in: searchLocationIds } }] : []),
-      ],
-    }),
-    ...(rentalStartDate && {
-      rentalStartDate: { gte: new Date(rentalStartDate) },
-    }),
-    ...(rentalEndDate && {
-      rentalEndDate: { lte: new Date(rentalEndDate) },
-    }),
-    ...filterWhere,
-  };
+  // DataTable enum filters: status/type are the two enum columns → `{ in: [...] }`
+  // filters on those scalar fields (replicates the dropped buildFilterWhere where).
+  const statusFilterIn = (() => {
+    const v = filters?.status;
+    return Array.isArray(v) && v.length > 0 ? new Set(v as string[]) : null;
+  })();
+  const typeFilterIn = (() => {
+    const v = filters?.type;
+    return Array.isArray(v) && v.length > 0 ? new Set(v as string[]) : null;
+  })();
+
+  const searchLower = search?.toLowerCase();
+  const rentalStartGte = rentalStartDate ? new Date(rentalStartDate).getTime() : null;
+  const rentalEndLte = rentalEndDate ? new Date(rentalEndDate).getTime() : null;
+
+  const filtered = allProjects.filter((p) => {
+    if (p.isTemplate) return false;
+    if (status && p.status !== status) return false;
+    if (type && p.type !== type) return false;
+    if (clientId && p.clientId !== clientId) return false;
+    if (searchLower) {
+      const matchesName = p.name.toLowerCase().includes(searchLower);
+      const matchesNumber = p.projectNumber.toLowerCase().includes(searchLower);
+      const matchesLocation =
+        searchLocationIdSet != null && p.locationId != null && searchLocationIdSet.has(p.locationId);
+      if (!matchesName && !matchesNumber && !matchesLocation) return false;
+    }
+    if (rentalStartGte != null && (p.rentalStartDate == null || p.rentalStartDate.getTime() < rentalStartGte))
+      return false;
+    if (rentalEndLte != null && (p.rentalEndDate == null || p.rentalEndDate.getTime() > rentalEndLte))
+      return false;
+    if (statusFilterIn && !statusFilterIn.has(p.status)) return false;
+    if (typeFilterIn && !typeFilterIn.has(p.type)) return false;
+    return true;
+  });
+
+  const total = filtered.length;
 
   // Clients live in Convex (no Prisma join). Sorting by client name therefore
-  // can't happen in the DB — when sortBy === "client" we fetch all matching
-  // projects, attach clients, then sort + paginate in JS. Other sorts keep DB
-  // pagination and just attach clients to the page.
+  // can't happen at the source — when sortBy === "client" we sort + paginate
+  // after attaching clients. Other sorts sort the mapped rows, then paginate.
   const sortByClient = sortBy === "client";
-  const [projectsRaw, total] = await Promise.all([
-    prisma.project.findMany({
-      where,
-      ...(sortByClient
-        ? {}
-        : { orderBy: { [sortBy]: sortOrder }, skip: (page - 1) * pageSize, take: pageSize }),
-    }),
-    prisma.project.count({ where }),
-  ]);
+
+  if (!sortByClient) {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    filtered.sort((a, b) => compareProjectField(a, b, sortBy) * dir);
+  }
+
+  // For non-client sorts, slice the page before attaching cross-domain data.
+  const pageRows = sortByClient ? filtered : filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const [clientMap, locationMap] = await Promise.all([
     getClientMap(organizationId),
     getLocationMap(organizationId),
   ]);
-  let projects = projectsRaw.map((p) => ({
+  let projects = pageRows.map((p) => ({
     ...p,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
     location: p.locationId ? locationMap.get(p.locationId) ?? null : null,
@@ -331,12 +364,15 @@ export async function getProjectIssueFlags(projectIds: string[]) {
   const { organizationId } = await getOrgContext();
   if (projectIds.length === 0) return {} as Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }>;
 
-  // Only compute for active projects
+  // Only compute for active projects. `project` is dual-written to Convex — read
+  // all org projects (Prisma-row-shaped) and filter to the requested ids + active
+  // statuses in JS (pure, reversible swap of the old Prisma findMany).
   const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
-  const projects = await prisma.project.findMany({
-    where: { id: { in: projectIds }, organizationId, status: { in: activeStatuses } },
-    select: { id: true, rentalStartDate: true, rentalEndDate: true },
-  });
+  const idSet = new Set(projectIds);
+  const activeStatusSet = new Set<string>(activeStatuses);
+  const projects = (await getProjectsByOrgMapped(organizationId)).filter(
+    (p) => idSet.has(p.id) && activeStatusSet.has(p.status),
+  );
 
   if (projects.length === 0) return {} as Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }>;
 
@@ -380,23 +416,42 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 export async function getProject(id: string) {
   const { organizationId } = await getOrgContext();
   // The equipment line-item tree (categories → groups → lineItems →
-  // childLineItems → units, with asset/bulkAsset/kit/model/supplier) now comes
-  // from the dual-written Convex tables, reconstructed in JS — see
-  // src/lib/project-line-item-read.ts (Phase A keystone). Prisma here only
-  // supplies the project scalars + location + projectManagers + media, which stay
-  // Prisma reads for now.
-  const projectRow = await prisma.project.findUnique({
-    where: { id, organizationId },
-    include: {
-      projectManagers: {
-        include: {
-          user: { select: { id: true, name: true, email: true, image: true } },
-        },
-        orderBy: { addedAt: "asc" },
-      },
-    },
+  // childLineItems → units, with asset/bulkAsset/kit/model/supplier) comes from
+  // the dual-written Convex tables, reconstructed in JS — see
+  // src/lib/project-line-item-read.ts (Phase A keystone).
+  //
+  // Project scalars are dual-written to Convex → read the Prisma-row-shaped doc.
+  // projectManagers are Convex-only (Phase B); read the join rows from Convex and
+  // attach the linked Better-Auth `user` (kept-table Prisma) by a single batched
+  // findMany. media + location stay as before.
+  const projectScalars = await getProjectByIdMapped(id, organizationId);
+  if (!projectScalars) return null;
+
+  const convexForProject = await getConvexClient();
+  const pmRows = await convexForProject.query(api.projectManagers.listByProject, {
+    projectId: id,
+    orgId: organizationId,
   });
-  if (!projectRow) return null;
+  // Order by addedAt asc (mirrors the dropped Prisma `orderBy: { addedAt: "asc" }`).
+  const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
+  const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
+  const pmUsers = pmUserIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: pmUserIds } },
+        select: { id: true, name: true, email: true, image: true },
+      })
+    : [];
+  const pmUserMap = new Map(pmUsers.map((u) => [u.id, u]));
+  const projectManagers = sortedPmRows.map((pm) => ({
+    id: pm.id,
+    organizationId: pm.organizationId,
+    projectId: pm.projectId,
+    userId: pm.userId,
+    addedAt: pm.addedAt != null ? new Date(pm.addedAt) : null,
+    user: pmUserMap.get(pm.userId) ?? null,
+  }));
+
+  const projectRow = { ...projectScalars, projectManagers };
 
   // project media gallery now from the Convex mirror (dual-written → identical
   // data); was a Prisma projectMedia + file join. See media-read.ts.
@@ -1084,10 +1139,18 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
 export async function getTemplates() {
   const { organizationId } = await getOrgContext();
 
-  const templates = await prisma.project.findMany({
-    where: { organizationId, isTemplate: true },
-    orderBy: { updatedAt: "desc" },
-  });
+  // `project` is dual-written to Convex — read all org projects (Prisma-row-shaped),
+  // keep only templates, order by updatedAt desc (NULLS FIRST, Postgres DESC).
+  const templates = (await getProjectsByOrgMapped(organizationId))
+    .filter((p) => p.isTemplate === true)
+    .sort((a, b) => {
+      const at = a.updatedAt?.getTime() ?? null;
+      const bt = b.updatedAt?.getTime() ?? null;
+      if (at === bt) return 0;
+      if (at === null) return -1; // nulls first under DESC
+      if (bt === null) return 1;
+      return bt - at;
+    });
 
   // The `_count.lineItems` (top-level / non kit-child) now comes from the
   // dual-written Convex line items instead of a Prisma `_count` aggregate.

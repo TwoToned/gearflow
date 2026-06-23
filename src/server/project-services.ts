@@ -23,6 +23,7 @@ import {
   getProjectServicesSummaryFromConvex,
 } from "@/lib/project-service-read";
 import { getProjectById } from "@/lib/projects-read";
+import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
 import {
@@ -1090,45 +1091,52 @@ export async function getServiceCostHistory(
   // Use authenticated org context, not the passed param
   const resolvedOrgId = orgId || organizationId;
 
-  const history = await prisma.projectService.findMany({
-    where: {
-      organizationId: resolvedOrgId,
-      type: serviceType,
-      unitPrice: { not: null },
-      status: { in: ["COMPLETED", "CONFIRMED", "IN_PROGRESS"] },
-    },
-    select: {
-      unitPrice: true,
-      pricingType: true,
-      lineTotal: true,
-      costTotal: true,
-      date: true,
-      project: { select: { projectNumber: true, name: true } },
-    },
-    orderBy: { date: "desc" },
-    take: limit,
-  });
+  // projectService + project are dual-written to Convex. Read the org's services,
+  // replicate the Prisma where (type === serviceType, unitPrice != null, status in
+  // [COMPLETED, CONFIRMED, IN_PROGRESS]) + orderBy date desc + take(limit) in JS,
+  // and resolve each service's project (projectNumber / name) from a Convex map.
+  const STATUSES = new Set(["COMPLETED", "CONFIRMED", "IN_PROGRESS"]);
+  const allServices = await getProjectServicesByOrg(resolvedOrgId);
+  const matched = allServices
+    .filter(
+      (s) =>
+        s.type === serviceType &&
+        s.unitPrice != null &&
+        s.status != null &&
+        STATUSES.has(s.status),
+    )
+    .sort((a, b) => (b.date ?? 0) - (a.date ?? 0))
+    .slice(0, limit);
 
-  if (history.length === 0) {
+  if (matched.length === 0) {
     return serialize({ average: null, min: null, max: null, count: 0, history: [] });
   }
 
-  const prices = history.map((h) => Number(h.unitPrice));
+  const projectIds = [...new Set(matched.map((s) => s.projectId))];
+  const projectRows = await Promise.all(projectIds.map((pid) => getProjectById(pid)));
+  const projectMap = new Map(
+    projectRows.flatMap((p) => (p ? [[p.id, p] as const] : [])),
+  );
+
+  const prices = matched.map((h) => Number(h.unitPrice));
   const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
 
   return serialize({
     average: roundCurrency(avg),
     min: Math.min(...prices),
     max: Math.max(...prices),
-    count: history.length,
-    history: history.map((h) => ({
-      unitPrice: Number(h.unitPrice),
-      pricingType: h.pricingType,
-      lineTotal: h.lineTotal ? Number(h.lineTotal) : null,
-      date: h.date,
-      projectNumber: h.project.projectNumber,
-      projectName: h.project.name,
-    })),
+    count: matched.length,
+    history: matched.map((h) => {
+      const project = projectMap.get(h.projectId);
+      return {
+        unitPrice: Number(h.unitPrice),
+        pricingType: h.pricingType,
+        lineTotal: h.lineTotal != null ? Number(h.lineTotal) : null,
+        date: h.date != null ? new Date(h.date) : null,
+        projectNumber: project?.projectNumber ?? "",
+        projectName: project?.name ?? "",
+      };
+    }),
   });
 }
 

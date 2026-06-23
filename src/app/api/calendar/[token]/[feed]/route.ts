@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientMap } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
@@ -157,36 +158,40 @@ async function buildServicesFeed(
   orgName: string,
   tzid: string
 ): Promise<string> {
-  const services = await prisma.projectService.findMany({
-    where: {
-      organizationId: orgId,
-      status: { not: "CANCELLED" },
-      date: { not: null },
-      project: {
-        isTemplate: false,
-        status: { not: "CANCELLED" },
-      },
-    },
-    include: {
-      project: {
-        select: { name: true, projectNumber: true },
-      },
-    },
-    orderBy: { date: "desc" },
-  });
+  // projectService + project are dual-written to Convex. The relational
+  // `where` on project (isTemplate / status) can't survive — read the org's
+  // services + projects from Convex, resolve each service's project via a map,
+  // and replicate the filter in JS: service status != CANCELLED && date != null,
+  // project isTemplate === false && status != CANCELLED. Order by date desc.
+  const [allServices, allProjects] = await Promise.all([
+    getProjectServicesByOrg(orgId),
+    getProjectsByOrg(orgId),
+  ]);
+  const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+  const services = allServices
+    .flatMap((s) => {
+      if (s.status === "CANCELLED" || s.date == null) return [];
+      const project = projectMap.get(s.projectId);
+      if (!project || project.isTemplate || project.status === "CANCELLED") return [];
+      return [{ ...s, project: { name: project.name, projectNumber: project.projectNumber } }];
+    })
+    .sort((a, b) => (b.date as number) - (a.date as number));
 
   const events: ICalEvent[] = [];
 
   for (const s of services) {
-    if (!s.date) continue;
+    if (s.date == null) continue;
 
-    const dtstart = buildDateTime(s.date, s.startTime || s.scheduledTime, tzid);
-    const dtend = s.endDate
-      ? buildDateTime(s.endDate, s.endTime, tzid)
+    // Convex stores date/endDate as epoch-ms — convert to Date for buildDateTime.
+    const sDate = new Date(s.date);
+    const sEndDate = s.endDate != null ? new Date(s.endDate) : null;
+    const dtstart = buildDateTime(sDate, s.startTime || s.scheduledTime, tzid);
+    const dtend = sEndDate
+      ? buildDateTime(sEndDate, s.endTime, tzid)
       : s.endTime
-        ? buildDateTime(s.date, s.endTime, tzid)
+        ? buildDateTime(sDate, s.endTime, tzid)
         : buildDateTime(
-            s.date,
+            sDate,
             s.startTime ? undefined : s.scheduledTime,
             tzid
           );
@@ -196,11 +201,13 @@ async function buildServicesFeed(
       dtend.setTime(dtstart.getTime() + 60 * 60 * 1000);
     }
 
+    // status is optional on the Convex doc (Prisma-defaulted "PLANNED").
+    const sStatus = s.status ?? "PLANNED";
     const descLines = [
       `Service: ${s.title}`,
       `Type: ${s.type.replace(/_/g, " ")}`,
       `Project: #${s.project.projectNumber} - ${s.project.name}`,
-      `Status: ${s.status.replace(/_/g, " ")}`,
+      `Status: ${sStatus.replace(/_/g, " ")}`,
     ];
     if (s.notes) descLines.push(`Notes: ${s.notes}`);
     if (s.crewCountRequired)
@@ -213,7 +220,7 @@ async function buildServicesFeed(
       location: s.address || undefined,
       dtstart,
       dtend,
-      status: s.status === "CONFIRMED" || s.status === "IN_PROGRESS"
+      status: sStatus === "CONFIRMED" || sStatus === "IN_PROGRESS"
         ? "CONFIRMED"
         : "TENTATIVE",
       categories: ["GearFlow", s.type.replace(/_/g, " ")],

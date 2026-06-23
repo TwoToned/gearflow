@@ -3329,6 +3329,40 @@ already-inverted tables + three small inversions.
 - **Prod backfills to run on deploy:** `convex-backfill-woocommerce-integration.ts`
   (required) + `convex-backfill-notification-email-log.ts` (optional).
 
+### Phase C — project keystone read-cleanup (1/2)
+
+The keystone (`project` + `projectService`, both dual-written; `projectManager`/
+`projectTask`/`projectMedia` already Convex-only). Split like the other domains:
+**read-cleanup first, write-invert second.** This is the read-cleanup — data-serving
+reads → Convex, pure reversible swap; writes still dual-write. No live inbound FK
+blocks the eventual inversion (Stage 1 #254 dropped them all).
+
+- **Foundation:** `projects-read.ts` gains `mapProject` (ConvexProject →
+  Prisma-row shape: epoch-ms→Date, Decimal→number, absent→null, defaults coerced) +
+  `getProjectsByOrgMapped` / `getProjectByIdMapped`.
+- **Reads rewired:** `getProjects` (list — the Prisma `where`/sort/paginate
+  replicated in JS over the Convex list, incl. location-name search via Convex
+  location ids + NULLS-LAST sort + the client-sort JS path), `getProject` (scalars +
+  `projectManagers` from Convex, linked user from the kept Postgres `user`),
+  `getProjectIssueFlags`, `getTemplates`; the **PDF `build-document-data`** (project
+  scalars + call-sheet crew from Convex — the Prisma crewAssignment include was
+  already empty since crew is Convex-only; the still-Prisma `subHires` read kept);
+  the calendar ical services feed (relational `where: { project }` → Convex map + JS
+  filter), kit scan-log project attach, `getServiceCostHistory`, and the
+  crew-communication email builders.
+- **Left on Prisma (flip with write-inversion 2/2):** all read-before-write guards
+  inside the project/projectService write actions, `generateProjectNumber` /
+  `peekNextProjectNumber` (the counter), and the write paths.
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests. Reads only.
+- **Next (2/2) — the last domain inversion:** migrate `projectNumberSequence` (the
+  atomic `ON CONFLICT … value+1` counter — the single riskiest invariant; a custom
+  Convex `reserveNextNumber` check-then-increment + a `by_organizationId_projectNumber`
+  index for the `@@unique` guard), then invert `projectService` + `project` writes
+  (createProject / updateProject* / duplicateProject / saveAsTemplate / deleteProject
+  / the template deep-copy) to Convex-only and delete `project-mirror.ts` +
+  `project-subtable-mirror.ts`. After that: Stage 3 strip schema → Stage 4 DROP TABLE
+  → Stage 5 infra cleanup.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

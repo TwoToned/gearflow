@@ -95,6 +95,19 @@ export const remove = mutation({
 
 // ─── CUSTOM (project keystone write-inversion, Phase C) ───
 
+/** The current counter row for `(organizationId, scopeKey)` — powers the
+ *  no-increment "next number" preview (peekNextProjectNumber). */
+export const getByOrgAndScopeKey = query({
+  args: { organizationId: v.string(), scopeKey: v.string() },
+  handler: async (ctx, { organizationId, scopeKey }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("projectNumberSequences")
+      .withIndex("by_organizationId_scopeKey", (q) => q.eq("organizationId", organizationId).eq("scopeKey", scopeKey))
+      .unique();
+  },
+});
+
 /**
  * Atomically allocate the next sequence value for `(organizationId, scopeKey)` —
  * the Convex equivalent of the Postgres `INSERT … ON CONFLICT … value = value + 1

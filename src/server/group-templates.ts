@@ -6,6 +6,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
+import { getKitMap } from "@/lib/kits-read";
 import { getProjectById } from "@/lib/projects-read";
 import {
   getGroupTemplateParents,
@@ -57,20 +58,26 @@ export async function getGroupTemplates() {
   const parents = await getGroupTemplateParents(organizationId);
   if (parents.length === 0) return serialize([]);
 
-  // One Prisma round-trip for ALL templates' items, then group by templateId —
-  // reproduces the per-template `include: { items: { include: { model, kit } } }`
-  // with the same selects and `orderBy: { sortOrder: "asc" }`.
-  const items = await prisma.groupTemplateItem.findMany({
-    where: { organizationId, templateId: { in: parents.map((p) => p.id) } },
-    include: {
-      model: {
-        select: { id: true, name: true, dailyRate: true, weeklyRate: true },
-      },
-      kit: {
-        select: { id: true, name: true, assetTag: true },
-      },
-    },
-    orderBy: { sortOrder: "asc" },
+  // One Prisma round-trip for ALL templates' items (groupTemplateItem is a Prisma
+  // child table), then attach model + kit from Convex. model/kit are Convex-only —
+  // the old Prisma `include: { model, kit }` threw on `model` (no such relation) and
+  // returned null on `kit` (no Prisma kit rows). Resolve both from the Convex maps.
+  const [rawItems, modelMap, kitMap] = await Promise.all([
+    prisma.groupTemplateItem.findMany({
+      where: { organizationId, templateId: { in: parents.map((p) => p.id) } },
+      orderBy: { sortOrder: "asc" },
+    }),
+    getModelMap(organizationId),
+    getKitMap(organizationId),
+  ]);
+  const items = rawItems.map((it) => {
+    const m = it.modelId ? modelMap.get(it.modelId) : undefined;
+    const k = it.kitId ? kitMap.get(it.kitId) : undefined;
+    return {
+      ...it,
+      model: m ? { id: m.id, name: m.name, dailyRate: m.dailyRate ?? null, weeklyRate: m.weeklyRate ?? null } : null,
+      kit: k ? { id: k.id, name: k.name, assetTag: k.assetTag ?? null } : null,
+    };
   });
 
   const itemsByTemplate = new Map<string, typeof items>();
@@ -246,13 +253,18 @@ export async function applyGroupTemplate(
   }
   const templateItems = await prisma.groupTemplateItem.findMany({
     where: { templateId: parsed.templateId, organizationId },
-    include: { kit: true },
     orderBy: { sortOrder: "asc" },
   });
-  const modelMap = await getModelMap(organizationId);
+  // model + kit are Convex-only — resolve both from the Convex maps (the old
+  // `include: { kit: true }` returned null and silently dropped kit items).
+  const [modelMap, kitMap] = await Promise.all([
+    getModelMap(organizationId),
+    getKitMap(organizationId),
+  ]);
   const itemsWithModels = templateItems.map((i) => ({
     ...i,
     model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
+    kit: i.kitId ? kitMap.get(i.kitId) ?? null : null,
   }));
 
   const client = await getConvexClient();

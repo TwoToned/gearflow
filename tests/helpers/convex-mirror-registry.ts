@@ -22,11 +22,6 @@
 
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import {
-  mirrorProjectCreate,
-  patchProjectInConvex,
-  removeProjectFromConvex,
-} from "@/lib/project-mirror";
 
 type Row = Record<string, unknown>;
 
@@ -79,7 +74,7 @@ export const MIRROR_REGISTRY: Record<string, MirrorEntry> = {
   BulkAsset: generic(api.bulkAssets),
   Kit: generic(api.kits),
   KitBulkItem: generic(api.kitBulkItems),
-  Project: { create: mirrorProjectCreate, patch: patchProjectInConvex, remove: removeProjectFromConvex },
+  Project: generic(api.projects),
   ProjectCategory: generic(api.projectCategories),
   ProjectGroup: generic(api.projectGroups),
   ProjectLineItem: generic(api.projectLineItems),

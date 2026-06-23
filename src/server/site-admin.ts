@@ -512,11 +512,16 @@ export async function adminDeleteUser(userId: string) {
   // returnedById point at this user so we can clear those FKs post-commit.
   const lineItemsToClearCheckedOut: { id: string }[] = [];
   const lineItemsToClearReturned: { id: string }[] = [];
+  // project is Convex-only — collect projects this user manages so the
+  // projectManagerId FK can be cleared post-commit (replaces the old in-tx
+  // prisma.project.updateMany).
+  const projectsToClearManager: { id: string }[] = [];
   for (const org of allOrgsForSweep) {
-    const [serialized, bulk, lines] = await Promise.all([
+    const [serialized, bulk, lines, projects] = await Promise.all([
       convexForDelete.query(api.kitSerializedItems.list, { orgId: org.id }),
       convexForDelete.query(api.kitBulkItems.list, { orgId: org.id }),
       convexForDelete.query(api.projectLineItems.list, { orgId: org.id }),
+      convexForDelete.query(api.projects.list, { orgId: org.id }),
     ]);
     for (const s of serialized) if (s.addedById === userId) serializedItemsToRemove.push({ id: s.id });
     for (const b of bulk) if (b.addedById === userId) bulkItemsToRemove.push({ id: b.id });
@@ -524,6 +529,7 @@ export async function adminDeleteUser(userId: string) {
       if (li.checkedOutById === userId) lineItemsToClearCheckedOut.push({ id: li.id });
       if (li.returnedById === userId) lineItemsToClearReturned.push({ id: li.id });
     }
+    for (const p of projects) if (p.projectManagerId === userId) projectsToClearManager.push({ id: p.id });
   }
 
   const [scanLogsToRemove, testTagRecordsToRemove] = await Promise.all([
@@ -538,9 +544,9 @@ export async function adminDeleteUser(userId: string) {
 
   await prisma.$transaction(async (tx) => {
     // Null out nullable User FK references (KEPT tables only).
-    // maintenanceRecord is Convex-only now — its reportedById/assignedToId FK
-    // scrub runs post-commit via api.maintenanceRecords.scrubUserRefs below.
-    await tx.project.updateMany({ where: { projectManagerId: userId }, data: { projectManagerId: null } });
+    // maintenanceRecord and project are Convex-only now — the
+    // projectManagerId / reportedById / assignedToId FK scrubs run post-commit
+    // (api.projects.patchProject + api.maintenanceRecords.scrubUserRefs below).
 
     // Delete records with non-nullable User FKs (KEPT tables only).
     await tx.assetScanLog.deleteMany({ where: { scannedById: userId } });
@@ -565,6 +571,14 @@ export async function adminDeleteUser(userId: string) {
       id: li.id,
       set: {},
       clear: ["returnedById"],
+    });
+  }
+  // project is Convex-only — clear the projectManagerId FK on this user's projects.
+  for (const p of projectsToClearManager) {
+    await convexForDelete.mutation(api.projects.patchProject, {
+      id: p.id,
+      set: {},
+      clear: ["projectManagerId"],
     });
   }
   for (const item of serializedItemsToRemove) {

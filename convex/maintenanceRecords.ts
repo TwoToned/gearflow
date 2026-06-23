@@ -142,3 +142,37 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (Phase C) ───────────────────────────────────────────────────────
+
+/**
+ * Scrub a deleted Better Auth user's FK references from an org's maintenance
+ * records. Re-implements the Prisma `updateMany({ reportedById|assignedToId:
+ * userId } → null)` the user-delete sweep used to run against the (now dead)
+ * Postgres `maintenance_record` table. For each record where `reportedById` or
+ * `assignedToId` equals `userId`, patch the matching field to `undefined`
+ * (Convex `db.patch` with a field = `undefined` deletes it → clears to null);
+ * the non-matching field is left untouched.
+ */
+export const scrubUserRefs = mutation({
+  args: { organizationId: v.string(), userId: v.string() },
+  handler: async (ctx, { organizationId, userId }) => {
+    await requireService(ctx);
+    const docs = await ctx.db
+      .query("maintenanceRecords")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .collect();
+    let scrubbed = 0;
+    for (const doc of docs) {
+      const matchReported = doc.reportedById === userId;
+      const matchAssigned = doc.assignedToId === userId;
+      if (!matchReported && !matchAssigned) continue;
+      const patch: { reportedById?: undefined; assignedToId?: undefined } = {};
+      if (matchReported) patch.reportedById = undefined;
+      if (matchAssigned) patch.assignedToId = undefined;
+      await ctx.db.patch(doc._id, patch);
+      scrubbed += 1;
+    }
+    return { scrubbed };
+  },
+});

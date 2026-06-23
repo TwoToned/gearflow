@@ -4,6 +4,9 @@ import { getClientMap } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import {
   getAssignmentsByOrg,
@@ -225,32 +228,40 @@ async function buildMaintenanceFeed(
   orgName: string,
   tzid: string
 ): Promise<string> {
-  const records = await prisma.maintenanceRecord.findMany({
-    where: {
-      organizationId: orgId,
-      status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-      scheduledDate: { not: null },
-    },
-    include: {
-      assignedTo: { select: { name: true } },
-      assets: {
-        include: {
-          asset: {
-            select: {
-              assetTag: true,
-              customName: true,
-              modelId: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: { scheduledDate: "asc" },
-  });
+  // maintenanceRecord is Convex-only (Phase C). Read the org's records from
+  // Convex, replicate the old `where` (status in [SCHEDULED, IN_PROGRESS],
+  // scheduledDate != null) + `orderBy: { scheduledDate: "asc" }` in JS.
+  const allRecords = await getMaintenanceRecordsByOrg(orgId);
+  const records = allRecords
+    .filter(
+      (r) =>
+        (r.status === "SCHEDULED" || r.status === "IN_PROGRESS") &&
+        r.scheduledDate != null,
+    )
+    .sort((a, b) => (a.scheduledDate!.getTime() - b.scheduledDate!.getTime()));
 
-  // Model FK was dropped (Phase B); resolve asset model names from the Convex
-  // mirror (replaces the old nested `asset.model.select.name`).
-  const modelMap = await getModelMap(orgId);
+  // The maintenanceRecordAsset join + assets live in Convex; assignedTo is a
+  // Better Auth User (Prisma). Resolve both, plus model names for the labels.
+  const recordIds = records.map((r) => r.id);
+  const [assetLinks, allAssets, modelMap] = await Promise.all([
+    getMaintenanceAssetLinksByRecordIds(recordIds),
+    getAssetsByOrg(orgId),
+    getModelMap(orgId),
+  ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const linksByRecord = new Map<string, typeof assetLinks>();
+  for (const l of assetLinks) {
+    const arr = linksByRecord.get(l.maintenanceRecordId) ?? [];
+    arr.push(l);
+    linksByRecord.set(l.maintenanceRecordId, arr);
+  }
+  const assignedToIds = [
+    ...new Set(records.map((r) => r.assignedToId).filter((id): id is string => !!id)),
+  ];
+  const assignedToUsers = assignedToIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: assignedToIds } }, select: { id: true, name: true } })
+    : [];
+  const assignedToNameMap = new Map(assignedToUsers.map((u) => [u.id, u.name]));
 
   const events: ICalEvent[] = [];
 
@@ -260,12 +271,14 @@ async function buildMaintenanceFeed(
     const dtstart = buildDateTime(r.scheduledDate, null, tzid);
     const dtend = new Date(dtstart); // Same day — flagged as all-day below
 
-    const assetNames = r.assets
-      .map((a) => {
-        const modelName = a.asset.modelId
-          ? modelMap.get(a.asset.modelId)?.name ?? ""
+    const assetNames = (linksByRecord.get(r.id) ?? [])
+      .flatMap((l) => {
+        const asset = assetMap.get(l.assetId);
+        if (!asset) return [];
+        const modelName = asset.modelId
+          ? modelMap.get(asset.modelId)?.name ?? ""
           : "";
-        return a.asset.customName || `${modelName} (${a.asset.assetTag})`;
+        return [asset.customName || `${modelName} (${asset.assetTag})`];
       })
       .join(", ");
 
@@ -275,7 +288,8 @@ async function buildMaintenanceFeed(
       `Status: ${r.status.replace(/_/g, " ")}`,
     ];
     if (r.description) descLines.push(`Details: ${r.description}`);
-    if (r.assignedTo?.name) descLines.push(`Assigned To: ${r.assignedTo.name}`);
+    const assignedToName = r.assignedToId ? assignedToNameMap.get(r.assignedToId) : null;
+    if (assignedToName) descLines.push(`Assigned To: ${assignedToName}`);
     if (assetNames) descLines.push(`Assets: ${assetNames}`);
 
     events.push({

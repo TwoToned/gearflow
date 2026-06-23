@@ -201,14 +201,14 @@ export async function getRecentActivity() {
     convex.query(api.assetScanLogs.list, { orgId: organizationId }),
     convex.query(api.testTagRecords.list, { orgId: organizationId }),
     convex.query(api.testTagAssets.list, { orgId: organizationId }),
-    prisma.maintenanceRecord.findMany({
-      where: { organizationId },
-      include: {
-        reportedBy: { select: { id: true, name: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-    }),
+    // maintenanceRecord is Convex-only (Phase C). Read the org's records, then
+    // replicate `orderBy: { updatedAt: "desc" }` + `take: 10` in JS. reportedBy
+    // (a Better Auth User) is attached from Prisma below.
+    getMaintenanceRecordsByOrg(organizationId).then((records) =>
+      [...records]
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+        .slice(0, 10),
+    ),
     getModelMap(organizationId),
     getAssetsByOrg(organizationId),
     getBulkAssetsByOrg(organizationId),
@@ -263,6 +263,15 @@ export async function getRecentActivity() {
     arr.push(l);
     linksByRecord.set(l.maintenanceRecordId, arr);
   }
+  // reportedBy is a Better Auth User (Prisma KEPT table) — resolve names for the
+  // records' reportedById refs (replaces the old `include: { reportedBy }`).
+  const reportedByIds = [
+    ...new Set(maintenanceRecords.map((m) => m.reportedById).filter((id): id is string => !!id)),
+  ];
+  const reportedByUsers = reportedByIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: reportedByIds } }, select: { id: true, name: true } })
+    : [];
+  const reportedByMap = new Map(reportedByUsers.map((u) => [u.id, u]));
 
   const withModels = {
     logs: scanLogsSorted.map((l) => {
@@ -280,6 +289,7 @@ export async function getRecentActivity() {
     testRecords,
     maintenanceRecords: maintenanceRecords.map((m) => ({
       ...m,
+      reportedBy: m.reportedById ? reportedByMap.get(m.reportedById) ?? null : null,
       assets: (linksByRecord.get(m.id) ?? [])
         .slice(0, 3) // preserve the old include `take: 3`
         .map((l) => {

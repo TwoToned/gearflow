@@ -9,6 +9,8 @@ import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
 import {
   getDismissedKeysForUser,
   getDismissalsForUser,
@@ -120,19 +122,33 @@ export async function getNotifications(): Promise<AppNotification[]> {
   const modelMap = await getModelMap(organizationId);
 
   // 1. Overdue maintenance
-  const overdueMaintenance = await prisma.maintenanceRecord.findMany({
-    where: {
-      organizationId,
-      status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-      scheduledDate: { lt: now },
-    },
-    include: { assets: { include: { asset: true } } },
-    take: 10,
-  });
+  // maintenanceRecord is Convex-only (Phase C). Read the org's records, replicate
+  // the old `where` (status in [SCHEDULED, IN_PROGRESS], scheduledDate < now) +
+  // `take: 10` in JS. The maintenanceRecordAsset join + assets live in Convex.
+  const overdueMaintenance = (await getMaintenanceRecordsByOrg(organizationId))
+    .filter(
+      (m) =>
+        (m.status === "SCHEDULED" || m.status === "IN_PROGRESS") &&
+        m.scheduledDate != null &&
+        m.scheduledDate.getTime() < now.getTime(),
+    )
+    .slice(0, 10);
+
+  const overdueRecordIds = overdueMaintenance.map((m) => m.id);
+  const overdueLinks = await getMaintenanceAssetLinksByRecordIds(overdueRecordIds);
+  const overdueAssets = await getAssetsByOrg(organizationId);
+  const overdueAssetMap = new Map(overdueAssets.map((a) => [a.id, a]));
+  const overdueLinksByRecord = new Map<string, typeof overdueLinks>();
+  for (const l of overdueLinks) {
+    const arr = overdueLinksByRecord.get(l.maintenanceRecordId) ?? [];
+    arr.push(l);
+    overdueLinksByRecord.set(l.maintenanceRecordId, arr);
+  }
 
   for (const m of overdueMaintenance) {
-    const firstAsset = m.assets[0]?.asset;
-    const assetCount = m.assets.length;
+    const recordLinks = overdueLinksByRecord.get(m.id) ?? [];
+    const firstAsset = recordLinks[0] ? overdueAssetMap.get(recordLinks[0].assetId) : undefined;
+    const assetCount = recordLinks.length;
     const firstModelName = firstAsset?.modelId ? modelMap.get(firstAsset.modelId)?.name : undefined;
     const desc = firstAsset
       ? assetCount > 1

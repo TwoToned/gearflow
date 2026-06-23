@@ -32,7 +32,6 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -155,26 +154,52 @@ export async function createProjectService(
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
 
-  // Wrap in transaction (Arch fix #1)
-  const service = await prisma.$transaction(async (tx) => {
-    const maxSort = await tx.projectService.aggregate({
-      where: { projectId },
-      _max: { sortOrder: true },
-    });
-
-    const svc = await tx.projectService.create({
-      data: {
-        organizationId,
-        projectId,
-        ...fields,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      },
-    });
-
-    return svc;
+  // projectService is Convex-only now (Phase C). Compute sortOrder = max+1 from the
+  // project's existing Convex services, mint a cuid, and write directly.
+  const convexForCreate = await getConvexClient();
+  const existingForProject = (await getProjectServicesByOrg(organizationId)).filter(
+    (s) => s.projectId === projectId,
+  );
+  const maxSort = existingForProject.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1);
+  const serviceId = createId();
+  const nowCreate = Date.now();
+  await convexForCreate.mutation(api.projectServices.create, {
+    id: serviceId,
+    organizationId,
+    projectId,
+    type: fields.type,
+    title: fields.title,
+    ...(fields.description != null ? { description: fields.description } : {}),
+    ...(fields.notes != null ? { notes: fields.notes } : {}),
+    ...(serviceDate ? { date: serviceDate.getTime() } : {}),
+    ...(serviceEndDate ? { endDate: serviceEndDate.getTime() } : {}),
+    ...(fields.startTime != null ? { startTime: fields.startTime } : {}),
+    ...(fields.endTime != null ? { endTime: fields.endTime } : {}),
+    ...(fields.scheduledTime != null ? { scheduledTime: fields.scheduledTime } : {}),
+    ...(fields.estimatedDuration != null ? { estimatedDuration: fields.estimatedDuration } : {}),
+    ...(fields.address != null ? { address: fields.address } : {}),
+    ...(fields.latitude != null ? { latitude: fields.latitude } : {}),
+    ...(fields.longitude != null ? { longitude: fields.longitude } : {}),
+    showOnDocuments: fields.showOnDocuments,
+    ...(fields.unitPrice != null ? { unitPrice: fields.unitPrice } : {}),
+    quantity: fields.quantity,
+    ...(fields.pricingType != null ? { pricingType: fields.pricingType } : {}),
+    ...(fields.duration != null ? { duration: fields.duration } : {}),
+    ...(fields.discount != null ? { discount: fields.discount } : {}),
+    ...(fields.lineTotal != null ? { lineTotal: fields.lineTotal } : {}),
+    ...(fields.costTotal != null ? { costTotal: fields.costTotal } : {}),
+    taxable: fields.taxable,
+    ...(fields.vehicleDescription != null ? { vehicleDescription: fields.vehicleDescription } : {}),
+    ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
+    ...(fields.crewCountRequired != null ? { crewCountRequired: fields.crewCountRequired } : {}),
+    ...(fields.crewRoleId != null ? { crewRoleId: fields.crewRoleId } : {}),
+    sortOrder: maxSort + 1,
+    createdAt: nowCreate,
+    updatedAt: nowCreate,
   });
+  const service = await getProjectServiceByIdFromConvex(organizationId, serviceId);
 
-  // Crew assignments (Convex-only) — created after the service tx commits, with the
+  // Crew assignments (Convex-only) — created after the service write, with the
   // partial-unique (projectId, crewMemberId, serviceId) invariant enforced in Convex.
   if (parsed.crewMemberIds && parsed.crewMemberIds.length > 0) {
     const phase = serviceTypeToPhase(parsed.type);
@@ -208,7 +233,6 @@ export async function createProjectService(
 
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(projectId);
-  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -218,7 +242,7 @@ export async function createProjectService(
     entityType: "service",
     entityId: service.id,
     entityName: service.title,
-    summary: `Created ${SERVICE_TYPE_LABELS[service.type]} service "${service.title}"`,
+    summary: `Created ${SERVICE_TYPE_LABELS[service.type as ServiceType]} service "${service.title}"`,
     projectId,
   });
 
@@ -235,33 +259,67 @@ export async function updateProjectService(
   );
   const parsed = projectServiceSchema.parse(data);
 
-  const existing = await prisma.projectService.findFirst({
-    where: { id, organizationId },
-  });
+  // projectService is Convex-only now (Phase C) — read the existing service there.
+  const existing = await getProjectServiceByIdFromConvex(organizationId, id).catch(() => null);
   if (!existing) throw new Error("Service not found");
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
 
-  // Wrap in transaction (Arch fix #1)
-  const service = await prisma.$transaction(async (tx) => {
-    const svc = await tx.projectService.update({
-      where: { id },
-      data: fields,
-    });
-    return svc;
+  // Patch the service in Convex. Date/endDate can be cleared to null when the form
+  // omits them; lineItemId/crewRoleId likewise clear-to-null when not set.
+  const convexForUpdate = await getConvexClient();
+  const updateSet: Record<string, unknown> = {
+    type: fields.type,
+    title: fields.title,
+    showOnDocuments: fields.showOnDocuments,
+    quantity: fields.quantity,
+    taxable: fields.taxable,
+    updatedAt: Date.now(),
+  };
+  const updateClear: string[] = [];
+  const setOrClear = (key: string, value: unknown, asDate = false) => {
+    if (value == null) updateClear.push(key);
+    else updateSet[key] = asDate ? (value as Date).getTime() : value;
+  };
+  setOrClear("description", fields.description);
+  setOrClear("notes", fields.notes);
+  setOrClear("date", serviceDate, true);
+  setOrClear("endDate", serviceEndDate, true);
+  setOrClear("startTime", fields.startTime);
+  setOrClear("endTime", fields.endTime);
+  setOrClear("scheduledTime", fields.scheduledTime);
+  setOrClear("estimatedDuration", fields.estimatedDuration);
+  setOrClear("address", fields.address);
+  setOrClear("latitude", fields.latitude);
+  setOrClear("longitude", fields.longitude);
+  setOrClear("unitPrice", fields.unitPrice);
+  setOrClear("pricingType", fields.pricingType);
+  setOrClear("duration", fields.duration);
+  setOrClear("discount", fields.discount);
+  setOrClear("lineTotal", fields.lineTotal);
+  setOrClear("costTotal", fields.costTotal);
+  setOrClear("vehicleDescription", fields.vehicleDescription);
+  setOrClear("numberOfTrips", fields.numberOfTrips);
+  setOrClear("crewCountRequired", fields.crewCountRequired);
+  setOrClear("crewRoleId", fields.crewRoleId);
+  await convexForUpdate.mutation(api.projectServices.patchService, {
+    id,
+    set: updateSet,
+    clear: updateClear,
   });
 
   // Clean up any legacy linked line item (Convex-only — cascade delete the line).
   if (existing.lineItemId) {
-    const convex = await getConvexClient();
-    await convex
+    await convexForUpdate
       .mutation(api.projectLineItems.removeLineItemCascade, { id: existing.lineItemId })
       .catch(() => {});
-    await prisma.projectService.update({
-      where: { id },
-      data: { lineItemId: null },
+    await convexForUpdate.mutation(api.projectServices.patchService, {
+      id,
+      set: {},
+      clear: ["lineItemId"],
     });
   }
+  const service = await getProjectServiceByIdFromConvex(organizationId, id);
 
   // Reconcile the service's crew assignments (Convex-only): remove de-selected
   // members (cascade their shifts/time-entries), add newly-selected, and patch the
@@ -318,7 +376,6 @@ export async function updateProjectService(
 
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(existing.projectId);
-  await syncProjectServicesToConvex(organizationId, existing.projectId);
 
   await logActivity({
     organizationId,
@@ -328,7 +385,7 @@ export async function updateProjectService(
     entityType: "service",
     entityId: service.id,
     entityName: service.title,
-    summary: `Updated ${SERVICE_TYPE_LABELS[service.type]} service "${service.title}"`,
+    summary: `Updated ${SERVICE_TYPE_LABELS[service.type as ServiceType]} service "${service.title}"`,
     projectId: existing.projectId,
   });
 
@@ -341,9 +398,8 @@ export async function deleteProjectService(id: string) {
     "update",
   );
 
-  const service = await prisma.projectService.findFirst({
-    where: { id, organizationId },
-  });
+  // projectService is Convex-only now (Phase C) — read it there.
+  const service = await getProjectServiceByIdFromConvex(organizationId, id).catch(() => null);
   if (!service) throw new Error("Service not found");
 
   // The service's crew assignments (Convex-only) — captured before the delete so
@@ -353,31 +409,21 @@ export async function deleteProjectService(id: string) {
     (a) => a.serviceId === id,
   );
 
-  // Wrap in transaction (Arch fix #1). The line item is Convex-only now (Phase C),
-  // so it can't be deleted inside the Prisma tx — unlink it here, then cascade-
-  // delete the orphaned Convex line after the tx commits.
-  await prisma.$transaction(async (tx) => {
-    // Unlink line item — set lineItemId to null (Arch fix #7)
-    if (service.lineItemId) {
-      await tx.projectService.update({
-        where: { id },
-        data: { lineItemId: null },
-      });
-    }
-
-    await tx.projectService.delete({ where: { id } });
-  });
+  // The line item is Convex-only (Phase C) — cascade-delete it after unlinking, then
+  // remove the service itself from Convex.
   if (service.lineItemId) {
+    await convex
+      .mutation(api.projectServices.patchService, { id, set: {}, clear: ["lineItemId"] });
     await convex
       .mutation(api.projectLineItems.removeLineItemCascade, { id: service.lineItemId })
       .catch(() => {});
   }
+  await convex.mutation(api.projectServices.remove, { id });
   for (const a of serviceAssignments) {
     await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
   }
 
   await recalculateProjectTotals(service.projectId);
-  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -387,7 +433,7 @@ export async function deleteProjectService(id: string) {
     entityType: "service",
     entityId: id,
     entityName: service.title,
-    summary: `Deleted ${SERVICE_TYPE_LABELS[service.type]} service "${service.title}"`,
+    summary: `Deleted ${SERVICE_TYPE_LABELS[service.type as ServiceType]} service "${service.title}"`,
     projectId: service.projectId,
   });
 }
@@ -401,18 +447,18 @@ export async function updateServiceStatus(
     "update",
   );
 
-  const service = await prisma.projectService.findFirst({
-    where: { id, organizationId },
-  });
+  // projectService is Convex-only now (Phase C).
+  const service = await getProjectServiceByIdFromConvex(organizationId, id).catch(() => null);
   if (!service) throw new Error("Service not found");
 
-  const updated = await prisma.projectService.update({
-    where: { id },
-    data: { status },
+  const convex = await getConvexClient();
+  await convex.mutation(api.projectServices.patchService, {
+    id,
+    set: { status, updatedAt: Date.now() },
   });
+  const updated = await getProjectServiceByIdFromConvex(organizationId, id);
 
   await recalculateProjectTotals(service.projectId);
-  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -438,19 +484,24 @@ export async function bulkUpdateServiceStatus(
     "update",
   );
 
-  const firstService = await prisma.projectService.findFirst({
-    where: { id: ids[0], organizationId },
-    select: { projectId: true },
-  });
+  // projectService is Convex-only now (Phase C) — read the org's services, match the
+  // requested ids, and patch each.
+  const idSet = new Set(ids);
+  const orgServices = await getProjectServicesByOrg(organizationId);
+  const matching = orgServices.filter((s) => idSet.has(s.id));
+  const firstService = matching.find((s) => s.id === ids[0]) ?? matching[0] ?? null;
 
-  await prisma.projectService.updateMany({
-    where: { id: { in: ids }, organizationId },
-    data: { status },
-  });
+  const convex = await getConvexClient();
+  const nowBulk = Date.now();
+  for (const s of matching) {
+    await convex.mutation(api.projectServices.patchService, {
+      id: s.id,
+      set: { status, updatedAt: nowBulk },
+    });
+  }
 
   if (firstService) {
     await recalculateProjectTotals(firstService.projectId);
-    await syncProjectServicesToConvex(organizationId, firstService.projectId);
   }
 
   await logActivity({
@@ -475,10 +526,8 @@ export async function updateServiceCrewStatus(
     "update",
   );
 
-  const service = await prisma.projectService.findFirst({
-    where: { id: serviceId, organizationId },
-    select: { id: true, title: true, type: true, projectId: true },
-  });
+  // projectService is Convex-only now (Phase C) — read the service there.
+  const service = await getProjectServiceByIdFromConvex(organizationId, serviceId).catch(() => null);
   if (!service) throw new Error("Service not found");
 
   let updatedCount: number;
@@ -698,15 +747,15 @@ async function _createServicesFromTemplateData(
   userId: string,
   userName: string,
 ) {
-  // Get existing services to avoid duplicates (idempotent re-run)
-  const existingServices = await prisma.projectService.findMany({
-    where: { projectId },
-    select: { type: true, date: true },
-  });
+  // Get existing services to avoid duplicates (idempotent re-run). projectService is
+  // Convex-only now (Phase C) — read the project's services from Convex.
+  const existingServices = (await getProjectServicesByOrg(organizationId)).filter(
+    (s) => s.projectId === projectId,
+  );
 
   const existingKey = new Set(
     existingServices.map((s) =>
-      `${s.type}:${s.date ? s.date.toISOString().slice(0, 10) : "null"}`
+      `${s.type}:${s.date != null ? new Date(s.date).toISOString().slice(0, 10) : "null"}`
     ),
   );
 
@@ -772,49 +821,47 @@ async function _createServicesFromTemplateData(
     return serialize({ created: 0, lineItemsCreated: 0 });
   }
 
-  // Create all services inside a transaction (Arch fix #1)
-  const maxSort = await prisma.projectService.aggregate({
-    where: { projectId },
-    _max: { sortOrder: true },
-  });
-  let sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+  // Create all services in Convex (projectService is Convex-only — Phase C).
+  // sortOrder = max+1 computed from the project's existing Convex services.
+  const maxSort = existingServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1);
+  let sortOrder = maxSort + 1;
 
-  const createdServices = await prisma.$transaction(async (tx) => {
-    const created = [];
-    for (const svc of toCreate) {
-      const lineTotal = svc.unitPrice != null
-        ? calculateServiceLineTotal(svc.unitPrice, 0)
-        : null;
+  const convex = await getConvexClient();
+  const createdServices: { id: string }[] = [];
+  for (const svc of toCreate) {
+    const lineTotal = svc.unitPrice != null
+      ? calculateServiceLineTotal(svc.unitPrice, 0)
+      : null;
 
-      const service = await tx.projectService.create({
-        data: {
-          organizationId,
-          projectId,
-          type: svc.type,
-          title: svc.title,
-          description: svc.description,
-          date: svc.date,
-          endDate: svc.endDate,
-          address: project.location?.address ?? null,
-          latitude: project.location?.latitude ?? null,
-          longitude: project.location?.longitude ?? null,
-          crewCountRequired: svc.crewCountRequired,
-          vehicleDescription: svc.vehicleDescription,
-          pricingType: svc.pricingType,
-          unitPrice: svc.unitPrice,
-          lineTotal,
-          showOnDocuments: svc.showOnDocuments,
-          sortOrder: sortOrder++,
-        },
-      });
-      created.push(service);
-    }
-    return created;
-  });
+    const id = createId();
+    const now = Date.now();
+    await convex.mutation(api.projectServices.create, {
+      id,
+      organizationId,
+      projectId,
+      type: svc.type,
+      title: svc.title,
+      ...(svc.description != null ? { description: svc.description } : {}),
+      ...(svc.date ? { date: svc.date.getTime() } : {}),
+      ...(svc.endDate ? { endDate: svc.endDate.getTime() } : {}),
+      ...(project.location?.address != null ? { address: project.location.address } : {}),
+      ...(project.location?.latitude != null ? { latitude: project.location.latitude } : {}),
+      ...(project.location?.longitude != null ? { longitude: project.location.longitude } : {}),
+      ...(svc.crewCountRequired != null ? { crewCountRequired: svc.crewCountRequired } : {}),
+      ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
+      ...(svc.pricingType != null ? { pricingType: svc.pricingType } : {}),
+      ...(svc.unitPrice != null ? { unitPrice: svc.unitPrice } : {}),
+      ...(lineTotal != null ? { lineTotal } : {}),
+      showOnDocuments: svc.showOnDocuments,
+      sortOrder: sortOrder++,
+      createdAt: now,
+      updatedAt: now,
+    });
+    createdServices.push({ id });
+  }
 
   // Sync line items for services that show on documents
   await recalculateProjectTotals(projectId);
-  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -869,10 +916,12 @@ export async function cloneServicesFromProject(
     eventStartDate: convexSource.eventStartDate != null ? new Date(convexSource.eventStartDate) : null,
   };
 
-  const sourceServicesRaw = await prisma.projectService.findMany({
-    where: { projectId: sourceProjectId, status: { not: "CANCELLED" } },
-    orderBy: { sortOrder: "asc" },
-  });
+  // projectService is Convex-only now (Phase C) — read the source project's services,
+  // replicate the Prisma where (status != CANCELLED) + orderBy sortOrder asc. Use the
+  // mapped by-project helper (epoch-ms → Date) so the clone-create date math works.
+  const sourceServicesRaw = (await getProjectServicesFromConvex(organizationId, sourceProjectId))
+    .filter((s) => s.status !== "CANCELLED")
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
   // Crew assignments live in Convex — group the source project's by serviceId.
   const sourceAssignmentsByService = new Map<string, Awaited<ReturnType<typeof getAssignmentsByProject>>>();
@@ -905,58 +954,61 @@ export async function cloneServicesFromProject(
     return result;
   }
 
-  const maxSort = await prisma.projectService.aggregate({
-    where: { projectId: targetProjectId },
-    _max: { sortOrder: true },
-  });
-  let sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+  // sortOrder = max+1 computed from the target project's existing Convex services.
+  const targetServices = (await getProjectServicesByOrg(organizationId)).filter(
+    (s) => s.projectId === targetProjectId,
+  );
+  let sortOrder = targetServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
 
   const clonedCrew: { newServiceId: string; source: Awaited<ReturnType<typeof getAssignmentsByProject>> }[] = [];
-  const created = await prisma.$transaction(async (tx) => {
-    const results = [];
-    for (const svc of sourceServices) {
-      const service = await tx.projectService.create({
-        data: {
-          organizationId,
-          projectId: targetProjectId,
-          type: svc.type,
-          title: svc.title,
-          description: svc.description,
-          notes: svc.notes,
-          date: offsetDate(svc.date),
-          endDate: offsetDate(svc.endDate),
-          startTime: svc.startTime,
-          endTime: svc.endTime,
-          scheduledTime: svc.scheduledTime,
-          estimatedDuration: svc.estimatedDuration,
-          address: svc.address,
-          latitude: svc.latitude,
-          longitude: svc.longitude,
-          showOnDocuments: svc.showOnDocuments,
-          unitPrice: svc.unitPrice,
-          quantity: svc.quantity,
-          pricingType: svc.pricingType,
-          duration: svc.duration,
-          discount: svc.discount,
-          lineTotal: svc.lineTotal,
-          costTotal: svc.costTotal,
-          taxable: svc.taxable,
-          vehicleDescription: svc.vehicleDescription,
-          numberOfTrips: svc.numberOfTrips,
-          crewCountRequired: svc.crewCountRequired,
-          crewRoleId: svc.crewRoleId,
-          status: "PLANNED", // Reset status
-          sortOrder: sortOrder++,
-        },
-      });
+  const cloneCreateConvex = await getConvexClient();
+  const created: { id: string }[] = [];
+  for (const svc of sourceServices) {
+    const id = createId();
+    const now = Date.now();
+    const clonedDate = offsetDate(svc.date);
+    const clonedEndDate = offsetDate(svc.endDate);
+    await cloneCreateConvex.mutation(api.projectServices.create, {
+      id,
+      organizationId,
+      projectId: targetProjectId,
+      type: svc.type as ServiceType,
+      title: svc.title,
+      ...(svc.description != null ? { description: svc.description } : {}),
+      ...(svc.notes != null ? { notes: svc.notes } : {}),
+      ...(clonedDate ? { date: clonedDate.getTime() } : {}),
+      ...(clonedEndDate ? { endDate: clonedEndDate.getTime() } : {}),
+      ...(svc.startTime != null ? { startTime: svc.startTime } : {}),
+      ...(svc.endTime != null ? { endTime: svc.endTime } : {}),
+      ...(svc.scheduledTime != null ? { scheduledTime: svc.scheduledTime } : {}),
+      ...(svc.estimatedDuration != null ? { estimatedDuration: svc.estimatedDuration } : {}),
+      ...(svc.address != null ? { address: svc.address } : {}),
+      ...(svc.latitude != null ? { latitude: svc.latitude } : {}),
+      ...(svc.longitude != null ? { longitude: svc.longitude } : {}),
+      showOnDocuments: svc.showOnDocuments,
+      ...(svc.unitPrice != null ? { unitPrice: svc.unitPrice } : {}),
+      quantity: svc.quantity,
+      ...(svc.pricingType != null ? { pricingType: svc.pricingType as PricingType } : {}),
+      ...(svc.duration != null ? { duration: svc.duration } : {}),
+      ...(svc.discount != null ? { discount: svc.discount } : {}),
+      ...(svc.lineTotal != null ? { lineTotal: svc.lineTotal } : {}),
+      ...(svc.costTotal != null ? { costTotal: svc.costTotal } : {}),
+      taxable: svc.taxable,
+      ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
+      ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),
+      ...(svc.crewCountRequired != null ? { crewCountRequired: svc.crewCountRequired } : {}),
+      ...(svc.crewRoleId != null ? { crewRoleId: svc.crewRoleId } : {}),
+      status: "PLANNED", // Reset status
+      sortOrder: sortOrder++,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      // Defer crew-assignment clone to Convex (after the service tx commits).
-      clonedCrew.push({ newServiceId: service.id, source: svc.crewAssignments });
+    // Defer crew-assignment clone to Convex.
+    clonedCrew.push({ newServiceId: id, source: svc.crewAssignments });
 
-      results.push(service);
-    }
-    return results;
-  });
+    created.push({ id });
+  }
 
   // Clone crew assignments (Convex-only) for every cloned service, partial-unique
   // enforced. Dates offset to the target project's timeline.
@@ -986,7 +1038,6 @@ export async function cloneServicesFromProject(
   }
 
   await recalculateProjectTotals(targetProjectId);
-  await syncProjectServicesToConvex(organizationId, targetProjectId);
 
   await logActivity({
     organizationId,
@@ -1037,33 +1088,37 @@ export async function convertLineItemToService(lineItemId: string) {
   };
   const serviceType = typeMap[lineItem.type] || "MISC";
 
-  const maxSort = await prisma.projectService.aggregate({
-    where: { projectId: lineItem.projectId },
-    _max: { sortOrder: true },
+  // projectService is Convex-only now (Phase C). sortOrder = max+1 from the project's
+  // existing Convex services; mint a cuid and write directly.
+  const convex = await getConvexClient();
+  const existingForProject = (await getProjectServicesByOrg(organizationId)).filter(
+    (s) => s.projectId === lineItem.projectId,
+  );
+  const maxSort = existingForProject.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1);
+  const serviceId = createId();
+  const now = Date.now();
+  const convertedPricingType = (lineItem.pricingType && String(lineItem.pricingType) !== ""
+    ? lineItem.pricingType
+    : null) as PricingType | null;
+  await convex.mutation(api.projectServices.create, {
+    id: serviceId,
+    organizationId,
+    projectId: lineItem.projectId,
+    type: serviceType,
+    title: lineItem.description || SERVICE_TYPE_LABELS[serviceType],
+    showOnDocuments: true,
+    ...(lineItem.unitPrice != null ? { unitPrice: lineItem.unitPrice } : {}),
+    quantity: lineItem.quantity,
+    ...(convertedPricingType ? { pricingType: convertedPricingType } : {}),
+    ...(lineItem.duration ? { duration: Number(lineItem.duration) } : {}),
+    ...(lineItem.discount ? { discount: Number(lineItem.discount) } : {}),
+    ...(lineItem.lineTotal ? { lineTotal: Number(lineItem.lineTotal) } : {}),
+    lineItemId: lineItem.id,
+    sortOrder: maxSort + 1,
+    createdAt: now,
+    updatedAt: now,
   });
-
-  const service = await prisma.$transaction(async (tx) => {
-    const svc = await tx.projectService.create({
-      data: {
-        organizationId,
-        projectId: lineItem.projectId,
-        type: serviceType,
-        title: lineItem.description || SERVICE_TYPE_LABELS[serviceType],
-        showOnDocuments: true,
-        unitPrice: lineItem.unitPrice,
-        quantity: lineItem.quantity,
-        pricingType: lineItem.pricingType as PricingType | null,
-        duration: lineItem.duration ? Number(lineItem.duration) : null,
-        discount: lineItem.discount ? Number(lineItem.discount) : null,
-        lineTotal: lineItem.lineTotal ? Number(lineItem.lineTotal) : null,
-        lineItemId: lineItem.id,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      },
-    });
-    return svc;
-  });
-
-  await syncProjectServicesToConvex(organizationId, lineItem.projectId);
+  const service = await getProjectServiceByIdFromConvex(organizationId, serviceId);
 
   await logActivity({
     organizationId,

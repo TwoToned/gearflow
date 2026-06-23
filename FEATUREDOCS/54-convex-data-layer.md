@@ -3354,14 +3354,50 @@ blocks the eventual inversion (Stage 1 #254 dropped them all).
   inside the project/projectService write actions, `generateProjectNumber` /
   `peekNextProjectNumber` (the counter), and the write paths.
 - **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests. Reads only.
-- **Next (2/2) — the last domain inversion:** migrate `projectNumberSequence` (the
-  atomic `ON CONFLICT … value+1` counter — the single riskiest invariant; a custom
-  Convex `reserveNextNumber` check-then-increment + a `by_organizationId_projectNumber`
-  index for the `@@unique` guard), then invert `projectService` + `project` writes
-  (createProject / updateProject* / duplicateProject / saveAsTemplate / deleteProject
-  / the template deep-copy) to Convex-only and delete `project-mirror.ts` +
-  `project-subtable-mirror.ts`. After that: Stage 3 strip schema → Stage 4 DROP TABLE
-  → Stage 5 infra cleanup.
+### Phase C — project keystone write-inversion (2/2) — DONE ★ LAST DOMAIN, STAGE 2 COMPLETE ★
+
+`project` + `projectService` are now **Convex-only** (read + write); `project-mirror.ts`
++ `project-subtable-mirror.ts` deleted. This was the final domain inversion — every
+domain table is now Convex-authoritative; Stage 2 is finished.
+
+- **Project-number reservation (the single riskiest invariant)** — the atomic Postgres
+  `INSERT … ON CONFLICT … value+1` is replaced by `projectNumberSequences.reserveNextNumber`
+  (a serializable Convex mutation — concurrent creates conflict on the
+  by_organizationId_scopeKey read range and retry, never double-allocating), and the
+  `@@unique([organizationId, projectNumber])` by `projects.createWithUniqueNumber`
+  (check-then-insert on the existing by_organizationId_projectNumber index; returns
+  `{created:false}` on clash so `createProject` bumps the counter + retries).
+  `peekNextProjectNumber` reads the Convex counter (no increment) +
+  `getProjectsByOrgMapped` for the skip-loop.
+- **Writes:** createProject (counter loop), updateProject* / updateProjectNotes /
+  archiveProject (`patchProject` set+clear), duplicateProject + saveAsTemplate
+  (`createWithUniqueNumber` first, then the already-Convex deep-copy children),
+  deleteProject + deleteTemplate (`api.projects.remove` + explicit Convex cascades),
+  woocommerce createProjectFromOrder. projectService: create (sortOrder max+1) /
+  update / delete / status / bulk-status / template-create / clone / convertLineItem,
+  via `patchService` clear-to-null + `create`/`remove`.
+- **2 stale-write bugs fixed:** `recalculateProjectTotals` now patches Convex (was a
+  no-op mirror — totals were stale in Convex); the site-admin user-delete clears
+  `projectManagerId` in Convex (was a Prisma `updateMany` only). `split-sibling-collapse`
+  repoints projectService `lineItemId` in Convex (was Prisma-only).
+- **Counter backfill (required on deploy):** `projectNumberSequence` was pure-Prisma
+  (Convex empty) → `scripts/convex-backfill-project-number-sequence.ts` carries the
+  per-(org, scopeKey) counter `value` so the inverted reserve doesn't restart at 1 and
+  collide. Run in prod BEFORE the write-inversion serves traffic.
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests, AND a **live
+  dev-Convex exercise (8/8)** — incl. a **concurrent ×12 counter reservation proving
+  no double-allocation**, the unique-number guard, peek-without-increment, and
+  `patchProject` clear-to-null.
+- **Behavioural note:** project-number reservation + create are no longer one DB
+  transaction (counter bump and create are separate atomic Convex mutations); counter
+  monotonicity + the unique guard preserve correctness.
+
+### ★ MIGRATION STATUS: Stage 2 (write-inversion) COMPLETE for every domain.
+Remaining: **Stage 3** strip the domain models from `prisma/schema.prisma` (keep
+Better Auth + `customRole` + `activityLog`), **Stage 4** `DROP TABLE … CASCADE`
+(irreversible), **Stage 5** delete the backfill/parity/mirror infra. Prod backfills
+still pending on the open PRs: woocommerce-integration (req), notification-email-log
+(opt), **project-number-sequence (req)**.
 
 ## Conventions
 

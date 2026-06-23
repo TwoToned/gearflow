@@ -1,10 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
 import { getTheOrg } from "@/lib/single-org";
 import { verifyWebhookSignature } from "@/lib/woocommerce-utils";
 import { findCompletedOrderLog } from "@/lib/woocommerce-order-logs-read";
+import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
 import {
   processWooCommerceOrder,
   type WooOrder,
@@ -56,10 +56,8 @@ export async function POST(request: Request) {
     orgId = org.id;
   }
 
-  // 6. Load the org's WooCommerce integration config
-  const integration = await prisma.wooCommerceIntegration.findUnique({
-    where: { organizationId: orgId },
-  });
+  // 6. Load the org's WooCommerce integration config (Convex-only)
+  const integration = await getWooCommerceIntegrationByOrg(orgId);
   if (!integration?.isEnabled) {
     return Response.json({ error: "Integration not enabled" }, { status: 404 });
   }
@@ -78,10 +76,10 @@ export async function POST(request: Request) {
 
   const order = parsed;
 
-  // 9. Store last payload for "Test & Detect" feature
-  await prisma.wooCommerceIntegration.update({
-    where: { organizationId: orgId },
-    data: { lastPayload: order as never },
+  // 9. Store last payload for "Test & Detect" feature (Convex-only update)
+  await (await getConvexClient()).mutation(api.wooCommerceIntegrations.update, {
+    id: integration.id,
+    patch: { lastPayload: order, updatedAt: Date.now() },
   });
 
   // 10. Only process order.created topic

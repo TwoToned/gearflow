@@ -36,6 +36,7 @@ export const create = mutation({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
+    webhookSecret: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -65,6 +66,7 @@ export const createIfMissing = mutation({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
+    webhookSecret: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -98,6 +100,7 @@ export const update = mutation({
     patch: v.object({
       organizationId: v.optional(v.string()),
       isEnabled: v.optional(v.boolean()),
+      webhookSecret: v.optional(v.string()),
       storeUrl: v.optional(v.string()),
       productMatchField: v.optional(v.string()),
       customFieldKey: v.optional(v.string()),
@@ -135,5 +138,46 @@ export const remove = mutation({
     const doc = await ctx.db.query("wooCommerceIntegrations").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("wooCommerceIntegrations not found: " + id);
     await ctx.db.delete(doc._id);
+  },
+});
+
+// ─── CUSTOM (Phase C) ───
+// The generated `update` mutation can't unset a field (the wire drops nulls).
+// `patchWooCommerceIntegration` applies `set` then explicitly clears each key in
+// `clear` to `undefined`, so optional string fields (storeUrl, customFieldKey,
+// rentalStartKey, etc.) can be emptied. Mirrors convex/subHires.ts patchSubHire.
+export const patchWooCommerceIntegration = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      isEnabled: v.optional(v.boolean()),
+      webhookSecret: v.optional(v.string()),
+      storeUrl: v.optional(v.string()),
+      productMatchField: v.optional(v.string()),
+      customFieldKey: v.optional(v.string()),
+      rentalStartKey: v.optional(v.string()),
+      rentalEndKey: v.optional(v.string()),
+      eventStartKey: v.optional(v.string()),
+      deliveryAddressKey: v.optional(v.string()),
+      notesKey: v.optional(v.string()),
+      dateFormat: v.optional(v.string()),
+      locationMetaKey: v.optional(v.string()),
+      defaultLocationId: v.optional(v.string()),
+      defaultProjectType: v.optional(v.string()),
+      autoConfirmEnquiry: v.optional(v.boolean()),
+      notifyUserIds: v.optional(v.array(v.string())),
+      lastPayload: v.optional(v.any()),
+      updatedAt: v.optional(v.number()),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("wooCommerceIntegrations").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("wooCommerceIntegrations not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
   },
 });

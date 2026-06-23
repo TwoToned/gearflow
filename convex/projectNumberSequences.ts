@@ -92,3 +92,31 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (project keystone write-inversion, Phase C) ───
+
+/**
+ * Atomically allocate the next sequence value for `(organizationId, scopeKey)` —
+ * the Convex equivalent of the Postgres `INSERT … ON CONFLICT … value = value + 1
+ * RETURNING value`. Convex mutations are serializable on the documents they touch,
+ * so concurrent project creates conflict on the by_organizationId_scopeKey read
+ * range and retry, never double-allocating. `newId` is the cuid used only when the
+ * counter row is first created (ignored if it already exists). Returns the new value.
+ */
+export const reserveNextNumber = mutation({
+  args: { organizationId: v.string(), scopeKey: v.string(), newId: v.string(), now: v.number() },
+  handler: async (ctx, { organizationId, scopeKey, newId, now }) => {
+    await requireService(ctx);
+    const existing = await ctx.db
+      .query("projectNumberSequences")
+      .withIndex("by_organizationId_scopeKey", (q) => q.eq("organizationId", organizationId).eq("scopeKey", scopeKey))
+      .unique();
+    if (existing) {
+      const value = (existing.value ?? 0) + 1;
+      await ctx.db.patch(existing._id, { value, updatedAt: now });
+      return value;
+    }
+    await ctx.db.insert("projectNumberSequences", { id: newId, organizationId, scopeKey, value: 1, updatedAt: now });
+    return 1;
+  },
+});

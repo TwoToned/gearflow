@@ -1,19 +1,34 @@
 # UI Component Library
 
-## Critical Convention: `render` prop
-shadcn/ui v4 uses Base UI, which uses `render` prop for composition (NOT Radix's `asChild`):
+## Critical Convention: overlay primitives are **Radix**, compose with `asChild`
+After the RVLT rebrand, every overlay primitive in `src/components/ui/` —
+`Dialog`, `Sheet`, `DropdownMenu`, `Popover`, `Select`, `Tooltip` — is built on
+**Radix** (`@radix-ui/react-*`). Compose triggers with Radix's `asChild` prop
+(NOT Base UI's `render`):
 ```tsx
-<DialogTrigger render={<Button variant="outline" />}>Open Dialog</DialogTrigger>
-<DropdownMenuTrigger render={<Button size="sm" />}>Menu</DropdownMenuTrigger>
-<SidebarMenuButton render={<Link href="/foo" />}>Link Text</SidebarMenuButton>
+<DialogTrigger asChild><Button variant="line">Open Dialog</Button></DialogTrigger>
+<DropdownMenuTrigger asChild><Button size="sm">Menu</Button></DropdownMenuTrigger>
 ```
+`@base-ui/react` is still installed but is used **only for the utility helpers**
+`mergeProps` / `useRender` (in `breadcrumb.tsx`, `sidebar.tsx`) — never for
+overlays.
+
+### ⚠️ NEVER nest a Base UI overlay inside a Radix modal Dialog
+A Radix modal `Dialog` sets `pointer-events: none` on `document.body` and only
+re-enables it on its own DismissableLayer stack. A Base UI popover/menu/select
+portals to `<body>` as a sibling and therefore inherits that lock — **every click
+inside it is silently swallowed**. This was the root cause of the "can't click
+crew / models / supplier-create in any form" bug (the pickers are used inside
+Dialogs everywhere). The fix: keep these pickers on Radix Popover so the popup
+lives in the same layer stack as the dialog. `combobox-picker.tsx` carries a
+banner comment warning not to revert it to `@base-ui/react/popover`.
 
 ## Key Custom Components
-- **ComboboxPicker** (`src/components/ui/combobox-picker.tsx`) — Searchable select with `creatable` mode for new entries
+- **ComboboxPicker / MultiComboboxPicker** (`src/components/ui/combobox-picker.tsx`) — Searchable single/multi select with `creatable` mode and an optional `onCreateNew` action. Built on **Radix** Popover (see the dialog-nesting warning above) — used inside Dialogs across services (crew), add-asset (models), sub-hire (supplier create), project wizard, etc.
 - **AssetTagInput** (`src/components/ui/asset-tag-input.tsx`) — Plain text input for entering asset/test tags. Drop-in replacement for the removed `ScanInput`; the in-app camera scanner was deleted (it never worked on iPhone). Manual typing and external HID barcode wedges (which act like a keyboard) still work everywhere. Accepts and ignores the old camera-only props (`onScan`/`scannerTitle`/`showScanButton`/`continuous`) for compatibility.
 - **DataTable** (`src/components/ui/data-table.tsx`) — Shared table with server-side pagination, sorting, column visibility, enum filters
 - **DynamicIcon** (`src/components/ui/dynamic-icon.tsx`) — Renders Lucide icon by string name
-- **TagInput** (`src/components/ui/tag-input.tsx`) — Tag input with autocomplete from org-wide suggestions
+- **TagInput** (`src/components/ui/tag-input.tsx`) — Tag/chip input with autocomplete from org-wide suggestions. Suggestion dropdown is a **Radix** Popover (was a raw `document.body` portal that broke inside Dialogs — see the dialog-nesting warning above).
 - **UserAvatar** (`src/components/ui/user-avatar.tsx`) — Avatar with image + initials fallback
 - **MediaUploader** (`src/components/media/media-uploader.tsx`) — Bulk upload + primary marking (manual drag-to-reorder removed; `@dnd-kit` dropped)
 - **MediaThumbnail** (`src/components/media/media-thumbnail.tsx`) — Image with fallback placeholder

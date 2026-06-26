@@ -25,6 +25,7 @@ import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getBu
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById, getKitSerializedItemsByOrg, getKitBulkItemsByOrg } from "@/lib/kits-read";
 import { getSubHiresByProject } from "@/lib/sub-hire-read";
+import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
 
@@ -1320,11 +1321,12 @@ export async function recalculateProjectTotals(projectId: string) {
 
   const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
 
-  // 3. Service financials
-  const services = await prisma.projectService.findMany({
-    where: { projectId, status: { not: "CANCELLED" } },
-    select: { costTotal: true, lineTotal: true, showOnDocuments: true },
-  });
+  // 3. Service financials. project_service is Convex-only — read the org's
+  // services and filter to this project's non-CANCELLED rows in JS (replaces the
+  // Prisma findMany by projectId + status != CANCELLED).
+  const services = (await getProjectServicesByOrg(project.organizationId)).filter(
+    (s) => s.projectId === projectId && s.status !== "CANCELLED",
+  );
 
   // costTotal = what it costs us (all services)
   const serviceCostTotal = roundCurrency(
@@ -1334,7 +1336,7 @@ export async function recalculateProjectTotals(projectId: string) {
   // serviceRevenue = what we charge the client (only billable services shown on documents)
   const serviceRevenue = roundCurrency(
     services
-      .filter((s) => s.showOnDocuments)
+      .filter((s) => s.showOnDocuments === true)
       .reduce((sum, s) => sum + (s.lineTotal != null ? Number(s.lineTotal) : 0), 0)
   );
 

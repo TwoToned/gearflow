@@ -106,20 +106,41 @@ export async function getKit(id: string) {
           return [{ ...mapLineItemDoc(r), project }];
         });
     })(),
-    // assetScanLog is still Prisma; scannedBy is a Better-Auth User (Prisma, kept).
-    // `project` is dual-written to Convex — resolve it from a Convex project map by
-    // projectId instead of a Prisma `include: { project: true }`.
+    // assetScanLog is Convex-only — read the org's scan logs, filter to this kit,
+    // replicate orderBy scannedAt desc + take 20. scannedBy is a Better-Auth User
+    // (Prisma, kept) batched by id; `project` resolves from a Convex project map.
     (async () => {
-      const logs = await prisma.assetScanLog.findMany({
-        where: { kitId: id },
-        take: 20,
-        orderBy: { scannedAt: "desc" },
-        include: { scannedBy: true },
+      const rawLogs = await (await getConvexClient()).query(api.assetScanLogs.list, {
+        orgId: organizationId,
       });
-      const logProjects = await getProjectsByOrg(organizationId);
+      const logs = rawLogs
+        .filter((l) => l.kitId === id)
+        .sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0))
+        .slice(0, 20);
+
+      const userIds = [...new Set(logs.map((l) => l.scannedById).filter((u): u is string => !!u))];
+      const [logProjects, scanUsers] = await Promise.all([
+        getProjectsByOrg(organizationId),
+        userIds.length
+          ? prisma.user.findMany({ where: { id: { in: userIds } } })
+          : Promise.resolve([]),
+      ]);
       const logProjectMap = new Map(logProjects.map((p) => [p.id, p]));
+      const userMap = new Map(scanUsers.map((u) => [u.id, u]));
+
       return logs.map((l) => ({
-        ...l,
+        id: l.id,
+        organizationId: l.organizationId,
+        assetId: l.assetId ?? null,
+        bulkAssetId: l.bulkAssetId ?? null,
+        kitId: l.kitId ?? null,
+        projectId: l.projectId ?? null,
+        action: l.action,
+        scannedById: l.scannedById,
+        scannedAt: l.scannedAt != null ? new Date(l.scannedAt) : null,
+        notes: l.notes ?? null,
+        location: l.location ?? null,
+        scannedBy: userMap.get(l.scannedById) ?? null,
         project: l.projectId ? logProjectMap.get(l.projectId) ?? null : null,
       }));
     })(),

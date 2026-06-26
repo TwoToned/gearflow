@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generate } from "@pdfme/generator";
 import { requireOrganization } from "@/lib/auth-server";
-import { prisma } from "@/lib/prisma";
+import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import { buildDocumentData } from "@/lib/pdfme/build-document-data";
 import {
   buildTimelineInputs,
@@ -47,22 +47,12 @@ export async function GET(
     // Build standard document data (project, org, branding, etc.)
     const data = await buildDocumentData(projectId, organizationId, "quote");
 
-    // Fetch services with crew assignments
-    const services = await prisma.projectService.findMany({
-      where: { organizationId, projectId, status: { not: "CANCELLED" } },
-      include: {
-        crewAssignments: {
-          where: { status: { notIn: ["CANCELLED", "DECLINED"] } },
-          select: {
-            crewMember: {
-              select: { firstName: true, lastName: true },
-            },
-            status: true,
-          },
-        },
-      },
-      orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
-    });
+    // Fetch services with crew assignments. project_service is Convex-only —
+    // read via the helper (which attaches crewRole + crewAssignments and orders
+    // by [date asc, sortOrder asc]), then replicate the dropped Prisma filters:
+    // skip CANCELLED services and CANCELLED/DECLINED assignments.
+    const allServices = await getProjectServicesFromConvex(organizationId, projectId);
+    const services = allServices.filter((s) => s.status !== "CANCELLED");
 
     // Map to timeline service shape
     const timelineServices: TimelineService[] = services.map((s) => ({
@@ -75,7 +65,15 @@ export async function GET(
       endTime: s.endTime,
       address: s.address,
       notes: s.notes,
-      crewAssignments: s.crewAssignments,
+      crewAssignments: s.crewAssignments
+        .filter((ca) => ca.status !== "CANCELLED" && ca.status !== "DECLINED" && ca.crewMember != null)
+        .map((ca) => ({
+          crewMember: {
+            firstName: ca.crewMember!.firstName,
+            lastName: ca.crewMember!.lastName,
+          },
+          status: ca.status ?? "",
+        })),
       lineTotal: s.lineTotal ? Number(s.lineTotal) : null,
       costTotal: s.costTotal ? Number(s.costTotal) : null,
     }));

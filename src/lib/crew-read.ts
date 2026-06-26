@@ -45,6 +45,10 @@ export async function getCrewRolesByOrg(orgId: string): Promise<ConvexCrewRole[]
   return await (await getConvexClient()).query(api.crewRoles.list, { orgId });
 }
 
+export async function getCrewRoleById(id: string): Promise<ConvexCrewRole | null> {
+  return await (await getConvexClient()).query(api.crewRoles.getById, { id });
+}
+
 export async function getCrewSkillsByOrg(orgId: string): Promise<ConvexCrewSkill[]> {
   return await (await getConvexClient()).query(api.crewSkills.list, { orgId });
 }

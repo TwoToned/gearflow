@@ -188,6 +188,13 @@ export async function getSubHireGroups(subHireId: string): Promise<SubHireGroupR
   return rows.map(mapSubHireGroup).sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+/** A single sub-hire group by cuid (null if missing). Not org-scoped on the Convex
+ *  side — resolve the parent sub-hire (getSubHireById) to verify org/project. */
+export async function getSubHireGroupById(id: string): Promise<SubHireGroupRow | null> {
+  const row = (await (await getConvexClient()).query(api.subHireGroups.getById, { id })) as RawGroup | null;
+  return row ? mapSubHireGroup(row) : null;
+}
+
 /** Item counts per sub-hire id (one round trip each) for the list `_count`. */
 export async function getSubHireItemCounts(subHireIds: string[]): Promise<Map<string, number>> {
   if (subHireIds.length === 0) return new Map();

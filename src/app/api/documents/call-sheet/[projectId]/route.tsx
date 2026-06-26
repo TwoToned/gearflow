@@ -46,13 +46,12 @@ export async function GET(
     }
   }
 
-  // Validate crewMemberId if provided
+  // Validate crewMemberId if provided. crew_assignment is Convex-only — list the
+  // project's assignments and check one is for this member.
   if (crewMemberId) {
-    const { prisma } = await import("@/lib/prisma");
-    const assignment = await prisma.crewAssignment.findFirst({
-      where: { projectId, organizationId, crewMemberId },
-      select: { id: true },
-    });
+    const { getAssignmentsByProject } = await import("@/lib/crew-scheduling-read");
+    const projectAssignments = await getAssignmentsByProject(projectId, organizationId);
+    const assignment = projectAssignments.find((a) => a.crewMemberId === crewMemberId);
     if (!assignment) {
       return NextResponse.json(
         { error: "Crew member not found on this project" },

@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
-import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
+import { getCrewMembersByOrg, getCrewRoleMap, getCrewMemberById, getCrewRoleById } from "@/lib/crew-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { createId } from "@paralleldrive/cuid2";
@@ -36,8 +36,8 @@ import {
 function resolveRate(
   rateOverride: number | null | undefined,
   rateType: string | null | undefined,
-  crewMember: { defaultDayRate: unknown; defaultHourlyRate: unknown },
-  crewRole: { defaultRate: unknown; rateType: string | null } | null,
+  crewMember: { defaultDayRate?: unknown; defaultHourlyRate?: unknown },
+  crewRole: { defaultRate?: unknown; rateType?: string | null } | null,
 ): { rate: number; rateType: string } {
   if (rateOverride != null && rateOverride > 0) {
     return { rate: rateOverride, rateType: rateType || "DAILY" };
@@ -161,19 +161,17 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
   const project = await getProjectById(projectId);
   if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
-  // Get crew member and role for rate cascade
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: parsed.crewMemberId, organizationId },
-    select: { id: true, firstName: true, lastName: true, defaultDayRate: true, defaultHourlyRate: true },
-  });
+  // Get crew member and role for rate cascade (crew_member / crew_role are
+  // Convex-only — read the doc + verify org).
+  const crewMemberDoc = await getCrewMemberById(parsed.crewMemberId);
+  const crewMember = crewMemberDoc && crewMemberDoc.organizationId === organizationId ? crewMemberDoc : null;
   if (!crewMember) throw new Error("Crew member not found");
 
-  const crewRole = parsed.crewRoleId
-    ? await prisma.crewRole.findUnique({
-        where: { id: parsed.crewRoleId, organizationId },
-        select: { id: true, name: true, defaultRate: true, rateType: true },
-      })
-    : null;
+  const crewRoleDoc = parsed.crewRoleId ? await getCrewRoleById(parsed.crewRoleId) : null;
+  const crewRole =
+    crewRoleDoc && crewRoleDoc.organizationId === organizationId
+      ? { id: crewRoleDoc.id, name: crewRoleDoc.name, defaultRate: crewRoleDoc.defaultRate ?? null, rateType: crewRoleDoc.rateType ?? null }
+      : null;
 
   const startDate = parsed.startDate ? new Date(parsed.startDate as unknown as string) : null;
   const endDate = parsed.endDate ? new Date(parsed.endDate as unknown as string) : null;
@@ -260,22 +258,19 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
     throw new Error("Assignment not found");
   }
 
-  // crewMember (rate cascade inputs) + project (audit label) live in still-Prisma
-  // tables — read them directly; only the assignment WRITE inverts to Convex.
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: existing.crewMemberId, organizationId },
-    select: { firstName: true, lastName: true, defaultDayRate: true, defaultHourlyRate: true },
-  });
+  // crewMember (rate cascade inputs) + project (audit label) are Convex-only —
+  // read the docs; the assignment WRITE inverts to Convex.
+  const crewMemberDoc = await getCrewMemberById(existing.crewMemberId);
+  const crewMember = crewMemberDoc && crewMemberDoc.organizationId === organizationId ? crewMemberDoc : null;
   if (!crewMember) throw new Error("Crew member not found");
 
   const project = await getProjectById(existing.projectId);
 
-  const crewRole = parsed.crewRoleId
-    ? await prisma.crewRole.findUnique({
-        where: { id: parsed.crewRoleId, organizationId },
-        select: { defaultRate: true, rateType: true },
-      })
-    : null;
+  const crewRoleDoc = parsed.crewRoleId ? await getCrewRoleById(parsed.crewRoleId) : null;
+  const crewRole =
+    crewRoleDoc && crewRoleDoc.organizationId === organizationId
+      ? { defaultRate: crewRoleDoc.defaultRate ?? null, rateType: crewRoleDoc.rateType ?? null }
+      : null;
 
   const startDate = parsed.startDate ? new Date(parsed.startDate as unknown as string) : null;
   const endDate = parsed.endDate ? new Date(parsed.endDate as unknown as string) : null;
@@ -361,10 +356,8 @@ export async function deleteAssignment(id: string) {
     throw new Error("Assignment not found");
   }
 
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: assignment.crewMemberId, organizationId },
-    select: { firstName: true, lastName: true },
-  });
+  const crewMemberDoc = await getCrewMemberById(assignment.crewMemberId);
+  const crewMember = crewMemberDoc && crewMemberDoc.organizationId === organizationId ? crewMemberDoc : null;
   const project = await getProjectById(assignment.projectId);
 
   // Convex-only cascade delete: assignment + its shifts + its linked time entries.
@@ -394,10 +387,8 @@ export async function updateAssignmentStatus(id: string, status: string) {
     throw new Error("Assignment not found");
   }
 
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: assignment.crewMemberId, organizationId },
-    select: { firstName: true, lastName: true },
-  });
+  const crewMemberDoc = await getCrewMemberById(assignment.crewMemberId);
+  const crewMember = crewMemberDoc && crewMemberDoc.organizationId === organizationId ? crewMemberDoc : null;
   if (!crewMember) throw new Error("Crew member not found");
   const project = await getProjectById(assignment.projectId);
 

@@ -1,7 +1,6 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import {
   projectGroupSchema,
@@ -16,6 +15,7 @@ import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { getModelMap } from "@/lib/models-read";
+import { getProjectByIdMapped } from "@/lib/projects-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -30,10 +30,8 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
   const group = await client.query(api.projectGroups.getById, { id: groupId });
   if (!group) return 0;
 
-  const project = await prisma.project.findUnique({
-    where: { id: group.projectId },
-    select: { defaultRentalPeriod: true, defaultRentalQuantity: true },
-  });
+  // project is Convex-only — read the scalars (org-scoped via the group's org).
+  const project = await getProjectByIdMapped(group.projectId, group.organizationId);
 
   const allLineItems = await client.query(api.projectLineItems.listByProject, {
     projectId: group.projectId,

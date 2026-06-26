@@ -31,6 +31,20 @@ export const getById = query({
   },
 });
 
+/**
+ * Lookup a file by its proxy `thumbnailUrl` (the data-URI fallback in
+ * src/lib/storage.ts). Service-only, cross-org (the caller has no orgId in that
+ * path). No index on thumbnailUrl (rare fallback), so this scans + filters.
+ */
+export const getByThumbnailUrl = query({
+  args: { thumbnailUrl: v.string() },
+  handler: async (ctx, { thumbnailUrl }) => {
+    await requireService(ctx);
+    const docs = await ctx.db.query("fileUploads").collect();
+    return docs.find((d) => d.thumbnailUrl === thumbnailUrl) ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

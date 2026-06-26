@@ -27,7 +27,6 @@
  */
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
@@ -42,7 +41,7 @@ import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-rea
 import { indexChildren, reconstructScope } from "@/lib/project-line-item-tree-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
-import { getSubHiresByProject, getSubHireGroups, getSubHireItems } from "@/lib/sub-hire-read";
+import { getSubHiresByProject, getSubHireGroups, getSubHireGroupById, getSubHireById, getSubHireItems } from "@/lib/sub-hire-read";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
@@ -279,10 +278,15 @@ export async function moveSubHireGroupToCategory(
   );
   await requirePermission("subHire", "update");
 
-  const group = await prisma.subHireGroup.findFirst({
-    where: { id: parsed.groupId, subHire: { organizationId } },
-    include: { subHire: { select: { id: true, projectId: true } } },
-  });
+  // sub_hire_group / sub_hire are Convex-only — read the group, then its parent
+  // sub-hire (org-checked), reconstructing the `{ subHire: { id, projectId } }`
+  // shape the old Prisma include returned.
+  const groupRow = await getSubHireGroupById(parsed.groupId);
+  const parentSubHire = groupRow ? await getSubHireById(groupRow.subHireId) : null;
+  const group =
+    groupRow && parentSubHire && parentSubHire.organizationId === organizationId
+      ? { ...groupRow, subHire: { id: parentSubHire.id, projectId: parentSubHire.projectId } }
+      : null;
   if (!group) {
     throw new Error("Sub-hire group not found");
   }
@@ -483,15 +487,18 @@ export async function reorderMixedGroupsInCategory(
     }
   }
 
-  // Cross-org validation for sub-hire groups via Prisma (subHireGroup stays Prisma)
+  // Cross-org validation for sub-hire groups (Convex-only): every group must
+  // resolve to a sub-hire in this org + project.
   if (subHireGroupIds.length > 0) {
-    const shgCount = await prisma.subHireGroup.count({
-      where: {
-        id: { in: subHireGroupIds },
-        subHire: { organizationId, projectId: category.projectId },
-      },
-    });
-    if (shgCount !== subHireGroupIds.length) {
+    const checks = await Promise.all(
+      subHireGroupIds.map(async (gid) => {
+        const g = await getSubHireGroupById(gid);
+        if (!g) return false;
+        const sh = await getSubHireById(g.subHireId);
+        return !!sh && sh.organizationId === organizationId && sh.projectId === category.projectId;
+      }),
+    );
+    if (!checks.every(Boolean)) {
       throw new Error("One or more sub-hire groups do not belong to this project");
     }
   }
@@ -546,11 +553,18 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     }
   }
   if (subHireGroupId) {
-    const shg = await prisma.subHireGroup.findFirst({
-      where: { id: subHireGroupId, subHire: { organizationId, projectId: parsed.projectId } },
-      select: { id: true },
-    });
-    if (!shg) throw new Error("Sub-hire group not found in this project");
+    // sub_hire_group / sub_hire are Convex-only — resolve the group's parent
+    // sub-hire and verify it's in this org + project.
+    const shg = await getSubHireGroupById(subHireGroupId);
+    const shgParent = shg ? await getSubHireById(shg.subHireId) : null;
+    if (
+      !shg ||
+      !shgParent ||
+      shgParent.organizationId !== organizationId ||
+      shgParent.projectId !== parsed.projectId
+    ) {
+      throw new Error("Sub-hire group not found in this project");
+    }
   }
 
   const categoryId = createId();

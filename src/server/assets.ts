@@ -13,7 +13,6 @@ import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps, getAssetMediaFromConvex, getModelMediaFromConvex, withResolvedFile } from "@/lib/media-read";
-import { getProjectsByOrg } from "@/lib/projects-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 import { type FilterValue } from "@/lib/table-utils";
 import {
@@ -161,11 +160,24 @@ export async function getAsset(id: string) {
     asset.parentAssetId ? getAssetById(asset.parentAssetId) : Promise.resolve(null),
   ]);
 
-  // Model (+ category) + supplier + projects + maintenance records live in Convex.
+  // Line items are already asset-scoped (listByAssetId). Order + take 20 now so we
+  // fetch ONLY the projects those rows reference — instead of getProjectsByOrg
+  // (every project in the org) just to build a lookup map for ≤20 rows.
+  const orderedLineItemDocs = [...lineItemDocs]
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 20);
+  const lineProjectIds = [
+    ...new Set(orderedLineItemDocs.map((li) => li.projectId).filter((p): p is string => !!p)),
+  ];
+
+  // Model (+ category) + supplier + referenced projects + maintenance records (Convex).
+  // (maintenanceRecords stays org-wide for now — a by-asset scoped read is a follow-up.)
   const [modelMap, supplier, projects, maintenanceRecords] = await Promise.all([
     getModelWithCategoryMap(organizationId),
     asset.supplierId ? getSupplierById(asset.supplierId) : null,
-    getProjectsByOrg(organizationId),
+    lineProjectIds.length
+      ? convex.query(api.projects.listByIds, { orgId: organizationId, ids: lineProjectIds })
+      : Promise.resolve([]),
     getMaintenanceRecordsByOrg(organizationId),
   ]);
 
@@ -272,9 +284,7 @@ export async function getAsset(id: string) {
 
   // ── lineItems (project history; createdAt desc, take 20) + project ──
   const projectMap = new Map(projects.map((p) => [p.id, p]));
-  const lineItems = [...lineItemDocs]
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    .slice(0, 20)
+  const lineItems = orderedLineItemDocs
     .map((li) => {
       const project = li.projectId ? projectMap.get(li.projectId) ?? null : null;
       return {

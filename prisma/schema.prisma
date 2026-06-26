@@ -946,7 +946,6 @@ model Kit {
   media              KitMedia[]
   kitCheckItems      KitCheckItem[]
   checkRecords       CheckRecord[]
-  groupTemplateItems GroupTemplateItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1705,8 +1704,7 @@ model GroupTemplateItem {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   templateId     String // references a Convex groupTemplates doc; FK dropped Phase B
   modelId        String? // references a Convex models doc; FK dropped Phase B
-  kitId          String?
-  kit            Kit?          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  kitId          String? // references a Convex kits doc; FK dropped Phase C
   quantity       Int           @default(1)
   sortOrder      Int           @default(0)
 

@@ -1,12 +1,26 @@
 "use client"
 
 import * as React from "react"
-import { createPortal } from "react-dom"
+import * as PopoverPrimitive from "@radix-ui/react-popover"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+
+/**
+ * TagInput — chip input with autocomplete suggestions.
+ *
+ * The suggestion dropdown is a **Radix** Popover (anchored to the input box).
+ * It used to be a hand-rolled `createPortal(..., document.body)` dropdown, which
+ * broke inside Radix modal Dialogs (used in category-manager, equipment-add,
+ * warehouse, etc.): a body-portaled element inherits the dialog's
+ * `pointer-events: none` lock so suggestions were unclickable, and — being
+ * outside the dialog's layer stack — a click on a suggestion registered as an
+ * outside-click that closed the dialog. Radix Popover puts the dropdown in the
+ * same DismissableLayer stack as the dialog, fixing both. Do NOT revert to a
+ * raw body portal. See FEATUREDOCS/07.
+ */
 
 interface TagInputProps {
   value: string[]
@@ -28,7 +42,6 @@ function TagInput({
   const [inputValue, setInputValue] = React.useState("")
   const [showSuggestions, setShowSuggestions] = React.useState(false)
   const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
-  const [dropdownPos, setDropdownPos] = React.useState<{ top: number; left: number; width: number } | null>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -41,17 +54,6 @@ function TagInput({
         !value.includes(s.toLowerCase())
     )
   }, [suggestions, inputValue, value])
-
-  const updateDropdownPos = React.useCallback(() => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect()
-      setDropdownPos({
-        top: rect.bottom + window.scrollY + 4,
-        left: rect.left + window.scrollX,
-        width: rect.width,
-      })
-    }
-  }, [])
 
   const addTag = React.useCallback(
     (tag: string) => {
@@ -122,81 +124,82 @@ function TagInput({
     }
     setShowSuggestions(true)
     setHighlightedIndex(-1)
-    updateDropdownPos()
   }
-
-  React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setShowSuggestions(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
 
   const showDropdown = showSuggestions && filteredSuggestions.length > 0
 
-  React.useEffect(() => {
-    if (showDropdown) {
-      updateDropdownPos()
-    }
-  }, [showDropdown, updateDropdownPos])
-
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
-      <div
-        className={cn(
-          "flex min-h-8 flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-2 py-1 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-          disabled && "pointer-events-none opacity-50"
-        )}
-        onClick={() => inputRef.current?.focus()}
-      >
-        {value.map((tag) => (
-          <Badge key={tag} status="neutral" className="gap-0.5">
-            {tag}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                removeTag(tag)
+    <PopoverPrimitive.Root
+      open={showDropdown}
+      onOpenChange={(o) => {
+        if (!o) {
+          setShowSuggestions(false)
+          setHighlightedIndex(-1)
+        }
+      }}
+    >
+      <PopoverPrimitive.Anchor asChild>
+        <div ref={containerRef} className={cn("relative", className)}>
+          <div
+            className={cn(
+              "flex min-h-8 flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-2 py-1 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+              disabled && "pointer-events-none opacity-50"
+            )}
+            onClick={() => inputRef.current?.focus()}
+          >
+            {value.map((tag) => (
+              <Badge key={tag} status="neutral" className="gap-0.5">
+                {tag}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeTag(tag)
+                  }}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-fg-3/20"
+                  disabled={disabled}
+                  aria-label={`Remove ${tag}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </Badge>
+            ))}
+            <Input
+              ref={inputRef}
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (inputValue.trim() && filteredSuggestions.length > 0) {
+                  setShowSuggestions(true)
+                }
               }}
-              className="ml-0.5 rounded-full p-0.5 hover:bg-fg-3/20"
+              placeholder={value.length === 0 ? placeholder : ""}
               disabled={disabled}
-              aria-label={`Remove ${tag}`}
-            >
-              <X className="size-3" />
-            </button>
-          </Badge>
-        ))}
-        <Input
-          ref={inputRef}
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onFocus={() => {
-            if (inputValue.trim() && filteredSuggestions.length > 0) {
-              setShowSuggestions(true)
+              className="h-6 min-w-[80px] flex-1 border-0 px-0 py-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
+            />
+          </div>
+        </div>
+      </PopoverPrimitive.Anchor>
+
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={4}
+          style={{ width: "var(--radix-popover-trigger-width)" }}
+          className="z-50 max-h-48 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md"
+          // Keep focus in the input — never steal it into the popup.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          // Typing in the anchored input must not close the dropdown; genuine
+          // outside interaction still closes it (Radix default).
+          onFocusOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => {
+            if (containerRef.current?.contains(e.target as Node)) {
+              e.preventDefault()
             }
           }}
-          placeholder={value.length === 0 ? placeholder : ""}
-          disabled={disabled}
-          className="h-6 min-w-[80px] flex-1 border-0 px-0 py-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
-        />
-      </div>
-
-      {showDropdown && dropdownPos && createPortal(
-        <div
-          className="z-50 max-h-48 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md"
-          style={{
-            position: "absolute",
-            top: dropdownPos.top,
-            left: dropdownPos.left,
-            width: dropdownPos.width,
-          }}
+          // Don't let a press inside the popup move focus off the input.
           onMouseDown={(e) => e.preventDefault()}
         >
           {filteredSuggestions.map((suggestion, index) => (
@@ -217,10 +220,9 @@ function TagInput({
               {suggestion}
             </button>
           ))}
-        </div>,
-        document.body
-      )}
-    </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }
 

@@ -263,6 +263,12 @@ Moved out of the sidebar into its own non-template main-content tab (after
 - "Import Services" button clones services from another project with date offset
 - Empty state with calendar preset and contextual CTA
 - FadeIn/StaggerList motion animations
+- **Service date model**: only `BUMP_IN` / `BUMP_OUT` / `LABOUR` can span multiple
+  days (`canBeMultiDay` in `services-panel.tsx`). For every other type `endDate`
+  is forced to equal `date` in `buildServiceData()` (`server/project-services.ts`)
+  and the single-day date input keeps `endDate` synced on change. Without this,
+  editing only the start date left a stale `endDate` and silently turned a 1-day
+  service into a 2-day span (also clamps `endDate` < `date`).
 
 ## Project Types
 `DRY_HIRE, WET_HIRE, INSTALLATION, TOUR, CORPORATE, THEATRE, FESTIVAL, CONFERENCE, OTHER`

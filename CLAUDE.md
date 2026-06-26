@@ -125,12 +125,29 @@ aren't killed). Anything you put in the URL itself wins.
 
 ## Critical Conventions
 
-### shadcn/ui v4 — `render` prop, NOT `asChild`
-```tsx
-<DialogTrigger render={<Button />}>Open</DialogTrigger>
-<DropdownMenuTrigger render={<Button />}>Menu</DropdownMenuTrigger>
-<SidebarMenuButton render={<Link href="/foo" />}>Link</SidebarMenuButton>
-```
+### Composition: Radix overlays use `asChild`, Base UI shells use `render`
+The RVLT rebrand left the UI library **mixed**, and the two families compose
+differently — using the wrong prop is a silent no-op:
+
+- **Overlay primitives are Radix** (`@radix-ui/react-*`): `Dialog`, `Sheet`,
+  `DropdownMenu`, `Popover`, `Select`, `Tooltip`. Compose triggers with **`asChild`**:
+  ```tsx
+  <DialogTrigger asChild><Button>Open</Button></DialogTrigger>
+  <DropdownMenuTrigger asChild><Button>Menu</Button></DropdownMenuTrigger>
+  ```
+- **Sidebar + Breadcrumb are Base UI** (`@base-ui/react` `useRender`): compose with
+  the **`render`** prop:
+  ```tsx
+  <SidebarMenuButton render={<Link href="/foo" />}>Link</SidebarMenuButton>
+  <BreadcrumbLink render={<Link href="/foo" />}>Crumb</BreadcrumbLink>
+  ```
+
+**⚠️ NEVER put a Base UI overlay (popover/menu) inside a Radix modal `Dialog`.** A
+Radix modal Dialog sets `pointer-events: none` on `document.body`; a Base UI popup
+portals to `<body>` as a sibling, inherits the lock, and every click is swallowed
+(this broke crew/model/supplier pickers in forms). Searchable pickers
+(`combobox-picker.tsx`, `tag-input.tsx`) are built on **Radix** Popover for exactly
+this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/07.
 
 ### Prisma v6
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
@@ -160,13 +177,17 @@ aren't killed). Anything you put in the URL itself wins.
 ### DOM Safety (removeChild Fix)
 - `DomPatch` (in root layout) monkey-patches `removeChild`/`insertBefore` to silently ignore calls where the target node is not a child — prevents the React 19 "Cannot read properties of null" TypeError
 - `GlobalErrorBoundary` (in root layout) catches any remaining DOM manipulation errors and auto-recovers
-- `OverlayLockReset` (in root layout) self-heals the "whole page becomes unclickable until refresh" bug: Base UI/Floating UI marks the rest of the page inert (`data-base-ui-inert` + `inert`/`aria-hidden`/`pointer-events:none` + a full-screen `[role="presentation"]` backdrop) while a modal overlay is open; React 19 sometimes orphans those locks when the overlay unmounts during navigation. A guarded watchdog clears orphaned locks **only when no overlay is open** (`src/components/overlay-lock-reset.tsx`, tested in `overlay-lock-reset.test.ts`)
+- `OverlayLockReset` (in root layout) self-heals the "whole page becomes unclickable until refresh" bug: Base UI/Floating UI marks the rest of the page inert (`data-base-ui-inert` + `inert`/`aria-hidden`/`pointer-events:none` + a full-screen `[role="presentation"]` backdrop) while a modal overlay is open; React 19 sometimes orphans those locks when the overlay unmounts during navigation. A guarded watchdog clears orphaned locks **only when no overlay is open** (`src/components/overlay-lock-reset.tsx`, tested in `overlay-lock-reset.test.ts`). NOTE: this watchdog targets the legacy **Base UI** `data-base-ui-inert` markers. Radix overlays (now the default) manage their own `pointer-events:none` body lock via DismissableLayer and clear it on close, so they don't rely on this watchdog — the real Radix footgun is nesting a non-Radix popup inside a modal Dialog (see the composition note above).
 - **When adding new providers or scripts to the root layout**: place them inside `<GlobalErrorBoundary>` to ensure coverage
 - **Never remove** `DomPatch`, `GlobalErrorBoundary`, or `OverlayLockReset` from `layout.tsx` — they are critical for navigation stability
-- **New dropdown/menu UI is Base UI (shadcn v4):** `DropdownMenuItem` fires `onClick` (NOT Radix's `onSelect`), and `DropdownMenuLabel` must be wrapped in `<DropdownMenuGroup>` (it's a `GroupLabel` and throws otherwise). Test menus by actually OPENING them, not just rendering the closed trigger.
+- **Dropdown/menu UI is Radix** (`@radix-ui/react-dropdown-menu`): `DropdownMenuItem` supports both `onSelect` and `onClick` (the codebase uses `onClick`). The codebase wraps `DropdownMenuLabel` in `<DropdownMenuGroup>` for consistency. Test menus by actually OPENING them, not just rendering the closed trigger.
 
-### Select — ALWAYS pass explicit label children to `SelectValue`
-`SelectValue` in shadcn/ui v4 **cannot** resolve labels from portal-rendered `SelectItem` children. Without explicit children, it shows the raw `value` (e.g. an ID or enum key) instead of the human-readable label. **Every `<SelectValue>` must have explicit children**:
+### Select — pass explicit label children to `SelectValue`
+Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
+convention is to **pass explicit children anyway** (belt-and-braces): it guarantees
+the human-readable label even when the selected `SelectItem` isn't currently mounted
+(virtualised / async lists), where a bare `<SelectValue />` can fall back to the raw
+`value` like an ID or enum key. Keep every `<SelectValue>` with explicit children:
 ```tsx
 // BAD — shows raw value like "createdAt" or "CHECKED_OUT"
 <SelectValue />

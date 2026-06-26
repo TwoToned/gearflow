@@ -1272,7 +1272,17 @@ function ServiceDialog({
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Date</Label>
-                <Input type="date" {...form.register("date")} />
+                <Input
+                  type="date"
+                  {...form.register("date")}
+                  onChange={(e) => {
+                    // Single-day service types: keep endDate locked to date so
+                    // changing the date doesn't leave a stale endDate behind
+                    // (which would render as a 2-day service).
+                    form.setValue("date", e.target.value);
+                    form.setValue("endDate", e.target.value);
+                  }}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Start time</Label>

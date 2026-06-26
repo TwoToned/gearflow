@@ -79,7 +79,21 @@ function deriveCrewTimes(
 /** DRY helper: build the shared data shape for create + update (Arch fix #8) */
 function buildServiceData(parsed: ReturnType<typeof projectServiceSchema.parse>) {
   const serviceDate = parsed.date ? new Date(parsed.date as unknown as string) : null;
-  const serviceEndDate = parsed.endDate ? new Date(parsed.endDate as unknown as string) : serviceDate;
+  let serviceEndDate = parsed.endDate ? new Date(parsed.endDate as unknown as string) : serviceDate;
+  // Only BUMP_IN / BUMP_OUT / LABOUR services can span multiple days (mirrors
+  // `canBeMultiDay` in services-panel.tsx). For every other type the end date
+  // MUST track the start date — otherwise editing just the start date leaves a
+  // stale endDate behind and silently turns a 1-day service into a 2-day span
+  // (reported: "changing date forward turned it into a 2-day service", and the
+  // date "not fully changing everywhere").
+  const MULTI_DAY_TYPES = new Set(["BUMP_IN", "BUMP_OUT", "LABOUR"]);
+  if (!MULTI_DAY_TYPES.has(String(parsed.type))) {
+    serviceEndDate = serviceDate;
+  }
+  // An end date before the start also renders as a multi-day span — clamp it.
+  if (serviceDate && serviceEndDate && serviceEndDate.getTime() < serviceDate.getTime()) {
+    serviceEndDate = serviceDate;
+  }
   const lineTotal = calculateServiceLineTotal(
     parsed.unitPrice,
     parsed.discount,

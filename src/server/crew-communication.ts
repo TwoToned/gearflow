@@ -16,6 +16,12 @@ import {
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getLocationById } from "@/lib/locations-read";
+import {
+  getAssignmentById,
+  getAssignmentsByProject,
+} from "@/lib/crew-scheduling-read";
+import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
+import { getProjectByIdMapped } from "@/lib/projects-read";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -24,52 +30,72 @@ function generateToken(): string {
 // ─── Build email data from assignment ────────────────────────────────────────
 
 async function buildAssignmentEmailData(assignmentId: string) {
-  const assignment = await prisma.crewAssignment.findUnique({
-    where: { id: assignmentId },
-    include: {
-      crewMember: {
-        select: { firstName: true, lastName: true, email: true },
-      },
-      crewRole: { select: { name: true } },
-      project: {
-        select: {
-          name: true,
-          projectNumber: true,
-          locationId: true,
-          siteContactName: true,
-          siteContactPhone: true,
-        },
-      },
-      organization: { select: { name: true } },
-    },
-  });
+  // crewAssignment / crewMember / crewRole and project are all dual-written /
+  // Convex-only — re-source the assignment + its crew member, role and project
+  // from Convex (the old Prisma `crewAssignment.findUnique` reads empty). The
+  // organization name stays Prisma (Better-Auth-adjacent org table, kept).
+  const assignmentRow = await getAssignmentById(assignmentId);
+  if (!assignmentRow) throw new Error("Assignment not found");
 
-  if (!assignment) throw new Error("Assignment not found");
+  const [crewMember, project, roleMap, org] = await Promise.all([
+    getCrewMemberById(assignmentRow.crewMemberId),
+    getProjectByIdMapped(assignmentRow.projectId, assignmentRow.organizationId),
+    assignmentRow.crewRoleId ? getCrewRoleMap(assignmentRow.organizationId) : Promise.resolve(null),
+    prisma.organization.findUnique({
+      where: { id: assignmentRow.organizationId },
+      select: { name: true },
+    }),
+  ]);
+  if (!crewMember) throw new Error("Assignment not found");
+  if (!project) throw new Error("Assignment not found");
+
+  const roleName = assignmentRow.crewRoleId
+    ? roleMap?.get(assignmentRow.crewRoleId)?.name ?? null
+    : null;
 
   // Location FK was dropped (Phase B); resolve the project's location from the
   // Convex mirror (replaces the old nested `project.location` select).
-  const location = assignment.project.locationId
-    ? await getLocationById(assignment.project.locationId)
+  const location = project.locationId
+    ? await getLocationById(project.locationId)
     : null;
+
+  // Reconstruct the nested shape the senders consume (assignment.crewMember /
+  // .project / .organizationId).
+  const assignment = {
+    ...assignmentRow,
+    crewMember: {
+      firstName: crewMember.firstName,
+      lastName: crewMember.lastName,
+      email: crewMember.email ?? null,
+    },
+    crewRole: roleName ? { name: roleName } : null,
+    project: {
+      name: project.name,
+      projectNumber: project.projectNumber,
+      siteContactName: project.siteContactName,
+      siteContactPhone: project.siteContactPhone,
+    },
+    organization: org ? { name: org.name } : null,
+  };
 
   return {
     assignment,
     emailData: {
-      crewFirstName: assignment.crewMember.firstName,
-      projectName: assignment.project.name,
-      projectNumber: assignment.project.projectNumber,
-      roleName: assignment.crewRole?.name || null,
-      phase: assignment.phase,
-      startDate: assignment.startDate?.toISOString() || null,
-      endDate: assignment.endDate?.toISOString() || null,
-      startTime: assignment.startTime,
-      endTime: assignment.endTime,
+      crewFirstName: crewMember.firstName,
+      projectName: project.name,
+      projectNumber: project.projectNumber,
+      roleName,
+      phase: assignmentRow.phase,
+      startDate: assignmentRow.startDate?.toISOString() || null,
+      endDate: assignmentRow.endDate?.toISOString() || null,
+      startTime: assignmentRow.startTime,
+      endTime: assignmentRow.endTime,
       locationName: location?.name || null,
       locationAddress: location?.address || null,
-      siteContactName: assignment.project.siteContactName,
-      siteContactPhone: assignment.project.siteContactPhone,
-      notes: assignment.notes,
-      orgName: assignment.organization?.name || "GearFlow",
+      siteContactName: project.siteContactName,
+      siteContactPhone: project.siteContactPhone,
+      notes: assignmentRow.notes,
+      orgName: org?.name || "GearFlow",
     },
   };
 }
@@ -144,15 +170,20 @@ export async function sendCrewOffer(assignmentId: string) {
 export async function sendCrewOfferAll(projectId: string) {
   const { organizationId } = await requirePermission("crew", "update");
 
-  const assignments = await prisma.crewAssignment.findMany({
-    where: {
-      projectId,
-      organizationId,
-      status: "PENDING",
-      crewMember: { email: { not: null } },
-    },
-    select: { id: true },
-  });
+  // crewAssignment / crewMember are Convex-only — read the project's assignments
+  // from Convex, keep PENDING ones whose crew member has an email (replacing the
+  // old relational Prisma `where`).
+  const projectAssignments = await getAssignmentsByProject(projectId, organizationId);
+  const pendingAssignments = projectAssignments.filter((a) => a.status === "PENDING");
+  const memberIds = [...new Set(pendingAssignments.map((a) => a.crewMemberId))];
+  const memberEmail = new Map<string, string | null>();
+  await Promise.all(
+    memberIds.map(async (mid) => {
+      const m = await getCrewMemberById(mid);
+      memberEmail.set(mid, m?.email ?? null);
+    }),
+  );
+  const assignments = pendingAssignments.filter((a) => !!memberEmail.get(a.crewMemberId));
 
   let sent = 0;
   const errors: string[] = [];
@@ -231,41 +262,52 @@ export async function sendBulkMessage(
     "update"
   );
 
-  const where: Record<string, unknown> = {
-    projectId,
-    organizationId,
-    status: { notIn: ["CANCELLED", "DECLINED"] },
-    crewMember: { email: { not: null } },
-  };
+  // crewAssignment / crewMember / project / organization are dual-written /
+  // Convex-only — read the project's assignments from Convex and replicate the
+  // Prisma `where` (status notIn [CANCELLED, DECLINED], crewMember has email, +
+  // optional phase / crewRoleId) in JS. crewMember (first name + email) + project
+  // (name + number) come from Convex; org name stays Prisma.
+  const projectAssignments = await getAssignmentsByProject(projectId, organizationId);
+  const filteredAssignments = projectAssignments.filter(
+    (a) =>
+      a.status !== "CANCELLED" &&
+      a.status !== "DECLINED" &&
+      (filter?.phase ? a.phase === filter.phase : true) &&
+      (filter?.crewRoleId ? a.crewRoleId === filter.crewRoleId : true),
+  );
 
-  if (filter?.phase) where.phase = filter.phase;
-  if (filter?.crewRoleId) where.crewRoleId = filter.crewRoleId;
-
-  const assignments = await prisma.crewAssignment.findMany({
-    where,
-    include: {
-      crewMember: { select: { firstName: true, email: true } },
-      project: { select: { name: true, projectNumber: true } },
-      organization: { select: { name: true } },
-    },
-  });
+  const [project, org] = await Promise.all([
+    getProjectByIdMapped(projectId, organizationId),
+    prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+  ]);
+  const memberIds = [...new Set(filteredAssignments.map((a) => a.crewMemberId))];
+  const memberById = new Map<string, { firstName: string; email: string | null }>();
+  await Promise.all(
+    memberIds.map(async (mid) => {
+      const m = await getCrewMemberById(mid);
+      if (m) memberById.set(mid, { firstName: m.firstName, email: m.email ?? null });
+    }),
+  );
+  // crewMember email present (mirrors `crewMember: { email: { not: null } }`).
+  const assignments = filteredAssignments.filter((a) => !!memberById.get(a.crewMemberId)?.email);
 
   let sent = 0;
   const errors: string[] = [];
 
   for (const a of assignments) {
-    if (!a.crewMember.email) continue;
+    const member = memberById.get(a.crewMemberId);
+    if (!member?.email) continue;
     try {
       const email = crewBulkMessageEmail(
-        a.crewMember.firstName,
-        a.project.name,
-        a.project.projectNumber,
+        member.firstName,
+        project?.name ?? "",
+        project?.projectNumber ?? "",
         message,
         userName,
-        a.organization?.name || "GearFlow"
+        org?.name || "GearFlow"
       );
       await sendEmail({
-        to: a.crewMember.email,
+        to: member.email,
         subject: email.subject,
         html: email.html,
       });

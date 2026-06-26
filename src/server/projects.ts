@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
-import { getCallSheetData } from "@/lib/projects-read";
+import {
+  getCallSheetData,
+  getProjectsByOrgMapped,
+  getProjectByIdMapped,
+  type ProjectRow,
+} from "@/lib/projects-read";
 import {
   getLineItemsByProjectIds,
   buildIncludeLineItemsByProject,
@@ -15,7 +20,7 @@ import {
   projectSchema,
   type ProjectFormValues,
 } from "@/lib/validations/project";
-import type { Prisma, ProjectStatus } from "@/generated/prisma/client";
+import type { ProjectStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
@@ -24,10 +29,8 @@ import { getKitSerializedItemsByOrg } from "@/lib/kits-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
-import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
-import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { type FilterValue } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
@@ -90,28 +93,25 @@ function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig |
  * existing (e.g. manually-entered) one, we bump again. Returns the number.
  */
 async function generateProjectNumber(
-  tx: Prisma.TransactionClient,
   organizationId: string,
   config: ProjectNumberConfig,
   now: Date,
 ): Promise<string> {
   const parts = datePartsInTimezone(now, config.timezone);
   const scopeKey = scopeKeyFor(config.reset, parts);
+  const convex = await getConvexClient();
 
   for (let attempt = 0; attempt < 50; attempt++) {
-    const rows = await tx.$queryRaw<{ value: number }[]>`
-      INSERT INTO "project_number_sequence" ("id", "organizationId", "scopeKey", "value", "updatedAt")
-      VALUES (${createId()}, ${organizationId}, ${scopeKey}, 1, NOW())
-      ON CONFLICT ("organizationId", "scopeKey")
-      DO UPDATE SET "value" = "project_number_sequence"."value" + 1, "updatedAt" = NOW()
-      RETURNING "value"
-    `;
-    const sequence = Number(rows[0]?.value ?? 1);
-    const number = renderProjectNumber(config.format, { parts, sequence, padding: config.padding });
-    const clash = await tx.project.findFirst({
-      where: { organizationId, projectNumber: number },
-      select: { id: true },
+    // Atomic counter bump (Convex serializable mutation = race-free across concurrent
+    // creates — the ON CONFLICT … value+1 equivalent). cuid used only on first insert.
+    const sequence = await convex.mutation(api.projectNumberSequences.reserveNextNumber, {
+      organizationId,
+      scopeKey,
+      newId: createId(),
+      now: now.getTime(),
     });
+    const number = renderProjectNumber(config.format, { parts, sequence, padding: config.padding });
+    const clash = await convex.query(api.projects.getByOrgAndNumber, { organizationId, projectNumber: number });
     if (!clash) return number;
   }
   throw new Error("Could not generate a unique project number");
@@ -150,9 +150,12 @@ export async function peekNextProjectNumber(override?: {
 
   const parts = datePartsInTimezone(new Date(), config.timezone);
   const scopeKey = scopeKeyFor(config.reset, parts);
-  const seqRow = await prisma.projectNumberSequence.findUnique({
-    where: { organizationId_scopeKey: { organizationId, scopeKey } },
-    select: { value: true },
+  // The sequence counter is Convex-only now — read the doc (no increment; this is
+  // a pure preview) and use its `value`.
+  const convex = await getConvexClient();
+  const seqRow = await convex.query(api.projectNumberSequences.getByOrgAndScopeKey, {
+    organizationId,
+    scopeKey,
   });
   const startSeq = (seqRow?.value ?? 0) + 1;
 
@@ -163,38 +166,49 @@ export async function peekNextProjectNumber(override?: {
   // already-used number — e.g. counter 0 → "260601" when 260601-260603 exist.
   // Probe forward only; never persist (this is a preview, must not consume a number).
   // Keep this skip loop in sync with `generateProjectNumber` above.
+  const takenNumbers = new Set(
+    (await getProjectsByOrgMapped(organizationId)).map((p) => p.projectNumber),
+  );
   for (let i = 0; i < 50; i++) {
     const number = renderProjectNumber(config.format, {
       parts,
       sequence: startSeq + i,
       padding: config.padding,
     });
-    const clash = await prisma.project.findFirst({
-      where: { organizationId, projectNumber: number },
-      select: { id: true },
-    });
-    if (!clash) return number;
+    if (!takenNumbers.has(number)) return number;
   }
   // Pathological: 50 consecutive codes taken. Fall back to the unskipped render
   // rather than hard-erroring the preview query.
   return renderProjectNumber(config.format, { parts, sequence: startSeq, padding: config.padding });
 }
 
-const projectFilterColumns: FilterColumnDef[] = [
-  { id: "status", filterType: "enum" },
-  { id: "type", filterType: "enum" },
-];
+/**
+ * Compare two mapped project rows on a scalar `sortBy` column, returning the
+ * ASCENDING ordering (the caller multiplies by -1 for desc). Mirrors the dropped
+ * Prisma `orderBy: { [sortBy]: sortOrder }`: NULLs sort LAST under ASC (so they
+ * compare "greater" here, then the desc multiply flips them to first, matching
+ * Postgres NULLS FIRST under DESC). Dates compare by epoch, numbers numerically,
+ * everything else lexicographically.
+ */
+function compareProjectField(a: ProjectRow, b: ProjectRow, sortBy: string): number {
+  const av = (a as unknown as Record<string, unknown>)[sortBy] ?? null;
+  const bv = (b as unknown as Record<string, unknown>)[sortBy] ?? null;
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1; // nulls last under ASC
+  if (bv == null) return -1;
+  if (av instanceof Date && bv instanceof Date) return av.getTime() - bv.getTime();
+  if (typeof av === "number" && typeof bv === "number") return av - bv;
+  return String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0;
+}
 
 async function generateTemplateCode(organizationId: string): Promise<string> {
-  const count = await prisma.project.count({
-    where: { organizationId, isTemplate: true },
-  });
+  // project is Convex-only — count templates + check uniqueness off the Convex mirror.
+  const allProjects = await getProjectsByOrgMapped(organizationId);
+  const count = allProjects.filter((p) => p.isTemplate).length;
   let code = `TPL-${String(count + 1).padStart(4, "0")}`;
   // Ensure uniqueness
-  const existing = await prisma.project.findFirst({
-    where: { organizationId, projectNumber: code },
-  });
-  if (existing) {
+  const existingNumbers = new Set(allProjects.map((p) => p.projectNumber));
+  if (existingNumbers.has(code)) {
     code = `TPL-${String(count + 2).padStart(4, "0")}`;
   }
   return code;
@@ -230,64 +244,78 @@ export async function getProjects(params?: {
     filters,
   } = params || {};
 
-  // Build filter where from DataTable filters
-  const filterWhere = buildFilterWhere(filters, projectFilterColumns);
+  // The `project` row is dual-written to Convex — read all org projects from the
+  // Convex mirror (Prisma-row-shaped) and replicate the old Prisma `where` / sort /
+  // pagination in JS. Pure, reversible read swap (Phase C keystone read-cleanup).
+  const allProjects = await getProjectsByOrgMapped(organizationId);
 
   // The location FK was dropped (Phase B) — the search-by-location-name clause
   // can no longer be a Prisma relational filter. Resolve matching location ids
   // from the Convex mirror and match projects by `locationId in [...]` instead.
-  const searchLocationIds = search
-    ? (await getMappedLocationsByOrg(organizationId))
-        .filter((l) => l.name.toLowerCase().includes(search.toLowerCase()))
-        .map((l) => l.id)
-    : [];
+  const searchLocationIdSet = search
+    ? new Set(
+        (await getMappedLocationsByOrg(organizationId))
+          .filter((l) => l.name.toLowerCase().includes(search.toLowerCase()))
+          .map((l) => l.id),
+      )
+    : null;
 
-  const where: Prisma.ProjectWhereInput = {
-    organizationId,
-    isTemplate: false,
-    ...(status && {
-      status: status as Prisma.EnumProjectStatusFilter,
-    }),
-    ...(type && {
-      type: type as Prisma.EnumProjectTypeFilter,
-    }),
-    ...(clientId && { clientId }),
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { projectNumber: { contains: search, mode: "insensitive" } },
-        ...(searchLocationIds.length > 0 ? [{ locationId: { in: searchLocationIds } }] : []),
-      ],
-    }),
-    ...(rentalStartDate && {
-      rentalStartDate: { gte: new Date(rentalStartDate) },
-    }),
-    ...(rentalEndDate && {
-      rentalEndDate: { lte: new Date(rentalEndDate) },
-    }),
-    ...filterWhere,
-  };
+  // DataTable enum filters: status/type are the two enum columns → `{ in: [...] }`
+  // filters on those scalar fields (replicates the dropped buildFilterWhere where).
+  const statusFilterIn = (() => {
+    const v = filters?.status;
+    return Array.isArray(v) && v.length > 0 ? new Set(v as string[]) : null;
+  })();
+  const typeFilterIn = (() => {
+    const v = filters?.type;
+    return Array.isArray(v) && v.length > 0 ? new Set(v as string[]) : null;
+  })();
+
+  const searchLower = search?.toLowerCase();
+  const rentalStartGte = rentalStartDate ? new Date(rentalStartDate).getTime() : null;
+  const rentalEndLte = rentalEndDate ? new Date(rentalEndDate).getTime() : null;
+
+  const filtered = allProjects.filter((p) => {
+    if (p.isTemplate) return false;
+    if (status && p.status !== status) return false;
+    if (type && p.type !== type) return false;
+    if (clientId && p.clientId !== clientId) return false;
+    if (searchLower) {
+      const matchesName = p.name.toLowerCase().includes(searchLower);
+      const matchesNumber = p.projectNumber.toLowerCase().includes(searchLower);
+      const matchesLocation =
+        searchLocationIdSet != null && p.locationId != null && searchLocationIdSet.has(p.locationId);
+      if (!matchesName && !matchesNumber && !matchesLocation) return false;
+    }
+    if (rentalStartGte != null && (p.rentalStartDate == null || p.rentalStartDate.getTime() < rentalStartGte))
+      return false;
+    if (rentalEndLte != null && (p.rentalEndDate == null || p.rentalEndDate.getTime() > rentalEndLte))
+      return false;
+    if (statusFilterIn && !statusFilterIn.has(p.status)) return false;
+    if (typeFilterIn && !typeFilterIn.has(p.type)) return false;
+    return true;
+  });
+
+  const total = filtered.length;
 
   // Clients live in Convex (no Prisma join). Sorting by client name therefore
-  // can't happen in the DB — when sortBy === "client" we fetch all matching
-  // projects, attach clients, then sort + paginate in JS. Other sorts keep DB
-  // pagination and just attach clients to the page.
+  // can't happen at the source — when sortBy === "client" we sort + paginate
+  // after attaching clients. Other sorts sort the mapped rows, then paginate.
   const sortByClient = sortBy === "client";
-  const [projectsRaw, total] = await Promise.all([
-    prisma.project.findMany({
-      where,
-      ...(sortByClient
-        ? {}
-        : { orderBy: { [sortBy]: sortOrder }, skip: (page - 1) * pageSize, take: pageSize }),
-    }),
-    prisma.project.count({ where }),
-  ]);
+
+  if (!sortByClient) {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    filtered.sort((a, b) => compareProjectField(a, b, sortBy) * dir);
+  }
+
+  // For non-client sorts, slice the page before attaching cross-domain data.
+  const pageRows = sortByClient ? filtered : filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const [clientMap, locationMap] = await Promise.all([
     getClientMap(organizationId),
     getLocationMap(organizationId),
   ]);
-  let projects = projectsRaw.map((p) => ({
+  let projects = pageRows.map((p) => ({
     ...p,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
     location: p.locationId ? locationMap.get(p.locationId) ?? null : null,
@@ -331,12 +359,15 @@ export async function getProjectIssueFlags(projectIds: string[]) {
   const { organizationId } = await getOrgContext();
   if (projectIds.length === 0) return {} as Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }>;
 
-  // Only compute for active projects
+  // Only compute for active projects. `project` is dual-written to Convex — read
+  // all org projects (Prisma-row-shaped) and filter to the requested ids + active
+  // statuses in JS (pure, reversible swap of the old Prisma findMany).
   const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
-  const projects = await prisma.project.findMany({
-    where: { id: { in: projectIds }, organizationId, status: { in: activeStatuses } },
-    select: { id: true, rentalStartDate: true, rentalEndDate: true },
-  });
+  const idSet = new Set(projectIds);
+  const activeStatusSet = new Set<string>(activeStatuses);
+  const projects = (await getProjectsByOrgMapped(organizationId)).filter(
+    (p) => idSet.has(p.id) && activeStatusSet.has(p.status),
+  );
 
   if (projects.length === 0) return {} as Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }>;
 
@@ -380,23 +411,42 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 export async function getProject(id: string) {
   const { organizationId } = await getOrgContext();
   // The equipment line-item tree (categories → groups → lineItems →
-  // childLineItems → units, with asset/bulkAsset/kit/model/supplier) now comes
-  // from the dual-written Convex tables, reconstructed in JS — see
-  // src/lib/project-line-item-read.ts (Phase A keystone). Prisma here only
-  // supplies the project scalars + location + projectManagers + media, which stay
-  // Prisma reads for now.
-  const projectRow = await prisma.project.findUnique({
-    where: { id, organizationId },
-    include: {
-      projectManagers: {
-        include: {
-          user: { select: { id: true, name: true, email: true, image: true } },
-        },
-        orderBy: { addedAt: "asc" },
-      },
-    },
+  // childLineItems → units, with asset/bulkAsset/kit/model/supplier) comes from
+  // the dual-written Convex tables, reconstructed in JS — see
+  // src/lib/project-line-item-read.ts (Phase A keystone).
+  //
+  // Project scalars are dual-written to Convex → read the Prisma-row-shaped doc.
+  // projectManagers are Convex-only (Phase B); read the join rows from Convex and
+  // attach the linked Better-Auth `user` (kept-table Prisma) by a single batched
+  // findMany. media + location stay as before.
+  const projectScalars = await getProjectByIdMapped(id, organizationId);
+  if (!projectScalars) return null;
+
+  const convexForProject = await getConvexClient();
+  const pmRows = await convexForProject.query(api.projectManagers.listByProject, {
+    projectId: id,
+    orgId: organizationId,
   });
-  if (!projectRow) return null;
+  // Order by addedAt asc (mirrors the dropped Prisma `orderBy: { addedAt: "asc" }`).
+  const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
+  const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
+  const pmUsers = pmUserIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: pmUserIds } },
+        select: { id: true, name: true, email: true, image: true },
+      })
+    : [];
+  const pmUserMap = new Map(pmUsers.map((u) => [u.id, u]));
+  const projectManagers = sortedPmRows.map((pm) => ({
+    id: pm.id,
+    organizationId: pm.organizationId,
+    projectId: pm.projectId,
+    userId: pm.userId,
+    addedAt: pm.addedAt != null ? new Date(pm.addedAt) : null,
+    user: pmUserMap.get(pm.userId) ?? null,
+  }));
+
+  const projectRow = { ...projectScalars, projectManagers };
 
   // project media gallery now from the Convex mirror (dual-written → identical
   // data); was a Prisma projectMedia + file join. See media-read.ts.
@@ -502,71 +552,85 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   const templateNumber =
     isTemplate && !parsed.projectNumber ? await generateTemplateCode(organizationId) : null;
 
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const projectNumber = useAutoNumber
-        ? await generateProjectNumber(tx, organizationId, autoConfig!, new Date())
-        : (templateNumber ?? parsed.projectNumber!);
-      const project = await tx.project.create({
-      data: {
-        organizationId,
-        isTemplate,
-        projectNumber,
-        name: parsed.name,
-        clientId: parsed.clientId || null,
-        status: parsed.status,
-        type: parsed.type,
-        description: parsed.description || null,
-        locationId: parsed.locationId || null,
-        siteContactName: parsed.siteContactName || null,
-        siteContactPhone: parsed.siteContactPhone || null,
-        siteContactEmail: parsed.siteContactEmail || null,
-        loadInDate: parsed.loadInDate ?? null,
-        loadInTime: parsed.loadInTime || null,
-        eventStartDate: parsed.eventStartDate ?? null,
-        eventStartTime: parsed.eventStartTime || null,
-        eventEndDate: parsed.eventEndDate ?? null,
-        eventEndTime: parsed.eventEndTime || null,
-        loadOutDate: parsed.loadOutDate ?? null,
-        loadOutTime: parsed.loadOutTime || null,
-        rentalStartDate: parsed.rentalStartDate ?? null,
-        rentalEndDate: parsed.rentalEndDate ?? null,
-        crewNotes: parsed.crewNotes || null,
-        internalNotes: parsed.internalNotes || null,
-        clientNotes: parsed.clientNotes || null,
-        defaultRentalPeriod: parsed.defaultRentalPeriod || null,
-        defaultRentalQuantity: parsed.defaultRentalQuantity || null,
-        taxRate: parsed.taxRate ?? null,
-        discountPercent: parsed.discountPercent ?? null,
-        depositPercent: parsed.depositPercent ?? null,
-        depositPaid: parsed.depositPaid ?? null,
-        invoicedTotal: parsed.invoicedTotal ?? null,
-        tags: parsed.tags,
-      },
+  // project is Convex-only now. Build the create args (dates → epoch-ms, nulls
+  // omitted); the project number is allocated + the row created together below.
+  const id = createId();
+  const now = new Date();
+  const baseArgs = {
+    id,
+    organizationId,
+    isTemplate,
+    name: parsed.name,
+    clientId: parsed.clientId || undefined,
+    status: parsed.status,
+    type: parsed.type,
+    description: parsed.description || undefined,
+    locationId: parsed.locationId || undefined,
+    siteContactName: parsed.siteContactName || undefined,
+    siteContactPhone: parsed.siteContactPhone || undefined,
+    siteContactEmail: parsed.siteContactEmail || undefined,
+    loadInDate: parsed.loadInDate?.getTime(),
+    loadInTime: parsed.loadInTime || undefined,
+    eventStartDate: parsed.eventStartDate?.getTime(),
+    eventStartTime: parsed.eventStartTime || undefined,
+    eventEndDate: parsed.eventEndDate?.getTime(),
+    eventEndTime: parsed.eventEndTime || undefined,
+    loadOutDate: parsed.loadOutDate?.getTime(),
+    loadOutTime: parsed.loadOutTime || undefined,
+    rentalStartDate: parsed.rentalStartDate?.getTime(),
+    rentalEndDate: parsed.rentalEndDate?.getTime(),
+    crewNotes: parsed.crewNotes || undefined,
+    internalNotes: parsed.internalNotes || undefined,
+    clientNotes: parsed.clientNotes || undefined,
+    defaultRentalPeriod: parsed.defaultRentalPeriod || undefined,
+    defaultRentalQuantity: parsed.defaultRentalQuantity || undefined,
+    taxRate: parsed.taxRate ?? undefined,
+    discountPercent: parsed.discountPercent ?? undefined,
+    depositPercent: parsed.depositPercent ?? undefined,
+    depositPaid: parsed.depositPaid ?? undefined,
+    invoicedTotal: parsed.invoicedTotal ?? undefined,
+    tags: parsed.tags,
+    createdAt: now.getTime(),
+    updatedAt: now.getTime(),
+  };
+
+  const convex = await getConvexClient();
+  let created: { created: boolean; id: string } | null = null;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const projectNumber = useAutoNumber
+      ? await generateProjectNumber(organizationId, autoConfig!, now)
+      : (templateNumber ?? parsed.projectNumber!);
+    created = await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
+    if (created.created) break;
+    // Number taken. A manual / template number is a hard duplicate; an auto number
+    // lost a race — loop to allocate the next one.
+    if (!useAutoNumber) {
+      throw new UserFacingError({
+        code: "DUPLICATE_PROJECT_CODE",
+        title: "Project code already in use",
+        message: `A ${isTemplate ? "template" : "project"} with code "${projectNumber}" already exists.`,
+        field: "projectNumber",
       });
-
-      return project;
-    });
-    await mirrorProjectCreate(result);
-
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "project",
-      entityId: result.id,
-      entityName: result.projectNumber,
-      summary: `Created ${isTemplate ? "template" : "project"} ${result.projectNumber} - ${result.name}`,
-      projectId: result.id,
-    });
-
-    return serialize(result);
-  } catch (e: unknown) {
-    const translated = translatePrismaError(e);
-    if (translated) throw translated;
-    throw e;
+    }
   }
+  if (!created?.created) throw new Error("Could not allocate a unique project number");
+
+  const result = await getProjectByIdMapped(id, organizationId);
+  if (!result) throw new Error("Project create failed");
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "project",
+    entityId: result.id,
+    entityName: result.projectNumber,
+    summary: `Created ${isTemplate ? "template" : "project"} ${result.projectNumber} - ${result.name}`,
+    projectId: result.id,
+  });
+
+  return serialize(result);
 }
 
 export async function updateProject(id: string, data: ProjectFormValues) {
@@ -574,11 +638,9 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   const parsed = projectSchema.parse(data);
 
   // Read the prior status so a project-form save that flips status into a
-  // blocked-forward state can be gated on blocking comments.
-  const before = await prisma.project.findUnique({
-    where: { id, organizationId },
-    select: { status: true, isTemplate: true },
-  });
+  // blocked-forward state can be gated on blocking comments. (project is
+  // Convex-only — read the mapped row instead of Prisma.)
+  const before = await getProjectByIdMapped(id, organizationId);
 
   if (
     before &&
@@ -591,51 +653,62 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.project.update({
-      where: { id, organizationId },
-      data: {
-        projectNumber: parsed.projectNumber,
-        name: parsed.name,
-        clientId: parsed.clientId || null,
-        status: parsed.status,
-        type: parsed.type,
-        description: parsed.description || null,
-        locationId: parsed.locationId || null,
-        siteContactName: parsed.siteContactName || null,
-        siteContactPhone: parsed.siteContactPhone || null,
-        siteContactEmail: parsed.siteContactEmail || null,
-        loadInDate: parsed.loadInDate ?? null,
-        loadInTime: parsed.loadInTime || null,
-        eventStartDate: parsed.eventStartDate ?? null,
-        eventStartTime: parsed.eventStartTime || null,
-        eventEndDate: parsed.eventEndDate ?? null,
-        eventEndTime: parsed.eventEndTime || null,
-        loadOutDate: parsed.loadOutDate ?? null,
-        loadOutTime: parsed.loadOutTime || null,
-        rentalStartDate: parsed.rentalStartDate ?? null,
-        rentalEndDate: parsed.rentalEndDate ?? null,
-        defaultRentalPeriod: parsed.defaultRentalPeriod || null,
-        defaultRentalQuantity: parsed.defaultRentalQuantity || null,
-        taxRate: parsed.taxRate ?? null,
-        crewNotes: parsed.crewNotes || null,
-        internalNotes: parsed.internalNotes || null,
-        clientNotes: parsed.clientNotes || null,
-        discountPercent: parsed.discountPercent ?? null,
-        depositPercent: parsed.depositPercent ?? null,
-        depositPaid: parsed.depositPaid ?? null,
-        invoicedTotal: parsed.invoicedTotal ?? null,
-        tags: parsed.tags,
-      },
-    });
-    return result;
+  // project is Convex-only — patch via api.projects.patchProject. Value→set,
+  // empty/null→clear (mirrors the old `|| null` / `?? null` clear-to-null logic).
+  const set: Record<string, unknown> = {
+    projectNumber: parsed.projectNumber,
+    name: parsed.name,
+    status: parsed.status,
+    type: parsed.type,
+    tags: parsed.tags,
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+  const setOrClear = (key: string, value: unknown) => {
+    if (value === null || value === undefined || value === "") clear.push(key);
+    else set[key] = value;
+  };
+  setOrClear("clientId", parsed.clientId || null);
+  setOrClear("description", parsed.description || null);
+  setOrClear("locationId", parsed.locationId || null);
+  setOrClear("siteContactName", parsed.siteContactName || null);
+  setOrClear("siteContactPhone", parsed.siteContactPhone || null);
+  setOrClear("siteContactEmail", parsed.siteContactEmail || null);
+  setOrClear("loadInDate", parsed.loadInDate?.getTime() ?? null);
+  setOrClear("loadInTime", parsed.loadInTime || null);
+  setOrClear("eventStartDate", parsed.eventStartDate?.getTime() ?? null);
+  setOrClear("eventStartTime", parsed.eventStartTime || null);
+  setOrClear("eventEndDate", parsed.eventEndDate?.getTime() ?? null);
+  setOrClear("eventEndTime", parsed.eventEndTime || null);
+  setOrClear("loadOutDate", parsed.loadOutDate?.getTime() ?? null);
+  setOrClear("loadOutTime", parsed.loadOutTime || null);
+  setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
+  setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
+  setOrClear("defaultRentalPeriod", parsed.defaultRentalPeriod || null);
+  setOrClear("defaultRentalQuantity", parsed.defaultRentalQuantity || null);
+  setOrClear("taxRate", parsed.taxRate ?? null);
+  setOrClear("crewNotes", parsed.crewNotes || null);
+  setOrClear("internalNotes", parsed.internalNotes || null);
+  setOrClear("clientNotes", parsed.clientNotes || null);
+  setOrClear("discountPercent", parsed.discountPercent ?? null);
+  setOrClear("depositPercent", parsed.depositPercent ?? null);
+  setOrClear("depositPaid", parsed.depositPaid ?? null);
+  setOrClear("invoicedTotal", parsed.invoicedTotal ?? null);
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.projects.patchProject, {
+    id,
+    set,
+    ...(clear.length > 0 ? { clear } : {}),
   });
-  await patchProjectInConvex(updated.id, updated);
 
   // Recalculate totals if tax rate changed
   if (parsed.taxRate !== undefined) {
     await recalculateProjectTotals(id);
   }
+
+  const updated = await getProjectByIdMapped(id, organizationId);
+  if (!updated) throw new Error("Project update failed");
 
   await logActivity({
     organizationId,
@@ -657,7 +730,7 @@ export async function updateProjectStatus(
   status: ProjectFormValues["status"]
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
-  const project = await prisma.project.findUnique({ where: { id, organizationId } });
+  const project = await getProjectByIdMapped(id, organizationId);
   if (!project) {
     throw new UserFacingError({
       code: "NOT_FOUND",
@@ -679,14 +752,15 @@ export async function updateProjectStatus(
     });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.project.update({
-      where: { id, organizationId },
-      data: { status },
-    });
-    return result;
+  // project is Convex-only — patch the status directly.
+  const convex = await getConvexClient();
+  await convex.mutation(api.projects.patchProject, {
+    id,
+    set: { status, updatedAt: Date.now() },
   });
-  await patchProjectInConvex(updated.id, updated);
+
+  const updated = await getProjectByIdMapped(id, organizationId);
+  if (!updated) throw new Error("Project status update failed");
 
   await logActivity({
     organizationId,
@@ -710,21 +784,28 @@ export async function updateProjectNotes(
   notes: string,
 ) {
   const { organizationId } = await requirePermission("project", "update");
-  const updated = await prisma.project.update({
-    where: { id, organizationId },
-    data: { [field]: notes || null },
+  // project is Convex-only — patch the single whitelisted notes field (clear when
+  // emptied, mirroring the old `notes || null`).
+  const convex = await getConvexClient();
+  await convex.mutation(api.projects.patchProject, {
+    id,
+    ...(notes ? { set: { [field]: notes, updatedAt: Date.now() } } : { set: { updatedAt: Date.now() }, clear: [field] }),
   });
-  await patchProjectInConvex(updated.id, updated);
+  const updated = await getProjectByIdMapped(id, organizationId);
+  if (!updated) throw new Error("Project notes update failed");
   return serialize(updated);
 }
 
 export async function archiveProject(id: string) {
   const { organizationId } = await requirePermission("project", "update");
-  const updated = await prisma.project.update({
-    where: { id, organizationId },
-    data: { status: "CANCELLED" },
+  // project is Convex-only — set status to CANCELLED.
+  const convex = await getConvexClient();
+  await convex.mutation(api.projects.patchProject, {
+    id,
+    set: { status: "CANCELLED", updatedAt: Date.now() },
   });
-  await patchProjectInConvex(updated.id, updated);
+  const updated = await getProjectByIdMapped(id, organizationId);
+  if (!updated) throw new Error("Project archive failed");
   return serialize(updated);
 }
 
@@ -732,11 +813,18 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
   const { organizationId } = await requirePermission("project", "create");
 
   const client = await getConvexClient();
-  const source = await prisma.project.findUniqueOrThrow({
-    where: { id: sourceId, organizationId },
-    include: {
-      projectManagers: true,
-    },
+  // project is Convex-only — read the source scalars + its project managers from Convex.
+  const source = await getProjectByIdMapped(sourceId, organizationId);
+  if (!source) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
+  const sourceProjectManagers = await client.query(api.projectManagers.listByProject, {
+    projectId: sourceId,
+    orgId: organizationId,
   });
 
   // Read source categories/groups from Convex (Convex-only after write inversion).
@@ -800,35 +888,47 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const newProject = await tx.project.create({
-        data: {
-          organizationId,
-          projectNumber: newProjectNumber,
-          name: newName,
-          clientId: source.clientId,
-          status: "ENQUIRY",
-          type: source.type,
-          description: source.description,
-          locationId: source.locationId,
-          siteContactName: source.siteContactName,
-          siteContactPhone: source.siteContactPhone,
-          siteContactEmail: source.siteContactEmail,
-          crewNotes: source.crewNotes,
-          internalNotes: source.internalNotes,
-          clientNotes: source.clientNotes,
-          discountPercent: source.discountPercent,
-          depositPercent: source.depositPercent,
-          defaultRentalPeriod: source.defaultRentalPeriod,
-          defaultRentalQuantity: source.defaultRentalQuantity,
-          taxRate: source.taxRate,
-          tags: source.tags,
-          isTemplate: false,
-        },
-      });
-
-      return newProject;
+    // project is Convex-only — create the new project row FIRST (children below
+    // reference its id). createWithUniqueNumber enforces the org+number unique
+    // guard; a clash means the requested duplicate code is taken.
+    const newProjectId = createId();
+    const dupCreatedAt = Date.now();
+    const created = await client.mutation(api.projects.createWithUniqueNumber, {
+      id: newProjectId,
+      organizationId,
+      projectNumber: newProjectNumber,
+      name: newName,
+      status: "ENQUIRY",
+      type: source.type,
+      ...(source.clientId ? { clientId: source.clientId } : {}),
+      ...(source.description ? { description: source.description } : {}),
+      ...(source.locationId ? { locationId: source.locationId } : {}),
+      ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
+      ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
+      ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
+      ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
+      ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
+      ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
+      ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
+      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
+      ...(source.defaultRentalPeriod ? { defaultRentalPeriod: source.defaultRentalPeriod } : {}),
+      ...(source.defaultRentalQuantity != null ? { defaultRentalQuantity: source.defaultRentalQuantity } : {}),
+      ...(source.taxRate != null ? { taxRate: source.taxRate } : {}),
+      tags: source.tags,
+      isTemplate: false,
+      createdAt: dupCreatedAt,
+      updatedAt: dupCreatedAt,
     });
+    if (!created.created) {
+      throw new UserFacingError({
+        code: "DUPLICATE_PROJECT_CODE",
+        title: "Project code already in use",
+        message: `A project with code "${newProjectNumber}" already exists.`,
+        field: "projectNumber",
+      });
+    }
+    const result = await getProjectByIdMapped(newProjectId, organizationId);
+    if (!result) throw new Error("Project duplicate failed");
 
     // Create duplicated categories + groups + line items in Convex. Line items
     // are Convex-only (Phase C), so they're written here (outside the Prisma tx)
@@ -959,9 +1059,8 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
       await copyLineItem(li, result.id, null, null);
     }
 
-    await mirrorProjectCreate(result);
     // Copy project managers directly to Convex (Convex-only after Phase B).
-    for (const pm of source.projectManagers) {
+    for (const pm of sourceProjectManagers) {
       await client.mutation(api.projectManagers.createIfMissing, {
         id: createId(),
         organizationId,
@@ -985,9 +1084,8 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 export async function saveAsTemplate(projectId: string, templateName: string) {
   const { organizationId } = await requirePermission("project", "create");
 
-  const source = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-  });
+  // project is Convex-only — read the source scalars from Convex.
+  const source = await getProjectByIdMapped(projectId, organizationId);
 
   if (!source) {
     throw new UserFacingError({
@@ -1013,35 +1111,43 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
   const templateNumber = await generateTemplateCode(organizationId);
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const template = await tx.project.create({
-        data: {
-          organizationId,
-          projectNumber: templateNumber,
-          name: templateName,
-          clientId: source.clientId,
-          status: "ENQUIRY",
-          type: source.type,
-          description: source.description,
-          locationId: source.locationId,
-          siteContactName: source.siteContactName,
-          siteContactPhone: source.siteContactPhone,
-          siteContactEmail: source.siteContactEmail,
-          crewNotes: source.crewNotes,
-          internalNotes: source.internalNotes,
-          clientNotes: source.clientNotes,
-          discountPercent: source.discountPercent,
-          depositPercent: source.depositPercent,
-          tags: source.tags,
-          isTemplate: true,
-        },
-      });
-
-      return template;
+    // project is Convex-only — create the template project row FIRST (lines below
+    // reference its id). createWithUniqueNumber enforces the org+number guard.
+    const templateId = createId();
+    const templateCreatedAt = Date.now();
+    const created = await convexForTemplate.mutation(api.projects.createWithUniqueNumber, {
+      id: templateId,
+      organizationId,
+      projectNumber: templateNumber,
+      name: templateName,
+      status: "ENQUIRY",
+      type: source.type,
+      isTemplate: true,
+      ...(source.clientId ? { clientId: source.clientId } : {}),
+      ...(source.description ? { description: source.description } : {}),
+      ...(source.locationId ? { locationId: source.locationId } : {}),
+      ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
+      ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
+      ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
+      ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
+      ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
+      ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
+      ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
+      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
+      tags: source.tags,
+      createdAt: templateCreatedAt,
+      updatedAt: templateCreatedAt,
     });
-
-    // Mirror the new template project to Convex.
-    await mirrorProjectCreate(result);
+    if (!created.created) {
+      throw new UserFacingError({
+        code: "DUPLICATE_PROJECT_CODE",
+        title: "Template code already in use",
+        message: `A template with code "${templateNumber}" already exists.`,
+        field: "projectNumber",
+      });
+    }
+    const result = await getProjectByIdMapped(templateId, organizationId);
+    if (!result) throw new Error("Template create failed");
 
     // Create the copied line items in Convex (project row is Prisma; lines Convex).
     const tNow = Date.now();
@@ -1084,10 +1190,18 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
 export async function getTemplates() {
   const { organizationId } = await getOrgContext();
 
-  const templates = await prisma.project.findMany({
-    where: { organizationId, isTemplate: true },
-    orderBy: { updatedAt: "desc" },
-  });
+  // `project` is dual-written to Convex — read all org projects (Prisma-row-shaped),
+  // keep only templates, order by updatedAt desc (NULLS FIRST, Postgres DESC).
+  const templates = (await getProjectsByOrgMapped(organizationId))
+    .filter((p) => p.isTemplate === true)
+    .sort((a, b) => {
+      const at = a.updatedAt?.getTime() ?? null;
+      const bt = b.updatedAt?.getTime() ?? null;
+      if (at === bt) return 0;
+      if (at === null) return -1; // nulls first under DESC
+      if (bt === null) return 1;
+      return bt - at;
+    });
 
   // The `_count.lineItems` (top-level / non kit-child) now comes from the
   // dual-written Convex line items instead of a Prisma `_count` aggregate.
@@ -1113,9 +1227,8 @@ export async function getTemplates() {
 export async function deleteTemplate(id: string) {
   const { organizationId } = await requirePermission("project", "delete");
 
-  const template = await prisma.project.findUnique({
-    where: { id, organizationId },
-  });
+  // project is Convex-only — read the template scalars from Convex.
+  const template = await getProjectByIdMapped(id, organizationId);
   if (!template) {
     throw new UserFacingError({
       code: "NOT_FOUND",
@@ -1131,30 +1244,40 @@ export async function deleteTemplate(id: string) {
     });
   }
 
-  await prisma.project.delete({ where: { id, organizationId } });
-  await removeProjectFromConvex(id);
-  // Delete Convex-only sub-table rows (PM/tasks) and reconcile Prisma-cascade ones (services).
+  // Delete the Convex-only sub-table rows (PM/tasks/services), then the project doc.
+  // (No Prisma FK cascade remains — they're all explicit Convex cascades now.)
   const convexForDelete = await getConvexClient();
-  const [pmRows, taskRows] = await Promise.all([
+  const [pmRows, taskRows, serviceRows] = await Promise.all([
     convexForDelete.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
     convexForDelete.query(api.projectTasks.listByProject, { projectId: id, orgId: organizationId }),
+    convexForDelete.query(api.projectServices.listByProject, { projectId: id, orgId: organizationId }),
   ]);
   await Promise.all([
     ...pmRows.map((pm) => convexForDelete.mutation(api.projectManagers.remove, { id: pm.id })),
     ...taskRows.map((t) => convexForDelete.mutation(api.projectTasks.remove, { id: t.id })),
+    ...serviceRows.map((s) => convexForDelete.mutation(api.projectServices.remove, { id: s.id })),
   ]);
-  await syncProjectServicesToConvex(organizationId, id);
+  // Grouping (category/group/slot) + any template line items live in Convex only.
+  await convexForDelete.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
+  const templateLineItems = await convexForDelete.query(api.projectLineItems.listByProject, {
+    projectId: id,
+    orgId: organizationId,
+  });
+  for (const li of templateLineItems) {
+    if (li.parentLineItemId == null) {
+      await convexForDelete.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
+    }
+  }
+  await convexForDelete.mutation(api.projects.remove, { id });
   return { success: true };
 }
 
 export async function deleteProject(id: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "delete");
 
-  // Only allow deleting cancelled projects. Project scalar stays Prisma (project
-  // table not flipped yet); its line items are Convex-only (Phase C).
-  const project = await prisma.project.findUnique({
-    where: { id, organizationId },
-  });
+  // Only allow deleting cancelled projects. Project + line items are Convex-only
+  // (Phase C) — read the project scalars from Convex.
+  const project = await getProjectByIdMapped(id, organizationId);
 
   if (!project) {
     throw new UserFacingError({
@@ -1249,29 +1372,28 @@ export async function deleteProject(id: string) {
     }
   }
 
-  // Delete the Prisma project row (project table not flipped yet).
-  await prisma.project.delete({ where: { id, organizationId } });
-
-  // Mirror the freed kits' status (kit table is Convex — already patched above,
-  // but keep the mirror reconcile for any kit-mirror-derived projections), and
-  // tidy the remaining Convex sub-tables / crew cascade / project doc.
+  // Tidy the remaining Convex sub-tables / crew cascade, then delete the project
+  // doc. The project + all its sub-tables are Convex-only now (no Prisma FK
+  // cascade remains — dropped in Phase C #254), so each is removed explicitly.
   for (const aid of crewAssignmentIds) {
     await convex.mutation(api.crewAssignments.deleteCascade, { id: aid });
   }
-  await removeProjectFromConvex(id);
-  // Delete Convex-only sub-table rows (PM/tasks) and reconcile Prisma-cascade ones (services).
-  const [pmRows, taskRows] = await Promise.all([
+  // Delete Convex-only sub-table rows (PM/tasks/services).
+  const [pmRows, taskRows, serviceRows] = await Promise.all([
     convex.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
     convex.query(api.projectTasks.listByProject, { projectId: id, orgId: organizationId }),
+    convex.query(api.projectServices.listByProject, { projectId: id, orgId: organizationId }),
   ]);
   await Promise.all([
     ...pmRows.map((pm) => convex.mutation(api.projectManagers.remove, { id: pm.id })),
     ...taskRows.map((t) => convex.mutation(api.projectTasks.remove, { id: t.id })),
+    ...serviceRows.map((s) => convex.mutation(api.projectServices.remove, { id: s.id })),
   ]);
   // Grouping (category/group/slot) lives in Convex only; the Prisma FK cascade
   // that used to clean these up was dropped in Phase C #254, so purge them here.
   await convex.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
-  await syncProjectServicesToConvex(organizationId, id);
+  // Finally delete the project doc itself (Convex-only).
+  await convex.mutation(api.projects.remove, { id });
 
   await logActivity({
     organizationId,

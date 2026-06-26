@@ -13,7 +13,6 @@
  * See docs/designs/line-item-fulfillment-model.md (Phase 2b).
  */
 
-import { prisma } from "@/lib/prisma";
 import {
   planAll,
   type CollapseRow,
@@ -196,15 +195,21 @@ export async function mergeGroup(
     now,
   });
 
-  // 2. Repoint ProjectService FKs — projectService is NOT flipped (stays Prisma).
-  //    Done in the action since the Convex mergeGroup mutation doesn't touch it.
+  // 2. Repoint ProjectService FKs — projectService is Convex-only now (Phase C).
+  //    Read the org's services, find any pointing at a merged-away sibling, and
+  //    repoint each to the canonical line. (Previously a Prisma updateMany with no
+  //    Convex reconcile — a stale-write bug now that the table lives in Convex.)
   let servicesRepointed = 0;
-  for (const move of plan.moves) {
-    const serviceMove = await prisma.projectService.updateMany({
-      where: { lineItemId: move.siblingId },
-      data: { lineItemId: plan.canonicalId },
-    });
-    servicesRepointed += serviceMove.count;
+  const siblingIds = new Set(plan.moves.map((m) => m.siblingId));
+  const orgServices = await convex.query(api.projectServices.list, { orgId: organizationId });
+  for (const svc of orgServices) {
+    if (svc.lineItemId != null && siblingIds.has(svc.lineItemId)) {
+      await convex.mutation(api.projectServices.patchService, {
+        id: svc.id,
+        set: { lineItemId: plan.canonicalId },
+      });
+      servicesRepointed += 1;
+    }
   }
 
   // 3. Stats. The Convex mutation doesn't return per-row counts, so the

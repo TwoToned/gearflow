@@ -1,6 +1,7 @@
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import type { ProjectStatus, ProjectType, RentalPeriod } from "@/generated/prisma/client";
 
 export type ConvexProject = Doc<"projects">;
 export type ConvexProjectService = Doc<"projectServices">;
@@ -12,6 +13,125 @@ export async function getProjectsByOrg(orgId: string): Promise<ConvexProject[]> 
 
 export async function getProjectById(id: string): Promise<ConvexProject | null> {
   return await (await getConvexClient()).query(api.projects.getById, { id });
+}
+
+// ─── Prisma-row-shaped mapping (for consumers that read the project scalars) ─────
+// epoch-ms → Date, Decimal → number, absent optional → null, Prisma defaults
+// coerced non-null. Cross-domain joins (client/location/managers/services/lineItems)
+// are composed by the caller from their own Convex reads.
+
+const toDate = (v: number | undefined): Date | null => (typeof v === "number" ? new Date(v) : null);
+const orNull = <T>(v: T | undefined): T | null => (v === undefined ? null : v);
+
+export interface ProjectRow {
+  id: string;
+  organizationId: string;
+  projectNumber: string;
+  name: string;
+  clientId: string | null;
+  status: ProjectStatus;
+  type: ProjectType;
+  description: string | null;
+  locationId: string | null;
+  siteContactName: string | null;
+  siteContactPhone: string | null;
+  siteContactEmail: string | null;
+  loadInDate: Date | null;
+  loadInTime: string | null;
+  eventStartDate: Date | null;
+  eventStartTime: string | null;
+  eventEndDate: Date | null;
+  eventEndTime: string | null;
+  loadOutDate: Date | null;
+  loadOutTime: string | null;
+  rentalStartDate: Date | null;
+  rentalEndDate: Date | null;
+  projectManagerId: string | null;
+  defaultRentalPeriod: RentalPeriod | null;
+  defaultRentalQuantity: number | null;
+  taxRate: number | null;
+  equipmentRevenue: number | null;
+  serviceCostTotal: number | null;
+  labourCostTotal: number | null;
+  subHireCostTotal: number | null;
+  margin: number | null;
+  crewNotes: string | null;
+  internalNotes: string | null;
+  clientNotes: string | null;
+  subtotal: number | null;
+  discountPercent: number | null;
+  discountAmount: number | null;
+  taxAmount: number | null;
+  total: number | null;
+  depositPercent: number | null;
+  depositPaid: number | null;
+  invoicedTotal: number | null;
+  tags: string[];
+  isTemplate: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export function mapProject(d: ConvexProject): ProjectRow {
+  return {
+    id: d.id,
+    organizationId: d.organizationId,
+    projectNumber: d.projectNumber,
+    name: d.name,
+    clientId: orNull(d.clientId),
+    status: (d.status ?? "ENQUIRY") as ProjectStatus,
+    type: (d.type ?? "OTHER") as ProjectType,
+    description: orNull(d.description),
+    locationId: orNull(d.locationId),
+    siteContactName: orNull(d.siteContactName),
+    siteContactPhone: orNull(d.siteContactPhone),
+    siteContactEmail: orNull(d.siteContactEmail),
+    loadInDate: toDate(d.loadInDate),
+    loadInTime: orNull(d.loadInTime),
+    eventStartDate: toDate(d.eventStartDate),
+    eventStartTime: orNull(d.eventStartTime),
+    eventEndDate: toDate(d.eventEndDate),
+    eventEndTime: orNull(d.eventEndTime),
+    loadOutDate: toDate(d.loadOutDate),
+    loadOutTime: orNull(d.loadOutTime),
+    rentalStartDate: toDate(d.rentalStartDate),
+    rentalEndDate: toDate(d.rentalEndDate),
+    projectManagerId: orNull(d.projectManagerId),
+    defaultRentalPeriod: orNull(d.defaultRentalPeriod) as RentalPeriod | null,
+    defaultRentalQuantity: orNull(d.defaultRentalQuantity),
+    taxRate: orNull(d.taxRate),
+    equipmentRevenue: orNull(d.equipmentRevenue),
+    serviceCostTotal: orNull(d.serviceCostTotal),
+    labourCostTotal: orNull(d.labourCostTotal),
+    subHireCostTotal: orNull(d.subHireCostTotal),
+    margin: orNull(d.margin),
+    crewNotes: orNull(d.crewNotes),
+    internalNotes: orNull(d.internalNotes),
+    clientNotes: orNull(d.clientNotes),
+    subtotal: orNull(d.subtotal),
+    discountPercent: orNull(d.discountPercent),
+    discountAmount: orNull(d.discountAmount),
+    taxAmount: orNull(d.taxAmount),
+    total: orNull(d.total),
+    depositPercent: orNull(d.depositPercent),
+    depositPaid: orNull(d.depositPaid),
+    invoicedTotal: orNull(d.invoicedTotal),
+    tags: d.tags ?? [],
+    isTemplate: d.isTemplate ?? false,
+    createdAt: toDate(d.createdAt),
+    updatedAt: toDate(d.updatedAt),
+  };
+}
+
+/** All org projects, Prisma-row-shaped. */
+export async function getProjectsByOrgMapped(orgId: string): Promise<ProjectRow[]> {
+  return (await getProjectsByOrg(orgId)).map(mapProject);
+}
+
+/** One project, Prisma-row-shaped (null if missing / wrong org). */
+export async function getProjectByIdMapped(id: string, orgId: string): Promise<ProjectRow | null> {
+  const d = await getProjectById(id);
+  return d && d.organizationId === orgId ? mapProject(d) : null;
 }
 
 /** Returns the set of projectIds where userId appears as a project manager. */

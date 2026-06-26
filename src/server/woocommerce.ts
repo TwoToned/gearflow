@@ -2,18 +2,16 @@
 
 import crypto from "crypto";
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { getClientsByOrg, getClientById, type ConvexClient } from "@/lib/clients-read";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getModelsByOrg } from "@/lib/models-read";
-import { getProjectsByOrg } from "@/lib/projects-read";
+import { getProjectsByOrg, getProjectByIdMapped } from "@/lib/projects-read";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { mirrorProjectCreate } from "@/lib/project-mirror";
 import { flexibleDateParse } from "@/lib/woocommerce-utils";
 import {
   getWooCommerceOrderLogsPage,
@@ -338,26 +336,40 @@ export async function processWooCommerceOrder(
     // 5. Generate a project number
     const projectNumber = await generateWebOrderProjectNumber(orgId, order);
 
-    // 6. Create the project
-    const project = await prisma.project.create({
-      data: {
-        organizationId: orgId,
-        projectNumber,
-        name: order.billing.company
-          ? `${order.billing.company} — Website Order #${order.number || order.id}`
-          : `${order.billing.first_name} ${order.billing.last_name} — Website Order #${order.number || order.id}`,
-        clientId: client.id,
-        status: integration.autoConfirmEnquiry ? "QUOTING" : "ENQUIRY",
-        type: integration.defaultProjectType as never,
-        locationId: locationId ?? null,
-        rentalStartDate: dates.rentalStart ?? null,
-        rentalEndDate: dates.rentalEnd ?? null,
-        eventStartDate: dates.eventStart ?? null,
-        clientNotes: extractNotes(order, integration),
-        tags: ["website-order"],
-      },
+    // 6. Create the project (Convex-only — createWithUniqueNumber enforces the
+    // org+number guard; on a rare race-clash, append a unique suffix and retry).
+    const projectId = createId();
+    const projectName = order.billing.company
+      ? `${order.billing.company} — Website Order #${order.number || order.id}`
+      : `${order.billing.first_name} ${order.billing.last_name} — Website Order #${order.number || order.id}`;
+    const clientNotes = extractNotes(order, integration);
+    const projectCreatedAt = Date.now();
+    const buildProjectArgs = (num: string) => ({
+      id: projectId,
+      organizationId: orgId,
+      projectNumber: num,
+      name: projectName,
+      clientId: client.id,
+      status: (integration.autoConfirmEnquiry ? "QUOTING" : "ENQUIRY") as never,
+      type: integration.defaultProjectType as never,
+      ...(locationId ? { locationId } : {}),
+      ...(dates.rentalStart ? { rentalStartDate: dates.rentalStart.getTime() } : {}),
+      ...(dates.rentalEnd ? { rentalEndDate: dates.rentalEnd.getTime() } : {}),
+      ...(dates.eventStart ? { eventStartDate: dates.eventStart.getTime() } : {}),
+      ...(clientNotes ? { clientNotes } : {}),
+      tags: ["website-order"],
+      createdAt: projectCreatedAt,
+      updatedAt: projectCreatedAt,
     });
-    await mirrorProjectCreate(project);
+    let createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(projectNumber));
+    let finalProjectNumber = projectNumber;
+    if (!createResult.created) {
+      finalProjectNumber = `${projectNumber}-${Date.now().toString(36).slice(-4)}`;
+      createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(finalProjectNumber));
+      if (!createResult.created) throw new Error("Could not allocate a unique web-order project number");
+    }
+    const project = await getProjectByIdMapped(projectId, orgId);
+    if (!project) throw new Error("WooCommerce project create failed");
 
     // 7. Add line items for matched and unmatched products.
     // projectLineItem is Convex-only — write each line via api.projectLineItems.create

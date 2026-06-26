@@ -13,7 +13,6 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { patchProjectInConvex } from "@/lib/project-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
@@ -1380,9 +1379,12 @@ export async function recalculateProjectTotals(projectId: string) {
   const total = roundCurrency(taxableAmount + taxAmount);
   const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
 
-  const updated = await prisma.project.update({
-    where: { id: projectId },
-    data: {
+  // project is Convex-only — patch the recomputed totals directly. (The prior
+  // Prisma update + mirror left the Convex totals stale when the mirror was a
+  // no-op; this is now the single source of truth.)
+  await convex.mutation(api.projects.patchProject, {
+    id: projectId,
+    set: {
       equipmentRevenue,
       serviceCostTotal,
       labourCostTotal,
@@ -1392,8 +1394,7 @@ export async function recalculateProjectTotals(projectId: string) {
       taxAmount,
       total,
       margin,
+      updatedAt: Date.now(),
     },
   });
-  // Mirror the recomputed project totals to Convex (project is dual-written).
-  await patchProjectInConvex(updated.id, updated);
 }

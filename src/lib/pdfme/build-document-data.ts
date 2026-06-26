@@ -10,6 +10,16 @@ import { getClientById } from "@/lib/clients-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
 import { buildDocumentLineItemData } from "@/lib/project-line-item-read";
+import { getProjectByIdMapped } from "@/lib/projects-read";
+import { getProjectServicesByOrg } from "@/lib/project-services-read";
+import {
+  getAssignmentsByProject,
+  getShiftsByAssignmentIds,
+  sortProjectCrew,
+  shiftsForAssignmentSortedAsc,
+  EXCLUDED_ASSIGNMENT_STATUSES,
+} from "@/lib/crew-scheduling-read";
+import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatDate } from "./plugins/helpers";
@@ -107,59 +117,98 @@ export async function buildDocumentData(
 
   const docColor = branding?.documentColor || branding?.primaryColor || DEFAULT_DOC_COLOR;
 
-  // Load project with deep includes + categories/groups for document structure
-  const projectRow = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    include: {
-      // location + the line-item tree + categories all live in Convex now —
-      // attached below / reconstructed via buildDocumentLineItemData.
-      // Sub-hires + their groups are loaded for Phase 1+ (sub-hire-as-section
-      // feature). Phase 0 includes them but doesn't consume them yet so the
-      // include shape is locked alongside the snapshot fixtures.
-      // SubHireGroup is nested under SubHire, not directly on Project.
-      // supplier is dual-written to Convex — attached below, not joined here.
-      subHires: {
-        include: {
-          groups: { orderBy: { sortOrder: "asc" } },
-        },
+  // Project scalars are dual-written to Convex → read the Prisma-row-shaped doc.
+  // location + the line-item tree + categories live in Convex (attached below /
+  // reconstructed via buildDocumentLineItemData). crewAssignments are Convex-only
+  // (re-sourced below for call sheets). Sub-hires + their groups are still Prisma
+  // (sub_hire is a Stage-2 leaf) — read here by projectId. SubHireGroup is nested
+  // under SubHire; supplier is dual-written to Convex (attached below, not joined).
+  const [projectScalars, subHireRows] = await Promise.all([
+    getProjectByIdMapped(projectId, organizationId),
+    prisma.subHire.findMany({
+      where: { projectId, organizationId },
+      include: {
+        groups: { orderBy: { sortOrder: "asc" } },
       },
-      ...(docType === "call-sheet"
-        ? {
-            crewAssignments: {
-              where: {
-                organizationId,
-                status: { notIn: ["CANCELLED", "DECLINED"] },
-                ...(options?.crewMemberId ? { crewMemberId: options.crewMemberId } : {}),
-                ...(options?.crewRoleId ? { crewRoleId: options.crewRoleId } : {}),
-              },
-              include: {
-                crewMember: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    phone: true,
-                    email: true,
-                    department: true,
-                  },
-                },
-                crewRole: { select: { name: true } },
-                shifts: { orderBy: { date: "asc" } },
-              },
-              orderBy: [
-                { isProjectManager: "desc" },
-                { phase: "asc" },
-                { crewMember: { lastName: "asc" } },
-              ],
-            },
-          }
-        : {}),
-    },
-  });
+    }),
+  ]);
 
-  if (!projectRow) {
+  if (!projectScalars) {
     throw new Error(`Project ${projectId} not found`);
   }
+
+  // crewAssignments (call-sheet only) are Convex-only. Re-source the same shape the
+  // old Prisma include produced: filter status notIn [CANCELLED, DECLINED] (+ the
+  // optional crewMember/crewRole narrowing), order [isProjectManager desc, phase
+  // asc, crewMember.lastName asc], and attach crewMember/crewRole (Convex maps) +
+  // shifts (Convex, date asc).
+  type CrewAssignmentInclude = {
+    id: string;
+    organizationId: string;
+    crewMemberId: string;
+    crewRoleId: string | null;
+    status: string;
+    phase: string | null;
+    isProjectManager: boolean;
+    startTime: string | null;
+    endTime: string | null;
+    notes: string | null;
+    crewMember: { id: string; firstName: string; lastName: string; phone: string | null; email: string | null; department: string | null } | null;
+    crewRole: { name: string } | null;
+    shifts: Array<{ date: Date; callTime: string | null; endTime: string | null; breakMinutes: number | null; location: string | null; notes: string | null }>;
+  };
+  let crewAssignmentRows: CrewAssignmentInclude[] = [];
+  if (docType === "call-sheet") {
+    const assignments = (await getAssignmentsByProject(projectId, organizationId)).filter(
+      (a) =>
+        !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status) &&
+        (options?.crewMemberId ? a.crewMemberId === options.crewMemberId : true) &&
+        (options?.crewRoleId ? a.crewRoleId === options.crewRoleId : true),
+    );
+    const [shifts, crewMemberMap, crewRoleMap] = await Promise.all([
+      getShiftsByAssignmentIds(assignments.map((a) => a.id)),
+      getCrewMemberMap(organizationId),
+      getCrewRoleMap(organizationId),
+    ]);
+    const sorted = sortProjectCrew(assignments, (a) => crewMemberMap.get(a.crewMemberId)?.lastName);
+    crewAssignmentRows = sorted.map((a) => {
+      const member = crewMemberMap.get(a.crewMemberId);
+      const role = a.crewRoleId ? crewRoleMap.get(a.crewRoleId) : undefined;
+      return {
+        id: a.id,
+        organizationId: a.organizationId,
+        crewMemberId: a.crewMemberId,
+        crewRoleId: a.crewRoleId,
+        status: a.status,
+        phase: a.phase,
+        isProjectManager: a.isProjectManager,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        notes: a.notes,
+        crewMember: member
+          ? {
+              id: member.id,
+              firstName: member.firstName,
+              lastName: member.lastName,
+              phone: member.phone ?? null,
+              email: member.email ?? null,
+              department: member.department ?? null,
+            }
+          : null,
+        crewRole: role ? { name: role.name } : null,
+        shifts: shiftsForAssignmentSortedAsc(shifts, a.id).map((s) => ({
+          date: s.date,
+          callTime: s.callTime,
+          endTime: s.endTime,
+          breakMinutes: s.breakMinutes,
+          location: s.location,
+          notes: s.notes,
+        })),
+      };
+    });
+  }
+
+  const projectRow = { ...projectScalars, subHires: subHireRows, crewAssignments: crewAssignmentRows };
 
   // The line-item tree + categories come from Convex via buildDocumentLineItemData
   // (model/supplier/kit/asset/bulkAsset + per-line category/group selects, units in
@@ -289,16 +338,18 @@ export async function buildDocumentData(
   );
 
   // ─── Append billable services as virtual line items ─────────────────────────
-  // Services with showOnDocuments appear on quotes/invoices as their own section
-  const billableServices = await prisma.projectService.findMany({
-    where: {
-      projectId,
-      organizationId,
-      showOnDocuments: true,
-      status: { not: "CANCELLED" },
-    },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Services with showOnDocuments appear on quotes/invoices as their own section.
+  // projectService is dual-written to Convex — read the org's services, filter to
+  // this project (showOnDocuments === true, status != CANCELLED) and order by
+  // sortOrder asc, replicating the dropped Prisma findMany.
+  const billableServices = (await getProjectServicesByOrg(organizationId))
+    .filter(
+      (s) =>
+        s.projectId === projectId &&
+        s.showOnDocuments === true &&
+        s.status !== "CANCELLED",
+    )
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
   if (billableServices.length > 0) {
     for (const svc of billableServices) {

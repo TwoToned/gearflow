@@ -31,6 +31,22 @@ export const getById = query({
   },
 });
 
+/**
+ * Kit serialized-item members for ONE kit (via by_kitId), org-filtered. Replaces
+ * getKitSerializedItemsByOrg + JS `.filter(kitId === id)` in the getKit composite.
+ */
+export const listByKitId = query({
+  args: { orgId: v.string(), kitId: v.string() },
+  handler: async (ctx, { orgId, kitId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("kitSerializedItems")
+      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

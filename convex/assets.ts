@@ -55,6 +55,28 @@ export const listByModel = query({
   },
 });
 
+/**
+ * Batch point-read assets by cuid, scoped to one org. Lets a detail composite
+ * (e.g. getKit) read only its member assets by id instead of collecting the whole
+ * org registry (getAssetsByOrg) and filtering in JS. Cross-org ids are dropped,
+ * never returned. Order is NOT guaranteed (callers key by id).
+ */
+export const listByIds = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgRead(ctx, orgId);
+    // Dedupe + cap: this is user-callable, so an unbounded id array would fan out
+    // arbitrarily many point-reads. 1000 is comfortable headroom over any real
+    // detail composite's member count.
+    const unique = [...new Set(ids)];
+    if (unique.length > 1000) throw new ConvexError("assets.listByIds: too many ids (max 1000)");
+    const docs = await Promise.all(
+      unique.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

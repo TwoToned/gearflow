@@ -33,6 +33,25 @@ export const getById = query({
   },
 });
 
+/**
+ * Batch point-read projects by cuid, scoped to one org. Lets a detail composite
+ * attach projects to its line-items / scan-logs by id instead of collecting every
+ * project in the org (getProjectsByOrg) just to build a lookup map. Cross-org ids
+ * dropped. Does NOT exclude templates — callers that need that filter on the result.
+ */
+export const listByIds = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(ids)];
+    if (unique.length > 1000) throw new ConvexError("projects.listByIds: too many ids (max 1000)");
+    const docs = await Promise.all(
+      unique.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

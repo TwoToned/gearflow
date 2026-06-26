@@ -56,6 +56,24 @@ export const listByModel = query({
   },
 });
 
+/**
+ * Batch point-read bulk assets by cuid, scoped to one org — the bulk-asset
+ * counterpart of assets.listByIds, so a detail composite reads only its members
+ * instead of getBulkAssetsByOrg. Cross-org ids are dropped.
+ */
+export const listByIds = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(ids)];
+    if (unique.length > 1000) throw new ConvexError("bulkAssets.listByIds: too many ids (max 1000)");
+    const docs = await Promise.all(
+      unique.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

@@ -21,7 +21,6 @@ import { getPrimaryPhotoMap, getKitMediaFromConvex, withResolvedFile } from "@/l
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getCategoryMap } from "@/lib/categories-read";
-import { getProjectsByOrg } from "@/lib/projects-read";
 import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { getAssetById, getBulkAssetById, getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc, mapConvexAssetToPrisma, mapConvexBulkAssetToPrisma } from "@/lib/assets-read";
 import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, getKitByAssetTag, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
@@ -74,91 +73,104 @@ export async function getKit(id: string) {
   const kit = await getKitById(id);
   if (!kit || kit.organizationId !== organizationId) return serialize(null);
 
-  const [
-    allSerialized,
-    allBulk,
-    allAssets,
-    allBulkAssets,
-    modelMap,
-    lineItems,
-    scanLogs,
-    maintenanceRecords,
-    media,
-  ] = await Promise.all([
-    getKitSerializedItemsByOrg(organizationId),
-    getKitBulkItemsByOrg(organizationId),
-    getAssetsByOrg(organizationId),
-    getBulkAssetsByOrg(organizationId),
-    getModelMap(organizationId),
-    (async () => {
-      // projectLineItem is Convex-only now; attach project from the Convex map.
-      const [rows, projects] = await Promise.all([
-        (await getConvexClient()).query(api.projectLineItems.listByKitId, { kitId: id, orgId: organizationId }),
-        getProjectsByOrg(organizationId),
-      ]);
-      const projMap = new Map(projects.map((p) => [p.id, p]));
-      return rows
-        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-        .slice(0, 20)
-        .flatMap((r) => {
-          const project = projMap.get(r.projectId);
-          if (!project) return [];
-          return [{ ...mapLineItemDoc(r), project }];
-        });
-    })(),
-    // assetScanLog is Convex-only — read the org's scan logs, filter to this kit,
-    // replicate orderBy scannedAt desc + take 20. scannedBy is a Better-Auth User
-    // (Prisma, kept) batched by id; `project` resolves from a Convex project map.
-    (async () => {
-      const rawLogs = await (await getConvexClient()).query(api.assetScanLogs.list, {
-        orgId: organizationId,
-      });
-      const logs = rawLogs
-        .filter((l) => l.kitId === id)
-        .sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0))
-        .slice(0, 20);
+  // Wave 1 — the kit's members + per-kit relations, each read SCOPED to this kit
+  // (was: collect the whole org's serialized items / bulk items / asset registry /
+  // bulk assets / scan logs / projects and JS-filter to this kit — the "smoking
+  // gun" O(org inventory) read on the hottest detail path). These return the same
+  // raw Convex doc shapes the org-wide `list` queries did, so all downstream
+  // mapping is unchanged — only the row SET narrows to this kit.
+  const convex = await getConvexClient();
+  const [serialized, bulk, modelMap, lineItemRows, scanLogRows, maintenanceRecords, media] =
+    await Promise.all([
+      convex.query(api.kitSerializedItems.listByKitId, { orgId: organizationId, kitId: id }),
+      convex.query(api.kitBulkItems.listByKitId, { orgId: organizationId, kitId: id }),
+      getModelMap(organizationId),
+      convex
+        .query(api.projectLineItems.listByKitId, { kitId: id, orgId: organizationId })
+        .then((rows) => rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, 20)),
+      // assetScanLog scoped to this kit (by_kitId), then orderBy scannedAt desc + take 20.
+      convex
+        .query(api.assetScanLogs.listByKitId, { orgId: organizationId, kitId: id })
+        .then((rows) => rows.sort((a, b) => (b.scannedAt ?? 0) - (a.scannedAt ?? 0)).slice(0, 20)),
+      // maintenanceRecord stays org-wide-then-filtered for now (smaller table; a
+      // by-kit scoped read is a follow-up). Replicates orderBy createdAt desc + take 20.
+      getMaintenanceRecordsByOrg(organizationId).then((records) =>
+        records
+          .filter((m) => m.kitId === id)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .slice(0, 20),
+      ),
+      // kit media gallery now from the Convex mirror (dual-written → identical data).
+      getKitMediaFromConvex(id),
+    ]);
 
-      const userIds = [...new Set(logs.map((l) => l.scannedById).filter((u): u is string => !!u))];
-      const [logProjects, scanUsers] = await Promise.all([
-        getProjectsByOrg(organizationId),
-        userIds.length
-          ? prisma.user.findMany({ where: { id: { in: userIds } } })
-          : Promise.resolve([]),
-      ]);
-      const logProjectMap = new Map(logProjects.map((p) => [p.id, p]));
-      const userMap = new Map(scanUsers.map((u) => [u.id, u]));
-
-      return logs.map((l) => ({
-        id: l.id,
-        organizationId: l.organizationId,
-        assetId: l.assetId ?? null,
-        bulkAssetId: l.bulkAssetId ?? null,
-        kitId: l.kitId ?? null,
-        projectId: l.projectId ?? null,
-        action: l.action,
-        scannedById: l.scannedById,
-        scannedAt: l.scannedAt != null ? new Date(l.scannedAt) : null,
-        notes: l.notes ?? null,
-        location: l.location ?? null,
-        scannedBy: userMap.get(l.scannedById) ?? null,
-        project: l.projectId ? logProjectMap.get(l.projectId) ?? null : null,
-      }));
-    })(),
-    // maintenanceRecord is Convex-only (Phase C). Read the org's records, filter
-    // to this kit, then replicate `orderBy: { createdAt: "desc" }` + `take: 20`.
-    getMaintenanceRecordsByOrg(organizationId).then((records) =>
-      records
-        .filter((m) => m.kitId === id)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-        .slice(0, 20),
+  // Wave 2 — the members' assets + the projects/users referenced by the (already
+  // kit-scoped, ≤20) line items and scan logs, all read by id instead of org-wide.
+  const memberAssetIds = serialized.map((si) => si.assetId).filter((x): x is string => !!x);
+  const memberBulkIds = bulk.map((bi) => bi.bulkAssetId).filter((x): x is string => !!x);
+  const scanUserIds = [...new Set(scanLogRows.map((l) => l.scannedById).filter((u): u is string => !!u))];
+  const projectIds = [
+    ...new Set(
+      [...lineItemRows, ...scanLogRows]
+        .map((r) => r.projectId)
+        .filter((p): p is string => !!p),
     ),
-    // kit media gallery now from the Convex mirror (dual-written → identical data).
-    getKitMediaFromConvex(id),
+  ];
+
+  // listByIds caps at 1000 ids (it's user-callable). A kit could in theory have
+  // more members than that, and the old getKit had no cap — so batch in chunks of
+  // 1000 to preserve the no-cap behaviour for this trusted server caller.
+  const chunk = <T,>(arr: T[], n: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  };
+  const [memberAssets, memberBulkAssets, projects, scanUsers] = await Promise.all([
+    Promise.all(
+      chunk(memberAssetIds, 1000).map((ids) => convex.query(api.assets.listByIds, { orgId: organizationId, ids })),
+    ).then((r) => r.flat()),
+    Promise.all(
+      chunk(memberBulkIds, 1000).map((ids) => convex.query(api.bulkAssets.listByIds, { orgId: organizationId, ids })),
+    ).then((r) => r.flat()),
+    projectIds.length
+      ? convex.query(api.projects.listByIds, { orgId: organizationId, ids: projectIds })
+      : Promise.resolve([]),
+    scanUserIds.length
+      ? prisma.user.findMany({ where: { id: { in: scanUserIds } } })
+      : Promise.resolve([]),
   ]);
 
+  const projMap = new Map(projects.map((p) => [p.id, p]));
+  const userMap = new Map(scanUsers.map((u) => [u.id, u]));
+
+  // Line items: attach project from the by-id map (drop any whose project is absent).
+  const lineItems = lineItemRows.flatMap((r) => {
+    const project = projMap.get(r.projectId);
+    if (!project) return [];
+    return [{ ...mapLineItemDoc(r), project }];
+  });
+
+  // Scan logs: same mapped shape as before; scannedBy (Better-Auth User, Prisma)
+  // and project resolved from the by-id maps.
+  const scanLogs = scanLogRows.map((l) => ({
+    id: l.id,
+    organizationId: l.organizationId,
+    assetId: l.assetId ?? null,
+    bulkAssetId: l.bulkAssetId ?? null,
+    kitId: l.kitId ?? null,
+    projectId: l.projectId ?? null,
+    action: l.action,
+    scannedById: l.scannedById,
+    scannedAt: l.scannedAt != null ? new Date(l.scannedAt) : null,
+    notes: l.notes ?? null,
+    location: l.location ?? null,
+    scannedBy: userMap.get(l.scannedById) ?? null,
+    project: l.projectId ? projMap.get(l.projectId) ?? null : null,
+  }));
+
   // Map the Convex member assets to the Prisma row shape the detail page expects.
-  const assetMap = new Map(allAssets.map((a) => [a.id, mapConvexAssetToPrisma(a)]));
-  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, mapConvexBulkAssetToPrisma(b)]));
+  const assetMap = new Map(memberAssets.map((a) => [a.id, mapConvexAssetToPrisma(a)]));
+  const bulkAssetMap = new Map(memberBulkAssets.map((b) => [b.id, mapConvexBulkAssetToPrisma(b)]));
 
 
   // Location + Category FKs were dropped (Phase B); attach both from the Convex mirror.
@@ -171,8 +183,7 @@ export async function getKit(id: string) {
 
   // A member whose asset is absent from the mirror is anomalous (the Prisma FK
   // join always returned the asset) — drop it rather than surface a null asset.
-  const serializedItems = allSerialized
-    .filter((si) => si.kitId === id)
+  const serializedItems = serialized
     .flatMap((si) => {
       const asset = assetMap.get(si.assetId);
       if (!asset) return [];
@@ -182,8 +193,7 @@ export async function getKit(id: string) {
       }];
     });
 
-  const bulkItems = allBulk
-    .filter((bi) => bi.kitId === id)
+  const bulkItems = bulk
     .flatMap((bi) => {
       const bulkAsset = bulkAssetMap.get(bi.bulkAssetId);
       if (!bulkAsset) return [];

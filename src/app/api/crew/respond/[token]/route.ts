@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
 import { getProjectById } from "@/lib/projects-read";
+import { getCrewMemberById, getCrewRoleById } from "@/lib/crew-read";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline
@@ -39,17 +39,11 @@ export async function GET(
     );
   }
 
-  // Resolve the project (Convex) + crew member / role (still-Prisma) for display.
+  // Resolve the project + crew member / role (all Convex-only) for display.
   const project = await getProjectById(assignment.projectId);
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id: assignment.crewMemberId },
-    select: { firstName: true, lastName: true },
-  });
+  const crewMember = await getCrewMemberById(assignment.crewMemberId);
   const crewRole = assignment.crewRoleId
-    ? await prisma.crewRole.findUnique({
-        where: { id: assignment.crewRoleId },
-        select: { name: true },
-      })
+    ? await getCrewRoleById(assignment.crewRoleId)
     : null;
   const projectDisplayName = project?.name ?? "this project";
 

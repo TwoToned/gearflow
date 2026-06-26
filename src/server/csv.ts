@@ -331,45 +331,37 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
       const existing = existingId ? modelById.get(existingId) ?? null : null;
 
       if (existing) {
-        const updated = await prisma.model.update({
-          where: { id: existing.id },
-          data: {
-            categoryId: data.categoryId ?? existing.categoryId,
-            sku: data.sku ?? existing.sku,
-            description: data.description ?? existing.description,
-            assetType: data.assetType,
-            defaultRentalPrice: data.defaultRentalPrice ?? existing.defaultRentalPrice,
-            dailyRate: data.dailyRate ?? existing.dailyRate,
-            weeklyRate: data.weeklyRate ?? existing.weeklyRate,
-            monthlyRate: data.monthlyRate ?? existing.monthlyRate,
-            defaultPurchasePrice: data.defaultPurchasePrice ?? existing.defaultPurchasePrice,
-            replacementCost: data.replacementCost ?? existing.replacementCost,
-            weight: data.weight ?? existing.weight,
-            powerDraw: data.powerDraw ?? existing.powerDraw,
-            requiresTestAndTag: data.requiresTestAndTag,
-            testAndTagIntervalDays: data.testAndTagIntervalDays ?? existing.testAndTagIntervalDays,
-            maintenanceIntervalDays: data.maintenanceIntervalDays ?? existing.maintenanceIntervalDays,
-            ...(data.tags.length > 0 ? { tags: data.tags } : {}),
-          },
-        });
-        await mirrorModelPatch(updated.id, updated);
+        // model is Convex-only — patch Convex directly (no Prisma write).
+        const patch = {
+          categoryId: data.categoryId ?? existing.categoryId,
+          sku: data.sku ?? existing.sku,
+          description: data.description ?? existing.description,
+          assetType: data.assetType,
+          defaultRentalPrice: data.defaultRentalPrice ?? existing.defaultRentalPrice,
+          dailyRate: data.dailyRate ?? existing.dailyRate,
+          weeklyRate: data.weeklyRate ?? existing.weeklyRate,
+          monthlyRate: data.monthlyRate ?? existing.monthlyRate,
+          defaultPurchasePrice: data.defaultPurchasePrice ?? existing.defaultPurchasePrice,
+          replacementCost: data.replacementCost ?? existing.replacementCost,
+          weight: data.weight ?? existing.weight,
+          powerDraw: data.powerDraw ?? existing.powerDraw,
+          requiresTestAndTag: data.requiresTestAndTag,
+          testAndTagIntervalDays: data.testAndTagIntervalDays ?? existing.testAndTagIntervalDays,
+          maintenanceIntervalDays: data.maintenanceIntervalDays ?? existing.maintenanceIntervalDays,
+          ...(data.tags.length > 0 ? { tags: data.tags } : {}),
+        };
+        await mirrorModelPatch(existing.id, patch);
         // Keep the dedup map current so later rows see the updated values.
-        modelById.set(updated.id, updated as unknown as ConvexModel);
+        modelById.set(existing.id, { ...existing, ...patch } as unknown as ConvexModel);
         result.updated++;
       } else {
-        const created = await prisma.model.create({
-          data: {
-            organizationId,
-            ...data,
-          },
-        });
-        await mirrorModelCreate(created);
+        // model is Convex-only — mint the cuid + create in Convex (no Prisma write).
+        const id = createId();
+        const row = { id, organizationId, ...data };
+        await mirrorModelCreate(row);
         // Register the new model so later rows in the same file dedup against it.
-        modelByDedupKey.set(
-          modelDedupKey(created.name, created.manufacturer, created.modelNumber),
-          created.id,
-        );
-        modelById.set(created.id, created as unknown as ConvexModel);
+        modelByDedupKey.set(modelDedupKey(data.name, data.manufacturer, data.modelNumber), id);
+        modelById.set(id, row as unknown as ConvexModel);
         result.created++;
       }
     } catch (e) {
@@ -612,11 +604,8 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
         data.defaultRentalPrice = parsed.rates.dailyRate;
       }
 
-      const updated = await prisma.model.update({
-        where: { id: match.modelId, organizationId },
-        data,
-      });
-      await mirrorModelPatch(updated.id, updated);
+      // model is Convex-only — patch Convex directly (no Prisma write).
+      await mirrorModelPatch(match.modelId, data);
       result.updated++;
     } catch (e) {
       result.errors.push({ row: i + 1, message: e instanceof Error ? e.message : "Unknown error" });

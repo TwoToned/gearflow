@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../../../../convex/_generated/api";
 import {
   generateVCalendar,
   buildDateTime,
@@ -7,6 +9,9 @@ import {
 } from "@/lib/ical";
 import type { OrgSettings } from "@/server/settings";
 import { getLocationMap } from "@/lib/locations-read";
+import { getProjectById } from "@/lib/projects-read";
+import { getCrewRoleMap } from "@/lib/crew-read";
+import { getShiftsByAssignmentIds } from "@/lib/crew-scheduling-read";
 
 /** Read the org's configured IANA timezone (default Australia/Sydney). */
 async function getOrgTimezone(organizationId: string): Promise<string> {
@@ -38,44 +43,84 @@ export async function GET(
   // Strip .ics extension if present
   const cleanToken = token.replace(/\.ics$/, "");
 
-  const member = await prisma.crewMember.findUnique({
-    where: { icalToken: cleanToken },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      icalEnabled: true,
-      organizationId: true,
-      assignments: {
-        where: {
-          status: { in: ["CONFIRMED", "ACCEPTED"] },
-        },
-        include: {
-          crewRole: { select: { name: true } },
-          project: {
-            select: {
-              name: true,
-              projectNumber: true,
-              locationId: true,
-              siteContactName: true,
-              siteContactPhone: true,
-            },
-          },
-          shifts: {
-            where: { status: { not: "CANCELLED" } },
-            orderBy: { date: "asc" },
-          },
-        },
-      },
-    },
+  // crew_member is Convex-only — look up by the iCal feed token (service-only;
+  // the token IS the auth). The nested assignments / role / project / shifts
+  // joins are resolved from Convex below instead of a Prisma `include`.
+  const convex = await getConvexClient();
+  const memberDoc = await convex.query(api.crewMembers.getByIcalToken, {
+    icalToken: cleanToken,
   });
 
-  if (!member || !member.icalEnabled) {
+  if (!memberDoc || !(memberDoc.icalEnabled ?? false)) {
     return NextResponse.json(
       { error: "Calendar feed not found or disabled" },
       { status: 404 }
     );
   }
+
+  const organizationId = memberDoc.organizationId;
+
+  // The member's CONFIRMED/ACCEPTED assignments come from Convex (org list
+  // filtered to this member). crewRole + project resolve from Convex maps;
+  // shifts (non-CANCELLED, date asc) come from the by-assignment Convex query.
+  const [orgAssignments, roleMap] = await Promise.all([
+    convex.query(api.crewAssignments.list, { orgId: organizationId }),
+    getCrewRoleMap(organizationId),
+  ]);
+  const myRawAssignments = orgAssignments.filter(
+    (a) =>
+      a.crewMemberId === memberDoc.id &&
+      (a.status === "CONFIRMED" || a.status === "ACCEPTED"),
+  );
+  const shiftsAll = await getShiftsByAssignmentIds(myRawAssignments.map((a) => a.id));
+  const shiftsByAssignment = new Map<string, typeof shiftsAll>();
+  for (const s of shiftsAll) {
+    if (s.status === "CANCELLED") continue;
+    const arr = shiftsByAssignment.get(s.assignmentId);
+    if (arr) arr.push(s);
+    else shiftsByAssignment.set(s.assignmentId, [s]);
+  }
+  for (const arr of shiftsByAssignment.values()) {
+    arr.sort((x, y) => x.date.getTime() - y.date.getTime());
+  }
+
+  // Resolve each assignment's project (Convex) once, keyed by projectId.
+  const projectIds = [...new Set(myRawAssignments.map((a) => a.projectId))];
+  const projectEntries = await Promise.all(
+    projectIds.map(async (pid) => [pid, await getProjectById(pid)] as const),
+  );
+  const projectById = new Map(projectEntries);
+
+  const member = {
+    id: memberDoc.id,
+    firstName: memberDoc.firstName,
+    lastName: memberDoc.lastName,
+    organizationId,
+    assignments: myRawAssignments.flatMap((a) => {
+      const p = projectById.get(a.projectId);
+      if (!p) return [];
+      return [
+        {
+          id: a.id,
+          phase: a.phase ?? null,
+          notes: a.notes ?? null,
+          startDate: a.startDate != null ? new Date(a.startDate) : null,
+          startTime: a.startTime ?? null,
+          endDate: a.endDate != null ? new Date(a.endDate) : null,
+          endTime: a.endTime ?? null,
+          crewRole: a.crewRoleId ? { name: roleMap.get(a.crewRoleId)?.name ?? null } : null,
+          project: {
+            name: p.name,
+            projectNumber: p.projectNumber,
+            locationId: p.locationId ?? null,
+            siteContactName: p.siteContactName ?? null,
+            siteContactPhone: p.siteContactPhone ?? null,
+          },
+          shifts: shiftsByAssignment.get(a.id) ?? [],
+        },
+      ];
+    }),
+  };
 
   const tzid = await getOrgTimezone(member.organizationId);
   // Location FK was dropped (Phase B); resolve project locations from the Convex

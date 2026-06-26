@@ -141,18 +141,20 @@ export async function getFileAsDataUri(proxyUrl: string): Promise<string | null>
       }
     }
 
-    // Strategy 2: look up the FileUpload record by thumbnailUrl
+    // Strategy 2: look up the FileUpload record by thumbnailUrl. file_upload is
+    // Convex-only — query by thumbnailUrl via the service token (no orgId in this
+    // path, so the Convex query is cross-org, mirroring the old global findFirst).
     try {
-      const { prisma } = await import("@/lib/prisma");
-      const record = await prisma.fileUpload.findFirst({
-        where: { thumbnailUrl: proxyUrl },
-        select: { storageKey: true },
+      const { getConvexClient } = await import("@/lib/convex-client");
+      const { api } = await import("../../convex/_generated/api");
+      const record = await (await getConvexClient()).query(api.fileUploads.getByThumbnailUrl, {
+        thumbnailUrl: proxyUrl,
       });
       if (record) {
         return fetchS3AsDataUri(record.storageKey);
       }
     } catch {
-      // DB lookup failed, give up
+      // Lookup failed, give up
     }
   }
 

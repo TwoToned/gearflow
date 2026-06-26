@@ -1,7 +1,6 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -306,16 +305,14 @@ export async function deleteLocation(id: string) {
   const convex = await getConvexClient();
 
   // location_media Cascade re-implementation: the dropped Cascade FK auto-deleted
-  // a location's media rows on delete. location_media is still dual-written
-  // (Prisma rows + Convex mirror), so the cascade must land in BOTH stores —
-  // remove every locationMedia row for this location from Convex AND Prisma,
-  // then delete the location itself. (The old Cascade dropped only the join
-  // rows, leaving file_upload rows; this preserves that exact behaviour.)
+  // a location's media rows on delete. location_media is Convex-only now — remove
+  // every locationMedia row for this location from Convex, then delete the
+  // location itself. (The old Cascade dropped only the join rows, leaving
+  // file_upload rows; this preserves that exact behaviour.)
   const media = await getLocationMediaGallery(id);
   for (const m of media) {
     await convex.mutation(api.locationMedia.remove, { id: m.id });
   }
-  await prisma.locationMedia.deleteMany({ where: { locationId: id, organizationId } });
 
   await convex.mutation(api.locations.remove, { id });
 

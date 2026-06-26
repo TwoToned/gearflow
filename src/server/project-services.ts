@@ -1,6 +1,5 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import {
@@ -25,7 +24,7 @@ import {
 import { getProjectById } from "@/lib/projects-read";
 import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationById } from "@/lib/locations-read";
-import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
+import { getCrewRoleMap, getCrewMemberMap, getCrewMembersByOrg, getCrewMemberById } from "@/lib/crew-read";
 import {
   getAssignmentsByProject,
   compareAscNullsLast,
@@ -1230,24 +1229,34 @@ export async function getCrewSuggestionsForProject(projectId: string) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });
   }
 
-  // Get crew members with matching roles
-  const members = await prisma.crewMember.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      status: "ACTIVE",
-      crewRoleId: { in: suggestedRoleIds },
-    },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      image: true,
-      crewRole: { select: { id: true, name: true, color: true } },
-    },
-    orderBy: { lastName: "asc" },
-    take: 20,
-  });
+  // Get crew members with matching roles (crew_member / crew_role are Convex-only).
+  // Replicates the Prisma where (active + status ACTIVE + crewRoleId in roles),
+  // orderBy lastName asc, take 20, with the nested crewRole attached from the map.
+  const roleIdSet = new Set(suggestedRoleIds);
+  const [allMembers, roleMap] = await Promise.all([
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+  ]);
+  const members = allMembers
+    .filter(
+      (m) =>
+        (m.isActive ?? true) &&
+        (m.status ?? "ACTIVE") === "ACTIVE" &&
+        m.crewRoleId != null &&
+        roleIdSet.has(m.crewRoleId),
+    )
+    .sort((a, b) => a.lastName.localeCompare(b.lastName))
+    .slice(0, 20)
+    .map((m) => {
+      const role = m.crewRoleId ? roleMap.get(m.crewRoleId) ?? null : null;
+      return {
+        id: m.id,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        image: m.image ?? null,
+        crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null } : null,
+      };
+    });
 
   return serialize({ suggestedRoleIds, suggestedMembers: members });
 }
@@ -1275,10 +1284,8 @@ export async function generateCrewMessage(
     siteContactPhone: convexProject.siteContactPhone ?? null,
   };
 
-  const member = await prisma.crewMember.findFirst({
-    where: { id: crewMemberId, organizationId },
-    select: { firstName: true, lastName: true, email: true, phone: true },
-  });
+  const memberDoc = await getCrewMemberById(crewMemberId);
+  const member = memberDoc && memberDoc.organizationId === organizationId ? memberDoc : null;
   if (!member) throw new Error("Crew member not found");
 
   // Assignments + their service / crewRole come from Convex (the assignment,
@@ -1350,8 +1357,8 @@ export async function generateCrewMessage(
   return serialize({
     message: lines.join("\n"),
     crewMemberName: `${member.firstName} ${member.lastName}`,
-    crewMemberPhone: member.phone,
-    crewMemberEmail: member.email,
+    crewMemberPhone: member.phone ?? null,
+    crewMemberEmail: member.email ?? null,
   });
 }
 

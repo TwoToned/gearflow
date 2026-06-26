@@ -1,7 +1,7 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
+import { listDocumentTemplates } from "@/lib/document-template-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -243,24 +243,18 @@ export async function deleteBrandTemplate(id: string) {
   if (!template) throw new Error("Brand template not found");
 
   // Unlink any document templates pointing at this brand template. document_template
-  // is dual-written (Prisma + Convex mirror) and the PDF pipeline still reads it
-  // from Prisma, so the null must land in BOTH stores. Find the affected ids first
-  // so we can mirror each unlink to Convex.
-  const linked = await prisma.documentTemplate.findMany({
-    where: { brandTemplateId: id, organizationId },
-    select: { id: true },
-  });
+  // is Convex-only now — find the affected rows (org's templates filtered to this
+  // brandTemplateId) and clear `brandTemplateId` on each via the Convex mutation.
+  const linked = (await listDocumentTemplates(organizationId)).filter(
+    (dt) => dt.brandTemplateId === id,
+  );
   if (linked.length > 0) {
-    await prisma.documentTemplate.updateMany({
-      where: { brandTemplateId: id, organizationId },
-      data: { brandTemplateId: null },
-    });
     const convex = await getConvexClient();
     for (const dt of linked) {
-      // Clear brandTemplateId in the Convex documentTemplates mirror (matches the
-      // dropped FK's SetNull). The shared mirror helper (toConvexDoc) drops null
-      // keys, so it can't clear a field — call the mutation directly with an
-      // explicit `undefined`, which Convex `db.patch` treats as field removal.
+      // Clear brandTemplateId in Convex (matches the dropped FK's SetNull). The
+      // shared mirror helper (toConvexDoc) drops null keys, so it can't clear a
+      // field — call the mutation directly with an explicit `undefined`, which
+      // Convex `db.patch` treats as field removal.
       await convex.mutation(api.documentTemplates.update, {
         id: dt.id,
         patch: { brandTemplateId: undefined, updatedAt: Date.now() },

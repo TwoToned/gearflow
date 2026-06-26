@@ -37,6 +37,20 @@ export const getById = query({
   },
 });
 
+/**
+ * Lookup a crew member by their iCal feed token (the public-calendar bearer).
+ * Service-only — the token IS the auth. No index (icalToken is rare + nullable),
+ * so this scans + filters; a calendar feed request is infrequent.
+ */
+export const getByIcalToken = query({
+  args: { icalToken: v.string() },
+  handler: async (ctx, { icalToken }) => {
+    await requireService(ctx);
+    const docs = await ctx.db.query("crewMembers").collect();
+    return docs.find((d) => d.icalToken === icalToken) ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

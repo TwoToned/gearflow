@@ -20,6 +20,7 @@ import {
   EXCLUDED_ASSIGNMENT_STATUSES,
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
+import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatDate } from "./plugins/helpers";
@@ -117,21 +118,21 @@ export async function buildDocumentData(
 
   const docColor = branding?.documentColor || branding?.primaryColor || DEFAULT_DOC_COLOR;
 
-  // Project scalars are dual-written to Convex → read the Prisma-row-shaped doc.
-  // location + the line-item tree + categories live in Convex (attached below /
-  // reconstructed via buildDocumentLineItemData). crewAssignments are Convex-only
-  // (re-sourced below for call sheets). Sub-hires + their groups are still Prisma
-  // (sub_hire is a Stage-2 leaf) — read here by projectId. SubHireGroup is nested
-  // under SubHire; supplier is dual-written to Convex (attached below, not joined).
-  const [projectScalars, subHireRows] = await Promise.all([
+  // Project scalars + sub-hires + their groups are all Convex-only now. location +
+  // the line-item tree + categories live in Convex (attached below / reconstructed
+  // via buildDocumentLineItemData). crewAssignments are Convex-only (re-sourced
+  // below for call sheets). SubHireGroup is nested under SubHire (sortOrder asc);
+  // supplier is in Convex (attached below, not joined).
+  const [projectScalars, subHireBase] = await Promise.all([
     getProjectByIdMapped(projectId, organizationId),
-    prisma.subHire.findMany({
-      where: { projectId, organizationId },
-      include: {
-        groups: { orderBy: { sortOrder: "asc" } },
-      },
-    }),
+    getSubHiresByProject(projectId, organizationId),
   ]);
+  const subHireRows = await Promise.all(
+    subHireBase.map(async (sh) => ({
+      ...sh,
+      groups: await getSubHireGroups(sh.id),
+    })),
+  );
 
   if (!projectScalars) {
     throw new Error(`Project ${projectId} not found`);

@@ -15,7 +15,7 @@ import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
-import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
+import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
 
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
@@ -23,11 +23,9 @@ export async function getProjectForWarehouse(projectId: string) {
   // The whole EQUIPMENT line-item tree (lineItems → childLineItems → units, with
   // model/supplier/kit/asset/bulkAsset + check-item counts) is reconstructed from
   // the dual-written Convex tables in JS — see buildWarehouseLineItems (Phase A
-  // keystone consumer 2/4). Prisma here only supplies the project scalars; even
+  // keystone consumer 2/4). project is Convex-only too — read the scalars; even
   // location is attached from Convex below.
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-  });
+  const project = await getProjectByIdMapped(projectId, organizationId);
 
   if (!project) {
     throw new Error("Project not found");
@@ -721,10 +719,8 @@ export async function getProjectPullSheet(projectId: string) {
   // The EQUIPMENT line-item tree (lineItems → childLineItems, model/supplier/kit/
   // asset/bulkAsset + per-asset location graft, CANCELLED dropped, no units) is
   // reconstructed from the dual-written Convex tables — see buildPullSheetLineItems
-  // (Phase A keystone consumer 3/4). Prisma supplies only the project scalars.
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-  });
+  // (Phase A keystone consumer 3/4). project is Convex-only — read the scalars.
+  const project = await getProjectByIdMapped(projectId, organizationId);
 
   if (!project) {
     throw new Error("Project not found");

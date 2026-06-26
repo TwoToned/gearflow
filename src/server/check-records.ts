@@ -14,6 +14,7 @@ import {
 } from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { getCheckItemById } from "@/lib/check-items-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import {
@@ -153,10 +154,8 @@ async function checkPredictiveMaintenance(
       // Get asset and check item details for the maintenance record
       const [asset, checkItem] = await Promise.all([
         getAssetById(assetId),
-        prisma.checkItem.findUnique({
-          where: { id: checkItemId },
-          select: { label: true },
-        }),
+        // check_item is Convex-only — read the org-scoped row (label only used).
+        getCheckItemById(organizationId, checkItemId),
       ]);
 
       if (!asset || !checkItem) continue;

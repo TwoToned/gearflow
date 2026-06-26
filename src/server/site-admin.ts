@@ -538,8 +538,8 @@ export async function adminDeleteUser(userId: string) {
 
   await prisma.$transaction(async (tx) => {
     // Null out nullable User FK references (KEPT tables only).
-    await tx.maintenanceRecord.updateMany({ where: { reportedById: userId }, data: { reportedById: null } });
-    await tx.maintenanceRecord.updateMany({ where: { assignedToId: userId }, data: { assignedToId: null } });
+    // maintenanceRecord is Convex-only now — its reportedById/assignedToId FK
+    // scrub runs post-commit via api.maintenanceRecords.scrubUserRefs below.
     await tx.project.updateMany({ where: { projectManagerId: userId }, data: { projectManagerId: null } });
 
     // Delete records with non-nullable User FKs (KEPT tables only).
@@ -579,6 +579,16 @@ export async function adminDeleteUser(userId: string) {
   }
   for (const item of testTagRecordsToRemove) {
     await convexForDelete.mutation(api.testTagRecords.remove, { id: item.id });
+  }
+
+  // maintenanceRecord is Convex-only: clear this user's reportedById/assignedToId
+  // FK references across every org (GDPR sweep is cross-org). Replaces the two
+  // dead Prisma `maintenanceRecord.updateMany` calls removed from the tx above.
+  for (const org of allOrgsForSweep) {
+    await convexForDelete.mutation(api.maintenanceRecords.scrubUserRefs, {
+      organizationId: org.id,
+      userId,
+    });
   }
 
   const theOrg = await getTheOrg();

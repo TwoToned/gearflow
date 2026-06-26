@@ -25,6 +25,7 @@ import { getProjectsByOrg } from "@/lib/projects-read";
 import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { getAssetById, getBulkAssetById, getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc, mapConvexAssetToPrisma, mapConvexBulkAssetToPrisma } from "@/lib/assets-read";
 import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, getKitByAssetTag, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
+import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
@@ -111,11 +112,14 @@ export async function getKit(id: string) {
       orderBy: { scannedAt: "desc" },
       include: { scannedBy: true, project: true },
     }),
-    prisma.maintenanceRecord.findMany({
-      where: { kitId: id },
-      take: 20,
-      orderBy: { createdAt: "desc" },
-    }),
+    // maintenanceRecord is Convex-only (Phase C). Read the org's records, filter
+    // to this kit, then replicate `orderBy: { createdAt: "desc" }` + `take: 20`.
+    getMaintenanceRecordsByOrg(organizationId).then((records) =>
+      records
+        .filter((m) => m.kitId === id)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, 20),
+    ),
     // kit media gallery now from the Convex mirror (dual-written → identical data).
     getKitMediaFromConvex(id),
   ]);

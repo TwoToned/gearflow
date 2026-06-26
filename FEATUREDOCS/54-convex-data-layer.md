@@ -494,6 +494,22 @@ rewired to Convex:
   flag counted DEDICATED bulk accessories from the frozen table (added after
   cutover were invisible). Now `api.assetBulkChildren.list` filtered by
   `parentAssetId` (the inline "stays on Prisma" comment was itself stale).
+- **`maintenanceRecord`** (writes already Convex-only) → five surviving Prisma
+  reads served stale records, and one write hit the dead Postgres copy:
+  - **Reads** rewired to `getMaintenanceRecordsByOrg` (+ JS filter/sort/slice
+    replicating the old `where`/`orderBy`/`take`), with the asset join from
+    `getMaintenanceAssetLinksByRecordIds` + `getAssetsByOrg` and the
+    `reportedBy`/`assignedTo` Better-Auth-User names from a Prisma `user` lookup:
+    `api/calendar/[token]/[feed]/route.ts` (maintenance feed),
+    `notifications.ts` (overdue maintenance), `notification-email-sender.ts`
+    (overdue maintenance email), `dashboard.ts` `getRecentActivity`,
+    `kits.ts` `getKit` (filtered by `kitId`).
+  - **Write** — `site-admin.ts` `adminDeleteUser` cleared `reportedById`/
+    `assignedToId` on the dead Postgres table inside the `$transaction`; those
+    two `tx.maintenanceRecord.updateMany` lines were removed, and a new
+    Convex `api.maintenanceRecords.scrubUserRefs({ organizationId, userId })`
+    mutation (sets the matching FK field to `undefined` to clear it) now runs
+    post-commit for every org in the cross-org GDPR sweep (`allOrgsForSweep`).
 
 **Not stale (deliberately left on Prisma):** `crewRole` / `crewSkill` reads —
 seed-only reference tables (no app writes ⇒ Prisma == Convex), and `crew.ts`'s
@@ -3269,6 +3285,49 @@ The family (read + write) is fully migrated.
   set + CLEAR responseToken, getByResponseToken, patchShift clear +
   removeScheduledByAssignment (preserves non-SCHEDULED), patchTimeEntry approval-reset,
   deleteCascade (assignment + shifts + linked time-entry).
+
+### Phase C — config leftovers (final non-keystone sweep) — DONE
+
+A scoping pass found the scary clusters were already done: the **model cluster**
+(model + modelMedia + modelCheckItem + modelBulkAccessory + supplierModelRate) is
+fully Convex-only (zero app Prisma reads/writes — the ~200 model joins all attach
+from `getModelMap`), as are maintenanceRecordAsset, serviceTemplate, brandTemplate,
+groupTemplate parent, savedTableView, notificationDismissal,
+userNotificationPreference, wooCommerceOrderLog. `savedReport` no longer exists;
+`sectionPreset` is orphaned (no app refs). So the remaining work was bug-fixes on
+already-inverted tables + three small inversions.
+
+- **Bug-fixes (stale reads on Convex-only tables):**
+  - **group-templates** — `getGroupTemplates` did `prisma.groupTemplateItem.findMany({
+    include: { model, kit } })`, but `GroupTemplateItem` has **no `model` relation**
+    (FK dropped) so Prisma **threw at runtime** (the list surface was broken), and
+    `kit` (Convex-only) returned null. `applyGroupTemplate` had the same kit bug
+    (silently dropped kit items). Both now resolve model via `getModelMap` + kit via
+    `getKitMap`.
+  - **documentTemplate PDF** — `generate-pdf.ts` loaded the template from Prisma
+    while the UI/writes are Convex-only (split-brain) → now `document-template-read`.
+  - **maintenanceRecord** — 5 stale reads + the user-delete FK-scrub (see the
+    residual stale-read audit above).
+- **Write-inversions:**
+  - **checkItem** — was Prisma-first + an inline mirror → Convex-only
+    (create/`patchCheckItem`/remove); mirror helpers deleted. Already dual-written,
+    no backfill.
+  - **wooCommerceIntegration** — was **pure-Prisma** (Convex table unused) → Convex-only
+    hard cutover. New `woocommerce-integration-read.ts`; the upserts →
+    read-then-update-or-create; webhook read+write → Convex. **Added the missing
+    `webhookSecret` field** to the Convex schema + validators (the webhook HMAC check
+    needs it) + `patchWooCommerceIntegration`. **Needs prod backfill before deploy**
+    (`scripts/convex-backfill-woocommerce-integration.ts`) — Convex copy is empty.
+  - **notificationEmailLog** — was **pure-Prisma** → Convex-only (dedup read, create,
+    sentAt-cutoff prune as a list-and-remove loop). Optional prod backfill
+    (`scripts/convex-backfill-notification-email-log.ts`) avoids a one-time duplicate-
+    email burst.
+- **Validation:** `npm run build` exit 0 + lint 0 errors + 2431 tests, AND a **live
+  dev-Convex exercise (8/8)**: woo create + `webhookSecret` round-trip + patch
+  set/CLEAR (secret preserved), checkItem create + patch set/CLEAR + remove,
+  emailLog create/list/prune.
+- **Prod backfills to run on deploy:** `convex-backfill-woocommerce-integration.ts`
+  (required) + `convex-backfill-notification-email-log.ts` (optional).
 
 ## Conventions
 

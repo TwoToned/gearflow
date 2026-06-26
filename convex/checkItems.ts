@@ -118,3 +118,36 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── CUSTOM (Phase C) ───
+// The generated `update` mutation can't unset a field (the wire drops nulls).
+// `patchCheckItem` applies `set` then explicitly clears each key in `clear` to
+// `undefined`, so optional fields (description, category, measurementUnit,
+// measurementMin/Max, dropdownOptions) can be emptied when an edit drops them
+// (e.g. switching a check item's type). Mirrors convex/subHires.ts patchSubHire.
+export const patchCheckItem = mutation({
+  args: {
+    id: v.string(),
+    set: v.object({
+      label: v.optional(v.string()),
+      description: v.optional(v.string()),
+      type: v.optional(enums.CheckItemType),
+      category: v.optional(v.string()),
+      measurementUnit: v.optional(v.string()),
+      measurementMin: v.optional(v.number()),
+      measurementMax: v.optional(v.number()),
+      dropdownOptions: v.optional(v.any()),
+      updatedAt: v.optional(v.number()),
+    }),
+    clear: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { id, set, clear }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("checkItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new ConvexError("checkItems not found: " + id);
+    const patch: Record<string, unknown> = { ...set };
+    for (const k of clear ?? []) patch[k] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});

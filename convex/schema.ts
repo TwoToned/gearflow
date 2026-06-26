@@ -1705,6 +1705,7 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
+    webhookSecret: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),

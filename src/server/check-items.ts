@@ -1,8 +1,6 @@
 "use server";
 
-import { type FunctionArgs } from "convex/server";
-import { prisma } from "@/lib/prisma";
-import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getModelById, getModelMap } from "@/lib/models-read";
@@ -24,30 +22,13 @@ import {
   type ReorderModelCheckItemsValues,
 } from "@/lib/validations/check-item";
 
-// Check items are DUAL-WRITTEN: every create/update/delete writes the Prisma
-// `check_item` row (the durable FK anchor — model_check_item, kit_check_item, and
-// check_record all carry a required + Cascade FK to it) AND the Convex
-// `checkItems` doc (the reactive read source). Prisma is written first; the Convex
-// payload is derived from the written row via toConvexDoc so they can't drift. The
-// model/kit assignment join tables + cross-domain readers stay on the always-fresh
-// Prisma mirror. See FEATUREDOCS/54.
-
-/** Mirror a freshly written Prisma check-item row into Convex (create). */
-async function mirrorCheckItemToConvex(row: Record<string, unknown>) {
-  await (await getConvexClient()).mutation(
-    api.checkItems.createIfMissing,
-    toConvexDoc(row) as FunctionArgs<typeof api.checkItems.createIfMissing>,
-  );
-}
-
-/** Mirror an updated Prisma check-item row into Convex (patch, id stripped). */
-async function patchCheckItemInConvex(id: string, row: Record<string, unknown>) {
-  const { id: _id, ...patch } = toConvexDoc(row);
-  await (await getConvexClient()).mutation(api.checkItems.update, {
-    id,
-    patch: patch as FunctionArgs<typeof api.checkItems.update>["patch"],
-  });
-}
+// Check items are CONVEX-ONLY (Phase C config-leftover inversion): every
+// create/update/delete writes the Convex `checkItems` doc directly (createId() +
+// Date.now()) with no Prisma row. The model/kit assignment join tables were
+// already Convex-only; check_record snapshot reads stay Prisma on purpose (see
+// check-records.ts). Reads go through src/lib/check-items-read.ts. Clears (emptied
+// optional fields) go through the custom api.checkItems.patchCheckItem mutation.
+// See FEATUREDOCS/54.
 
 // ─── Check Item Library ─────────────────────────────────────────────────────
 
@@ -115,15 +96,26 @@ export async function createCheckItem(data: CheckItemFormValues) {
   );
   const parsed = checkItemSchema.parse(data);
 
-  const result = await prisma.checkItem.create({
-    data: {
-      ...parsed,
-      dropdownOptions: parsed.dropdownOptions as unknown as undefined,
-      organizationId,
-      createdById: userId,
-    },
+  const id = createId();
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.checkItems.create, {
+    id,
+    organizationId,
+    label: parsed.label,
+    description: parsed.description || undefined,
+    type: parsed.type ?? "PASS_FAIL",
+    category: parsed.category || undefined,
+    measurementUnit: parsed.measurementUnit || undefined,
+    measurementMin: parsed.measurementMin ?? undefined,
+    measurementMax: parsed.measurementMax ?? undefined,
+    dropdownOptions: parsed.dropdownOptions ?? undefined,
+    createdById: userId,
+    createdAt: now,
+    updatedAt: now,
   });
-  await mirrorCheckItemToConvex(result);
+
+  const result = await getCheckItemById(organizationId, id);
+  if (!result) throw new Error("Failed to load check item after create");
 
   await logActivity({
     organizationId,
@@ -146,14 +138,40 @@ export async function updateCheckItem(id: string, data: CheckItemFormValues) {
   );
   const parsed = checkItemSchema.parse(data);
 
-  const result = await prisma.checkItem.update({
-    where: { id, organizationId },
-    data: {
-      ...parsed,
-      dropdownOptions: parsed.dropdownOptions as unknown as undefined,
-    },
+  // Org-scoped existence guard (replaces Prisma `update where {id, organizationId}`).
+  const existing = await getCheckItemById(organizationId, id);
+  if (!existing) throw new Error("Check item not found");
+
+  // Build `set` (present values) + `clear` (omitted optional fields). The form
+  // submits the full object, so an absent optional means "cleared" (e.g. switching
+  // the type drops measurement/dropdown fields).
+  const set: Record<string, unknown> = {
+    label: parsed.label,
+    type: parsed.type ?? "PASS_FAIL",
+    updatedAt: Date.now(),
+  };
+  const clear: string[] = [];
+  const nullableFields = {
+    description: parsed.description,
+    category: parsed.category,
+    measurementUnit: parsed.measurementUnit,
+    measurementMin: parsed.measurementMin,
+    measurementMax: parsed.measurementMax,
+    dropdownOptions: parsed.dropdownOptions,
+  } as const;
+  for (const [key, value] of Object.entries(nullableFields)) {
+    if (value === undefined || value === null || value === "") clear.push(key);
+    else set[key] = value;
+  }
+
+  await (await getConvexClient()).mutation(api.checkItems.patchCheckItem, {
+    id,
+    set,
+    clear,
   });
-  await patchCheckItemInConvex(id, result);
+
+  const result = await getCheckItemById(organizationId, id);
+  if (!result) throw new Error("Failed to load check item after update");
 
   await logActivity({
     organizationId,
@@ -193,9 +211,9 @@ export async function deleteCheckItem(id: string) {
     );
   }
 
-  const result = await prisma.checkItem.delete({
-    where: { id, organizationId },
-  });
+  // Org-scoped existence guard (replaces Prisma `delete where {id, organizationId}`).
+  const result = await getCheckItemById(organizationId, id);
+  if (!result) throw new Error("Check item not found");
   await (await getConvexClient()).mutation(api.checkItems.remove, { id });
 
   await logActivity({
@@ -366,10 +384,10 @@ export async function bulkAddCheckItemsToModels(
   // Model lives in Convex — fetch names for audit log via map.
   const convexModelMap = await getModelMap(organizationId);
   const models = modelIds.map((id) => ({ id, name: convexModelMap.get(id)?.name ?? id }));
-  const checkItems = await prisma.checkItem.findMany({
-    where: { id: { in: checkItemIds }, organizationId },
-    select: { id: true, label: true },
-  });
+  // check_item is Convex-only — read labels from the org's Convex check items.
+  const idSet = new Set(checkItemIds);
+  const allCheckItems = await getCheckItemsForOrg(organizationId);
+  const checkItems = allCheckItems.filter((c) => idSet.has(c.id));
 
   const checkLabels = checkItems.map((c) => c.label).join(", ");
   const modelNames = models.map((m) => m.name);

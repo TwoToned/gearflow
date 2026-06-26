@@ -19,6 +19,7 @@ import {
   getWooCommerceOrderLogsPage,
   getFailedOrderLogById,
 } from "@/lib/woocommerce-order-logs-read";
+import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
 import {
   wooCommerceIntegrationSchema,
   type WooCommerceIntegrationFormValues,
@@ -29,17 +30,19 @@ import {
 // with no Prisma row and no mirror; reads go through
 // src/lib/woocommerce-order-logs-read.ts. The table has NO @@unique constraint and no
 // inbound FK — webhook idempotency (dedup by wooOrderId + COMPLETED) is replicated as a
-// Convex read-before-write in the webhook route. wooCommerceIntegration stays on Prisma
-// (not part of this bucket). The Prisma `woocommerce_order_log` table is left unwritten
-// until Phase C drops it.
+// Convex read-before-write in the webhook route. The Prisma `woocommerce_order_log`
+// table is left unwritten until Phase C drops it.
+//
+// wooCommerceIntegration is ALSO Convex-only now (Phase C config-leftover inversion):
+// one-per-org row written via api.wooCommerceIntegrations.* (createId() + Date.now()),
+// read via src/lib/woocommerce-integration-read.ts. Clears (empty optional strings) go
+// through the custom api.wooCommerceIntegrations.patchWooCommerceIntegration mutation.
 
 // ─── Server Actions (UI) ────────────────────────────────────────────────────
 
 export async function getWooCommerceIntegration() {
   const { organizationId } = await requirePermission("orgSettings", "read");
-  const integration = await prisma.wooCommerceIntegration.findUnique({
-    where: { organizationId },
-  });
+  const integration = await getWooCommerceIntegrationByOrg(organizationId);
   return integration ? serialize(integration) : null;
 }
 
@@ -47,39 +50,73 @@ export async function updateWooCommerceIntegration(data: WooCommerceIntegrationF
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
   const parsed = wooCommerceIntegrationSchema.parse(data);
 
-  const existing = await prisma.wooCommerceIntegration.findUnique({
-    where: { organizationId },
-  });
+  const convex = await getConvexClient();
+  const existing = await getWooCommerceIntegrationByOrg(organizationId);
 
-  const result = await prisma.wooCommerceIntegration.upsert({
-    where: { organizationId },
-    create: {
+  // Nullable optional-string fields: empty → cleared/omitted.
+  const nullableKeys = [
+    "storeUrl",
+    "customFieldKey",
+    "rentalStartKey",
+    "rentalEndKey",
+    "eventStartKey",
+    "deliveryAddressKey",
+    "notesKey",
+    "locationMetaKey",
+    "defaultLocationId",
+  ] as const;
+
+  const now = Date.now();
+  if (existing) {
+    // Build a `set` of present values + a `clear` list of emptied nullable fields.
+    const set: Record<string, unknown> = {
+      isEnabled: parsed.isEnabled,
+      productMatchField: parsed.productMatchField,
+      dateFormat: parsed.dateFormat,
+      defaultProjectType: parsed.defaultProjectType,
+      autoConfirmEnquiry: parsed.autoConfirmEnquiry,
+      notifyUserIds: parsed.notifyUserIds,
+      updatedAt: now,
+    };
+    const clear: string[] = [];
+    for (const k of nullableKeys) {
+      const value = parsed[k];
+      if (value) set[k] = value;
+      else clear.push(k);
+    }
+    await convex.mutation(api.wooCommerceIntegrations.patchWooCommerceIntegration, {
+      id: existing.id,
+      set,
+      clear,
+    });
+  } else {
+    const id = createId();
+    await convex.mutation(api.wooCommerceIntegrations.create, {
+      id,
       organizationId,
-      webhookSecret: existing?.webhookSecret || generateSecret(),
-      ...parsed,
-      storeUrl: parsed.storeUrl || null,
-      customFieldKey: parsed.customFieldKey || null,
-      rentalStartKey: parsed.rentalStartKey || null,
-      rentalEndKey: parsed.rentalEndKey || null,
-      eventStartKey: parsed.eventStartKey || null,
-      deliveryAddressKey: parsed.deliveryAddressKey || null,
-      notesKey: parsed.notesKey || null,
-      locationMetaKey: parsed.locationMetaKey || null,
-      defaultLocationId: parsed.defaultLocationId || null,
-    },
-    update: {
-      ...parsed,
-      storeUrl: parsed.storeUrl || null,
-      customFieldKey: parsed.customFieldKey || null,
-      rentalStartKey: parsed.rentalStartKey || null,
-      rentalEndKey: parsed.rentalEndKey || null,
-      eventStartKey: parsed.eventStartKey || null,
-      deliveryAddressKey: parsed.deliveryAddressKey || null,
-      notesKey: parsed.notesKey || null,
-      locationMetaKey: parsed.locationMetaKey || null,
-      defaultLocationId: parsed.defaultLocationId || null,
-    },
-  });
+      webhookSecret: generateSecret(),
+      isEnabled: parsed.isEnabled,
+      productMatchField: parsed.productMatchField,
+      dateFormat: parsed.dateFormat,
+      defaultProjectType: parsed.defaultProjectType,
+      autoConfirmEnquiry: parsed.autoConfirmEnquiry,
+      notifyUserIds: parsed.notifyUserIds,
+      storeUrl: parsed.storeUrl || undefined,
+      customFieldKey: parsed.customFieldKey || undefined,
+      rentalStartKey: parsed.rentalStartKey || undefined,
+      rentalEndKey: parsed.rentalEndKey || undefined,
+      eventStartKey: parsed.eventStartKey || undefined,
+      deliveryAddressKey: parsed.deliveryAddressKey || undefined,
+      notesKey: parsed.notesKey || undefined,
+      locationMetaKey: parsed.locationMetaKey || undefined,
+      defaultLocationId: parsed.defaultLocationId || undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const result = await getWooCommerceIntegrationByOrg(organizationId);
+  if (!result) throw new Error("Failed to load WooCommerce integration after save");
 
   await logActivity({
     organizationId,
@@ -99,16 +136,28 @@ export async function regenerateWebhookSecret() {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
   const secret = generateSecret();
-  const result = await prisma.wooCommerceIntegration.upsert({
-    where: { organizationId },
-    create: {
+  const convex = await getConvexClient();
+  const existing = await getWooCommerceIntegrationByOrg(organizationId);
+
+  let entityId: string;
+  if (existing) {
+    await convex.mutation(api.wooCommerceIntegrations.update, {
+      id: existing.id,
+      patch: { webhookSecret: secret, updatedAt: Date.now() },
+    });
+    entityId = existing.id;
+  } else {
+    const id = createId();
+    const now = Date.now();
+    await convex.mutation(api.wooCommerceIntegrations.create, {
+      id,
       organizationId,
       webhookSecret: secret,
-    },
-    update: {
-      webhookSecret: secret,
-    },
-  });
+      createdAt: now,
+      updatedAt: now,
+    });
+    entityId = id;
+  }
 
   await logActivity({
     organizationId,
@@ -116,7 +165,7 @@ export async function regenerateWebhookSecret() {
     userName,
     action: "UPDATE",
     entityType: "wooCommerceIntegration",
-    entityId: result.id,
+    entityId,
     entityName: "WooCommerce Integration",
     summary: "Regenerated WooCommerce webhook secret",
   });
@@ -150,9 +199,7 @@ export async function retryFailedOrder(logId: string) {
   const log = await getFailedOrderLogById(organizationId, logId);
   if (!log) throw new Error("Order log not found or not in FAILED status");
 
-  const integration = await prisma.wooCommerceIntegration.findUnique({
-    where: { organizationId },
-  });
+  const integration = await getWooCommerceIntegrationByOrg(organizationId);
   if (!integration?.isEnabled) throw new Error("Integration not enabled");
 
   // Re-process the stored payload
@@ -162,10 +209,7 @@ export async function retryFailedOrder(logId: string) {
 export async function getLastPayloadMetaKeys() {
   const { organizationId } = await requirePermission("orgSettings", "read");
 
-  const integration = await prisma.wooCommerceIntegration.findUnique({
-    where: { organizationId },
-    select: { lastPayload: true },
-  });
+  const integration = await getWooCommerceIntegrationByOrg(organizationId);
 
   if (!integration?.lastPayload) return null;
 

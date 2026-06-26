@@ -4,7 +4,15 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.19.6.0] - 2026-06-16
+## [0.19.7.0] - 2026-06-26
+
+### Fixed
+- Dropdowns, comboboxes and tag inputs inside dialogs are clickable again. Picking crew on a service, choosing models when adding equipment, creating a supplier in a sub-hire, and adding tags in any form now work — they were silently swallowing clicks because the picker popups rendered behind the dialog's pointer lock.
+- Editing a service's date no longer turns a one-day service into a two-day span. Single-day service types keep their end date locked to the start date, and the date field stays consistent everywhere.
+- Pages no longer bounce you back to the home page on a transient hiccup. A momentary database or auth-token blip now recovers in place instead of dropping you to the dashboard.
+
+### Changed
+- Searchable pickers (combobox + tag input) and the app's overlay primitives are unified on one UI library, so dialogs, menus, and popups layer correctly together.
 
 ### Changed
 - **Equipment, asset, kit, project, supplier, location and category data now reads

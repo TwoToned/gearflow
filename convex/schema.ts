@@ -827,6 +827,10 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
+    // Composite: range-scan a project's lines by status (e.g. CHECKED_OUT) instead
+    // of collecting ALL of a project's lines and JS-filtering. Used by
+    // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
+    .index("by_projectId_status", ["projectId", "status"])
     .index("by_modelId", ["modelId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])

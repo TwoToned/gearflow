@@ -642,8 +642,14 @@ export const checkInBulkTotals = mutation({
     if (wanted.length === 0) return { returned: [] as Array<{ key: string; quantity: number; condition: string }> };
 
     const defaultLoc = await defaultLocationId(ctx, a.organizationId);
-    const rows = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
-      .filter((r) => r.organizationId === a.organizationId && r.status === "CHECKED_OUT" && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
+    // Range-scan only CHECKED_OUT lines for this project via the composite index
+    // (was: collect ALL of the project's lines then JS-filter on status). The
+    // remaining predicate (org / not-subhire-group / accessory-or-not-kit-child)
+    // stays a JS post-filter over the now-smaller candidate set.
+    const rows = (await ctx.db.query("projectLineItems")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", a.projectId).eq("status", "CHECKED_OUT"))
+      .collect())
+      .filter((r) => r.organizationId === a.organizationId && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
 
     const toInput = async (child: typeof rows[number]): Promise<CheckInItem> => {

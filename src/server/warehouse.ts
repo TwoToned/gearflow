@@ -35,13 +35,15 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
-  const lineItems = await buildWarehouseLineItems(projectId, organizationId);
-
-  // Clients + location live in Convex — attach instead of a Prisma join.
-  const client = project.clientId ? await getClientById(project.clientId) : null;
-  const location = project.locationId
-    ? (await getLocationMap(organizationId)).get(project.locationId) ?? null
-    : null;
+  // ONE parallel wave (was 3 SEQUENTIAL round-trips: line-item tree → client →
+  // location). All independent of each other — each needs only projectId/orgId or
+  // the project scalars already read above.
+  const [lineItems, client, locationMap] = await Promise.all([
+    buildWarehouseLineItems(projectId, organizationId),
+    project.clientId ? getClientById(project.clientId) : Promise.resolve(null),
+    project.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
+  ]);
+  const location = project.locationId && locationMap ? locationMap.get(project.locationId) ?? null : null;
   return serialize({ ...project, lineItems, client, location });
 }
 

@@ -27,6 +27,21 @@ export async function getKitsByOrg(orgId: string): Promise<ConvexKit[]> {
   return await (await getConvexClient()).query(api.kits.list, { orgId });
 }
 
+/**
+ * Scoped counterpart of getKitsByOrg: read only the kits a composite references by
+ * id (e.g. a project's line-item kits), instead of every kit in the org. Chunked at
+ * the listByIds cap. Same doc shape, so callers' maps are unchanged.
+ */
+export async function getKitsByIds(orgId: string, ids: string[]): Promise<ConvexKit[]> {
+  if (ids.length === 0) return [];
+  const convex = await getConvexClient();
+  const out: ConvexKit[] = [];
+  for (let i = 0; i < ids.length; i += 1000) {
+    out.push(...(await convex.query(api.kits.listByIds, { orgId, ids: ids.slice(i, i + 1000) })));
+  }
+  return out;
+}
+
 /** All of an org's kits keyed by cuid `id`, for attaching to joined rows. */
 export async function getKitMap(orgId: string): Promise<Map<string, ConvexKit>> {
   const all = await getKitsByOrg(orgId);

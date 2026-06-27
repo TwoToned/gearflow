@@ -282,6 +282,19 @@ export async function getOrgLineItems(orgId: string): Promise<MappedLineItem[]> 
   return docs.map(mapLineItemDoc);
 }
 
+/**
+ * Scoped counterpart of getOrgLineItems: line items referencing only the given
+ * models (batched), instead of the whole org. Availability filters by model anyway,
+ * so this is behavior-preserving for that use — and avoids a whole-org read on every
+ * project refetch.
+ */
+export async function getLineItemsByModelIds(orgId: string, modelIds: string[]): Promise<MappedLineItem[]> {
+  if (modelIds.length === 0) return [];
+  const convex = await getConvexClient();
+  const docs: LineItemDoc[] = await convex.query(api.projectLineItems.listByModelIds, { modelIds, orgId });
+  return docs.map(mapLineItemDoc);
+}
+
 /** All line item units for the org, mapped to the Prisma unit row shape. */
 export async function getOrgLineItemUnits(orgId: string): Promise<MappedUnit[]> {
   const convex = await getConvexClient();

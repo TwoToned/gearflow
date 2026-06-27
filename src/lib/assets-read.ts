@@ -32,6 +32,32 @@ export async function getBulkAssetsByOrg(orgId: string): Promise<ConvexBulkAsset
   return await (await getConvexClient()).query(api.bulkAssets.list, { orgId });
 }
 
+/**
+ * Scoped counterparts of getAssetsByOrg / getBulkAssetsByOrg: read only the rows
+ * a composite references by id (e.g. a project's line-item assets), instead of the
+ * whole org registry. Chunked at 1000 (the listByIds cap) so a large project can't
+ * hit it. Same raw doc shape, so callers' maps are unchanged.
+ */
+export async function getAssetsByIds(orgId: string, ids: string[]): Promise<ConvexAsset[]> {
+  if (ids.length === 0) return [];
+  const convex = await getConvexClient();
+  const out: ConvexAsset[] = [];
+  for (let i = 0; i < ids.length; i += 1000) {
+    out.push(...(await convex.query(api.assets.listByIds, { orgId, ids: ids.slice(i, i + 1000) })));
+  }
+  return out;
+}
+
+export async function getBulkAssetsByIds(orgId: string, ids: string[]): Promise<ConvexBulkAsset[]> {
+  if (ids.length === 0) return [];
+  const convex = await getConvexClient();
+  const out: ConvexBulkAsset[] = [];
+  for (let i = 0; i < ids.length; i += 1000) {
+    out.push(...(await convex.query(api.bulkAssets.listByIds, { orgId, ids: ids.slice(i, i + 1000) })));
+  }
+  return out;
+}
+
 export async function getAssetByAssetTag(orgId: string, assetTag: string): Promise<ConvexAsset | null> {
   return await (await getConvexClient()).query(api.assets.getByAssetTag, { organizationId: orgId, assetTag });
 }

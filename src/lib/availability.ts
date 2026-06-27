@@ -3,7 +3,7 @@ import { getProjectsByOrg } from "@/lib/projects-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import {
-  getOrgLineItems,
+  getLineItemsByModelIds,
   indexProjectsById,
   sumBookingsByModel,
   type DateWindow,
@@ -108,7 +108,7 @@ export async function computeOverbookedStatus(
   // Sub-hire items are third-party stock and are excluded.
   // When no dates: only count THIS project's bookings (no date overlap possible).
   const [orgLineItems, orgProjects] = await Promise.all([
-    getOrgLineItems(organizationId),
+    getLineItemsByModelIds(organizationId, modelIds),
     getProjectsByOrg(organizationId),
   ]);
   const projectsById = indexProjectsById(orgProjects);

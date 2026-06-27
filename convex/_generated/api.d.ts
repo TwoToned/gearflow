@@ -61,6 +61,7 @@ import type * as notificationDismissals from "../notificationDismissals.js";
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as parity from "../parity.js";
 import type * as projectCategories from "../projectCategories.js";
+import type * as projectEquipment from "../projectEquipment.js";
 import type * as projectGroups from "../projectGroups.js";
 import type * as projectLineItemUnits from "../projectLineItemUnits.js";
 import type * as projectLineItems from "../projectLineItems.js";
@@ -157,6 +158,7 @@ declare const fullApi: ApiFromModules<{
   notificationEmailLogs: typeof notificationEmailLogs;
   parity: typeof parity;
   projectCategories: typeof projectCategories;
+  projectEquipment: typeof projectEquipment;
   projectGroups: typeof projectGroups;
   projectLineItemUnits: typeof projectLineItemUnits;
   projectLineItems: typeof projectLineItems;

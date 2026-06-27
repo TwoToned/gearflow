@@ -697,6 +697,20 @@ export const listByAssetId = query({
   },
 });
 
+/**
+ * Line items referencing ONE model (via by_modelId), org-filtered. Replaces a
+ * whole-org `projectLineItems.list` + JS `.filter(li => li.modelId === …)` on the
+ * model-level availability check in addLineItem.
+ */
+export const listByModelId = query({
+  args: { modelId: v.string(), orgId: v.string() },
+  handler: async (ctx, { modelId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return (await ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect())
+      .filter((r) => r.organizationId === orgId);
+  },
+});
+
 // ── CUSTOM (Phase C H) — by-kit lookup for kit delete-guards ──
 export const listByKitId = query({
   args: { kitId: v.string(), orgId: v.string() },

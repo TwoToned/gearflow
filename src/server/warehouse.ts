@@ -14,7 +14,7 @@ import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
-import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
+import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
 
 export async function getProjectForWarehouse(projectId: string) {
@@ -511,15 +511,22 @@ export async function getScanLog(params?: {
   const total = rawLogs.length;
   const pageLogs = rawLogs.slice((page - 1) * pageSize, page * pageSize);
 
-  // Attach scannedBy (Better Auth user — stays Prisma).
+  // Attach scannedBy + asset/bulk/project, all scoped to THIS PAGE's logs (≤pageSize)
+  // — was getAssetsByOrg/getBulkAssetsByOrg/getProjectsByOrg (the whole org) to fill
+  // maps used only for the page's rows.
   const scannedByIds = [...new Set(pageLogs.map((l) => l.scannedById))];
+  const pageAssetIds = [...new Set(pageLogs.map((l) => l.assetId).filter((x): x is string => !!x))];
+  const pageBulkIds = [...new Set(pageLogs.map((l) => l.bulkAssetId).filter((x): x is string => !!x))];
+  const pageProjectIds = [...new Set(pageLogs.map((l) => l.projectId).filter((x): x is string => !!x))];
   const convexScanUsers = await getConvexClient();
   const [scanUsers, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
     scannedByIds.length > 0 ? convexScanUsers.query(api.users.listByIds, { ids: scannedByIds }) : Promise.resolve([]),
     getModelMap(organizationId),
-    getAssetsByOrg(organizationId),
-    getBulkAssetsByOrg(organizationId),
-    getProjectsByOrg(organizationId),
+    getAssetsByIds(organizationId, pageAssetIds),
+    getBulkAssetsByIds(organizationId, pageBulkIds),
+    pageProjectIds.length
+      ? convexForScanLog.query(api.projects.listByIds, { orgId: organizationId, ids: pageProjectIds })
+      : Promise.resolve([]),
   ]);
   // scannedBy now resolves from the Convex `users` mirror (was a prisma.user join).
   const scanUserMap = new Map(

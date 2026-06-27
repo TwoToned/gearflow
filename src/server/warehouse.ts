@@ -513,14 +513,18 @@ export async function getScanLog(params?: {
 
   // Attach scannedBy (Better Auth user — stays Prisma).
   const scannedByIds = [...new Set(pageLogs.map((l) => l.scannedById))];
+  const convexScanUsers = await getConvexClient();
   const [scanUsers, modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
-    scannedByIds.length > 0 ? prisma.user.findMany({ where: { id: { in: scannedByIds } } }) : Promise.resolve([]),
+    scannedByIds.length > 0 ? convexScanUsers.query(api.users.listByIds, { ids: scannedByIds }) : Promise.resolve([]),
     getModelMap(organizationId),
     getAssetsByOrg(organizationId),
     getBulkAssetsByOrg(organizationId),
     getProjectsByOrg(organizationId),
   ]);
-  const scanUserMap = new Map(scanUsers.map((u) => [u.id, u]));
+  // scannedBy now resolves from the Convex `users` mirror (was a prisma.user join).
+  const scanUserMap = new Map(
+    scanUsers.map((u) => [u.id, { id: u.id, name: u.name, email: u.email, image: u.image ?? null }]),
+  );
   const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
   const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));

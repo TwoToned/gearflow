@@ -982,12 +982,14 @@ export async function checkAvailability(
   const startDate = hasDates ? new Date(rentalStartDate) : null;
   const endDate = hasDates ? new Date(rentalEndDate) : null;
 
-  // Model + active assets live in Convex — fetch in parallel.
-  const [model, activeAssets, activeBulkAssets] = await Promise.all([
-    getModelById(modelId),
-    getActiveAssetsByModel(modelId, organizationId),
-    getActiveBulkAssetsByModel(modelId, organizationId),
-  ]);
+  // ONE round-trip for everything this check needs (was ~6 queries in 3 sequential
+  // waves: model+assets+bulks, then lines+projects, then a trailing accessories
+  // read). Read backend-local inside a single Convex query; raw docs used below.
+  const convex = await getConvexClient();
+  const ab = await convex.query(api.availabilityCheck.checkBundle, { modelId, orgId: organizationId });
+  const model = ab.model;
+  const activeAssets = ab.activeAssets;
+  const activeBulkAssets = ab.activeBulkAssets;
 
   if (!model) {
     return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates, hasAccessories: false });
@@ -1003,14 +1005,9 @@ export async function checkAvailability(
   // Include both regular items AND kit children — they all consume stock
   // Sub-hire items represent third-party stock and are excluded.
   // When no dates: only count bookings on the current project (stock-only check)
-  // Line items + projects both live in Convex — read both, filter/join in JS.
-  const convex = await getConvexClient();
-  // Line items scoped to THIS model (was: every line item in the org, then a
-  // `li.modelId !== modelId` skip in the loop below).
-  const [allOrgLines, allProjects] = await Promise.all([
-    convex.query(api.projectLineItems.listByModelId, { modelId, orgId: organizationId }),
-    getProjectsByOrg(organizationId),
-  ]);
+  // Line items (this model) + all org projects — both from the bundle above.
+  const allOrgLines = ab.lines;
+  const allProjects = ab.projects;
   const projectById = new Map(allProjects.map((p) => [p.id, p]));
 
   const overlappingLineItems: Array<{
@@ -1073,9 +1070,7 @@ export async function checkAvailability(
     0
   );
 
-  const bulkAccessoryCount = (
-    await (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, { modelId, organizationId })
-  ).length;
+  const bulkAccessoryCount = ab.bulkAccessoryCount;
 
   if (modelForBreakdown.assetType === "SERIALIZED") {
     const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);

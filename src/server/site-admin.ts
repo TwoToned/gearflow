@@ -2,6 +2,7 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { removeUserFromConvex } from "@/lib/user-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
@@ -604,6 +605,9 @@ export async function adminDeleteUser(userId: string) {
       userId,
     });
   }
+
+  // Remove the user from the Convex `users` mirror (best-effort).
+  await removeUserFromConvex(userId);
 
   const theOrg = await getTheOrg();
   if (theOrg) {

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
+import { mirrorUserToConvex } from "@/lib/user-mirror";
 
 export async function getProfile() {
   const session = await requireSession();
@@ -41,6 +42,9 @@ export async function updateProfile(data: { name?: string; image?: string | null
       image: true,
     },
   });
+
+  // Keep the Convex user mirror in sync (best-effort).
+  await mirrorUserToConvex(session.user.id);
 
   return serialize(updated);
 }

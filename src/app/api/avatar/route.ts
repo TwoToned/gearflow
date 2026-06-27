@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth-server";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/prisma";
+import { mirrorUserToConvex } from "@/lib/user-mirror";
 import { uploadToS3, deleteFromS3, ensureBucket, storageKeyFromUrl } from "@/lib/storage";
 import sharp from "sharp";
 import { fileTypeFromBuffer } from "file-type";
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
       where: { id: userId },
       data: { image: url },
     });
+    await mirrorUserToConvex(userId); // keep the Convex user mirror in sync
 
     return NextResponse.json({ url });
   } catch (error) {
@@ -121,6 +123,7 @@ export async function DELETE(request: NextRequest) {
       where: { id: userId },
       data: { image: null },
     });
+    await mirrorUserToConvex(userId); // keep the Convex user mirror in sync
 
     return NextResponse.json({ success: true });
   } catch (error) {

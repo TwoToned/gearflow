@@ -39,15 +39,21 @@ export const getById = query({
 
 /**
  * Lookup a crew member by their iCal feed token (the public-calendar bearer).
- * Service-only — the token IS the auth. No index (icalToken is rare + nullable),
- * so this scans + filters; a calendar feed request is infrequent.
+ * Service-only — the token IS the auth. Uses the `by_icalToken` index. The public
+ * calendar feed URL is externally reachable, so the previous full-table
+ * `.collect().find()` was a cross-org scan an attacker could trigger at will by
+ * hitting the feed endpoint with junk tokens (a scrape-able DoS). `.first()` (not
+ * `.unique()`) because `icalToken` is nullable and the index is non-unique — many
+ * rows share the `null` key, so `.unique()` would throw.
  */
 export const getByIcalToken = query({
   args: { icalToken: v.string() },
   handler: async (ctx, { icalToken }) => {
     await requireService(ctx);
-    const docs = await ctx.db.query("crewMembers").collect();
-    return docs.find((d) => d.icalToken === icalToken) ?? null;
+    return await ctx.db
+      .query("crewMembers")
+      .withIndex("by_icalToken", (q) => q.eq("icalToken", icalToken))
+      .first();
   },
 });
 

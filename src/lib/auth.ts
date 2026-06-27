@@ -5,6 +5,7 @@ import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
+import { mirrorUserToConvex } from "@/lib/user-mirror";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
 import { getSiteSettingsFromConvex } from "./site-settings-read";
@@ -267,6 +268,10 @@ export const auth = betterAuth({
           } catch {
             // Non-critical — don't block registration
           }
+
+          // Mirror the new user into Convex (best-effort; runs after the role +
+          // org-membership writes above so the mirror captures the final role).
+          await mirrorUserToConvex(user.id);
         },
       },
     },

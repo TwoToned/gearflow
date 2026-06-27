@@ -6,8 +6,10 @@ import {
   type ConvexBulkAsset,
   getAssetsByOrg,
   getBulkAssetsByOrg,
+  getAssetsByIds,
+  getBulkAssetsByIds,
 } from "@/lib/assets-read";
-import { type ConvexKit, getKitsByOrg, getKitMap } from "@/lib/kits-read";
+import { type ConvexKit, getKitsByOrg, getKitsByIds, getKitMap } from "@/lib/kits-read";
 import { type ConvexLocation, getLocationMap } from "@/lib/locations-read";
 import {
   buildLineItemAttachMaps,
@@ -413,14 +415,30 @@ export async function buildProjectEquipmentTree(
   const lineItems = liDocs.map(mapLineItemDoc);
   const lineItemIds = lineItems.map((li) => li.id);
 
-  const [unitDocs, attachMaps, assetArr, bulkArr, kitArr] = await Promise.all([
+  const [unitDocs, attachMaps] = await Promise.all([
     lineItemIds.length
       ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
       : Promise.resolve([] as UnitDoc[]),
     buildLineItemAttachMaps(organizationId),
-    getAssetsByOrg(organizationId),
-    getBulkAssetsByOrg(organizationId),
-    getKitsByOrg(organizationId),
+  ]);
+
+  // Scope the asset/bulk/kit reads to the ids THIS project's lines + units actually
+  // reference (was: getAssetsByOrg / getBulkAssetsByOrg / getKitsByOrg — the whole
+  // org registry, read on EVERY project refetch incl. every add/edit/delete). Same
+  // raw doc shape, so the maps below are unchanged.
+  const refAssetIds = [...new Set(
+    [...lineItems.map((li) => li.assetId), ...unitDocs.map((u) => u.assetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const refBulkIds = [...new Set(
+    [...lineItems.map((li) => li.bulkAssetId), ...unitDocs.map((u) => u.bulkAssetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const refKitIds = [...new Set(lineItems.map((li) => li.kitId).filter((x): x is string => !!x))];
+  const [assetArr, bulkArr, kitArr] = await Promise.all([
+    getAssetsByIds(organizationId, refAssetIds),
+    getBulkAssetsByIds(organizationId, refBulkIds),
+    getKitsByIds(organizationId, refKitIds),
   ]);
 
   const assetMap = new Map(assetArr.map((a) => [a.id, a]));
@@ -488,7 +506,7 @@ export async function buildWarehouseLineItems(projectId: string, organizationId:
   const lineItems = liDocs.map(mapLineItemDoc);
   const lineItemIds = lineItems.map((li) => li.id);
 
-  const [unitDocs, attachMaps, kitMap, modelCheckCounts, kitCheckCounts, assetArr, bulkArr] =
+  const [unitDocs, attachMaps, kitMap, modelCheckCounts, kitCheckCounts] =
     await Promise.all([
       lineItemIds.length
         ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
@@ -497,9 +515,23 @@ export async function buildWarehouseLineItems(projectId: string, organizationId:
       getKitMap(organizationId),
       getModelCheckItemCountMap(organizationId),
       getKitCheckItemCountMap(organizationId),
-      getAssetsByOrg(organizationId),
-      getBulkAssetsByOrg(organizationId),
     ]);
+
+  // Scope asset/bulk reads to the ids this project's lines + units reference (assets
+  // attach on BOTH lines and units here) — was getAssetsByOrg/getBulkAssetsByOrg (the
+  // whole org registry) on every warehouse refetch.
+  const refAssetIds = [...new Set(
+    [...lineItems.map((li) => li.assetId), ...unitDocs.map((u) => u.assetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const refBulkIds = [...new Set(
+    [...lineItems.map((li) => li.bulkAssetId), ...unitDocs.map((u) => u.bulkAssetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const [assetArr, bulkArr] = await Promise.all([
+    getAssetsByIds(organizationId, refAssetIds),
+    getBulkAssetsByIds(organizationId, refBulkIds),
+  ]);
 
   const assetMap = new Map(assetArr.map((a) => [a.id, a]));
   const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));

@@ -711,6 +711,25 @@ export const listByModelId = query({
   },
 });
 
+/**
+ * Line items referencing ANY of the given models (batched by_modelId scans in one
+ * round-trip), org-filtered. Replaces a whole-org `projectLineItems.list` that
+ * availability (computeOverbookedStatus) collected then JS-filtered by the project's
+ * models. Deduped + capped.
+ */
+export const listByModelIds = query({
+  args: { modelIds: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { modelIds, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(modelIds)];
+    if (unique.length > 1000) throw new ConvexError("projectLineItems.listByModelIds: too many modelIds (max 1000)");
+    const groups = await Promise.all(
+      unique.map((mid) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
+    );
+    return groups.flat().filter((r) => r.organizationId === orgId);
+  },
+});
+
 // ── CUSTOM (Phase C H) — by-kit lookup for kit delete-guards ──
 export const listByKitId = query({
   args: { kitId: v.string(), orgId: v.string() },

@@ -89,6 +89,7 @@ import type * as testTagAssets from "../testTagAssets.js";
 import type * as testTagAuditorTokens from "../testTagAuditorTokens.js";
 import type * as testTagRecords from "../testTagRecords.js";
 import type * as userNotificationPreferences from "../userNotificationPreferences.js";
+import type * as users from "../users.js";
 import type * as warehouseCloses from "../warehouseCloses.js";
 import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
 import type * as warehouseDetail from "../warehouseDetail.js";
@@ -184,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   testTagAuditorTokens: typeof testTagAuditorTokens;
   testTagRecords: typeof testTagRecords;
   userNotificationPreferences: typeof userNotificationPreferences;
+  users: typeof users;
   warehouseCloses: typeof warehouseCloses;
   warehouseDashboardTokens: typeof warehouseDashboardTokens;
   warehouseDetail: typeof warehouseDetail;

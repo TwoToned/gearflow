@@ -313,6 +313,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     refreshProjectOverbooked(projectId);
   }, [projectId]);
 
+  // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
+  // lingering until the server round-trip + the reactive refetch land). The id is
+  // rolled back on error (row reappears) and pruned once the refetch confirms the
+  // deletion. Bridges the gap between the mutation and the live refresh.
+  const [pendingRemovalIds, setPendingRemovalIds] = useState<ReadonlySet<string>>(() => new Set());
+
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createCategoryMut = useServerMutation({
@@ -378,8 +384,35 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       toast.success("Item removed");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, id: string) => {
+      // Rollback the optimistic hide so the row reappears.
+      setPendingRemovalIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      toast.error(e.message);
+    },
   });
+
+  // Optimistically hide the row, then fire the delete. Every row's onRemove uses this.
+  const handleRemoveItem = useCallback(
+    (id: string) => {
+      setPendingRemovalIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+      removeMut.mutate(id);
+    },
+    [removeMut],
+  );
+
+  // No prune needed: a successfully-removed id simply stops matching any rendered
+  // row (the refetch drops it). ids are cuids (never reused), so a retained dead id
+  // is a harmless no-op in the filters — and skipping a prune effect avoids a
+  // setState-in-effect cascading render. The set only grows within a mounted
+  // session and resets on navigation.
 
 
   const saveAsTemplateMut = useServerMutation({
@@ -685,7 +718,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           </TableHeader>
               <TableBody>
                 {typedCategories.map((cat, catIndex) => {
-                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   const mixedSlots: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
                     kind: "project" as const,
                     sortOrder: g.sortOrder,
@@ -794,7 +827,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
-                                  onRemove={() => removeMut.mutate(item.id)}
+                                  onRemove={() => handleRemoveItem(item.id)}
                                 />
                               ))}
                             </React.Fragment>
@@ -804,7 +837,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         if (!group) return null;
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                         return (
                           <React.Fragment key={group.id}>
                             <GroupRow
@@ -887,7 +920,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   lineItemId: item.id,
                                   initialGroupId: group.id,
                                 })}
-                                onRemove={() => removeMut.mutate(item.id)}
+                                onRemove={() => handleRemoveItem(item.id)}
                               />
                             ))}
                           </React.Fragment>
@@ -921,7 +954,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           onMoveToGroup={() => setMoveItemToGroup({
                             lineItemId: item.id,
                           })}
-                          onRemove={() => removeMut.mutate(item.id)}
+                          onRemove={() => handleRemoveItem(item.id)}
                         />
                       ))}
                     </React.Fragment>
@@ -940,7 +973,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   </TableRow>
                 )}
                 {(() => {
-                  const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i));
+                  const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   return uncatVisible.map((item, itemIndex) => (
                   <LineItemRow
                     key={item.id}
@@ -966,7 +999,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     onMoveToGroup={() => setMoveItemToGroup({
                       lineItemId: item.id,
                     })}
-                    onRemove={() => removeMut.mutate(item.id)}
+                    onRemove={() => handleRemoveItem(item.id)}
                   />
                   ));
                 })()}
@@ -978,7 +1011,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                 {orphanProjectGroups.map((group) => {
                   const isExpanded = expandedGroups.has(group.id);
                   const priceVal = group.price != null ? Number(group.price) : null;
-                  const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                  const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   return (
                     <React.Fragment key={`pg-${group.id}`}>
                       <GroupRow
@@ -1053,7 +1086,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             lineItemId: item.id,
                             initialGroupId: group.id,
                           })}
-                          onRemove={() => removeMut.mutate(item.id)}
+                          onRemove={() => handleRemoveItem(item.id)}
                         />
                       ))}
                     </React.Fragment>
@@ -1115,7 +1148,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             setManagingSubHireId(shGroup.subHire.id);
                             setShowSubHireOrderDialog(true);
                           }}
-                          onRemove={() => removeMut.mutate(item.id)}
+                          onRemove={() => handleRemoveItem(item.id)}
                         />
                       ))}
                     </React.Fragment>

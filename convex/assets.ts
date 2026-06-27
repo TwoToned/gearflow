@@ -56,6 +56,24 @@ export const listByModel = query({
 });
 
 /**
+ * Batch the per-model `by_modelId` scans for MANY models into ONE round-trip.
+ * Replaces an N+1 of N separate `listByModel` calls (e.g. availability computes
+ * stock per model across a projects view). Deduped + capped; org-filtered.
+ */
+export const listByModelIds = query({
+  args: { orgId: v.string(), modelIds: v.array(v.string()) },
+  handler: async (ctx, { orgId, modelIds }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(modelIds)];
+    if (unique.length > 1000) throw new ConvexError("assets.listByModelIds: too many modelIds (max 1000)");
+    const groups = await Promise.all(
+      unique.map((mid) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
+    );
+    return groups.flat().filter((a) => a.organizationId === orgId);
+  },
+});
+
+/**
  * Batch point-read assets by cuid, scoped to one org. Lets a detail composite
  * (e.g. getKit) read only its member assets by id instead of collecting the whole
  * org registry (getAssetsByOrg) and filtering in JS. Cross-org ids are dropped,

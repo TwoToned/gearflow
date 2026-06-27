@@ -57,6 +57,24 @@ export const listByModel = query({
 });
 
 /**
+ * Batch the per-model `by_modelId` scans for MANY models into ONE round-trip —
+ * the bulk-asset counterpart of assets.listByModelIds, killing the per-model N+1
+ * in availability. Deduped + capped; org-filtered.
+ */
+export const listByModelIds = query({
+  args: { orgId: v.string(), modelIds: v.array(v.string()) },
+  handler: async (ctx, { orgId, modelIds }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(modelIds)];
+    if (unique.length > 1000) throw new ConvexError("bulkAssets.listByModelIds: too many modelIds (max 1000)");
+    const groups = await Promise.all(
+      unique.map((mid) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
+    );
+    return groups.flat().filter((b) => b.organizationId === orgId);
+  },
+});
+
+/**
  * Batch point-read bulk assets by cuid, scoped to one org — the bulk-asset
  * counterpart of assets.listByIds, so a detail composite reads only its members
  * instead of getBulkAssetsByOrg. Cross-org ids are dropped.

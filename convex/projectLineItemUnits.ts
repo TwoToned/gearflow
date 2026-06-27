@@ -32,6 +32,23 @@ export const getById = query({
   },
 });
 
+/**
+ * Units for ONE asset within an org (all statuses), via the
+ * `by_organizationId_assetId_status` index — replaces a whole-org
+ * `projectLineItemUnits.list` + JS `.filter(u => u.assetId === …)` on the
+ * add-line-item double-booking check.
+ */
+export const listByOrgAndAsset = query({
+  args: { orgId: v.string(), assetId: v.string() },
+  handler: async (ctx, { orgId, assetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("projectLineItemUnits")
+      .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", orgId).eq("assetId", assetId))
+      .collect();
+  },
+});
+
 export const listByLineItem = query({
   args: { lineItemId: v.string() },
   handler: async (ctx, { lineItemId }) => {

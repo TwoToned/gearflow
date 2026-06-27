@@ -108,24 +108,28 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         const conflictSet = new Set(conflictProjectIds);
         const convex = await getConvexClient();
         // Asset may be booked via a legacy line.assetId row OR via a unit — check
-        // both in Convex (the flipped tables).
-        const [assetLines, allUnits] = await Promise.all([
+        // both in Convex (the flipped tables). Both reads are now scoped to THIS
+        // asset (was: collect every unit in the org, then JS-filter to the asset,
+        // then one getById per unit — a whole-table read + an N+1 that produced
+        // hundreds of Convex calls per add).
+        const [assetLines, assetUnits] = await Promise.all([
           convex.query(api.projectLineItems.listByAssetId, { assetId: parsed.assetId, orgId: organizationId }),
-          convex.query(api.projectLineItemUnits.list, { orgId: organizationId }),
+          convex.query(api.projectLineItemUnits.listByOrgAndAsset, { orgId: organizationId, assetId: parsed.assetId }),
         ]);
         const lineConflict = assetLines.find(
           (li) => li.status !== "CANCELLED" && conflictSet.has(li.projectId),
         );
-        const assetUnits = allUnits.filter((u) => u.assetId === parsed.assetId);
-        let unitConflictProjId: string | undefined;
-        for (const u of assetUnits) {
-          if (u.status === "RETURNED") continue;
-          const ul = await convex.query(api.projectLineItems.getById, { id: u.lineItemId });
-          if (ul && ul.status !== "CANCELLED" && conflictSet.has(ul.projectId)) {
-            unitConflictProjId = ul.projectId;
-            break;
-          }
-        }
+        // Batch-fetch the line items for the asset's live units in one round-trip
+        // (was one getById per unit).
+        const unitLineIds = [
+          ...new Set(assetUnits.filter((u) => u.status !== "RETURNED").map((u) => u.lineItemId)),
+        ];
+        const unitLines = unitLineIds.length
+          ? await convex.query(api.projectLineItems.listByIds, { ids: unitLineIds, orgId: organizationId })
+          : [];
+        const unitConflictProjId = unitLines.find(
+          (ul) => ul.status !== "CANCELLED" && conflictSet.has(ul.projectId),
+        )?.projectId;
         const conflictProjId = lineConflict?.projectId ?? unitConflictProjId;
         const conflictProject = conflictProjId ? projectMap.get(conflictProjId) : null;
         if (conflictProject) {
@@ -174,7 +178,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
-        const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
+        // Scoped to THIS model (was: collect every line item in the org, then
+        // JS-filter to the model).
+        const modelLines = await (await getConvexClient()).query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId });
         let overlapping;
         if (hasDates) {
           const projStartMs = convexProject.rentalStartDate as number;
@@ -193,17 +199,15 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
               )
               .map((p) => p.id),
           );
-          overlapping = allOrgLines.filter(
+          overlapping = modelLines.filter(
             (li) =>
-              li.modelId === parsed.modelId &&
               li.status !== "CANCELLED" &&
               li.subHireId == null &&
               modelConflictProjectIds.has(li.projectId),
           );
         } else {
-          overlapping = allOrgLines.filter(
+          overlapping = modelLines.filter(
             (li) =>
-              li.modelId === parsed.modelId &&
               li.status !== "CANCELLED" &&
               li.subHireId == null &&
               li.projectId === projectId,
@@ -507,7 +511,8 @@ export async function updateLineItem(
         assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
         bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
       };
-      const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
+      // Scoped to THIS model (was: collect every line item in the org).
+      const modelLines = await (await getConvexClient()).query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId });
       let overlapping;
       if (hasDates) {
         const projStartMs = updateConvexProject!.rentalStartDate as number;
@@ -526,18 +531,16 @@ export async function updateLineItem(
             )
             .map((p) => p.id),
         );
-        overlapping = allOrgLines.filter(
+        overlapping = modelLines.filter(
           (li) =>
-            li.modelId === parsed.modelId &&
             li.status !== "CANCELLED" &&
             li.subHireId == null &&
             li.id !== id &&
             updateConflictProjectIds.has(li.projectId),
         );
       } else {
-        overlapping = allOrgLines.filter(
+        overlapping = modelLines.filter(
           (li) =>
-            li.modelId === parsed.modelId &&
             li.status !== "CANCELLED" &&
             li.subHireId == null &&
             li.id !== id &&
@@ -733,8 +736,8 @@ export async function addKitLineItem(
       .map((p) => p.id);
     const kitProjectMap = new Map(kitAddAllProjects.map((p) => [p.id, p]));
     const kitConflictSet = new Set(kitConflictProjectIds);
-    const allOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
-    const conflict = allOrgLines.find(
+    const kitLines = await (await getConvexClient()).query(api.projectLineItems.listByKitId, { kitId, orgId: organizationId });
+    const conflict = kitLines.find(
       (li) =>
         li.kitId === kitId &&
         !li.isKitChild &&
@@ -1002,8 +1005,10 @@ export async function checkAvailability(
   // When no dates: only count bookings on the current project (stock-only check)
   // Line items + projects both live in Convex — read both, filter/join in JS.
   const convex = await getConvexClient();
+  // Line items scoped to THIS model (was: every line item in the org, then a
+  // `li.modelId !== modelId` skip in the loop below).
   const [allOrgLines, allProjects] = await Promise.all([
-    convex.query(api.projectLineItems.list, { orgId: organizationId }),
+    convex.query(api.projectLineItems.listByModelId, { modelId, orgId: organizationId }),
     getProjectsByOrg(organizationId),
   ]);
   const projectById = new Map(allProjects.map((p) => [p.id, p]));
@@ -1221,7 +1226,7 @@ export async function checkKitAvailability(
   const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
   const kitAvailConflictSet = new Set(kitAvailConflictProjectIds);
 
-  const kitAvailOrgLines = await (await getConvexClient()).query(api.projectLineItems.list, { orgId: organizationId });
+  const kitAvailOrgLines = await (await getConvexClient()).query(api.projectLineItems.listByKitId, { kitId, orgId: organizationId });
   const conflict = kitAvailOrgLines.find(
     (li) =>
       li.kitId === kitId &&

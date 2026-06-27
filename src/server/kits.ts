@@ -136,12 +136,16 @@ export async function getKit(id: string) {
       ? convex.query(api.projects.listByIds, { orgId: organizationId, ids: projectIds })
       : Promise.resolve([]),
     scanUserIds.length
-      ? prisma.user.findMany({ where: { id: { in: scanUserIds } } })
+      ? convex.query(api.users.listByIds, { ids: scanUserIds })
       : Promise.resolve([]),
   ]);
 
   const projMap = new Map(projects.map((p) => [p.id, p]));
-  const userMap = new Map(scanUsers.map((u) => [u.id, u]));
+  // scannedBy now resolves from the Convex `users` mirror (was a cross-domain
+  // prisma.user join) — the page reads only id/name/email/image.
+  const userMap = new Map(
+    scanUsers.map((u) => [u.id, { id: u.id, name: u.name, email: u.email, image: u.image ?? null }]),
+  );
 
   // Line items: attach project from the by-id map (drop any whose project is absent).
   const lineItems = lineItemRows.flatMap((r) => {

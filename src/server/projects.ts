@@ -430,6 +430,11 @@ export async function getProject(id: string) {
   // Order by addedAt asc (mirrors the dropped Prisma `orderBy: { addedAt: "asc" }`).
   const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
   const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
+  // NOTE: left as a prisma.user join (NOT yet moved to the Convex users mirror).
+  // The project page assumes pm.user is non-null (reads pm.user.id), so a
+  // best-effort-mirror gap would crash it — this one waits for the surface
+  // conversion PR (page null-guard / guaranteed mirror) rather than a standalone
+  // swap. kits/warehouse `scannedBy` are null-safe and already moved.
   const pmUsers = pmUserIds.length > 0
     ? await prisma.user.findMany({
         where: { id: { in: pmUserIds } },

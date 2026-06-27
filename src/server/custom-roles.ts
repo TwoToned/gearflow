@@ -8,6 +8,11 @@ import {
   type PermissionMap,
 } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity-log";
+import {
+  upsertCustomRoleMirror,
+  upsertCustomRoleMirrorById,
+  removeCustomRoleMirror,
+} from "@/lib/member-mirror";
 
 // ─── Read ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +74,9 @@ export async function createCustomRole(data: {
     },
   });
 
+  // Additive: Prisma committed; mirror best-effort after (§3.3.4).
+  await upsertCustomRoleMirrorById(role.id);
+
   await logActivity({
     organizationId,
     userId,
@@ -116,6 +124,33 @@ export async function updateCustomRole(
   if (data.ssoGroupClaim !== undefined) updateData.ssoGroupClaim = data.ssoGroupClaim?.trim() || null;
   if (data.permissions !== undefined) updateData.permissions = JSON.stringify(data.permissions);
 
+  // Restrictive (a permissions edit may REMOVE permissions): mirror the merged
+  // new state to Convex FIRST (strict), then commit Prisma — never leave Convex
+  // granting a permission Prisma is about to remove (§3.3.4).
+  await upsertCustomRoleMirror(
+    {
+      id: existing.id,
+      organizationId,
+      name: data.name !== undefined ? data.name.trim() : existing.name,
+      description:
+        data.description !== undefined
+          ? data.description?.trim() || null
+          : existing.description,
+      color: data.color !== undefined ? data.color || null : existing.color,
+      permissions:
+        data.permissions !== undefined
+          ? JSON.stringify(data.permissions)
+          : existing.permissions,
+      ssoGroupClaim:
+        data.ssoGroupClaim !== undefined
+          ? data.ssoGroupClaim?.trim() || null
+          : existing.ssoGroupClaim,
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
+    },
+    { strict: true },
+  );
+
   const updated = await prisma.customRole.update({
     where: { id, organizationId },
     data: updateData,
@@ -160,6 +195,10 @@ export async function deleteCustomRole(id: string) {
       `Cannot delete this role — ${memberCount} member${memberCount > 1 ? "s" : ""} still assigned to it. Reassign them first.`,
     );
   }
+
+  // Restrictive: remove from the Convex mirror FIRST (strict), then commit the
+  // Prisma delete (§3.3.4). A Convex failure aborts the deletion.
+  await removeCustomRoleMirror(id, { strict: true });
 
   await prisma.customRole.delete({ where: { id, organizationId } });
 
@@ -207,6 +246,9 @@ export async function duplicateCustomRole(id: string, newName: string) {
     summary: `Duplicated custom role ${existing.name} as ${role.name}`,
     details: { sourceId: id, sourceName: existing.name },
   });
+
+  // Additive: Prisma committed; mirror best-effort after (§3.3.4).
+  await upsertCustomRoleMirrorById(role.id);
 
   return serialize({
     ...role,

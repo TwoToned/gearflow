@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
+import { upsertMemberMirrorById, removeMemberMirror } from "@/lib/member-mirror";
 import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import { validateProjectNumberFormat, type IncrementReset } from "@/lib/project-number";
@@ -347,6 +348,9 @@ export async function addMemberByEmail(email: string, role: string) {
       summary: `Added member ${normalizedEmail} with role ${role}`,
     });
 
+    // Additive: Prisma committed; mirror best-effort after (§3.3.4).
+    await upsertMemberMirrorById(member.id);
+
     return serialize(member);
   }
 
@@ -412,6 +416,13 @@ export async function removeMember(memberId: string) {
 
   if (!member) throw new Error("Member not found");
   if (member.role === "owner") throw new Error("Cannot remove the owner");
+
+  // Restrictive (revocation): remove from the Convex mirror FIRST (strict), then
+  // commit the Prisma delete (§3.3.4).
+  await removeMemberMirror(
+    { organizationId, userId: member.userId },
+    { strict: true },
+  );
 
   await prisma.member.delete({ where: { id: memberId } });
   return { success: true };

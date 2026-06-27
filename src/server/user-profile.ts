@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { mirrorUserToConvex } from "@/lib/user-mirror";
+import { removeMemberMirror } from "@/lib/member-mirror";
 
 export async function getProfile() {
   const session = await requireSession();
@@ -76,6 +77,13 @@ export async function leaveOrganization(orgId: string) {
   if (member.role === "owner") {
     throw new Error("You are the owner. Transfer ownership to another member before leaving.");
   }
+
+  // Restrictive (self-revocation): remove from the Convex mirror FIRST (strict),
+  // then commit the Prisma delete (§3.3.4).
+  await removeMemberMirror(
+    { organizationId: orgId, userId: session.user.id },
+    { strict: true },
+  );
 
   await prisma.member.delete({ where: { id: member.id } });
   return { success: true };

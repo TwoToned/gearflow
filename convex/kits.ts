@@ -36,6 +36,24 @@ export const getById = query({
   },
 });
 
+/**
+ * Batch point-read kits by cuid, scoped to one org — lets a composite read only
+ * the kits its line items reference (e.g. buildProjectEquipmentTree) instead of
+ * getKitsByOrg (every kit in the org). Cross-org ids are dropped.
+ */
+export const listByIds = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgRead(ctx, orgId);
+    const unique = [...new Set(ids)];
+    if (unique.length > 1000) throw new ConvexError("kits.listByIds: too many ids (max 1000)");
+    const docs = await Promise.all(
+      unique.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+  },
+});
+
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {

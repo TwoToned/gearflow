@@ -8,7 +8,7 @@
  *    — role string is "custom:<id>", permissions stored as JSON.
  *
  * The pure RBAC logic (RESOURCES, rolePermissions, hasPermission, …) now lives in
- * `convex/lib/permissions-core.ts` so it can be imported by BOTH this Next.js
+ * `convex/lib/permissionsCore.ts` so it can be imported by BOTH this Next.js
  * server module and Convex functions — one source of truth for permission checks
  * (Phase 0 of the native read layer; see docs/designs/convex-native-read-layer.md).
  * This file re-exports that core and adds the UI-only pieces (the matrix registry
@@ -23,15 +23,15 @@ export {
   ORG_ROLES,
   ASSIGNABLE_BUILT_IN_ROLES,
   isBuiltInRole,
-} from "../../convex/lib/permissions-core";
+} from "../../convex/lib/permissionsCore";
 export type {
   Resource,
   Action,
   PermissionMap,
   OrgRole,
-} from "../../convex/lib/permissions-core";
+} from "../../convex/lib/permissionsCore";
 
-import type { Resource } from "../../convex/lib/permissions-core";
+import type { Resource } from "../../convex/lib/permissionsCore";
 
 /** Registry of all resources and their possible actions — drives the matrix UI */
 export const PERMISSION_REGISTRY: Record<

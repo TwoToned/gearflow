@@ -232,3 +232,59 @@ export const ASSIGNABLE_BUILT_IN_ROLES = ["admin", "manager", "member", "viewer"
 export function isBuiltInRole(role: string): boolean {
   return role in rolePermissions;
 }
+
+// ─── Org-scoped RBAC decision (native read layer) ───────────────────────────
+//
+// The PURE decision behind the Convex `requireOrgPermission` guard. Keeping it
+// here (isomorphic, import-free) means the Convex guard and the server-action
+// path (`requirePermission`) share the SAME logic — so a unit test on this
+// function IS the RBAC parity test between native reads and server actions
+// (docs/designs/convex-native-read-layer.md §3.3.3, §8 implementation gate).
+//
+// The ctx/db plumbing (resolve identity, look up the member row by (org,user)
+// with .first(), look up + org-scope the custom role, JSON.parse its permissions)
+// lives in convex/lib/auth.ts and feeds resolved inputs to this function.
+
+/** Minimal auth shape — mirrors ConvexAuthContext without importing convex/server. */
+export type OrgPermissionAuth =
+  | { kind: "service" }
+  | { kind: "user"; userId: string; orgId: string | null }
+  | null;
+
+export type OrgPermissionDecision =
+  | "allow"
+  | "deny:unauthenticated"
+  | "deny:org-mismatch"
+  | "deny:not-member"
+  | "deny:insufficient";
+
+export interface OrgPermissionInput {
+  auth: OrgPermissionAuth;
+  /** Org the query is being asked to read. */
+  requestedOrgId: string;
+  /** The caller's member row for (requestedOrgId, userId), or null if none. */
+  member: { role: string } | null;
+  /** Parsed custom-role permission map when `member.role` is "custom:…", else null. */
+  customPermissions: PermissionMap | null;
+}
+
+/**
+ * Decide whether the caller may perform `action` on `resource` within
+ * `requestedOrgId`. Service identity bypasses (the trusted backend already ran
+ * requirePermission). A user must (a) match the requested org, (b) be a member,
+ * and (c) pass hasPermission for their role.
+ */
+export function decideOrgPermission(
+  input: OrgPermissionInput,
+  resource: Resource,
+  action: string,
+): OrgPermissionDecision {
+  const { auth, requestedOrgId, member, customPermissions } = input;
+  if (!auth) return "deny:unauthenticated";
+  if (auth.kind === "service") return "allow"; // trusted server already authorized
+  if (!auth.orgId || auth.orgId !== requestedOrgId) return "deny:org-mismatch";
+  if (!member) return "deny:not-member";
+  return hasPermission(member.role, resource, action, customPermissions)
+    ? "allow"
+    : "deny:insufficient";
+}

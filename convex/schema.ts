@@ -123,7 +123,10 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    // Native-read-layer RBAC: requireOrgPermission resolves a user's role by
+    // (org, user) in one indexed lookup. See docs/designs/convex-native-read-layer.md §3.3.
+    .index("by_org_user", ["organizationId", "userId"]),
 
   // Invitation
   invitations: defineTable({

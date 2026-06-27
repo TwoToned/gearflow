@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { upsertMemberMirrorByOrgUser } from "./member-mirror";
 import type { OrgSSOSettings, SSOGroupMapping } from "./sso-types";
 import type { Organization } from "@/generated/prisma/client";
 
@@ -210,6 +211,9 @@ export async function handleSSOProvisioning(data: {
         where: { id: existingMember.id },
         data: { role },
       });
+      // SSO role sync — best-effort mirror (provisioning re-runs on every login,
+      // so the mirror self-heals; the nightly reconcile is the backstop §3.3.4).
+      await upsertMemberMirrorByOrgUser(provider.organizationId, user.id);
     }
     return;
   }
@@ -221,6 +225,9 @@ export async function handleSSOProvisioning(data: {
         where: { id: existingMember.id },
         data: { role },
       });
+      // SSO role sync — best-effort mirror (provisioning re-runs on every login,
+      // so the mirror self-heals; the nightly reconcile is the backstop §3.3.4).
+      await upsertMemberMirrorByOrgUser(provider.organizationId, user.id);
     }
     return;
   }
@@ -264,6 +271,9 @@ export async function handleSSOProvisioning(data: {
       role,
     },
   });
+
+  // Additive: mirror best-effort after the Prisma commit.
+  await upsertMemberMirrorByOrgUser(provider.organizationId, user.id);
 
   return;
 }

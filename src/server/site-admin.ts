@@ -3,6 +3,11 @@
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { removeUserFromConvex } from "@/lib/user-mirror";
+import {
+  upsertMemberMirror,
+  upsertMemberMirrorByOrgUser,
+  removeMemberMirror,
+} from "@/lib/member-mirror";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
@@ -156,6 +161,9 @@ export async function adminCreateOrganization(data: {
     });
     return newOrg;
   });
+
+  // Additive (org + owner created): mirror best-effort after the transaction.
+  await upsertMemberMirrorByOrgUser(org.id, ownerId);
 
   await logActivity({
     organizationId: org.id,
@@ -693,6 +701,14 @@ export async function adminTransferOwnership(orgId: string, newOwnerId: string) 
     return { currentOwner, newOwner };
   });
 
+  // Admin ownership transfer (demote + promote). Best-effort mirror after the
+  // transaction for both affected members (platform-admin path; nightly reconcile
+  // is the backstop §3.3.4).
+  if (result.currentOwner) {
+    await upsertMemberMirrorByOrgUser(orgId, result.currentOwner.userId);
+  }
+  await upsertMemberMirrorByOrgUser(orgId, newOwnerId);
+
   await logActivity({
     organizationId: orgId,
     userId: session.user.id,
@@ -755,6 +771,9 @@ export async function adminAddMemberToOrg(orgId: string, email: string, role: st
     data: { organizationId: orgId, userId: user.id, role },
   });
 
+  // Additive: mirror best-effort after the Prisma commit.
+  await upsertMemberMirrorByOrgUser(orgId, user.id);
+
   await logActivity({
     organizationId: orgId,
     userId: session.user.id,
@@ -779,6 +798,13 @@ export async function adminRemoveMemberFromOrg(orgId: string, memberId: string) 
   });
   if (!member) throw new Error("Member not found.");
   if (member.role === "owner") throw new Error("Cannot remove the owner. Transfer ownership first.");
+
+  // Restrictive (revocation): remove from the Convex mirror FIRST (strict), then
+  // commit the Prisma delete (§3.3.4).
+  await removeMemberMirror(
+    { organizationId: orgId, userId: member.userId },
+    { strict: true },
+  );
 
   await prisma.member.delete({ where: { id: memberId } });
 
@@ -814,6 +840,20 @@ export async function adminChangeMemberRole(orgId: string, memberId: string, new
     });
     if (!customRole) throw new Error("Custom role not found in this organization.");
   }
+
+  // Restrictive (a role change may reduce permissions): mirror the NEW role to
+  // Convex FIRST (strict), then commit Prisma (§3.3.4). Pass the new role
+  // explicitly — reading Prisma here would mirror the stale old role.
+  await upsertMemberMirror(
+    {
+      id: memberId,
+      organizationId: orgId,
+      userId: member.userId,
+      role: newRole,
+      createdAt: member.createdAt,
+    },
+    { strict: true },
+  );
 
   await prisma.member.update({
     where: { id: memberId },

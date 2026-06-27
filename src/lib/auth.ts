@@ -6,6 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { mirrorUserToConvex } from "@/lib/user-mirror";
+import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
 import { getSiteSettingsFromConvex } from "./site-settings-read";
@@ -263,6 +264,8 @@ export const auth = betterAuth({
                     role: hasOwner ? "member" : "owner",
                   },
                 });
+                // Additive (auto-create on registration): mirror best-effort.
+                await upsertMemberMirrorByOrgUser(org.id, user.id);
               }
             }
           } catch {

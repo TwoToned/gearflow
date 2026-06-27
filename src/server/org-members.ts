@@ -5,6 +5,10 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail, roleChangedEmail, removedFromOrgEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity-log";
+import {
+  upsertMemberMirror,
+  removeMemberMirror,
+} from "@/lib/member-mirror";
 
 export async function getOrgMembers(params?: {
   page?: number;
@@ -106,6 +110,20 @@ export async function changeMemberRole(memberId: string, newRole: string) {
     throw new Error("Only the owner can manage admin roles.");
   }
 
+  // Restrictive (a role change may reduce permissions): mirror the NEW role to
+  // Convex FIRST (strict), then commit Prisma — never leave Convex granting the
+  // old role after Prisma demotes (§3.3.4). A Convex failure aborts the change.
+  await upsertMemberMirror(
+    {
+      id: memberId,
+      organizationId,
+      userId: target.userId,
+      role: newRole,
+      createdAt: target.createdAt,
+    },
+    { strict: true },
+  );
+
   await prisma.member.update({
     where: { id: memberId },
     data: { role: newRole },
@@ -169,6 +187,13 @@ export async function removeOrgMember(memberId: string) {
     throw new Error("Only the owner can remove admins.");
   }
 
+  // Restrictive (revocation): remove from the Convex mirror FIRST (strict), then
+  // commit the Prisma delete (§3.3.4). A Convex failure aborts the removal.
+  await removeMemberMirror(
+    { organizationId, userId: target.userId },
+    { strict: true },
+  );
+
   await prisma.member.delete({ where: { id: memberId } });
 
   await logActivity({
@@ -211,6 +236,21 @@ export async function transferOwnership(newOwnerId: string) {
   });
   if (!newOwner) throw new Error("Target must be a member of this organization.");
 
+  // transferOwnership is both a DEMOTION (old owner → admin) and a PROMOTION
+  // (new member → owner). The demotion is restrictive, so mirror it to Convex
+  // FIRST (strict) before the Prisma transaction; the promotion is additive, so
+  // mirror it best-effort AFTER (§3.3.4).
+  await upsertMemberMirror(
+    {
+      id: actor.id,
+      organizationId,
+      userId,
+      role: "admin",
+      createdAt: actor.createdAt,
+    },
+    { strict: true },
+  );
+
   await prisma.$transaction([
     prisma.member.update({
       where: { id: actor.id },
@@ -221,6 +261,14 @@ export async function transferOwnership(newOwnerId: string) {
       data: { role: "owner" },
     }),
   ]);
+
+  await upsertMemberMirror({
+    id: newOwner.id,
+    organizationId,
+    userId: newOwnerId,
+    role: "owner",
+    createdAt: newOwner.createdAt,
+  });
 
   return { success: true };
 }

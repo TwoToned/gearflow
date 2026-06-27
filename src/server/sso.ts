@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
+import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
 import { env } from "@/env";
 import type { OrgSettings } from "./settings";
@@ -344,6 +345,9 @@ export async function approveSSOUser(approvalId: string, role?: string) {
     entityName: approval.email,
     summary: `Approved SSO user ${approval.email} with role ${assignRole}`,
   });
+
+  // Additive (membership granted): mirror best-effort after the Prisma commit.
+  await upsertMemberMirrorByOrgUser(organizationId, approval.userId);
 
   // Send email notification
   const pName = await getPlatformName();

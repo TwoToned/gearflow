@@ -1,6 +1,7 @@
 import { getModelMap } from "@/lib/models-read";
-import { getActiveAssetsByModel, getActiveBulkAssetsByModel } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import {
   getOrgLineItems,
   indexProjectsById,
@@ -114,14 +115,29 @@ export async function computeOverbookedStatus(
   const { totalByModel: totalBookedByModel, thisProjectByModel: thisProjectBookedByModel } =
     sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
 
-  // Batch fetch model metadata + active assets/bulkAssets from Convex in parallel.
-  const convexModelMap = await getModelMap(organizationId);
-  const [assetsByModel, bulksByModel] = await Promise.all([
-    Promise.all(modelIds.map(async (id) => [id, await getActiveAssetsByModel(id, organizationId)] as const)),
-    Promise.all(modelIds.map(async (id) => [id, await getActiveBulkAssetsByModel(id, organizationId)] as const)),
+  // Batch fetch model metadata + active assets/bulkAssets from Convex. Was an N+1:
+  // one assets.listByModel + one bulkAssets.listByModel round-trip PER model (so a
+  // projects view spanning N models fired 2N Convex queries). Now two batched
+  // queries that do all the per-model by_modelId scans server-side in one trip
+  // each, grouped here (replicating getActive*ByModel's `isActive !== false`).
+  const convex = await getConvexClient();
+  const [convexModelMap, assetsAll, bulksAll] = await Promise.all([
+    getModelMap(organizationId),
+    convex.query(api.assets.listByModelIds, { orgId: organizationId, modelIds }),
+    convex.query(api.bulkAssets.listByModelIds, { orgId: organizationId, modelIds }),
   ]);
-  const assetMap = new Map(assetsByModel);
-  const bulkMap = new Map(bulksByModel);
+  const assetMap = new Map<string, typeof assetsAll>();
+  for (const a of assetsAll) {
+    if (!a.modelId || a.isActive === false) continue;
+    const arr = assetMap.get(a.modelId);
+    if (arr) arr.push(a); else assetMap.set(a.modelId, [a]);
+  }
+  const bulkMap = new Map<string, typeof bulksAll>();
+  for (const b of bulksAll) {
+    if (!b.modelId || b.isActive === false) continue;
+    const arr = bulkMap.get(b.modelId);
+    if (arr) arr.push(b); else bulkMap.set(b.modelId, [b]);
+  }
 
   const stockByModel = new Map<string, number>();
   const effectiveStockByModel = new Map<string, number>();

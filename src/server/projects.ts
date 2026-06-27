@@ -423,24 +423,39 @@ export async function getProject(id: string) {
   if (!projectScalars) return null;
 
   const convexForProject = await getConvexClient();
-  const pmRows = await convexForProject.query(api.projectManagers.listByProject, {
-    projectId: id,
-    orgId: organizationId,
-  });
-  // Order by addedAt asc (mirrors the dropped Prisma `orderBy: { addedAt: "asc" }`).
+
+  // WAVE 1 — every independent read in parallel (was ~5 SEQUENTIAL round-trips:
+  // pmRows → media → location → equipment tree → client). At this app's data scale
+  // the cost is round-trip COUNT × RTT, not payload, so collapsing the sequential
+  // waterfall is the win.
+  const [pmRows, media0, locationMap, equipmentTree, client] = await Promise.all([
+    convexForProject.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
+    getProjectMediaFromConvex(id),
+    projectScalars.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
+    // The whole equipment composition (categories → groups → lineItems → children →
+    // units, with model/supplier/asset/bulkAsset/kit attached) — keystone reader.
+    buildProjectEquipmentTree(id, organizationId),
+    projectScalars.clientId ? getClientById(projectScalars.clientId) : Promise.resolve(null),
+  ]);
+  const media = withResolvedFile(media0);
+  const { categories, lineItems: topLineItems } = equipmentTree;
+
+  // WAVE 2 — pmUsers (needs pmRows' ids) + overbooking (needs the line-item tree),
+  // independent of each other → parallel.
   const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
   const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
-  // NOTE: left as a prisma.user join (NOT yet moved to the Convex users mirror).
-  // The project page assumes pm.user is non-null (reads pm.user.id), so a
-  // best-effort-mirror gap would crash it — this one waits for the surface
-  // conversion PR (page null-guard / guaranteed mirror) rather than a standalone
-  // swap. kits/warehouse `scannedBy` are null-safe and already moved.
-  const pmUsers = pmUserIds.length > 0
-    ? await prisma.user.findMany({
-        where: { id: { in: pmUserIds } },
-        select: { id: true, name: true, email: true, image: true },
-      })
-    : [];
+  // NOTE: pm.user left as a prisma.user join (NOT the Convex mirror): the project
+  // page reads pm.user.id non-null, so a best-effort-mirror gap would crash it —
+  // waits for the surface-conversion PR.
+  const [pmUsers, overbookedMap] = await Promise.all([
+    pmUserIds.length > 0
+      ? prisma.user.findMany({
+          where: { id: { in: pmUserIds } },
+          select: { id: true, name: true, email: true, image: true },
+        })
+      : Promise.resolve([] as Array<{ id: string; name: string; email: string; image: string | null }>),
+    computeOverbookedStatus(organizationId, topLineItems, projectScalars.rentalStartDate, projectScalars.rentalEndDate, id),
+  ]);
   const pmUserMap = new Map(pmUsers.map((u) => [u.id, u]));
   const projectManagers = sortedPmRows.map((pm) => ({
     id: pm.id,
@@ -453,21 +468,13 @@ export async function getProject(id: string) {
 
   const projectRow = { ...projectScalars, projectManagers };
 
-  // project media gallery now from the Convex mirror (dual-written → identical
-  // data); was a Prisma projectMedia + file join. See media-read.ts.
-  const media = withResolvedFile(await getProjectMediaFromConvex(projectRow.id));
-
-  // Location FK was dropped (Phase B) — reconstruct `location` (with its parent)
-  // from the Convex mirror, replacing the old `include: { location: { include:
-  // { parent } } }`. Returns the Prisma-row business shape (mapLocation) so the
-  // address/lat/long inheritance below behaves identically.
+  // Location (with parent) reconstructed from the wave-1 locationMap.
   let location:
     | (import("@/lib/locations-read").MappedLocation & {
         parent: import("@/lib/locations-read").MappedLocation | null;
       })
     | null = null;
-  if (projectRow.locationId) {
-    const locationMap = await getLocationMap(organizationId);
+  if (projectRow.locationId && locationMap) {
     const locDoc = locationMap.get(projectRow.locationId);
     if (locDoc) {
       const loc = mapLocation(locDoc);
@@ -490,22 +497,6 @@ export async function getProject(id: string) {
     }
   }
 
-  // The whole equipment composition (categories → groups → lineItems →
-  // childLineItems → units, with model/supplier/asset/bulkAsset/kit attached) is
-  // reconstructed from the dual-written Convex tables in JS — keystone reader.
-  const { categories, lineItems: topLineItems } = await buildProjectEquipmentTree(
-    project.id,
-    organizationId,
-  );
-
-  const overbookedMap = await computeOverbookedStatus(
-    organizationId,
-    topLineItems,
-    project.rentalStartDate,
-    project.rentalEndDate,
-    project.id,
-  );
-
   const enrichedLineItems = topLineItems.map((li) => {
     const info = overbookedMap.get(li.id);
     return {
@@ -523,8 +514,7 @@ export async function getProject(id: string) {
     };
   });
 
-  // Clients live in Convex — attach instead of a Prisma join.
-  const client = project.clientId ? await getClientById(project.clientId) : null;
+  // `client` fetched in wave 1 (Convex), attached here.
   return serialize({ ...project, categories, client, lineItems: enrichedLineItems });
 }
 

@@ -297,22 +297,22 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
       const result = await readBackLine(existing.id);
 
-      await recalculateProjectTotals(projectId);
-
-      // Model lives in Convex — enrich after update.
-      const mergedModel = result?.modelId ? await getModelById(result.modelId) : null;
-
-      await logActivity({
-        organizationId,
-        userId,
-        userName,
-        action: "UPDATE",
-        entityType: "lineItem",
-        entityId: existing.id,
-        entityName: result?.description || `Line item`,
-        summary: `Merged line item into existing on project (qty ${oldQuantity} -> ${newQuantity})`,
-        projectId,
-      });
+      // Post-write tail in parallel (recalc + model enrich + best-effort audit).
+      const [, mergedModel] = await Promise.all([
+        recalculateProjectTotals(projectId),
+        result?.modelId ? getModelById(result.modelId).catch(() => null) : Promise.resolve(null),
+        logActivity({
+          organizationId,
+          userId,
+          userName,
+          action: "UPDATE",
+          entityType: "lineItem",
+          entityId: existing.id,
+          entityName: result?.description || `Line item`,
+          summary: `Merged line item into existing on project (qty ${oldQuantity} -> ${newQuantity})`,
+          projectId,
+        }),
+      ]);
 
       return serialize({ ...result, model: mergedModel, _merged: true, _newQuantity: newQuantity });
     }
@@ -408,34 +408,37 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     });
   }
 
-  await recalculateProjectTotals(projectId);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "lineItem",
-    entityId: result.id,
-    entityName: result.description || `Line item`,
-    summary: `Added line item to project`,
-    projectId,
-  });
-
-  await writeCollabActivityEvent(
-    { organizationId, userId, userName },
-    {
-      entityType: "project",
-      entityId: projectId,
-      action: "line_item_added",
-      summary: `added ${result.description || "a line item"}`,
-      targetType: "lineItem",
-      targetId: result.id,
-    },
-  );
-
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+  // Post-write tail in parallel (recalc + best-effort audit + collab + supplier
+  // enrich). Group suggested-price above already settled before recalc.
+  const [, , , supplier] = await Promise.all([
+    recalculateProjectTotals(projectId),
+    logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: result.id,
+      entityName: result.description || `Line item`,
+      summary: `Added line item to project`,
+      projectId,
+    }),
+    writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: projectId,
+        action: "line_item_added",
+        summary: `added ${result.description || "a line item"}`,
+        targetType: "lineItem",
+        targetId: result.id,
+      },
+    ),
+    // Best-effort enrich: a decorative supplier-read failure must not abort an
+    // already-committed write (would risk a duplicate add on retry) — recalc is
+    // the only rejection path in this wave.
+    result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
+  ]);
   return serialize({ ...result, supplier });
 }
 
@@ -639,38 +642,37 @@ export async function updateLineItem(
 
   const result = (await readBackLine(id))!;
 
-  await recalculateProjectTotals(result.projectId);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "lineItem",
-    entityId: result.id,
-    entityName: result.description || `Line item`,
-    summary: `Updated line item on project`,
-    projectId: result.projectId,
-  });
-
-  await writeCollabActivityEvent(
-    { organizationId, userId, userName },
-    {
-      entityType: "project",
-      entityId: result.projectId,
-      action: "line_item_updated",
-      summary: `updated ${result.description || "a line item"}`,
-      targetType: "lineItem",
-      targetId: result.id,
-      metadata: {
-        quantity: result.quantity,
-        lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
+  // Post-write tail in parallel (recalc + best-effort audit + collab + supplier enrich).
+  const [, , , supplier] = await Promise.all([
+    recalculateProjectTotals(result.projectId),
+    logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: result.id,
+      entityName: result.description || `Line item`,
+      summary: `Updated line item on project`,
+      projectId: result.projectId,
+    }),
+    writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: result.projectId,
+        action: "line_item_updated",
+        summary: `updated ${result.description || "a line item"}`,
+        targetType: "lineItem",
+        targetId: result.id,
+        metadata: {
+          quantity: result.quantity,
+          lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
+        },
       },
-    },
-  );
-
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+    ),
+    result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
+  ]);
   return serialize({ ...result, supplier });
 }
 
@@ -775,22 +777,24 @@ export async function addKitLineItem(
 
   const parentItem = (await readBackLine(parentId))!;
 
-  await recalculateProjectTotals(projectId);
-
-  if (emitActivity) {
-    const memberCount = kit.serializedItems.length + kit.bulkItems.length;
-    await writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: projectId,
-        action: "kit_added",
-        summary: `added kit "${parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
-        targetType: "lineItem",
-        targetId: parentItem.id,
-      },
-    );
-  }
+  // Post-write tail in parallel (recalc + best-effort collab feed).
+  const memberCount = kit.serializedItems.length + kit.bulkItems.length;
+  await Promise.all([
+    recalculateProjectTotals(projectId),
+    emitActivity
+      ? writeCollabActivityEvent(
+          { organizationId, userId, userName },
+          {
+            entityType: "project",
+            entityId: projectId,
+            action: "kit_added",
+            summary: `added kit "${parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
+            targetType: "lineItem",
+            targetId: parentItem.id,
+          },
+        )
+      : Promise.resolve(),
+  ]);
 
   return serialize(parentItem);
 }
@@ -846,31 +850,32 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
 
   const result = (await readBackLine(customId))!;
 
-  await recalculateProjectTotals(projectId);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "lineItem",
-    entityId: result.id,
-    entityName: parsed.description,
-    summary: `Added custom item "${parsed.description}" to project`,
-    projectId,
-  });
-
-  await writeCollabActivityEvent(
-    { organizationId, userId, userName },
-    {
-      entityType: "project",
-      entityId: projectId,
-      action: "custom_item_added",
-      summary: `added custom item "${parsed.description}"`,
-      targetType: "lineItem",
-      targetId: result.id,
-    },
-  );
+  // Post-write tail in parallel (recalc + best-effort audit + collab feed).
+  await Promise.all([
+    recalculateProjectTotals(projectId),
+    logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: result.id,
+      entityName: parsed.description,
+      summary: `Added custom item "${parsed.description}" to project`,
+      projectId,
+    }),
+    writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: projectId,
+        action: "custom_item_added",
+        summary: `added custom item "${parsed.description}"`,
+        targetType: "lineItem",
+        targetId: result.id,
+      },
+    ),
+  ]);
 
   return serialize(result);
 }
@@ -910,31 +915,34 @@ export async function removeLineItem(id: string) {
   // (+ their units) and the parent (+ its units) atomically in one Convex
   // mutation.
   await convex.mutation(api.projectLineItems.removeLineItemCascade, { id });
-  await recalculateProjectTotals(item.projectId);
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "lineItem",
-    entityId: id,
-    entityName: item.description || `Line item`,
-    summary: `Removed line item from project`,
-    projectId: item.projectId,
-  });
-
-  await writeCollabActivityEvent(
-    { organizationId, userId, userName },
-    {
-      entityType: "project",
-      entityId: item.projectId,
-      action: "line_item_removed",
-      summary: `removed ${item.description || "a line item"}`,
-      targetType: "lineItem",
-      targetId: id,
-    },
-  );
+  // Post-delete tail in parallel — recalc + audit log + collab feed are independent
+  // (logActivity/writeCollabActivityEvent are best-effort and never throw).
+  await Promise.all([
+    recalculateProjectTotals(item.projectId),
+    logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: item.description || `Line item`,
+      summary: `Removed line item from project`,
+      projectId: item.projectId,
+    }),
+    writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: item.projectId,
+        action: "line_item_removed",
+        summary: `removed ${item.description || "a line item"}`,
+        targetType: "lineItem",
+        targetId: id,
+      },
+    ),
+  ]);
 
   return serialize({ success: true });
 }

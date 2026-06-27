@@ -23,6 +23,87 @@ work that should be a scoped, indexed, paginated read." All findings below carry
 
 ---
 
+# ⟳ STATUS & RE-EVALUATION (2026-06-27)
+
+The original plan + autoplan review below are the design-of-record. This section is the
+**current truth**: what shipped, what dogfooding surfaced, the research-backed root-cause
+framing, and the revised priority order. Read this first.
+
+## Shipped to prod (main)
+| PR | What | Effect |
+|----|------|--------|
+| #276 | iCal `getByIcalToken` indexed (#9) | closed an externally-triggerable cross-org scan (DoS) |
+| #282 | **Keystone**: `getKit`/`getAsset` scoped to the entity (#2) + `by_projectId_status` index (#5) | detail reads went O(org inventory) → O(entity) |
+| #283 | **Add/edit-item N+1 fix** (line-items) + **projects-view per-model N+1** (availability) + warehouse de-dup (#6a) | killed the "~1 min / hundreds of calls" add/edit hang and the `assets:listByModel` wall on the projects view |
+
+## New findings from dogfooding (were NOT in the original plan)
+- **F-A. Add/edit a project item = hundreds of calls (`line-items.ts`).** `addLineItem` /
+  `updateLineItem` / `checkAvailability` ran their double-booking & availability checks with
+  a **per-unit `getById` loop** over the org's **entire** unit table, plus **whole-org
+  `projectLineItems.list` at 5 sites**. → fixed in #283 (new scoped queries
+  `listByOrgAndAsset`, `listByModelId`; batched the loop). **This is the same class as #2 —
+  a server action doing the fan-out as N network calls instead of one scoped read.**
+- **F-B. Projects view = per-model `listByModel` fan-out.** `computeOverbookedStatus` fired
+  `assets.listByModel` + `bulkAssets.listByModel` **per model** (2N round-trips). → fixed in
+  #283 with batched `listByModelIds` (2N → 2).
+- **F-C. The fixes are not whack-a-mole — they're all the same root cause** (below). There
+  are almost certainly more instances (`getProject` composite is the prime suspect, next).
+
+## Research-backed root cause (deep-research, 2026-06-27 — cited)
+**The slowness is a Prisma→Convex *port artifact*, not "Convex is slow."** Verified math
+(primary sources: graphql/dataloader, graphql-js.org, Shopify Engineering):
+- **N+1 = 1 parent query + N child queries.** The count scales **linearly with data** (50
+  rows → 51 round-trips; 1,000 → 1,001). **Total wait ≈ round-trip count × RTT.** At
+  ~20 ms/trip, a few hundred sequential trips = **seconds**. That is exactly what we see.
+- **In Prisma/SQL, one logical read = one round-trip** — the JOIN happens *inside Postgres*
+  (microseconds). **The port turned each `include`/relation/`findMany` loop into a separate
+  Convex *network* query**, so 1 round-trip + internal joins became dozens of network trips.
+  Same data, ~50× the trips. The thin `*-read.ts` wrappers called in `.map()` loops are the
+  fingerprint.
+- **Canonical fix (cited): resolve/join on the server, return ONE payload.** DataLoader-style
+  batching collapses "4 round-trips → at most 2"; an 11-query fan-out → 1. Deterministic, not
+  a benchmark.
+- **Convex-native form of the fix** (Convex docs / Stack — search-surfaced, lighter citation
+  due to a rate-limited verification pass, but established): do the fan-out **inside one query
+  function** (reads there are backend-local microseconds, not network) using the relationship
+  helpers (`getAll`/`getManyFrom`/`getManyVia` + `Promise.all`); use `@convex-dev/aggregate`
+  for counts/sums (O(log N), incrementally maintained); use Convex **optimistic updates** and
+  the "Help, my app is overreacting" guidance for the reactive/refetch storm.
+  Refs: stack.convex.dev/functional-relationships-helpers · convex.dev/components/aggregate ·
+  docs.convex.dev/client/react/optimistic-updates · stack.convex.dev/help-my-app-is-overreacting.
+- **Why Linear/Figma feel instant** (local-first; established, lightly cited here): the action
+  doesn't round-trip at all — optimistic **local write** + normalized client cache + background
+  sync. The per-action round-trip is off the critical path.
+
+## The three levers (everything reduces to these)
+1. **Move per-row/per-model loops INTO one Convex query function** (server-side fan-out → one
+   payload). Biggest, lowest-risk, proven (#2, #283). **More to do — audit every `src/server/*`
+   composite for whole-org `.list` + `.map(query)` loops; `getProject` next.**
+2. **Delete the version-vector → server-action waterfall; use native Convex `useQuery`
+   subscriptions.** Native subs push only what changed, incrementally, no per-tick server
+   roundtrip, no double-refetch. The research's own open question landed here independently:
+   *"is the manual refetch a porting artifact to delete?"* — yes. Blocker = the Better-Auth user
+   join → the **user-mirror unlock** (T1 spike #281).
+3. **Optimistic updates so writes feel instant** — Convex `optimisticUpdate` (light) up to the
+   full local-first tier (the Linear bar the user is asking for).
+
+## Revised priority order (supersedes "Recommended sequencing" below)
+1. **DONE** — #2 keystone, #5 index, #9 iCal, F-A/F-B add-edit + projects-view N+1 (#283).
+2. **`getProject` composite + a sweep of `src/server/*` for the same whole-org-read / N+1-loop
+   pattern** (lever 1). Same quick, high-confidence scoping fix; `getProject` is the shared
+   post-write refetch path behind add/edit/**delete**. ← **NEXT.**
+3. **User-mirror → kill the version-vector waterfall** (lever 2, T1 spike #281). The
+   architectural root-cause fix; makes detail pages pure incremental subscriptions and removes
+   the double-refetch entirely. Biggest structural win.
+4. **Optimistic updates** (lever 3) once #2/#3 land — the "pretty much instant" bar.
+5. **Asset-list pagination** (Phase 2 / T3 denormalize+searchIndex) — still valid; lower
+   urgency than the write-path/refetch storm the user actually hits.
+6. **Infra debt:** the **~18 warehouse/category integration tests broken on shared dev** block
+   validating warehouse work (and #6b) — worth a focused fix.
+7. **Deferred:** #6b nested-kit (blocked on test env), #3 double-refetch (subsumed by lever 2).
+
+---
+
 ## The smoking gun, in one example
 
 Open one kit detail page and edit one field. Here's what happens:
@@ -385,6 +466,10 @@ naturally with dropping the doubled refetch (Part 1 #3). Medium effort, high "fe
 ---
 
 ## Recommended sequencing
+
+> **⚠️ SUPERSEDED by "STATUS & RE-EVALUATION (2026-06-27)" at the top of this doc.** The
+> ordering below was the pre-implementation plan; #2/#5/#9 + the dogfooding N+1s have since
+> shipped, and the research reframed the work around the 3 levers. Kept for history.
 
 **Rewritten after the autoplan review (premise gate: "Part 1 first, gate Part 2").** Measure
 first, ship the backend foundation + skeletons, prove it with numbers, then decide whether

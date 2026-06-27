@@ -37,18 +37,26 @@ export async function writeCollabActivityEvent(
   actor: CollabActivityActor,
   event: CollabActivityEvent,
 ): Promise<void> {
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.logActivityEvent, {
-    orgId: actor.organizationId,
-    actorUserId: actor.userId,
-    actorName: actor.userName,
-    actorColor: getUserColor(actor.userId),
-    entityType: event.entityType,
-    entityId: event.entityId,
-    targetType: event.targetType,
-    targetId: event.targetId,
-    action: event.action,
-    summary: event.summary,
-    metadata: event.metadata,
-  });
+  // Best-effort (mirrors logActivity): the realtime collaboration feed is
+  // non-critical, so a failure here must never fail the surrounding write — and
+  // this lets callers run it concurrently with recalc/audit in the post-write tail
+  // without a throw aborting the action.
+  try {
+    const convex = await getConvexClient();
+    await convex.mutation(api.collaboration.logActivityEvent, {
+      orgId: actor.organizationId,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: getUserColor(actor.userId),
+      entityType: event.entityType,
+      entityId: event.entityId,
+      targetType: event.targetType,
+      targetId: event.targetId,
+      action: event.action,
+      summary: event.summary,
+      metadata: event.metadata,
+    });
+  } catch (error) {
+    console.error("Failed to write collab activity event:", error);
+  }
 }

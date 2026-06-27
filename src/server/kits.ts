@@ -177,13 +177,14 @@ export async function getKit(id: string) {
   const bulkAssetMap = new Map(memberBulkAssets.map((b) => [b.id, mapConvexBulkAssetToPrisma(b)]));
 
 
-  // Location + Category FKs were dropped (Phase B); attach both from the Convex mirror.
-  const location = kit.locationId
-    ? (await getLocationMap(organizationId)).get(kit.locationId) ?? null
-    : null;
-  const category = kit.categoryId
-    ? (await getCategoryMap(organizationId)).get(kit.categoryId) ?? null
-    : null;
+  // Location + Category FKs were dropped (Phase B); attach both from the Convex
+  // mirror — the two maps in one parallel wave (were two sequential round-trips).
+  const [kitLocationMap, kitCategoryMap] = await Promise.all([
+    kit.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
+    kit.categoryId ? getCategoryMap(organizationId) : Promise.resolve(null),
+  ]);
+  const location = kit.locationId && kitLocationMap ? kitLocationMap.get(kit.locationId) ?? null : null;
+  const category = kit.categoryId && kitCategoryMap ? kitCategoryMap.get(kit.categoryId) ?? null : null;
 
   // A member whose asset is absent from the mirror is anomalous (the Prisma FK
   // join always returned the asset) — drop it rather than surface a null asset.

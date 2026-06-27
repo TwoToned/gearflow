@@ -140,6 +140,10 @@ export async function getAsset(id: string) {
 
   // Composite sub-reads — all from Convex (asset/projectLineItem/assetBulkChild
   // are Convex-only; media/maintenance/testTag/scanLog already mirrored).
+  // ONE parallel wave for EVERYTHING that needs only org + the asset scalars (was 3
+  // sequential waves). The model-map / supplier / maintenance / model-media /
+  // model-accessory reads only depend on asset.modelId/supplierId (known above), so
+  // they fold in here; only `projects` (below) needs this wave's line-item rows.
   const [
     media,
     childAssetDocs,
@@ -149,6 +153,11 @@ export async function getAsset(id: string) {
     testTagDocs,
     maintenanceLinks,
     parentAssetDoc,
+    modelMap,
+    supplier,
+    maintenanceRecords,
+    modelMediaRows,
+    modelBulkAccessoriesRaw,
   ] = await Promise.all([
     getAssetMediaFromConvex(id),
     convex.query(api.assets.listByParentAssetId, { parentAssetId: id, orgId: organizationId }),
@@ -158,6 +167,13 @@ export async function getAsset(id: string) {
     convex.query(api.testTagAssets.listByAssetId, { assetId: id }),
     convex.query(api.maintenanceRecordAssets.listByAssetIds, { assetIds: [id] }),
     asset.parentAssetId ? getAssetById(asset.parentAssetId) : Promise.resolve(null),
+    getModelWithCategoryMap(organizationId),
+    asset.supplierId ? getSupplierById(asset.supplierId) : Promise.resolve(null),
+    getMaintenanceRecordsByOrg(organizationId),
+    asset.modelId ? getModelMediaFromConvex(asset.modelId) : Promise.resolve([]),
+    asset.modelId
+      ? convex.query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
+      : Promise.resolve([]),
   ]);
 
   // Line items are already asset-scoped (listByAssetId). Order + take 20 now so we
@@ -170,24 +186,11 @@ export async function getAsset(id: string) {
     ...new Set(orderedLineItemDocs.map((li) => li.projectId).filter((p): p is string => !!p)),
   ];
 
-  // Model (+ category) + supplier + referenced projects + maintenance records (Convex).
-  // (maintenanceRecords stays org-wide for now — a by-asset scoped read is a follow-up.)
-  const [modelMap, supplier, projects, maintenanceRecords] = await Promise.all([
-    getModelWithCategoryMap(organizationId),
-    asset.supplierId ? getSupplierById(asset.supplierId) : null,
-    lineProjectIds.length
-      ? convex.query(api.projects.listByIds, { orgId: organizationId, ids: lineProjectIds })
-      : Promise.resolve([]),
-    getMaintenanceRecordsByOrg(organizationId),
-  ]);
-
-  // Model media (gallery) + the model's bulk accessories — both Convex.
-  const [modelMediaRows, modelBulkAccessoriesRaw] = await Promise.all([
-    asset.modelId ? getModelMediaFromConvex(asset.modelId) : Promise.resolve([]),
-    asset.modelId
-      ? convex.query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
-      : Promise.resolve([]),
-  ]);
+  // Only the referenced projects depend on this request's line items (the kit-scoped
+  // lineProjectIds derived above) — everything else was folded into the wave above.
+  const projects = lineProjectIds.length
+    ? await convex.query(api.projects.listByIds, { orgId: organizationId, ids: lineProjectIds })
+    : [];
 
   const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
 

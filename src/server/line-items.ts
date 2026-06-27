@@ -158,12 +158,16 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         });
       }
     } else {
-      // Model-level — check quantity against available stock
-      // Model + active assets live in Convex — fetch in parallel.
-      const [model, activeAssets, activeBulkAssets] = await Promise.all([
+      // Model-level — check quantity against available stock.
+      // ONE parallel wave for all enforcement reads (was 3 sequential round-trips:
+      // model/assets/bulks → modelLines → projects). projects only when dated.
+      const convexEnf = await getConvexClient();
+      const [model, activeAssets, activeBulkAssets, modelLines, modelAllProjects] = await Promise.all([
         getModelById(parsed.modelId),
         getActiveAssetsByModel(parsed.modelId, organizationId),
         getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+        convexEnf.query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId }),
+        hasDates ? getProjectsByOrg(organizationId) : Promise.resolve(null),
       ]);
 
       // WHY: For model-level (non-specific) adds, enforce against effective
@@ -178,16 +182,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
-        // Scoped to THIS model (was: collect every line item in the org, then
-        // JS-filter to the model).
-        const modelLines = await (await getConvexClient()).query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId });
         let overlapping;
         if (hasDates) {
           const projStartMs = convexProject.rentalStartDate as number;
           const projEndMs = convexProject.rentalEndDate as number;
-          const modelAllProjects = await getProjectsByOrg(organizationId);
           const modelConflictProjectIds = new Set(
-            modelAllProjects
+            modelAllProjects!
               .filter(
                 (p) =>
                   !p.isTemplate &&
@@ -498,11 +498,15 @@ export async function updateLineItem(
     const updateConvexProject = await getProjectById(existing.projectId);
     const hasDates = updateConvexProject?.rentalStartDate != null && updateConvexProject?.rentalEndDate != null;
 
-    // Model + active assets live in Convex — fetch in parallel.
-    const [model, activeAssets, activeBulkAssets] = await Promise.all([
+    // ONE parallel wave for all enforcement reads (was 3 sequential round-trips:
+    // model/assets/bulks → modelLines → projects). projects only when dated.
+    const convexEnf = await getConvexClient();
+    const [model, activeAssets, activeBulkAssets, modelLines, updateAllProjects] = await Promise.all([
       getModelById(parsed.modelId),
       getActiveAssetsByModel(parsed.modelId, organizationId),
       getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+      convexEnf.query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId }),
+      hasDates ? getProjectsByOrg(organizationId) : Promise.resolve(null),
     ]);
 
     if (model) {
@@ -511,15 +515,12 @@ export async function updateLineItem(
         assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
         bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
       };
-      // Scoped to THIS model (was: collect every line item in the org).
-      const modelLines = await (await getConvexClient()).query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId });
       let overlapping;
       if (hasDates) {
         const projStartMs = updateConvexProject!.rentalStartDate as number;
         const projEndMs = updateConvexProject!.rentalEndDate as number;
-        const updateAllProjects = await getProjectsByOrg(organizationId);
         const updateConflictProjectIds = new Set(
-          updateAllProjects
+          updateAllProjects!
             .filter(
               (p) =>
                 !p.isTemplate &&
@@ -1280,11 +1281,21 @@ export async function recalculateProjectTotals(projectId: string) {
   const project = await getProjectById(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
 
+  const orgId = project.organizationId;
   const convex = await getConvexClient();
-  // Groups + line items both live in Convex — read both, compute revenue in JS.
-  const [groups, projectLines] = await Promise.all([
-    convex.query(api.projectGroups.listByProject, { projectId, orgId: project.organizationId }),
-    convex.query(api.projectLineItems.listByProject, { projectId, orgId: project.organizationId }),
+  // EVERY add/edit/delete runs this. All six reads are independent → ONE parallel
+  // wave (was ~5 SEQUENTIAL round-trips: groups/lines → services → assignments →
+  // subHires → a conditional org-tax read). This is the common write-latency tail.
+  const needsOrgTax = project.taxRate == null;
+  const [groups, projectLines, allOrgServices, assignments, allSubHires, orgTaxRow] = await Promise.all([
+    convex.query(api.projectGroups.listByProject, { projectId, orgId }),
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId }),
+    getProjectServicesByOrg(orgId),
+    getAssignmentsByProject(projectId, orgId),
+    getSubHiresByProject(projectId, orgId),
+    needsOrgTax
+      ? prisma.organization.findUnique({ where: { id: orgId }, select: { defaultTaxRate: true } })
+      : Promise.resolve(null),
   ]);
 
   // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
@@ -1324,7 +1335,7 @@ export async function recalculateProjectTotals(projectId: string) {
   // 3. Service financials. project_service is Convex-only — read the org's
   // services and filter to this project's non-CANCELLED rows in JS (replaces the
   // Prisma findMany by projectId + status != CANCELLED).
-  const services = (await getProjectServicesByOrg(project.organizationId)).filter(
+  const services = allOrgServices.filter(
     (s) => s.projectId === projectId && s.status !== "CANCELLED",
   );
 
@@ -1340,16 +1351,15 @@ export async function recalculateProjectTotals(projectId: string) {
       .reduce((sum, s) => sum + (s.lineTotal != null ? Number(s.lineTotal) : 0), 0)
   );
 
-  // 4. Labour costs from crew assignments (read from Convex — dual-written)
-  const assignments = await getAssignmentsByProject(projectId, project.organizationId);
-
+  // 4. Labour costs from crew assignments (read from Convex — dual-written;
+  // fetched in the parallel wave above).
   const labourCostTotal = roundCurrency(
     assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
   );
 
   // 5. Sub-hire costs (what we pay suppliers) — sub-hires are dual-written; read
   // from Convex and filter out CANCELLED/DRAFT in JS.
-  const subHires = (await getSubHiresByProject(projectId, project.organizationId)).filter(
+  const subHires = allSubHires.filter(
     (sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT",
   );
 
@@ -1363,18 +1373,13 @@ export async function recalculateProjectTotals(projectId: string) {
   const discountAmount = roundCurrency(subtotal * (discountPercent / 100));
   const taxableAmount = roundCurrency(subtotal - discountAmount);
 
-  // Tax rate: project override → org default → 10%
+  // Tax rate: project override → org default → 10% (org default fetched in the
+  // parallel wave above, only when the project has no override).
   let taxRate = 10;
   if (project.taxRate != null) {
     taxRate = Number(project.taxRate);
-  } else {
-    const org = await prisma.organization.findUnique({
-      where: { id: project.organizationId },
-      select: { defaultTaxRate: true },
-    });
-    if (org?.defaultTaxRate != null) {
-      taxRate = Number(org.defaultTaxRate);
-    }
+  } else if (orgTaxRow?.defaultTaxRate != null) {
+    taxRate = Number(orgTaxRow.defaultTaxRate);
   }
 
   const taxAmount = roundCurrency(taxableAmount * (taxRate / 100));

@@ -45,6 +45,23 @@ export const listByProject = query({
   },
 });
 
+/**
+ * Scan logs for ONE kit (via by_kitId), org-filtered. Replaces the org-wide
+ * assetScanLogs.list + JS `.filter(kitId === id)` in the getKit composite. Returns
+ * raw rows; ordering/limit (scannedAt desc, take 20) stays in the caller.
+ */
+export const listByKitId = query({
+  args: { orgId: v.string(), kitId: v.string() },
+  handler: async (ctx, { orgId, kitId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db
+      .query("assetScanLogs")
+      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
+      .collect();
+    return rows.filter((r) => r.organizationId === orgId);
+  },
+});
+
 /** List scan logs for a single asset within an org. */
 export const listByOrgAndAsset = query({
   args: { orgId: v.string(), assetId: v.string() },

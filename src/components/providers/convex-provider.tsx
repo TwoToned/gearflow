@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache";
 import { authClient } from "@/lib/auth-client";
 import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
 
@@ -19,8 +20,21 @@ import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
  * docs/designs/convex-phase5-auth-bridge.md.
  *
  * Inert if NEXT_PUBLIC_CONVEX_URL is unset (a deploy without the backend).
+ *
+ * Phase 0 (native read layer): wrapped in ConvexQueryCacheProvider from
+ * convex-helpers so a query subscription survives unmount for a bounded window —
+ * back-navigation reloads instantly instead of paying a cold round trip. This is
+ * additive: it only affects call sites that opt in by importing the cached hooks
+ * from "convex-helpers/react/cache"; the default `useQuery` from "convex/react"
+ * is unchanged. See docs/designs/convex-native-read-layer.md (Phase 0).
  */
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+
+// Bounded cache: keep an unmounted subscription alive for 5 minutes, cap the
+// number of idle (unmounted-but-retained) entries so a long session can't grow
+// the open-subscription set without limit.
+const CACHE_EXPIRATION_MS = 5 * 60 * 1000;
+const CACHE_MAX_IDLE_ENTRIES = 250;
 
 /**
  * Bridges Better Auth → Convex. `fetchAccessToken` returns the current user's
@@ -74,7 +88,12 @@ export function ConvexClientProvider({
 
   return (
     <ConvexProviderWithAuth client={client} useAuth={useBetterAuthForConvex}>
-      {children}
+      <ConvexQueryCacheProvider
+        expiration={CACHE_EXPIRATION_MS}
+        maxIdleEntries={CACHE_MAX_IDLE_ENTRIES}
+      >
+        {children}
+      </ConvexQueryCacheProvider>
     </ConvexProviderWithAuth>
   );
 }

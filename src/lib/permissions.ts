@@ -2,42 +2,36 @@
  * Role-based permission system for GearFlow.
  *
  * Two types of roles:
- * 1. Built-in roles (owner, admin, manager, member, staff, warehouse, viewer)
+ * 1. Built-in roles (owner, admin, manager, member, warehouse, viewer)
  *    — static defaults, always available.
  * 2. Custom roles (stored per-org in the custom_role table)
  *    — role string is "custom:<id>", permissions stored as JSON.
  *
- * The PERMISSION_REGISTRY defines every resource and its possible actions.
- * This is the single source of truth for the permission matrix UI.
+ * The pure RBAC logic (RESOURCES, rolePermissions, hasPermission, …) now lives in
+ * `convex/lib/permissions-core.ts` so it can be imported by BOTH this Next.js
+ * server module and Convex functions — one source of truth for permission checks
+ * (Phase 0 of the native read layer; see docs/designs/convex-native-read-layer.md).
+ * This file re-exports that core and adds the UI-only pieces (the matrix registry
+ * and display labels) that Convex never needs.
  */
 
-export const RESOURCES = [
-  "asset",
-  "bulkAsset",
-  "model",
-  "kit",
-  "project",
-  "client",
-  "warehouse",
-  "testTag",
-  "maintenance",
-  "location",
-  "document",
-  "orgSettings",
-  "orgMembers",
-  "supplier",
-  "subHire",
-  "crew",
-  "reports",
-  "checkItem",
-] as const;
+export {
+  RESOURCES,
+  rolePermissions,
+  hasPermission,
+  isReadOnly,
+  ORG_ROLES,
+  ASSIGNABLE_BUILT_IN_ROLES,
+  isBuiltInRole,
+} from "../../convex/lib/permissions-core";
+export type {
+  Resource,
+  Action,
+  PermissionMap,
+  OrgRole,
+} from "../../convex/lib/permissions-core";
 
-export type Resource = (typeof RESOURCES)[number];
-
-export type Action = string;
-
-/** Full permission map: resource -> array of allowed actions */
-export type PermissionMap = Partial<Record<Resource, readonly string[]>>;
+import type { Resource } from "../../convex/lib/permissions-core";
 
 /** Registry of all resources and their possible actions — drives the matrix UI */
 export const PERMISSION_REGISTRY: Record<
@@ -213,194 +207,6 @@ export const PERMISSION_REGISTRY: Record<
     ],
   },
 };
-
-// ─── Built-in role defaults ─────────────────────────────────────────────────
-
-const ALL_ASSET = ["create", "read", "update", "delete", "import", "export"] as const;
-const ALL_CRUD = ["create", "read", "update", "delete"] as const;
-const ALL_PROJECT = ["create", "read", "update", "delete", "manage_line_items", "generate_documents"] as const;
-
-export const rolePermissions: Record<string, PermissionMap> = {
-  owner: {
-    asset: ALL_ASSET,
-    bulkAsset: ALL_CRUD,
-    model: ALL_ASSET,
-    kit: ALL_CRUD,
-    project: ALL_PROJECT,
-    client: ALL_CRUD,
-    warehouse: ["read", "check_out", "check_in", "scan", "close"],
-    testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
-    maintenance: ALL_CRUD,
-    location: ALL_CRUD,
-    document: ["generate", "send", "manage_templates"],
-    orgSettings: ["read", "update"],
-    orgMembers: ["read", "invite", "update_role", "remove"],
-    supplier: ALL_CRUD,
-    subHire: ALL_CRUD,
-    crew: ALL_CRUD,
-    reports: ["view", "export", "create", "delete"],
-    checkItem: ALL_CRUD,
-  },
-  admin: {
-    asset: ALL_ASSET,
-    bulkAsset: ALL_CRUD,
-    model: ALL_ASSET,
-    kit: ALL_CRUD,
-    project: ALL_PROJECT,
-    client: ALL_CRUD,
-    warehouse: ["read", "check_out", "check_in", "scan", "close"],
-    testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
-    maintenance: ALL_CRUD,
-    location: ALL_CRUD,
-    document: ["generate", "send", "manage_templates"],
-    orgSettings: ["read", "update"],
-    orgMembers: ["read", "invite", "update_role", "remove"],
-    supplier: ALL_CRUD,
-    subHire: ALL_CRUD,
-    crew: ALL_CRUD,
-    reports: ["view", "export", "create", "delete"],
-    checkItem: ALL_CRUD,
-  },
-  manager: {
-    asset: ["create", "read", "update", "import", "export"],
-    bulkAsset: ["create", "read", "update"],
-    model: ["create", "read", "update", "import", "export"],
-    kit: ["create", "read", "update"],
-    project: ["create", "read", "update", "manage_line_items", "generate_documents"],
-    client: ["create", "read", "update"],
-    warehouse: ["read", "check_out", "check_in", "scan", "close"],
-    testTag: ["create", "read", "update", "quick_test", "generate_reports"],
-    maintenance: ["create", "read", "update"],
-    location: ["create", "read", "update"],
-    document: ["generate", "send", "manage_templates"],
-    orgSettings: ["read"],
-    orgMembers: ["read"],
-    supplier: ["create", "read", "update"],
-    subHire: ["create", "read", "update"],
-    crew: ["create", "read", "update"],
-    reports: ["view", "export", "create", "delete"],
-    checkItem: ALL_CRUD,
-  },
-  member: {
-    asset: ["create", "read", "update"],
-    bulkAsset: ["create", "read", "update"],
-    model: ["create", "read", "update"],
-    kit: ["read"],
-    project: ["create", "read", "update", "manage_line_items", "generate_documents"],
-    client: ["create", "read", "update"],
-    warehouse: ["read", "check_out", "check_in", "scan"],
-    testTag: ["create", "read", "update", "quick_test"],
-    maintenance: ["create", "read", "update"],
-    location: ["read"],
-    document: ["generate"],
-    orgSettings: [],
-    orgMembers: [],
-    supplier: ["read"],
-    subHire: ["create", "read"],
-    crew: ["read"],
-    reports: ["view"],
-    checkItem: ["read"],
-  },
-  // `staff` role removed (Wave 2) — was a duplicate of `member` with identical
-  // permissions. Existing `staff` members are migrated to `member` via the
-  // consolidate-staff-role migration. Better Auth's memberRoleHierarchy and
-  // sso-provisioning ROLE_HIERARCHY no longer list it. UI dropdowns no longer
-  // offer it.
-  warehouse: {
-    asset: ["read"],
-    bulkAsset: ["read"],
-    model: ["read"],
-    kit: ["read"],
-    project: ["read"],
-    client: ["read"],
-    warehouse: ["read", "check_out", "check_in", "scan", "close"],
-    testTag: ["read"],
-    maintenance: ["read"],
-    location: ["read"],
-    document: [],
-    orgSettings: [],
-    orgMembers: [],
-    supplier: ["read"],
-    subHire: ["read"],
-    crew: ["read"],
-    reports: ["view"],
-    checkItem: ["read"],
-  },
-  viewer: {
-    asset: ["read"],
-    bulkAsset: ["read"],
-    model: ["read"],
-    kit: ["read"],
-    project: ["read"],
-    client: ["read"],
-    warehouse: [],
-    testTag: ["read"],
-    maintenance: ["read"],
-    location: ["read"],
-    document: [],
-    orgSettings: [],
-    orgMembers: [],
-    supplier: ["read"],
-    subHire: ["read"],
-    crew: ["read"],
-    reports: ["view"],
-    checkItem: ["read"],
-  },
-};
-
-/**
- * Check if a role has a specific permission.
- * For custom roles (prefixed "custom:"), pass the resolved permissions map.
- */
-export function hasPermission(
-  role: string,
-  resource: Resource,
-  action: string,
-  customPermissions?: PermissionMap | null,
-): boolean {
-  // Owner always has all permissions (safety net)
-  if (role === "owner") {
-    return true;
-  }
-
-  // Custom role: use provided permissions
-  if (role.startsWith("custom:")) {
-    if (!customPermissions) return false;
-    return customPermissions[resource]?.includes(action) ?? false;
-  }
-
-  // Built-in role: use static map
-  const perms = rolePermissions[role];
-  if (!perms) return false;
-  return perms[resource]?.includes(action) ?? false;
-}
-
-/**
- * Check if a permission map has ANY write permission (create/update/delete).
- * Used to determine if a user is effectively read-only.
- */
-export function isReadOnly(permissions: PermissionMap): boolean {
-  for (const resource of RESOURCES) {
-    const actions = permissions[resource];
-    if (!actions) continue;
-    for (const action of actions) {
-      if (action !== "read" && action !== "view") return false;
-    }
-  }
-  return true;
-}
-
-/** All org roles in hierarchy order */
-export const ORG_ROLES = ["owner", "admin", "manager", "member", "viewer"] as const;
-export type OrgRole = (typeof ORG_ROLES)[number];
-
-/** Built-in roles that can be assigned (excludes owner — owner is transferred) */
-export const ASSIGNABLE_BUILT_IN_ROLES = ["admin", "manager", "member", "viewer"] as const;
-
-/** Check if a role string is a built-in role */
-export function isBuiltInRole(role: string): boolean {
-  return role in rolePermissions;
-}
 
 /** Role display labels */
 export const roleLabels: Record<string, string> = {

@@ -506,7 +506,7 @@ export async function buildWarehouseLineItems(projectId: string, organizationId:
   const lineItems = liDocs.map(mapLineItemDoc);
   const lineItemIds = lineItems.map((li) => li.id);
 
-  const [unitDocs, attachMaps, kitMap, modelCheckCounts, kitCheckCounts, assetArr, bulkArr] =
+  const [unitDocs, attachMaps, kitMap, modelCheckCounts, kitCheckCounts] =
     await Promise.all([
       lineItemIds.length
         ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
@@ -515,9 +515,23 @@ export async function buildWarehouseLineItems(projectId: string, organizationId:
       getKitMap(organizationId),
       getModelCheckItemCountMap(organizationId),
       getKitCheckItemCountMap(organizationId),
-      getAssetsByOrg(organizationId),
-      getBulkAssetsByOrg(organizationId),
     ]);
+
+  // Scope asset/bulk reads to the ids this project's lines + units reference (assets
+  // attach on BOTH lines and units here) — was getAssetsByOrg/getBulkAssetsByOrg (the
+  // whole org registry) on every warehouse refetch.
+  const refAssetIds = [...new Set(
+    [...lineItems.map((li) => li.assetId), ...unitDocs.map((u) => u.assetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const refBulkIds = [...new Set(
+    [...lineItems.map((li) => li.bulkAssetId), ...unitDocs.map((u) => u.bulkAssetId)]
+      .filter((x): x is string => !!x),
+  )];
+  const [assetArr, bulkArr] = await Promise.all([
+    getAssetsByIds(organizationId, refAssetIds),
+    getBulkAssetsByIds(organizationId, refBulkIds),
+  ]);
 
   const assetMap = new Map(assetArr.map((a) => [a.id, a]));
   const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));

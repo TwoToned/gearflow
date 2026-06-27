@@ -1,9 +1,7 @@
-import { getModelMap } from "@/lib/models-read";
-import { getProjectsByOrg } from "@/lib/projects-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import {
-  getLineItemsByModelIds,
   indexProjectsById,
   sumBookingsByModel,
   type DateWindow,
@@ -107,25 +105,20 @@ export async function computeOverbookedStatus(
   // Include BOTH regular items AND kit children — they all consume stock.
   // Sub-hire items are third-party stock and are excluded.
   // When no dates: only count THIS project's bookings (no date overlap possible).
-  const [orgLineItems, orgProjects] = await Promise.all([
-    getLineItemsByModelIds(organizationId, modelIds),
-    getProjectsByOrg(organizationId),
-  ]);
-  const projectsById = indexProjectsById(orgProjects);
+  // ONE round-trip for ALL overbooking inputs (was 5 separate Convex queries in 2
+  // waves: line items + projects, then models + assets + bulks). Read backend-local
+  // inside a single query; raw docs reconstructed here (parity-by-construction).
+  const convex = await getConvexClient();
+  const ob = await convex.query(api.overbooking.bundle, { orgId: organizationId, modelIds });
+
+  const orgLineItems = ob.lineItems.map(mapLineItemDoc);
+  const projectsById = indexProjectsById(ob.projects);
   const { totalByModel: totalBookedByModel, thisProjectByModel: thisProjectBookedByModel } =
     sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
 
-  // Batch fetch model metadata + active assets/bulkAssets from Convex. Was an N+1:
-  // one assets.listByModel + one bulkAssets.listByModel round-trip PER model (so a
-  // projects view spanning N models fired 2N Convex queries). Now two batched
-  // queries that do all the per-model by_modelId scans server-side in one trip
-  // each, grouped here (replicating getActive*ByModel's `isActive !== false`).
-  const convex = await getConvexClient();
-  const [convexModelMap, assetsAll, bulksAll] = await Promise.all([
-    getModelMap(organizationId),
-    convex.query(api.assets.listByModelIds, { orgId: organizationId, modelIds }),
-    convex.query(api.bulkAssets.listByModelIds, { orgId: organizationId, modelIds }),
-  ]);
+  const convexModelMap = new Map(ob.models.map((m) => [m.id, m]));
+  const assetsAll = ob.assets;
+  const bulksAll = ob.bulkAssets;
   const assetMap = new Map<string, typeof assetsAll>();
   for (const a of assetsAll) {
     if (!a.modelId || a.isActive === false) continue;

@@ -9,7 +9,7 @@ import {
   getAssetsByIds,
   getBulkAssetsByIds,
 } from "@/lib/assets-read";
-import { type ConvexKit, getKitsByOrg, getKitsByIds, getKitMap } from "@/lib/kits-read";
+import { type ConvexKit, getKitsByOrg, getKitMap } from "@/lib/kits-read";
 import { type ConvexLocation, getLocationMap } from "@/lib/locations-read";
 import {
   buildLineItemAttachMaps,
@@ -405,48 +405,26 @@ export async function buildProjectEquipmentTree(
   projectId: string,
   organizationId: string,
 ): Promise<ProjectEquipmentTree> {
+  // ONE round-trip: read line items + categories + groups + units + the referenced
+  // assets/bulks/kits + the org's models/suppliers/categories, all inside a single
+  // Convex query (backend-local reads). Was ~10 separate server→Convex queries in 3
+  // sequential waves — the round-trip count was the latency, not the payload.
   const convex = await getConvexClient();
-  const [liDocs, catDocs, grpDocs] = await Promise.all([
-    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
-  ]);
+  const bundleData = await convex.query(api.projectEquipment.bundle, { projectId, orgId: organizationId });
 
-  const lineItems = liDocs.map(mapLineItemDoc);
-  const lineItemIds = lineItems.map((li) => li.id);
+  const lineItems = bundleData.lineItems.map(mapLineItemDoc);
+  const attachMaps = {
+    models: new Map(bundleData.models.map((m) => [m.id, m])),
+    suppliers: new Map(bundleData.suppliers.map((s) => [s.id, s])),
+    categories: new Map(bundleData.categories.map((c) => [c.id, c])),
+  };
 
-  const [unitDocs, attachMaps] = await Promise.all([
-    lineItemIds.length
-      ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
-      : Promise.resolve([] as UnitDoc[]),
-    buildLineItemAttachMaps(organizationId),
-  ]);
-
-  // Scope the asset/bulk/kit reads to the ids THIS project's lines + units actually
-  // reference (was: getAssetsByOrg / getBulkAssetsByOrg / getKitsByOrg — the whole
-  // org registry, read on EVERY project refetch incl. every add/edit/delete). Same
-  // raw doc shape, so the maps below are unchanged.
-  const refAssetIds = [...new Set(
-    [...lineItems.map((li) => li.assetId), ...unitDocs.map((u) => u.assetId)]
-      .filter((x): x is string => !!x),
-  )];
-  const refBulkIds = [...new Set(
-    [...lineItems.map((li) => li.bulkAssetId), ...unitDocs.map((u) => u.bulkAssetId)]
-      .filter((x): x is string => !!x),
-  )];
-  const refKitIds = [...new Set(lineItems.map((li) => li.kitId).filter((x): x is string => !!x))];
-  const [assetArr, bulkArr, kitArr] = await Promise.all([
-    getAssetsByIds(organizationId, refAssetIds),
-    getBulkAssetsByIds(organizationId, refBulkIds),
-    getKitsByIds(organizationId, refKitIds),
-  ]);
-
-  const assetMap = new Map(assetArr.map((a) => [a.id, a]));
-  const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));
-  const kitMap = new Map(kitArr.map((k) => [k.id, k]));
+  const assetMap = new Map(bundleData.assets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(bundleData.bulkAssets.map((b) => [b.id, b]));
+  const kitMap = new Map(bundleData.kits.map((k) => [k.id, k]));
 
   // Units carry `asset`/`bulkAsset` as `{ id, assetTag }` selects (PROJECT_UNIT_INCLUDE).
-  const units: UnitWithAssetSelect[] = unitDocs.map((u) => {
+  const units: UnitWithAssetSelect[] = bundleData.units.map((u) => {
     const m = mapUnitDoc(u);
     return {
       ...m,
@@ -460,8 +438,8 @@ export async function buildProjectEquipmentTree(
 
   // Grouped tree: childLineItems 1 deep. Top-level list: ALL items, 2 deep.
   const rawCategories = reconstructCategories(
-    catDocs.map(mapCategoryDoc),
-    grpDocs.map(mapGroupDoc),
+    bundleData.projectCategories.map(mapCategoryDoc),
+    bundleData.groups.map(mapGroupDoc),
     lineItems,
     byParent,
     unitsByLineItem,

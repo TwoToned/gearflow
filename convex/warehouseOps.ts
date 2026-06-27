@@ -154,8 +154,15 @@ async function gatherTestTagAssetsAndAssert(
   organizationId: string,
   projectId: string,
   items: Array<{ lineItemId: string; assetId?: string }>,
-): Promise<Array<{ id: string; assetId?: string; bulkAssetId?: string }>> {
+): Promise<{
+  preflight: Array<{ id: string; assetId?: string; bulkAssetId?: string }>;
+  unitsByLine: Map<string, Awaited<ReturnType<typeof lineUnits>>>;
+}> {
   const preflightLineItems: Array<{ id: string; assetId?: string; bulkAssetId?: string }> = [];
+  // Cache each line's units here so the immediately-following expand stage reuses
+  // them instead of re-reading. Safe: both stages run BEFORE any mutation, so the
+  // snapshot is stable. (Do NOT extend this cache into the mutating main loop.)
+  const unitsByLine = new Map<string, Awaited<ReturnType<typeof lineUnits>>>();
   const assetIds: string[] = [];
   const bulkIds: string[] = [];
   for (const it of items) {
@@ -164,14 +171,16 @@ async function gatherTestTagAssetsAndAssert(
     preflightLineItems.push({ id: li.id, assetId: li.assetId, bulkAssetId: li.bulkAssetId });
     if (li.assetId) assetIds.push(li.assetId);
     if (li.bulkAssetId) bulkIds.push(li.bulkAssetId);
-    for (const u of await lineUnits(ctx, li.id)) {
+    const units = await lineUnits(ctx, li.id);
+    unitsByLine.set(li.id, units);
+    for (const u of units) {
       if (u.assetId) assetIds.push(u.assetId);
       if (u.bulkAssetId) bulkIds.push(u.bulkAssetId);
     }
     if (it.assetId) assetIds.push(it.assetId);
   }
   await assertTestTagAllowsCheckout(ctx, organizationId, { assetIds, bulkAssetIds: bulkIds });
-  return preflightLineItems;
+  return { preflight: preflightLineItems, unitsByLine };
 }
 
 /** Expand "deploy whole prepped line" into one item per prepped unit. */
@@ -180,13 +189,16 @@ async function expandPrepUnitAssignments(
   organizationId: string,
   items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
   preflight: Array<{ id: string; assetId?: string; bulkAssetId?: string }>,
+  unitsByLine: Map<string, Awaited<ReturnType<typeof lineUnits>>>,
 ): Promise<Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>> {
   const out: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }> = [];
   for (const item of items) {
     if (item.assetId) { out.push(item); continue; }
     const row = preflight.find((l) => l.id === item.lineItemId);
     if (row?.assetId || row?.bulkAssetId) { out.push(item); continue; }
-    const units = (await lineUnits(ctx, item.lineItemId))
+    // Reuse the units gather already read this same (pre-mutation) snapshot;
+    // fall back to a read only for a line gather skipped (wrong org/project).
+    const units = (unitsByLine.get(item.lineItemId) ?? (await lineUnits(ctx, item.lineItemId)))
       .filter((u) => u.status !== "CHECKED_OUT" && (u.assetId || u.bulkAssetId))
       .sort((a, b) => a.ordinal - b.ordinal);
     if (units.length === 0) { out.push(item); continue; }
@@ -223,8 +235,8 @@ export const checkoutItems = mutation({
     if (!project || project.organizationId !== a.organizationId) throw new ConvexError("Project not found");
     const projectLocationId = project.locationId ?? null;
 
-    const preflight = await gatherTestTagAssetsAndAssert(ctx, a.organizationId, a.projectId, a.items);
-    const expanded = await expandPrepUnitAssignments(ctx, a.organizationId, a.items, preflight);
+    const { preflight, unitsByLine } = await gatherTestTagAssetsAndAssert(ctx, a.organizationId, a.projectId, a.items);
+    const expanded = await expandPrepUnitAssignments(ctx, a.organizationId, a.items, preflight, unitsByLine);
 
     const updated = new Set<string>();
     for (const item of expanded) {
@@ -652,6 +664,17 @@ export const checkInBulkTotals = mutation({
       .filter((r) => r.organizationId === a.organizationId && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
 
+    // Batch-load the distinct models the rows reference once (rows share models),
+    // instead of a per-row models.by_cuid point-read inside toInput.
+    const modelIds = [...new Set(rows.map((r) => r.modelId).filter((m): m is string => !!m))];
+    const modelById = new Map(
+      (await Promise.all(
+        modelIds.map((mid) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", mid)).unique()),
+      ))
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .map((m) => [m.id, m] as const),
+    );
+
     const toInput = async (child: typeof rows[number]): Promise<CheckInItem> => {
       const units = await lineUnits(ctx, child.id);
       let outstanding: number;
@@ -664,7 +687,7 @@ export const checkInBulkTotals = mutation({
       else if (child.subHireId) itemType = "SUBHIRE";
       else if (child.bulkAssetId) itemType = "OWNED_BULK";
       else itemType = "OWNED_SERIALISED";
-      const model = child.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", child.modelId!)).unique() : null;
+      const model = child.modelId ? modelById.get(child.modelId) ?? null : null;
       return {
         lineItemId: child.id, modelId: child.modelId ?? null, modelName: model?.name ?? null, modelNumber: model?.modelNumber ?? null,
         assetId: child.assetId ?? null, bulkAssetId: child.bulkAssetId ?? null, subHireId: child.subHireId ?? null,

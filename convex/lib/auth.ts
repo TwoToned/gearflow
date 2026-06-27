@@ -1,5 +1,12 @@
 import type { Auth } from "convex/server";
 import { ConvexError } from "convex/values";
+import type { QueryCtx } from "../_generated/server";
+import {
+  decideOrgPermission,
+  type Resource,
+  type PermissionMap,
+  type OrgPermissionDecision,
+} from "./permissionsCore";
 
 /**
  * Convex-side auth enforcement for the Phase 5 auth bridge.
@@ -114,5 +121,95 @@ export async function requireOrgReadDoc(
   if (!doc) return;
   if (!auth.orgId || doc.organizationId !== auth.orgId) {
     throw new ConvexError("Forbidden: organization mismatch.");
+  }
+}
+
+// ─── RBAC permission guard (native read layer, Phase 1) ─────────────────────
+//
+// requireOrgRead enforces only ORG-SCOPING. requireOrgPermission additionally
+// enforces RESOURCE/ACTION permissions inside Convex, so a browser-facing
+// composite query grants exactly what the server-action `requirePermission`
+// would (docs/designs/convex-native-read-layer.md §3.3). The decision logic is
+// the isomorphic `decideOrgPermission` (shared with the server path via
+// permissionsCore); this wrapper only resolves the ctx/db inputs:
+//   • the caller's member row by (org, user) — `.first()`, NOT `.unique()`, to
+//     match Prisma's duplicate-tolerant findFirst (a duplicate mirror row must
+//     not crash the read);
+//   • for a "custom:<id>" role, the org-scoped custom role + its parsed perms.
+//
+// Typed for QueryCtx (read path). Phase 5 can widen it to mutation ctx.
+
+/** Parse a stored custom-role permissions JSON string; null on absent/invalid. */
+function parseCustomPermissions(raw: string | undefined): PermissionMap | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PermissionMap;
+  } catch {
+    return null; // malformed → no permissions (deny), never throw
+  }
+}
+
+function orgPermissionMessage(decision: OrgPermissionDecision): string {
+  switch (decision) {
+    case "deny:unauthenticated":
+      return "Unauthorized: authentication required.";
+    case "deny:org-mismatch":
+      return "Forbidden: organization mismatch.";
+    case "deny:not-member":
+      return "Forbidden: not a member of this organization.";
+    default:
+      return "Forbidden: insufficient permissions.";
+  }
+}
+
+/**
+ * Throw unless the caller may perform `action` on `resource` within `orgId`.
+ * Service ⇒ allow. User ⇒ org match + membership + role permission. Throws
+ * `ConvexError` (never plain Error) so the reason survives the prod boundary.
+ */
+export async function requireOrgPermission(
+  ctx: QueryCtx,
+  orgId: string,
+  resource: Resource,
+  action: string,
+): Promise<void> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind === "service") return; // trusted backend already authorized
+
+  let member: { role: string } | null = null;
+  let customPermissions: PermissionMap | null = null;
+
+  if (auth?.kind === "user" && auth.orgId === orgId) {
+    const row = await ctx.db
+      .query("members")
+      .withIndex("by_org_user", (q) =>
+        q.eq("organizationId", orgId).eq("userId", auth.userId),
+      )
+      .first();
+    member = row ? { role: row.role } : null;
+
+    if (member && member.role.startsWith("custom:")) {
+      const customRoleId = member.role.slice("custom:".length);
+      const custom = await ctx.db
+        .query("customRoles")
+        .withIndex("by_cuid", (q) => q.eq("id", customRoleId))
+        .first();
+      // Org-scope the role: a custom role belonging to another org must NOT grant
+      // here (mirrors src/server/custom-roles.ts org scoping). Missing/cross-org
+      // → null perms → hasPermission denies.
+      customPermissions =
+        custom && custom.organizationId === orgId
+          ? parseCustomPermissions(custom.permissions)
+          : null;
+    }
+  }
+
+  const decision = decideOrgPermission(
+    { auth, requestedOrgId: orgId, member, customPermissions },
+    resource,
+    action,
+  );
+  if (decision !== "allow") {
+    throw new ConvexError(orgPermissionMessage(decision));
   }
 }

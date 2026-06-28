@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { NATIVE_DASHBOARD_ENABLED, useNativeDashboardStats } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
   ScanBarcode,
@@ -58,7 +59,19 @@ export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: stats, isLoading: statsLoading } = useServerQuery({ queryKey: ["dashboard-stats", orgId], queryFn: getDashboardStats });
+  // Native read-layer path (Phase 3, default OFF). When the flag is on, the seven
+  // dashboard stats come from the counter-backed dashboardStats.bundle subscription
+  // (O(1) read + date-derived) instead of getDashboardStats' whole-org scans. Both
+  // hooks run; the flag selects the result. When off, the native hook skips and the
+  // server query stays enabled.
+  const nativeStats = useNativeDashboardStats(orgId);
+  const { data: scStats, isLoading: scStatsLoading } = useServerQuery({
+    queryKey: ["dashboard-stats", orgId],
+    queryFn: getDashboardStats,
+    enabled: !NATIVE_DASHBOARD_ENABLED,
+  });
+  const stats = NATIVE_DASHBOARD_ENABLED ? nativeStats.data : scStats;
+  const statsLoading = NATIVE_DASHBOARD_ENABLED ? nativeStats.isLoading : scStatsLoading;
   const { data: upcoming } = useServerQuery({ queryKey: ["dashboard-upcoming", orgId], queryFn: getUpcomingProjects });
   const { data: activity } = useServerQuery({ queryKey: ["dashboard-activity", orgId], queryFn: getRecentActivity });
   const { data: subHireStats } = useServerQuery({ queryKey: ["dashboard-sub-hire-stats", orgId], queryFn: getSubHireDashboardStats });

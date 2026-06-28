@@ -4,6 +4,10 @@ import { useEffect, useRef } from "react";
 import { createSharedResource } from "./use-shared-resource";
 import { getProject } from "@/server/projects";
 import { useProject } from "./use-projects";
+import {
+  NATIVE_PROJECT_DETAIL_ENABLED,
+  useNativeProjectDetail,
+} from "./use-native-project-equipment";
 
 /**
  * Shared store for a project's detail composite (Phase 6 — React Query removal).
@@ -44,6 +48,21 @@ export function useProjectDetail(projectId: string) {
       prevUpdatedAt.current = next;
     }
   }, [convexProject?.updatedAt, projectId]);
+
+  // Native read-layer path (Phase 1d, default OFF). When the flag is on, the whole
+  // composite comes from live Convex subscriptions (projectDetail.bundle +
+  // browserBundle) reconstructed client-side — no server action, reactive by the
+  // WebSocket. orgId is read off the project doc this hook already subscribes to.
+  // Both paths' hooks run (rules-of-hooks); the flag only selects which result we
+  // return. When the flag is off, `useNativeProjectDetail` is a no-op (skips).
+  const native = useNativeProjectDetail(projectId, convexProject?.organizationId);
+  if (NATIVE_PROJECT_DETAIL_ENABLED) {
+    return {
+      data: native.data as typeof result.data,
+      isLoading: native.isLoading,
+      refresh: () => resource.refresh(projectId),
+    };
+  }
 
   return result;
 }

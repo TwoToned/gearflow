@@ -1,9 +1,58 @@
 # Convex-Native Read Layer — Migration Design
 
-**Status:** Proposed (design + phased plan; no production code yet)
+**Status:** IN PROGRESS — Phases 0–1 shipped (12 PRs). Phase 2 in flight.
 **Author:** autoplan research session, 2026-06-28
 **Branch:** `worktree-bridge-cse_017LNKTLidv7uzAAREUiRha3`
 **Related:** [[convex-phase5-auth-bridge]], [[convex-hybrid-migration]], `perf-convex-efficiency-2026-06.md`, memory `perf-round-trip-bundles.md`
+
+---
+
+## ▶ NEXT SESSION — START HERE (2026-06-28)
+
+**Goal: complete Phase 2 (remaining read surfaces) + Phase 3 (dashboard).** Full
+resume context is in the memory file `convex-native-read-layer.md` (PR list, live
+state, gotchas).
+
+**Done:** Phase 0 (plumbing) + Phase 1 (project-detail native composite + RBAC guard
++ members/customRoles mirror + backfill + convex-test harness). 12 PRs merged. Members
+backfill run on prod Convex.
+
+**Live state:** native project-detail flag `NEXT_PUBLIC_NATIVE_PROJECT_DETAIL` is
+currently **OFF** (rolled back — it has loading-state flashes + the overbooking gap to
+finish before re-enabling). A referenced-only-assets perf fix is live.
+`convex/equipmentTab.ts` (`equipmentTab.bundle`) is built but **has no consumer yet**.
+
+**Core insight:** the app is slow because every read is a tower (browser → Next →
+Convex HTTP ×~50 round-trips → compose → serialize → browser). Native = ONE
+backend-local Convex composite over a reactive `useQuery`. Don't perf-tune the towers
+— replace them.
+
+**Phase 2 surfaces, priority order** — each = browser composite (`requireOrgPermission`,
+**referenced-only reads, never whole-org catalog**) + client-safe reconstruction
+(zero server imports; reuse `src/lib/project-equipment-reconstruct.ts`; unit-test it)
++ flag-gated wiring (`NEXT_PUBLIC_NATIVE_*`, default off) + CI-verify + user verifies live:
+1. **Equipment editing tab** (active pain, ~15s load): reconstruct the 6 views from
+   `equipmentTab.bundle`; make the composite referenced-only for models/suppliers too;
+   wire `src/components/projects/equipment-tab.tsx` (uses the 6 `createSharedResource`
+   reads in `src/hooks/use-project-equipment.ts`) behind `NEXT_PUBLIC_NATIVE_EQUIPMENT`.
+2. **Finish project-detail:** smooth loading states (no access-denied/not-found flash
+   during auth resolution) + port the overbooked-flag enrichment (`computeOverbookedStatus`
+   — careful: flat-vs-nested + kit-inheritance), then re-enable + verify.
+3. **Warehouse detail, kit detail, asset detail, project finance/other tabs.**
+
+**Phase 3 — dashboard:** native composites + **maintained counter tables** (NOT
+`.collect().length`) as its own mini-design (schema, per-write updates, backfill,
+reconcile, parity tests). Activity-feed tile stays server-action until Phase 5
+(audit not in Convex).
+
+**Hard gotchas:** Convex module filenames camelCase, NO hyphens (broke prod deploy
+once). `NEXT_PUBLIC_*` flags are build-inlined → need Dockerfile ARG + build-image.yml
+build-arg + GitHub repo variable + a rebuild (runtime env does nothing). Use
+`useAuthedQuery` for browser queries. Keep `recalculateProjectTotals` (financial)
+server-side. `pnpm add --ignore-workspace`; copy `.env`/`.env.local` from main repo;
+`DATABASE_URL=<placeholder> pnpm exec prisma generate` before `tsc`. CI Build job
+(`next build`) verifies client-safety. One PR per surface, flag default-off, deploy is
+async (poll `https://flow.rvlt.app` for 200/307).
 
 ---
 

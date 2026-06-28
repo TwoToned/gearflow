@@ -66,6 +66,7 @@ import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as overbooking from "../overbooking.js";
 import type * as parity from "../parity.js";
 import type * as projectCategories from "../projectCategories.js";
+import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
 import type * as projectGroups from "../projectGroups.js";
 import type * as projectLineItemUnits from "../projectLineItemUnits.js";
@@ -168,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   overbooking: typeof overbooking;
   parity: typeof parity;
   projectCategories: typeof projectCategories;
+  projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;
   projectGroups: typeof projectGroups;
   projectLineItemUnits: typeof projectLineItemUnits;

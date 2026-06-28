@@ -130,6 +130,20 @@ describe("reconstructProjectCategories", () => {
       { kind: "project", sortOrder: 2, projectGroupId: "g1" },
     ]);
   });
+
+  it("places a sub-hire-group parent line (subHireGroupId + categoryId) in BOTH buckets, like the server's dual pass", () => {
+    const b = bundle({
+      categories: [d({ id: "c1", organizationId: ORG, projectId: PROJ, name: "Audio", sortOrder: 0 })],
+      subHires: [d({ id: "sh1", organizationId: ORG, projectId: PROJ, supplierId: "sup1", createdById: "u1", orderNumber: "SH-1", status: "ON_HIRE" })],
+      subHireGroups: [d({ id: "shg1", subHireId: "sh1", title: "Hired", sortOrder: 0, targetCategoryId: "c1" })],
+      // The synthetic sub-hire-group parent carries BOTH subHireGroupId and categoryId.
+      lineItems: [li({ id: "shgParent", subHireGroupId: "shg1", categoryId: "c1" })],
+      suppliers: [d({ id: "sup1", organizationId: ORG, name: "AVHire Co" })],
+    });
+    const [cat] = reconstructProjectCategories(b);
+    expect(cat.subHireGroupTargets?.[0].lineItems?.map((i) => i.id)).toEqual(["shgParent"]);
+    expect(cat.lineItems?.map((i) => i.id)).toEqual(["shgParent"]); // also in the category bucket
+  });
 });
 
 describe("reconstructProjectSubHires", () => {

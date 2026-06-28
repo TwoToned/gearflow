@@ -316,7 +316,12 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const shGroupIdSet = new Set(categorizedSHGroups.map((g) => g.id));
 
-  // Top-level line items keyed by their grouping (mirror getProjectCategories).
+  // Top-level line items keyed by their grouping. Mirror getProjectCategories'
+  // TWO INDEPENDENT passes (not one mutually-exclusive chain): a synthetic
+  // sub-hire-group parent line carries BOTH a subHireGroupId and a categoryId, so
+  // the server lands it in subHireGroupLineItems AND lineItemsByCatId. Pass 2 keys
+  // by groupId-else-categoryId without consulting subHireGroupId, exactly like
+  // src/server/project-categories.ts:186-195 + 222-235.
   const lineItemsBySubHireGroupId = new Map<string, MappedLineItem[]>();
   const lineItemsByGroupId = new Map<string, MappedLineItem[]>();
   const lineItemsByCatId = new Map<string, MappedLineItem[]>();
@@ -326,7 +331,11 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
       const arr = lineItemsBySubHireGroupId.get(li.subHireGroupId) ?? [];
       arr.push(li);
       lineItemsBySubHireGroupId.set(li.subHireGroupId, arr);
-    } else if (li.groupId) {
+    }
+  }
+  for (const li of mappedLineItems) {
+    if (li.isKitChild || li.parentLineItemId) continue;
+    if (li.groupId) {
       const arr = lineItemsByGroupId.get(li.groupId) ?? [];
       arr.push(li);
       lineItemsByGroupId.set(li.groupId, arr);

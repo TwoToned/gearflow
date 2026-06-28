@@ -328,7 +328,27 @@ a missed consumed field is a silent runtime gap the type system won't catch unde
 Five flags now plumbed (Dockerfile ARG/ENV + build-image.yml build-arg):
 `NEXT_PUBLIC_NATIVE_{PROJECT_DETAIL, EQUIPMENT, WAREHOUSE, KIT, ASSET}` — set the matching GitHub repo
 variable to `true` + rebuild to flip each live (project-detail also needs the members backfill on prod).
-**Next: Phase 3** (dashboard counters, §3.6).
+
+**Phase 3 CORE COMPLETE (2026-06-29)** — the §3.6 counter mini-design + native dashboard stats:
+- **#318 (merged):** `dashboardCounters` table + `convex/dashboardCounters.ts` (`computeCounters`,
+  `reconcile`, **`reconcileIfStale`**, `bump`, `getByOrg`) + `dashboardStats.bundle` + backfill +
+  convex-test parity. The native stats tile reads the six counters O(1) + computes the two date-derived
+  metrics (`maintenanceDue`, `overdueReturns`) at read from bounded indexed queries. Behind
+  `NEXT_PUBLIC_NATIVE_DASHBOARD`.
+- **#319:** native sub-hire stats tile (`dashboardSubHire.bundle` — bounded, no counter).
+- **Maintenance mechanism — reconcile-on-view, NOT per-write bumps:** the counted dimensions change
+  across many writes incl. the GENERATED asset CRUD (can't hand-edit) and ~a dozen asset-status
+  transitions in `warehouseOps`, so atomic per-write bumps would be invasive + fragile. Instead the
+  dashboard hook fires `reconcileIfStale` on view, throttled to ≤ once/`maxAge` per org — O(1) on the
+  hot read path, zero write-site risk, fresh-enough for a stats overview. `bump` is kept for a future
+  targeted hook. Reconcile reads are bounded per-org (pagination is future hardening for huge tenants).
+- **Deferred (low-risk):** `getUpcomingProjects` / `getMyHomeData` / `getMyBlockingComments` read
+  BOUNDED project/thread sets (not the whole-org registry → not the limit risk) — convertible to native
+  composites for reactivity polish. `getRecentActivity` is the one remaining whole-org-recent read;
+  its native version needs indexed `scannedAt`/`testDate desc` reads + user-name joins off the Convex
+  `users` mirror (its own follow-up). All four are correct + flag-safe on server actions today.
+
+To flip `NEXT_PUBLIC_NATIVE_DASHBOARD`: run `pnpm convex:backfill:dashboard-counters` on prod first.
 
 ### 3.6 Dashboard counters are a mini-domain, not a sub-bullet (review point 4)
 

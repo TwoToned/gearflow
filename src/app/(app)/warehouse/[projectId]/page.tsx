@@ -8,6 +8,10 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
 import { useWarehouseProjectVersion } from "@/hooks/use-warehouse";
 import {
+  NATIVE_WAREHOUSE_ENABLED,
+  useNativeWarehouseProject,
+} from "@/hooks/use-native-warehouse";
+import {
   ScanBarcode,
   ChevronRight,
   ArrowLeft,
@@ -620,12 +624,27 @@ function WarehouseProjectPage({
   // (useWarehouseProjectVersion) drives re-runs of the unchanged
   // getProjectForWarehouse server action — cross-user over the WebSocket. Same
   // pattern as the kit/asset detail pages. See convex/warehouseDetail.ts.
+  // Native read-layer path (Phase 2, default OFF). When the flag is on, the whole
+  // composite comes from ONE live warehouseDetail.bundle subscription
+  // (reconstructed client-side) — no server action, reactive over the WebSocket
+  // (warehouseOps mutations write line items + units in Convex). Both paths' hooks
+  // run (rules-of-hooks); the flag selects which result we use. When off, the
+  // native hook skips and the server query stays enabled.
+  const native = useNativeWarehouseProject(projectId, orgId);
   const projectVersion = useWarehouseProjectVersion(projectId);
-  const { data: project, isLoading, refetch: refetchProject } = useReactiveServerQuery({
+  const {
+    data: scProject,
+    isLoading: scLoading,
+    refetch: refetchProject,
+  } = useReactiveServerQuery({
     watch: projectVersion,
     queryKey: ["warehouse-project", orgId, projectId],
     queryFn: () => getProjectForWarehouse(projectId),
+    enabled: !NATIVE_WAREHOUSE_ENABLED,
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const project = (NATIVE_WAREHOUSE_ENABLED ? native.data : scProject) as any;
+  const isLoading = NATIVE_WAREHOUSE_ENABLED ? native.isLoading : scLoading;
 
   // Same-view refresh after a write. The Convex vector also pushes the change,
   // but refetchProject re-reads the Prisma source of truth immediately without

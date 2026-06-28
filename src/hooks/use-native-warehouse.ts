@@ -1,0 +1,51 @@
+"use client";
+
+import { useMemo } from "react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { api } from "../../convex/_generated/api";
+import {
+  reconstructWarehouseProject,
+  type NativeWarehouseProject,
+} from "@/lib/warehouse-detail-reconstruct";
+
+/**
+ * Feature flag (default OFF) for the native warehouse-detail read cutover (Phase
+ * 2). Until "true" in the build env, the warehouse page keeps the version-vector
+ * doorbell → getProjectForWarehouse refetch. Inlined at build time — flipping it
+ * needs the Dockerfile/build-image build-arg + repo var.
+ */
+export const NATIVE_WAREHOUSE_ENABLED =
+  process.env.NEXT_PUBLIC_NATIVE_WAREHOUSE === "true";
+
+/**
+ * Native warehouse detail: ONE `warehouseDetail.bundle` subscription reconstructs
+ * the full getProjectForWarehouse shape (`{ ...project, lineItems, client,
+ * location }`) client-side — reactive over the WebSocket (the warehouseOps
+ * mutations write line items + units in Convex, so edits push to the
+ * subscription). Skips entirely unless the flag is on and ids are present.
+ *
+ * `notFound` distinguishes "project missing / not permitted / template" (bundle
+ * === null) from "still loading" so the page surfaces not-found only when definitive.
+ */
+export function useNativeWarehouseProject(
+  projectId: string | undefined,
+  orgId: string | undefined,
+): { data: NativeWarehouseProject | undefined; isLoading: boolean; notFound: boolean } {
+  const enabled = NATIVE_WAREHOUSE_ENABLED && !!projectId && !!orgId;
+  const bundle = useAuthedQuery(
+    api.warehouseDetail.bundle,
+    enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
+  );
+
+  const data = useMemo(() => {
+    if (!enabled || bundle === undefined) return undefined;
+    if (bundle === null) return undefined; // not found / not permitted / template
+    return reconstructWarehouseProject(bundle);
+  }, [enabled, bundle]);
+
+  return {
+    data,
+    isLoading: enabled && bundle === undefined,
+    notFound: enabled && bundle === null,
+  };
+}

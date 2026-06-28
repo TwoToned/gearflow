@@ -33,9 +33,10 @@ ARG NEXT_PUBLIC_GOOGLE_CONFIGURED
 ARG NEXT_PUBLIC_MICROSOFT_CONFIGURED
 ARG NEXT_PUBLIC_SENTRY_DSN
 ARG NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED
-# Native read-layer cutover flag (Phase 1d). Unset/"" → off (server-action path).
-# Set to "true" via the GitHub repo variable to inline it on into the client bundle.
+# Native read-layer cutover flags. Unset/"" → off (server-action path). Set to
+# "true" via the matching GitHub repo variable to inline it on into the client bundle.
 ARG NEXT_PUBLIC_NATIVE_PROJECT_DETAIL
+ARG NEXT_PUBLIC_NATIVE_EQUIPMENT
 
 ENV DATABASE_URL=$DATABASE_URL \
     BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET \
@@ -47,7 +48,8 @@ ENV DATABASE_URL=$DATABASE_URL \
     NEXT_PUBLIC_MICROSOFT_CONFIGURED=$NEXT_PUBLIC_MICROSOFT_CONFIGURED \
     NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
     NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=$NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED \
-    NEXT_PUBLIC_NATIVE_PROJECT_DETAIL=$NEXT_PUBLIC_NATIVE_PROJECT_DETAIL
+    NEXT_PUBLIC_NATIVE_PROJECT_DETAIL=$NEXT_PUBLIC_NATIVE_PROJECT_DETAIL \
+    NEXT_PUBLIC_NATIVE_EQUIPMENT=$NEXT_PUBLIC_NATIVE_EQUIPMENT
 
 # Prisma client (codegen only — no DB access) + Next production build.
 RUN pnpm exec prisma generate && pnpm run build

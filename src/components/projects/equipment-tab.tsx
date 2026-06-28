@@ -20,6 +20,10 @@ import {
   useProjectSubHires,
   useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
+import {
+  NATIVE_EQUIPMENT_ENABLED,
+  useNativeEquipmentTab,
+} from "@/hooks/use-native-equipment-tab";
 import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
@@ -123,10 +127,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  // Native read-layer path (Phase 2, default OFF). When the flag is on, ALL six
+  // equipment views come from ONE reactive equipmentTab.bundle subscription
+  // (reconstructed client-side) — no server actions, no doorbell→refetch. Both the
+  // native hook and the server-action hooks below run (rules-of-hooks); the flag
+  // only selects which result we use. When off, the native hook is a no-op (skips).
+  const native = useNativeEquipmentTab(projectId, orgId);
+
   // Cross-tab live sync: subscribe to the dual-written line-item / group /
   // category Convex tables and re-fetch the equipment composites whenever
   // another tab (or collaborator) edits pricing, moves items, or changes groups.
-  useProjectEquipmentLiveSync(projectId, orgId);
+  // The native path is already reactive over its own subscription — skip the
+  // doorbell there (pass undefined so the live-sync subscriptions don't fire).
+  useProjectEquipmentLiveSync(
+    NATIVE_EQUIPMENT_ENABLED ? undefined : projectId,
+    NATIVE_EQUIPMENT_ENABLED ? undefined : orgId,
+  );
 
   // Passive section/group collaboration state: one lock subscription and one
   // comment-count subscription for the project, then row lookups by target key.
@@ -282,23 +298,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     });
   }, []);
 
-  const { data: categories = [], isLoading } = useProjectCategories(projectId);
+  // Server-action shared resources (the legacy path). When native is on, each is
+  // passed `undefined` so its fetch skips (no double-fetch alongside the native
+  // subscription); the value comes from `native` instead.
+  const scKey = NATIVE_EQUIPMENT_ENABLED ? undefined : projectId;
+  const { data: scCategories = [], isLoading: scLoading } = useProjectCategories(scKey);
+  const { data: scUncategorizedItems = [] } = useUncategorizedItems(scKey);
+  const { data: scUncategorizedSubHireGroups = [] } = useUncategorizedSubHireGroups(scKey);
+  const { data: scUncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(scKey);
+  const { data: scOverbookedMap = {} } = useProjectOverbooked(scKey);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: scProjectSubHires = [] } = useProjectSubHires(scKey) as { data: any[] };
 
-  const { data: uncategorizedItems = [] } = useUncategorizedItems(projectId);
-
-  const { data: uncategorizedSubHireGroups = [] } = useUncategorizedSubHireGroups(projectId);
-
-  const { data: uncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(projectId);
+  const categories = NATIVE_EQUIPMENT_ENABLED ? native.categories : scCategories;
+  const isLoading = NATIVE_EQUIPMENT_ENABLED ? native.isLoading : scLoading;
+  const uncategorizedItems = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedItems : scUncategorizedItems;
+  const uncategorizedSubHireGroups = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedSubHireGroups : scUncategorizedSubHireGroups;
+  const uncategorizedProjectGroups = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedProjectGroups : scUncategorizedProjectGroups;
+  const overbookedMap = NATIVE_EQUIPMENT_ENABLED ? native.overbookedMap : scOverbookedMap;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const projectSubHires = (NATIVE_EQUIPMENT_ENABLED ? native.projectSubHires : scProjectSubHires) as any[];
 
   const { data: templates = [] } = useGroupTemplates(orgId);
 
   const { data: servicesData } = useProjectServices(projectId);
-
-  const { data: overbookedMap = {} } = useProjectOverbooked(projectId);
-
-  // Availability check for the currently-edited line item (equipment w/ modelId only)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: projectSubHires = [] } = useProjectSubHires(projectId) as { data: any[] };
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })

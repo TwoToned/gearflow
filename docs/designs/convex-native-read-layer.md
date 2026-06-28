@@ -265,6 +265,44 @@ The existing composite bundles are **deliberately service-only**. `convex/projec
 
 **Rule:** every browser-facing composite is a **NEW** query returning **DTOs with an explicit per-entity field allowlist**, never raw Convex docs. The service bundles stay service-only and untouched. Each browser composite ships with a test asserting sensitive/service-only fields (unit internals, tokens, costs not meant for the role) are absent. This is design + per-entity allowlist work, **not** a one-line guard swap — the single biggest under-scoped item in the first draft.
 
+### 3.5.1 Execution progress — Phases 1–2 (2026-06-28)
+
+Phase 0/1 landed earlier (PRs #297–304: client plumbing, isomorphic RBAC core
+`convex/lib/permissionsCore.ts`, `requireOrgPermission` + members/customRoles
+mirror, convex-test harness, `projectDetail.bundle`, `projectEquipment.browserBundle`,
+the client-safe `project-equipment-reconstruct.ts`, and the flag-gated native
+`useProjectDetail`). Phase 2 continued:
+
+- **`equipmentTab.bundle` referenced-only** (#310, merged): models/suppliers/categories
+  point-read by referenced ids, never whole-org `.collect()` (mirrors the assets/bulks/kits
+  fix).
+- **`overbooking-core.ts`** (#311, merged): the overbooked math extracted client-safe —
+  `computeStockBreakdown`, `projectMatchesWindow`, `indexProjectsById`,
+  `sumBookingsByModel`, `reconstructOverbookedStatus`, `relevantOverbookModelIds`.
+  `availability.ts`/`availability-read.ts` re-export them; `computeOverbookedStatus`
+  is now a thin IO wrapper delegating to the core. This is the shared foundation for
+  every overbooked view.
+- **Project-detail finished** (#312, merged): `enrichProjectDetailOverbooked` ports the
+  overbooked-flag enrichment (the documented gap) — applies the map onto top-level line
+  items + one child level exactly as `getProject`, passing the SAME nested array to
+  `reconstructOverbookedStatus` so the kit-children-nested quirk is preserved. Also fixed
+  the native loading flash: `useNativeProjectDetail` returns `notFound`, and
+  `use-project-detail` holds `isLoading` true while the orgId source (`useProject`) is
+  still resolving (was flashing "Project not found" during auth resolution). Ready to flip
+  `NEXT_PUBLIC_NATIVE_PROJECT_DETAIL` live.
+- **Equipment editing tab native cutover** (#313, open): `equipment-tab-reconstruct.ts`
+  reconstructs all six views (getProjectCategories tree + mixedGroups slot ordering,
+  uncat items/sub-hire-groups/project-groups, overbooked via the core, getSubHires slice)
+  from one `equipmentTab.bundle` subscription; `useNativeEquipmentTab` + `equipment-tab.tsx`
+  select native vs the six server resources behind `NEXT_PUBLIC_NATIVE_EQUIPMENT` (default
+  off; build-arg plumbed). Writes stay server actions (their `convex.mutation` pushes the
+  reactive delta — the `useProjectEquipmentLiveSync` doorbell is retired on this path).
+
+**Pattern established for the remaining Phase-2 surfaces** (warehouse/kit/asset/finance):
+referenced-only browser composite → client-safe pure reconstruction module (zero server
+imports; reuse the attach/tree helpers; unit-test parity) → `useNative*` hook + flag-gated
+consumer select → CI `next build` verifies client-safety → user flips the flag + verifies live.
+
 ### 3.6 Dashboard counters are a mini-domain, not a sub-bullet (review point 4)
 
 `getDashboardStats` derives counts across **seven domains** — assets, bulk assets, projects, maintenance records, project line items, crew members, crew assignments (`src/server/dashboard.ts:29-66`) — today by whole-org `.collect()` + JS counting. A native reactive port cannot `.collect().length` (Convex has no count operator and would hit the 32k-doc/16 MiB limits on a large tenant), so the counts must come from **maintained denormalized counter tables**. That is a write-path obligation, not a read swap, and needs its own scoped design before Phase 3 starts:

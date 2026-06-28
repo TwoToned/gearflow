@@ -34,38 +34,20 @@ import { mapLineItemDoc, mapUnitDoc, type MappedLineItem, type MappedUnit } from
 type LineItemDoc = Doc<"projectLineItems">;
 type UnitDoc = Doc<"projectLineItemUnits">;
 
-/** Project statuses excluded from availability/booking windows (Prisma `notIn`). */
-export const EXCLUDED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
-  "CANCELLED",
-  "RETURNED",
-  "COMPLETED",
-  "INVOICED",
-]);
-
-/** The booking date window (inclusive overlap). */
-export interface DateWindow {
-  start: Date;
-  end: Date;
-}
-
-/**
- * Reproduces the Prisma `project` `where` used by every availability read:
- * non-template, active status, and rental window overlaps `[start, end]`.
- * A project with no rental dates is excluded (null fails the date comparison,
- * matching Prisma's behaviour on `lte`/`gte` against null).
- */
-export function projectMatchesWindow(p: ConvexProject, window: DateWindow): boolean {
-  if (p.isTemplate === true) return false;
-  if (p.status != null && EXCLUDED_PROJECT_STATUSES.has(p.status)) return false;
-  if (p.rentalStartDate == null || p.rentalEndDate == null) return false;
-  // rentalStartDate <= end AND rentalEndDate >= start
-  return p.rentalStartDate <= window.end.getTime() && p.rentalEndDate >= window.start.getTime();
-}
-
-/** Build a `projectId → ConvexProject` map from the org's projects. */
-export function indexProjectsById(projects: ConvexProject[]): Map<string, ConvexProject> {
-  return new Map(projects.map((p) => [p.id, p]));
-}
+// The window/booking pure helpers moved into the client-safe overbooking-core so
+// the native read layer can run the same math client-side. Re-exported here for
+// back-compat — every existing server caller keeps importing them from this module.
+export {
+  EXCLUDED_PROJECT_STATUSES,
+  projectMatchesWindow,
+  indexProjectsById,
+  sumBookingsByModel,
+  type DateWindow,
+} from "@/lib/overbooking-core";
+import {
+  projectMatchesWindow,
+  type DateWindow,
+} from "@/lib/overbooking-core";
 
 /** A booking row as the calendar UI consumes it — `clientName` resolved by the caller. */
 export interface BookingRow {
@@ -200,45 +182,6 @@ export function buildAssetBookings(
   unitRows.sort(rentalStartSort);
 
   return [...legacy, ...unitRows];
-}
-
-/**
- * For overbooking: sum non-cancelled, non-sub-hire bookings per model across all
- * projects whose window overlaps (or, when `window` is null, only `thisProjectId`).
- * Returns total-by-model and this-project-by-model maps, mirroring
- * `computeOverbookedStatus`'s aggregation.
- */
-export function sumBookingsByModel(
-  modelIds: string[],
-  lineItems: MappedLineItem[],
-  projectsById: Map<string, ConvexProject>,
-  window: DateWindow | null,
-  thisProjectId: string,
-): { totalByModel: Map<string, number>; thisProjectByModel: Map<string, number> } {
-  const modelSet = new Set(modelIds);
-  const totalByModel = new Map<string, number>();
-  const thisProjectByModel = new Map<string, number>();
-
-  for (const li of lineItems) {
-    if (li.modelId == null || !modelSet.has(li.modelId)) continue;
-    if (li.status === "CANCELLED") continue;
-    if (li.subHireId != null) continue;
-
-    if (window) {
-      const p = projectsById.get(li.projectId);
-      if (!p || !projectMatchesWindow(p, window)) continue;
-    } else {
-      // Dateless: only this project's bookings (no overlap possible).
-      if (li.projectId !== thisProjectId) continue;
-    }
-
-    totalByModel.set(li.modelId, (totalByModel.get(li.modelId) ?? 0) + li.quantity);
-    if (li.projectId === thisProjectId) {
-      thisProjectByModel.set(li.modelId, (thisProjectByModel.get(li.modelId) ?? 0) + li.quantity);
-    }
-  }
-
-  return { totalByModel, thisProjectByModel };
 }
 
 /**

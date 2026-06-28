@@ -62,9 +62,16 @@ export function useProjectDetail(projectId: string) {
   // return. When the flag is off, `useNativeProjectDetail` is a no-op (skips).
   const native = useNativeProjectDetail(projectId, convexProject?.organizationId);
   if (NATIVE_PROJECT_DETAIL_ENABLED) {
+    // While the project doc (the orgId source) is still loading, keep isLoading
+    // true so the page shows its skeleton — NOT the "not found" state. Without
+    // this, the native hook is skipped (no orgId yet) and reports
+    // {data: undefined, isLoading: false}, which the page reads as "loaded, no
+    // project" and flashes not-found during auth/orgId resolution. `convexProject
+    // === null` (project genuinely missing) is NOT loading → not-found shows.
+    const orgResolving = convexProject === undefined;
     return {
       data: native.data as typeof result.data,
-      isLoading: native.isLoading,
+      isLoading: orgResolving || native.isLoading,
       refresh: () => resource.refresh(projectId),
     };
   }

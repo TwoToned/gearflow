@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { reconstructProjectDetail } from "./project-detail-reconstruct";
+import {
+  reconstructProjectDetail,
+  enrichProjectDetailOverbooked,
+} from "./project-detail-reconstruct";
 import type { EquipmentBundleData } from "./project-equipment-reconstruct";
+import type { OverbookingBundleData } from "./overbooking-core";
 
 /**
  * Unit coverage for the full native project-detail reconstruction (Phase 1d B.2).
@@ -95,5 +99,65 @@ describe("reconstructProjectDetail", () => {
     expect(res.media).toHaveLength(1); // m2 dropped (file unresolved)
     expect(res.media[0].id).toBe("m1");
     expect(res.media[0].file.url).toBe("http://x/a.jpg");
+  });
+
+  it("line items default to not-overbooked before enrichment", () => {
+    const equipment: EquipmentBundleData = {
+      ...EMPTY_EQUIPMENT,
+      lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 3, status: "QUOTED" })],
+    };
+    const res = reconstructProjectDetail(detailBundle(), equipment);
+    expect(res.lineItems).toHaveLength(1);
+    expect(res.lineItems[0].isOverbooked).toBe(false);
+    expect(res.lineItems[0].overbookedInfo).toBeNull();
+  });
+});
+
+const WIN_START = new Date("2026-01-01T00:00:00Z").getTime();
+const WIN_END = new Date("2026-01-10T00:00:00Z").getTime();
+
+describe("enrichProjectDetailOverbooked", () => {
+  // p1 books 3 of model m1, which has only 2 serialized assets → over by 1.
+  const equipment: EquipmentBundleData = {
+    ...EMPTY_EQUIPMENT,
+    lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 3, status: "QUOTED" })],
+  };
+  const detail = detailBundle({
+    project: d({ id: "p1", organizationId: "o1", projectNumber: "P-1", name: "Gig", createdAt: 1000, rentalStartDate: WIN_START, rentalEndDate: WIN_END }),
+  });
+  const overbooking: OverbookingBundleData = {
+    lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 3, status: "QUOTED" })],
+    assets: [d({ id: "a1", organizationId: "o1", modelId: "m1", status: "AVAILABLE", isActive: true }), d({ id: "a2", organizationId: "o1", modelId: "m1", status: "AVAILABLE", isActive: true })],
+    bulkAssets: [],
+    projects: [d({ id: "p1", organizationId: "o1", projectNumber: "P-1", name: "Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: WIN_START, rentalEndDate: WIN_END })],
+    models: [d({ id: "m1", organizationId: "o1", assetType: "SERIALIZED" })],
+  } as never;
+
+  it("returns the base unchanged while the overbooking bundle is still loading", () => {
+    const base = reconstructProjectDetail(detail, equipment);
+    const out = enrichProjectDetailOverbooked(base, undefined);
+    expect(out.lineItems[0].isOverbooked).toBe(false);
+    expect(out).toBe(base);
+  });
+
+  it("flags overbooked line items once the bundle lands", () => {
+    const base = reconstructProjectDetail(detail, equipment);
+    const out = enrichProjectDetailOverbooked(base, overbooking);
+    expect(out.lineItems[0].isOverbooked).toBe(true);
+    expect(out.lineItems[0].overbookedInfo).toMatchObject({ overBy: 1, totalStock: 2, effectiveStock: 2 });
+  });
+
+  it("leaves non-overbooked items false when within stock", () => {
+    const within: EquipmentBundleData = {
+      ...EMPTY_EQUIPMENT,
+      lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" })],
+    };
+    const ob: OverbookingBundleData = {
+      ...overbooking,
+      lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" })],
+    } as never;
+    const base = reconstructProjectDetail(detail, within);
+    const out = enrichProjectDetailOverbooked(base, ob);
+    expect(out.lineItems[0].isOverbooked).toBe(false);
   });
 });

@@ -11,11 +11,12 @@
  * server-only co-residents); the TYPES come via `import type` (erased). Parity
  * with the server path is by-copy — keep these in sync if the source mappers change.
  *
- * KNOWN GAP (tracked): the overbooked-flag ENRICHMENT (`isOverbooked` /
- * `overbookedInfo` on line items) is NOT yet reconstructed here — its server math
- * (computeOverbookedStatus) has kit-parent inheritance logic best ported with the
- * live UI to verify the indicators. Until then native line items render without
- * overbook warnings (graceful: undefined → no warning), the only parity gap.
+ * Overbooked-flag enrichment (`isOverbooked` / `overbookedInfo` on the top-level
+ * line items + one level of children) is applied by
+ * {@link enrichProjectDetailOverbooked} from the `overbooking.bundle` payload,
+ * mirroring `getProject` (which passes the SAME nested top-level array to
+ * `computeOverbookedStatus`, so kit children nested under `childLineItems` are not
+ * flat-iterated — parity-by-construction).
  */
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../convex/_generated/api";
@@ -27,6 +28,11 @@ import {
   type EquipmentBundleData,
   type ProjectEquipmentTree,
 } from "@/lib/project-equipment-reconstruct";
+import {
+  reconstructOverbookedStatus,
+  type OverbookedInfo,
+  type OverbookingBundleData,
+} from "@/lib/overbooking-core";
 
 type ProjectDetailBundle = NonNullable<FunctionReturnType<typeof api.projectDetail.bundle>>;
 type ProjectDoc = ProjectDetailBundle["project"];
@@ -171,12 +177,22 @@ type LocationWithParent =
   | (MappedLocation & { parent: MappedLocation | null })
   | null;
 
+/** The overbooked flags `getProject` adds to each enriched line-item node. */
+type OverbookedFields = { isOverbooked: boolean; overbookedInfo: OverbookedInfo | null };
+
+type TopLineItem = ProjectEquipmentTree["lineItems"][number];
+/** A top-level line item enriched with overbooked flags (children one level deep). */
+export type EnrichedLineItem = TopLineItem &
+  OverbookedFields & {
+    childLineItems?: Array<NonNullable<TopLineItem["childLineItems"]>[number] & OverbookedFields>;
+  };
+
 export type NativeProjectDetail = ProjectRow & {
   projectManagers: ProjectManagerOut[];
   media: Array<ProjectGalleryMedia & { file: GalleryFile }>;
   location: LocationWithParent;
   categories: ProjectEquipmentTree["categories"];
-  lineItems: ProjectEquipmentTree["lineItems"];
+  lineItems: EnrichedLineItem[];
   client: ProjectDetailBundle["client"];
 };
 
@@ -212,11 +228,40 @@ function reconstructLocation(detail: ProjectDetailBundle): LocationWithParent {
 }
 
 /**
+ * Apply the `lineItemId → OverbookedInfo` map onto the top-level line items + one
+ * level of children, exactly as `getProject`'s `enrichedLineItems` does. An empty
+ * map yields `isOverbooked: false` / `overbookedInfo: null` on every node (the
+ * server's behaviour when nothing is overbooked).
+ */
+function applyOverbookedMap(
+  lineItems: TopLineItem[],
+  map: Map<string, OverbookedInfo>,
+): EnrichedLineItem[] {
+  return lineItems.map((li) => {
+    const info = map.get(li.id);
+    return {
+      ...li,
+      isOverbooked: !!info,
+      overbookedInfo: info ?? null,
+      childLineItems: li.childLineItems?.map((child) => {
+        const childInfo = map.get(child.id);
+        return {
+          ...child,
+          isOverbooked: !!childInfo,
+          overbookedInfo: childInfo ?? null,
+        };
+      }),
+    } as EnrichedLineItem;
+  });
+}
+
+/**
  * Build the full getProject-shaped object from the native composites. `detail` is
  * the projectDetail.bundle (non-null), `equipment` the browserBundle.
  *
- * NOTE: overbooked-flag enrichment is not applied (see module header) — line items
- * pass through from the equipment reconstruction as-is.
+ * Line items start with default overbooked flags (`isOverbooked: false`); call
+ * {@link enrichProjectDetailOverbooked} with the `overbooking.bundle` payload to
+ * fill them in (reactively, once that subscription lands).
  */
 export function reconstructProjectDetail(
   detail: ProjectDetailBundle,
@@ -230,7 +275,30 @@ export function reconstructProjectDetail(
     media: reconstructMedia(detail.media, detail.mediaFiles),
     location: reconstructLocation(detail),
     categories,
-    lineItems,
+    lineItems: applyOverbookedMap(lineItems, new Map()),
     client: detail.client,
   };
+}
+
+/**
+ * Re-enrich a reconstructed project-detail's line items with overbooked flags from
+ * the `overbooking.bundle` payload. Parity with `getProject`: the SAME nested
+ * top-level `lineItems` array is passed to `reconstructOverbookedStatus` (kit
+ * children nested under `childLineItems` are not flat-iterated), then the resulting
+ * map is applied to the top level + one child level. `overbooking === undefined`
+ * (still loading) returns the input unchanged — badges appear when it lands.
+ */
+export function enrichProjectDetailOverbooked(
+  base: NativeProjectDetail,
+  overbooking: OverbookingBundleData | undefined,
+): NativeProjectDetail {
+  if (!overbooking) return base;
+  const map = reconstructOverbookedStatus(
+    overbooking,
+    base.lineItems,
+    base.rentalStartDate,
+    base.rentalEndDate,
+    base.id,
+  );
+  return { ...base, lineItems: applyOverbookedMap(base.lineItems, map) };
 }

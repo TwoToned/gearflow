@@ -40,25 +40,49 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
   const subHireGroups = shGroupArrays.flat();
   const subHireItems = shItemArrays.flat();
 
-  // Referenced assets/bulks/kits (point reads by id, like projectEquipment.bundle).
+  // Referenced-only point reads (by id), NEVER whole-org catalog loads — the
+  // attach maps key by id, so loading exactly what the project references yields
+  // identical attachments to the old whole-org load (parity-by-construction) at
+  // O(referenced) cost. assets/bulks/kits referenced by line items; models by
+  // line items; suppliers by line items AND sub-hires; categories by the
+  // referenced models' categoryId (resolveAttachedModel nests the model's
+  // category). This mirrors getProjectCategories' refIdsFromLineItems fix, and
+  // extends referenced-only to models/suppliers/categories too.
   const uniq = (arr: Array<string | undefined | null>): string[] => [
     ...new Set(arr.filter((x): x is string => !!x)),
   ];
   const refAssetIds = uniq(lineItems.map((li) => li.assetId));
   const refBulkIds = uniq(lineItems.map((li) => li.bulkAssetId));
   const refKitIds = uniq(lineItems.map((li) => li.kitId));
+  const refModelIds = uniq(lineItems.map((li) => li.modelId));
+  const refSupplierIds = uniq([
+    ...lineItems.map((li) => li.supplierId),
+    ...subHires.map((s) => s.supplierId),
+  ]);
 
-  const [assetDocs, bulkDocs, kitDocs, models, suppliers, orgCategories] = await Promise.all([
-    Promise.all(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    Promise.all(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    Promise.all(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+  const pointRead = <T,>(
+    table: "assets" | "bulkAssets" | "kits" | "models" | "suppliers" | "categories",
+    ids: string[],
+  ) =>
+    Promise.all(ids.map((id) => ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).unique())) as Promise<(T | null)[]>;
+
+  const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
+    pointRead<{ organizationId?: string | null }>("assets", refAssetIds),
+    pointRead<{ organizationId?: string | null }>("bulkAssets", refBulkIds),
+    pointRead<{ organizationId?: string | null }>("kits", refKitIds),
+    pointRead<{ organizationId?: string | null; categoryId?: string | null }>("models", refModelIds),
+    pointRead<{ organizationId?: string | null }>("suppliers", refSupplierIds),
   ]);
 
   const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]) =>
     arr.filter((d): d is T => d !== null && d.organizationId === orgId);
+
+  const models = inOrg(modelDocs);
+  const suppliers = inOrg(supplierDocs);
+
+  // Categories referenced by the (in-org) models, point-read by id.
+  const refCategoryIds = uniq(models.map((m) => m.categoryId));
+  const categoryDocs = await pointRead<{ organizationId?: string | null }>("categories", refCategoryIds);
 
   return {
     lineItems,
@@ -73,7 +97,7 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
     kits: inOrg(kitDocs),
     models,
     suppliers,
-    orgCategories,
+    orgCategories: inOrg(categoryDocs),
   };
 }
 

@@ -112,6 +112,8 @@ export function reconstructAsset(bundle: AssetBundleData) {
       parentAssetId: item.parentAssetId,
       bulkAssetId: item.bulkAssetId,
       quantity: item.quantity,
+      // AssetAccessoriesManager renders a "Dedicated" vs "Ships-with" badge off this.
+      allocationMode: (item.allocationMode ?? "SHIPS_WITH") as "SHIPS_WITH" | "DEDICATED",
       sortOrder: item.sortOrder ?? null,
       bulkAsset: bulkRef(item.bulkAssetId),
     }));

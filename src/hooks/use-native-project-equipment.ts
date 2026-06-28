@@ -7,6 +7,10 @@ import {
   reconstructProjectEquipmentTree,
   type ProjectEquipmentTree,
 } from "@/lib/project-equipment-reconstruct";
+import {
+  reconstructProjectDetail,
+  type NativeProjectDetail,
+} from "@/lib/project-detail-reconstruct";
 
 /**
  * Feature flag (default OFF) for the native read-layer project-detail cutover
@@ -46,4 +50,32 @@ export function useNativeProjectEquipmentTree(
     () => (data ? reconstructProjectEquipmentTree(data) : undefined),
     [data],
   );
+}
+
+/**
+ * The FULL native project-detail composite — the getProject-shaped object built
+ * from `projectDetail.bundle` + `projectEquipment.browserBundle`, reconstructed
+ * client-side. Returns `{ data, isLoading }` matching the useProjectDetail
+ * interface so `use-project-detail.ts` can swap to it behind the flag. Both
+ * subscriptions skip entirely unless the flag is on and ids are present.
+ *
+ * (Overbooked-flag enrichment is not yet applied — see project-detail-reconstruct
+ * module header; line items render without overbook warnings until that lands.)
+ */
+export function useNativeProjectDetail(
+  projectId: string | undefined,
+  orgId: string | undefined,
+): { data: NativeProjectDetail | undefined; isLoading: boolean } {
+  const enabled = NATIVE_PROJECT_DETAIL_ENABLED && !!projectId && !!orgId;
+  const args = enabled ? { projectId: projectId!, orgId: orgId! } : "skip";
+  const detail = useAuthedQuery(api.projectDetail.bundle, args);
+  const equipment = useAuthedQuery(api.projectEquipment.browserBundle, args);
+
+  const data = useMemo(() => {
+    if (!enabled || detail === undefined || equipment === undefined) return undefined;
+    if (detail === null) return undefined; // project not found / not permitted
+    return reconstructProjectDetail(detail, equipment);
+  }, [enabled, detail, equipment]);
+
+  return { data, isLoading: enabled && data === undefined };
 }

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import type { QueryCtx } from "./_generated/server";
+import { requireService, requireOrgPermission } from "./lib/auth";
 
 /**
  * ONE-round-trip read of everything `buildProjectEquipmentTree` needs to rebuild a
@@ -15,57 +16,83 @@ import { requireService } from "./lib/auth";
  * stays in src/lib unchanged, so this is parity-by-construction with the old
  * per-table reads (same index reads, same org filter).
  */
+async function readBundle(ctx: QueryCtx, projectId: string, orgId: string) {
+  const [lineItems, projectCategories, groups] = await Promise.all([
+    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+  ]);
+
+  const lineItemIds = lineItems.map((li) => li.id);
+  const units = (
+    await Promise.all(
+      lineItemIds.map((id) =>
+        ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", id)).collect(),
+      ),
+    )
+  ).flat();
+
+  const uniq = (arr: Array<string | undefined | null>): string[] => [
+    ...new Set(arr.filter((x): x is string => !!x)),
+  ];
+  const refAssetIds = uniq([...lineItems.map((li) => li.assetId), ...units.map((u) => u.assetId)]);
+  const refBulkIds = uniq([...lineItems.map((li) => li.bulkAssetId), ...units.map((u) => u.bulkAssetId)]);
+  const refKitIds = uniq(lineItems.map((li) => li.kitId));
+
+  const [assetDocs, bulkDocs, kitDocs, models, suppliers, categories] = await Promise.all([
+    Promise.all(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    Promise.all(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    Promise.all(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+  ]);
+
+  return {
+    lineItems,
+    projectCategories,
+    groups,
+    units,
+    // Org-filter the by-id reads to match the old getAssetsByIds/etc. helpers.
+    assets: assetDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
+    bulkAssets: bulkDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
+    kits: kitDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
+    models,
+    suppliers,
+    categories,
+  };
+}
+
+/**
+ * SERVICE-only bundle — the existing read path (getProject server action, service
+ * token). Returns `units`, which historically motivated the service-only gate.
+ */
 export const bundle = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    // Service-only: this bundle returns `units` (projectLineItemUnits), which are
-    // service-only — the only caller is the getProject server action (service
-    // token). Do NOT relax to requireOrgRead (would expose units to user tokens).
     await requireService(ctx);
+    return readBundle(ctx, projectId, orgId);
+  },
+});
 
-    const [lineItems, projectCategories, groups] = await Promise.all([
-      ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-      ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-      ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ]);
-
-    const lineItemIds = lineItems.map((li) => li.id);
-    const units = (
-      await Promise.all(
-        lineItemIds.map((id) =>
-          ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", id)).collect(),
-        ),
-      )
-    ).flat();
-
-    const uniq = (arr: Array<string | undefined | null>): string[] => [
-      ...new Set(arr.filter((x): x is string => !!x)),
-    ];
-    const refAssetIds = uniq([...lineItems.map((li) => li.assetId), ...units.map((u) => u.assetId)]);
-    const refBulkIds = uniq([...lineItems.map((li) => li.bulkAssetId), ...units.map((u) => u.bulkAssetId)]);
-    const refKitIds = uniq(lineItems.map((li) => li.kitId));
-
-    const [assetDocs, bulkDocs, kitDocs, models, suppliers, categories] = await Promise.all([
-      Promise.all(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-      Promise.all(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-      Promise.all(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ]);
-
-    return {
-      lineItems,
-      projectCategories,
-      groups,
-      units,
-      // Org-filter the by-id reads to match the old getAssetsByIds/etc. helpers.
-      assets: assetDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
-      bulkAssets: bulkDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
-      kits: kitDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
-      models,
-      suppliers,
-      categories,
-    };
+/**
+ * BROWSER-facing bundle for the native read-layer cutover (Phase 1c). Identical
+ * shape to `bundle` (so the existing src reconstruction consumes it unchanged), but
+ * gated on `requireOrgPermission(orgId, "project", "read")` instead of the service
+ * token — i.e. it enforces, inside Convex, the SAME permission the `getProject`
+ * server action checks via `requirePermission`. This is stronger than the old
+ * generated-CRUD org-scope (which is why exposing `units` here is safe: only a user
+ * who may read this project's equipment receives it — exactly what the server
+ * action already returns to that user). See docs/designs/convex-native-read-layer.md
+ * §3.3/§3.5. Org+project scoping is enforced by the indexed reads + the org filter.
+ *
+ * Not consumed yet — the equipment-tab cutover (Phase 1d) wires `useQuery` onto this
+ * behind a feature flag; until then this is additive and inert.
+ */
+export const browserBundle = query({
+  args: { projectId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, orgId }) => {
+    await requireOrgPermission(ctx, orgId, "project", "read");
+    return readBundle(ctx, projectId, orgId);
   },
 });

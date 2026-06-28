@@ -9,7 +9,7 @@ import {
   getAssetsByIds,
   getBulkAssetsByIds,
 } from "@/lib/assets-read";
-import { type ConvexKit, getKitsByOrg, getKitMap } from "@/lib/kits-read";
+import { type ConvexKit, getKitMap } from "@/lib/kits-read";
 import { type ConvexLocation, getLocationMap } from "@/lib/locations-read";
 import {
   buildLineItemAttachMaps,
@@ -25,8 +25,8 @@ import {
   indexChildren,
   indexUnits,
   reconstructScope,
-  reconstructCategories,
 } from "@/lib/project-line-item-tree-read";
+import { reconstructProjectEquipmentTree } from "@/lib/project-equipment-reconstruct";
 
 /**
  * Convex read layer for the project **equipment line-item tree** — the I/O +
@@ -65,33 +65,6 @@ type GroupDoc = Doc<"projectGroups">;
 function msToDate(n: number | null | undefined): Date | null {
   return n == null ? null : new Date(n);
 }
-
-/** Strip Convex meta + convert the listed epoch-ms keys to `Date` (absent → key
- *  preserved as-is). Used for nested asset/bulkAsset/kit, matching the raw-doc
- *  fidelity model/supplier already get. */
-function stripMetaWithDates<T extends Record<string, unknown>>(
-  doc: T,
-  dateKeys: readonly string[],
-): Omit<T, "_id" | "_creationTime"> {
-  const { _id, _creationTime, ...rest } = doc as Record<string, unknown>;
-  void _id;
-  void _creationTime;
-  for (const k of dateKeys) {
-    if (rest[k] != null) rest[k] = new Date(rest[k] as number);
-  }
-  return rest as Omit<T, "_id" | "_creationTime">;
-}
-
-const ASSET_DATE_KEYS = [
-  "purchaseDate",
-  "warrantyExpiry",
-  "lastTestAndTagDate",
-  "nextTestAndTagDate",
-  "createdAt",
-  "updatedAt",
-] as const;
-const BULK_ASSET_DATE_KEYS = ["lastReorderedAt", "createdAt", "updatedAt"] as const;
-const KIT_DATE_KEYS = ["purchaseDate", "createdAt", "updatedAt"] as const;
 
 /** A line item mapped from its Convex doc into the Prisma row shape getProject
  *  expects (every scalar present, dates as `Date`, nullable absent → `null`). */
@@ -331,14 +304,6 @@ type UnitWithAssetSelect = MappedUnit & {
   bulkAsset: { id: string; assetTag: string } | null;
 };
 
-/** Resolve a `{ id, assetTag }` select from a full Convex asset/bulk doc. */
-function assetTagSelect(
-  doc: { id: string; assetTag?: string | null } | undefined,
-): { id: string; assetTag: string } | null {
-  if (!doc) return null;
-  return { id: doc.id, assetTag: doc.assetTag ?? "" };
-}
-
 /** A reconstructed line-item node carrying the relations getProject's Prisma
  *  include produced (plain kit — no `_count`). `childLineItems` is present only
  *  to the included depth (absent past it). */
@@ -351,37 +316,6 @@ type AttachedNode = MappedLineItem & {
   supplier: unknown;
   childLineItems?: AttachedNode[];
 };
-
-/**
- * Attach raw-doc `asset` / `bulkAsset` / `kit` (full, Convex-meta stripped, dates
- * → `Date`) onto every node of a model/supplier-attached tree, recursing into
- * `childLineItems`. A null/missing id → `null` (no Prisma fallback). Units are
- * left untouched (already shaped in {@link buildProjectEquipmentTree}).
- */
-function attachAssetBulkKitPlain<
-  T extends { assetId: string | null; bulkAssetId: string | null; kitId: string | null; childLineItems?: unknown },
->(
-  rows: T[],
-  assetMap: Map<string, ConvexAsset>,
-  bulkAssetMap: Map<string, ConvexBulkAsset>,
-  kitMap: Map<string, ConvexKit>,
-): Array<T & { asset: ConvexAsset | null; bulkAsset: ConvexBulkAsset | null; kit: ConvexKit | null }> {
-  return rows.map((row) => {
-    const children = row.childLineItems;
-    const assetDoc = row.assetId ? assetMap.get(row.assetId) : undefined;
-    const bulkDoc = row.bulkAssetId ? bulkAssetMap.get(row.bulkAssetId) : undefined;
-    const kitDoc = row.kitId ? kitMap.get(row.kitId) : undefined;
-    return {
-      ...row,
-      asset: assetDoc ? (stripMetaWithDates(assetDoc, ASSET_DATE_KEYS) as ConvexAsset) : null,
-      bulkAsset: bulkDoc ? (stripMetaWithDates(bulkDoc, BULK_ASSET_DATE_KEYS) as ConvexBulkAsset) : null,
-      kit: kitDoc ? (stripMetaWithDates(kitDoc, KIT_DATE_KEYS) as ConvexKit) : null,
-      ...(Array.isArray(children)
-        ? { childLineItems: attachAssetBulkKitPlain(children as T[], assetMap, bulkAssetMap, kitMap) }
-        : {}),
-    };
-  }) as Array<T & { asset: ConvexAsset | null; bulkAsset: ConvexBulkAsset | null; kit: ConvexKit | null }>;
-}
 
 export interface ProjectEquipmentTree {
   categories: Array<
@@ -412,58 +346,12 @@ export async function buildProjectEquipmentTree(
   const convex = await getConvexClient();
   const bundleData = await convex.query(api.projectEquipment.bundle, { projectId, orgId: organizationId });
 
-  const lineItems = bundleData.lineItems.map(mapLineItemDoc);
-  const attachMaps = {
-    models: new Map(bundleData.models.map((m) => [m.id, m])),
-    suppliers: new Map(bundleData.suppliers.map((s) => [s.id, s])),
-    categories: new Map(bundleData.categories.map((c) => [c.id, c])),
-  };
-
-  const assetMap = new Map(bundleData.assets.map((a) => [a.id, a]));
-  const bulkAssetMap = new Map(bundleData.bulkAssets.map((b) => [b.id, b]));
-  const kitMap = new Map(bundleData.kits.map((k) => [k.id, k]));
-
-  // Units carry `asset`/`bulkAsset` as `{ id, assetTag }` selects (PROJECT_UNIT_INCLUDE).
-  const units: UnitWithAssetSelect[] = bundleData.units.map((u) => {
-    const m = mapUnitDoc(u);
-    return {
-      ...m,
-      asset: m.assetId ? assetTagSelect(assetMap.get(m.assetId)) : null,
-      bulkAsset: m.bulkAssetId ? assetTagSelect(bulkAssetMap.get(m.bulkAssetId)) : null,
-    };
-  });
-
-  const byParent = indexChildren(lineItems);
-  const unitsByLineItem = indexUnits(units);
-
-  // Grouped tree: childLineItems 1 deep. Top-level list: ALL items, 2 deep.
-  const rawCategories = reconstructCategories(
-    bundleData.projectCategories.map(mapCategoryDoc),
-    bundleData.groups.map(mapGroupDoc),
-    lineItems,
-    byParent,
-    unitsByLineItem,
-    1,
-  );
-  const rawTop = reconstructScope(lineItems, byParent, { unitsByLineItem, depth: 2 });
-
-  // Attach pass 1: model + supplier (existing shared helper). Pass 2: asset/bulkAsset/kit.
-  const attach = (rows: ReturnType<typeof reconstructScope>) =>
-    attachAssetBulkKitPlain(
-      attachLineItemTree(rows, attachMaps) as never[],
-      assetMap,
-      bulkAssetMap,
-      kitMap,
-    ) as unknown as AttachedNode[];
-
-  const categories = rawCategories.map((cat) => ({
-    ...cat,
-    groups: cat.groups.map((g) => ({ ...g, lineItems: attach(g.lineItems) })),
-    lineItems: attach(cat.lineItems),
-  }));
-  const lineItemsOut = attach(rawTop);
-
-  return { categories, lineItems: lineItemsOut };
+  // The reconstruction is PURE and now lives in the client-safe
+  // project-equipment-reconstruct.ts (so the native read-layer cutover can run it
+  // browser-side on a useQuery(browserBundle) result). Same code → parity. The
+  // mappers below remain in this module for the OTHER reconstructions (warehouse /
+  // pull-sheet) that still read here.
+  return reconstructProjectEquipmentTree(bundleData);
 }
 
 /**

@@ -303,6 +303,33 @@ referenced-only browser composite → client-safe pure reconstruction module (ze
 imports; reuse the attach/tree helpers; unit-test parity) → `useNative*` hook + flag-gated
 consumer select → CI `next build` verifies client-safety → user flips the flag + verifies live.
 
+**Phase 2 COMPLETE (2026-06-29).** All detail surfaces migrated, each flag-gated default-off:
+- **Warehouse** (#314): `warehouseDetail.bundle` + `warehouse-detail-reconstruct.ts` — reproduces
+  `buildWarehouseLineItems` (FLAT EQUIPMENT tree w/ units, model/kit check-item counts, asset on
+  lines AND units). Write-dep audit passed (`warehouseOps` mutations patch units in Convex →
+  reactive). `NEXT_PUBLIC_NATIVE_WAREHOUSE`.
+- **Kit** (#315): `kitDetail.bundle` + `kit-detail-reconstruct.ts` — **thin DTOs** (page reads a
+  small subset of each sub-entity, traced; `maintenanceRecords` omitted-unused). `NEXT_PUBLIC_NATIVE_KIT`.
+- **Asset** (#316): `assetDetail.bundle` + `asset-detail-reconstruct.ts` — the largest (~14 sub-entities),
+  thin DTOs incl. the `AssetAccessoriesManager` shapes; `scanLogs` omitted-unused; serialized assets
+  only (bulk path untouched). `NEXT_PUBLIC_NATIVE_ASSET`. Adversarial review caught + fixed a dropped
+  `childBulkItems.allocationMode` badge field.
+- **Finance / other project tabs:** the Financials tab's `FinancialSummary` reads `project.*` +
+  `project.categories` straight off the native project-detail composite — already covered by
+  `NEXT_PUBLIC_NATIVE_PROJECT_DETAIL`. `ProjectCostsPanel` + the services/tasks/notes/files sub-panels
+  have their own smaller reads (minor, deferred — not core detail composites).
+
+**Thin-DTO refinement to the pattern:** trace the consumer's actual field usage (Explore subagent),
+produce only those fields, and cast `native → typeof scServer` in the page so existing typed access
+compiles. Far less work than porting full Prisma mappers, and safe because the cast bridges types
+while the consumed fields are produced at runtime. Adversarially review the trimmed reconstructions —
+a missed consumed field is a silent runtime gap the type system won't catch under the cast.
+
+Five flags now plumbed (Dockerfile ARG/ENV + build-image.yml build-arg):
+`NEXT_PUBLIC_NATIVE_{PROJECT_DETAIL, EQUIPMENT, WAREHOUSE, KIT, ASSET}` — set the matching GitHub repo
+variable to `true` + rebuild to flip each live (project-detail also needs the members backfill on prod).
+**Next: Phase 3** (dashboard counters, §3.6).
+
 ### 3.6 Dashboard counters are a mini-domain, not a sub-bullet (review point 4)
 
 `getDashboardStats` derives counts across **seven domains** — assets, bulk assets, projects, maintenance records, project line items, crew members, crew assignments (`src/server/dashboard.ts:29-66`) — today by whole-org `.collect()` + JS counting. A native reactive port cannot `.collect().length` (Convex has no count operator and would hit the 32k-doc/16 MiB limits on a large tenant), so the counts must come from **maintained denormalized counter tables**. That is a write-path obligation, not a read swap, and needs its own scoped design before Phase 3 starts:

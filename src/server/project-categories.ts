@@ -23,8 +23,8 @@ import {
   indexChildren,
   reconstructScope,
 } from "@/lib/project-line-item-tree-read";
-import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
-import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
+import { getAssetsByIds, getBulkAssetsByIds, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getKitsByIds, type ConvexKit } from "@/lib/kits-read";
 import { getSubHiresByProject, getSubHireGroups, getSubHireItems } from "@/lib/sub-hire-read";
 import type { LineItemAttachMaps } from "@/lib/line-item-tree-read";
 
@@ -88,12 +88,35 @@ interface AttachContext {
 }
 
 /** Load the org-scoped maps the line-item tree attach needs (one round trip). */
-async function loadAttachContext(orgId: string): Promise<AttachContext> {
+/** Referenced asset/bulk/kit ids across a set of mapped line items (incl. children),
+ *  so the attach context loads ONLY what this project references instead of the
+ *  whole org catalog — the equipment-tab load was pulling every org asset/bulk/kit. */
+function refIdsFromLineItems(lineItems: MappedLineItem[]) {
+  const assets = new Set<string>();
+  const bulks = new Set<string>();
+  const kits = new Set<string>();
+  for (const li of lineItems) {
+    if (li.assetId) assets.add(li.assetId);
+    if (li.bulkAssetId) bulks.add(li.bulkAssetId);
+    if (li.kitId) kits.add(li.kitId);
+  }
+  return { assetIds: [...assets], bulkIds: [...bulks], kitIds: [...kits] };
+}
+
+async function loadAttachContext(
+  orgId: string,
+  refs: { assetIds: string[]; bulkIds: string[]; kitIds: string[] },
+): Promise<AttachContext> {
+  // Referenced-only reads: a project references a handful of assets, not the org's
+  // entire catalog. getAssetsByIds/etc. point-read by id (chunked), so the cost is
+  // O(referenced) not O(org) — the fix for the slow equipment-tab load. Parity-by-
+  // construction: the attach maps key by id, so loading exactly the referenced docs
+  // yields identical attachments to the old whole-org load.
   const [attachMaps, assetArr, bulkArr, kitArr] = await Promise.all([
     buildLineItemAttachMaps(orgId),
-    getAssetsByOrg(orgId),
-    getBulkAssetsByOrg(orgId),
-    getKitsByOrg(orgId),
+    getAssetsByIds(orgId, refs.assetIds),
+    getBulkAssetsByIds(orgId, refs.bulkIds),
+    getKitsByIds(orgId, refs.kitIds),
   ]);
   return {
     attachMaps,
@@ -187,8 +210,8 @@ export async function getProjectCategories(projectId: string) {
     };
   });
 
-  // 3. Build lookup maps + tree-attach helpers
-  const ctx = await loadAttachContext(organizationId);
+  // 3. Build lookup maps + tree-attach helpers (referenced-only — see loadAttachContext)
+  const ctx = await loadAttachContext(organizationId, refIdsFromLineItems(mappedLineItems));
   const attachMaps = ctx.attachMaps;
 
   // childLineItems matched globally by parentLineItemId (depth 1, no units —
@@ -313,7 +336,7 @@ export async function getUncategorizedLineItems(projectId: string) {
     (li) => !li.isKitChild && !li.parentLineItemId && li.categoryId == null && li.groupId == null,
   );
 
-  const ctx = await loadAttachContext(organizationId);
+  const ctx = await loadAttachContext(organizationId, refIdsFromLineItems(mappedLineItems));
   return serialize(attachScopeRows(scope, byParent, ctx));
 }
 

@@ -33,13 +33,18 @@ const resource = createSharedResource((projectId: string) => getProject(projectI
 
 /** Subscribe to a project's detail composite. `projectId` is the store key. */
 export function useProjectDetail(projectId: string) {
-  const result = resource.use(projectId);
+  // When the native flag is on, DON'T fire the old getProject server action — pass
+  // `undefined` so the shared resource skips its fetch (no double-fetch alongside
+  // the native subscriptions). The version-vector refresh effect is also a no-op
+  // then (native is reactive over the WebSocket).
+  const result = resource.use(NATIVE_PROJECT_DETAIL_ENABLED ? undefined : projectId);
 
-  // Convex subscription for cross-tab change detection.
+  // Convex subscription for cross-tab change detection (also the orgId source).
   const convexProject = useProject(projectId);
   const prevUpdatedAt = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    if (NATIVE_PROJECT_DETAIL_ENABLED) return; // native path needs no manual refresh
     const next = convexProject?.updatedAt;
     if (next !== undefined && prevUpdatedAt.current !== undefined && next !== prevUpdatedAt.current) {
       resource.refresh(projectId);

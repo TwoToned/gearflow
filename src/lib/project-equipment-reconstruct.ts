@@ -397,7 +397,7 @@ type AttachedNode = MappedLineItem & {
  * → `Date`) onto every node of a model/supplier-attached tree, recursing into
  * `childLineItems`. A null/missing id → `null`. Units are left untouched.
  */
-function attachAssetBulkKitPlain<
+export function attachAssetBulkKitPlain<
   T extends { assetId: string | null; bulkAssetId: string | null; kitId: string | null; childLineItems?: unknown },
 >(
   rows: T[],

@@ -48,8 +48,9 @@ const toDate = (v: number | undefined | null): Date | null =>
   typeof v === "number" ? new Date(v) : null;
 const orNull = <T>(v: T | undefined | null): T | null => (v == null ? null : v);
 
-/** Copy of projects-read.mapProject: Convex project doc → Prisma row shape. */
-function mapProject(d: ProjectDoc): ProjectRow {
+/** Copy of projects-read.mapProject: Convex project doc → Prisma row shape.
+ *  Exported for reuse by other native reconstructions (e.g. warehouse). */
+export function mapProject(d: ProjectDoc): ProjectRow {
   return {
     id: d.id,
     organizationId: d.organizationId,

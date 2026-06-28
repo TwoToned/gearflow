@@ -61,3 +61,26 @@ export function useNativeDashboardStats(
 
   return { data, isLoading: enabled && data === undefined };
 }
+
+export interface NativeSubHireStats {
+  activeSubHires: number;
+  monthlySubHireCost: number;
+  overdueReturns: number;
+}
+
+/**
+ * Native getSubHireDashboardStats: the org's (bounded) sub-hire heads aggregated
+ * reactively — no counter needed. `now` is minute-bucketed and `monthStart` is the
+ * first of the current month (both client-computed; queries can't read the clock).
+ */
+export function useNativeSubHireStats(
+  orgId: string | undefined,
+): NativeSubHireStats | undefined {
+  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  const monthStart = enabled ? new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() : 0;
+  return useAuthedQuery(
+    api.dashboardSubHire.bundle,
+    enabled ? { orgId: orgId!, now: nowBucket, monthStart } : "skip",
+  ) as NativeSubHireStats | undefined;
+}

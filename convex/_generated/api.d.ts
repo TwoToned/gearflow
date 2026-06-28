@@ -35,6 +35,7 @@ import type * as customFieldDefinitions from "../customFieldDefinitions.js";
 import type * as customRoles from "../customRoles.js";
 import type * as dashboardCounters from "../dashboardCounters.js";
 import type * as dashboardStats from "../dashboardStats.js";
+import type * as dashboardSubHire from "../dashboardSubHire.js";
 import type * as documentTemplates from "../documentTemplates.js";
 import type * as equipmentTab from "../equipmentTab.js";
 import type * as fileUploads from "../fileUploads.js";
@@ -141,6 +142,7 @@ declare const fullApi: ApiFromModules<{
   customRoles: typeof customRoles;
   dashboardCounters: typeof dashboardCounters;
   dashboardStats: typeof dashboardStats;
+  dashboardSubHire: typeof dashboardSubHire;
   documentTemplates: typeof documentTemplates;
   equipmentTab: typeof equipmentTab;
   fileUploads: typeof fileUploads;

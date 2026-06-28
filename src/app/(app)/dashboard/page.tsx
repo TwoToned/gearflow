@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { NATIVE_DASHBOARD_ENABLED, useNativeDashboardStats } from "@/hooks/use-native-dashboard";
+import { NATIVE_DASHBOARD_ENABLED, useNativeDashboardStats, useNativeSubHireStats } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
   ScanBarcode,
@@ -74,7 +74,9 @@ export default function DashboardPage() {
   const statsLoading = NATIVE_DASHBOARD_ENABLED ? nativeStats.isLoading : scStatsLoading;
   const { data: upcoming } = useServerQuery({ queryKey: ["dashboard-upcoming", orgId], queryFn: getUpcomingProjects });
   const { data: activity } = useServerQuery({ queryKey: ["dashboard-activity", orgId], queryFn: getRecentActivity });
-  const { data: subHireStats } = useServerQuery({ queryKey: ["dashboard-sub-hire-stats", orgId], queryFn: getSubHireDashboardStats });
+  const nativeSubHireStats = useNativeSubHireStats(orgId);
+  const { data: scSubHireStats } = useServerQuery({ queryKey: ["dashboard-sub-hire-stats", orgId], queryFn: getSubHireDashboardStats, enabled: !NATIVE_DASHBOARD_ENABLED });
+  const subHireStats = NATIVE_DASHBOARD_ENABLED ? nativeSubHireStats : scSubHireStats;
   const { data: myHome } = useServerQuery({ queryKey: ["my-home", orgId], queryFn: getMyHomeData });
   const { data: myBlockers } = useServerQuery({ queryKey: ["my-blocking-comments", orgId], queryFn: getMyBlockingComments });
 

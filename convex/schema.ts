@@ -2120,4 +2120,23 @@ export default defineSchema({
     .index("by_orgId_entityId_createdAt", ["orgId", "entityId", "createdAt"])
     .index("by_orgId_createdAt", ["orgId", "createdAt"]),
 
+  // Denormalised dashboard stat counters (Phase 3). One row per org holding the
+  // counts getDashboardStats used to derive by whole-org `.collect()` + JS count
+  // — read O(1) by the native dashboard instead of scanning the asset registry /
+  // line-item table. Maintained incrementally by `dashboardCounters.bump` from the
+  // write paths + authoritatively recomputed by `dashboardCounters.reconcile`
+  // (backfill + drift correction). Date-derived metrics (maintenanceDue,
+  // overdueReturns) are NOT stored here — they're computed at read from bounded
+  // indexed queries (nothing writes at the moment a date passes).
+  dashboardCounters: defineTable({
+    organizationId: v.string(),
+    activeAssets: v.number(),
+    checkedOutAssets: v.number(),
+    bulkQuantity: v.number(),
+    activeProjects: v.number(),
+    activeCrew: v.number(),
+    pendingCrewOffers: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organizationId", ["organizationId"]),
+
 });

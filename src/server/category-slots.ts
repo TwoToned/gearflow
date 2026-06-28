@@ -39,8 +39,8 @@ import {
 } from "@/lib/line-item-tree-read";
 import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-read";
 import { indexChildren, reconstructScope } from "@/lib/project-line-item-tree-read";
-import { getAssetsByOrg, getBulkAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
-import { getKitsByOrg, type ConvexKit } from "@/lib/kits-read";
+import { getAssetsByIds, getBulkAssetsByIds, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getKitsByIds, type ConvexKit } from "@/lib/kits-read";
 import { getSubHiresByProject, getSubHireGroups, getSubHireGroupById, getSubHireById, getSubHireItems } from "@/lib/sub-hire-read";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
@@ -113,12 +113,31 @@ interface AttachContext {
   kitMap: Map<string, ConvexKit>;
 }
 
-async function loadAttachContext(orgId: string): Promise<AttachContext> {
+/** Referenced asset/bulk/kit ids across a set of mapped line items (see the same
+ *  helper in project-categories.ts — both reads loaded the whole org catalog). */
+function refIdsFromLineItems(lineItems: MappedLineItem[]) {
+  const assets = new Set<string>();
+  const bulks = new Set<string>();
+  const kits = new Set<string>();
+  for (const li of lineItems) {
+    if (li.assetId) assets.add(li.assetId);
+    if (li.bulkAssetId) bulks.add(li.bulkAssetId);
+    if (li.kitId) kits.add(li.kitId);
+  }
+  return { assetIds: [...assets], bulkIds: [...bulks], kitIds: [...kits] };
+}
+
+async function loadAttachContext(
+  orgId: string,
+  refs: { assetIds: string[]; bulkIds: string[]; kitIds: string[] },
+): Promise<AttachContext> {
+  // Referenced-only (point reads by id) instead of the whole org catalog — parity
+  // by construction (attach maps key by id). The slow-equipment-tab-load fix.
   const [attachMaps, assetArr, bulkArr, kitArr] = await Promise.all([
     buildLineItemAttachMaps(orgId),
-    getAssetsByOrg(orgId),
-    getBulkAssetsByOrg(orgId),
-    getKitsByOrg(orgId),
+    getAssetsByIds(orgId, refs.assetIds),
+    getBulkAssetsByIds(orgId, refs.bulkIds),
+    getKitsByIds(orgId, refs.kitIds),
   ]);
   return {
     attachMaps,
@@ -194,7 +213,7 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
   }
 
   const attachMaps = await buildLineItemAttachMaps(organizationId);
-  const ctx = await loadAttachContext(organizationId);
+  const ctx = await loadAttachContext(organizationId, refIdsFromLineItems(mappedLineItems));
   const attached = groups.map((g) => {
     const subHire = subHireById.get(g.subHireId)!;
     const items = (itemsBySubHire.get(g.subHireId) ?? []).filter((i) => i.groupId === g.id);
@@ -248,7 +267,7 @@ export async function getUncategorizedProjectGroups(projectId: string) {
     }
   }
 
-  const ctx = await loadAttachContext(organizationId);
+  const ctx = await loadAttachContext(organizationId, refIdsFromLineItems(mappedLineItems));
   const attached = uncategorized.map((g) => ({
     ...g,
     price: g.price ?? null,

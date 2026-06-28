@@ -79,6 +79,7 @@ jobs:
             NEXT_PUBLIC_MICROSOFT_CONFIGURED=${{ vars.NEXT_PUBLIC_MICROSOFT_CONFIGURED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=${{ vars.NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED }}
+            NEXT_PUBLIC_NATIVE_PROJECT_DETAIL=${{ vars.NEXT_PUBLIC_NATIVE_PROJECT_DETAIL }}
 
       # Tell Coolify to pull the new image and redeploy. This is Coolify's
       # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):

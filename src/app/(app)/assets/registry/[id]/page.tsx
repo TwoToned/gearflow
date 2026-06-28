@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
 import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { NATIVE_ASSET_ENABLED, useNativeAsset } from "@/hooks/use-native-asset";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useAssetDetailVersion } from "@/hooks/use-assets";
@@ -112,13 +113,27 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // accessories change (cross-user over the WebSocket). The bulk path redirects
   // to the model page and is not in the realtime scope → a plain useServerQuery.
   // See convex/assetDetail.ts + src/hooks/use-reactive-server-query.ts.
+  // Native read-layer path (Phase 2, default OFF). When the flag is on (serialized
+  // assets only), the asset composite comes from ONE live assetDetail.bundle
+  // subscription (reconstructed client-side) — no server action, reactive over the
+  // WebSocket. Both hooks run; the flag selects the result.
+  const native = useNativeAsset(isBulk ? undefined : id, orgId);
   const assetVersion = useAssetDetailVersion(isBulk ? undefined : id);
-  const { data: asset, isLoading: assetLoading, refetch: refetchAsset } = useReactiveServerQuery({
+  const {
+    data: scAsset,
+    isLoading: scAssetLoading,
+    refetch: refetchAsset,
+  } = useReactiveServerQuery({
     watch: assetVersion,
     queryKey: ["asset", orgId, id],
     queryFn: () => getAsset(id),
-    enabled: !isBulk,
+    enabled: !isBulk && !NATIVE_ASSET_ENABLED,
   });
+  const useNativeAssetPath = NATIVE_ASSET_ENABLED && !isBulk;
+  const asset = useNativeAssetPath
+    ? (native.data as unknown as typeof scAsset)
+    : scAsset;
+  const assetLoading = useNativeAssetPath ? native.isLoading : scAssetLoading;
 
   const { data: bulkAsset, isLoading: bulkLoading } = useServerQuery({
     queryKey: ["bulk-asset", orgId, id],

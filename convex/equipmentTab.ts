@@ -60,18 +60,15 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
     ...subHires.map((s) => s.supplierId),
   ]);
 
-  const pointRead = <T,>(
-    table: "assets" | "bulkAssets" | "kits" | "models" | "suppliers" | "categories",
-    ids: string[],
-  ) =>
-    Promise.all(ids.map((id) => ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).unique())) as Promise<(T | null)[]>;
-
+  // Per-table point reads (each keeps its full Doc type — the attach maps and the
+  // client reconstruction read concrete fields like id/categoryId/assetTag).
+  const byCuid = <T>(rows: Promise<T | null>[]) => Promise.all(rows);
   const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
-    pointRead<{ organizationId?: string | null }>("assets", refAssetIds),
-    pointRead<{ organizationId?: string | null }>("bulkAssets", refBulkIds),
-    pointRead<{ organizationId?: string | null }>("kits", refKitIds),
-    pointRead<{ organizationId?: string | null; categoryId?: string | null }>("models", refModelIds),
-    pointRead<{ organizationId?: string | null }>("suppliers", refSupplierIds),
+    byCuid(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    byCuid(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    byCuid(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    byCuid(refModelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    byCuid(refSupplierIds.map((id) => ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
   ]);
 
   const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]) =>
@@ -82,7 +79,9 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
 
   // Categories referenced by the (in-org) models, point-read by id.
   const refCategoryIds = uniq(models.map((m) => m.categoryId));
-  const categoryDocs = await pointRead<{ organizationId?: string | null }>("categories", refCategoryIds);
+  const categoryDocs = await Promise.all(
+    refCategoryIds.map((id) => ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+  );
 
   return {
     lineItems,

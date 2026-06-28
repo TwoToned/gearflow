@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { NATIVE_KIT_ENABLED, useNativeKit } from "@/hooks/use-native-kit";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useKitDetailVersion } from "@/hooks/use-kits";
@@ -112,12 +113,30 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // unchanged getKit server action whenever the kit or its contents change (cross-user
   // over the WebSocket — replaces the SSE `kit:updated` → invalidate path). See
   // convex/kitDetail.ts + src/hooks/use-reactive-server-query.ts.
+  // Native read-layer path (Phase 2, default OFF). When the flag is on, the kit
+  // composite comes from ONE live kitDetail.bundle subscription (reconstructed
+  // client-side) — no server action, reactive over the WebSocket. Both hooks run;
+  // the flag selects the result. When off, the native hook skips and the server
+  // query stays enabled.
+  const native = useNativeKit(id, orgId);
   const kitVersion = useKitDetailVersion(id);
-  const { data: kit, isLoading, refetch: refetchKit } = useReactiveServerQuery({
+  const {
+    data: scKit,
+    isLoading: scLoading,
+    refetch: refetchKit,
+  } = useReactiveServerQuery({
     watch: kitVersion,
     queryKey: ["kit", orgId, id],
     queryFn: () => getKit(id),
+    enabled: !NATIVE_KIT_ENABLED,
   });
+  // The native reconstruction is a thin DTO of the same getKit shape (the page
+  // reads only the fields it produces); cast to the server type so the page's
+  // typed field access is preserved.
+  const kit = NATIVE_KIT_ENABLED
+    ? (native.data as unknown as typeof scKit)
+    : scKit;
+  const isLoading = NATIVE_KIT_ENABLED ? native.isLoading : scLoading;
 
   // Dialog-gated cross-domain reads (NOT in the SSE map; no cross-user liveness).
   // After an add, the mutation calls refetch() to drop the just-added rows.

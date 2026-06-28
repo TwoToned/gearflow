@@ -216,6 +216,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.8
         version: 4.1.8(vitest@4.1.8)
+      convex-test:
+        specifier: 0.0.53
+        version: 0.0.53(convex@1.40.0(react@19.2.7))
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -4181,6 +4184,11 @@ packages:
         optional: true
       zod:
         optional: true
+
+  convex-test@0.0.53:
+    resolution: {integrity: sha512-bouZQTnTvZi8IHljHL++yClj1vcV+/9ZxEcd8JZz7RDxOfPkRKrkMgkk/xlX4M1EAiwcEJPNiQE7VJFvDM3lCQ==}
+    peerDependencies:
+      convex: ^1.32.0
 
   convex@1.40.0:
     resolution: {integrity: sha512-jChWEB45q+9Ibryc7hg0l6hB1xA4zwE2y6ZhkhGP6oJkqYeiURkMagA2ZQZYMy1/T8PZ9ztoVJJtbL/+Ob851Q==}
@@ -11388,6 +11396,10 @@ snapshots:
       react: 19.2.7
       typescript: 6.0.3
       zod: 4.4.3
+
+  convex-test@0.0.53(convex@1.40.0(react@19.2.7)):
+    dependencies:
+      convex: 1.40.0(react@19.2.7)
 
   convex@1.40.0(react@19.2.7):
     dependencies:

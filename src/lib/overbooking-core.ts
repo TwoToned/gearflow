@@ -168,6 +168,23 @@ export type OverbookLineItem = {
 export type OverbookingBundleData = FunctionReturnType<typeof api.overbooking.bundle>;
 
 /**
+ * The model ids the overbooked computation actually consults — the `relevantItems`
+ * filter (`computeOverbookedStatus`): line items with a model, non-cancelled, not a
+ * sub-hire. The native read layer passes these as the `overbooking.bundle`
+ * `modelIds` arg so the bundle fetches exactly what `reconstructOverbookedStatus`
+ * needs (mirrors the server's modelIds derivation).
+ */
+export function relevantOverbookModelIds(lineItems: OverbookLineItem[]): string[] {
+  return [
+    ...new Set(
+      lineItems
+        .filter((li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null)
+        .map((li) => li.modelId!),
+    ),
+  ];
+}
+
+/**
  * PURE reconstruction of `computeOverbookedStatus` from the `overbooking.bundle`
  * payload + the project's (non-cancelled) line items. Byte-for-byte the Map the
  * server `computeOverbookedStatus` produces — the server now fetches the bundle

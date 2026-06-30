@@ -342,11 +342,14 @@ variable to `true` + rebuild to flip each live (project-detail also needs the me
   dashboard hook fires `reconcileIfStale` on view, throttled to ≤ once/`maxAge` per org — O(1) on the
   hot read path, zero write-site risk, fresh-enough for a stats overview. `bump` is kept for a future
   targeted hook. Reconcile reads are bounded per-org (pagination is future hardening for huge tenants).
-- **Deferred (low-risk):** `getUpcomingProjects` / `getMyHomeData` / `getMyBlockingComments` read
-  BOUNDED project/thread sets (not the whole-org registry → not the limit risk) — convertible to native
-  composites for reactivity polish. `getRecentActivity` is the one remaining whole-org-recent read;
-  its native version needs indexed `scannedAt`/`testDate desc` reads + user-name joins off the Convex
-  `users` mirror (its own follow-up). All four are correct + flag-safe on server actions today.
+- **The remaining 4 reads — now native too (#320):** `getUpcomingProjects` / `getMyHomeData` /
+  `getMyBlockingComments` → `convex/dashboardLists.ts` (`upcoming` / `home` / `blocking`); the user
+  identity for `home`/`blocking` comes from `getAuthContext(ctx)` inside the query. `getRecentActivity`
+  → `convex/dashboardActivity.bundle`: scan logs + test records bounded to the newest 10 via org+time
+  composite indexes (`assetScanLogs.by_organizationId_scannedAt` added; `testTagRecords` already had
+  `by_organizationId_testDate`), user names off the `users` mirror. **All 6 dashboard reads are native
+  — Phase 3 complete.** (Convex queries can't return `Date` objects; dates stay epoch-ms and the
+  consumers wrap with `new Date()`.)
 
 To flip `NEXT_PUBLIC_NATIVE_DASHBOARD`: run `pnpm convex:backfill:dashboard-counters` on prod first.
 

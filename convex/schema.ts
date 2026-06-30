@@ -1016,7 +1016,8 @@ export default defineSchema({
     .index("by_kitId", ["kitId"])
     .index("by_projectId", ["projectId"])
     .index("by_scannedById", ["scannedById"])
-    .index("by_scannedAt", ["scannedAt"]),
+    .index("by_scannedAt", ["scannedAt"])
+    .index("by_organizationId_scannedAt", ["organizationId", "scannedAt"]),
 
   // FileUpload
   fileUploads: defineTable({

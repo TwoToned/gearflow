@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { NATIVE_DASHBOARD_ENABLED, useNativeDashboardStats, useNativeSubHireStats } from "@/hooks/use-native-dashboard";
+import {
+  NATIVE_DASHBOARD_ENABLED,
+  useNativeDashboardStats,
+  useNativeSubHireStats,
+  useNativeUpcoming,
+  useNativeHome,
+  useNativeBlocking,
+  useNativeActivity,
+} from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
   ScanBarcode,
@@ -72,13 +80,30 @@ export default function DashboardPage() {
   });
   const stats = NATIVE_DASHBOARD_ENABLED ? nativeStats.data : scStats;
   const statsLoading = NATIVE_DASHBOARD_ENABLED ? nativeStats.isLoading : scStatsLoading;
-  const { data: upcoming } = useServerQuery({ queryKey: ["dashboard-upcoming", orgId], queryFn: getUpcomingProjects });
-  const { data: activity } = useServerQuery({ queryKey: ["dashboard-activity", orgId], queryFn: getRecentActivity });
+  // The bounded project/thread/activity reads — native behind the same flag.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeUpcoming = useNativeUpcoming(orgId) as any;
+  const { data: scUpcoming } = useServerQuery({ queryKey: ["dashboard-upcoming", orgId], queryFn: getUpcomingProjects, enabled: !NATIVE_DASHBOARD_ENABLED });
+  const upcoming = NATIVE_DASHBOARD_ENABLED ? nativeUpcoming : scUpcoming;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeActivity = useNativeActivity(orgId) as any;
+  const { data: scActivity } = useServerQuery({ queryKey: ["dashboard-activity", orgId], queryFn: getRecentActivity, enabled: !NATIVE_DASHBOARD_ENABLED });
+  const activity = NATIVE_DASHBOARD_ENABLED ? nativeActivity : scActivity;
+
   const nativeSubHireStats = useNativeSubHireStats(orgId);
   const { data: scSubHireStats } = useServerQuery({ queryKey: ["dashboard-sub-hire-stats", orgId], queryFn: getSubHireDashboardStats, enabled: !NATIVE_DASHBOARD_ENABLED });
   const subHireStats = NATIVE_DASHBOARD_ENABLED ? nativeSubHireStats : scSubHireStats;
-  const { data: myHome } = useServerQuery({ queryKey: ["my-home", orgId], queryFn: getMyHomeData });
-  const { data: myBlockers } = useServerQuery({ queryKey: ["my-blocking-comments", orgId], queryFn: getMyBlockingComments });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeHome = useNativeHome(orgId) as any;
+  const { data: scMyHome } = useServerQuery({ queryKey: ["my-home", orgId], queryFn: getMyHomeData, enabled: !NATIVE_DASHBOARD_ENABLED });
+  const myHome = NATIVE_DASHBOARD_ENABLED ? nativeHome : scMyHome;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeBlocking = useNativeBlocking(orgId) as any;
+  const { data: scMyBlockers } = useServerQuery({ queryKey: ["my-blocking-comments", orgId], queryFn: getMyBlockingComments, enabled: !NATIVE_DASHBOARD_ENABLED });
+  const myBlockers = NATIVE_DASHBOARD_ENABLED ? nativeBlocking : scMyBlockers;
 
   const now = new Date();
   const hour = now.getHours();

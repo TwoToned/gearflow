@@ -62,6 +62,33 @@ export function useNativeDashboardStats(
   return { data, isLoading: enabled && data === undefined };
 }
 
+/**
+ * The remaining bounded dashboard reads, native (Phase 3): upcoming projects, my
+ * home, my blocking comments, recent activity. Each is a reactive useQuery over a
+ * Convex composite; the consumers parse dates with `new Date()`, so the queries
+ * return epoch-ms. All gated on the same NEXT_PUBLIC_NATIVE_DASHBOARD flag.
+ */
+export function useNativeUpcoming(orgId: string | undefined) {
+  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(api.dashboardLists.upcoming, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
+}
+
+export function useNativeHome(orgId: string | undefined) {
+  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  return useAuthedQuery(api.dashboardLists.home, enabled ? { orgId: orgId! } : "skip");
+}
+
+export function useNativeBlocking(orgId: string | undefined) {
+  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId! } : "skip");
+}
+
+export function useNativeActivity(orgId: string | undefined) {
+  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  return useAuthedQuery(api.dashboardActivity.bundle, enabled ? { orgId: orgId! } : "skip");
+}
+
 export interface NativeSubHireStats {
   activeSubHires: number;
   monthlySubHireCost: number;

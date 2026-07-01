@@ -14,6 +14,9 @@ import { UserFacingError } from "@/lib/errors";
 export const nativeAssetWrites = (): boolean =>
   process.env.NATIVE_ASSET_WRITES === "true";
 
+export const nativeKitWrites = (): boolean =>
+  process.env.NATIVE_KIT_WRITES === "true";
+
 /**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is
@@ -66,3 +69,9 @@ export function mapAssetWriteError(e: unknown): unknown {
   }
   return e;
 }
+
+/**
+ * Domain-agnostic alias — the DUPLICATE_ASSET_TAG mapping is shared by the kit
+ * write path (kits reject duplicate tags with the same code).
+ */
+export const mapNativeWriteError = mapAssetWriteError;

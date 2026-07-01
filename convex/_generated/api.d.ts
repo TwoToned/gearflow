@@ -49,6 +49,7 @@ import type * as kitCheckItems from "../kitCheckItems.js";
 import type * as kitDetail from "../kitDetail.js";
 import type * as kitMedia from "../kitMedia.js";
 import type * as kitSerializedItems from "../kitSerializedItems.js";
+import type * as kitWrites from "../kitWrites.js";
 import type * as kits from "../kits.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   kitDetail: typeof kitDetail;
   kitMedia: typeof kitMedia;
   kitSerializedItems: typeof kitSerializedItems;
+  kitWrites: typeof kitWrites;
   kits: typeof kits;
   "lib/audit": typeof lib_audit;
   "lib/auth": typeof lib_auth;

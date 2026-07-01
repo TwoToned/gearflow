@@ -86,3 +86,59 @@ export const removeNative = mutation({
     return { projectId: line.projectId };
   },
 });
+
+const LINE_NEVER_CLEAR = new Set(["id", "organizationId", "projectId"]);
+
+/**
+ * patchNative — apply a set/clear patch to a line item + UPDATE audit, atomic.
+ * RBAC(project, manage_line_items). The server action still does the availability
+ * re-check (cross-project, on quantity increase) + the stale-revision guard + builds
+ * set/clear; the write + audit move here. recalc stays server-side (post-write).
+ */
+export const patchNative = mutation({
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    set: v.any(),
+    clear: v.array(v.string()),
+    entityName: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, set, clear, entityName, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+
+    const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    if (clear.length === 0) {
+      await ctx.db.patch(doc._id, set as Record<string, unknown>);
+    } else {
+      const { _id, _creationTime, ...rest } = doc;
+      const merged: Record<string, unknown> = { ...rest, ...(set as Record<string, unknown>) };
+      for (const k of clear) {
+        if (LINE_NEVER_CLEAR.has(k)) continue;
+        delete merged[k];
+      }
+      await ctx.db.replace(doc._id, merged as typeof rest);
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Updated line item on project",
+      projectId: doc.projectId,
+      createdAt: now,
+    });
+
+    return { projectId: doc.projectId };
+  },
+});

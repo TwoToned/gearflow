@@ -635,18 +635,36 @@ export async function updateLineItem(
   if (parsed.bulkAssetId !== undefined) setStr("bulkAssetId", parsed.bulkAssetId);
   if (parsed.supplierId !== undefined) setStr("supplierId", parsed.supplierId);
 
-  await (await getConvexClient()).mutation(api.projectLineItems.patchLineItem, {
-    id,
-    set,
-    clear,
-  });
+  const patchConvex = await getConvexClient();
+  if (nativeLineItemWrites()) {
+    // Native: RBAC + patch/clear + UPDATE audit atomic. The availability re-check +
+    // stale guard above stay server-side; recalc + collab stay below (unchanged).
+    try {
+      await patchConvex.mutation(api.lineItemWrites.patchNative, {
+        id,
+        orgId: organizationId,
+        set,
+        clear,
+        entityName: parsed.description || "Line item",
+        actor: { userId, userName },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  } else {
+    await patchConvex.mutation(api.projectLineItems.patchLineItem, { id, set, clear });
+  }
 
   const result = (await readBackLine(id))!;
 
   // Post-write tail in parallel (recalc + best-effort audit + collab + supplier enrich).
   const [, , , supplier] = await Promise.all([
     recalculateProjectTotals(result.projectId),
-    logActivity({
+    nativeLineItemWrites()
+      ? Promise.resolve()
+      : logActivity({
       organizationId,
       userId,
       userName,

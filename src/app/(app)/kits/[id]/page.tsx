@@ -4,11 +4,9 @@ import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
-import { NATIVE_KIT_ENABLED, useNativeKit } from "@/hooks/use-native-kit";
+import { useNativeKit } from "@/hooks/use-native-kit";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useKitDetailVersion } from "@/hooks/use-kits";
 import { Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
@@ -109,34 +107,20 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Reactive composite: subscribe to the cheap Convex version vector and re-run the
-  // unchanged getKit server action whenever the kit or its contents change (cross-user
-  // over the WebSocket — replaces the SSE `kit:updated` → invalidate path). See
-  // convex/kitDetail.ts + src/hooks/use-reactive-server-query.ts.
-  // Native read-layer path (Phase 2, default OFF). When the flag is on, the kit
-  // composite comes from ONE live kitDetail.bundle subscription (reconstructed
-  // client-side) — no server action, reactive over the WebSocket. Both hooks run;
-  // the flag selects the result. When off, the native hook skips and the server
-  // query stays enabled.
+  // Native kit-detail read (Phase 4 — the version-vector server-action path is
+  // retired). ONE live `kitDetail.bundle` subscription reconstructs the getKit
+  // shape client-side, reactive over the WebSocket. Writes are still server actions
+  // whose `convex.mutation` pushes the delta to this subscription, so the historic
+  // post-mutation refetch calls are redundant — `refetchKit` is kept as a no-op
+  // (belt-and-braces) to avoid touching every call site.
   const native = useNativeKit(id, orgId);
-  const kitVersion = useKitDetailVersion(id);
-  const {
-    data: scKit,
-    isLoading: scLoading,
-    refetch: refetchKit,
-  } = useReactiveServerQuery({
-    watch: kitVersion,
-    queryKey: ["kit", orgId, id],
-    queryFn: () => getKit(id),
-    enabled: !NATIVE_KIT_ENABLED,
-  });
-  // The native reconstruction is a thin DTO of the same getKit shape (the page
-  // reads only the fields it produces); cast to the server type so the page's
-  // typed field access is preserved.
-  const kit = NATIVE_KIT_ENABLED
-    ? (native.data as unknown as typeof scKit)
-    : scKit;
-  const isLoading = NATIVE_KIT_ENABLED ? native.isLoading : scLoading;
+  // The native reconstruction is a thin DTO of the same getKit shape (the page reads
+  // only the fields it produces); cast to the server type so the page's typed field
+  // access is preserved.
+  type KitDetail = Awaited<ReturnType<typeof getKit>>;
+  const kit = native.data as unknown as KitDetail | undefined;
+  const isLoading = native.isLoading;
+  const refetchKit = useCallback(() => {}, []);
 
   // Dialog-gated cross-domain reads (NOT in the SSE map; no cross-user liveness).
   // After an add, the mutation calls refetch() to drop the just-added rows.

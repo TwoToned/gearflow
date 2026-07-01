@@ -34,15 +34,3 @@ export function useBulkAssets(orgId: string | undefined): BulkAssetDoc[] | undef
 export function useBulkAsset(id: string | undefined): BulkAssetDoc | null | undefined {
   return useAuthedQuery(api.bulkAssets.getById, id ? { id } : "skip");
 }
-
-/**
- * Reactive "version vector" for the asset DETAIL page — the cheap Convex value
- * that `useReactiveServerQuery` watches to re-run the unchanged `getAsset` server
- * action on any cross-user change to the asset, its media, or its accessories.
- * See convex/assetDetail.ts for the silent-staleness contract. Pass `undefined`
- * to skip (e.g. the bulk-asset path, which redirects to the model page and never
- * renders this composite).
- */
-export function useAssetDetailVersion(id: string | undefined) {
-  return useAuthedQuery(api.assetDetail.version, id ? { id } : "skip");
-}

@@ -5,12 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
-import { useWarehouseProjectVersion } from "@/hooks/use-warehouse";
-import {
-  NATIVE_WAREHOUSE_ENABLED,
-  useNativeWarehouseProject,
-} from "@/hooks/use-native-warehouse";
+import { useNativeWarehouseProject } from "@/hooks/use-native-warehouse";
 import {
   ScanBarcode,
   ChevronRight,
@@ -32,7 +27,6 @@ import { showError } from "@/lib/show-error";
 import { focusRing } from "@/lib/utils";
 
 import {
-  getProjectForWarehouse,
   lookupAssetForScan,
   checkOutItems,
   checkInItems,
@@ -620,38 +614,21 @@ function WarehouseProjectPage({
     }
   }
 
-  // Reactive detail composite: a cheap Convex "version vector"
-  // (useWarehouseProjectVersion) drives re-runs of the unchanged
-  // getProjectForWarehouse server action — cross-user over the WebSocket. Same
-  // pattern as the kit/asset detail pages. See convex/warehouseDetail.ts.
-  // Native read-layer path (Phase 2, default OFF). When the flag is on, the whole
-  // composite comes from ONE live warehouseDetail.bundle subscription
-  // (reconstructed client-side) — no server action, reactive over the WebSocket
-  // (warehouseOps mutations write line items + units in Convex). Both paths' hooks
-  // run (rules-of-hooks); the flag selects which result we use. When off, the
-  // native hook skips and the server query stays enabled.
+  // Native warehouse-detail read (Phase 4 — the version-vector server-action path is
+  // retired). ONE live `warehouseDetail.bundle` subscription reconstructs the full
+  // getProjectForWarehouse shape client-side, reactive over the WebSocket (the
+  // warehouseOps mutations write line items + units in Convex, so edits push to this
+  // subscription). No server action, no manual refetch needed.
   const native = useNativeWarehouseProject(projectId, orgId);
-  const projectVersion = useWarehouseProjectVersion(projectId);
-  const {
-    data: scProject,
-    isLoading: scLoading,
-    refetch: refetchProject,
-  } = useReactiveServerQuery({
-    watch: projectVersion,
-    queryKey: ["warehouse-project", orgId, projectId],
-    queryFn: () => getProjectForWarehouse(projectId),
-    enabled: !NATIVE_WAREHOUSE_ENABLED,
-  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const project = (NATIVE_WAREHOUSE_ENABLED ? native.data : scProject) as any;
-  const isLoading = NATIVE_WAREHOUSE_ENABLED ? native.isLoading : scLoading;
+  const project = native.data as any;
+  const isLoading = native.isLoading;
 
-  // Same-view refresh after a write. The Convex vector also pushes the change,
-  // but refetchProject re-reads the Prisma source of truth immediately without
-  // waiting for the mirror write to land. The old ["project-prep-kits"]
-  // invalidation is dropped — nothing reads that key (dead key, data-identical).
+  // Post-write refresh is now a no-op: the native subscription pushes every
+  // warehouseOps change live over the WebSocket, so an explicit refetch is
+  // redundant (kept to avoid touching every call site).
+  const refetchProject = useCallback(() => {}, []);
   const invalidate = () => {
-    refetchProject();
     setSelectedOut(new Set());
     setSelectedIn(new Set());
   };

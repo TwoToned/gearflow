@@ -20,6 +20,9 @@ export const nativeKitWrites = (): boolean =>
 export const nativeCrewWrites = (): boolean =>
   process.env.NATIVE_CREW_WRITES === "true";
 
+export const nativeProjectWrites = (): boolean =>
+  process.env.NATIVE_PROJECT_WRITES === "true";
+
 /**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is

@@ -10,7 +10,6 @@ import {
   countCheckedOutInProjects,
   countEquipmentLineItemsByProject,
 } from "@/lib/line-item-count-read";
-import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getProjectsByOrg, getProjectIdsForManager } from "@/lib/projects-read";
@@ -119,78 +118,6 @@ export async function getMyHomeData() {
   // Clients live in Convex — attach instead of a Prisma join.
   const withClients = await attachClient(organizationId, myProjects);
   return serialize({ userName, userId, myProjects: withClients });
-}
-
-/**
- * Open blocking comments that need the current user's attention: ones on a
- * project they manage, or where they've been @mentioned. Surfaced on the
- * dashboard so a blocker that's gating prep / send-out can't sit unnoticed.
- */
-export async function getMyBlockingComments() {
-  const { organizationId, userId } = await getOrgContext();
-
-  const threads = await listOpenBlockingThreads(organizationId);
-  if (threads.length === 0) return serialize([]);
-
-  const projectIds = Array.from(new Set(threads.map((t) => t.projectId).filter(Boolean)));
-  const [allOrgProjects, pmProjectIds] = await Promise.all([
-    getProjectsByOrg(organizationId),
-    getProjectIdsForManager(organizationId, userId),
-  ]);
-  const idSet = new Set(projectIds);
-  const projectMap = new Map(allOrgProjects.filter((p) => idSet.has(p.id)).map((p) => [p.id, p]));
-
-  const surfaced = threads
-    .map((t) => {
-      const project = projectMap.get(t.projectId);
-      if (!project) return null;
-      const isPM = project.projectManagerId === userId || pmProjectIds.has(project.id);
-      const isMentioned = t.mentionUserIds.includes(userId);
-      if (!isPM && !isMentioned) return null;
-      return {
-        threadId: t.threadId,
-        projectId: t.projectId,
-        projectName: project.name,
-        projectNumber: project.projectNumber,
-        targetType: t.targetType,
-        snippet: t.snippet,
-        createdByName: t.createdByName,
-        createdAt: t.createdAt,
-        // "mention" wins as the more personal reason when both apply.
-        reason: isMentioned ? ("mention" as const) : ("pm" as const),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => b.createdAt - a.createdAt);
-
-  return serialize(surfaced);
-}
-
-export async function getUpcomingProjects() {
-  const { organizationId } = await getOrgContext();
-
-  const now = new Date();
-
-  const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
-  const allOrgProjects = await getProjectsByOrg(organizationId);
-  const candidateUpcoming = allOrgProjects
-    .filter(
-      (p) =>
-        !p.isTemplate &&
-        UPCOMING_STATUSES.has(p.status ?? "") &&
-        p.rentalStartDate != null &&
-        (p.rentalStartDate as number) >= now.getTime(),
-    )
-    .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number))
-    .slice(0, 8);
-
-  const upcomingIds = candidateUpcoming.map((p) => p.id);
-  const upcomingLineItems = await getLineItemsByProjectIds(organizationId, upcomingIds);
-  const upcomingLiMap = countEquipmentLineItemsByProject(upcomingLineItems, upcomingIds);
-  const projects = candidateUpcoming.map((p) => ({ ...p, _count: { lineItems: upcomingLiMap.get(p.id) ?? 0 } }));
-
-  // Clients live in Convex — attach instead of a Prisma join.
-  return serialize(await attachClient(organizationId, projects));
 }
 
 export async function getRecentActivity() {

@@ -1,13 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { createSharedResource } from "./use-shared-resource";
-import {
-  useProjectLineItems,
-  useProjectGroups,
-  useProjectCategories as useConvexProjectCategories,
-  useProjectSubHireDocs,
-} from "./use-projects";
 import {
   getProjectCategories,
   getUncategorizedLineItems,
@@ -61,94 +54,3 @@ const subHire = createSharedResource((subHireId: string) => getSubHire(subHireId
 /** Subscribe to a single sub-hire's detail. Key = subHireId. */
 export const useSubHire = subHire.use;
 export const refreshSubHire = subHire.refresh;
-
-/**
- * Cross-tab live sync for the equipment-tab composition.
- *
- * The equipment composites (categories, uncategorized items, overbooked status)
- * are deep cross-domain server-action reads — they stay server actions because
- * Prisma still owns the asset/unit/kit physical joins. But line items, groups,
- * and categories are all dual-written to Convex, so we subscribe to those tables
- * directly. When ANOTHER tab (or collaborator) edits a price, moves an item, adds
- * a group, etc., the Convex mirror pushes the change over the websocket; the
- * fingerprint below changes and we re-fetch the composites so this tab updates
- * live — no manual refresh.
- *
- * Mount once in the equipment tab. The local writer still calls invalidate()
- * synchronously; this only fires the redundant-but-harmless refresh once the
- * Convex push lands (and is the ONLY refresh other tabs get).
- */
-function fingerprintLineItems(
-  items: { id: string; updatedAt?: number; unitPrice?: number; lineTotal?: number; quantity?: number; discount?: number; categoryId?: string; groupId?: string; status?: string; sortOrder?: number }[] | undefined,
-): string | undefined {
-  if (!items) return undefined;
-  return items
-    .map((i) => `${i.id}:${i.updatedAt ?? 0}:${i.unitPrice ?? ""}:${i.lineTotal ?? ""}:${i.quantity ?? ""}:${i.discount ?? ""}:${i.categoryId ?? ""}:${i.groupId ?? ""}:${i.status ?? ""}:${i.sortOrder ?? ""}`)
-    .sort()
-    .join("|");
-}
-
-function fingerprintGrouping(
-  rows: { id: string; updatedAt?: number; sortOrder?: number }[] | undefined,
-  extra?: (r: { id: string }) => string,
-): string | undefined {
-  if (!rows) return undefined;
-  return rows
-    .map((r) => `${r.id}:${r.updatedAt ?? 0}:${r.sortOrder ?? ""}:${extra?.(r) ?? ""}`)
-    .sort()
-    .join("|");
-}
-
-/** Subscribe to Convex line-item/group/category/sub-hire tables and refresh the equipment composites on any cross-tab change. */
-export function useProjectEquipmentLiveSync(
-  projectId: string | undefined,
-  orgId: string | undefined,
-) {
-  const lineItems = useProjectLineItems(projectId, orgId);
-  const groups = useProjectGroups(projectId, orgId);
-  const cats = useConvexProjectCategories(projectId, orgId);
-  const subHires = useProjectSubHireDocs(projectId, orgId);
-
-  const liFp = fingerprintLineItems(lineItems);
-  const grpFp = fingerprintGrouping(
-    groups,
-    (r) => `${(r as { title?: string; price?: number; quantity?: number; categoryId?: string }).title ?? ""}:${(r as { price?: number }).price ?? ""}:${(r as { quantity?: number }).quantity ?? ""}:${(r as { categoryId?: string }).categoryId ?? ""}`,
-  );
-  const catFp = fingerprintGrouping(cats, (r) => (r as { name?: string }).name ?? "");
-  // Sub-hire fingerprint covers order-level edits (status, cost, supplier, target
-  // category/group). Item/group line edits inside a sub-hire bump the parent's
-  // updatedAt via the recalc sweep, so the parent row is a sufficient signal.
-  const shFp = fingerprintGrouping(
-    subHires as { id: string; updatedAt?: number }[] | undefined,
-    (r) => {
-      const s = r as { status?: string; totalCost?: number; supplierId?: string; defaultTargetCategoryId?: string; defaultTargetGroupId?: string };
-      return `${s.status ?? ""}:${s.totalCost ?? ""}:${s.supplierId ?? ""}:${s.defaultTargetCategoryId ?? ""}:${s.defaultTargetGroupId ?? ""}`;
-    },
-  );
-
-  const prev = useRef<{ li?: string; grp?: string; cat?: string; sh?: string }>({});
-
-  useEffect(() => {
-    if (!projectId) return;
-    const p = prev.current;
-    const equipChanged =
-      (liFp !== undefined && p.li !== undefined && liFp !== p.li) ||
-      (grpFp !== undefined && p.grp !== undefined && grpFp !== p.grp) ||
-      (catFp !== undefined && p.cat !== undefined && catFp !== p.cat);
-    const subHireChanged = shFp !== undefined && p.sh !== undefined && shFp !== p.sh;
-    if (equipChanged || subHireChanged) {
-      refreshProjectCategories(projectId);
-      refreshUncategorizedItems(projectId);
-      refreshUncategorizedProjectGroups(projectId);
-      refreshProjectOverbooked(projectId);
-    }
-    if (subHireChanged) {
-      refreshProjectSubHires(projectId);
-      refreshUncategorizedSubHireGroups(projectId);
-    }
-    if (liFp !== undefined) p.li = liFp;
-    if (grpFp !== undefined) p.grp = grpFp;
-    if (catFp !== undefined) p.cat = catFp;
-    if (shFp !== undefined) p.sh = shFp;
-  }, [projectId, liFp, grpFp, catFp, shFp]);
-}

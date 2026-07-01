@@ -39,6 +39,11 @@ const ASSET_WRITE_ERROR_MAP: Record<
     message: "This asset has accessories attached.",
     hint: "Detach its accessories first, then delete.",
   },
+  DUPLICATE_ASSET_TAG: {
+    title: "Duplicate asset tag",
+    message: "That asset tag already exists.",
+    hint: "Use a different asset tag.",
+  },
 };
 
 export function mapAssetWriteError(e: unknown): unknown {
@@ -49,9 +54,14 @@ export function mapAssetWriteError(e: unknown): unknown {
     "code" in e.data &&
     typeof (e.data as { code: unknown }).code === "string"
   ) {
-    const mapped = ASSET_WRITE_ERROR_MAP[(e.data as { code: string }).code];
+    const code = (e.data as { code: string }).code;
+    const mapped = ASSET_WRITE_ERROR_MAP[code];
     if (mapped) {
-      return new UserFacingError({ code: (e.data as { code: string }).code, ...mapped });
+      // Prefer the mutation's own message (some carry dynamic detail, e.g. the
+      // offending asset tag) over the static fallback.
+      const dyn = (e.data as { message?: unknown }).message;
+      const message = typeof dyn === "string" && dyn ? dyn : mapped.message;
+      return new UserFacingError({ code, title: mapped.title, message, hint: mapped.hint });
     }
   }
   return e;

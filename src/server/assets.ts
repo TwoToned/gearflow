@@ -414,21 +414,12 @@ export async function createAsset(data: AssetFormValues) {
   const model = await getModelById(parsed.modelId);
 
   try {
-    // DUP GUARD: Convex has no unique index — reject a duplicate tag up front.
-    const dup = await getAssetByAssetTag(organizationId, parsed.assetTag);
-    if (dup) {
-      throw new UserFacingError({
-        code: "DUPLICATE_ASSET_TAG",
-        title: "Duplicate asset tag",
-        message: `Asset tag "${parsed.assetTag}" already exists.`,
-        hint: "Use a different asset tag.",
-      });
-    }
-
     const convex = await getConvexClient();
     const newId = createId();
     const now = Date.now();
-    await convex.mutation(api.assets.create, {
+    // Shared insert payload (identical for the legacy service mutation and the
+    // native mutation — only the guard/audit placement differs).
+    const assetFields = {
       id: newId,
       organizationId,
       modelId: parsed.modelId,
@@ -453,7 +444,32 @@ export async function createAsset(data: AssetFormValues) {
       tags: parsed.tags || undefined,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    if (nativeAssetWrites()) {
+      // Native: dup-guard + insert + CREATE audit atomic in the mutation.
+      try {
+        await convex.mutation(api.assetWrites.createNative, {
+          ...assetFields,
+          actor: { userId, userName },
+          auditId: createId(),
+        });
+      } catch (e) {
+        throw mapAssetWriteError(e);
+      }
+    } else {
+      // Legacy: DUP GUARD in the action (Convex has no unique index), then insert.
+      const dup = await getAssetByAssetTag(organizationId, parsed.assetTag);
+      if (dup) {
+        throw new UserFacingError({
+          code: "DUPLICATE_ASSET_TAG",
+          title: "Duplicate asset tag",
+          message: `Asset tag "${parsed.assetTag}" already exists.`,
+          hint: "Use a different asset tag.",
+        });
+      }
+      await convex.mutation(api.assets.create, assetFields);
+    }
     // Read back the persisted row in the Prisma shape callers expect.
     const created = await getAssetById(newId);
     if (!created) throw new Error("Asset create read-back failed: " + newId);
@@ -488,18 +504,21 @@ export async function createAsset(data: AssetFormValues) {
       });
     }
 
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "asset",
-      entityId: result.id,
-      entityName: result.assetTag,
-      summary: `Created asset ${result.assetTag}`,
-      details: { created: { assetTag: result.assetTag, modelId: parsed.modelId } },
-      assetId: result.id,
-    });
+    if (!nativeAssetWrites()) {
+      // Native path already wrote the CREATE audit atomically in the mutation.
+      await logActivity({
+        organizationId,
+        userId,
+        userName,
+        action: "CREATE",
+        entityType: "asset",
+        entityId: result.id,
+        entityName: result.assetTag,
+        summary: `Created asset ${result.assetTag}`,
+        details: { created: { assetTag: result.assetTag, modelId: parsed.modelId } },
+        assetId: result.id,
+      });
+    }
 
     return serialize(result);
   } catch (e: unknown) {
@@ -649,8 +668,9 @@ export async function updateAsset(id: string, data: AssetFormValues) {
 
   let updated;
   try {
-    // DUP GUARD only when the tag changed.
-    if (parsed.assetTag !== before.assetTag) {
+    // DUP GUARD only when the tag changed (legacy path; the native mutation runs
+    // this guard atomically with the write).
+    if (!nativeAssetWrites() && parsed.assetTag !== before.assetTag) {
       const dup = await getAssetByAssetTag(organizationId, parsed.assetTag);
       if (dup && dup.id !== id) {
         throw new UserFacingError({
@@ -691,7 +711,24 @@ export async function updateAsset(id: string, data: AssetFormValues) {
     setOrClear("locationId", parsed.locationId);
 
     const convex = await getConvexClient();
-    await convex.mutation(api.assets.patchAsset, { id, set, clear });
+    if (nativeAssetWrites()) {
+      // Native: tag-change dup-guard + patch/clear + UPDATE audit atomic.
+      try {
+        await convex.mutation(api.assetWrites.updateNative, {
+          id,
+          orgId: organizationId,
+          set,
+          clear,
+          actor: { userId, userName },
+          auditId: createId(),
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapAssetWriteError(e);
+      }
+    } else {
+      await convex.mutation(api.assets.patchAsset, { id, set, clear });
+    }
     const updatedDoc = await getAssetById(id);
     if (!updatedDoc) throw new Error("Asset update read-back failed: " + id);
     updated = mapConvexAssetToPrisma(updatedDoc);
@@ -701,17 +738,20 @@ export async function updateAsset(id: string, data: AssetFormValues) {
     throw e;
   }
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "asset",
-    entityId: updated.id,
-    entityName: updated.assetTag,
-    summary: `Updated asset ${updated.assetTag}`,
-    assetId: updated.id,
-  });
+  if (!nativeAssetWrites()) {
+    // Native path already wrote the UPDATE audit atomically in the mutation.
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: updated.id,
+      entityName: updated.assetTag,
+      summary: `Updated asset ${updated.assetTag}`,
+      assetId: updated.id,
+    });
+  }
 
   // Register in T&T if model requires it and not already registered
   // Model lives in Convex — fetch for T&T requirements check.

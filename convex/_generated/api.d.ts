@@ -62,6 +62,7 @@ import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_testtag from "../lib/testtag.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lineItemMergeMaps from "../lineItemMergeMaps.js";
+import type * as lineItemWrites from "../lineItemWrites.js";
 import type * as locationMedia from "../locationMedia.js";
 import type * as locations from "../locations.js";
 import type * as maintenanceRecordAssets from "../maintenanceRecordAssets.js";
@@ -177,6 +178,7 @@ declare const fullApi: ApiFromModules<{
   "lib/testtag": typeof lib_testtag;
   "lib/validators": typeof lib_validators;
   lineItemMergeMaps: typeof lineItemMergeMaps;
+  lineItemWrites: typeof lineItemWrites;
   locationMedia: typeof locationMedia;
   locations: typeof locations;
   maintenanceRecordAssets: typeof maintenanceRecordAssets;

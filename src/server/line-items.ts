@@ -13,6 +13,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { nativeLineItemWrites, mapNativeWriteError } from "@/lib/native-writes";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
@@ -892,6 +893,38 @@ export async function removeLineItem(id: string) {
       title: "Line item not found",
       message: "This item was deleted by someone else. Refresh the page.",
     });
+  }
+
+  if (nativeLineItemWrites()) {
+    // Native: the child-removal guard + cascade (children + units) + DELETE audit
+    // run atomically in the mutation. recalc + the collab feed stay server-side
+    // (recalc already ran post-delete before — unchanged, so totals are identical).
+    try {
+      await convex.mutation(api.lineItemWrites.removeNative, {
+        id,
+        orgId: organizationId,
+        actor: { userId, userName },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+    await Promise.all([
+      recalculateProjectTotals(item.projectId),
+      writeCollabActivityEvent(
+        { organizationId, userId, userName },
+        {
+          entityType: "project",
+          entityId: item.projectId,
+          action: "line_item_removed",
+          summary: `removed ${item.description || "a line item"}`,
+          targetType: "lineItem",
+          targetId: id,
+        },
+      ),
+    ]);
+    return serialize({ success: true });
   }
 
   // Block direct removal of child items (kit members, sub-hire group children,

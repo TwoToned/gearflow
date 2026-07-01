@@ -1,58 +1,73 @@
 # Convex-Native Read Layer — Migration Design
 
-**Status:** IN PROGRESS — Phases 0–1 shipped (12 PRs). Phase 2 in flight.
+**Status:** IN PROGRESS — Phases 0–3 shipped (reads fully native). Phase 4–5 next.
 **Author:** autoplan research session, 2026-06-28
 **Branch:** `worktree-bridge-cse_017LNKTLidv7uzAAREUiRha3`
 **Related:** [[convex-phase5-auth-bridge]], [[convex-hybrid-migration]], `perf-convex-efficiency-2026-06.md`, memory `perf-round-trip-bundles.md`
 
 ---
 
-## ▶ NEXT SESSION — START HERE (2026-06-28)
+## ▶ NEXT SESSION — START HERE (Phases 4 + 5)
 
-**Goal: complete Phase 2 (remaining read surfaces) + Phase 3 (dashboard).** Full
-resume context is in the memory file `convex-native-read-layer.md` (PR list, live
-state, gotchas).
+**Goal: complete Phase 4 (delete the legacy read layer) + Phase 5 (native writes).**
+Full resume context in the memory file `convex-native-read-layer.md`.
 
-**Done:** Phase 0 (plumbing) + Phase 1 (project-detail native composite + RBAC guard
-+ members/customRoles mirror + backfill + convex-test harness). 12 PRs merged. Members
-backfill run on prod Convex.
+**Done:** Phases 0–3. All READ surfaces are native Convex `useQuery` composites —
+project-detail, equipment tab, warehouse/kit/asset detail, and the dashboard (with
+counter tables). **Writes are still server actions.** First: `git log origin/main` +
+grep the `NEXT_PUBLIC_NATIVE_*` flags to confirm exactly what's live before deleting
+or changing anything.
 
-**Live state:** native project-detail flag `NEXT_PUBLIC_NATIVE_PROJECT_DETAIL` is
-currently **OFF** (rolled back — it has loading-state flashes + the overbooking gap to
-finish before re-enabling). A referenced-only-assets perf fix is live.
-`convex/equipmentTab.ts` (`equipmentTab.bundle`) is built but **has no consumer yet**.
+**Core rule (unchanged):** native = one backend-local Convex composite over a reactive
+subscription. Browser queries gate on `requireOrgPermission`/`requireOrgRead`, read
+**referenced-only** (never whole-org catalogs), use `useAuthedQuery`, reconstruct in a
+client-safe module (zero server imports, unit-tested). One PR per slice, flag-gated
+where behaviour changes, CI-verified (`lint`+`tsc`+`test`+`next build`), deploy async
+(poll `https://flow.rvlt.app` for 200/307).
 
-**Core insight:** the app is slow because every read is a tower (browser → Next →
-Convex HTTP ×~50 round-trips → compose → serialize → browser). Native = ONE
-backend-local Convex composite over a reactive `useQuery`. Don't perf-tune the towers
-— replace them.
+**Phase 4 — delete legacy reads, PER-CONSUMER, only after `git grep` proves zero
+importers (never wholesale):**
+- `src/hooks/use-reactive-server-query.ts` + `convex/*Detail.ts` `version`/`listVersion`
+  exports (version vectors) — once no surface imports them.
+- `src/hooks/use-shared-resource.ts` — **keep the file until every consumer is gone**
+  (used broadly: SSO settings, templates, custom roles, org members, profile, project
+  subtabs; some Prisma/auth-adjacent). Delete dead detail/equipment consumers first.
+- `src/hooks/use-server-query.ts` — only if fully retired.
+- `serialize()` calls + dead `src/lib/*-read.ts` helpers on dead read paths. **Do NOT
+  delete `serialize` itself** (still used on write returns + non-migrated paths).
 
-**Phase 2 surfaces, priority order** — each = browser composite (`requireOrgPermission`,
-**referenced-only reads, never whole-org catalog**) + client-safe reconstruction
-(zero server imports; reuse `src/lib/project-equipment-reconstruct.ts`; unit-test it)
-+ flag-gated wiring (`NEXT_PUBLIC_NATIVE_*`, default off) + CI-verify + user verifies live:
-1. **Equipment editing tab** (active pain, ~15s load): reconstruct the 6 views from
-   `equipmentTab.bundle`; make the composite referenced-only for models/suppliers too;
-   wire `src/components/projects/equipment-tab.tsx` (uses the 6 `createSharedResource`
-   reads in `src/hooks/use-project-equipment.ts`) behind `NEXT_PUBLIC_NATIVE_EQUIPMENT`.
-2. **Finish project-detail:** smooth loading states (no access-denied/not-found flash
-   during auth resolution) + port the overbooked-flag enrichment (`computeOverbookedStatus`
-   — careful: flat-vs-nested + kit-inheritance), then re-enable + verify.
-3. **Warehouse detail, kit detail, asset detail, project finance/other tabs.**
+**Phase 5 — native writes (highest-risk; ONE domain per PR: assets → line-items → kits
+→ projects → crew, behind a per-domain write-path flag):**
+- **5a RBAC into the mutation:** widen `requireOrgPermission` (`convex/lib/auth.ts`,
+  currently `QueryCtx`) to mutation ctx; enforce it in the mutations (they only
+  `requireService` today).
+- **5b Invariants into the mutation:** move server-action domain rules + relevant
+  `src/lib/validations/` checks into the mutation (transactional, unbypassable; Zod
+  stays the client-form contract).
+- **5c Audit into the mutation:** write the audit row to Convex `activityLogs` (table
+  exists, zero writers) INSIDE the same mutation transaction (today `logActivity` is a
+  separate Postgres write that drifts). Unblocks the dashboard activity-feed reactive read.
+- **5d Optimistic client write:** `useMutation(api.x).withOptimisticUpdate(...)` — never
+  mutate `localStore`, client ids throwaway, match server sort order.
+- **KEY DECISION (was deferred as too risky blind):** `recalculateProjectTotals`
+  (financial, `src/server/line-items.ts`). Either port into an internal Convex mutation
+  via `ctx.scheduler.runAfter(0, …)`, or keep server-side + fire after the optimistic
+  write. **Parity-test the totals before flipping any flag — money data.**
+- Also migrate the Postgres-only membership/role/org-calendar writes here (retires the
+  mirror's fail-closed complexity). **Gate each domain on a write-parity test** (same
+  inputs → same Convex state + same audit) before flipping.
 
-**Phase 3 — dashboard:** native composites + **maintained counter tables** (NOT
-`.collect().length`) as its own mini-design (schema, per-write updates, backfill,
-reconcile, parity tests). Activity-feed tile stays server-action until Phase 5
-(audit not in Convex).
+**Hard gotchas:** Convex filenames camelCase, NO hyphens (broke prod deploy once).
+`NEXT_PUBLIC_*` flags are build-inlined → Dockerfile ARG + build-image.yml build-arg +
+GitHub repo variable + a rebuild (runtime env does nothing). Always `throw new
+ConvexError` (never plain `Error`) in `convex/*.ts`. `createIfMissing`/upsert-idempotent
+for mirror writes. `convex-test` harness exists (`import.meta.glob` typed via
+`convex/import-meta-glob.d.ts`) — integration-test every new mutation's RBAC + audit.
+`pnpm add --ignore-workspace`; copy `.env`/`.env.local` from main repo; `DATABASE_URL=
+<placeholder> pnpm exec prisma generate` before `tsc`; `pnpm exec convex codegen`
+regenerates `_generated`. CI Build job (`next build`) verifies client-safety.
 
-**Hard gotchas:** Convex module filenames camelCase, NO hyphens (broke prod deploy
-once). `NEXT_PUBLIC_*` flags are build-inlined → need Dockerfile ARG + build-image.yml
-build-arg + GitHub repo variable + a rebuild (runtime env does nothing). Use
-`useAuthedQuery` for browser queries. Keep `recalculateProjectTotals` (financial)
-server-side. `pnpm add --ignore-workspace`; copy `.env`/`.env.local` from main repo;
-`DATABASE_URL=<placeholder> pnpm exec prisma generate` before `tsc`. CI Build job
-(`next build`) verifies client-safety. One PR per surface, flag default-off, deploy is
-async (poll `https://flow.rvlt.app` for 200/307).
+**After this:** only Phases 6 (Convex crons/actions) + 7 (native search) remain.
 
 ---
 

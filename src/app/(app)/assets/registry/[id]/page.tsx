@@ -1,14 +1,12 @@
 "use client";
 
-import { use, Suspense, useEffect, useMemo, useState } from "react";
+import { use, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
-import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
-import { NATIVE_ASSET_ENABLED, useNativeAsset } from "@/hooks/use-native-asset";
+import { useNativeAsset } from "@/hooks/use-native-asset";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useAssetDetailVersion } from "@/hooks/use-assets";
 import {
   Archive,
   ChevronRight,
@@ -108,32 +106,20 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
     return isNaN(parsed.getTime()) ? null : parsed;
   }, [searchParams]);
 
-  // Reactive composite: subscribe to the cheap Convex version vector and re-run
-  // the unchanged getAsset server action whenever the asset, its media, or its
-  // accessories change (cross-user over the WebSocket). The bulk path redirects
-  // to the model page and is not in the realtime scope → a plain useServerQuery.
-  // See convex/assetDetail.ts + src/hooks/use-reactive-server-query.ts.
-  // Native read-layer path (Phase 2, default OFF). When the flag is on (serialized
-  // assets only), the asset composite comes from ONE live assetDetail.bundle
-  // subscription (reconstructed client-side) — no server action, reactive over the
-  // WebSocket. Both hooks run; the flag selects the result.
+  // Native asset-detail read (Phase 4 — the version-vector server-action path is
+  // retired). ONE live `assetDetail.bundle` subscription reconstructs the getAsset
+  // shape client-side (serialized assets only — the bulk path redirects to the model
+  // page and loads via a plain useServerQuery below), reactive over the WebSocket.
+  // Writes are still server actions whose `convex.mutation` pushes the delta to this
+  // subscription, so the historic post-mutation refetch calls are redundant —
+  // `refetchAsset` is kept as a no-op (belt-and-braces) to avoid touching call sites.
   const native = useNativeAsset(isBulk ? undefined : id, orgId);
-  const assetVersion = useAssetDetailVersion(isBulk ? undefined : id);
-  const {
-    data: scAsset,
-    isLoading: scAssetLoading,
-    refetch: refetchAsset,
-  } = useReactiveServerQuery({
-    watch: assetVersion,
-    queryKey: ["asset", orgId, id],
-    queryFn: () => getAsset(id),
-    enabled: !isBulk && !NATIVE_ASSET_ENABLED,
-  });
-  const useNativeAssetPath = NATIVE_ASSET_ENABLED && !isBulk;
-  const asset = useNativeAssetPath
-    ? (native.data as unknown as typeof scAsset)
-    : scAsset;
-  const assetLoading = useNativeAssetPath ? native.isLoading : scAssetLoading;
+  // Thin DTO of the getAsset shape (the page reads only produced fields); cast to the
+  // server type so the page's typed field access is preserved.
+  type AssetDetail = Awaited<ReturnType<typeof getAsset>>;
+  const asset = native.data as unknown as AssetDetail | undefined;
+  const assetLoading = !isBulk && native.isLoading;
+  const refetchAsset = useCallback(() => {}, []);
 
   const { data: bulkAsset, isLoading: bulkLoading } = useServerQuery({
     queryKey: ["bulk-asset", orgId, id],

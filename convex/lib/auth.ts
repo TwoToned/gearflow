@@ -1,6 +1,6 @@
 import type { Auth } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { QueryCtx } from "../_generated/server";
+import type { QueryCtx, MutationCtx } from "../_generated/server";
 import {
   decideOrgPermission,
   type Resource,
@@ -137,7 +137,10 @@ export async function requireOrgReadDoc(
 //     not crash the read);
 //   • for a "custom:<id>" role, the org-scoped custom role + its parsed perms.
 //
-// Typed for QueryCtx (read path). Phase 5 can widen it to mutation ctx.
+// Accepts QueryCtx OR MutationCtx: the read path (browser composites) and the
+// native write path (Phase 5 asset/line-item/... mutations in convex/*Writes.ts)
+// enforce the SAME RBAC through this one guard. It only uses ctx.auth + ctx.db.query,
+// both present on either ctx.
 
 /** Parse a stored custom-role permissions JSON string; null on absent/invalid. */
 function parseCustomPermissions(raw: string | undefined): PermissionMap | null {
@@ -168,7 +171,7 @@ function orgPermissionMessage(decision: OrgPermissionDecision): string {
  * `ConvexError` (never plain Error) so the reason survives the prod boundary.
  */
 export async function requireOrgPermission(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   orgId: string,
   resource: Resource,
   action: string,

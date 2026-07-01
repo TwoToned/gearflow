@@ -106,6 +106,7 @@ import type * as users from "../users.js";
 import type * as warehouseCloses from "../warehouseCloses.js";
 import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
 import type * as warehouseDetail from "../warehouseDetail.js";
+import type * as warehouseList from "../warehouseList.js";
 import type * as warehouseOps from "../warehouseOps.js";
 import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
@@ -215,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   warehouseCloses: typeof warehouseCloses;
   warehouseDashboardTokens: typeof warehouseDashboardTokens;
   warehouseDetail: typeof warehouseDetail;
+  warehouseList: typeof warehouseList;
   warehouseOps: typeof warehouseOps;
   wooCommerceIntegrations: typeof wooCommerceIntegrations;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;

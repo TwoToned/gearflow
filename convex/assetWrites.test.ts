@@ -124,3 +124,92 @@ describe("assetWrites.updateNotesNative — invariants (5b)", () => {
     ).rejects.toThrow(/not found/i);
   });
 });
+
+const archiveArgs = { id: "a1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+
+describe("assetWrites.archiveNative", () => {
+  test("retires the asset + linked T&T and writes an audit row", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, assetId: "a1", testTagId: "TAG-1", description: "TAG-1", status: "NOT_YET_TESTED", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(SERVICE).mutation(api.assetWrites.archiveNative, archiveArgs);
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(asset?.isActive).toBe(false);
+      expect(asset?.status).toBe("RETIRED");
+      const tt = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "tt1")).first();
+      expect(tt?.status).toBe("RETIRED");
+      expect(tt?.isActive).toBe(false);
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.summary).toMatch(/Archived asset/);
+    });
+  });
+
+  test("a viewer is denied (asset:update)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.archiveNative, archiveArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+const deleteArgs = { id: "a1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+
+describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
+  test("owner deletes a free asset + writes the DELETE audit", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t, "owner");
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.deleteNative, deleteArgs);
+    expect(res.id).toBe("a1");
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(asset).toBeNull();
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("DELETE");
+    });
+  });
+
+  test("a manager (no asset:delete) is denied", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t, "manager");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.deleteNative, deleteArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("blocked when referenced by a project line item (ASSET_IN_USE)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", assetId: "a1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, deleteArgs),
+    ).rejects.toThrow(/referenced by project line items/i);
+  });
+
+  test("blocked when the asset is a kit member (ASSET_IN_KIT)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, deleteArgs),
+    ).rejects.toThrow(/part of a kit/i);
+  });
+
+  test("blocked when the asset has accessory children (ASSET_HAS_ACCESSORIES)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "child", organizationId: ORG, modelId: "m1", assetTag: "CHILD", parentAssetId: "a1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, deleteArgs),
+    ).rejects.toThrow(/accessories attached/i);
+  });
+});

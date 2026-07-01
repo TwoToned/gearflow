@@ -213,3 +213,91 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
     ).rejects.toThrow(/accessories attached/i);
   });
 });
+
+describe("assetWrites.createNative", () => {
+  const createArgs = {
+    id: "new1", organizationId: ORG, modelId: "m1", assetTag: "NEW-1",
+    status: "AVAILABLE" as const, condition: "GOOD" as const,
+    createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId: "log1",
+  };
+
+  test("member creates an asset + writes the CREATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
+    expect(res.id).toBe("new1");
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "new1")).first();
+      expect(asset?.assetTag).toBe("NEW-1");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
+    });
+  });
+
+  test("rejects a duplicate asset tag (DUPLICATE_ASSET_TAG)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t); // seeds TAG-1
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.createNative, { ...createArgs, assetTag: "TAG-1" }),
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  test("a viewer is denied (asset:create)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "viewer" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+describe("assetWrites.updateNative", () => {
+  const updArgs = { id: "a1", orgId: ORG, set: { assetTag: "TAG-1", status: "IN_MAINTENANCE" as const, updatedAt: NOW }, clear: [] as string[], actor: ACTOR, auditId: "log1", now: NOW };
+
+  test("applies set + writes the UPDATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t);
+    await t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, updArgs);
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(asset?.status).toBe("IN_MAINTENANCE");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("UPDATE");
+    });
+  });
+
+  test("clear removes an optional field", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", status: "AVAILABLE", condition: "GOOD", isActive: true, notes: "old", createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { ...updArgs, set: { updatedAt: NOW }, clear: ["notes"] });
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(asset?.notes).toBeUndefined();
+    });
+  });
+
+  test("rejects a tag change that collides with another asset (DUPLICATE_ASSET_TAG)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t); // a1 / TAG-1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "TAKEN", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { ...updArgs, set: { assetTag: "TAKEN", updatedAt: NOW } }),
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  test("a viewer is denied (asset:update)", async () => {
+    const t = convexTest(schema, modules);
+    await seedAsset(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNative, updArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});

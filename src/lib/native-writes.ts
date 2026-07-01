@@ -23,6 +23,9 @@ export const nativeCrewWrites = (): boolean =>
 export const nativeProjectWrites = (): boolean =>
   process.env.NATIVE_PROJECT_WRITES === "true";
 
+export const nativeLineItemWrites = (): boolean =>
+  process.env.NATIVE_LINEITEM_WRITES === "true";
+
 /**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is
@@ -52,6 +55,21 @@ const ASSET_WRITE_ERROR_MAP: Record<
     title: "Duplicate asset tag",
     message: "That asset tag already exists.",
     hint: "Use a different asset tag.",
+  },
+  // Line-item removeNative guards (mirror src/server/line-items.ts).
+  NOT_FOUND: {
+    title: "Line item not found",
+    message: "This item was deleted by someone else. Refresh the page.",
+  },
+  KIT_CHILD: {
+    title: "Cannot remove this item",
+    message: "This item is part of a Kit.",
+    hint: "Remove the Kit from the project instead — that will remove all its members at once.",
+  },
+  ACCESSORY_CHILD: {
+    title: "Cannot remove this item",
+    message: "This item is an accessory of another asset.",
+    hint: "Remove the parent asset's line to remove it, or detach the accessory from the asset in the catalog.",
   },
 };
 

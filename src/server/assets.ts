@@ -26,6 +26,7 @@ import {
   mapConvexAssetToPrisma,
 } from "@/lib/assets-read";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { nativeAssetWrites, mapAssetWriteError } from "@/lib/native-writes";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
 import { getActiveCustomFieldsForOrg } from "@/lib/custom-fields-read";
 import { getConvexClient } from "@/lib/convex-client";
@@ -782,6 +783,38 @@ export async function deleteAsset(id: string) {
   }
   const asset = mapConvexAssetToPrisma(assetDoc);
 
+  if (nativeAssetWrites()) {
+    // Native path: the orphan guards + T&T retire + remove + Convex audit run
+    // transactionally in the mutation (closes the check-then-write race). Map its
+    // coded ConvexError back to the rich UserFacingError so the toast is unchanged.
+    try {
+      await convex.mutation(api.assetWrites.deleteNative, {
+        id,
+        orgId: organizationId,
+        actor: { userId, userName },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapAssetWriteError(e);
+    }
+    // Transition: also write the Postgres audit so the activity-log screens (still
+    // Postgres-backed) show the delete until audit reads migrate to Convex. The
+    // mutation already wrote the Convex audit (the future reactive source of truth).
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "asset",
+      entityId: id,
+      entityName: asset.assetTag,
+      summary: `Deleted asset ${asset.assetTag}`,
+      details: { deleted: { assetTag: asset.assetTag } },
+    });
+    return { id };
+  }
+
   const lineItemCount = (await convex.query(api.projectLineItems.listByAssetId, { assetId: id, orgId: organizationId })).length;
   if (lineItemCount > 0) {
     throw new UserFacingError({
@@ -840,9 +873,19 @@ export async function deleteAsset(id: string) {
 }
 
 export async function updateAssetNotes(id: string, notes: string) {
-  const { organizationId } = await requirePermission("asset", "update");
+  const { organizationId, userId, userName } = await requirePermission("asset", "update");
   const convex = await getConvexClient();
-  if (notes) {
+  if (nativeAssetWrites()) {
+    // Native path: RBAC + org invariant + atomic Convex audit in one mutation.
+    await convex.mutation(api.assetWrites.updateNotesNative, {
+      id,
+      orgId: organizationId,
+      notes: notes || null,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else if (notes) {
     await convex.mutation(api.assets.patchAsset, {
       id,
       set: { notes, updatedAt: Date.now() },
@@ -863,10 +906,26 @@ export async function updateAssetNotes(id: string, notes: string) {
 }
 
 export async function archiveAsset(id: string) {
-  const { organizationId } = await requirePermission("asset", "update");
+  const { organizationId, userId, userName } = await requirePermission("asset", "update");
+  const convex = await getConvexClient();
+
+  if (nativeAssetWrites()) {
+    // Native path: retire linked T&T + soft-retire the asset + audit, one transaction.
+    await convex.mutation(api.assetWrites.archiveNative, {
+      id,
+      orgId: organizationId,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+    const nativeDoc = await getAssetById(id);
+    if (!nativeDoc || nativeDoc.organizationId !== organizationId) {
+      throw new Error("Asset archive read-back failed: " + id);
+    }
+    return serialize(mapConvexAssetToPrisma(nativeDoc));
+  }
 
   // Retire linked T&T entries (Convex-only write).
-  const convex = await getConvexClient();
   const linkedTTList = await convex.query(api.testTagAssets.listByAssetId, { assetId: id });
   const archiveNow = Date.now();
   for (const tt of linkedTTList) {

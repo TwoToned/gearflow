@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useServerQuery } from "@/hooks/use-server-query";
 import {
-  NATIVE_DASHBOARD_ENABLED,
   useNativeDashboardStats,
   useNativeSubHireStats,
   useNativeUpcoming,
@@ -35,15 +33,7 @@ import { Button } from "@/components/ui/button";
 import { FlowMascot } from "@/components/ui/flow-mascot";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
-import {
-  getDashboardStats,
-  getUpcomingProjects,
-  getRecentActivity,
-  getMyHomeData,
-  getMyBlockingComments,
-} from "@/server/dashboard";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
-import { getSubHireDashboardStats } from "@/server/sub-hires";
 import { formatDistanceToNow, format } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 
@@ -67,43 +57,22 @@ export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Native read-layer path (Phase 3, default OFF). When the flag is on, the seven
-  // dashboard stats come from the counter-backed dashboardStats.bundle subscription
-  // (O(1) read + date-derived) instead of getDashboardStats' whole-org scans. Both
-  // hooks run; the flag selects the result. When off, the native hook skips and the
-  // server query stays enabled.
+  // Native read-layer path (Phase 4 — the getDashboardStats/... server-action reads
+  // are retired). The seven stats come from the counter-backed
+  // dashboardStats.bundle subscription (O(1) read + date-derived); the bounded
+  // project/thread/activity reads come from their own native subscriptions.
   const nativeStats = useNativeDashboardStats(orgId);
-  const { data: scStats, isLoading: scStatsLoading } = useServerQuery({
-    queryKey: ["dashboard-stats", orgId],
-    queryFn: getDashboardStats,
-    enabled: !NATIVE_DASHBOARD_ENABLED,
-  });
-  const stats = NATIVE_DASHBOARD_ENABLED ? nativeStats.data : scStats;
-  const statsLoading = NATIVE_DASHBOARD_ENABLED ? nativeStats.isLoading : scStatsLoading;
-  // The bounded project/thread/activity reads — native behind the same flag.
+  const stats = nativeStats.data;
+  const statsLoading = nativeStats.isLoading;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nativeUpcoming = useNativeUpcoming(orgId) as any;
-  const { data: scUpcoming } = useServerQuery({ queryKey: ["dashboard-upcoming", orgId], queryFn: getUpcomingProjects, enabled: !NATIVE_DASHBOARD_ENABLED });
-  const upcoming = NATIVE_DASHBOARD_ENABLED ? nativeUpcoming : scUpcoming;
-
+  const upcoming = useNativeUpcoming(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nativeActivity = useNativeActivity(orgId) as any;
-  const { data: scActivity } = useServerQuery({ queryKey: ["dashboard-activity", orgId], queryFn: getRecentActivity, enabled: !NATIVE_DASHBOARD_ENABLED });
-  const activity = NATIVE_DASHBOARD_ENABLED ? nativeActivity : scActivity;
-
-  const nativeSubHireStats = useNativeSubHireStats(orgId);
-  const { data: scSubHireStats } = useServerQuery({ queryKey: ["dashboard-sub-hire-stats", orgId], queryFn: getSubHireDashboardStats, enabled: !NATIVE_DASHBOARD_ENABLED });
-  const subHireStats = NATIVE_DASHBOARD_ENABLED ? nativeSubHireStats : scSubHireStats;
-
+  const activity = useNativeActivity(orgId) as any;
+  const subHireStats = useNativeSubHireStats(orgId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nativeHome = useNativeHome(orgId) as any;
-  const { data: scMyHome } = useServerQuery({ queryKey: ["my-home", orgId], queryFn: getMyHomeData, enabled: !NATIVE_DASHBOARD_ENABLED });
-  const myHome = NATIVE_DASHBOARD_ENABLED ? nativeHome : scMyHome;
-
+  const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nativeBlocking = useNativeBlocking(orgId) as any;
-  const { data: scMyBlockers } = useServerQuery({ queryKey: ["my-blocking-comments", orgId], queryFn: getMyBlockingComments, enabled: !NATIVE_DASHBOARD_ENABLED });
-  const myBlockers = NATIVE_DASHBOARD_ENABLED ? nativeBlocking : scMyBlockers;
+  const myBlockers = useNativeBlocking(orgId) as any;
 
   const now = new Date();
   const hour = now.getHours();

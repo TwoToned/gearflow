@@ -1,73 +1,68 @@
 # Convex-Native Read Layer — Migration Design
 
-**Status:** IN PROGRESS — Phases 0–3 shipped (reads fully native). Phase 4–5 next.
+**Status:** IN PROGRESS — Phases 0–3 COMPLETE (reads native). Phase 4 in flight (4 PRs
+open). Phase 5 (native writes) is the next major phase.
 **Author:** autoplan research session, 2026-06-28
-**Branch:** `worktree-bridge-cse_017LNKTLidv7uzAAREUiRha3`
 **Related:** [[convex-phase5-auth-bridge]], [[convex-hybrid-migration]], `perf-convex-efficiency-2026-06.md`, memory `perf-round-trip-bundles.md`
 
 ---
 
-## ▶ NEXT SESSION — START HERE (Phases 4 + 5)
+## ▶ NEXT SESSION — START HERE (2026-07-01)
 
-**Goal: complete Phase 4 (delete the legacy read layer) + Phase 5 (native writes).**
-Full resume context in the memory file `convex-native-read-layer.md`.
+**Goal: finish Phase 4 (delete remaining legacy read layer) + execute Phase 5 (native
+writes, domain-by-domain).** Full resume context in the memory file
+`convex-native-read-layer.md` (PR list, live state, gotchas).
 
-**Done:** Phases 0–3. All READ surfaces are native Convex `useQuery` composites —
-project-detail, equipment tab, warehouse/kit/asset detail, and the dashboard (with
-counter tables). **Writes are still server actions.** First: `git log origin/main` +
-grep the `NEXT_PUBLIC_NATIVE_*` flags to confirm exactly what's live before deleting
-or changing anything.
+**Done:** Phase 0 (plumbing) + Phase 1 (project-detail native + RBAC guard + members/
+customRoles mirror + convex-test) + **Phase 2 COMPLETE** (equipment tab, warehouse/kit/
+asset detail all native) + **Phase 3 COMPLETE** (all 6 dashboard reads native, counter
+tables). **All 6 `NEXT_PUBLIC_NATIVE_*` flags set `true` in GitHub repo vars (2026-07-01).**
 
-**Core rule (unchanged):** native = one backend-local Convex composite over a reactive
-subscription. Browser queries gate on `requireOrgPermission`/`requireOrgRead`, read
-**referenced-only** (never whole-org catalogs), use `useAuthedQuery`, reconstruct in a
-client-safe module (zero server imports, unit-tested). One PR per slice, flag-gated
-where behaviour changes, CI-verified (`lint`+`tsc`+`test`+`next build`), deploy async
-(poll `https://flow.rvlt.app` for 200/307).
+**Phase 4 IN FLIGHT (2026-07-01, 4 PRs open):**
+- **#323** — retire the version-vector detail read path: collapse kit/asset/warehouse
+  DETAIL pages to native-only; delete the `version` exports in `convex/{kit,asset,
+  warehouse}Detail.ts`, the `use{Kit,Asset,WarehouseProject}DetailVersion` wrappers, and
+  the 3 `convex-roundtrip-*-detail.ts` scripts (they validated only the deleted vectors).
+- **#324** — retire the equipment-tab doorbell: collapse the 6 shared-resource reads +
+  delete `useProjectEquipmentLiveSync`. KEPT the `invalidate()`/`refresh*` chokepoint
+  (the add-form + sub-hire dialog still READ those shared stores).
+- **#325** — collapse the 6 dashboard reads to native-only.
+- **#326** — collapse project-detail read to native-only; `refreshProjectDetail` kept
+  as a no-op (native subscription is reactive).
 
-**Phase 4 — delete legacy reads, PER-CONSUMER, only after `git grep` proves zero
-importers (never wholesale):**
-- `src/hooks/use-reactive-server-query.ts` + `convex/*Detail.ts` `version`/`listVersion`
-  exports (version vectors) — once no surface imports them.
-- `src/hooks/use-shared-resource.ts` — **keep the file until every consumer is gone**
-  (used broadly: SSO settings, templates, custom roles, org members, profile, project
-  subtabs; some Prisma/auth-adjacent). Delete dead detail/equipment consumers first.
-- `src/hooks/use-server-query.ts` — only if fully retired.
-- `serialize()` calls + dead `src/lib/*-read.ts` helpers on dead read paths. **Do NOT
-  delete `serialize` itself** (still used on write returns + non-migrated paths).
+**Phase 4 REMAINING (handoff):**
+- `use-reactive-server-query.ts` **stays** — still imported by the **warehouse LANDING
+  list** (`warehouse/page.tsx`), which was never migrated to native. Migrating that list
+  (a `getProjects` version-vector read) is the prerequisite to deleting the hook.
+- `use-server-query.ts` **stays** — used by 100+ no-liveness one-shot reads (badges,
+  admin, pickers). Not a Phase-4 target.
+- `use-shared-resource.ts` **stays** — still backs SSO/org-members/custom-roles/profile/
+  templates/project-services/crew + the equipment add-form/sub-hire dialog reads.
+- **Dead server actions to prune (verify-then-delete):** `getUpcomingProjects` +
+  `getMyBlockingComments` are now zero-importer. `getDashboardStats`/`getSubHireDashboardStats`
+  only referenced in comments. `getRecentActivity` (used by `maintenance-record-asset-read.ts`)
+  and `getMyHomeData` (int test) must stay. Do these as one small "prune dead dashboard
+  reads" PR after #325 merges.
 
-**Phase 5 — native writes (highest-risk; ONE domain per PR: assets → line-items → kits
-→ projects → crew, behind a per-domain write-path flag):**
-- **5a RBAC into the mutation:** widen `requireOrgPermission` (`convex/lib/auth.ts`,
-  currently `QueryCtx`) to mutation ctx; enforce it in the mutations (they only
-  `requireService` today).
-- **5b Invariants into the mutation:** move server-action domain rules + relevant
-  `src/lib/validations/` checks into the mutation (transactional, unbypassable; Zod
-  stays the client-form contract).
-- **5c Audit into the mutation:** write the audit row to Convex `activityLogs` (table
-  exists, zero writers) INSIDE the same mutation transaction (today `logActivity` is a
-  separate Postgres write that drifts). Unblocks the dashboard activity-feed reactive read.
-- **5d Optimistic client write:** `useMutation(api.x).withOptimisticUpdate(...)` — never
-  mutate `localStore`, client ids throwaway, match server sort order.
-- **KEY DECISION (was deferred as too risky blind):** `recalculateProjectTotals`
-  (financial, `src/server/line-items.ts`). Either port into an internal Convex mutation
-  via `ctx.scheduler.runAfter(0, …)`, or keep server-side + fire after the optimistic
-  write. **Parity-test the totals before flipping any flag — money data.**
-- Also migrate the Postgres-only membership/role/org-calendar writes here (retires the
-  mirror's fail-closed complexity). **Gate each domain on a write-parity test** (same
-  inputs → same Convex state + same audit) before flipping.
+**Core insight (unchanged):** native = ONE backend-local Convex composite over a
+reactive `useQuery`, replacing the browser → Next → Convex-HTTP-tower → serialize path.
 
-**Hard gotchas:** Convex filenames camelCase, NO hyphens (broke prod deploy once).
-`NEXT_PUBLIC_*` flags are build-inlined → Dockerfile ARG + build-image.yml build-arg +
-GitHub repo variable + a rebuild (runtime env does nothing). Always `throw new
-ConvexError` (never plain `Error`) in `convex/*.ts`. `createIfMissing`/upsert-idempotent
-for mirror writes. `convex-test` harness exists (`import.meta.glob` typed via
-`convex/import-meta-glob.d.ts`) — integration-test every new mutation's RBAC + audit.
-`pnpm add --ignore-workspace`; copy `.env`/`.env.local` from main repo; `DATABASE_URL=
-<placeholder> pnpm exec prisma generate` before `tsc`; `pnpm exec convex codegen`
-regenerates `_generated`. CI Build job (`next build`) verifies client-safety.
+**Hard gotchas:** Convex module filenames camelCase, NO hyphens (broke prod deploy
+once). `NEXT_PUBLIC_*` flags are build-inlined → Dockerfile ARG + build-image.yml
+build-arg + GitHub repo var + a rebuild (runtime env does nothing) — **note: because
+they're build-inlined, an env-var rollback in prod ALSO needs a rebuild, so it's no
+faster than a git revert; that's why Phase 4 can safely collapse the flags**. Use
+`useAuthedQuery`. `pnpm add --ignore-workspace`; copy `.env`/`.env.local` from main;
+`DATABASE_URL=<placeholder> pnpm exec prisma generate` before `tsc`; `pnpm exec convex
+codegen` after convex edits. CI `next build` verifies client-safety. One PR per slice,
+deploy is async (poll `https://flow.rvlt.app` for 200/307).
 
-**After this:** only Phases 6 (Convex crons/actions) + 7 (native search) remain.
+**⚠️ Live-state sequencing:** the running prod container predates the flag-set (repo
+vars set 2026-07-01 AFTER the last build), so native reads have **not run in prod yet**.
+Merging ANY Phase 4 PR triggers a rebuild that both flips native reads live AND removes
+that surface's fallback. Smoke-test the affected surface after the first merge deploys.
+
+See **§Phase 5 execution plan (2026-07-01)** below before starting native writes.
 
 ---
 
@@ -449,6 +444,86 @@ Per domain (assets → line-items → kits → projects → crew → …), one d
 - **Ship/reversible:** per domain, behind a write-path flag (server-action write vs native mutation). Each domain independently revertible.
 - **Risk:** **High** — writes are where data corruption happens. Gate each domain on a write-parity test (same inputs → same resulting Convex state + same audit entry, native vs server action) before flipping the flag.
 - **Effort:** ~4–6 weeks across all domains, incremental.
+
+### Phase 5 execution plan (2026-07-01) — de-risked implementation notes
+
+Grounded in the current code (`src/server/assets.ts`, `convex/assets.ts`,
+`convex/lib/auth.ts`, `src/lib/activity-log.ts`). Read before touching writes.
+
+**★ The load-bearing safety constraint: 5a+5b+5c must land TOGETHER per mutation.**
+Convex `query`/`mutation` are PUBLIC — any authenticated user token can call them.
+Today asset mutations `requireService(ctx)`, which rejects every user token, so the
+server action (service token) is the only caller and its `requirePermission` +
+dup-guard + custom-field validation + `logActivity` are unbypassable. The moment you
+relax `requireService` → `requireOrgPermission` to enable native writes, a user with
+`asset:create` can call `api.assets.create` **directly from the browser**, bypassing
+every invariant + the audit row. Therefore you can NEVER ship 5a alone. The minimum
+safe unit is: relax the guard **and** move the invariants (5b) **and** write the audit
+row (5c) into that mutation, in one change. (`requireOrgPermission` still early-returns
+for the service token, so the existing server-action path keeps working unchanged.)
+
+**Recommended shape — additive NEW native mutations, not in-place relaxation.** Keep
+the generated service mutations (`api.assets.create` etc.) exactly as they are (live
+server-action path untouched, zero risk). Add NEW mutations (e.g.
+`convex/assets.ts` `createNative` / `updateNative` / `removeNative`, or a `convex/
+assetWrites.ts` module) that enforce `requireOrgPermission` + invariants + audit, and
+are called ONLY by the flag'd client path. This isolates all risk behind the flag and
+gives a trivial rollback (don't call them).
+
+**Widen the guard (safe, do first):** `requireOrgPermission(ctx: QueryCtx | MutationCtx, …)`
+— it only uses `ctx.auth` + `ctx.db.query`, both present on `MutationCtx`. Pure type
+widening, no behaviour change. Add a convex-test that a mutation ctx enforces the same
+role matrix (mirror `convex/rbac.test.ts`).
+
+**Audit-in-mutation (5c) — the actor problem.** `activityLogs` (schema `convex/
+schema.ts:1350`, ZERO writers today) needs `userId` + `userName`. A **service-token**
+call carries no user identity; a **user-token** native call does (`getAuthContext(ctx)
+→ {userId}`), but not the display name. Resolution: the mutation takes an explicit
+`actor: { userId, userName }` arg. The server-action path passes the actor it already
+has (from `getOrgContext`); the native client path passes the current user (or the
+mutation derives `userId` from `getAuthContext` and looks `userName` up in the `users`
+mirror). Write the row with `ctx.db.insert("activityLogs", …)` **in the same mutation**
+so data+audit are atomic (fixes today's drift where `logActivity` is a separate Postgres
+write that silently swallows failures, `activity-log.ts:29`). Add a shared helper
+`convex/lib/audit.ts writeActivityLog(ctx, entry)`.
+
+**Convex determinism caveats for the audit/id/timestamp:** `Date.now()` IS allowed in
+mutations (unlike queries), but `Math.random()`/`crypto`-based `createId()` (cuid2) is
+NOT deterministic — generate the activityLog `id` in the caller and pass it as an arg
+(the server action already does this pattern for asset ids), OR use the Convex doc
+`_id`. Match Prisma's `activityLog` id shape (cuid string) for parity if the audit
+screens later read both stores during the transition.
+
+**Per-mutation invariant port (5b) — asset specifics:** `createAsset` needs the
+dup-tag guard (`getAssetByAssetTag` → in-mutation `by_assetTag` index lookup),
+`resolveAssetCustomFields` (reads active ASSET custom-field defs — port to a ctx
+helper), and the test&tag auto-register side-effect (defer to Phase 6 `ctx.scheduler`,
+or replicate the `testTagAssets.createIfMissing` call in-mutation). `updateAsset` needs
+the dup-guard only when the tag changes. `deleteAsset` needs the orphan guards (no line
+items / not in a kit / no children) + the T&T retire. These are the real work; write a
+convex-test per invariant.
+
+**5d optimistic:** only after 5a–5c land + parity passes. `useMutation(api.assetWrites.
+createNative).withOptimisticUpdate(...)`. Never mutate `localStore`; client ids are
+throwaway; guard on "query loaded"; match the `assets.list` sort for inserts.
+
+**recalculateProjectTotals (money — line-items domain only, NOT assets):** decide when
+you reach line-items. Option (a) internal Convex mutation via `ctx.scheduler.runAfter(0,
+…)` after the write (atomic-ish, fully native); option (b) keep server-side, client
+fires it after the optimistic write. Whichever — gate on a totals parity test before
+flipping the flag. Assets have no recalc, which is why assets is the right pattern-prover.
+
+**Write-parity gate (per domain, before flipping any flag):** same inputs → identical
+resulting Convex state + identical audit entry, native mutation vs server action. Build
+it as a convex-test that runs both paths against the same in-memory backend and diffs
+the resulting docs + the `activityLogs` row.
+
+**Also in Phase 5 (retires mirror complexity):** migrate the Postgres-only membership/
+customRole/org-calendar writes into Convex; then flip the `members`/`customRoles` guard
+reads from fail-closed-mirror to authoritative (no more Prisma→Convex mirror to sync).
+
+**Sequence:** assets (pattern-prover) → line-items (money, recalc decision) → kits →
+projects → crew. One domain per PR, per-domain `NEXT_PUBLIC_NATIVE_*_WRITES` flag.
 
 ### Phase 6 — Convex background jobs & side-effects (Tier C)
 **Goal:** stop using Next.js as the scheduler/glue for things Convex does natively.

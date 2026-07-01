@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireOrgPermission } from "./lib/auth";
+import { requireOrgRead, requireOrgPermission } from "./lib/auth";
 
 /**
  * Reactive "version vectors" for the WAREHOUSE pages (Phase 6 — React Query
@@ -107,93 +107,6 @@ export const listVersion = query({
       .join("|");
 
     return { projects: sig };
-  },
-});
-
-/**
- * `version` — the per-project WAREHOUSE DETAIL composite
- * (`warehouse/[projectId]/page.tsx`, queryKey ["warehouse-project", orgId,
- * projectId]). The cheap reactive value `useReactiveServerQuery` watches to
- * re-run the unchanged `getProjectForWarehouse` server action whenever any
- * warehouse-visible field of the project or its line items changes — cross-user
- * over the WebSocket, replacing the (currently dead) SSE `warehouse-project`
- * invalidation. Establishes nothing new beyond the kitDetail/assetDetail
- * convention; see those files for the version-vector rationale.
- *
- * COVERAGE (the silent-staleness contract — must be a superset of the page's
- * mutable, mirror-backed surface):
- *   • project doc `updatedAt` + `status` — the header (status pill / name /
- *     number, all on the project row → bumped by @updatedAt) and pipeline
- *     transitions.
- *   • `client` name — the header renders `project.client.name`; a client rename
- *     does NOT touch the project row, so project.updatedAt won't move (same
- *     cross-domain-join-freshness class codex flagged on `listVersion`). Clients
- *     are dual-written, so fold the resolved name in.
- *   • a CONTENT SIGNATURE over the project's `projectLineItems` (by_projectId),
- *     folding every mutable warehouse-visible rollup the Pick/Prep · Deploy ·
- *     Return · Bulk-Check-In · Close-Out tabs render or flip IN PLACE: status,
- *     prepStatus, prepContainer, the quantity rollups (quantity /
- *     checkedOutQuantity / returnedQuantity / assigned / packed / damaged /
- *     lost), the asset/bulk/kit assignment, return condition/status, and the
- *     checkout/return timestamps. An in-place check-out (a line-item status +
- *     checkedOutQuantity flip at the SAME row count) moves the signature — the
- *     proof the round-trip script asserts.
- *
- * KNOWN SCOPE NOTE: the per-unit `project_line_item_unit` fulfillment rows are
- * NOT dual-written to Convex (the line-item mirror strips `units`), so the vector
- * watches the line-item ROLLUPS instead — every warehouse mutation updates those
- * rollups in the same `$transaction` and re-mirrors all of the project's line
- * items via `upsertProjectLineItemsToConvex`, so a rollup-level signature tracks
- * the unit flips it summarises. The page's own per-mutation `refetch()` covers
- * same-view freshness independently of this vector regardless (the SSE path emits
- * nothing today — see assetDetail.ts — so this vector is a pure additive
- * cross-user improvement, not a data-identical contract that could regress).
- *
- * Browser-readable: reads the project doc, enforces org scoping via
- * requireOrgReadDoc, then reads line items by projectId. Returns only
- * ids/status/quantities/timestamps — no secrets.
- */
-export const version = query({
-  args: { projectId: v.string() },
-  handler: async (ctx, { projectId }) => {
-    const project = await ctx.db
-      .query("projects")
-      .withIndex("by_cuid", (q) => q.eq("id", projectId))
-      .unique();
-    await requireOrgReadDoc(ctx, project);
-    if (!project) return null;
-
-    const lineItems = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
-
-    // Deterministic per-row signature (sorted, so mirror insertion order can't
-    // perturb it). Folds every mutable warehouse-visible rollup so an add/remove
-    // AND an in-place status/quantity flip both move the vector.
-    const lineItemsSig = lineItems
-      .map(
-        (li) =>
-          `${li.id}:${li.status ?? ""}:${li.prepStatus ?? ""}:${li.prepContainer ?? ""}:${li.quantity ?? ""}:${li.checkedOutQuantity ?? ""}:${li.returnedQuantity ?? ""}:${li.assignedQuantity ?? ""}:${li.packedQuantity ?? ""}:${li.damagedQuantity ?? ""}:${li.lostQuantity ?? ""}:${li.assetId ?? ""}:${li.bulkAssetId ?? ""}:${li.kitId ?? ""}:${li.returnCondition ?? ""}:${li.returnStatus ?? ""}:${li.checkedOutAt ?? ""}:${li.returnedAt ?? ""}:${li.updatedAt ?? li._creationTime}`,
-      )
-      .sort()
-      .join("|");
-
-    const clientName = project.clientId
-      ? ((
-          await ctx.db
-            .query("clients")
-            .withIndex("by_cuid", (q) => q.eq("id", project.clientId!))
-            .unique()
-        )?.name ?? "")
-      : "";
-
-    return {
-      project: project.updatedAt ?? project._creationTime,
-      status: project.status ?? "",
-      client: clientName,
-      lineItems: lineItemsSig,
-    };
   },
 });
 

@@ -5,6 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { nativeCrewWrites } from "@/lib/native-writes";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import {
@@ -254,12 +255,21 @@ export async function createCrewMember(data: CrewMemberFormValues) {
   // they're read-only, backfilled as skillIds. Cascade children stay Prisma.
   const id = createId();
   const now = Date.now();
-  await (await getConvexClient()).mutation(
-    api.crewMembers.createIfMissing,
-    toConvexDoc({ id, organizationId, ...cleaned, isActive: true, createdAt: now, updatedAt: now }) as FunctionArgs<
-      typeof api.crewMembers.createIfMissing
-    >,
-  );
+  const convexDoc = toConvexDoc({ id, organizationId, ...cleaned, isActive: true, createdAt: now, updatedAt: now });
+  const convex = await getConvexClient();
+  if (nativeCrewWrites()) {
+    // Native: insert (idempotent by cuid) + CREATE audit atomic in the mutation.
+    await convex.mutation(api.crewWrites.createNative, {
+      ...convexDoc,
+      actor: { userId, userName },
+      auditId: createId(),
+    } as FunctionArgs<typeof api.crewWrites.createNative>);
+  } else {
+    await convex.mutation(
+      api.crewMembers.createIfMissing,
+      convexDoc as FunctionArgs<typeof api.crewMembers.createIfMissing>,
+    );
+  }
   const result = {
     id,
     organizationId,
@@ -269,16 +279,18 @@ export async function createCrewMember(data: CrewMemberFormValues) {
     updatedAt: new Date(now),
   };
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "crew_member",
-    entityId: result.id,
-    entityName: `${result.firstName} ${result.lastName}`,
-    summary: `Created crew member ${result.firstName} ${result.lastName}`,
-  });
+  if (!nativeCrewWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "CREATE",
+      entityType: "crew_member",
+      entityId: result.id,
+      entityName: `${result.firstName} ${result.lastName}`,
+      summary: `Created crew member ${result.firstName} ${result.lastName}`,
+    });
+  }
 
   return serialize(result);
 }
@@ -323,29 +335,45 @@ export async function updateCrewMember(id: string, data: CrewMemberFormValues) {
   const clear = Object.entries(cleaned)
     .filter(([, val]) => val == null)
     .map(([k]) => k);
-  await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
-    id,
-    set: toConvexDoc({ ...cleaned, updatedAt: now }),
-    clear,
-  });
+  const setDoc = toConvexDoc({ ...cleaned, updatedAt: now });
   const updated = { ...before, ...cleaned, updatedAt: new Date(now) };
-
   const changes = buildChanges(before, updated, [
     "firstName", "lastName", "email", "phone", "type", "status",
     "department", "defaultDayRate", "defaultHourlyRate", "address", "isActive",
   ]);
+  const entityName = `${updated.firstName} ${updated.lastName}`;
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "crew_member",
-    entityId: updated.id,
-    entityName: `${updated.firstName} ${updated.lastName}`,
-    summary: `Updated crew member ${updated.firstName} ${updated.lastName}`,
-    details: changes.length > 0 ? { changes } : undefined,
-  });
+  const convex = await getConvexClient();
+  if (nativeCrewWrites()) {
+    // Native: patch/clear + UPDATE audit (with the field-change diff) atomic.
+    await convex.mutation(api.crewWrites.updateNative, {
+      id,
+      orgId: organizationId,
+      set: setDoc,
+      clear,
+      entityName,
+      details: changes.length > 0 ? { changes } : undefined,
+      actor: { userId, userName },
+      auditId: createId(),
+      now,
+    } as FunctionArgs<typeof api.crewWrites.updateNative>);
+  } else {
+    await convex.mutation(api.crewMembers.patchMember, { id, set: setDoc, clear });
+  }
+
+  if (!nativeCrewWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "crew_member",
+      entityId: updated.id,
+      entityName,
+      summary: `Updated crew member ${entityName}`,
+      details: changes.length > 0 ? { changes } : undefined,
+    });
+  }
 
   return serialize(updated);
 }

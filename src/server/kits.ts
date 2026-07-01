@@ -16,6 +16,7 @@ import { reserveAssetTags } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { nativeKitWrites, mapNativeWriteError } from "@/lib/native-writes";
 
 import { getPrimaryPhotoMap, getKitMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
@@ -237,17 +238,10 @@ export async function createKit(data: KitFormValues) {
   const { organizationId, userId, userName } = await requirePermission("kit", "create");
   const parsed = kitSchema.parse(data);
 
-  // Dup-guard the assetTag against the Convex mirror (the Prisma unique
-  // constraint is gone now that kits are Convex-only).
-  const existingTag = await getKitByAssetTag(organizationId, parsed.assetTag);
-  if (existingTag) {
-    throw new Error(`Asset tag "${parsed.assetTag}" already exists`);
-  }
-
   const id = createId();
   const now = Date.now();
   const convex = await getConvexClient();
-  await convex.mutation(api.kits.create, {
+  const kitFields = {
     id,
     organizationId,
     name: parsed.name,
@@ -272,23 +266,45 @@ export async function createKit(data: KitFormValues) {
     checkMode: parsed.checkMode,
     createdAt: now,
     updatedAt: now,
-  });
+  };
+
+  if (nativeKitWrites()) {
+    // Native: dup-guard + insert + CREATE audit atomic in the mutation.
+    try {
+      await convex.mutation(api.kitWrites.createNative, {
+        ...kitFields,
+        actor: { userId, userName },
+        auditId: createId(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  } else {
+    // Legacy: dup-guard in the action (the Prisma unique constraint is gone).
+    const existingTag = await getKitByAssetTag(organizationId, parsed.assetTag);
+    if (existingTag) {
+      throw new Error(`Asset tag "${parsed.assetTag}" already exists`);
+    }
+    await convex.mutation(api.kits.create, kitFields);
+  }
   await reserveAssetTags(1);
 
   const created = await getKitById(id);
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "kit",
-    entityId: id,
-    entityName: parsed.assetTag,
-    summary: `Created kit ${parsed.assetTag} - ${parsed.name}`,
-    details: { created: { assetTag: parsed.assetTag, name: parsed.name } },
-    kitId: id,
-  });
+  if (!nativeKitWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "CREATE",
+      entityType: "kit",
+      entityId: id,
+      entityName: parsed.assetTag,
+      summary: `Created kit ${parsed.assetTag} - ${parsed.name}`,
+      details: { created: { assetTag: parsed.assetTag, name: parsed.name } },
+      kitId: id,
+    });
+  }
 
   // Always surface `id` (read-back can lag the mirror); callers route on it.
   return serialize({ ...created, id });
@@ -303,71 +319,98 @@ export async function updateKit(id: string, data: KitFormValues) {
     throw new Error("Kit not found");
   }
 
-  // Dup-guard the assetTag if it changed (Prisma unique constraint is gone).
-  if (parsed.assetTag !== existing.assetTag) {
-    const tagOwner = await getKitByAssetTag(organizationId, parsed.assetTag);
-    if (tagOwner && tagOwner.id !== id) {
-      throw new Error(`Asset tag "${parsed.assetTag}" already exists`);
-    }
-  }
-
   const now = Date.now();
   const convex = await getConvexClient();
-  await convex.mutation(api.kits.update, {
-    id,
-    patch: {
-      name: parsed.name,
-      assetTag: parsed.assetTag,
-      description: parsed.description || undefined,
-      categoryId: parsed.categoryId || undefined,
-      status: parsed.status,
-      condition: parsed.condition,
-      locationId: parsed.locationId || undefined,
-      weight: parsed.weight ?? undefined,
-      caseType: parsed.caseType || undefined,
-      caseDimensions: parsed.caseDimensions || undefined,
-      notes: parsed.notes || undefined,
-      purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
-      purchasePrice: parsed.purchasePrice ?? undefined,
-      image: parsed.image || undefined,
-      images: parsed.images ?? undefined,
-      isActive: parsed.isActive,
-      tags: parsed.tags ?? undefined,
-      checkMode: parsed.checkMode,
-      updatedAt: now,
-    },
-  });
+  const patch = {
+    name: parsed.name,
+    assetTag: parsed.assetTag,
+    description: parsed.description || undefined,
+    categoryId: parsed.categoryId || undefined,
+    status: parsed.status,
+    condition: parsed.condition,
+    locationId: parsed.locationId || undefined,
+    weight: parsed.weight ?? undefined,
+    caseType: parsed.caseType || undefined,
+    caseDimensions: parsed.caseDimensions || undefined,
+    notes: parsed.notes || undefined,
+    purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
+    purchasePrice: parsed.purchasePrice ?? undefined,
+    image: parsed.image || undefined,
+    images: parsed.images ?? undefined,
+    isActive: parsed.isActive,
+    tags: parsed.tags ?? undefined,
+    checkMode: parsed.checkMode,
+    updatedAt: now,
+  };
+
+  if (nativeKitWrites()) {
+    // Native: tag-change dup-guard + patch + UPDATE audit atomic.
+    try {
+      await convex.mutation(api.kitWrites.updateNative, {
+        id,
+        orgId: organizationId,
+        patch,
+        actor: { userId, userName },
+        auditId: createId(),
+        now,
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  } else {
+    // Dup-guard the assetTag if it changed (Prisma unique constraint is gone).
+    if (parsed.assetTag !== existing.assetTag) {
+      const tagOwner = await getKitByAssetTag(organizationId, parsed.assetTag);
+      if (tagOwner && tagOwner.id !== id) {
+        throw new Error(`Asset tag "${parsed.assetTag}" already exists`);
+      }
+    }
+    await convex.mutation(api.kits.update, { id, patch });
+  }
 
   const updated = await getKitById(id);
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "kit",
-    entityId: id,
-    entityName: parsed.assetTag,
-    summary: `Updated kit ${parsed.assetTag} - ${parsed.name}`,
-    kitId: id,
-  });
+  if (!nativeKitWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "kit",
+      entityId: id,
+      entityName: parsed.assetTag,
+      summary: `Updated kit ${parsed.assetTag} - ${parsed.name}`,
+      kitId: id,
+    });
+  }
 
   // Always surface `id` (read-back can lag the mirror); callers route on it.
   return serialize({ ...updated, id });
 }
 
 export async function updateKitNotes(id: string, notes: string) {
-  const { organizationId } = await requirePermission("kit", "update");
+  const { organizationId, userId, userName } = await requirePermission("kit", "update");
   const existing = await getKitById(id);
   if (!existing || existing.organizationId !== organizationId) {
     throw new Error("Kit not found");
   }
   const convex = await getConvexClient();
-  await convex.mutation(api.kits.update, {
-    id,
-    // notes: undefined clears the field (Convex patch deletes undefined keys).
-    patch: { notes: notes || undefined, updatedAt: Date.now() },
-  });
+  if (nativeKitWrites()) {
+    await convex.mutation(api.kitWrites.updateNotesNative, {
+      id,
+      orgId: organizationId,
+      notes: notes || null,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.kits.update, {
+      id,
+      // notes: undefined clears the field (Convex patch deletes undefined keys).
+      patch: { notes: notes || undefined, updatedAt: Date.now() },
+    });
+  }
   const updated = await getKitById(id);
   return serialize(updated);
 }

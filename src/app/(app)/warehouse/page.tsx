@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useWarehouseListVersion } from "@/hooks/use-warehouse";
+import { useNativeWarehouseList } from "@/hooks/use-native-warehouse";
 import {
   ArrowRight,
   CalendarDays,
@@ -21,7 +20,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-import { getProjects, updateProjectStatus } from "@/server/projects";
+import { updateProjectStatus } from "@/server/projects";
 import { batchCloseOut } from "@/server/warehouse-close";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -244,23 +243,20 @@ export default function WarehousePage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Reactive composite: subscribe to the cheap Convex version vector (a signature
-  // over the org's warehouse-pipeline projects) and re-run the unchanged
-  // getProjects server action whenever any of them changes status/dates/client —
-  // cross-user over the WebSocket. See convex/warehouseDetail.ts.
-  const listVersion = useWarehouseListVersion(orgId);
-  const { data, isLoading, refetch } = useReactiveServerQuery({
-    watch: listVersion,
-    queryKey: ["warehouse-projects", orgId, { search }],
-    queryFn: () =>
-      getProjects({
-        search: search || undefined,
-        pageSize: 100,
-        includeLineItems: true,
-        sortBy: "rentalStartDate",
-        sortOrder: "asc",
-      }),
-  });
+  // Native warehouse landing list (Phase 4 — the version-vector + getProjects
+  // server-action path is retired). ONE warehouseList.bundle subscription returns
+  // the warehouse-pipeline projects (thin line items + client), reactive over the
+  // WebSocket. Search is applied client-side below (was a getProjects server param).
+  const { projects: nativeProjects, isLoading } = useNativeWarehouseList(orgId);
+  const data = useMemo(
+    () =>
+      nativeProjects
+        ? { projects: nativeProjects as unknown as Project[] }
+        : undefined,
+    [nativeProjects],
+  );
+  // Post-write refresh is a no-op: the subscription pushes every change live.
+  const refetch = useCallback(() => {}, []);
 
   const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: "CHECKED_OUT" | "RETURNED" | "COMPLETED" }) =>
@@ -291,8 +287,13 @@ export default function WarehousePage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const projects = (data?.projects || []).filter((p) =>
-    WAREHOUSE_STATUSES.includes(p.status)
+  const searchLower = search.trim().toLowerCase();
+  const projects = (data?.projects || []).filter(
+    (p) =>
+      WAREHOUSE_STATUSES.includes(p.status) &&
+      (searchLower === "" ||
+        p.name.toLowerCase().includes(searchLower) ||
+        p.projectNumber.toLowerCase().includes(searchLower)),
   ) as Project[];
 
   const returnedProjects = projects.filter((p) => p.status === "RETURNED");

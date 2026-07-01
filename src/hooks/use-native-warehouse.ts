@@ -9,6 +9,33 @@ import {
 } from "@/lib/warehouse-detail-reconstruct";
 
 /**
+ * Native warehouse LANDING list (Phase 4 — the last surface off the version-vector
+ * + getProjects server-action path). ONE `warehouseList.bundle` subscription
+ * returns the warehouse-pipeline projects with thin line items + client, reactive
+ * over the WebSocket. Not flag-gated — it directly replaces the retired server path
+ * (a bounded, proven list-composite pattern; see convex/dashboardLists.ts). Returns
+ * `{ projects, isLoading }`; skips until orgId resolves.
+ */
+export function useNativeWarehouseList(orgId: string | undefined): {
+  projects:
+    | Array<{
+        id: string;
+        name: string;
+        projectNumber: string;
+        status: string;
+        rentalStartDate: number | null;
+        rentalEndDate: number | null;
+        client: { name: string } | null;
+        lineItems: Array<{ status: string; type: string; isKitChild: boolean }>;
+      }>
+    | undefined;
+  isLoading: boolean;
+} {
+  const bundle = useAuthedQuery(api.warehouseList.bundle, orgId ? { orgId } : "skip");
+  return { projects: bundle?.projects, isLoading: !!orgId && bundle === undefined };
+}
+
+/**
  * Feature flag (default OFF) for the native warehouse-detail read cutover (Phase
  * 2). Until "true" in the build env, the warehouse page keeps the version-vector
  * doorbell → getProjectForWarehouse refetch. Inlined at build time — flipping it

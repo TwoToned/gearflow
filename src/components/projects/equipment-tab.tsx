@@ -7,23 +7,17 @@ import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
-  useProjectCategories,
+  // Read hooks are retired here (the tab reads natively) — but the refresh
+  // chokepoints stay: they invalidate the shared server-action stores that the
+  // still-server-action equipment add-form / sub-hire dialog read (category
+  // dropdowns etc.), keeping those in sync after a tab write.
   refreshProjectCategories,
-  useUncategorizedItems,
   refreshUncategorizedItems,
-  useUncategorizedSubHireGroups,
   refreshUncategorizedSubHireGroups,
-  useUncategorizedProjectGroups,
   refreshUncategorizedProjectGroups,
-  useProjectOverbooked,
   refreshProjectOverbooked,
-  useProjectSubHires,
-  useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
-import {
-  NATIVE_EQUIPMENT_ENABLED,
-  useNativeEquipmentTab,
-} from "@/hooks/use-native-equipment-tab";
+import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
@@ -127,22 +121,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Native read-layer path (Phase 2, default OFF). When the flag is on, ALL six
-  // equipment views come from ONE reactive equipmentTab.bundle subscription
-  // (reconstructed client-side) — no server actions, no doorbell→refetch. Both the
-  // native hook and the server-action hooks below run (rules-of-hooks); the flag
-  // only selects which result we use. When off, the native hook is a no-op (skips).
+  // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
+  // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
+  // views come from ONE reactive equipmentTab.bundle subscription (reconstructed
+  // client-side); writes are still server actions whose convex.mutation pushes the
+  // delta to this subscription, so no doorbell→refetch is needed.
   const native = useNativeEquipmentTab(projectId, orgId);
-
-  // Cross-tab live sync: subscribe to the dual-written line-item / group /
-  // category Convex tables and re-fetch the equipment composites whenever
-  // another tab (or collaborator) edits pricing, moves items, or changes groups.
-  // The native path is already reactive over its own subscription — skip the
-  // doorbell there (pass undefined so the live-sync subscriptions don't fire).
-  useProjectEquipmentLiveSync(
-    NATIVE_EQUIPMENT_ENABLED ? undefined : projectId,
-    NATIVE_EQUIPMENT_ENABLED ? undefined : orgId,
-  );
 
   // Passive section/group collaboration state: one lock subscription and one
   // comment-count subscription for the project, then row lookups by target key.
@@ -298,26 +282,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     });
   }, []);
 
-  // Server-action shared resources (the legacy path). When native is on, each is
-  // passed `undefined` so its fetch skips (no double-fetch alongside the native
-  // subscription); the value comes from `native` instead.
-  const scKey = NATIVE_EQUIPMENT_ENABLED ? undefined : projectId;
-  const { data: scCategories = [], isLoading: scLoading } = useProjectCategories(scKey);
-  const { data: scUncategorizedItems = [] } = useUncategorizedItems(scKey);
-  const { data: scUncategorizedSubHireGroups = [] } = useUncategorizedSubHireGroups(scKey);
-  const { data: scUncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(scKey);
-  const { data: scOverbookedMap = {} } = useProjectOverbooked(scKey);
+  // All six equipment views come from the single native subscription.
+  const categories = native.categories;
+  const isLoading = native.isLoading;
+  const uncategorizedItems = native.uncategorizedItems;
+  const uncategorizedSubHireGroups = native.uncategorizedSubHireGroups;
+  const uncategorizedProjectGroups = native.uncategorizedProjectGroups;
+  const overbookedMap = native.overbookedMap;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: scProjectSubHires = [] } = useProjectSubHires(scKey) as { data: any[] };
-
-  const categories = NATIVE_EQUIPMENT_ENABLED ? native.categories : scCategories;
-  const isLoading = NATIVE_EQUIPMENT_ENABLED ? native.isLoading : scLoading;
-  const uncategorizedItems = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedItems : scUncategorizedItems;
-  const uncategorizedSubHireGroups = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedSubHireGroups : scUncategorizedSubHireGroups;
-  const uncategorizedProjectGroups = NATIVE_EQUIPMENT_ENABLED ? native.uncategorizedProjectGroups : scUncategorizedProjectGroups;
-  const overbookedMap = NATIVE_EQUIPMENT_ENABLED ? native.overbookedMap : scOverbookedMap;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const projectSubHires = (NATIVE_EQUIPMENT_ENABLED ? native.projectSubHires : scProjectSubHires) as any[];
+  const projectSubHires = native.projectSubHires as any[];
 
   const { data: templates = [] } = useGroupTemplates(orgId);
 

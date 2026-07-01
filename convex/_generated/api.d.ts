@@ -86,6 +86,7 @@ import type * as projectMedia from "../projectMedia.js";
 import type * as projectNumberSequences from "../projectNumberSequences.js";
 import type * as projectServices from "../projectServices.js";
 import type * as projectTasks from "../projectTasks.js";
+import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
 import type * as purgeRemovedTables from "../purgeRemovedTables.js";
 import type * as savedTableViews from "../savedTableViews.js";
@@ -200,6 +201,7 @@ declare const fullApi: ApiFromModules<{
   projectNumberSequences: typeof projectNumberSequences;
   projectServices: typeof projectServices;
   projectTasks: typeof projectTasks;
+  projectWrites: typeof projectWrites;
   projects: typeof projects;
   purgeRemovedTables: typeof purgeRemovedTables;
   savedTableViews: typeof savedTableViews;

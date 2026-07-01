@@ -34,6 +34,7 @@ import { type FilterValue } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
+import { nativeProjectWrites } from "@/lib/native-writes";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
   renderProjectNumber,
@@ -749,26 +750,42 @@ export async function updateProjectStatus(
 
   // project is Convex-only — patch the status directly.
   const convex = await getConvexClient();
-  await convex.mutation(api.projects.patchProject, {
-    id,
-    set: { status, updatedAt: Date.now() },
-  });
+  if (nativeProjectWrites()) {
+    // Native: template guard + patch + STATUS_CHANGE audit atomic in the mutation.
+    await convex.mutation(api.projectWrites.updateStatusNative, {
+      id,
+      orgId: organizationId,
+      // A status change always carries a concrete status (the field is optional only
+      // in the shared form type).
+      status: status as NonNullable<typeof status>,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projects.patchProject, {
+      id,
+      set: { status, updatedAt: Date.now() },
+    });
+  }
 
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project status update failed");
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "STATUS_CHANGE",
-    entityType: "project",
-    entityId: updated.id,
-    entityName: updated.projectNumber,
-    summary: `Changed project ${updated.projectNumber} status from ${project.status} to ${status}`,
-    details: { changes: [{ field: "status", from: project.status, to: status }] },
-    projectId: updated.id,
-  });
+  if (!nativeProjectWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "STATUS_CHANGE",
+      entityType: "project",
+      entityId: updated.id,
+      entityName: updated.projectNumber,
+      summary: `Changed project ${updated.projectNumber} status from ${project.status} to ${status}`,
+      details: { changes: [{ field: "status", from: project.status, to: status }] },
+      projectId: updated.id,
+    });
+  }
 
   return serialize(updated);
 }
@@ -778,27 +795,49 @@ export async function updateProjectNotes(
   field: "crewNotes" | "internalNotes" | "clientNotes",
   notes: string,
 ) {
-  const { organizationId } = await requirePermission("project", "update");
+  const { organizationId, userId, userName } = await requirePermission("project", "update");
   // project is Convex-only — patch the single whitelisted notes field (clear when
   // emptied, mirroring the old `notes || null`).
   const convex = await getConvexClient();
-  await convex.mutation(api.projects.patchProject, {
-    id,
-    ...(notes ? { set: { [field]: notes, updatedAt: Date.now() } } : { set: { updatedAt: Date.now() }, clear: [field] }),
-  });
+  if (nativeProjectWrites()) {
+    await convex.mutation(api.projectWrites.updateNotesNative, {
+      id,
+      orgId: organizationId,
+      field,
+      notes: notes || null,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projects.patchProject, {
+      id,
+      ...(notes ? { set: { [field]: notes, updatedAt: Date.now() } } : { set: { updatedAt: Date.now() }, clear: [field] }),
+    });
+  }
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project notes update failed");
   return serialize(updated);
 }
 
 export async function archiveProject(id: string) {
-  const { organizationId } = await requirePermission("project", "update");
+  const { organizationId, userId, userName } = await requirePermission("project", "update");
   // project is Convex-only — set status to CANCELLED.
   const convex = await getConvexClient();
-  await convex.mutation(api.projects.patchProject, {
-    id,
-    set: { status: "CANCELLED", updatedAt: Date.now() },
-  });
+  if (nativeProjectWrites()) {
+    await convex.mutation(api.projectWrites.archiveNative, {
+      id,
+      orgId: organizationId,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projects.patchProject, {
+      id,
+      set: { status: "CANCELLED", updatedAt: Date.now() },
+    });
+  }
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project archive failed");
   return serialize(updated);

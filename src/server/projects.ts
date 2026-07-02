@@ -591,12 +591,21 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   };
 
   const convex = await getConvexClient();
+  // One audit id for the whole allocation loop — only the winning insert writes it.
+  const projectAuditId = createId();
   let created: { created: boolean; id: string } | null = null;
   for (let attempt = 0; attempt < 50; attempt++) {
     const projectNumber = useAutoNumber
       ? await generateProjectNumber(organizationId, autoConfig!, now)
       : (templateNumber ?? parsed.projectNumber!);
-    created = await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
+    created = nativeProjectWrites()
+      ? await convex.mutation(api.projectWrites.createNative, {
+          ...baseArgs,
+          projectNumber,
+          actor: { userId, userName },
+          auditId: projectAuditId,
+        })
+      : await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
     if (created.created) break;
     // Number taken. A manual / template number is a hard duplicate; an auto number
     // lost a race — loop to allocate the next one.
@@ -614,17 +623,20 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   const result = await getProjectByIdMapped(id, organizationId);
   if (!result) throw new Error("Project create failed");
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "CREATE",
-    entityType: "project",
-    entityId: result.id,
-    entityName: result.projectNumber,
-    summary: `Created ${isTemplate ? "template" : "project"} ${result.projectNumber} - ${result.name}`,
-    projectId: result.id,
-  });
+  if (!nativeProjectWrites()) {
+    // Native path already wrote the CREATE audit atomically in the mutation.
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "CREATE",
+      entityType: "project",
+      entityId: result.id,
+      entityName: result.projectNumber,
+      summary: `Created ${isTemplate ? "template" : "project"} ${result.projectNumber} - ${result.name}`,
+      projectId: result.id,
+    });
+  }
 
   return serialize(result);
 }

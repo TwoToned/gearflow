@@ -239,7 +239,7 @@ export const remove = mutation({
 
 // ─── CUSTOM (project keystone write-inversion, Phase C) ───
 
-const projectWriteFields = {
+export const projectWriteFields = {
   clientId: v.optional(v.string()),
   status: v.optional(enums.ProjectStatus),
   type: v.optional(enums.ProjectType),

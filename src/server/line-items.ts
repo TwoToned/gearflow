@@ -1052,7 +1052,7 @@ export async function reorderLineItems(
   itemIds: string[],
   groupUpdates?: { id: string; groupName: string | null }[],
 ) {
-  await requirePermission("project", "manage_line_items");
+  const { organizationId: reorderOrgId } = await requirePermission("project", "manage_line_items");
 
   // Build the reorder payload: each id gets sortOrder = its index. groupUpdates
   // (id -> groupName) are merged in; ids that only appear in groupUpdates are
@@ -1071,10 +1071,19 @@ export async function reorderLineItems(
     items.push({ id, sortOrder: extraSort++, groupName: groupName || undefined });
   }
 
-  await (await getConvexClient()).mutation(api.projectLineItems.reorderLineItems, {
-    items,
-    now: Date.now(),
-  });
+  const reorderConvex = await getConvexClient();
+  if (nativeLineItemWrites()) {
+    await reorderConvex.mutation(api.lineItemWrites.reorderNative, {
+      orgId: reorderOrgId,
+      items,
+      now: Date.now(),
+    });
+  } else {
+    await reorderConvex.mutation(api.projectLineItems.reorderLineItems, {
+      items,
+      now: Date.now(),
+    });
+  }
 
   return serialize({ success: true });
 }

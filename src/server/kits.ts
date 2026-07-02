@@ -431,25 +431,38 @@ export async function archiveKit(id: string) {
   // then soft-deletes the kit (isActive=false, status=RETIRED). The status
   // re-guard lives inside the mutation.
   const convex = await getConvexClient();
-  await convex.mutation(api.kits.archiveCascade, {
-    organizationId,
-    kitId: id,
-    now: Date.now(),
-  });
+  if (nativeKitWrites()) {
+    // Native: member-release cascade + soft-retire + audit atomic in the mutation.
+    await convex.mutation(api.kitWrites.archiveNative, {
+      id,
+      orgId: organizationId,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.kits.archiveCascade, {
+      organizationId,
+      kitId: id,
+      now: Date.now(),
+    });
+  }
 
   const archived = await getKitById(id);
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "kit",
-    entityId: id,
-    entityName: kit.assetTag,
-    summary: `Archived kit ${kit.assetTag} - ${kit.name}`,
-    kitId: id,
-  });
+  if (!nativeKitWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "kit",
+      entityId: id,
+      entityName: kit.assetTag,
+      summary: `Archived kit ${kit.assetTag} - ${kit.name}`,
+      kitId: id,
+    });
+  }
 
   return serialize(archived);
 }
@@ -512,11 +525,24 @@ export async function deleteKit(id: string) {
   // Atomic Convex cascade: releases serialized assets + restores bulk
   // quantities, deletes member rows, then hard-deletes the kit row. The status
   // re-guard lives inside the mutation.
-  await convexKits.mutation(api.kits.deleteCascade, {
-    organizationId,
-    kitId: id,
-    now: Date.now(),
-  });
+  if (nativeKitWrites()) {
+    // Native: member-release cascade + hard-delete + audit atomic in the mutation.
+    // (The referencing-line-item guard above + the checkItem/media cleanup below
+    // stay server-side.)
+    await convexKits.mutation(api.kitWrites.deleteNative, {
+      id,
+      orgId: organizationId,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convexKits.mutation(api.kits.deleteCascade, {
+      organizationId,
+      kitId: id,
+      now: Date.now(),
+    });
+  }
 
   // Clean up kit-scoped metadata that the cascade doesn't cover. kitCheckItem
   // rows are removed via their dedicated mutation; kitMedia rows (Convex-only,
@@ -528,16 +554,18 @@ export async function deleteKit(id: string) {
   const kitMediaRows = await getKitMediaFromConvex(id);
   for (const m of kitMediaRows) await convexKits.mutation(api.kitMedia.remove, { id: m.id });
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "kit",
-    entityId: id,
-    entityName: tagForLog,
-    summary: `Permanently deleted kit ${tagForLog} - ${nameForLog}`,
-  });
+  if (!nativeKitWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "kit",
+      entityId: id,
+      entityName: tagForLog,
+      summary: `Permanently deleted kit ${tagForLog} - ${nameForLog}`,
+    });
+  }
 
   return serialize({ id, hardDeleted: true });
 }

@@ -199,3 +199,30 @@ describe("lineItemWrites.addKitNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("lineItemWrites.reorderNative", () => {
+  test("member reorders lines (sortOrder/groupName) + org-scoped", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 1 });
+      await ctx.db.insert("projectLineItems", { id: "lOther", organizationId: "org_other", projectId: "p9", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 5 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1, groupName: "Stage" }, { id: "lOther", sortOrder: 0 }], now: NOW });
+    await t.run(async (ctx) => {
+      const l1 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l1")).first();
+      const l2 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l2")).first();
+      const other = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "lOther")).first();
+      expect(l1?.sortOrder).toBe(1);
+      expect(l1?.groupName).toBe("Stage");
+      expect(l2?.sortOrder).toBe(0);
+      expect(other?.sortOrder).toBe(5); // cross-org row untouched
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items: [], now: NOW })).rejects.toThrow(/insufficient permissions/i);
+  });
+});

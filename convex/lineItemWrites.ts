@@ -355,3 +355,26 @@ export const addKitNative = mutation({
     return { id };
   },
 });
+
+/**
+ * reorderNative — bulk sort-order / groupName update for a project's lines. RBAC
+ * (project, manage_line_items). Mirrors reorderLineItems; org-scopes each row. No
+ * audit (reorder is not audited on the legacy path).
+ */
+export const reorderNative = mutation({
+  args: {
+    orgId: v.string(),
+    items: v.array(v.object({ id: v.string(), sortOrder: v.number(), groupName: v.optional(v.string()) })),
+    now: v.number(),
+  },
+  handler: async (ctx, { orgId, items, now }) => {
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    for (const it of items) {
+      const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();
+      if (doc && doc.organizationId === orgId) {
+        await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
+      }
+    }
+    return { ok: true as const };
+  },
+});

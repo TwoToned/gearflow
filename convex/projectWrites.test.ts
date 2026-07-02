@@ -148,3 +148,23 @@ describe("projectWrites.createNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs)).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("projectWrites.deleteNative", () => {
+  const dargs = { id: "p1", orgId: ORG, freedAssets: 2, freedKits: 1, actor: ACTOR, auditId: "log1", now: NOW };
+  test("owner deletes project + DELETE audit (freed counts)", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, "owner");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first()).toBeNull();
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("DELETE");
+      expect((log?.details as { freedAssets: number }).freedAssets).toBe(2);
+    });
+  });
+  test("a member (no project:delete) is denied", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, "member");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

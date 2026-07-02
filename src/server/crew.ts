@@ -395,22 +395,37 @@ export async function deleteCrewMember(id: string) {
   ]);
 
   // crewMember is Convex-only (Phase C); remove it + cascade its scheduling children.
-  await convex.mutation(api.crewMembers.remove, { id });
+  if (nativeCrewWrites()) {
+    // Native: member-row delete + DELETE audit atomic; the scheduling cascade below
+    // stays server-side (same order — member first, then its children).
+    await convex.mutation(api.crewWrites.deleteNative, {
+      id,
+      orgId: organizationId,
+      name: `${member.firstName} ${member.lastName}`,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.crewMembers.remove, { id });
+  }
   for (const a of memberAssignments) await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
   for (const t of orgTimeEntries) await convex.mutation(api.crewTimeEntries.remove, { id: t.id });
   for (const av of memberAvailability) await convex.mutation(api.crewAvailabilities.remove, { id: av.id });
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "crew_member",
-    entityId: id,
-    entityName: `${member.firstName} ${member.lastName}`,
-    summary: `Deleted crew member ${member.firstName} ${member.lastName}`,
-    details: { deleted: { name: `${member.firstName} ${member.lastName}` } },
-  });
+  if (!nativeCrewWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "crew_member",
+      entityId: id,
+      entityName: `${member.firstName} ${member.lastName}`,
+      summary: `Deleted crew member ${member.firstName} ${member.lastName}`,
+      details: { deleted: { name: `${member.firstName} ${member.lastName}` } },
+    });
+  }
 
   return { success: true };
 }

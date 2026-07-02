@@ -94,3 +94,22 @@ describe("crewWrites.updateNative", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("crewWrites.deleteNative", () => {
+  const dargs = { id: "c1", orgId: ORG, name: "Bob Ryan", actor: ACTOR, auditId: "log1", now: NOW };
+  test("owner deletes a crew member + DELETE audit", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "owner"); await seedCrew(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.crewWrites.deleteNative, dargs);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first()).toBeNull();
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("DELETE");
+    });
+  });
+  test("a member (no crew:delete) is denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member"); await seedCrew(t);
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.crewWrites.deleteNative, dargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

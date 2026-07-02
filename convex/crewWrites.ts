@@ -134,3 +134,44 @@ export const updateNative = mutation({
     return { id };
   },
 });
+
+/**
+ * deleteNative — remove a crew member row + DELETE audit, atomic. RBAC(crew, delete).
+ * Option A: the server action runs the scheduling cascade (assignments→shifts/time-
+ * entries, availability) via the existing mutations first; this does the final member-
+ * row delete + audit.
+ */
+export const deleteNative = mutation({
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    name: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, name, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "crew", "delete");
+    const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "Crew member not found." });
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    await ctx.db.delete(doc._id);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "DELETE",
+      entityType: "crew_member",
+      entityId: id,
+      entityName: name,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Deleted crew member ${name}`,
+      details: { deleted: { name } },
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});

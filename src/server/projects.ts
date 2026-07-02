@@ -1455,23 +1455,36 @@ export async function deleteProject(id: string) {
   // that used to clean these up was dropped in Phase C #254, so purge them here.
   await convex.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
   // Finally delete the project doc itself (Convex-only).
-  await convex.mutation(api.projects.remove, { id });
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "DELETE",
-    entityType: "project",
-    entityId: id,
-    entityName: project.projectNumber,
-    summary: `Deleted project ${project.projectNumber} - ${project.name}`,
-    details: {
-      deleted: { projectNumber: project.projectNumber, name: project.name },
+  if (nativeProjectWrites()) {
+    // Native: final project-row delete + DELETE audit atomic (the cascade above ran
+    // server-side; recalc N/A for a delete).
+    await convex.mutation(api.projectWrites.deleteNative, {
+      id,
+      orgId: organizationId,
       freedAssets: checkedOutAssetIds.length,
       freedKits: checkedOutKitIds.length,
-    },
-  });
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projects.remove, { id });
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "project",
+      entityId: id,
+      entityName: project.projectNumber,
+      summary: `Deleted project ${project.projectNumber} - ${project.name}`,
+      details: {
+        deleted: { projectNumber: project.projectNumber, name: project.name },
+        freedAssets: checkedOutAssetIds.length,
+        freedKits: checkedOutKitIds.length,
+      },
+    });
+  }
 }
 
 /** Get project milestone dates for call sheet dialog */

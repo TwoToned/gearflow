@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import * as enums from "./lib/validators";
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -140,5 +141,77 @@ export const patchNative = mutation({
     });
 
     return { projectId: doc.projectId };
+  },
+});
+
+/** Next sort order for a project's lines (replica of nextLineSort). */
+async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
+  const lines = await ctx.db
+    .query("projectLineItems")
+    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+    .collect();
+  return lines.filter((l) => l.organizationId === organizationId).reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+}
+
+/**
+ * addCustomNative — insert a custom (non-inventory) line item + CREATE audit, atomic.
+ * RBAC(project, manage_line_items). Custom items never consume inventory, so there's
+ * NO availability check to keep server-side — this is a fully-native add. sortOrder is
+ * computed in-mutation (nextLineSort replica); recalc stays server-side (post-write).
+ */
+export const addCustomNative = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    fields: v.object({
+      description: v.optional(v.string()),
+      quantity: v.number(),
+      unitPrice: v.optional(v.number()),
+      pricingType: v.optional(enums.PricingType),
+      duration: v.optional(v.number()),
+      discount: v.optional(v.number()),
+      notes: v.optional(v.string()),
+      isOptional: v.optional(v.boolean()),
+      categoryId: v.optional(v.string()),
+      groupId: v.optional(v.string()),
+      groupName: v.optional(v.string()),
+      lineTotal: v.optional(v.number()),
+    }),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, projectId, fields, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    await ctx.db.insert("projectLineItems", {
+      id,
+      organizationId,
+      projectId,
+      type: "EQUIPMENT",
+      isCustomItem: true,
+      ...fields,
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: fields.description || "Custom item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Added custom item "${fields.description ?? ""}" to project`,
+      projectId,
+      createdAt: now,
+    });
+
+    return { id };
   },
 });

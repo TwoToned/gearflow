@@ -116,3 +116,28 @@ describe("lineItemWrites.patchNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("lineItemWrites.addCustomNative", () => {
+  const cargs = { id: "cust1", organizationId: ORG, projectId: "p1", fields: { description: "Rigging labour", quantity: 1, unitPrice: 200 }, actor: ACTOR, auditId: "log1", now: NOW };
+  test("member adds a custom line (sortOrder computed) + CREATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "existing", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 4 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs);
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first();
+      expect(li?.isCustomItem).toBe(true);
+      expect(li?.sortOrder).toBe(5); // max(4)+1
+      expect(li?.description).toBe("Rigging labour");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

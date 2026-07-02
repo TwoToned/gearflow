@@ -79,3 +79,40 @@ describe("lineItemWrites.removeNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.removeNative, args)).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("lineItemWrites.patchNative", () => {
+  const pargs = { id: "li1", orgId: ORG, entityName: "Light", actor: ACTOR, auditId: "log1", now: NOW };
+  test("member patches fields + UPDATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, unitPrice: 50, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(3);
+      expect(li?.unitPrice).toBe(50);
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("UPDATE");
+      expect(log?.entityType).toBe("lineItem");
+    });
+  });
+  test("clear removes a field", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", notes: "x", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    await t.withIdentity(SERVICE).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { updatedAt: NOW }, clear: ["notes"] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.notes).toBeUndefined();
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "viewer");
+    await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
+  });
+});

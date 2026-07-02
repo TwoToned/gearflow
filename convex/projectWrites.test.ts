@@ -113,3 +113,38 @@ describe("projectWrites.updateNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("projectWrites.createNative", () => {
+  const cargs = { id: "np1", organizationId: ORG, projectNumber: "P-100", name: "New Gig", isTemplate: false, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId: "log1" };
+  test("member creates a project + CREATE audit (created:true)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs);
+    expect(res).toEqual({ created: true, id: "np1" });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first();
+      expect(p?.projectNumber).toBe("P-100");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
+    });
+  });
+  test("returns created:false + no insert/audit on a number clash", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "existing", organizationId: ORG, projectNumber: "P-100", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.projectWrites.createNative, cargs);
+    expect(res).toEqual({ created: false, id: "existing" });
+    await t.run(async (ctx) => {
+      const np = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first();
+      expect(np).toBeNull();
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log).toBeNull();
+    });
+  });
+  test("a viewer is denied (project:create)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "viewer" }); });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

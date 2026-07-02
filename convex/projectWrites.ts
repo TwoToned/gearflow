@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import * as enums from "./lib/validators";
+import { projectWriteFields } from "./projects";
 
 /**
  * Native PROJECT write mutations (Phase 5) — the MONEY-FREE project writes only:
@@ -191,5 +192,54 @@ export const updateNative = mutation({
     });
 
     return { id };
+  },
+});
+
+/**
+ * createNative — insert a project with the unique-project-number check + CREATE
+ * audit, atomic. RBAC(project, create). Mirrors createWithUniqueNumber: returns
+ * {created:false} without inserting/auditing when the number clashes (the server
+ * action's allocation retry loop handles that), {created:true} + audit on success.
+ * generateProjectNumber (the auto-number allocator) stays server-side.
+ */
+export const createNative = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectNumber: v.string(),
+    name: v.string(),
+    ...projectWriteFields,
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { actor, auditId, ...fields } = args;
+    await requireOrgPermission(ctx, fields.organizationId, "project", "create");
+
+    const clash = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId_projectNumber", (q) =>
+        q.eq("organizationId", fields.organizationId).eq("projectNumber", fields.projectNumber),
+      )
+      .unique();
+    if (clash) return { created: false as const, id: clash.id };
+
+    await ctx.db.insert("projects", fields);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: fields.organizationId,
+      action: "CREATE",
+      entityType: "project",
+      entityId: fields.id,
+      entityName: fields.projectNumber,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Created ${fields.isTemplate ? "template" : "project"} ${fields.projectNumber} - ${fields.name}`,
+      projectId: fields.id,
+      createdAt: typeof fields.createdAt === "number" ? fields.createdAt : 0,
+    });
+
+    return { created: true as const, id: fields.id };
   },
 });

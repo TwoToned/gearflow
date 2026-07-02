@@ -136,3 +136,60 @@ export const archiveNative = mutation({
     return { id };
   },
 });
+
+const PROJECT_NEVER_CLEAR = new Set(["id", "organizationId", "projectNumber"]);
+
+/**
+ * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
+ * RBAC(project, update). Option A: the server action keeps Zod validation + the
+ * conditional recalc (only when taxRate changes — recalc stays server-side, totals
+ * identical); the write + audit move here.
+ */
+export const updateNative = mutation({
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    set: v.any(),
+    clear: v.array(v.string()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, set, clear, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "project", "update");
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    const setObj = (set ?? {}) as Record<string, unknown>;
+    if (clear.length === 0) {
+      await ctx.db.patch(project._id, setObj);
+    } else {
+      const { _id, _creationTime, ...rest } = project;
+      const merged: Record<string, unknown> = { ...rest, ...setObj };
+      for (const k of clear) {
+        if (PROJECT_NEVER_CLEAR.has(k)) continue;
+        delete merged[k];
+      }
+      await ctx.db.replace(project._id, merged as typeof rest);
+    }
+
+    const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "project",
+      entityId: id,
+      entityName: project.projectNumber,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Updated project ${project.projectNumber} - ${name}`,
+      projectId: id,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});

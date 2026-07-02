@@ -80,3 +80,36 @@ describe("projectWrites.archiveNative", () => {
     });
   });
 });
+
+describe("projectWrites.updateNative", () => {
+  const uargs = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+  test("member patches fields + UPDATE audit (label from doc)", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, "member");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "Renamed Gig", taxRate: 10, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.name).toBe("Renamed Gig");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("UPDATE");
+      expect(log?.entityName).toBe("P1");
+      expect(log?.summary).toContain("Renamed Gig");
+    });
+  });
+  test("clear removes a field", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, clientNotes: "x", createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(SERVICE).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: ["clientNotes"] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.clientNotes).toBeUndefined();
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
+  });
+});

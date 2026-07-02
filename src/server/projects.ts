@@ -692,11 +692,25 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   setOrClear("invoicedTotal", parsed.invoicedTotal ?? null);
 
   const convex = await getConvexClient();
-  await convex.mutation(api.projects.patchProject, {
-    id,
-    set,
-    ...(clear.length > 0 ? { clear } : {}),
-  });
+  if (nativeProjectWrites()) {
+    // Native: RBAC + patch/clear + UPDATE audit atomic. Zod validation stays above;
+    // recalc stays below (server-side, unchanged → totals identical).
+    await convex.mutation(api.projectWrites.updateNative, {
+      id,
+      orgId: organizationId,
+      set,
+      clear,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projects.patchProject, {
+      id,
+      set,
+      ...(clear.length > 0 ? { clear } : {}),
+    });
+  }
 
   // Recalculate totals if tax rate changed
   if (parsed.taxRate !== undefined) {
@@ -706,17 +720,19 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project update failed");
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "project",
-    entityId: updated.id,
-    entityName: updated.projectNumber,
-    summary: `Updated project ${updated.projectNumber} - ${updated.name}`,
-    projectId: updated.id,
-  });
+  if (!nativeProjectWrites()) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "project",
+      entityId: updated.id,
+      entityName: updated.projectNumber,
+      summary: `Updated project ${updated.projectNumber} - ${updated.name}`,
+      projectId: updated.id,
+    });
+  }
 
   return serialize(updated);
 }

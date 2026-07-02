@@ -846,33 +846,50 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
   const lineTotal = calculateLineTotal(parsed.unitPrice, parsed.quantity, parsed.duration, parsed.discount);
 
   const customId = createId();
-  await (await getConvexClient()).mutation(api.projectLineItems.createCustomLineItem, {
-    id: customId,
-    organizationId,
-    projectId,
-    fields: {
-      description: parsed.description,
-      quantity: parsed.quantity,
-      unitPrice: parsed.unitPrice ?? undefined,
-      pricingType: parsed.pricingType,
-      duration: parsed.duration,
-      discount: parsed.discount ?? undefined,
-      notes: parsed.notes ?? undefined,
-      isOptional: parsed.isOptional,
-      categoryId: parsed.categoryId ?? undefined,
-      groupId: parsed.groupId ?? undefined,
-      groupName: groupName ?? undefined,
-      lineTotal: lineTotal ?? undefined,
-    },
-    now: Date.now(),
-  });
+  const customFields = {
+    description: parsed.description,
+    quantity: parsed.quantity,
+    unitPrice: parsed.unitPrice ?? undefined,
+    pricingType: parsed.pricingType,
+    duration: parsed.duration,
+    discount: parsed.discount ?? undefined,
+    notes: parsed.notes ?? undefined,
+    isOptional: parsed.isOptional,
+    categoryId: parsed.categoryId ?? undefined,
+    groupId: parsed.groupId ?? undefined,
+    groupName: groupName ?? undefined,
+    lineTotal: lineTotal ?? undefined,
+  };
+  const customConvex = await getConvexClient();
+  if (nativeLineItemWrites()) {
+    // Custom items consume no inventory → fully native (RBAC + insert + audit).
+    await customConvex.mutation(api.lineItemWrites.addCustomNative, {
+      id: customId,
+      organizationId,
+      projectId,
+      fields: customFields,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await customConvex.mutation(api.projectLineItems.createCustomLineItem, {
+      id: customId,
+      organizationId,
+      projectId,
+      fields: customFields,
+      now: Date.now(),
+    });
+  }
 
   const result = (await readBackLine(customId))!;
 
   // Post-write tail in parallel (recalc + best-effort audit + collab feed).
   await Promise.all([
     recalculateProjectTotals(projectId),
-    logActivity({
+    nativeLineItemWrites()
+      ? Promise.resolve()
+      : logActivity({
       organizationId,
       userId,
       userName,

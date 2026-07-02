@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
 import { useNativeAsset } from "@/hooks/use-native-asset";
+import { useOptimisticAssetNotes } from "@/hooks/use-native-asset-writes";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
@@ -114,6 +115,8 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // subscription, so the historic post-mutation refetch calls are redundant —
   // `refetchAsset` is kept as a no-op (belt-and-braces) to avoid touching call sites.
   const native = useNativeAsset(isBulk ? undefined : id, orgId);
+  // Phase 5d — optimistic native notes write (flag-gated, default off).
+  const optimisticNotes = useOptimisticAssetNotes(id, orgId);
   // Thin DTO of the getAsset shape (the page reads only produced fields); cast to the
   // server type so the page's typed field access is preserved.
   type AssetDetail = Awaited<ReturnType<typeof getAsset>>;
@@ -618,7 +621,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <NotesEditor
                   initialNotes={asset.notes || ""}
                   onChanged={() => refetchAsset()}
-                  onSave={(notes) => updateAssetNotes(id, notes)}
+                  onSave={optimisticNotes.enabled ? optimisticNotes.save : (notes) => updateAssetNotes(id, notes)}
                   placeholder="Add notes about this asset..."
                 />
               </TabsContent>

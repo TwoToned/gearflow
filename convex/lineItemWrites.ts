@@ -5,6 +5,8 @@ import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import * as enums from "./lib/validators";
+import { expandAccessoryChildLines } from "./lib/fulfillment";
+import { createKitLineItemCore } from "./projectLineItems";
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -209,6 +211,144 @@ export const addCustomNative = mutation({
       userName: actor.userName,
       summary: `Added custom item "${fields.description ?? ""}" to project`,
       projectId,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});
+
+/**
+ * addNative — insert an inventory line item (+ atomic accessory expansion via the
+ * shared expandAccessoryChildLines, the SAME helper createLineItem uses) + CREATE
+ * audit, all in one transaction. RBAC(project, manage_line_items).
+ *
+ * Option A: the server action keeps the cross-project availability/double-booking
+ * check (reads overlapping projects — a mutation can't safely do that at scale) and
+ * the price computation; it passes the resolved `fields`, and this mutation does the
+ * atomic write (parent + accessory children + units) + audit. recalc stays server-side.
+ */
+export const addNative = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    fields: v.object({
+      categoryId: v.optional(v.string()),
+      groupId: v.optional(v.string()),
+      type: v.optional(enums.LineItemType),
+      modelId: v.optional(v.string()),
+      assetId: v.optional(v.string()),
+      bulkAssetId: v.optional(v.string()),
+      description: v.optional(v.string()),
+      quantity: v.number(),
+      unitPrice: v.optional(v.number()),
+      pricingType: v.optional(enums.PricingType),
+      duration: v.optional(v.number()),
+      discount: v.optional(v.number()),
+      lineTotal: v.optional(v.number()),
+      groupName: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      isOptional: v.optional(v.boolean()),
+      showSubhireOnDocs: v.optional(v.boolean()),
+      supplierId: v.optional(v.string()),
+      subhireOrderNumber: v.optional(v.string()),
+    }),
+    includeAccessories: v.boolean(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+
+    // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
+    // accessories expanded as child lines atomically via the shared helper).
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    await ctx.db.insert("projectLineItems", {
+      id,
+      organizationId,
+      projectId,
+      ...fields,
+      status: "CONFIRMED",
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (includeAccessories && fields.type === "EQUIPMENT" && (fields.assetId || fields.modelId)) {
+      await expandAccessoryChildLines(ctx, {
+        id,
+        assetId: fields.assetId,
+        modelId: fields.modelId,
+        quantity: fields.quantity,
+        categoryId: fields.categoryId,
+        groupId: fields.groupId,
+        duration: fields.duration,
+        pricingType: fields.pricingType,
+        organizationId,
+        projectId,
+      });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: fields.description || "Line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Added line item to project",
+      projectId,
+      createdAt: now,
+    });
+
+    return { id, sortOrder };
+  },
+});
+
+/**
+ * addKitNative — add a kit to a project: parent line + expanded member child lines
+ * (ITEMIZED pricing) via the SHARED createKitLineItemCore (same code createKitLineItem
+ * runs) + CREATE audit, atomic. RBAC(project, manage_line_items). The kit
+ * availability / double-booking check stays server-side; recalc stays server-side.
+ */
+export const addKitNative = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    kitId: v.string(),
+    unitPrice: v.optional(v.number()),
+    pricingMode: enums.KitPricingMode,
+    groupName: v.optional(v.string()),
+    categoryId: v.optional(v.string()),
+    groupId: v.optional(v.string()),
+    kitLabel: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+
+    await createKitLineItemCore(ctx, {
+      id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: kitLabel,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Added kit ${kitLabel} to project`,
+      projectId,
+      kitId,
       createdAt: now,
     });
 

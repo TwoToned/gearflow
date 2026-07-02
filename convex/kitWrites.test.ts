@@ -123,3 +123,40 @@ describe("kitWrites.updateNotesNative", () => {
     });
   });
 });
+
+describe("kitWrites.archiveNative / deleteNative", () => {
+  const args = { id: "k1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+  test("owner archives an AVAILABLE kit + releases members + audit", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t, "owner");
+    await t.run(async (ctx) => { await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.archiveNative, args);
+    await t.run(async (ctx) => {
+      const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+      expect(kit?.status).toBe("RETIRED");
+      expect(kit?.isActive).toBe(false);
+      const members = await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", "k1")).collect();
+      expect(members).toHaveLength(0); // released
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("DELETE");
+    });
+  });
+  test("owner deletes an AVAILABLE kit", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t, "owner");
+    await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.deleteNative, args);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first()).toBeNull();
+    });
+  });
+  test("blocks archive of a non-AVAILABLE kit", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
+    await expect(t.withIdentity(SERVICE).mutation(api.kitWrites.archiveNative, args)).rejects.toThrow(/AVAILABLE/i);
+  });
+  test("a manager (no kit:delete) is denied", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t, "manager");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.kitWrites.deleteNative, args)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

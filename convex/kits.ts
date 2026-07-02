@@ -347,7 +347,7 @@ export const removeBulkItem = mutation({
 });
 
 /** Release all members + (archive: soft-delete / delete: hard-delete) the kit, atomically. */
-async function releaseKitMembers(ctx: MutationCtx, kitId: string, organizationId: string, now: number) {
+export async function releaseKitMembers(ctx: MutationCtx, kitId: string, organizationId: string, now: number) {
   const serialized = await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
   for (const m of serialized) {
     await releaseAsset(ctx, m.assetId, now);

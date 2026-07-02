@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import { releaseKitMembers } from "./kits";
 import * as enums from "./lib/validators";
 
 /**
@@ -199,5 +200,48 @@ export const updateNotesNative = mutation({
     });
 
     return { ok: true as const };
+  },
+});
+
+
+/**
+ * archiveNative / deleteNative — kit soft-retire / hard-delete with the member-release
+ * cascade (releaseKitMembers, the SAME helper the service archiveCascade/deleteCascade
+ * use) + audit, atomic. RBAC(kit, delete). The status guard (AVAILABLE only) runs
+ * inside the mutation.
+ */
+export const archiveNative = mutation({
+  args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "kit", "delete");
+    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
+    if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be archived" });
+    await releaseKitMembers(ctx, id, orgId, now);
+    await ctx.db.patch(kit._id, { isActive: false, status: "RETIRED", updatedAt: now });
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "DELETE", entityType: "kit", entityId: id,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Archived kit ${kit.assetTag} - ${kit.name}`, kitId: id, createdAt: now,
+    });
+    return { id };
+  },
+});
+
+export const deleteNative = mutation({
+  args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "kit", "delete");
+    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
+    if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });
+    await releaseKitMembers(ctx, id, orgId, now);
+    await ctx.db.delete(kit._id);
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "DELETE", entityType: "kit", entityId: id,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Deleted kit ${kit.assetTag} - ${kit.name}`, kitId: id, createdAt: now,
+    });
+    return { id };
   },
 });

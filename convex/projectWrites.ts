@@ -243,3 +243,47 @@ export const createNative = mutation({
     return { created: true as const, id: fields.id };
   },
 });
+
+/**
+ * deleteNative — remove the project row + DELETE audit, atomic. RBAC(project, delete).
+ * Option A: the server action runs the multi-table cascade (line items, crew
+ * assignments, managers/tasks/services, freeing checked-out assets/kits) via the
+ * existing mutations first; this does the final project-row delete + audit. `freed*`
+ * counts are computed server-side and passed for the audit detail.
+ */
+export const deleteNative = mutation({
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    freedAssets: v.number(),
+    freedKits: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, freedAssets, freedKits, actor, auditId, now }) => {
+    await requireOrgPermission(ctx, orgId, "project", "delete");
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    await ctx.db.delete(project._id);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "DELETE",
+      entityType: "project",
+      entityId: id,
+      entityName: project.projectNumber,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Deleted project ${project.projectNumber} - ${project.name}`,
+      details: { deleted: { projectNumber: project.projectNumber, name: project.name }, freedAssets, freedKits },
+      projectId: id,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});

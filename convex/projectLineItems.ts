@@ -454,6 +454,31 @@ export const createKitLineItem = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
+    return createKitLineItemCore(ctx, a);
+  },
+});
+
+/**
+ * Kit-line expansion core (extracted so the native addKitNative in
+ * convex/lineItemWrites.ts reuses the EXACT parent + member-child creation +
+ * ITEMIZED pricing rather than duplicating it). Inserts the kit parent line + one
+ * child line per serialized / bulk member, computing sortOrder in-mutation.
+ */
+export async function createKitLineItemCore(
+  ctx: MutationCtx,
+  a: {
+    id: string;
+    organizationId: string;
+    projectId: string;
+    kitId: string;
+    unitPrice?: number;
+    pricingMode: "KIT_PRICE" | "ITEMIZED";
+    groupName?: string;
+    categoryId?: string;
+    groupId?: string;
+    now: number;
+  },
+): Promise<{ id: string }> {
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", a.kitId)).unique();
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     let sort = await nextLineSort(ctx, a.projectId, a.organizationId);
@@ -493,8 +518,7 @@ export const createKitLineItem = mutation({
       });
     }
     return { id: a.id };
-  },
-});
+}
 
 /** Clear-to-null patch for a line (edit dialog: omit assoc fields to keep, clear to null). */
 export const patchLineItem = mutation({

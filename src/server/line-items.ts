@@ -368,34 +368,51 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // TOCTOU) and expands permanent accessories as child lines atomically.
   const newLineId = createId();
   const convex = await getConvexClient();
-  await convex.mutation(api.projectLineItems.createLineItem, {
-    id: newLineId,
-    organizationId,
-    projectId,
-    fields: {
-      type: parsed.type,
-      modelId: parsed.modelId || undefined,
-      assetId: parsed.assetId || undefined,
-      bulkAssetId: parsed.bulkAssetId || undefined,
-      description: parsed.description || undefined,
-      quantity: parsed.quantity,
-      unitPrice: autoUnitPrice ?? undefined,
-      pricingType: autoPricingType,
-      duration: autoDuration ?? undefined,
-      discount: parsed.discount ?? undefined,
-      lineTotal: lineTotal ?? undefined,
-      groupName: parsed.groupName || undefined,
-      notes: parsed.notes || undefined,
-      isOptional: parsed.isOptional,
-      showSubhireOnDocs: parsed.showSubhireOnDocs,
-      supplierId: parsed.supplierId || undefined,
-      subhireOrderNumber: parsed.subhireOrderNumber || undefined,
-      categoryId: parsed.categoryId || undefined,
-      groupId: parsed.groupId || undefined,
-    },
-    includeAccessories,
-    now: Date.now(),
-  });
+  const lineFields = {
+    type: parsed.type,
+    modelId: parsed.modelId || undefined,
+    assetId: parsed.assetId || undefined,
+    bulkAssetId: parsed.bulkAssetId || undefined,
+    description: parsed.description || undefined,
+    quantity: parsed.quantity,
+    unitPrice: autoUnitPrice ?? undefined,
+    pricingType: autoPricingType,
+    duration: autoDuration ?? undefined,
+    discount: parsed.discount ?? undefined,
+    lineTotal: lineTotal ?? undefined,
+    groupName: parsed.groupName || undefined,
+    notes: parsed.notes || undefined,
+    isOptional: parsed.isOptional,
+    showSubhireOnDocs: parsed.showSubhireOnDocs,
+    supplierId: parsed.supplierId || undefined,
+    subhireOrderNumber: parsed.subhireOrderNumber || undefined,
+    categoryId: parsed.categoryId || undefined,
+    groupId: parsed.groupId || undefined,
+  };
+  if (nativeLineItemWrites()) {
+    // Native: atomic insert + accessory expansion (the shared expandAccessoryChildLines
+    // helper, same as createLineItem) + CREATE audit. The cross-project availability
+    // check above + the price computation stay server-side.
+    await convex.mutation(api.lineItemWrites.addNative, {
+      id: newLineId,
+      organizationId,
+      projectId,
+      fields: lineFields,
+      includeAccessories,
+      actor: { userId, userName },
+      auditId: createId(),
+      now: Date.now(),
+    });
+  } else {
+    await convex.mutation(api.projectLineItems.createLineItem, {
+      id: newLineId,
+      organizationId,
+      projectId,
+      fields: lineFields,
+      includeAccessories,
+      now: Date.now(),
+    });
+  }
 
   const result = (await readBackLine(newLineId))!;
 
@@ -413,7 +430,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // enrich). Group suggested-price above already settled before recalc.
   const [, , , supplier] = await Promise.all([
     recalculateProjectTotals(projectId),
-    logActivity({
+    nativeLineItemWrites()
+      ? Promise.resolve()
+      : logActivity({
       organizationId,
       userId,
       userName,
@@ -781,7 +800,8 @@ export async function addKitLineItem(
   // kit's Convex members, computes sortOrder in-mutation, and applies ITEMIZED
   // child pricing from each member model's defaultRentalPrice.
   const parentId = createId();
-  await (await getConvexClient()).mutation(api.projectLineItems.createKitLineItem, {
+  const kitConvex = await getConvexClient();
+  const kitLineArgs = {
     id: parentId,
     organizationId,
     projectId,
@@ -792,7 +812,19 @@ export async function addKitLineItem(
     categoryId: categoryId || undefined,
     groupId: groupId || undefined,
     now: Date.now(),
-  });
+  };
+  if (nativeLineItemWrites()) {
+    // Native: parent + expanded member children (shared core) + CREATE audit atomic.
+    // The kit availability/double-booking check above stays server-side.
+    await kitConvex.mutation(api.lineItemWrites.addKitNative, {
+      ...kitLineArgs,
+      kitLabel: `${kit.assetTag} - ${kit.name}`,
+      actor: { userId, userName },
+      auditId: createId(),
+    });
+  } else {
+    await kitConvex.mutation(api.projectLineItems.createKitLineItem, kitLineArgs);
+  }
 
   const parentItem = (await readBackLine(parentId))!;
 

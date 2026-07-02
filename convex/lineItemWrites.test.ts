@@ -141,3 +141,61 @@ describe("lineItemWrites.addCustomNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs)).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("lineItemWrites.addNative", () => {
+  const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, actor: ACTOR, auditId: "log1", now: NOW };
+  test("member adds an inventory line (sortOrder in-mutation) + CREATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "e", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 2 });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs);
+    expect(res.sortOrder).toBe(3);
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first();
+      expect(li?.description).toBe("PAR Can");
+      expect(li?.status).toBe("CONFIRMED");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
+      expect(log?.entityType).toBe("lineItem");
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+describe("lineItemWrites.addKitNative", () => {
+  const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", actor: ACTOR, auditId: "log1", now: NOW };
+  test("member adds a kit (parent + member child lines) + CREATE audit", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs);
+    await t.run(async (ctx) => {
+      const parent = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first();
+      expect(parent?.kitId).toBe("k1");
+      expect(parent?.isKitChild).toBeUndefined();
+      const children = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kl1")).collect();
+      expect(children).toHaveLength(1); // the serialized member
+      expect(children[0].assetId).toBe("a1");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
+      expect(log?.kitId).toBe("k1");
+    });
+  });
+  test("viewer denied", async () => {
+    const t = convexTest(schema, modules);
+    await member(t, "viewer");
+    await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

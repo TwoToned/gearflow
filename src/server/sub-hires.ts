@@ -1730,38 +1730,6 @@ export async function duplicateSubHire(sourceId: string) {
   return serialize(result);
 }
 
-// ─── Dashboard Stats ─────────────────────────────────────────────────────────
-
-export async function getSubHireDashboardStats() {
-  const { organizationId } = await getOrgContext();
-
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  // subHire lives in Convex — read the org's heads and aggregate in JS.
-  const subHires = await getSubHiresByOrg(organizationId);
-
-  const activeSubHires = subHires.filter(
-    (sh) => sh.status === "CONFIRMED" || sh.status === "ON_HIRE",
-  ).length;
-
-  const monthlySubHireCost = subHires
-    .filter((sh) => sh.status !== "CANCELLED" && sh.hireStart !== null && sh.hireStart >= monthStart)
-    .reduce((sum, sh) => sum + sh.totalCost, 0);
-
-  const overdueReturns = subHires.filter(
-    (sh) => sh.status === "ON_HIRE" && sh.hireEnd !== null && sh.hireEnd < now,
-  ).length;
-
-  return serialize({
-    activeSubHires,
-    monthlySubHireCost,
-    overdueReturns,
-  });
-}
-
-// ─── Shortage Pre-Check ──────────────────────────────────────────────────────
-
 export async function checkSubHireOpportunity(
   modelId: string,
   quantity: number,

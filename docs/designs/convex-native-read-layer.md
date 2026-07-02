@@ -7,7 +7,48 @@ open). Phase 5 (native writes) is the next major phase.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (2026-07-01)
+## ▶ NEXT SESSION — START HERE (2026-07-02)
+
+**Phase 4 COMPLETE + Phase 5 write-inversion COMPLETE.** The remaining work is the
+optional polish (see "Phase 5 remaining" below) + Phases 6–7. Full resume context +
+per-PR detail in the memory file `convex-native-read-layer.md`.
+
+**Phase 4 — DONE + DEPLOYED (PRs #323–329):** the faked-reactivity read layer is
+deleted — `use-reactive-server-query.ts` + all version vectors + doorbells gone; the
+warehouse landing list migrated native (`convex/warehouseList.ts`); dead dashboard
+server actions pruned. (`use-server-query.ts` / `use-shared-resource.ts` stay — used by
+100+ no-liveness reads + auth-adjacent surfaces.)
+
+**Phase 5 write-inversion — DONE (PRs #330–342):** EVERY asset / kit / crew / project /
+line-item write is native — RBAC (`requireOrgPermission`) + invariants + **atomic Convex
+audit** (`writeActivityLog`) inside the mutation. Files: `convex/{asset,kit,crew,project,
+lineItem}Writes.ts` + `convex/lib/audit.ts`; guard widened to `QueryCtx | MutationCtx`;
+`src/lib/native-writes.ts` = per-domain flags + `ConvexError`→`UserFacingError` mapping.
+~50 convex-tests (RBAC matrix + every invariant + audit rows). Each domain gated behind a
+**runtime** env flag (`NATIVE_{ASSET,KIT,CREW,PROJECT,LINEITEM}_WRITES`, default OFF,
+flippable via Coolify with **no rebuild** since the gate is server-side).
+
+**Option A for the money writes (line-items / projects):** the cross-project
+availability/double-booking checks + accessory/kit expansion + `recalculateProjectTotals`
+stay SERVER-SIDE. recalc already runs *post-write* (never in the write txn), so totals are
+byte-identical → **parity by construction**. addLineItem/addKitLineItem reuse the exact
+existing expansion helpers (`expandAccessoryChildLines`, extracted `createKitLineItemCore`)
+— zero duplication.
+
+**Phase 5 remaining (optional polish, NOT done):** `reorderLineItems` (bulk sort-order);
+the delete/archive CASCADES (`deleteProject`, `deleteCrewMember`, kit archive/delete —
+multi-table, keep the existing cascade mutations); **5d optimistic client**
+(`useMutation().withOptimisticUpdate` — the UX layer); **audit-read migration** (move the
+activity-log screens to Convex `activityLogs` so the transitional Postgres `logActivity`
+dual-writes can be dropped). Then Phases 6 (crons/actions) + 7 (search).
+
+**⚠️ Before flipping any `NATIVE_*_WRITES` flag live:** dogfood on a preview, and for
+line-items/projects do a totals parity check (native vs server-action → same Convex state
++ same audit row). Flags are all OFF today — merging changed nothing in prod.
+
+---
+
+### (superseded) NEXT SESSION — 2026-07-01
 
 **Goal: finish Phase 4 (delete remaining legacy read layer) + execute Phase 5 (native
 writes, domain-by-domain).** Full resume context in the memory file

@@ -59,6 +59,7 @@ import type * as lib_fulfillment from "../lib/fulfillment.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
+import type * as lib_recalc from "../lib/recalc.js";
 import type * as lib_testtag from "../lib/testtag.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lineItemMergeMaps from "../lineItemMergeMaps.js";
@@ -175,6 +176,7 @@ declare const fullApi: ApiFromModules<{
   "lib/inventory": typeof lib_inventory;
   "lib/lineItemUnits": typeof lib_lineItemUnits;
   "lib/permissionsCore": typeof lib_permissionsCore;
+  "lib/recalc": typeof lib_recalc;
   "lib/testtag": typeof lib_testtag;
   "lib/validators": typeof lib_validators;
   lineItemMergeMaps: typeof lineItemMergeMaps;

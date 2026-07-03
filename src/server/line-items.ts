@@ -13,7 +13,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { nativeLineItemWrites, mapNativeWriteError } from "@/lib/native-writes";
+import { nativeLineItemWrites, nativeRecalc, mapNativeWriteError } from "@/lib/native-writes";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
@@ -29,6 +29,19 @@ import { getSubHiresByProject } from "@/lib/sub-hire-read";
 import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
+
+/**
+ * Org default tax rate from Postgres (the source of truth — the Convex `organizations`
+ * mirror has no writer, so it can be stale). Passed into the native write mutations so
+ * their in-transaction recalc uses the authoritative rate for the no-override fallback.
+ */
+async function orgDefaultTaxRateFor(orgId: string): Promise<number | null> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { defaultTaxRate: true },
+  });
+  return org?.defaultTaxRate != null ? Number(org.defaultTaxRate) : null;
+}
 
 /**
  * Read back a created/updated line from Convex and attach the asset/bulkAsset
@@ -280,29 +293,52 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           : parsed.notes
         : existing.notes;
 
-      await convex.mutation(api.projectLineItems.patchLineItem, {
-        id: existing.id,
-        set: {
-          quantity: newQuantity,
-          unitPrice: parsed.unitPrice ?? existing.unitPrice ?? undefined,
-          pricingType: parsed.pricingType || existing.pricingType,
-          duration: parsed.duration || existing.duration || undefined,
-          discount: parsed.discount ?? existing.discount ?? undefined,
-          lineTotal: newLineTotal ?? undefined,
-          groupName: parsed.groupName || existing.groupName || undefined,
-          notes: mergedNotes || undefined,
-          updatedAt: Date.now(),
-        },
-        clear: [],
-      });
+      const mergeSet = {
+        quantity: newQuantity,
+        unitPrice: parsed.unitPrice ?? existing.unitPrice ?? undefined,
+        pricingType: parsed.pricingType || existing.pricingType,
+        duration: parsed.duration || existing.duration || undefined,
+        discount: parsed.discount ?? existing.discount ?? undefined,
+        lineTotal: newLineTotal ?? undefined,
+        groupName: parsed.groupName || existing.groupName || undefined,
+        notes: mergedNotes || undefined,
+        updatedAt: Date.now(),
+      };
+      if (nativeLineItemWrites()) {
+        // Native: patch + UPDATE audit + in-mutation recalc, one round-trip.
+        try {
+          await convex.mutation(api.lineItemWrites.patchNative, {
+            id: existing.id,
+            orgId: organizationId,
+            set: mergeSet,
+            clear: [],
+            entityName: existing.description || "Line item",
+            orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
+            actor: { userId, userName },
+            auditId: createId(),
+            now: Date.now(),
+          });
+        } catch (e) {
+          throw mapNativeWriteError(e);
+        }
+      } else {
+        await convex.mutation(api.projectLineItems.patchLineItem, {
+          id: existing.id,
+          set: mergeSet,
+          clear: [],
+        });
+      }
 
       const result = await readBackLine(existing.id);
 
       // Post-write tail in parallel (recalc + model enrich + best-effort audit).
+      // Native path already recalced + audited in-mutation.
       const [, mergedModel] = await Promise.all([
-        recalculateProjectTotals(projectId),
+        nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
         result?.modelId ? getModelById(result.modelId).catch(() => null) : Promise.resolve(null),
-        logActivity({
+        nativeLineItemWrites()
+          ? Promise.resolve()
+          : logActivity({
           organizationId,
           userId,
           userName,
@@ -399,6 +435,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       projectId,
       fields: lineFields,
       includeAccessories,
+      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
       actor: { userId, userName },
       auditId: createId(),
       now: Date.now(),
@@ -429,7 +466,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // Post-write tail in parallel (recalc + best-effort audit + collab + supplier
   // enrich). Group suggested-price above already settled before recalc.
   const [, , , supplier] = await Promise.all([
-    recalculateProjectTotals(projectId),
+    // Native path recalcs in-mutation (one round-trip); only the legacy path
+    // needs the separate server-side recalc.
+    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
     nativeLineItemWrites()
       ? Promise.resolve()
       : logActivity({
@@ -665,6 +704,7 @@ export async function updateLineItem(
         set,
         clear,
         entityName: parsed.description || "Line item",
+        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
         now: Date.now(),
@@ -680,7 +720,9 @@ export async function updateLineItem(
 
   // Post-write tail in parallel (recalc + best-effort audit + collab + supplier enrich).
   const [, , , supplier] = await Promise.all([
-    recalculateProjectTotals(result.projectId),
+    // Native path recalcs in-mutation (one round-trip); only the legacy path
+    // needs the separate server-side recalc.
+    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(result.projectId),
     nativeLineItemWrites()
       ? Promise.resolve()
       : logActivity({
@@ -819,6 +861,7 @@ export async function addKitLineItem(
     await kitConvex.mutation(api.lineItemWrites.addKitNative, {
       ...kitLineArgs,
       kitLabel: `${kit.assetTag} - ${kit.name}`,
+      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
       actor: { userId, userName },
       auditId: createId(),
     });
@@ -831,7 +874,8 @@ export async function addKitLineItem(
   // Post-write tail in parallel (recalc + best-effort collab feed).
   const memberCount = kit.serializedItems.length + kit.bulkItems.length;
   await Promise.all([
-    recalculateProjectTotals(projectId),
+    // Native path recalcs in-mutation; only the legacy path needs the server recalc.
+    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
     emitActivity
       ? writeCollabActivityEvent(
           { organizationId, userId, userName },
@@ -900,6 +944,7 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       organizationId,
       projectId,
       fields: customFields,
+      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
       actor: { userId, userName },
       auditId: createId(),
       now: Date.now(),
@@ -918,7 +963,8 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
 
   // Post-write tail in parallel (recalc + best-effort audit + collab feed).
   await Promise.all([
-    recalculateProjectTotals(projectId),
+    // Native path recalcs in-mutation; only the legacy path needs the server recalc.
+    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
     nativeLineItemWrites()
       ? Promise.resolve()
       : logActivity({
@@ -964,12 +1010,13 @@ export async function removeLineItem(id: string) {
 
   if (nativeLineItemWrites()) {
     // Native: the child-removal guard + cascade (children + units) + DELETE audit
-    // run atomically in the mutation. recalc + the collab feed stay server-side
-    // (recalc already ran post-delete before — unchanged, so totals are identical).
+    // + project-totals recalc all run atomically in the mutation (one round-trip).
+    // Only the best-effort collab feed stays server-side.
     try {
       await convex.mutation(api.lineItemWrites.removeNative, {
         id,
         orgId: organizationId,
+        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
         now: Date.now(),
@@ -978,7 +1025,6 @@ export async function removeLineItem(id: string) {
       throw mapNativeWriteError(e);
     }
     await Promise.all([
-      recalculateProjectTotals(item.projectId),
       writeCollabActivityEvent(
         { organizationId, userId, userName },
         {
@@ -1400,6 +1446,22 @@ export async function recalculateProjectTotals(projectId: string) {
 
   const orgId = project.organizationId;
   const convex = await getConvexClient();
+
+  // Fast path: one backend-local recalc mutation instead of the 3 sequential
+  // server→Convex-Cloud waves below (the 6–12s write tail). Same math — the
+  // recalc.ts port is parity-tested against this function (convex/recalc.test.ts).
+  // org default tax lives in Postgres (no Convex mirror writer), passed in.
+  if (nativeRecalc()) {
+    const orgDefaultTaxRate =
+      project.taxRate == null ? await orgDefaultTaxRateFor(orgId) : null;
+    await convex.mutation(api.lineItemWrites.recalcNative, {
+      projectId,
+      orgId,
+      orgDefaultTaxRate,
+      now: Date.now(),
+    });
+    return;
+  }
   // EVERY add/edit/delete runs this. All six reads are independent → ONE parallel
   // wave (was ~5 SEQUENTIAL round-trips: groups/lines → services → assignments →
   // subHires → a conditional org-tax read). This is the common write-latency tail.

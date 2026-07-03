@@ -1,0 +1,108 @@
+import type { MutationCtx } from "../_generated/server";
+
+/**
+ * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).
+ *
+ * A BYTE-FOR-BYTE port of src/server/line-items.ts `recalculateProjectTotals`, moved
+ * inside the native write mutations so a line-item write is ONE backend-local Convex
+ * round-trip instead of ~5 server→Convex-Cloud HTTP hops (the 6–12s write tail). All
+ * inputs are Convex-native (groups/lines/services/assignments/sub-hires) EXCEPT the
+ * org default tax rate — that lives in Postgres (`organization.defaultTaxRate`, no
+ * Convex mirror writer), so the caller passes it (authoritative) as `orgDefaultTaxRate`.
+ *
+ * A convex-test (writeParity / recalcParity) proves this produces the same totals as
+ * the server-side function for the same inputs — the money gate.
+ */
+
+const round = (v: number): number => Math.round(v * 100) / 100;
+const num = (v: unknown): number => (v != null ? Number(v) : 0);
+
+export async function recalcProjectTotals(
+  ctx: MutationCtx,
+  projectId: string,
+  orgId: string,
+  orgDefaultTaxRate: number | null,
+  now: number,
+): Promise<void> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  // Project gone (e.g. a delete that also removed it) — nothing to recalc.
+  if (!project || project.organizationId !== orgId) return;
+
+  const [groups, projectLines, allServices, assignments, allSubHires] = await Promise.all([
+    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+  ]);
+
+  // 1. Equipment revenue from groups: bundle price × quantity + custom "extras on top".
+  const groupRevenue = groups.reduce((sum, g) => {
+    const bundlePrice = num(g.price);
+    const customExtras = projectLines
+      .filter(
+        (li) =>
+          li.groupId === g.id &&
+          li.isCustomItem === true &&
+          !li.isOptional &&
+          !li.isKitChild &&
+          li.status !== "CANCELLED",
+      )
+      .reduce((s, li) => s + num(li.lineTotal), 0);
+    return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
+  }, 0);
+
+  // 2. Standalone (ungrouped) line items — includes ungrouped custom items.
+  const standaloneRevenue = projectLines
+    .filter(
+      (li) =>
+        li.groupId == null && !li.isOptional && !li.isKitChild && li.status !== "CANCELLED",
+    )
+    .reduce((sum, li) => sum + num(li.lineTotal), 0);
+
+  const equipmentRevenue = round(groupRevenue + standaloneRevenue);
+
+  // 3. Service financials (this project's non-CANCELLED rows).
+  const services = allServices.filter(
+    (s) => s.organizationId === orgId && s.status !== "CANCELLED",
+  );
+  const serviceCostTotal = round(services.reduce((sum, s) => sum + num(s.costTotal), 0));
+  const serviceRevenue = round(
+    services.filter((s) => s.showOnDocuments === true).reduce((sum, s) => sum + num(s.lineTotal), 0),
+  );
+
+  // 4. Labour costs from crew assignments.
+  const labourCostTotal = round(assignments.reduce((sum, a) => sum + num(a.estimatedCost), 0));
+
+  // 5. Sub-hire costs (exclude CANCELLED/DRAFT).
+  const subHires = allSubHires.filter((sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT");
+  const subHireCostTotal = round(subHires.reduce((sum, sh) => sum + num(sh.totalCost), 0));
+
+  // 6. Totals (equipment + billable services).
+  const subtotal = round(equipmentRevenue + serviceRevenue);
+  const discountPercent = num(project.discountPercent);
+  const discountAmount = round(subtotal * (discountPercent / 100));
+  const taxableAmount = round(subtotal - discountAmount);
+
+  // Tax rate: project override → org default (Postgres, passed in) → 10%.
+  let taxRate = 10;
+  if (project.taxRate != null) taxRate = Number(project.taxRate);
+  else if (orgDefaultTaxRate != null) taxRate = Number(orgDefaultTaxRate);
+
+  const taxAmount = round(taxableAmount * (taxRate / 100));
+  const total = round(taxableAmount + taxAmount);
+  const margin = round(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
+
+  await ctx.db.patch(project._id, {
+    equipmentRevenue,
+    serviceCostTotal,
+    labourCostTotal,
+    subHireCostTotal,
+    subtotal,
+    discountAmount,
+    taxAmount,
+    total,
+    margin,
+    updatedAt: now,
+  });
+}

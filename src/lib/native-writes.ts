@@ -27,6 +27,16 @@ export const nativeLineItemWrites = (): boolean =>
   process.env.NATIVE_LINEITEM_WRITES === "true";
 
 /**
+ * Collapse the project-totals recalc (recalculateProjectTotals) from ~3 sequential
+ * server→Convex-Cloud round-trips into ONE backend-local `recalcNative` mutation.
+ * Every write across the app funnels through recalculateProjectTotals, so this one
+ * flag speeds up ALL user-facing writes (line-items, groups, services, sub-hires,
+ * project edits) — the fix for the 6–12s edit/delete tail. Default OFF.
+ */
+export const nativeRecalc = (): boolean =>
+  process.env.NATIVE_RECALC === "true";
+
+/**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is
  * identical whether the write ran natively or on the legacy path. Non-matching

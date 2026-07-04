@@ -6,6 +6,7 @@ import {
   Package,
   Container,
   X,
+  Undo2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -152,14 +153,27 @@ export function DeployTab({
                     Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
                   </Button>
                 ) : (
-                  <Button
-                    onClick={handleCheckOutSelected}
-                    disabled={selectedOutCount === 0 || checkOutIsPending}
-                    loading={checkOutIsPending}
-                    className="shrink-0"
-                  >
-                    Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                  </Button>
+                  <>
+                    {/* Move back a stage — return prepped gear to Pick (deprep). */}
+                    <Button
+                      variant="line"
+                      onClick={() => handleDeprep(selectedOut)}
+                      disabled={selectedOutCount === 0 || deprepIsPending || checkOutIsPending}
+                      loading={deprepIsPending}
+                      className="shrink-0"
+                    >
+                      <Undo2 className="mr-1.5 h-4 w-4" />
+                      Move to Pick{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                    </Button>
+                    <Button
+                      onClick={handleCheckOutSelected}
+                      disabled={selectedOutCount === 0 || checkOutIsPending || deprepIsPending}
+                      loading={checkOutIsPending}
+                      className="shrink-0"
+                    >
+                      Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                    </Button>
+                  </>
                 )}
               </div>
             </div>

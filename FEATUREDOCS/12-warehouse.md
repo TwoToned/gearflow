@@ -8,10 +8,14 @@
 
 ## Lifecycle Flow
 
-Gear moves strictly **left to right** through five stages — there is no reversing:
+Gear flows **left to right** through five stages. The primary button in each tab advances
+gear one step; a secondary **"Move to …"** button reverses one step (see *Move-back* below)
+for correcting a misclick — the derivation itself still keys off the item's real
+status/prepStatus, so a reversed item is simply re-derived at its new stage:
 
 ```
-Pick/prep → Prepped → Deployed → Returned → De-prepped
+Pick/prep → Prepped → Deployed → Returned → De-prepped   (→ forward buttons)
+Pick/prep ← Prepped ← Deployed ← Returned ← De-prepped   (← Move-to back buttons)
 ```
 
 The project warehouse page header renders a **lifecycle stepper** (`WarehouseLifecycle`,
@@ -35,11 +39,31 @@ performs the action that advances gear to the next stage:
 
 | Tab (stage gear is in) | Shows | Button → next stage |
 | --- | --- | --- |
-| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
+| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped · (first stage, no back) |
 | Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed · **Move to Pick → Pick** (deprep) |
-| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned |
-| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped |
-| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | — (terminal, read-only) |
+| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned · **Move to Prepped → Prepped** (un-deploy) |
+| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped · **Move to Deployed → Deployed** (un-return) |
+| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | **Move to Returned → Returned** (un-deprep, per row) |
+
+### Move-back (reverse a stage)
+Every stage's primary button advances gear one step; each stage past Pick also has a
+**secondary "Move to …" button** that reverses one step, so an operator can correct a
+misclick without a workaround. The reverses mirror their forward mutation exactly —
+flipping unit + asset status (and kit bulk-availability, opposite sign) back:
+
+| Reverse | Server action → Convex mutation | Effect |
+| --- | --- | --- |
+| Prepped → Pick | `deprepItem` / `deprepKit` | remove packed units, `prepStatus` → PENDING |
+| Deployed → Prepped | `undeployItems` / `undeployKit` → `warehouseOps.undeployItems`/`.undeployKit` | units CHECKED_OUT → prepped, assets → AVAILABLE @ default location, kit bulk availability +1 |
+| Returned → Deployed | `unreturnItems` / `unreturnKit` → `.unreturnItems`/`.unreturnKit` | units RETURNED → CHECKED_OUT, assets → CHECKED_OUT @ project location, kit bulk availability −1 |
+| De-prepped → Returned | `undeprepLine` → `.undeprepLine` | line `prepStatus` → PACKED (status stays RETURNED) |
+
+Selection is parsed by the shared `moveBackSelection` helper (same bulk `id:idx` / line-id /
+kit-parent parsing as the forward handlers), routing kit parents to the kit reverse and the
+rest to the item reverse. **Reverses flip whole units** — they do not sub-split a tagged bulk
+pool's quantity (matches how bulk deploy/return create whole unit rows). Legacy unit-less
+lines (deployed via `checkOutDeployWholeLine`) restore their line counters directly and skip
+the unit rollup (which would otherwise zero them).
 
 (Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
 `check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are

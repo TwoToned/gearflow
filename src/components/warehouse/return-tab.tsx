@@ -5,6 +5,7 @@ import {
   ScanBarcode,
   ChevronRight,
   Package,
+  Undo2,
   Container,
 } from "lucide-react";
 
@@ -70,6 +71,9 @@ export interface ReturnTabProps {
   // Actions
   handleReturnSelected: () => void;
   checkInIsPending: boolean;
+  /** Move the selected deployed units back to Prepped (un-deploy). */
+  handleUndeploy: (ids: Set<string>) => void;
+  undeployIsPending: boolean;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -107,6 +111,8 @@ export function ReturnTab({
   toggleExpanded,
   handleReturnSelected,
   checkInIsPending,
+  handleUndeploy,
+  undeployIsPending,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -132,9 +138,22 @@ export function ReturnTab({
                   className="h-11"
                 />
               </div>
+              {/* Move back a stage — return this gear to Prepped (un-deploy). */}
+              <Button
+                variant="line"
+                onClick={() => handleUndeploy(selectedIn)}
+                disabled={selectedInCount === 0 || undeployIsPending || checkInIsPending}
+                loading={undeployIsPending}
+                className="shrink-0"
+              >
+                <Undo2 className="mr-1.5 h-4 w-4" />
+                <span className="hidden sm:inline">Move to Prepped</span>
+                <span className="sm:hidden">Prep</span>
+                {selectedInCount > 0 ? ` (${selectedInCount})` : ""}
+              </Button>
               <Button
                 onClick={handleReturnSelected}
-                disabled={selectedInCount === 0 || checkInIsPending}
+                disabled={selectedInCount === 0 || checkInIsPending || undeployIsPending}
                 loading={checkInIsPending}
                 className="shrink-0"
               >

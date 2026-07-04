@@ -73,6 +73,9 @@ export interface DeployTabProps {
   handleCheckOutSelected: () => void;
   handleDeprep: (ids: Set<string>) => void;
   deprepIsPending: boolean;
+  /** De-prep mode only: move the selected returned units back to Deployed (un-return). */
+  handleUnreturn?: (ids: Set<string>) => void;
+  unreturnIsPending?: boolean;
   clearContainerMutate: (containerName: string) => void;
   clearContainerIsPending: boolean;
   checkOutIsPending: boolean;
@@ -111,6 +114,8 @@ export function DeployTab({
   handleCheckOutSelected,
   handleDeprep,
   deprepIsPending,
+  handleUnreturn,
+  unreturnIsPending,
   clearContainerMutate,
   clearContainerIsPending,
   checkOutIsPending,
@@ -144,14 +149,29 @@ export function DeployTab({
               </p>
               <div className="flex items-center gap-2">
                 {isDeprep ? (
-                  <Button
-                    onClick={() => handleDeprep(selectedOut)}
-                    disabled={selectedOutCount === 0 || deprepIsPending}
-                    loading={deprepIsPending}
-                    className="shrink-0"
-                  >
-                    Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                  </Button>
+                  <>
+                    {/* Move back a stage — return this gear to Deployed (un-return). */}
+                    {handleUnreturn && (
+                      <Button
+                        variant="line"
+                        onClick={() => handleUnreturn(selectedOut)}
+                        disabled={selectedOutCount === 0 || unreturnIsPending || deprepIsPending}
+                        loading={unreturnIsPending}
+                        className="shrink-0"
+                      >
+                        <Undo2 className="mr-1.5 h-4 w-4" />
+                        Move to Deployed{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => handleDeprep(selectedOut)}
+                      disabled={selectedOutCount === 0 || deprepIsPending || unreturnIsPending}
+                      loading={deprepIsPending}
+                      className="shrink-0"
+                    >
+                      Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                    </Button>
+                  </>
                 ) : (
                   <>
                     {/* Move back a stage — return prepped gear to Pick (deprep). */}

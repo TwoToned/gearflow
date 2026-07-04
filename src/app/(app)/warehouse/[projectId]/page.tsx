@@ -21,6 +21,7 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
@@ -32,6 +33,11 @@ import {
   checkInItems,
   checkOutKit,
   checkInKit,
+  undeployItems,
+  unreturnItems,
+  undeprepLine,
+  undeployKit,
+  unreturnKit,
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
   clearPrepContainer,
@@ -762,6 +768,74 @@ function WarehouseProjectPage({
     },
     onError: (e) => showError(e),
   });
+
+  // ── Move-back (reverse a stage) mutations ──────────────────────────────────
+  const undeployMutation = useServerMutation({
+    mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
+      undeployItems(projectId, items),
+    onSuccess: () => { toast.success("Moved back to Prepped"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const undeployKitMutation = useServerMutation({
+    mutationFn: (kitId: string) => undeployKit(projectId, kitId),
+    onSuccess: () => { toast.success("Kit moved back to Prepped"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const unreturnMutation = useServerMutation({
+    mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
+      unreturnItems(projectId, items),
+    onSuccess: () => { toast.success("Moved back to Deployed"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const unreturnKitMutation = useServerMutation({
+    mutationFn: (kitId: string) => unreturnKit(projectId, kitId),
+    onSuccess: () => { toast.success("Kit moved back to Deployed"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const undeprepMutation = useServerMutation({
+    mutationFn: (lineItemId: string) => undeprepLine(projectId, lineItemId),
+    onSuccess: () => { toast.success("Re-packed — back to Returned"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+
+  // Parse a selection set (bulk `id:idx` keys, plain line ids, kit parents) into
+  // per-line quantities + kit ids, then fire the given item/kit reverse mutations.
+  const moveBackSelection = (
+    ids: Set<string>,
+    fireItems: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => void,
+    fireKit: (kitId: string) => void,
+  ) => {
+    if (ids.size === 0) return;
+    const qtyMap = new Map<string, number>();
+    const kitIds = new Set<string>();
+    for (const key of ids) {
+      const lineItemId = key.includes(":") ? key.split(":")[0] : key;
+      const li = lineItems.find((l) => l.id === lineItemId);
+      if (li && li.kitId && !li.isKitChild) {
+        kitIds.add(li.kitId);
+      } else {
+        qtyMap.set(lineItemId, (qtyMap.get(lineItemId) || 0) + 1);
+      }
+    }
+    for (const kitId of kitIds) fireKit(kitId);
+    const items = Array.from(qtyMap.entries()).map(([lineItemId, quantity]) => ({
+      lineItemId,
+      assetId: lineItems.find((l) => l.id === lineItemId)?.assetId || undefined,
+      quantity,
+    }));
+    if (items.length > 0) fireItems(items);
+  };
+
+  // Deployed → Prepped
+  const handleUndeploy = (ids: Set<string>) => {
+    moveBackSelection(ids, (items) => undeployMutation.mutate(items), (kitId) => undeployKitMutation.mutate(kitId));
+    setSelectedIn(new Set());
+  };
+  // Returned → Deployed
+  const handleUnreturn = (ids: Set<string>) => {
+    moveBackSelection(ids, (items) => unreturnMutation.mutate(items), (kitId) => unreturnKitMutation.mutate(kitId));
+    setSelectedDeprep(new Set());
+  };
 
   const clearContainerMutation = useServerMutation({
     mutationFn: (containerName: string) => clearPrepContainer(projectId, containerName),
@@ -2460,6 +2534,8 @@ function WarehouseProjectPage({
           handleCheckOutSelected={handleCheckOutSelected}
           handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
+          handleUnreturn={handleUnreturn}
+          unreturnIsPending={unreturnMutation.isPending || unreturnKitMutation.isPending}
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
@@ -2493,6 +2569,8 @@ function WarehouseProjectPage({
           toggleExpanded={toggleExpanded}
           handleReturnSelected={handleReturnSelected}
           checkInIsPending={checkInMutation.isPending}
+          handleUndeploy={handleUndeploy}
+          undeployIsPending={undeployMutation.isPending || undeployKitMutation.isPending}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2516,6 +2594,7 @@ function WarehouseProjectPage({
                       <TableHead>Asset tag</TableHead>
                       <TableHead className="text-center w-16">Qty</TableHead>
                       <TableHead className="w-32">Status</TableHead>
+                      <TableHead className="w-40 text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2537,6 +2616,18 @@ function WarehouseProjectPage({
                         <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
                         <TableCell>
                           <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {/* Move back a stage: re-pack this returned item (→ Returned). */}
+                          <Button
+                            variant="line"
+                            size="sm"
+                            onClick={() => undeprepMutation.mutate(item.id)}
+                            disabled={undeprepMutation.isPending}
+                          >
+                            <Undo2 className="mr-1.5 h-4 w-4" />
+                            Move to Returned
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

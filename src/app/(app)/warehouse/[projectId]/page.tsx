@@ -97,6 +97,8 @@ import {
   isKitParent,
   collectAllVerifiableIds,
   bulkUnitKey,
+  bulkUnpackedRemaining,
+  bulkPackedWaiting,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -147,7 +149,15 @@ const statusLabels: Record<string, string> = {
 
 // GroupEntry, isKitParent, PrepStatusBadge, collectAllVerifiableIds are imported from warehouse-types / components
 
-function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupEntry[] {
+// `countStage` picks how a bulk line's per-unit count is derived so a partially
+// prepped line shows the right number of units in each tab: the units still to
+// pick in Pick, and the units packed-and-waiting in Prepped. Omitted (De-prep /
+// legacy) keeps the whole ordered quantity.
+function groupItems(
+  items: LineItem[],
+  mode: "prep" | "deploy" = "prep",
+  countStage?: "prep" | "prepped",
+): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];
 
@@ -174,12 +184,20 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
       });
     } else if (isBulkItem(item)) {
       // Bulk items (qty > 1) show as expandable groups with per-unit rows
-      // just like serialized groups. unitCount = item.quantity (remaining units).
+      // just like serialized groups. unitCount reflects the units actionable in
+      // this stage (still-to-pick vs packed-and-waiting) so a partially prepped
+      // line shows the right count in each tab.
+      const unitCount =
+        countStage === "prep"
+          ? bulkUnpackedRemaining(item)
+          : countStage === "prepped"
+            ? bulkPackedWaiting(item)
+            : item.quantity;
       result.push({
         kind: "bulk-group",
         groupKey: `bulk-${item.id}`,
         item,
-        unitCount: item.quantity,
+        unitCount,
       });
     } else if (item.model) {
       const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
@@ -1277,6 +1295,10 @@ function WarehouseProjectPage({
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
+    // Bulk lines are quantity-aware: show while any ordered unit is still
+    // unpacked, even once some units are prepped/deployed. This is what keeps
+    // "prep 1 of 10" from yanking the other 9 out of Pick.
+    if (isBulkItem(item)) return bulkUnpackedRemaining(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     // A returned piece of gear is DONE with the prep half of the flow — it lives
     // in the Returned / De-prep stage, never back here. (Without this, a returned
@@ -1309,6 +1331,9 @@ function WarehouseProjectPage({
   // (the "to return it goes back to deploy" confusion).
   const preppedItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
+    // Bulk lines are quantity-aware: show while any unit is packed and waiting to
+    // deploy, even if some of the line's units are already out or still to pick.
+    if (isBulkItem(item)) return bulkPackedWaiting(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     if (item.status === "RETURNED") return false;
     // Kit parents: show if any children are prepped but not deployed
@@ -1387,8 +1412,8 @@ function WarehouseProjectPage({
     return item.status === "CHECKED_OUT";
   });
 
-  const groupedPrep = groupItems(pickPrepItems);
-  const groupedOut = groupItems(checkOutItemsList, "deploy");
+  const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
+  const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy");
 

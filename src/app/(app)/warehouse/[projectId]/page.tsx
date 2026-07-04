@@ -21,6 +21,7 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
@@ -32,6 +33,11 @@ import {
   checkInItems,
   checkOutKit,
   checkInKit,
+  undeployItems,
+  unreturnItems,
+  undeprepLine,
+  undeployKit,
+  unreturnKit,
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
   clearPrepContainer,
@@ -97,6 +103,8 @@ import {
   isKitParent,
   collectAllVerifiableIds,
   bulkUnitKey,
+  bulkUnpackedRemaining,
+  bulkPackedWaiting,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -147,7 +155,15 @@ const statusLabels: Record<string, string> = {
 
 // GroupEntry, isKitParent, PrepStatusBadge, collectAllVerifiableIds are imported from warehouse-types / components
 
-function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupEntry[] {
+// `countStage` picks how a bulk line's per-unit count is derived so a partially
+// prepped line shows the right number of units in each tab: the units still to
+// pick in Pick, and the units packed-and-waiting in Prepped. Omitted (De-prep /
+// legacy) keeps the whole ordered quantity.
+function groupItems(
+  items: LineItem[],
+  mode: "prep" | "deploy" = "prep",
+  countStage?: "prep" | "prepped",
+): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];
 
@@ -174,12 +190,20 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
       });
     } else if (isBulkItem(item)) {
       // Bulk items (qty > 1) show as expandable groups with per-unit rows
-      // just like serialized groups. unitCount = item.quantity (remaining units).
+      // just like serialized groups. unitCount reflects the units actionable in
+      // this stage (still-to-pick vs packed-and-waiting) so a partially prepped
+      // line shows the right count in each tab.
+      const unitCount =
+        countStage === "prep"
+          ? bulkUnpackedRemaining(item)
+          : countStage === "prepped"
+            ? bulkPackedWaiting(item)
+            : item.quantity;
       result.push({
         kind: "bulk-group",
         groupKey: `bulk-${item.id}`,
         item,
-        unitCount: item.quantity,
+        unitCount,
       });
     } else if (item.model) {
       const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
@@ -745,6 +769,74 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
+  // ── Move-back (reverse a stage) mutations ──────────────────────────────────
+  const undeployMutation = useServerMutation({
+    mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
+      undeployItems(projectId, items),
+    onSuccess: () => { toast.success("Moved back to Prepped"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const undeployKitMutation = useServerMutation({
+    mutationFn: (kitId: string) => undeployKit(projectId, kitId),
+    onSuccess: () => { toast.success("Kit moved back to Prepped"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const unreturnMutation = useServerMutation({
+    mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
+      unreturnItems(projectId, items),
+    onSuccess: () => { toast.success("Moved back to Deployed"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const unreturnKitMutation = useServerMutation({
+    mutationFn: (kitId: string) => unreturnKit(projectId, kitId),
+    onSuccess: () => { toast.success("Kit moved back to Deployed"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+  const undeprepMutation = useServerMutation({
+    mutationFn: (lineItemId: string) => undeprepLine(projectId, lineItemId),
+    onSuccess: () => { toast.success("Re-packed — back to Returned"); invalidate(); },
+    onError: (e) => showError(e),
+  });
+
+  // Parse a selection set (bulk `id:idx` keys, plain line ids, kit parents) into
+  // per-line quantities + kit ids, then fire the given item/kit reverse mutations.
+  const moveBackSelection = (
+    ids: Set<string>,
+    fireItems: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => void,
+    fireKit: (kitId: string) => void,
+  ) => {
+    if (ids.size === 0) return;
+    const qtyMap = new Map<string, number>();
+    const kitIds = new Set<string>();
+    for (const key of ids) {
+      const lineItemId = key.includes(":") ? key.split(":")[0] : key;
+      const li = lineItems.find((l) => l.id === lineItemId);
+      if (li && li.kitId && !li.isKitChild) {
+        kitIds.add(li.kitId);
+      } else {
+        qtyMap.set(lineItemId, (qtyMap.get(lineItemId) || 0) + 1);
+      }
+    }
+    for (const kitId of kitIds) fireKit(kitId);
+    const items = Array.from(qtyMap.entries()).map(([lineItemId, quantity]) => ({
+      lineItemId,
+      assetId: lineItems.find((l) => l.id === lineItemId)?.assetId || undefined,
+      quantity,
+    }));
+    if (items.length > 0) fireItems(items);
+  };
+
+  // Deployed → Prepped
+  const handleUndeploy = (ids: Set<string>) => {
+    moveBackSelection(ids, (items) => undeployMutation.mutate(items), (kitId) => undeployKitMutation.mutate(kitId));
+    setSelectedIn(new Set());
+  };
+  // Returned → Deployed
+  const handleUnreturn = (ids: Set<string>) => {
+    moveBackSelection(ids, (items) => unreturnMutation.mutate(items), (kitId) => unreturnKitMutation.mutate(kitId));
+    setSelectedDeprep(new Set());
+  };
+
   const clearContainerMutation = useServerMutation({
     mutationFn: (containerName: string) => clearPrepContainer(projectId, containerName),
     onSuccess: () => {
@@ -1277,6 +1369,11 @@ function WarehouseProjectPage({
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
+    // Bulk lines are quantity-aware: show while any ordered unit is still
+    // unpacked, even once some units are prepped/deployed. This is what keeps
+    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit parents are
+    // handled by their child rollup below, never as a bulk line.)
+    if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     // A returned piece of gear is DONE with the prep half of the flow — it lives
     // in the Returned / De-prep stage, never back here. (Without this, a returned
@@ -1309,6 +1406,10 @@ function WarehouseProjectPage({
   // (the "to return it goes back to deploy" confusion).
   const preppedItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
+    // Bulk lines are quantity-aware: show while any unit is packed and waiting to
+    // deploy, even if some of the line's units are already out or still to pick.
+    // (Kit parents fall through to the child rollup below, never treated as bulk.)
+    if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     if (item.status === "RETURNED") return false;
     // Kit parents: show if any children are prepped but not deployed
@@ -1387,8 +1488,8 @@ function WarehouseProjectPage({
     return item.status === "CHECKED_OUT";
   });
 
-  const groupedPrep = groupItems(pickPrepItems);
-  const groupedOut = groupItems(checkOutItemsList, "deploy");
+  const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
+  const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy");
 
@@ -2433,6 +2534,8 @@ function WarehouseProjectPage({
           handleCheckOutSelected={handleCheckOutSelected}
           handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
+          handleUnreturn={handleUnreturn}
+          unreturnIsPending={unreturnMutation.isPending || unreturnKitMutation.isPending}
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
@@ -2466,6 +2569,8 @@ function WarehouseProjectPage({
           toggleExpanded={toggleExpanded}
           handleReturnSelected={handleReturnSelected}
           checkInIsPending={checkInMutation.isPending}
+          handleUndeploy={handleUndeploy}
+          undeployIsPending={undeployMutation.isPending || undeployKitMutation.isPending}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2489,6 +2594,7 @@ function WarehouseProjectPage({
                       <TableHead>Asset tag</TableHead>
                       <TableHead className="text-center w-16">Qty</TableHead>
                       <TableHead className="w-32">Status</TableHead>
+                      <TableHead className="w-40 text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2510,6 +2616,18 @@ function WarehouseProjectPage({
                         <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
                         <TableCell>
                           <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {/* Move back a stage: re-pack this returned item (→ Returned). */}
+                          <Button
+                            variant="line"
+                            size="sm"
+                            onClick={() => undeprepMutation.mutate(item.id)}
+                            disabled={undeprepMutation.isPending}
+                          >
+                            <Undo2 className="mr-1.5 h-4 w-4" />
+                            Move to Returned
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

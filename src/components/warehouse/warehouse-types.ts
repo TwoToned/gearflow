@@ -72,6 +72,36 @@ export function isBulkItem(item: LineItem) {
   return false;
 }
 
+// ─── Quantity-aware stage counts for bulk lines ──────────────────────────────
+// A bulk line stays a single row through its whole lifecycle (prep no longer
+// splits the line). Partial prep/deploy is tracked by per-unit rows in `units`
+// (one qty-1 row per prepped item, or a single qty-N row for a tagged bulk
+// pool). These helpers derive "how many units belong in each warehouse stage"
+// from those rows so a line can appear in Pick AND Prepped at once — the fix
+// for "prep 1 of 10 and all 10 jump to Prepped".
+
+function unitQty(u: NonNullable<LineItem["units"]>[number]): number {
+  return u.quantity ?? 1;
+}
+
+/** Ordered units not yet assigned to any prep/deploy/return row → still to pick. */
+export function bulkUnpackedRemaining(item: LineItem): number {
+  const assigned = (item.units ?? []).reduce((n, u) => n + unitQty(u), 0);
+  return Math.max(0, item.quantity - assigned);
+}
+
+/** Packed units not yet deployed or returned → sitting in the Prepped stage. */
+export function bulkPackedWaiting(item: LineItem): number {
+  return (item.units ?? [])
+    .filter(
+      (u) =>
+        u.status !== "CHECKED_OUT" &&
+        u.status !== "RETURNED" &&
+        u.prepStatus === "PACKED",
+    )
+    .reduce((n, u) => n + unitQty(u), 0);
+}
+
 export function modelDisplayName(item: LineItem) {
   if (!item.model) return item.description || "Unnamed item";
   return [item.model.name, item.model.modelNumber].filter(Boolean).join(" - ");

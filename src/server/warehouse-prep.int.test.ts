@@ -259,6 +259,91 @@ describe("prepItemDirect — fulfillment model", () => {
     expect(refreshed.packedQuantity).toBe(2);
   });
 
+  it("untagged bulk: prepping 1 of 10 packs ONE unit, not the whole line", async () => {
+    // The user-reported bug: an untagged multi-qty line (no asset tag) used to
+    // flip the whole line to PACKED on any prep, yanking all 10 into Prepped.
+    // Now each prep creates one generic PACKED unit, so 1 of 10 stays 1.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 10);
+
+    // No asset id — the untagged path. Prep a single unit.
+    await prepItemDirect(project.id, line.id, undefined, 1);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(1);
+    expect(units[0].assetId).toBeNull();
+    expect(units[0].bulkAssetId).toBeNull();
+    expect(units[0].prepStatus).toBe("PACKED");
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.quantity).toBe(10); // line never split
+    expect(refreshed.packedQuantity).toBe(1); // only ONE unit packed
+    expect(refreshed.prepStatus).toBe("PACKED");
+  });
+
+  it("untagged bulk: prep is capped at the ordered quantity", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 2);
+
+    await prepItemDirect(project.id, line.id, undefined, 1);
+    await prepItemDirect(project.id, line.id, undefined, 1);
+    // A third prep has no room — must not create a 3rd unit.
+    await prepItemDirect(project.id, line.id, undefined, 1);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(2);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.packedQuantity).toBe(2);
+  });
+
+  it("untagged bulk: partial deploy checks out only the packed units", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 5);
+
+    // Prep 3 of 5, then deploy 2 of the 3.
+    await prepItemDirect(project.id, line.id, undefined, 1);
+    await prepItemDirect(project.id, line.id, undefined, 1);
+    await prepItemDirect(project.id, line.id, undefined, 1);
+    await checkOutItems(project.id, [{ lineItemId: line.id, quantity: 2 }]);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(3);
+    expect(units.filter((u) => u.status === "CHECKED_OUT")).toHaveLength(2);
+    expect(units.filter((u) => u.status === "CONFIRMED")).toHaveLength(1);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.checkedOutQuantity).toBe(2);
+    expect(refreshed.packedQuantity).toBe(3); // still 3 packed rows exist
+  });
+
   it("operator-set FLAGGED_FAULTY survives a later unit pack", async () => {
     // completeCheckAndFlag is the operator override — a later
     // unit-rollup must not silently wipe it back to PACKED.

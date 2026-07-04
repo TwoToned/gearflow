@@ -8,10 +8,14 @@
 
 ## Lifecycle Flow
 
-Gear moves strictly **left to right** through five stages — there is no reversing:
+Gear flows **left to right** through five stages. The primary button in each tab advances
+gear one step; a secondary **"Move to …"** button reverses one step (see *Move-back* below)
+for correcting a misclick — the derivation itself still keys off the item's real
+status/prepStatus, so a reversed item is simply re-derived at its new stage:
 
 ```
-Pick/prep → Prepped → Deployed → Returned → De-prepped
+Pick/prep → Prepped → Deployed → Returned → De-prepped   (→ forward buttons)
+Pick/prep ← Prepped ← Deployed ← Returned ← De-prepped   (← Move-to back buttons)
 ```
 
 The project warehouse page header renders a **lifecycle stepper** (`WarehouseLifecycle`,
@@ -35,11 +39,31 @@ performs the action that advances gear to the next stage:
 
 | Tab (stage gear is in) | Shows | Button → next stage |
 | --- | --- | --- |
-| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped |
-| Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed |
-| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned |
-| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped |
-| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | — (terminal, read-only) |
+| Pick | `pickPrepItems` (not yet PACKED) | Prep → Prepped · (first stage, no back) |
+| Prepped | `preppedItems` (PACKED, not out) | Deploy → Deployed · **Move to Pick → Pick** (deprep) |
+| Deployed | `checkedOutItems` (CHECKED_OUT) | Return → Returned · **Move to Prepped → Prepped** (un-deploy) |
+| Returned | `returnedItems` (RETURNED + PACKED) | Deprep → De-prepped · **Move to Deployed → Deployed** (un-return) |
+| De-prepped | `deprepedItems` (RETURNED, prepStatus off PACKED) | **Move to Returned → Returned** (un-deprep, per row) |
+
+### Move-back (reverse a stage)
+Every stage's primary button advances gear one step; each stage past Pick also has a
+**secondary "Move to …" button** that reverses one step, so an operator can correct a
+misclick without a workaround. The reverses mirror their forward mutation exactly —
+flipping unit + asset status (and kit bulk-availability, opposite sign) back:
+
+| Reverse | Server action → Convex mutation | Effect |
+| --- | --- | --- |
+| Prepped → Pick | `deprepItem` / `deprepKit` | remove packed units, `prepStatus` → PENDING |
+| Deployed → Prepped | `undeployItems` / `undeployKit` → `warehouseOps.undeployItems`/`.undeployKit` | units CHECKED_OUT → prepped, assets → AVAILABLE @ default location, kit bulk availability +1 |
+| Returned → Deployed | `unreturnItems` / `unreturnKit` → `.unreturnItems`/`.unreturnKit` | units RETURNED → CHECKED_OUT, assets → CHECKED_OUT @ project location, kit bulk availability −1 |
+| De-prepped → Returned | `undeprepLine` → `.undeprepLine` | line `prepStatus` → PACKED (status stays RETURNED) |
+
+Selection is parsed by the shared `moveBackSelection` helper (same bulk `id:idx` / line-id /
+kit-parent parsing as the forward handlers), routing kit parents to the kit reverse and the
+rest to the item reverse. **Reverses flip whole units** — they do not sub-split a tagged bulk
+pool's quantity (matches how bulk deploy/return create whole unit rows). Legacy unit-less
+lines (deployed via `checkOutDeployWholeLine`) restore their line counters directly and skip
+the unit rollup (which would otherwise zero them).
 
 (Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
 `check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
@@ -51,21 +75,51 @@ run, back into inventory) after being **returned**.
 - Container dropdown next to scan input — select a case asset or type a custom container name
 - Container assets (from configured case category) auto-added to project on first prep
 - `prepItemDirect()` sets `prepStatus=PACKED` and `prepContainer` without deploying (status stays `CONFIRMED`)
-- **Unified split approach**: both serialized and bulk multi-qty items use the same split pattern:
-  - When prepping 1 unit from a qty > 1 item, a new qty=1 line item is created with `prepStatus=PACKED`
-  - For serialized items: the split item gets the assigned `assetId`
-  - For bulk items: the split item inherits the `bulkAssetId`
-  - The original item's `quantity` decrements by 1
-  - When original reaches qty=0, it's hidden from the prep tab
-  - When original reaches qty=1, the last unit is prepped in-place (no split)
+- **Per-unit fulfillment model (no line splitting)**: prep never splits the line or decrements its
+  `quantity`. A multi-qty line stays one row; each prepped item is a `projectLineItemUnit` row
+  (`prepStatus=PACKED`) carrying its own `assetId` (serialized), `bulkAssetId` (tagged bulk), or
+  neither (untagged bulk — see "Partial prep of untagged bulk lines" below). The line's
+  `packedQuantity`/`checkedOutQuantity`/`returnedQuantity` counters and coarse `status`/`prepStatus`
+  are **rolled up** from its units by `syncLineItemRollup`. Which stage a bulk line's units belong
+  to is derived from those unit rows (see quantity-aware staging below), so a partial prep leaves the
+  remaining units in Pick instead of moving the whole line.
 - Items with no check items assigned are prepped directly; items with checks go through the check queue
 - **Sub-hire items skip the asset picker**: When `handlePrepSelected()` processes selected items, it checks `!li.isSubhire` before routing a serialized item (no `assetId`, no `bulkAssetId`, SERIALIZED model) to the asset picker. Sub-hire items are third-party gear with no internal asset record, so they are prepped directly without asset assignment.
-- **Serialised routing is `assetType !== "BULK"`, NOT `=== "SERIALIZED"`.** `handlePrepSelected()` decides whether a non-bulk-asset line needs the asset picker. The Convex model mirror stores `assetType` as OPTIONAL, so a model whose mirror doc omitted it reads back `undefined`. Testing `=== "SERIALIZED"` then failed and the line fell through to the bulk/generic prep path, where `prepUnit` flips the WHOLE line to `PACKED` ignoring the ticked quantity — "prep one of four, all four move over" (and the downstream deploy then whole-lines too, since no per-unit rows exist). Prisma defaults `assetType` to `SERIALIZED`, so "not BULK" is the mirror-gap-proof reading for a line with no `bulkAssetId`. Genuine BULK lines are unaffected (still routed to the bulk path). Per-asset prep is regression-tested in `line-item-fulfillment.int.test.ts`.
+- **Serialised routing is `assetType !== "BULK"`, NOT `=== "SERIALIZED"`.** `handlePrepSelected()` decides whether a non-bulk-asset line needs the asset picker. The Convex model mirror stores `assetType` as OPTIONAL, so a model whose mirror doc omitted it reads back `undefined`. Testing `=== "SERIALIZED"` then failed and the line fell through to the bulk/generic prep path. Prisma defaults `assetType` to `SERIALIZED`, so "not BULK" is the mirror-gap-proof reading for a line with no `bulkAssetId`. Genuine BULK lines are routed to the bulk path (below). Per-asset prep is regression-tested in `warehouse-prep.int.test.ts`.
+
+#### Partial prep of untagged bulk lines (quantity-aware staging)
+A genuine BULK line with **no bulk asset tag assigned** (no per-unit identity) used to be
+prepped/deployed **whole-line**: `prepUnit`'s no-asset/no-bulk branch flipped the entire line to
+`prepStatus=PACKED`, so ticking *1 of 10* moved **all 10** into Prepped ("they don't have asset
+tags" and all jump over). Now these lines track prep **per unit**, exactly like tagged bulk:
+- `prepUnit` (in `convex/lib/fulfillment.ts`) creates one **generic** qty-1 `projectLineItemUnit`
+  (no `assetId`, no `bulkAssetId`, `prepStatus=PACKED`) per packed item, capped at the line's
+  ordered `quantity`. The single-unit / legacy (`quantity <= 1`) case keeps the whole-line flip.
+- Deploy: `checkoutItems`' no-asset/no-bulk branch calls `checkOutGenericUnits` (in
+  `convex/warehouseOps.ts`), flipping up to `want` prepped generic units to `CHECKED_OUT`. Only
+  lines that were never unit-prepped fall back to `checkOutDeployWholeLine`.
+- Deprep + return already handled generic units (`deprepItem` deletes packed units LIFO by count;
+  `returnLineUnits` §3 flips checked-out units up to `quantity`).
+- **UI staging is unit-derived** (not the binary line `prepStatus`). `bulkUnpackedRemaining` /
+  `bulkPackedWaiting` (in `warehouse-types.ts`, unit-tested in `bulk-unit-counts.test.ts`) split a
+  bulk line's units across stages: the Pick tab shows/counts units still to pick, the Prepped tab
+  shows/counts units packed-and-waiting — so one line can appear in **both** Pick and Prepped
+  during a partial prep. The `pickPrepItems`/`preppedItems` filters and `groupItems`' bulk
+  `unitCount` (via the `countStage` arg) all read these helpers. This uniformly fixes tagged bulk
+  and serialized-unassigned multi-qty lines too. Regression-tested in `warehouse-prep.int.test.ts`
+  ("untagged bulk: …").
 - Bulk items display as expandable groups with individual unit rows (Unit 1, Unit 2, etc.) — each unit gets its own check dialog
 - `deprepItem()` reverses prep: clears `prepStatus` to PENDING (split items stay as independent line items)
 
 ### Deploy Tab
 - Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
+- **Move to Pick (deprep) button** — a secondary `variant="line"` button next to Deploy that
+  sends the selected prepped units *back* to the Pick stage. It reuses `handleDeprep(selectedOut)`
+  (the same callback the De-prep tab uses): prepped-but-never-deployed items have no RETURN check,
+  so they route straight through `deprepItem`/`deprepKit`, which removes the packed unit rows and
+  resets the line's `prepStatus` to `PENDING`. Partial selections are honoured (deprep N of M).
+  This is the "move stuff back a stage, not just forward" affordance — every stage's primary
+  button advances gear; the Prepped stage additionally offers a reverse.
 - **Excludes `status === "RETURNED"`** (leaf, kit-child and grandchild filters) — returned gear belongs in the De-prep tab, not here
 - Split items (qty=1) flow through the serialized deploy path regardless of whether they have a `bulkAssetId`
 - Items grouped by `prepContainer` with section headers (Package icon + container name)

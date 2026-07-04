@@ -418,6 +418,109 @@ export async function checkInItems(
   return serialize(await attachModelToResults(organizationId, rows));
 }
 
+// ── Move-back (reverse a stage) ──────────────────────────────────────────────
+
+/** Deployed → Prepped. Reverse of checkOutItems for the selected units. */
+export async function undeployItems(
+  projectId: string,
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>,
+) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.undeployItems, {
+    organizationId,
+    projectId,
+    userId,
+    items: items.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
+    now: Date.now(),
+  });
+  for (const item of items) {
+    await logActivity({
+      organizationId, userId, userName, action: "UPDATE", entityType: "asset",
+      entityId: item.assetId || item.lineItemId, entityName: `Line item ${item.lineItemId}`,
+      summary: "Moved item back to Prepped (un-deploy)", projectId, assetId: item.assetId,
+    });
+  }
+  const rows = await Promise.all(
+    res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
+  );
+  return serialize(await attachModelToResults(organizationId, rows));
+}
+
+/** Returned → Deployed. Reverse of checkInItems for the selected units. */
+export async function unreturnItems(
+  projectId: string,
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>,
+) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.unreturnItems, {
+    organizationId,
+    projectId,
+    userId,
+    items: items.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
+    now: Date.now(),
+  });
+  for (const item of items) {
+    await logActivity({
+      organizationId, userId, userName, action: "UPDATE", entityType: "asset",
+      entityId: item.assetId || item.lineItemId, entityName: `Line item ${item.lineItemId}`,
+      summary: "Moved item back to Deployed (un-return)", projectId, assetId: item.assetId,
+    });
+  }
+  const rows = await Promise.all(
+    res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
+  );
+  return serialize(await attachModelToResults(organizationId, rows));
+}
+
+/** De-prepped → Returned. Re-pack a returned line (prepStatus back to PACKED). */
+export async function undeprepLine(projectId: string, lineItemId: string) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const convex = await getConvexClient();
+  await convex.mutation(api.warehouseOps.undeprepLine, {
+    organizationId,
+    projectId,
+    lineItemId,
+    now: Date.now(),
+  });
+  await logActivity({
+    organizationId, userId, userName, action: "UPDATE", entityType: "asset",
+    entityId: lineItemId, entityName: `Line item ${lineItemId}`,
+    summary: "Re-packed returned item (un-deprep)", projectId,
+  });
+  const row = await convex.query(api.projectLineItems.getById, { id: lineItemId });
+  return serialize(await attachModelToResults(organizationId, [row]));
+}
+
+/** Deployed → Prepped for a whole kit. Reverse of checkOutKit. */
+export async function undeployKit(projectId: string, kitId: string) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.undeployKit, {
+    organizationId, projectId, userId, kitId, now: Date.now(),
+  });
+  await logActivity({
+    organizationId, userId, userName, action: "UPDATE", entityType: "kit",
+    entityId: kitId, entityName: `Kit ${kitId}`, summary: "Moved kit back to Prepped (un-deploy)", projectId, kitId,
+  });
+  return serialize({ success: true, ...res });
+}
+
+/** Returned → Deployed for a whole kit. Reverse of checkInKit. */
+export async function unreturnKit(projectId: string, kitId: string) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.unreturnKit, {
+    organizationId, projectId, userId, kitId, now: Date.now(),
+  });
+  await logActivity({
+    organizationId, userId, userName, action: "UPDATE", entityType: "kit",
+    entityId: kitId, entityName: `Kit ${kitId}`, summary: "Moved kit back to Deployed (un-return)", projectId, kitId,
+  });
+  return serialize({ success: true, ...res });
+}
+
 export async function checkOutKit(projectId: string, kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 

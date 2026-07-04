@@ -92,6 +92,29 @@ async function checkOutDeployWholeLine(ctx: Ctx, p: { lineItemId: string; lineIt
   }
 }
 
+/**
+ * Deploy the prepped "generic" units of an untagged multi-quantity line (rows
+ * with neither an asset nor a bulk asset — the partial-prep model). Flips up to
+ * `want` of them to CHECKED_OUT so a partial deploy leaves the rest waiting.
+ * Returns false when the line has no such units (legacy whole-line deploy).
+ */
+async function checkOutGenericUnits(
+  ctx: Ctx,
+  p: { organizationId: string; lineItemId: string; want?: number; userId: string; projectId: string; notes?: string; now: number },
+): Promise<boolean> {
+  const units = (await lineUnits(ctx, p.lineItemId))
+    .filter((u) => !u.assetId && !u.bulkAssetId && u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.prepStatus === "PACKED")
+    .sort((a, b) => a.ordinal - b.ordinal);
+  if (units.length === 0) return false;
+  const want = p.want ?? units.length;
+  const toFlip = units.slice(0, Math.max(1, Math.min(want, units.length)));
+  for (const u of toFlip) {
+    await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
+  }
+  await scanLog(ctx, { organizationId: p.organizationId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes || `Deployed ${toFlip.length} unit(s)` });
+  return true;
+}
+
 /** Cascade checkout to a parent line's accessory children (per parent unit / whole line). */
 async function checkoutAccessoryChildren(
   ctx: Ctx,
@@ -258,9 +281,19 @@ export const checkoutItems = mutation({
           projectId: a.projectId, notes: item.notes, now: a.now,
         });
       } else {
-        await checkOutDeployWholeLine(ctx, { lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0, userId: a.userId, now: a.now });
-        updated.add(lineItem.id);
-        continue;
+        // No serialised asset, no bulk asset. Prefer deploying the prepped
+        // generic units (untagged multi-qty partial support); only legacy lines
+        // that were never unit-prepped fall back to the whole-line flip.
+        const flipped = await checkOutGenericUnits(ctx, {
+          organizationId: a.organizationId, lineItemId: lineItem.id, want: item.quantity,
+          userId: a.userId, projectId: a.projectId, notes: item.notes, now: a.now,
+        });
+        if (!flipped) {
+          await checkOutDeployWholeLine(ctx, { lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0, userId: a.userId, now: a.now });
+          updated.add(lineItem.id);
+          continue;
+        }
+        // Generic units flipped — fall through to finalize (accessories + rollup).
       }
       await finalizeCheckoutItem(ctx, {
         organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,

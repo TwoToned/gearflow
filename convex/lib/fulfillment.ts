@@ -655,12 +655,41 @@ export async function prepUnit(
   } else {
     const line = await lineDocByCuid(ctx, args.lineItemId);
     if (line) {
-      await ctx.db.patch(line._id, {
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
-        updatedAt: now,
-      });
+      const ordered = line.quantity ?? 0;
+      if (ordered > 1) {
+        // Untagged multi-quantity line (no serialised asset, no bulk asset).
+        // Track prep per unit — one qty-1 "generic" row per packed item — so a
+        // partial selection packs only that many and the rest stay in Pick.
+        // (Whole-line prep here is what caused "prep 1 of 10 → all 10 move".)
+        const existing = await lineUnits(ctx, args.lineItemId);
+        const assigned = existing.reduce((n, u) => n + (u.quantity ?? 0), 0);
+        const room = Math.max(0, ordered - assigned);
+        const toCreate = Math.min(Math.max(1, args.quantity ?? 1), room);
+        let ordinal = nextOrdinal(existing);
+        for (let i = 0; i < toCreate; i++) {
+          await ctx.db.insert("projectLineItemUnits", {
+            id: createId(),
+            organizationId: args.organizationId,
+            lineItemId: args.lineItemId,
+            ordinal: ordinal++,
+            quantity: 1,
+            returnedQuantity: 0,
+            status: "CONFIRMED",
+            prepStatus: "PACKED",
+            ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } else {
+        // Single-unit / legacy generic line — whole-line prep (unchanged).
+        await ctx.db.patch(line._id, {
+          status: "CONFIRMED",
+          prepStatus: "PACKED",
+          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          updatedAt: now,
+        });
+      }
     }
   }
   await syncLineItemRollup(ctx, args.lineItemId);

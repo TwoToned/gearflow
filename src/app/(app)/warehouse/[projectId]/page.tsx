@@ -1297,8 +1297,9 @@ function WarehouseProjectPage({
     if (item.status === "CANCELLED") return false;
     // Bulk lines are quantity-aware: show while any ordered unit is still
     // unpacked, even once some units are prepped/deployed. This is what keeps
-    // "prep 1 of 10" from yanking the other 9 out of Pick.
-    if (isBulkItem(item)) return bulkUnpackedRemaining(item) > 0;
+    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit parents are
+    // handled by their child rollup below, never as a bulk line.)
+    if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     // A returned piece of gear is DONE with the prep half of the flow — it lives
     // in the Returned / De-prep stage, never back here. (Without this, a returned
@@ -1333,7 +1334,8 @@ function WarehouseProjectPage({
     if (item.status === "CANCELLED") return false;
     // Bulk lines are quantity-aware: show while any unit is packed and waiting to
     // deploy, even if some of the line's units are already out or still to pick.
-    if (isBulkItem(item)) return bulkPackedWaiting(item) > 0;
+    // (Kit parents fall through to the child rollup below, never treated as bulk.)
+    if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     if (item.status === "RETURNED") return false;
     // Kit parents: show if any children are prepped but not deployed

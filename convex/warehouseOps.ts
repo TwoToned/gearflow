@@ -493,6 +493,222 @@ export const checkinItems = mutation({
   },
 });
 
+// ── Move-back (reverse a stage) ──────────────────────────────────────────────
+// Every warehouse stage's primary button advances gear one step; these mutations
+// are the inverse (Deployed→Prepped, Returned→Deployed, De-prepped→Returned).
+// They mirror the matching forward mutation exactly, flipping unit + asset status
+// (and kit bulk availability) back. Whole units only — no sub-quantity split of a
+// bulk pool. Kits go through their own reverse (like checkoutKit / checkinKit).
+
+/** Flip a line's units from one status to another (whole units, up to `want`),
+ *  restoring each serialised unit's asset status + location. */
+async function flipLineUnits(
+  ctx: Ctx,
+  p: {
+    organizationId: string; lineItemId: string;
+    fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT";
+    toPrepStatus?: "PACKED"; resetReturnedQty?: boolean;
+    assetStatus: string; locationId: string | null; clearLoc: boolean;
+    want?: number; now: number;
+  },
+): Promise<{ flipped: number; assetIds: string[] }> {
+  const units = (await lineUnits(ctx, p.lineItemId))
+    .filter((u) => u.status === p.fromStatus)
+    .sort((a, b) => a.ordinal - b.ordinal);
+  const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
+  const assetIds: string[] = [];
+  for (const u of toFlip) {
+    await ctx.db.patch(u._id, {
+      status: p.toStatus,
+      ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
+      ...(p.resetReturnedQty ? { returnedQuantity: 0 } : {}),
+      updatedAt: p.now,
+    });
+    if (u.assetId) assetIds.push(u.assetId);
+  }
+  if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
+  return { flipped: toFlip.length, assetIds };
+}
+
+/** Cascade a line's ACCESSORY children back with their parent (whole units). */
+async function reverseAccessoryChildren(
+  ctx: Ctx,
+  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
+): Promise<void> {
+  const children = (await childLines(ctx, p.parentLineItemId, p.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+  for (const child of children) {
+    await flipLineUnits(ctx, {
+      organizationId: p.organizationId, lineItemId: child.id,
+      fromStatus: p.fromStatus, toStatus: p.toStatus, toPrepStatus: p.toPrepStatus,
+      assetStatus: p.assetStatus, locationId: p.locationId, clearLoc: p.clearLoc, now: p.now,
+    });
+    await syncLineItemRollup(ctx, child.id);
+  }
+}
+
+const reverseItemArg = v.object({ lineItemId: v.string(), assetId: v.optional(v.string()), quantity: v.optional(v.number()) });
+
+/** Deployed → Prepped: reverse checkoutItems. Units CHECKED_OUT → prepped,
+ *  assets back to AVAILABLE at the default location. */
+export const undeployItems = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), items: v.array(reverseItemArg), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const defLoc = await defaultLocationId(ctx, a.organizationId);
+    const updated = new Set<string>();
+    for (const item of a.items) {
+      const line = await lineByCuid(ctx, item.lineItemId);
+      if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
+      const { flipped } = await flipLineUnits(ctx, {
+        organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
+        toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
+        locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
+      });
+      const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
+      if (wholeLine) {
+        // Legacy unit-less line — set counters directly; a rollup would zero them.
+        await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
+      }
+      await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+      if (!wholeLine) await syncLineItemRollup(ctx, line.id);
+      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
+      updated.add(line.id);
+    }
+    return { updatedLineIds: [...updated] };
+  },
+});
+
+/** Returned → Deployed: reverse checkinItems. Units RETURNED → CHECKED_OUT,
+ *  assets back out at the project location. */
+export const unreturnItems = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), items: v.array(reverseItemArg), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const projLoc = project?.locationId ?? null;
+    const updated = new Set<string>();
+    for (const item of a.items) {
+      const line = await lineByCuid(ctx, item.lineItemId);
+      if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
+      const { flipped } = await flipLineUnits(ctx, {
+        organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
+        toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
+        locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
+      });
+      const wholeLine = flipped === 0 && line.status === "RETURNED";
+      if (wholeLine) {
+        // Legacy unit-less line — restore checked-out counters directly; a rollup
+        // would zero checkedOutQuantity (no units to recompute from).
+        await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
+      }
+      await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+      if (!wholeLine) await syncLineItemRollup(ctx, line.id);
+      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
+      updated.add(line.id);
+    }
+    return { updatedLineIds: [...updated] };
+  },
+});
+
+/** De-prepped → Returned: re-pack a returned line (prepStatus back to PACKED).
+ *  Status stays RETURNED; this only reverses the de-prep prepStatus reset. */
+export const undeprepLine = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), lineItemId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const line = await lineByCuid(ctx, a.lineItemId);
+    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+    await ctx.db.patch(line._id, { prepStatus: "PACKED", updatedAt: a.now });
+    for (const child of (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY")) {
+      await ctx.db.patch(child._id, { prepStatus: "PACKED", updatedAt: a.now });
+    }
+    return { id: a.lineItemId };
+  },
+});
+
+/** Deployed → Prepped for a whole kit: reverse checkoutKit. */
+export const undeployKit = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+    if (!kitLine) throw new ConvexError("Kit not found on this project");
+    const defLoc = await defaultLocationId(ctx, a.organizationId);
+    const prepped = { status: "CONFIRMED" as const, prepStatus: "PACKED" as const, checkedOutQuantity: 0, updatedAt: a.now };
+
+    const children = await childLines(ctx, kitLine.id, a.organizationId);
+    const nestedKitChildren = children.filter((c) => c.kitId);
+    const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+
+    await ctx.db.patch(kitLine._id, prepped);
+    for (const c of children) await ctx.db.patch(c._id, prepped);
+    for (const nestedChild of nestedKitChildren) {
+      for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, prepped);
+      const nk = await kitByCuid(ctx, nestedChild.kitId!);
+      if (nk) await ctx.db.patch(nk._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "AVAILABLE", defLoc, true, a.now);
+    }
+    await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", defLoc, true, a.now);
+    for (const nestedChild of nestedKitChildren) {
+      const gcs = await childLines(ctx, nestedChild.id, a.organizationId);
+      await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "AVAILABLE", defLoc, true, a.now);
+    }
+    const kit = await kitByCuid(ctx, a.kitId);
+    if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "AVAILABLE", defLoc, true, a.now);
+
+    // Restore bulk availability the checkout consumed (+1, opposite of checkout's -1).
+    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
+    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
+    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
+
+    await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Prepped (un-deploy)" });
+    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
+  },
+});
+
+/** Returned → Deployed for a whole kit: reverse checkinKit. */
+export const unreturnKit = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+    if (!kitLine) throw new ConvexError("Kit not found on this project");
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const projLoc = project?.locationId ?? null;
+    const deployed = { status: "CHECKED_OUT" as const, returnedQuantity: 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now };
+
+    const children = (await childLines(ctx, kitLine.id, a.organizationId)).filter((c) => c.status === "RETURNED");
+    const nestedKitChildren = children.filter((c) => c.kitId);
+    const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+
+    await ctx.db.patch(kitLine._id, deployed);
+    for (const c of children) await ctx.db.patch(c._id, deployed);
+    for (const nestedChild of nestedKitChildren) {
+      for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "RETURNED")) await ctx.db.patch(gc._id, deployed);
+      const nk = await kitByCuid(ctx, nestedChild.kitId!);
+      if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "CHECKED_OUT", projLoc, false, a.now);
+    }
+    await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", projLoc, false, a.now);
+    for (const nestedChild of nestedKitChildren) {
+      const gcs = await childLines(ctx, nestedChild.id, a.organizationId);
+      await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "CHECKED_OUT", projLoc, false, a.now);
+    }
+    const kit = await kitByCuid(ctx, a.kitId);
+    if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "CHECKED_OUT", projLoc, false, a.now);
+
+    // Re-consume bulk availability the return restored (-1, opposite of checkin's +1).
+    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
+    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
+    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
+
+    await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Deployed (un-return)" });
+    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
+  },
+});
+
 // ── Force-return + container/quick-add (Group E3/E4) ──────────────────────────
 
 const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const, updatedAt: now });

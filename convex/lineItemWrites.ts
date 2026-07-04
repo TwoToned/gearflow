@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
@@ -41,11 +42,12 @@ export const removeNative = mutation({
   args: {
     id: v.string(),
     orgId: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, orgDefaultTaxRate, actor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
 
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -85,7 +87,9 @@ export const removeNative = mutation({
       createdAt: now,
     });
 
-    // The caller recalculates project totals afterward (server-side, unchanged).
+    // Recalc project totals in the SAME transaction (Option A — collapses the write
+    // to one round-trip; org default tax passed from Postgres, the source of truth).
+    await recalcProjectTotals(ctx, line.projectId, orgId, orgDefaultTaxRate, now);
     return { projectId: line.projectId };
   },
 });
@@ -102,6 +106,7 @@ export const patchNative = mutation({
   args: {
     id: v.string(),
     orgId: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
     set: v.any(),
     clear: v.array(v.string()),
     entityName: v.string(),
@@ -109,7 +114,7 @@ export const patchNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, set, clear, entityName, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, actor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
 
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -142,6 +147,7 @@ export const patchNative = mutation({
       createdAt: now,
     });
 
+    await recalcProjectTotals(ctx, doc.projectId, orgId, orgDefaultTaxRate, now);
     return { projectId: doc.projectId };
   },
 });
@@ -180,11 +186,12 @@ export const addCustomNative = mutation({
       groupName: v.optional(v.string()),
       lineTotal: v.optional(v.number()),
     }),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, orgDefaultTaxRate, actor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
 
     const sortOrder = await nextLineSort(ctx, projectId, organizationId);
@@ -214,6 +221,7 @@ export const addCustomNative = mutation({
       createdAt: now,
     });
 
+    await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
     return { id };
   },
 });
@@ -255,11 +263,12 @@ export const addNative = mutation({
       subhireOrderNumber: v.optional(v.string()),
     }),
     includeAccessories: v.boolean(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, orgDefaultTaxRate, actor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
@@ -304,6 +313,7 @@ export const addNative = mutation({
       createdAt: now,
     });
 
+    await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
     return { id, sortOrder };
   },
 });
@@ -326,11 +336,12 @@ export const addKitNative = mutation({
     categoryId: v.optional(v.string()),
     groupId: v.optional(v.string()),
     kitLabel: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, orgDefaultTaxRate, actor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
 
     await createKitLineItemCore(ctx, {
@@ -352,6 +363,7 @@ export const addKitNative = mutation({
       createdAt: now,
     });
 
+    await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
     return { id };
   },
 });
@@ -375,6 +387,34 @@ export const reorderNative = mutation({
         await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
       }
     }
+    return { ok: true as const };
+  },
+});
+
+/**
+ * recalcNative — recompute + persist a project's derived totals, backend-local.
+ *
+ * A drop-in for src/server/line-items.ts `recalculateProjectTotals`: that function
+ * did ~3 sequential server→Convex-Cloud round-trips (project read → parallel wave of
+ * 5 collection reads → project write), the common ~6–12s write tail. This does the
+ * whole thing in ONE mutation (all reads/writes are backend-local). Every write
+ * across the app (line-items, groups, services, sub-hires, project edits) funnels
+ * through recalculateProjectTotals, so this single collapse speeds up ALL of them.
+ *
+ * orgDefaultTaxRate is passed by the caller (Postgres — no Convex mirror writer).
+ * Gated behind NATIVE_RECALC; parity with the server-side math is proven by
+ * convex/recalc.test.ts (recalcProjectTotals, the shared core).
+ */
+export const recalcNative = mutation({
+  args: {
+    projectId: v.string(),
+    orgId: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, orgId, orgDefaultTaxRate, now }) => {
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    await recalcProjectTotals(ctx, projectId, orgId, orgDefaultTaxRate, now);
     return { ok: true as const };
   },
 });

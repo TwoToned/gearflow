@@ -3399,6 +3399,33 @@ Better Auth + `customRole` + `activityLog`), **Stage 4** `DROP TABLE … CASCADE
 still pending on the open PRs: woocommerce-integration (req), notification-email-log
 (opt), **project-number-sequence (req)**.
 
+### Phase 5 write-latency fix — recalc collapsed to one round-trip (NATIVE_RECALC)
+
+**Symptom:** editing/deleting a line item took 6–12s to reflect. **Cause:**
+`recalculateProjectTotals` (src/server/line-items.ts) runs after *every*
+add/edit/delete across the app and did ~3 SEQUENTIAL server→Convex-Cloud waves —
+project read → a parallel wave of 5 collection reads (groups/lines/services/
+assignments/sub-hires) → the project write — each hop ~1–2s in prod.
+
+**Fix:** `recalcProjectTotals` (`convex/lib/recalc.ts`) is a byte-for-byte port of
+that money math, runnable inside a mutation so the whole recompute is one
+backend-local pass. Two entry points:
+- **`recalcNative`** (convex/lineItemWrites.ts) — standalone RBAC-guarded mutation.
+  Behind **`NATIVE_RECALC`**, `recalculateProjectTotals` becomes a single call to it,
+  so EVERY domain's write (line-items, groups, services, sub-hires, project edits)
+  collapses its recalc from 3 waves to 1 hop.
+- **In-mutation recalc** — the 5 native line-item mutations (add/patch/addKit/
+  addCustom/remove) now take `orgDefaultTaxRate` and recalc in-transaction, so under
+  `NATIVE_LINEITEM_WRITES` a line-item write is ONE round-trip (write + audit +
+  totals). Their paired server-side `recalculateProjectTotals` calls are skipped when
+  the flag is on; the model-merge add path routes through `patchNative` for the same win.
+
+**org default tax** has no Convex mirror writer, so callers pass it authoritative
+from Postgres (`orgDefaultTaxRateFor`, only fetched when the project has no override).
+**Parity:** `convex/recalc.test.ts` proves the port produces identical totals to the
+server function (mixed project + org-default-tax fallback); `recalcNative` has
+member-recompute + viewer-denied coverage. Both flags default OFF.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

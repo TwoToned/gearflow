@@ -4,7 +4,13 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.19.7.0] - 2026-06-26
+## [0.19.8.0] - 2026-07-04
+
+### Fixed
+- Prepping part of an untagged bulk line no longer drags the whole line into Prepped. Pick one of ten cables (or any bulk/quantity item with no asset tag) and only that one moves — the other nine stay in Pick, ready to prep as you pack them. The same fix covers serialised multi-quantity lines: assign an asset to one unit and just that unit advances.
+
+### Added
+- **Move gear back a stage, not just forward.** Every warehouse stage past Pick now has a "Move to …" button beside its forward action: send prepped gear back to Pick, deployed gear back to Prepped, returned gear back to Deployed, and de-prepped gear back to Returned. Partial selections move only the units you pick, and whole kits move as one. Fixes the dead-end where a mis-scan or wrong tap left gear stuck one stage too far along.
 
 ### Fixed
 - Dropdowns, comboboxes and tag inputs inside dialogs are clickable again. Picking crew on a service, choosing models when adding equipment, creating a supplier in a sub-hire, and adding tags in any form now work — they were silently swallowing clicks because the picker popups rendered behind the dialog's pointer lock.

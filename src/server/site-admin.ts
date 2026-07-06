@@ -19,6 +19,7 @@ import { getPlatformName } from "@/lib/platform";
 import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { env } from "@/env";
 import { logActivity } from "@/lib/activity-log";
+import { runWithConcurrency } from "@/lib/concurrency";
 
 /** Verify the current user is a site admin. Throws if not. */
 async function requireSiteAdmin() {
@@ -569,31 +570,35 @@ export async function adminDeleteUser(userId: string) {
   // kitSerializedItem and kitBulkItem are Convex-only: clear the user FKs on
   // line items and delete the kit-member rows this user added.
   // Every follow-up here is an independent FK-clear / row-remove across distinct
-  // Convex tables (maintenanceRecord.scrubUserRefs is per-org) — fire them all
-  // concurrently. Was one sequential Convex round-trip per row across ~9 loops
-  // (a heavy GDPR sweep). Convex serialises any same-doc writes internally.
-  await Promise.all([
-    ...lineItemsToClearCheckedOut.map((li) =>
+  // Convex tables (maintenanceRecord.scrubUserRefs is per-org) — was one
+  // sequential Convex round-trip per row across ~9 loops (a heavy GDPR sweep).
+  // Run them with BOUNDED concurrency (not a bare Promise.all): a user who
+  // touched thousands of rows would otherwise fan out thousands of concurrent
+  // requests, hit Convex/HTTP limits, reject the whole batch, and leave the
+  // already-deleted user with unswept references.
+  const deletionTasks: Array<() => Promise<unknown>> = [
+    ...lineItemsToClearCheckedOut.map((li) => () =>
       convexForDelete.mutation(api.projectLineItems.patchLineItem, { id: li.id, set: {}, clear: ["checkedOutById"] }),
     ),
-    ...lineItemsToClearReturned.map((li) =>
+    ...lineItemsToClearReturned.map((li) => () =>
       convexForDelete.mutation(api.projectLineItems.patchLineItem, { id: li.id, set: {}, clear: ["returnedById"] }),
     ),
     // project is Convex-only — clear the projectManagerId FK on this user's projects.
-    ...projectsToClearManager.map((p) =>
+    ...projectsToClearManager.map((p) => () =>
       convexForDelete.mutation(api.projects.patchProject, { id: p.id, set: {}, clear: ["projectManagerId"] }),
     ),
-    ...serializedItemsToRemove.map((item) => convexForDelete.mutation(api.kitSerializedItems.remove, { id: item.id })),
-    ...bulkItemsToRemove.map((item) => convexForDelete.mutation(api.kitBulkItems.remove, { id: item.id })),
-    ...scanLogsToRemove.map((item) => convexForDelete.mutation(api.assetScanLogs.remove, { id: item.id })),
-    ...subTestRecordsToRemove.map((item) => convexForDelete.mutation(api.subTestRecords.remove, { id: item.id })),
-    ...testTagRecordsToRemove.map((item) => convexForDelete.mutation(api.testTagRecords.remove, { id: item.id })),
+    ...serializedItemsToRemove.map((item) => () => convexForDelete.mutation(api.kitSerializedItems.remove, { id: item.id })),
+    ...bulkItemsToRemove.map((item) => () => convexForDelete.mutation(api.kitBulkItems.remove, { id: item.id })),
+    ...scanLogsToRemove.map((item) => () => convexForDelete.mutation(api.assetScanLogs.remove, { id: item.id })),
+    ...subTestRecordsToRemove.map((item) => () => convexForDelete.mutation(api.subTestRecords.remove, { id: item.id })),
+    ...testTagRecordsToRemove.map((item) => () => convexForDelete.mutation(api.testTagRecords.remove, { id: item.id })),
     // maintenanceRecord is Convex-only: clear this user's reportedById/assignedToId
     // FK references across every org (GDPR sweep is cross-org).
-    ...allOrgsForSweep.map((org) =>
+    ...allOrgsForSweep.map((org) => () =>
       convexForDelete.mutation(api.maintenanceRecords.scrubUserRefs, { organizationId: org.id, userId }),
     ),
-  ]);
+  ];
+  await runWithConcurrency(deletionTasks, 20);
 
   // Remove the user from the Convex `users` mirror (best-effort).
   await removeUserFromConvex(userId);

@@ -1,6 +1,8 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete, fixes not started. Created 2026-07-06.
+**Status:** audit complete. **Wave 1b (deprep #5) shipped** — `deprepItemsBatch` +
+Convex `checkRecordOps.deprepItems` (item + kit ops), deprep handler rewired,
+parity test green. Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -68,7 +70,7 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 | 2 | warehouse page — `for (const bi of bulkNoCheckItems)` nested `for (let i=0;i<bi.quantity` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", bulk items × qty | **HIGH** (10×5=50 calls) | route to `prepItemsBatch` (expand qty server-side) |
 | 3 | warehouse page — `for (const item of readyItems)`/`readyNoCheckItems` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", serialized | HIGH | route to `prepItemsBatch` |
 | 4 | warehouse page — asset-picker confirm IIFE `for (... of withoutChecks) await prepItemDirect` | `prepItemDirect` | asset-picker confirm | MED | route to `prepItemsBatch` |
-| 5 | warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | new `deprepItemsBatch(projectId, items[])` |
+| 5 | ✅ warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | ✅ `deprepItemsBatch(projectId, ops[])` (item + kit ops) |
 | 6 | warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | new `checkOutKitsBatch` |
 | 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |
 | 8 | `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | new `setProjectManagers(projectId, userIds[])` (diff server-side) |

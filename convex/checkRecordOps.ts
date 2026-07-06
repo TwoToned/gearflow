@@ -48,6 +48,52 @@ export const prepItem = mutation({
   },
 });
 
+/** Batch prep: pack many units in ONE atomic mutation. Collapses the client's
+ *  per-item `prepItem` round-trip loop (warehouse "Prep Selected" / finish-check-
+ *  queue / asset-picker confirm) into a single call. Items are processed in the
+ *  given order, so units for the SAME lineItemId are appended deterministically —
+ *  identical to the old sequential prepItemDirect loop (which was ordered "to
+ *  avoid race conditions when items share the same lineItemId"). One Convex
+ *  transaction, so it's all-or-nothing. */
+export const prepItems = mutation({
+  args: {
+    organizationId: v.string(),
+    projectId: v.string(),
+    items: v.array(
+      v.object({
+        lineItemId: v.string(),
+        assetId: v.optional(v.string()),
+        bulkAssetId: v.optional(v.string()),
+        quantity: v.optional(v.number()),
+        prepContainer: v.optional(v.union(v.string(), v.null())),
+        includeAccessoryIds: v.optional(v.array(v.string())),
+      }),
+    ),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const touched = new Set<string>();
+    for (const item of a.items) {
+      const line = await lineByCuid(ctx, item.lineItemId);
+      if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) {
+        throw new ConvexError("Line item not found in project");
+      }
+      await prepUnit(ctx, {
+        organizationId: a.organizationId,
+        lineItemId: item.lineItemId,
+        assetId: item.assetId ?? null,
+        bulkAssetId: item.assetId ? null : (item.bulkAssetId ?? line.bulkAssetId ?? null),
+        quantity: item.quantity,
+        prepContainer: item.prepContainer ?? undefined,
+        includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+      });
+      touched.add(item.lineItemId);
+    }
+    return { ids: [...touched] };
+  },
+});
+
 /** Remove prep assignment: drop/reduce prepped units (+ cascade accessory units),
  *  clear legacy assetId, reset line prepStatus to PENDING. */
 export const deprepItem = mutation({

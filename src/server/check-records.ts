@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
+import { assertNoBlockingComments, getProjectBlockingSummary } from "@/lib/blocking-comments-read";
+import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
 import { getAssetById, getAssetByAssetTag, getBulkAssetById } from "@/lib/assets-read";
 import {
@@ -389,6 +390,94 @@ export async function prepItemDirect(
   });
 
   return serialize(result);
+}
+
+/**
+ * Batch prep: pack many units in ONE server round-trip + ONE atomic Convex
+ * mutation. Replaces the client-side `for (…) await prepItemDirect(…)` loops in
+ * the warehouse (finish-check-queue prep, "Prep Selected", asset-picker confirm),
+ * which fired one network round-trip per unit (up to items×qty = dozens). Same
+ * fulfillment outcome as the per-item loop: items are applied in array order, so
+ * multiple units on the SAME lineItemId are packed deterministically (the old
+ * loop's "sequential to avoid same-lineItemId races" ordering constraint).
+ *
+ * Callers must pre-expand quantity into one entry per unit exactly where the old
+ * loop did (e.g. a bulk-no-check line of qty 3 → three {quantity:1} entries) so
+ * the server reproduces the identical sequence of prepUnit calls.
+ */
+export async function prepItemsBatch(
+  projectId: string,
+  items: Array<{
+    lineItemId: string;
+    assetId?: string;
+    quantity?: number;
+    prepContainer?: string | null;
+    includeAccessoryIds?: string[];
+  }>
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+  if (items.length === 0) return serialize([]);
+
+  const convex = await getConvexClient();
+
+  // Blocking-comment gate — mirror prepItemDirect's per-item check, but read the
+  // project summary + line groups once instead of per item. A project-level
+  // blocker (or a blocker on any prepped line / its group) fails the whole batch,
+  // just as the old loop threw on the first blocked item.
+  const distinctLineIds = [...new Set(items.map((i) => i.lineItemId))];
+  const [summary, lineDocs] = await Promise.all([
+    getProjectBlockingSummary(organizationId, projectId),
+    convex.query(api.projectLineItems.listByIds, { ids: distinctLineIds, orgId: organizationId }),
+  ]);
+  const groupById = new Map(lineDocs.map((l) => [l.id, l.groupId ?? null]));
+  for (const lineItemId of distinctLineIds) {
+    const gate = evaluateBlockingGate(summary, {
+      lineItemId,
+      groupId: groupById.get(lineItemId) ?? null,
+      actionLabel: "prep this item",
+    });
+    if (gate.blocked) throw new Error(gate.message);
+  }
+
+  // One atomic mutation packs every unit (identical to N sequential prepItem calls).
+  const now = Date.now();
+  const res = await convex.mutation(api.checkRecordOps.prepItems, {
+    organizationId,
+    projectId,
+    items,
+    now,
+  });
+
+  // Re-read the touched lines once and log one activity entry per prepped item
+  // (matches prepItemDirect's per-call log). Model name resolved from one map.
+  const rows = await Promise.all(
+    res.ids.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
+  );
+  const grafted = await attachLineItemModels(
+    organizationId,
+    rows.filter((r): r is NonNullable<typeof r> => r != null).map((r) => ({ ...r, modelId: r.modelId ?? null })),
+  );
+  const lineById = new Map(grafted.map((g) => [g.id, g]));
+  for (const item of items) {
+    const line = lineById.get(item.lineItemId);
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: item.lineItemId,
+      entityName: line?.model?.name || "Line item",
+      summary: "Prepped item (no checks required)",
+      projectId,
+      assetId: item.assetId || line?.assetId || undefined,
+    });
+  }
+
+  return serialize(grafted);
 }
 
 export async function deprepItem(

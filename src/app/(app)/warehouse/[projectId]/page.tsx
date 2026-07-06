@@ -109,6 +109,7 @@ import {
 import {
   pullItem,
   prepItemDirect,
+  prepItemsBatch,
   getAssetAccessories,
   deprepItem,
   deprepKit,
@@ -543,15 +544,24 @@ function WarehouseProjectPage({
       // Reuse the snapshot we captured above — avoid re-reading checkQueue[0]
       // after setCheckQueue([]) was called.
       if (finishedContext === "PREP") {
-        // Prep remaining items that had no checks (set prepStatus=PACKED)
-        // Sequential to avoid race conditions when items share the same lineItemId
-        (async () => {
-          for (const i of checkQueueDirectItems) {
-            await prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null, i.includeAccessoryIds);
-          }
-          toast.success("Items prepped — ready to deploy");
-          invalidate();
-        })().catch((e) => showError(e));
+        // Prep remaining items that had no checks (set prepStatus=PACKED) in one
+        // batch call — the server applies them in array order, preserving the old
+        // "sequential to avoid same-lineItemId races" ordering constraint.
+        prepItemsBatch(
+          projectId,
+          checkQueueDirectItems.map((i) => ({
+            lineItemId: i.lineItemId,
+            assetId: i.assetId || undefined,
+            quantity: i.quantity,
+            prepContainer: selectedContainer || null,
+            includeAccessoryIds: i.includeAccessoryIds,
+          })),
+        )
+          .then(() => {
+            toast.success("Items prepped — ready to deploy");
+            invalidate();
+          })
+          .catch((e) => showError(e));
       } else {
         checkInMutation
           .mutateAsync({ items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) })
@@ -1815,10 +1825,23 @@ function WarehouseProjectPage({
         }
       }
 
-      // Prep bulk items without checks — 1 call per unit (each splits off a line item)
+      // Accumulate every no-check prep (bulk units + ready serialised) into one
+      // batch call fired below. Bulk items expand to one qty-1 entry per unit —
+      // exactly the sequence the old per-unit prepItemDirect loop produced (each
+      // still splits off its own line item server-side).
+      const directPrepItems: Array<{
+        lineItemId: string;
+        assetId?: string;
+        quantity?: number;
+        prepContainer?: string | null;
+      }> = [];
       for (const bi of bulkNoCheckItems) {
         for (let i = 0; i < bi.quantity; i++) {
-          await prepItemDirect(projectId, bi.lineItemId, undefined, 1, selectedContainer || null);
+          directPrepItems.push({
+            lineItemId: bi.lineItemId,
+            quantity: 1,
+            prepContainer: selectedContainer || null,
+          });
         }
       }
 
@@ -1843,9 +1866,18 @@ function WarehouseProjectPage({
         }
       }
 
-      // Prep ready items without checks directly
+      // Ready items without checks join the same batch (after the bulk units, so
+      // per-line ordering is unchanged from the old two-loop sequence).
       for (const item of readyNoCheckItems) {
-        await prepItemDirect(projectId, item.lineItemId, item.assetId, item.quantity, selectedContainer || null);
+        directPrepItems.push({
+          lineItemId: item.lineItemId,
+          assetId: item.assetId,
+          quantity: item.quantity,
+          prepContainer: selectedContainer || null,
+        });
+      }
+      if (directPrepItems.length > 0) {
+        await prepItemsBatch(projectId, directPrepItems);
       }
 
       // Start check queue if any items need checks
@@ -2111,23 +2143,24 @@ function WarehouseProjectPage({
       return;
     }
 
-    // No checks needed — prep all items directly.
-    // Must be sequential (not Promise.all) because multiple items may share the
-    // same lineItemId and each call splits/decrements the original's quantity.
-    (async () => {
-      for (const i of withoutChecks) {
-        await prepItemDirect(
-          projectId,
-          i.lineItemId,
-          i.assetId,
-          i.quantity,
-          selectedContainer || null,
-          i.includeAccessoryIds,
-        );
-      }
-      toast.success("Items prepped — ready to deploy");
-      invalidate();
-    })().catch((e) => showError(e));
+    // No checks needed — prep all items in one batch. The server applies them in
+    // array order, so lines that appear multiple times (shared lineItemId, each
+    // splitting/decrementing the original's quantity) stay correctly sequenced.
+    prepItemsBatch(
+      projectId,
+      withoutChecks.map((i) => ({
+        lineItemId: i.lineItemId,
+        assetId: i.assetId,
+        quantity: i.quantity,
+        prepContainer: selectedContainer || null,
+        includeAccessoryIds: i.includeAccessoryIds,
+      })),
+    )
+      .then(() => {
+        toast.success("Items prepped — ready to deploy");
+        invalidate();
+      })
+      .catch((e) => showError(e));
   };
 
   const handleReturnSelected = () => {

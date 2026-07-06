@@ -41,8 +41,25 @@ Checks if all non-container items in a container are deployed or returned, and a
 - All returned → container auto-returned (status: `RETURNED`, asset status: `AVAILABLE`)
 Called after every `checkOutItems` and `checkInItems` operation.
 
+### Batched prep (`prepItemsBatch`)
+Bulk prep flows ("Prep Selected", finish-check-queue direct prep, asset-picker
+confirm) used to fire **one `prepItemDirect` server round-trip per unit** — up to
+`items × quantity` (dozens) sequential network calls, which is the felt slowness
+on large preps. `prepItemsBatch(projectId, items[])` (`src/server/check-records.ts`)
+collapses that into **one** server round-trip backed by a single atomic Convex
+mutation `checkRecordOps.prepItems`, which loops `prepUnit` over the items **in
+array order** — reproducing the exact sequence (and the "sequential to avoid
+same-`lineItemId` races" ordering) of the old loop. Callers pre-expand quantity
+into one entry per unit (a bulk-no-check line of qty 3 → three `{quantity:1}`
+entries) so the server replays the identical `prepUnit` calls. The blocking-comment
+gate is read once (project summary + line groups) instead of per item; a
+project/line/group blocker fails the whole (atomic) batch, matching the old loop's
+throw-on-first-blocked behaviour. Parity with the per-item loop is proven in
+`src/server/warehouse-prep.int.test.ts` ("prepItemsBatch — parity …"). See
+`docs/designs/bulk-operations-batching.md` (Wave 1a).
+
 ### Modified Actions
-- **`prepItemDirect()`** — Accepts optional `prepContainer` parameter (6th arg). Sets `prepContainer` on the line item during prep.
+- **`prepItemDirect()`** — Accepts optional `prepContainer` parameter (6th arg). Sets `prepContainer` on the line item during prep. Still used for genuine single-item preps (drag-drop, single scan); bulk loops now use `prepItemsBatch`.
 - **`completeCheckAndPack()`** — Reads `prepContainer` from the submitted check data and sets it on the line item.
 - **`quickAddAndCheckOut()`** — Accepts `prepContainer` in the data object, sets it on the created line item.
 

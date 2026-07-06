@@ -1,6 +1,8 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete, fixes not started. Created 2026-07-06.
+**Status:** audit complete. **Wave 1a (prep #1–4) shipped** — `prepItemsBatch` +
+Convex `checkRecordOps.prepItems`, all 4 warehouse prep loops rewired, parity test
+green. Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -64,10 +66,10 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 
 | # | Location (grep anchor) | Looped single-item action | Trigger / count driver | Sev | Fix |
 |---|---|---|---|---|---|
-| 1 | warehouse page — `for (const i of checkQueueDirectItems)` → `prepItemDirect` | `prepItemDirect` | finish check queue, prep remaining | HIGH | new `prepItemsBatch(projectId, items[])` |
-| 2 | warehouse page — `for (const bi of bulkNoCheckItems)` nested `for (let i=0;i<bi.quantity` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", bulk items × qty | **HIGH** (10×5=50 calls) | route to `prepItemsBatch` (expand qty server-side) |
-| 3 | warehouse page — `for (const item of readyItems)`/`readyNoCheckItems` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", serialized | HIGH | route to `prepItemsBatch` |
-| 4 | warehouse page — asset-picker confirm IIFE `for (... of withoutChecks) await prepItemDirect` | `prepItemDirect` | asset-picker confirm | MED | route to `prepItemsBatch` |
+| 1 | ✅ warehouse page — `for (const i of checkQueueDirectItems)` → `prepItemDirect` | `prepItemDirect` | finish check queue, prep remaining | HIGH | ✅ `prepItemsBatch(projectId, items[])` |
+| 2 | ✅ warehouse page — `for (const bi of bulkNoCheckItems)` nested `for (let i=0;i<bi.quantity` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", bulk items × qty | **HIGH** (10×5=50 calls) | ✅ client-expanded qty into `prepItemsBatch` (merged with #3 into one call) |
+| 3 | ✅ warehouse page — `for (const item of readyItems)`/`readyNoCheckItems` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", serialized | HIGH | ✅ `prepItemsBatch` |
+| 4 | ✅ warehouse page — asset-picker confirm IIFE `for (... of withoutChecks) await prepItemDirect` | `prepItemDirect` | asset-picker confirm | MED | ✅ `prepItemsBatch` |
 | 5 | warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | new `deprepItemsBatch(projectId, items[])` |
 | 6 | warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | new `checkOutKitsBatch` |
 | 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |

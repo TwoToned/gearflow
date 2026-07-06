@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as activityLog from "../activityLog.js";
+import type * as activityLogWrites from "../activityLogWrites.js";
 import type * as assetBulkChildren from "../assetBulkChildren.js";
 import type * as assetDetail from "../assetDetail.js";
 import type * as assetMedia from "../assetMedia.js";
@@ -125,6 +127,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activityLog: typeof activityLog;
+  activityLogWrites: typeof activityLogWrites;
   assetBulkChildren: typeof assetBulkChildren;
   assetDetail: typeof assetDetail;
   assetMedia: typeof assetMedia;

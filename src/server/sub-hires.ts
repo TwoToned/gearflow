@@ -431,6 +431,10 @@ export async function deleteSubHire(id: string) {
 
   // projectLineItem lives in Convex — delete the linked lines there (cascade
   // handles any children) before tearing down the Prisma-side sub-hire.
+  // Sequential on purpose: linkedLines can contain a parent AND its child, and
+  // removeLineItemCascade deletes the parent's direct children — firing these in
+  // parallel would let a child's cascade run after its parent already deleted it
+  // and throw "not found". (Keep as a loop; the win here is elsewhere.)
   for (const li of linkedLines) {
     await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
   }
@@ -717,12 +721,14 @@ export async function reorderSubHireItems(subHireId: string, itemIds: string[]) 
   if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
   const convex = await getConvexClient();
-  for (let index = 0; index < itemIds.length; index++) {
-    await convex.mutation(api.subHireItems.patchItem, {
-      id: itemIds[index],
-      set: { sortOrder: index },
-    });
-  }
+  await Promise.all(
+    itemIds.map((id, index) =>
+      convex.mutation(api.subHireItems.patchItem, {
+        id,
+        set: { sortOrder: index },
+      }),
+    ),
+  );
 }
 
 // ─── Totals ──────────────────────────────────────────────────────────────────
@@ -857,6 +863,7 @@ async function generateSubHireLineItems(
     projectId,
     orgId: organizationId,
   });
+  // Sequential (parent/child cascade race — see the delete path above).
   for (const line of existingLines) {
     if (line.subHireId === subHireId) {
       await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: line.id });
@@ -874,8 +881,10 @@ async function generateSubHireLineItems(
   }
   // projectGroup lives in Convex — resolve group→category there.
   const groupCategoryMap = new Map<string, string | null>();
-  for (const gId of targetGroupIds) {
-    const pg = await convex.query(api.projectGroups.getById, { id: gId });
+  const targetGroups = await Promise.all(
+    [...targetGroupIds].map((gId) => convex.query(api.projectGroups.getById, { id: gId })),
+  );
+  for (const pg of targetGroups) {
     if (pg) groupCategoryMap.set(pg.id, pg.categoryId ?? null);
   }
 
@@ -1027,9 +1036,10 @@ async function generateSubHireLineItems(
   // Recalculate suggestedPrice on any project groups that received items
   if (affectedProjectGroupIds.size > 0) {
     const { calculateSuggestedPrice } = await import("@/server/project-groups");
-    for (const pgId of affectedProjectGroupIds) {
-      await calculateSuggestedPrice(pgId);
-    }
+    // NOTE: calculateSuggestedPrice is pure (computes + returns, no persist), so
+    // this loop's result was already discarded — kept as-is behaviourally, just
+    // run the (independent) recalcs concurrently instead of sequentially.
+    await Promise.all([...affectedProjectGroupIds].map((pgId) => calculateSuggestedPrice(pgId)));
   }
 }
 
@@ -1199,6 +1209,7 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
       projectId: oldProjectId,
       orgId: organizationId,
     });
+    // Sequential (parent/child cascade race — see the delete path above).
     for (const line of oldLines) {
       if (line.subHireId === subHireId) {
         await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: line.id });
@@ -1671,46 +1682,47 @@ export async function duplicateSubHire(sourceId: string) {
     updatedAt: now,
   });
 
-  // Copy groups with fresh ids, building the old→new id map.
+  // Pre-generate the old→new group id map in memory, then create groups + items
+  // concurrently — ids are pre-assigned and Convex has no FK, so item inserts
+  // don't need to wait for their group insert. Was one sequential mutation per
+  // group then per item.
   const groupIdMap = new Map<string, string>();
-  for (const group of sourceGroups) {
-    const newGroupId = createId();
-    await convex.mutation(api.subHireGroups.create, {
-      id: newGroupId,
-      subHireId: newId,
-      title: group.title,
-      quantity: group.quantity,
-      cost: group.cost ?? undefined,
-      charge: group.charge ?? undefined,
-      showOnQuote: group.showOnQuote,
-      showOnDocs: group.showOnDocs,
-      sortOrder: group.sortOrder,
-      // Placement targets are NOT copied (new DRAFT starts uncategorized)
-    });
-    groupIdMap.set(group.id, newGroupId);
-  }
-
-  // Copy items with mapped groupIds.
-  for (const item of sourceItems) {
-    const mappedGroupId = item.groupId ? groupIdMap.get(item.groupId) : undefined;
-    await convex.mutation(api.subHireItems.create, {
-      id: createId(),
-      subHireId: newId,
-      groupId: mappedGroupId || undefined,
-      modelId: item.modelId ?? undefined,
-      description: item.description,
-      quantity: item.quantity,
-      unitCost: item.unitCost,
-      unitCharge: item.unitCharge,
-      pricingType: item.pricingType,
-      duration: item.duration,
-      discount: item.discount,
-      showOnQuote: item.showOnQuote,
-      showOnDocs: item.showOnDocs,
-      sortOrder: item.sortOrder,
-      // Placement targets are NOT copied (new DRAFT starts uncategorized)
-    });
-  }
+  for (const group of sourceGroups) groupIdMap.set(group.id, createId());
+  await Promise.all([
+    ...sourceGroups.map((group) =>
+      convex.mutation(api.subHireGroups.create, {
+        id: groupIdMap.get(group.id)!,
+        subHireId: newId,
+        title: group.title,
+        quantity: group.quantity,
+        cost: group.cost ?? undefined,
+        charge: group.charge ?? undefined,
+        showOnQuote: group.showOnQuote,
+        showOnDocs: group.showOnDocs,
+        sortOrder: group.sortOrder,
+        // Placement targets are NOT copied (new DRAFT starts uncategorized)
+      }),
+    ),
+    ...sourceItems.map((item) =>
+      convex.mutation(api.subHireItems.create, {
+        id: createId(),
+        subHireId: newId,
+        groupId: (item.groupId ? groupIdMap.get(item.groupId) : undefined) || undefined,
+        modelId: item.modelId ?? undefined,
+        description: item.description,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        unitCharge: item.unitCharge,
+        pricingType: item.pricingType,
+        duration: item.duration,
+        discount: item.discount,
+        showOnQuote: item.showOnQuote,
+        showOnDocs: item.showOnDocs,
+        sortOrder: item.sortOrder,
+        // Placement targets are NOT copied (new DRAFT starts uncategorized)
+      }),
+    ),
+  ]);
 
   const result = await getSubHireById(newId);
   if (!result) throw new Error("Sub-hire not found after duplicate");

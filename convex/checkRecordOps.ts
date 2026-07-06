@@ -48,54 +48,62 @@ export const prepItem = mutation({
   },
 });
 
+/** Core deprep of a single line — extracted so both the single `deprepItem`
+ *  mutation and the batched `deprepItems` mutation run byte-identical logic. */
+async function deprepItemInner(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; lineItemId: string; quantity: number; now: number },
+) {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+  if (line.status === "CHECKED_OUT") throw new ConvexError("Item is already deployed — return it first");
+
+  const prepped = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
+    .filter((u) => u.status !== "CHECKED_OUT")
+    .sort((x, y) => y.ordinal - x.ordinal); // highest ordinal first (LIFO)
+
+  const isPartialBulk = prepped.length === 1 && prepped[0].bulkAssetId && !prepped[0].assetId && a.quantity < (prepped[0].quantity ?? 0);
+  if (isPartialBulk) {
+    await ctx.db.patch(prepped[0]._id, { quantity: (prepped[0].quantity ?? 0) - a.quantity, updatedAt: a.now });
+  } else {
+    const removeCount = Math.min(a.quantity, prepped.length);
+    const removedParentAssetIds: string[] = [];
+    for (let i = 0; i < removeCount; i++) {
+      if (prepped[i].assetId) removedParentAssetIds.push(prepped[i].assetId!);
+      await ctx.db.delete(prepped[i]._id);
+    }
+    if (removedParentAssetIds.length > 0) {
+      const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+      for (const child of accChildren) {
+        const accUnits = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
+          .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId));
+        for (const u of accUnits) await ctx.db.delete(u._id);
+      }
+      for (const child of accChildren) await syncLineItemRollup(ctx, child.id);
+    }
+  }
+
+  // Clear legacy line.assetId (kit children excepted).
+  if (!line.isKitChild && line.assetId) {
+    const fresh = await lineByCuid(ctx, a.lineItemId);
+    if (fresh) {
+      const { _id, _creationTime, assetId: _a, ...rest } = fresh;
+      await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: a.now });
+    }
+  } else {
+    const fresh = await lineByCuid(ctx, a.lineItemId);
+    if (fresh) await ctx.db.patch(fresh._id, { prepStatus: "PENDING", updatedAt: a.now });
+  }
+  await syncLineItemRollup(ctx, a.lineItemId);
+}
+
 /** Remove prep assignment: drop/reduce prepped units (+ cascade accessory units),
  *  clear legacy assetId, reset line prepStatus to PENDING. */
 export const deprepItem = mutation({
   args: { organizationId: v.string(), projectId: v.string(), lineItemId: v.string(), quantity: v.optional(v.number()), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const quantity = a.quantity ?? 1;
-    const line = await lineByCuid(ctx, a.lineItemId);
-    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
-    if (line.status === "CHECKED_OUT") throw new ConvexError("Item is already deployed — return it first");
-
-    const prepped = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
-      .filter((u) => u.status !== "CHECKED_OUT")
-      .sort((x, y) => y.ordinal - x.ordinal); // highest ordinal first (LIFO)
-
-    const isPartialBulk = prepped.length === 1 && prepped[0].bulkAssetId && !prepped[0].assetId && quantity < (prepped[0].quantity ?? 0);
-    if (isPartialBulk) {
-      await ctx.db.patch(prepped[0]._id, { quantity: (prepped[0].quantity ?? 0) - quantity, updatedAt: a.now });
-    } else {
-      const removeCount = Math.min(quantity, prepped.length);
-      const removedParentAssetIds: string[] = [];
-      for (let i = 0; i < removeCount; i++) {
-        if (prepped[i].assetId) removedParentAssetIds.push(prepped[i].assetId!);
-        await ctx.db.delete(prepped[i]._id);
-      }
-      if (removedParentAssetIds.length > 0) {
-        const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
-        for (const child of accChildren) {
-          const accUnits = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
-            .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId));
-          for (const u of accUnits) await ctx.db.delete(u._id);
-        }
-        for (const child of accChildren) await syncLineItemRollup(ctx, child.id);
-      }
-    }
-
-    // Clear legacy line.assetId (kit children excepted).
-    if (!line.isKitChild && line.assetId) {
-      const fresh = await lineByCuid(ctx, a.lineItemId);
-      if (fresh) {
-        const { _id, _creationTime, assetId: _a, ...rest } = fresh;
-        await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: a.now });
-      }
-    } else {
-      const fresh = await lineByCuid(ctx, a.lineItemId);
-      if (fresh) await ctx.db.patch(fresh._id, { prepStatus: "PENDING", updatedAt: a.now });
-    }
-    await syncLineItemRollup(ctx, a.lineItemId);
+    await deprepItemInner(ctx, { ...a, quantity: a.quantity ?? 1 });
     return { id: a.lineItemId };
   },
 });
@@ -178,5 +186,48 @@ export const deprepKit = mutation({
     if (!parent || parent.projectId !== a.projectId || parent.organizationId !== a.organizationId) throw new ConvexError("Kit line item not found");
     await setKitTreePrep(ctx, a.parentLineItemId, a.organizationId, a.now, "DEPREP");
     return { success: true };
+  },
+});
+
+/** Batch deprep: reverse prep for many selected items + kits in ONE atomic
+ *  mutation. Collapses the client's per-op `deprepItem` / `deprepKit` round-trip
+ *  loop (warehouse "Deprep Selected"). Ops are applied in the given order — the
+ *  same sequence the old loop fired — so any shared-lineItemId ordering is
+ *  preserved. Item ops route through deprepItemInner (byte-identical to the
+ *  single deprepItem); kit ops validate the parent + reset the kit tree, exactly
+ *  as the single deprepKit does. */
+export const deprepItems = mutation({
+  args: {
+    organizationId: v.string(),
+    projectId: v.string(),
+    ops: v.array(
+      v.object({
+        lineItemId: v.string(),
+        quantity: v.optional(v.number()),
+        isKit: v.optional(v.boolean()),
+      }),
+    ),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const touched = new Set<string>();
+    for (const op of a.ops) {
+      if (op.isKit) {
+        const parent = await lineByCuid(ctx, op.lineItemId);
+        if (!parent || parent.projectId !== a.projectId || parent.organizationId !== a.organizationId) throw new ConvexError("Kit line item not found");
+        await setKitTreePrep(ctx, op.lineItemId, a.organizationId, a.now, "DEPREP");
+      } else {
+        await deprepItemInner(ctx, {
+          organizationId: a.organizationId,
+          projectId: a.projectId,
+          lineItemId: op.lineItemId,
+          quantity: op.quantity ?? 1,
+          now: a.now,
+        });
+      }
+      touched.add(op.lineItemId);
+    }
+    return { ids: [...touched] };
   },
 });

@@ -575,6 +575,105 @@ export async function deprepKit(
 }
 
 /**
+ * Batch deprep: reverse prep for many selected items + kits in ONE server
+ * round-trip + ONE atomic Convex mutation. Replaces the client-side
+ * `for (const d of directDeprep) { deprepKit | deprepItem }` loop in the
+ * warehouse deprep handler, which fired one round-trip per selected item/kit.
+ *
+ * Ops are applied server-side in array order — the same sequence the old loop
+ * fired — so any shared-lineItemId ordering is preserved. Item ops run the exact
+ * deprepItem logic; kit ops run the exact deprepKit tree-reset. Same DB outcome
+ * as the per-op loop; only the round-trip count collapses from N to 1.
+ *
+ * (The single deprepKit's "Kit is not prepped" guard is a UX pre-check, not a
+ * correctness gate — omitted here so one already-PENDING kit can't abort the
+ * whole atomic batch; the underlying reset is a harmless no-op on such a kit.)
+ */
+export async function deprepItemsBatch(
+  projectId: string,
+  ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }>
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+  if (ops.length === 0) return serialize({ ids: [] });
+
+  const convex = await getConvexClient();
+  await convex.mutation(api.checkRecordOps.deprepItems, {
+    organizationId,
+    projectId,
+    ops,
+    now: Date.now(),
+  });
+
+  // Re-read the touched lines once for activity-log naming (item → model name,
+  // kit → kit name via the parent line's kitId), matching the per-op logging of
+  // the single deprepItem / deprepKit actions. Deprep never deletes the line
+  // itself, so every touched id still resolves.
+  const distinctIds = [...new Set(ops.map((o) => o.lineItemId))];
+  const rows = await convex.query(api.projectLineItems.listByIds, {
+    ids: distinctIds,
+    orgId: organizationId,
+  });
+  const lineById = new Map(rows.map((r) => [r.id, r]));
+  const grafted = await attachLineItemModels(
+    organizationId,
+    rows.map((r) => ({ ...r, modelId: r.modelId ?? null })),
+  );
+  const modelNameById = new Map(grafted.map((g) => [g.id, g.model?.name ?? null]));
+
+  const kitIds = [
+    ...new Set(
+      ops
+        .filter((o) => o.isKit)
+        .map((o) => lineById.get(o.lineItemId)?.kitId)
+        .filter((x): x is string => !!x),
+    ),
+  ];
+  const kitNameById = new Map<string, string>();
+  await Promise.all(
+    kitIds.map(async (kid) => {
+      const kit = await convex.query(api.kits.getById, { id: kid });
+      if (kit) kitNameById.set(kid, kit.name);
+    }),
+  );
+
+  for (const op of ops) {
+    const line = lineById.get(op.lineItemId);
+    if (op.isKit) {
+      const kitName = line?.kitId ? kitNameById.get(line.kitId) : undefined;
+      await logActivity({
+        organizationId,
+        userId,
+        userName,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: op.lineItemId,
+        entityName: kitName || "Kit",
+        summary: "Removed kit from prep",
+        projectId,
+      });
+    } else {
+      await logActivity({
+        organizationId,
+        userId,
+        userName,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: op.lineItemId,
+        entityName: modelNameById.get(op.lineItemId) || "Line item",
+        summary: "Removed item from prep",
+        projectId,
+        assetId: line?.assetId || undefined,
+      });
+    }
+  }
+
+  return serialize({ ids: distinctIds });
+}
+
+/**
  * Mark all children of a kit line item as prepped (prepStatus=PACKED).
  * Called after kit check forms are completed in PREP context.
  */

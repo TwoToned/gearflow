@@ -1,6 +1,8 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete, fixes not started. Created 2026-07-06.
+**Status:** audit complete. **Wave 2 #8–9 (project managers) shipped** —
+`setProjectManagers(projectId, userIds[])` + Convex `projectManagers.applyDiff`,
+wizard rewired off the add/remove fan-out, parity test green. Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -71,8 +73,8 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 | 5 | warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | new `deprepItemsBatch(projectId, items[])` |
 | 6 | warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | new `checkOutKitsBatch` |
 | 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |
-| 8 | `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | new `setProjectManagers(projectId, userIds[])` (diff server-side) |
-| 9 | `src/components/projects/project-form.tsx` — same manager add/remove fan-out | `addProjectManager`/`removeProjectManager` | manager selection delta on edit | HIGH | reuse `setProjectManagers` |
+| 8 | ✅ `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | ✅ `setProjectManagers(projectId, userIds[])` (diff server-side) |
+| 9 | ✅ (consolidated into `project-wizard.tsx` — no separate `project-form.tsx`; the wizard handles create AND edit) — same fan-out | `addProjectManager`/`removeProjectManager` | manager selection delta on edit | HIGH | ✅ `setProjectManagers` (same call, create + edit) |
 | 10 | `src/components/projects/equipment-tab.tsx` — multi-select move, `Promise.all(...map(moveLineItemToGroup))` | `moveLineItemToGroup` | drag N selected line items to a group | HIGH | new `moveLineItemsToGroup(moves[])` |
 | 11 | `src/app/(app)/crew/timesheets/page.tsx` **and** `src/app/(app)/crew/page.tsx` — `for (const crewId of selectedCrewIds) await createTimeEntry(...)` | `createTimeEntry` | log time for N selected crew | HIGH | new `createTimeEntries(data, crewMemberIds[])` (`createMany`) |
 

@@ -44,6 +44,8 @@ import type * as dashboardLists from "../dashboardLists.js";
 import type * as dashboardStats from "../dashboardStats.js";
 import type * as dashboardSubHire from "../dashboardSubHire.js";
 import type * as documentTemplates from "../documentTemplates.js";
+import type * as emailActions from "../emailActions.js";
+import type * as emails from "../emails.js";
 import type * as equipmentTab from "../equipmentTab.js";
 import type * as fileUploads from "../fileUploads.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
@@ -166,6 +168,8 @@ declare const fullApi: ApiFromModules<{
   dashboardStats: typeof dashboardStats;
   dashboardSubHire: typeof dashboardSubHire;
   documentTemplates: typeof documentTemplates;
+  emailActions: typeof emailActions;
+  emails: typeof emails;
   equipmentTab: typeof equipmentTab;
   fileUploads: typeof fileUploads;
   groupTemplateItems: typeof groupTemplateItems;

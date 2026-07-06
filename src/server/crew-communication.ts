@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
+import { deliverSideEffectEmail } from "@/lib/email-side-effect";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/env";
 import {
@@ -143,9 +144,13 @@ export async function sendCrewOffer(assignmentId: string) {
   const acceptUrl = `${baseUrl}/api/crew/respond/${token}?action=accept`;
   const declineUrl = `${baseUrl}/api/crew/respond/${token}?action=decline`;
 
-  // Send email
+  // Send email (Phase 6b: routed through the Convex durable/idempotent scheduler
+  // when NATIVE_EMAIL_SIDEEFFECTS is on). The response token is a natural nonce —
+  // a re-offer mints a new token → new key → new email, while an action retry of
+  // this same send dedupes.
   const email = crewOfferEmail(emailData, acceptUrl, declineUrl);
-  await sendEmail({
+  await deliverSideEffectEmail({
+    idempotencyKey: `crew-offer:${assignmentId}:${token}`,
     to: crewEmail,
     subject: email.subject,
     html: email.html,
@@ -216,7 +221,10 @@ export async function sendConfirmationEmail(assignmentId: string) {
   if (!crewEmail) return serialize({ success: false, reason: "no email" });
 
   const email = crewConfirmationEmail(emailData);
-  await sendEmail({
+  await deliverSideEffectEmail({
+    // No natural token here — mint a per-send nonce so a user-initiated re-send
+    // is a new email while an action retry of THIS send dedupes.
+    idempotencyKey: `crew-confirm:${assignmentId}:${generateToken()}`,
     to: crewEmail,
     subject: email.subject,
     html: email.html,
@@ -241,7 +249,8 @@ export async function sendCancellationEmail(assignmentId: string) {
   if (!crewEmail) return serialize({ success: false, reason: "no email" });
 
   const email = crewCancellationEmail(emailData);
-  await sendEmail({
+  await deliverSideEffectEmail({
+    idempotencyKey: `crew-cancel:${assignmentId}:${generateToken()}`,
     to: crewEmail,
     subject: email.subject,
     html: email.html,

@@ -1911,6 +1911,19 @@ export default defineSchema({
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_sentAt", ["organizationId", "sentAt"]),
 
+  // Phase 6b — idempotency ledger for Convex-scheduled email side-effects.
+  // One row per delivered (or in-flight) email, keyed by a caller-supplied
+  // idempotency key. Guards against action-retry double-sends: `emails.claim`
+  // does a transactional first-writer-wins insert; a failed send releases the
+  // claim so a later attempt can re-send. NOT a general email log — only sends
+  // routed through `convex/emailActions.ts` land here.
+  sentEmails: defineTable({
+    idempotencyKey: v.string(),
+    to: v.string(),
+    subject: v.string(),
+    sentAt: v.number(),
+  }).index("by_idempotencyKey", ["idempotencyKey"]),
+
   // CustomFieldDefinition
   customFieldDefinitions: defineTable({
     id: v.string(),

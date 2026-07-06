@@ -842,17 +842,59 @@ export async function syncContainerStatus(projectId: string, containerName: stri
   return serialize(res);
 }
 
-export async function getAvailableAssetsForModel(modelId: string) {
-  const { organizationId } = await getOrgContext();
+type AvailableAssetRow = {
+  id: string;
+  assetTag: string;
+  serialNumber: string | null;
+  customName: string | null;
+};
 
-  // Single query: get assets that have NO active line item referencing them.
-  // Uses Prisma's `none` relation filter — equivalent to SQL NOT EXISTS.
-  // An asset is "in use" if ANY line item on an active project:
-  //   a) has a non-terminal status (not RETURNED/CANCELLED), OR
-  //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
-  // Active project IDs come from Convex (source of truth for project status).
+/**
+ * Available serialised assets for ONE model — shared engine for the single and
+ * batched actions. Was a per-ASSET query loop (`listByAssetId` once per asset —
+ * a 50-asset model = 50 sequential Convex reads); now ONE `listByModelId` query
+ * returns every line item for the model, from which the in-use asset set is
+ * derived. Identical result, O(1) queries per model instead of O(assets).
+ */
+async function availableAssetsForModel(
+  modelId: string,
+  organizationId: string,
+  activeProjectIds: Set<string>,
+): Promise<AvailableAssetRow[]> {
+  const convex = await getConvexClient();
+  const [modelAssets, lines] = await Promise.all([
+    getActiveAssetsByModel(modelId, organizationId),
+    convex.query(api.projectLineItems.listByModelId, { modelId, orgId: organizationId }),
+  ]);
+  // An asset is in use if ANY of its line items is on an active project AND
+  // (status not RETURNED/CANCELLED OR prepStatus PACKED) — same predicate as the
+  // old per-asset check, now evaluated once over the model's line items.
+  const inUseAssetIds = new Set(
+    lines
+      .filter(
+        (li) =>
+          li.assetId != null &&
+          li.projectId != null &&
+          activeProjectIds.has(li.projectId) &&
+          ((li.status !== "RETURNED" && li.status !== "CANCELLED") || li.prepStatus === "PACKED"),
+      )
+      .map((li) => li.assetId as string),
+  );
+  return modelAssets
+    .filter((a) => a.status === "AVAILABLE" && !inUseAssetIds.has(a.id))
+    .map((a) => ({
+      id: a.id,
+      assetTag: a.assetTag,
+      serialNumber: a.serialNumber ?? null,
+      customName: a.customName ?? null,
+    }))
+    .sort((x, y) => x.assetTag.localeCompare(y.assetTag));
+}
+
+/** Active (non-template, non-terminal) project ids — the availability scope. */
+async function activeProjectIdSet(organizationId: string): Promise<Set<string>> {
   const allProjects = await getProjectsByOrg(organizationId);
-  const activeProjectIds = new Set(
+  return new Set(
     allProjects
       .filter(
         (p) =>
@@ -861,44 +903,32 @@ export async function getAvailableAssetsForModel(modelId: string) {
       )
       .map((p) => p.id),
   );
+}
 
-  // Assets of this model live in Convex; the "none active line item" NOT EXISTS
-  // filter is replicated in JS — an asset is in use if any of its line items is
-  // on an active project AND (status not RETURNED/CANCELLED OR prepStatus PACKED).
-  const convex = await getConvexClient();
-  const modelAssets = (await getActiveAssetsByModel(modelId, organizationId)).filter(
-    (a) => a.status === "AVAILABLE",
+export async function getAvailableAssetsForModel(modelId: string) {
+  const { organizationId } = await getOrgContext();
+  const activeProjectIds = await activeProjectIdSet(organizationId);
+  return serialize(await availableAssetsForModel(modelId, organizationId, activeProjectIds));
+}
+
+/**
+ * Available serialised assets for MANY models in ONE server round-trip — replaces
+ * the warehouse asset-picker's `for (item of needsAssetPicker) await
+ * getAvailableAssetsForModel(li.modelId)` loop (one round-trip per item, each of
+ * which was itself a per-asset query loop). Returns a `{ [modelId]: rows }` map.
+ * The active-project scope is read once; each model's availability is computed
+ * concurrently.
+ */
+export async function getAvailableAssetsForModels(modelIds: string[]) {
+  const { organizationId } = await getOrgContext();
+  const unique = [...new Set(modelIds)];
+  if (unique.length === 0) return serialize({} as Record<string, AvailableAssetRow[]>);
+
+  const activeProjectIds = await activeProjectIdSet(organizationId);
+  const entries = await Promise.all(
+    unique.map(async (modelId) => [modelId, await availableAssetsForModel(modelId, organizationId, activeProjectIds)] as const),
   );
-
-  const available: Array<{
-    id: string;
-    assetTag: string;
-    serialNumber: string | null;
-    customName: string | null;
-  }> = [];
-  for (const a of modelAssets) {
-    const lines = await convex.query(api.projectLineItems.listByAssetId, {
-      assetId: a.id,
-      orgId: organizationId,
-    });
-    const inUse = lines.some(
-      (li) =>
-        li.projectId != null &&
-        activeProjectIds.has(li.projectId) &&
-        ((li.status !== "RETURNED" && li.status !== "CANCELLED") || li.prepStatus === "PACKED"),
-    );
-    if (!inUse) {
-      available.push({
-        id: a.id,
-        assetTag: a.assetTag,
-        serialNumber: a.serialNumber ?? null,
-        customName: a.customName ?? null,
-      });
-    }
-  }
-  available.sort((x, y) => x.assetTag.localeCompare(y.assetTag));
-
-  return serialize(available);
+  return serialize(Object.fromEntries(entries) as Record<string, AvailableAssetRow[]>);
 }
 
 export async function getProjectPullSheet(projectId: string) {

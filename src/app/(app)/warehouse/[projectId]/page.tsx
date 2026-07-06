@@ -40,7 +40,7 @@ import {
   undeprepLine,
   undeployKit,
   unreturnKit,
-  getAvailableAssetsForModel,
+  getAvailableAssetsForModels,
   quickAddAndCheckOut,
   clearPrepContainer,
   ensureContainerOnProject,
@@ -1759,19 +1759,32 @@ function WarehouseProjectPage({
           checkItemCount: number;
         }> = [];
 
+        // Fetch availability for every model in the selection in ONE call, then
+        // build the picker rows from the map — was one getAvailableAssetsForModel
+        // round-trip per item (each itself a per-asset query loop), the felt
+        // "checks take a minute to load".
+        const pickerModelIds = [
+          ...new Set(
+            needsAssetPicker
+              .map((item) => lineItems.find((l) => l.id === item.lineItemId)?.modelId)
+              .filter((id): id is string => !!id),
+          ),
+        ];
+        const availabilityByModel = await getAvailableAssetsForModels(pickerModelIds);
+
         for (const item of needsAssetPicker) {
           const li = lineItems.find((l) => l.id === item.lineItemId);
           if (!li?.modelId) continue;
           // Use selected quantity if specified (from bulk unit selection), else full line item quantity
           const count = item.quantity || li.quantity;
-          const available = await getAvailableAssetsForModel(li.modelId);
+          const available = (availabilityByModel[li.modelId] ?? []) as AvailableAsset[];
           const checkItemCount = li.model?._count?.modelCheckItems || 0;
           for (let i = 0; i < count; i++) {
             pickerItems.push({
               lineItemId: li.id,
               modelId: li.modelId,
               modelName: li.model?.name || modelDisplayName(li),
-              availableAssets: available as AvailableAsset[],
+              availableAssets: available,
               selectedAssetId: "",
               checkItemCount,
             });

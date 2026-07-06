@@ -41,6 +41,23 @@ interface ComboboxPickerProps {
   disabled?: boolean
   /** When true, allows typing a new value that doesn't exist in options */
   creatable?: boolean
+  /**
+   * Async/server-search mode. When provided, the picker STOPS filtering
+   * `options` itself and instead reports the search term here on every
+   * keystroke — the parent is expected to fetch already-filtered `options`
+   * (e.g. a Convex `withSearchIndex` query). Absent = the default in-memory
+   * JS filter (unchanged for every existing caller).
+   */
+  onSearchChange?: (query: string) => void
+  /** Show a "Searching…" affordance while async results are in flight. */
+  loading?: boolean
+  /**
+   * Fallback label for the selected `value` when it isn't present in the
+   * currently-loaded `options` (unavoidable in async mode — the selected row
+   * may not be in the latest search page). Keeps the trigger showing the
+   * chosen item's name instead of a blank/raw id.
+   */
+  selectedLabel?: string
 }
 
 const POPUP_CLASS =
@@ -62,12 +79,18 @@ function ComboboxPicker({
   className,
   disabled = false,
   creatable = false,
+  onSearchChange,
+  loading = false,
+  selectedLabel,
 }: ComboboxPickerProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const searchInputRef = React.useRef<HTMLInputElement>(null)
 
+  // Async mode: parent supplies already-filtered options — never re-filter here
+  // (double-filtering would hide server hits the parent already narrowed).
   const filtered = React.useMemo(() => {
+    if (onSearchChange) return options
     if (!search) return options
     const lower = search.toLowerCase()
     return options.filter(
@@ -76,11 +99,20 @@ function ComboboxPicker({
         opt.value.toLowerCase().includes(lower) ||
         opt.description?.toLowerCase().includes(lower)
     )
-  }, [options, search])
+  }, [options, search, onSearchChange])
+
+  // Async mode: report the search term to the parent so it can refetch.
+  React.useEffect(() => {
+    if (onSearchChange) onSearchChange(search)
+  }, [search, onSearchChange])
 
   const selectedOption = options.find((opt) => opt.value === value)
-  // For creatable mode, show the raw value even if it's not in options
-  const displayLabel = selectedOption?.label || (creatable && value ? value : null)
+  // For creatable mode, show the raw value even if it's not in options. In async
+  // mode fall back to `selectedLabel` when the selected row isn't in this page.
+  const displayLabel =
+    selectedOption?.label ||
+    (value ? selectedLabel : null) ||
+    (creatable && value ? value : null)
   const showClear = allowClear && !!displayLabel
 
   function handleSelect(optionValue: string) {
@@ -182,7 +214,7 @@ function ComboboxPicker({
           <div className="max-h-60 overflow-y-auto scroll-py-1 p-1">
             {filtered.length === 0 ? (
               <div className="px-2 py-4 text-center text-sm text-fg-3">
-                {emptyMessage}
+                {loading ? "Searching…" : emptyMessage}
               </div>
             ) : (
               filtered.map((option) => (

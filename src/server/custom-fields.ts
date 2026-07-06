@@ -241,14 +241,17 @@ export async function reorderCustomFieldDefinitions(orderedIds: string[]) {
   // `where: { id, organizationId }` silently skipped foreign ids; replicate that
   // org-guard by verifying ownership per id (the reorder list is small) so a
   // stray/foreign id is a no-op rather than touching another org's row.
-  for (let idx = 0; idx < orderedIds.length; idx++) {
-    const id = orderedIds[idx];
-    const doc = await convex.query(api.customFieldDefinitions.getById, { id });
-    if (!doc || doc.organizationId !== organizationId) continue;
-    await convex.mutation(api.customFieldDefinitions.update, {
-      id,
-      patch: { sortOrder: idx, updatedAt: now },
-    });
-  }
+  // Each definition is independent — verify ownership + patch sortOrder for all
+  // ids concurrently (was a sequential read+update per id).
+  await Promise.all(
+    orderedIds.map(async (id, idx) => {
+      const doc = await convex.query(api.customFieldDefinitions.getById, { id });
+      if (!doc || doc.organizationId !== organizationId) return;
+      await convex.mutation(api.customFieldDefinitions.update, {
+        id,
+        patch: { sortOrder: idx, updatedAt: now },
+      });
+    }),
+  );
   return { ok: true };
 }

@@ -325,11 +325,14 @@ export async function reorderModelCheckItems(
   const parsed = reorderModelCheckItemsSchema.parse(data);
 
   const convex = await getConvexClient();
-  for (let index = 0; index < parsed.orderedCheckItemIds.length; index++) {
-    const checkItemId = parsed.orderedCheckItemIds[index];
-    const row = await convex.query(api.modelCheckItems.getByModelAndCheckItem, { orgId: organizationId, modelId: parsed.modelId, checkItemId });
-    if (row) await convex.mutation(api.modelCheckItems.update, { id: row.id, patch: { sortOrder: index } });
-  }
+  // Each (model, checkItem) row is independent — resolve + patch them all
+  // concurrently (was a sequential read+update per item).
+  await Promise.all(
+    parsed.orderedCheckItemIds.map(async (checkItemId, index) => {
+      const row = await convex.query(api.modelCheckItems.getByModelAndCheckItem, { orgId: organizationId, modelId: parsed.modelId, checkItemId });
+      if (row) await convex.mutation(api.modelCheckItems.update, { id: row.id, patch: { sortOrder: index } });
+    }),
+  );
 
   return { success: true };
 }
@@ -501,11 +504,13 @@ export async function reorderKitCheckItems(
   const { organizationId } = await requirePermission("checkItem", "update");
 
   const convex = await getConvexClient();
-  for (let index = 0; index < orderedCheckItemIds.length; index++) {
-    const checkItemId = orderedCheckItemIds[index];
-    const row = await convex.query(api.kitCheckItems.getByKitAndCheckItem, { orgId: organizationId, kitId, checkItemId });
-    if (row) await convex.mutation(api.kitCheckItems.update, { id: row.id, patch: { sortOrder: index } });
-  }
+  // Each (kit, checkItem) row is independent — resolve + patch concurrently.
+  await Promise.all(
+    orderedCheckItemIds.map(async (checkItemId, index) => {
+      const row = await convex.query(api.kitCheckItems.getByKitAndCheckItem, { orgId: organizationId, kitId, checkItemId });
+      if (row) await convex.mutation(api.kitCheckItems.update, { id: row.id, patch: { sortOrder: index } });
+    }),
+  );
 
   return { success: true };
 }

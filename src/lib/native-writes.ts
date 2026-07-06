@@ -37,6 +37,23 @@ export const nativeRecalc = (): boolean =>
   process.env.NATIVE_RECALC === "true";
 
 /**
+ * Audit-log Phase 5c cutover (two independent flags so the write can lead the read):
+ * - `NATIVE_ACTIVITY_WRITES` — `logActivity` ALSO mirrors each row into Convex
+ *   `activityLogs` (via `api.activityLogWrites.record`), giving Convex the COMPLETE
+ *   history across all domains, not just the 5 inverted ones. Keeps the Postgres write
+ *   too (dual-write) so the read can fall back instantly.
+ * - `NATIVE_ACTIVITY_READS` — the activity-log screens read Convex `activityLogs`
+ *   instead of Postgres. Only flip AFTER writes have run long enough to backfill, or
+ *   after a one-off backfill; otherwise the screen shows a truncated history.
+ * Both default OFF.
+ */
+export const nativeActivityWrites = (): boolean =>
+  process.env.NATIVE_ACTIVITY_WRITES === "true";
+
+export const nativeActivityReads = (): boolean =>
+  process.env.NATIVE_ACTIVITY_READS === "true";
+
+/**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is
  * identical whether the write ran natively or on the legacy path. Non-matching

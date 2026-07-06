@@ -260,7 +260,8 @@ export default defineSchema({
     .index("by_categoryId", ["categoryId"])
     .index("by_defaultTestProfileId", ["defaultTestProfileId"])
     .index("by_organizationId_sku", ["organizationId", "sku"])
-    .index("by_isActive", ["isActive"]),
+    .index("by_isActive", ["isActive"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
   // Supplier
   suppliers: defineTable({
@@ -285,7 +286,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_organizationId_name", ["organizationId", "name"]),
+    .index("by_organizationId_name", ["organizationId", "name"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
   // SupplierOrder
   supplierOrders: defineTable({
@@ -469,7 +471,8 @@ export default defineSchema({
     .index("by_locationId", ["locationId"])
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
-    .index("by_isActive", ["isActive"]),
+    .index("by_isActive", ["isActive"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
   // KitSerializedItem
   kitSerializedItems: defineTable({
@@ -551,7 +554,9 @@ export default defineSchema({
     .index("by_parentAssetId", ["parentAssetId"])
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
-    .index("by_isActive", ["isActive"]),
+    .index("by_isActive", ["isActive"])
+    .searchIndex("search_assetTag", { searchField: "assetTag", filterFields: ["organizationId", "isActive"] })
+    .searchIndex("search_serialNumber", { searchField: "serialNumber", filterFields: ["organizationId", "isActive"] }),
 
   // BulkAsset
   bulkAssets: defineTable({
@@ -707,7 +712,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_isActive", ["isActive"]),
+    .index("by_isActive", ["isActive"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
   // Project
   projects: defineTable({
@@ -767,7 +773,8 @@ export default defineSchema({
     .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
     .index("by_isTemplate", ["isTemplate"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isTemplate"] }),
 
   // ProjectLineItem
   projectLineItems: defineTable({

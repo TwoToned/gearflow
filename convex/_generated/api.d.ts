@@ -96,6 +96,7 @@ import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
 import type * as purgeRemovedTables from "../purgeRemovedTables.js";
 import type * as savedTableViews from "../savedTableViews.js";
+import type * as search from "../search.js";
 import type * as sectionPresets from "../sectionPresets.js";
 import type * as serviceTemplates from "../serviceTemplates.js";
 import type * as siteSettings from "../siteSettings.js";
@@ -217,6 +218,7 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   purgeRemovedTables: typeof purgeRemovedTables;
   savedTableViews: typeof savedTableViews;
+  search: typeof search;
   sectionPresets: typeof sectionPresets;
   serviceTemplates: typeof serviceTemplates;
   siteSettings: typeof siteSettings;

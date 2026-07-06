@@ -3426,6 +3426,42 @@ from Postgres (`orgDefaultTaxRateFor`, only fetched when the project has no over
 server function (mixed project + org-default-tax fallback); `recalcNative` has
 member-recompute + viewer-denied coverage. Both flags default OFF.
 
+### Phase 5c/5d closeout — audit-read migration + optimistic line-item edit
+
+**Audit-read migration (Phase 5c).** The activity-log screens can now read Convex
+`activityLogs` instead of Postgres. The catch: only the 5 inverted domains wrote
+`activityLogs` (atomically, via `writeActivityLog`); the other ~39 wrote only Postgres
+via `logActivity`. So a naive read-swap would show a truncated history. Fix:
+- `logActivity` (src/lib/activity-log.ts) now DUAL-WRITES — Postgres + a mirror into
+  Convex `activityLogs` via `api.activityLogWrites.record` (idempotent by cuid,
+  service-only), behind `NATIVE_ACTIVITY_WRITES`. Same shared cuid + timestamp so the
+  two rows match. Best-effort — audit never breaks a write.
+- `convex/activityLog.{list,listByEntity,exportRows}` — native reads with parity to
+  `src/server/activity-log.ts` (org-scoped `requireOrgRead`, same filters/pagination,
+  users-mirror join, ISO `createdAt`). list/export scan the most-recent 10k rows off
+  `by_organizationId_createdAt` and filter in JS (bounded read; returns `capped`).
+- `src/server/activity-log.ts` branches on `NATIVE_ACTIVITY_READS`.
+- `scripts/convex-backfill-activity-log.ts` loads existing Postgres history — **run it
+  before flipping the read flag**, else the screen is truncated to rows written since
+  the write flag went on. Both flags default OFF. Tests: `convex/activityLog.test.ts`.
+
+This is what lets the Postgres `logActivity`/`activityLog` path be dropped in
+decommission — the last audit tie to Postgres.
+
+**Optimistic line-item edit (Phase 5d).** Edited rows update with zero latency. Unlike
+the asset-notes 5d hook (direct Convex mutation + `withOptimisticUpdate`), line-item
+edits keep going through the `updateLineItem` server action — it owns the availability
+re-check, the stale-guard, and the org default tax rate (Postgres, no Convex mirror)
+that the in-mutation recalc needs, so a pure client→Convex write couldn't get totals
+right. Instead the pending fields overlay onto the `equipmentTab.bundle` line items
+BEFORE reconstruction (`src/hooks/use-native-line-item-writes.ts` `applyOptimisticEdits`),
+the same idea as the tab's optimistic DELETE. Cleared when the write settles (rollback
+on error). Flag `NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC` (default OFF, build-inlined).
+
+**Phases 4 + 5 are now closed.** Remaining: Phases 6 (crons/side-effects) + 7 (search),
+then the Postgres decommission. Membership/organization writes stay Postgres (Better
+Auth owns them — Tier E).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

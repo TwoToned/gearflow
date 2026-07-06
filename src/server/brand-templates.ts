@@ -71,14 +71,16 @@ async function unsetBrandDefaultsInConvex(organizationId: string, exceptId?: str
   const brands = (await convex.query(api.brandTemplates.list, {
     orgId: organizationId,
   })) as ConvexBrandTemplate[];
-  for (const b of brands) {
-    if (b.isDefault && b.id !== exceptId) {
-      await convex.mutation(api.brandTemplates.update, {
-        id: b.id,
-        patch: { isDefault: false, updatedAt: Date.now() },
-      });
-    }
-  }
+  await Promise.all(
+    brands
+      .filter((b) => b.isDefault && b.id !== exceptId)
+      .map((b) =>
+        convex.mutation(api.brandTemplates.update, {
+          id: b.id,
+          patch: { isDefault: false, updatedAt: Date.now() },
+        }),
+      ),
+  );
 }
 
 /**

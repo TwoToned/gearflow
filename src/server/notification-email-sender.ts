@@ -48,6 +48,7 @@ import {
   type NotificationPreferenceValues,
 } from "@/lib/validations/notification-preferences";
 import { getUserNotificationPreferenceMap } from "@/lib/user-notification-preferences-read";
+import { mapWithConcurrency, runWithConcurrency } from "@/lib/concurrency";
 
 interface OrgRecipient {
   userId: string;
@@ -437,15 +438,24 @@ export async function pruneStaleNotificationEmailLogs(): Promise<number> {
   const convex = await getConvexClient();
   const orgs = await prisma.organization.findMany({ select: { id: true } });
 
+  // Process orgs with BOUNDED concurrency (not a bare Promise.all over every
+  // org's logs at once): a platform with many orgs / huge log tables would
+  // otherwise hold every row in memory and fan out unbounded requests, throttling
+  // Convex and failing the scheduled prune. Read a batch of orgs' logs, delete
+  // their stale rows (bounded), then move on.
   let count = 0;
-  for (const org of orgs) {
-    const logs = await convex.query(api.notificationEmailLogs.list, { orgId: org.id });
-    for (const log of logs) {
-      if ((log.sentAt ?? 0) < cutoffMs) {
-        await convex.mutation(api.notificationEmailLogs.remove, { id: log.id });
-        count += 1;
-      }
-    }
-  }
+  await mapWithConcurrency(
+    orgs,
+    async (org) => {
+      const logs = await convex.query(api.notificationEmailLogs.list, { orgId: org.id });
+      const staleIds = logs.filter((log) => (log.sentAt ?? 0) < cutoffMs).map((log) => log.id);
+      await runWithConcurrency(
+        staleIds.map((id) => () => convex.mutation(api.notificationEmailLogs.remove, { id })),
+        20,
+      );
+      count += staleIds.length;
+    },
+    10,
+  );
   return count;
 }

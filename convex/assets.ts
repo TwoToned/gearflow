@@ -133,6 +133,66 @@ export const create = mutation({
   },
 });
 
+/**
+ * Insert many assets in ONE atomic mutation with an in-transaction duplicate-tag
+ * guard — collapses createAssets' per-asset loop (dup-guard read + create +
+ * read-back = 3 round-trips per asset). The guard uses the by_organizationId_
+ * assetTag index and also catches duplicates WITHIN the batch (a prior insert in
+ * the same transaction is visible). On a dup it throws a structured ConvexError
+ * the server action maps to its DUPLICATE_ASSET_TAG UserFacingError.
+ */
+export const createMany = mutation({
+  args: {
+    assets: v.array(
+      v.object({
+        id: v.string(),
+        organizationId: v.string(),
+        modelId: v.string(),
+        assetTag: v.string(),
+        serialNumber: v.optional(v.string()),
+        customName: v.optional(v.string()),
+        status: v.optional(enums.AssetStatus),
+        condition: v.optional(enums.AssetCondition),
+        purchaseDate: v.optional(v.number()),
+        purchasePrice: v.optional(v.number()),
+        purchaseSupplier: v.optional(v.string()),
+        supplierId: v.optional(v.string()),
+        purchaseOrderNumber: v.optional(v.string()),
+        supplierOrderId: v.optional(v.string()),
+        warrantyExpiry: v.optional(v.number()),
+        notes: v.optional(v.string()),
+        locationId: v.optional(v.string()),
+        customFieldValues: v.optional(v.any()),
+        lastTestAndTagDate: v.optional(v.number()),
+        nextTestAndTagDate: v.optional(v.number()),
+        barcode: v.optional(v.string()),
+        qrCode: v.optional(v.string()),
+        images: v.optional(v.array(v.string())),
+        tags: v.optional(v.array(v.string())),
+        isActive: v.optional(v.boolean()),
+        createdAt: v.optional(v.number()),
+        updatedAt: v.optional(v.number()),
+        kitId: v.optional(v.string()),
+        parentAssetId: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, { assets }) => {
+    await requireService(ctx);
+    const ids: string[] = [];
+    for (const a of assets) {
+      const dup = await ctx.db
+        .query("assets")
+        .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", a.organizationId).eq("assetTag", a.assetTag))
+        .first();
+      if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag });
+      await ctx.db.insert("assets", a);
+      ids.push(a.id);
+    }
+    return { ids };
+  },
+});
+
 export const createIfMissing = mutation({
   args: {
     id: v.string(),

@@ -86,6 +86,44 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Insert many time entries in ONE atomic mutation — collapses the "log time for
+ * N selected crew" client loop (one createTimeEntry round-trip per crew member).
+ * createIfMissing semantics per entry (idempotent by cuid on retry). The server
+ * action validates each crew member + assignment before calling this, so every
+ * entry here is already vetted.
+ */
+export const createMany = mutation({
+  args: {
+    entries: v.array(
+      v.object({
+        id: v.string(),
+        organizationId: v.string(),
+        assignmentId: v.optional(v.string()),
+        crewMemberId: v.string(),
+        description: v.optional(v.string()),
+        date: v.number(),
+        startTime: v.string(),
+        endTime: v.string(),
+        breakMinutes: v.optional(v.number()),
+        totalHours: v.optional(v.number()),
+        status: v.optional(enums.TimeEntryStatus),
+        notes: v.optional(v.string()),
+        createdAt: v.optional(v.number()),
+        updatedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, { entries }) => {
+    await requireService(ctx);
+    for (const e of entries) {
+      const existing = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", e.id)).unique();
+      if (existing) continue;
+      await ctx.db.insert("crewTimeEntries", e);
+    }
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

@@ -379,16 +379,21 @@ export async function updateModel(id: string, data: ModelFormValues) {
       // Propagate T&T defaults to active Convex testTagAsset rows linked to these assets.
       const convexForTT = await getConvexClient();
       const ttNow = Date.now();
-      for (const assetId of assetIds) {
-        const ttRows = await convexForTT.query(api.testTagAssets.listByAssetId, { assetId });
-        for (const tt of ttRows) {
-          if (tt.isActive === false) continue;
-          await convexForTT.mutation(api.testTagAssets.update, {
+      // Read every asset's T&T rows concurrently, then patch all the active ones
+      // concurrently — was a nested per-asset read + per-row update loop (N assets
+      // × M rows sequential). Independent rows, no ordering dependency.
+      const ttRowsPerAsset = await Promise.all(
+        assetIds.map((assetId) => convexForTT.query(api.testTagAssets.listByAssetId, { assetId })),
+      );
+      const activeTt = ttRowsPerAsset.flat().filter((tt) => tt.isActive !== false);
+      await Promise.all(
+        activeTt.map((tt) =>
+          convexForTT.mutation(api.testTagAssets.update, {
             id: tt.id,
             patch: { equipmentClass, applianceType, testIntervalMonths: intervalMonths, updatedAt: ttNow },
-          });
-        }
-      }
+          }),
+        ),
+      );
     }
   }
 
@@ -470,32 +475,32 @@ export async function bulkUpdateRates(
 
   const convex = await getConvexClient();
   const now = Date.now();
-  for (const model of models) {
-    const current = Number((model as Record<string, unknown>)[rateType] ?? 0);
-    let newRate: number;
-
-    switch (operation) {
-      case "set":
-        newRate = value;
-        break;
-      case "multiply":
-        newRate = current * value;
-        break;
-      case "increase_percent":
-        newRate = current * (1 + value / 100);
-        break;
-    }
-
-    newRate = Math.round(newRate * 100) / 100;
-
-    const patch: Record<string, number> = { [rateType]: newRate, updatedAt: now };
-    // Auto-sync defaultRentalPrice when dailyRate changes
-    if (rateType === "dailyRate") {
-      patch.defaultRentalPrice = newRate;
-    }
-
-    await convex.mutation(api.models.update, { id: model.id, patch });
-  }
+  // Independent per-model patches — compute in memory, then fire all the updates
+  // concurrently (was one sequential Convex round-trip per selected model).
+  await Promise.all(
+    models.map((model) => {
+      const current = Number((model as Record<string, unknown>)[rateType] ?? 0);
+      let newRate: number;
+      switch (operation) {
+        case "set":
+          newRate = value;
+          break;
+        case "multiply":
+          newRate = current * value;
+          break;
+        case "increase_percent":
+          newRate = current * (1 + value / 100);
+          break;
+      }
+      newRate = Math.round(newRate * 100) / 100;
+      const patch: Record<string, number> = { [rateType]: newRate, updatedAt: now };
+      // Auto-sync defaultRentalPrice when dailyRate changes
+      if (rateType === "dailyRate") {
+        patch.defaultRentalPrice = newRate;
+      }
+      return convex.mutation(api.models.update, { id: model.id, patch });
+    }),
+  );
 
   await logActivity({
     organizationId,

@@ -82,4 +82,61 @@ describe("ComboboxPicker smoke", () => {
 
     expect(onChange).toHaveBeenCalledWith("alice");
   });
+
+  // Phase 7 — async/server-search mode (onSearchChange).
+  describe("async search mode", () => {
+    it("reports the search term and does NOT filter options itself", async () => {
+      const onSearchChange = vi.fn();
+      // In async mode the parent supplies already-filtered options, so BOTH are
+      // shown regardless of the typed term (no internal JS filter).
+      render(
+        <ComboboxPicker
+          value=""
+          onChange={() => {}}
+          options={OPTIONS}
+          onSearchChange={onSearchChange}
+          placeholder="Search"
+        />,
+      );
+      // Mount effect reports the initial (empty) term.
+      expect(onSearchChange).toHaveBeenCalledWith("");
+
+      fireEvent.click(screen.getByRole("button"));
+      const input = await waitFor(() => screen.getByPlaceholderText("Search..."));
+      fireEvent.change(input, { target: { value: "zzz" } });
+
+      expect(onSearchChange).toHaveBeenLastCalledWith("zzz");
+      // Both parent-supplied options remain visible (no client-side filtering).
+      expect(screen.getByText("Alice")).toBeTruthy();
+      expect(screen.getByText("Bob")).toBeTruthy();
+    });
+
+    it("shows the selectedLabel fallback when the value isn't in options", () => {
+      render(
+        <ComboboxPicker
+          value="missing-id"
+          onChange={() => {}}
+          options={[]}
+          onSearchChange={() => {}}
+          selectedLabel="Chosen Supplier"
+        />,
+      );
+      expect(screen.getByText("Chosen Supplier")).toBeTruthy();
+    });
+
+    it("shows a Searching… affordance while loading with no results", async () => {
+      render(
+        <ComboboxPicker
+          value=""
+          onChange={() => {}}
+          options={[]}
+          onSearchChange={() => {}}
+          loading
+          placeholder="Search"
+        />,
+      );
+      fireEvent.click(screen.getByRole("button"));
+      await waitFor(() => expect(screen.getByText("Searching…")).toBeTruthy());
+    });
+  });
 });

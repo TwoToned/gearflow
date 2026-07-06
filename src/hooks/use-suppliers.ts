@@ -25,3 +25,18 @@ export function useSuppliers(orgId: string | undefined): SupplierDoc[] | undefin
 export function useSupplier(id: string | undefined): SupplierDoc | null | undefined {
   return useAuthedQuery(api.suppliers.getById, id ? { id } : "skip");
 }
+
+/**
+ * Phase 7 — reactive INDEXED supplier search (`api.search.suppliers`) instead of
+ * loading the whole org list to JS-filter. `query === ""` returns a bounded
+ * most-recent list. Pass `orgId: undefined` to skip.
+ */
+export function useSupplierSearch(
+  orgId: string | undefined,
+  query: string,
+): SupplierDoc[] | undefined {
+  return useAuthedQuery(
+    api.search.suppliers,
+    orgId ? { orgId, query } : "skip",
+  );
+}

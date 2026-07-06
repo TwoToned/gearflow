@@ -17,7 +17,8 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 
 import { createSubHire } from "@/server/sub-hires";
-import { useSuppliers } from "@/hooks/use-suppliers";
+import { useSupplier, useSupplierSearch } from "@/hooks/use-suppliers";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,14 +65,20 @@ export function SubHireAddForm({
   const [hireEnd, setHireEnd] = useState(toDateInput(rentalEndDate));
   const [notes, setNotes] = useState("");
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
+  const [supplierQuery, setSupplierQuery] = useState("");
 
-  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
-  const allSuppliers = useSuppliers(orgId);
-  const supplierOptions = (allSuppliers ?? [])
+  // Phase 7 — native INDEXED supplier search (bounded, reactive) instead of
+  // loading the whole org list to JS-filter. Debounced as the user types.
+  const debouncedSupplierQuery = useDebouncedValue(supplierQuery, 200);
+  const supplierResults = useSupplierSearch(orgId, debouncedSupplierQuery);
+  const supplierOptions = (supplierResults ?? [])
     .filter((s) => s.isActive ?? true)
     .map((s) => ({ value: s.id, label: s.name }));
 
-  const supplierName = supplierOptions.find((s) => s.value === supplierId)?.label;
+  // Resolve the selected supplier's label directly (it may not be in the current
+  // search page) so the trigger + summary always show the chosen name.
+  const selectedSupplier = useSupplier(supplierId || undefined);
+  const supplierName = selectedSupplier?.name;
 
   const createMut = useServerMutation({
     mutationFn: () =>
@@ -104,6 +111,9 @@ export function SubHireAddForm({
               value={supplierId}
               onChange={setSupplierId}
               options={supplierOptions}
+              onSearchChange={setSupplierQuery}
+              loading={supplierResults === undefined}
+              selectedLabel={supplierName}
               placeholder="Select a supplier…"
               searchPlaceholder="Search suppliers…"
               emptyMessage="No suppliers found."

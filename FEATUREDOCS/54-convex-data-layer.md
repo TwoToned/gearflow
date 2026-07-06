@@ -3458,9 +3458,42 @@ BEFORE reconstruction (`src/hooks/use-native-line-item-writes.ts` `applyOptimist
 the same idea as the tab's optimistic DELETE. Cleared when the write settles (rollback
 on error). Flag `NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC` (default OFF, build-inlined).
 
-**Phases 4 + 5 are now closed.** Remaining: Phases 6 (crons/side-effects) + 7 (search),
-then the Postgres decommission. Membership/organization writes stay Postgres (Better
-Auth owns them — Tier E).
+**Phases 4 + 5 are now closed.** Remaining: the Postgres decommission. Membership/
+organization writes stay Postgres (Better Auth owns them — Tier E).
+
+## Phase 6 — background jobs & side-effects
+
+- **Crons (`convex/crons.ts`).** Convex owns the durable cron SCHEDULE (observable in
+  the dashboard). Two jobs — notification emails (15m) + test-and-tag digests (daily) —
+  call internalActions in `convex/scheduledJobs.ts` that invoke the existing Next.js
+  `/api/cron/*` executor routes (`Bearer CRON_SECRET`). The executor stays in Next
+  because both pipelines fan out to org/member/user rows sourced from Postgres/Better
+  Auth (mirrors not verified-complete in prod). **Dormant** until `ENABLE_CONVEX_CRONS=true`
+  + `CONVEX_CRON_TARGET_URL` + `CRON_SECRET` on the Convex deployment. Full route removal
+  deferred until the mirrors are verified and email parity can be checked live.
+- **Email side-effects (`convex/emails.ts` + `convex/emailActions.ts`).** A durable,
+  idempotent layer: `enqueue` (service-only mutation) schedules `deliver`
+  (`"use node"` internalAction) via `ctx.scheduler.runAfter(0, …)`. At-least-once with
+  bounded retry/backoff (3 attempts) + a `sentEmails` delivered-ledger + Resend
+  `Idempotency-Key` for provider-side dedupe. Server sends route through
+  `deliverSideEffectEmail()` (`src/lib/email-side-effect.ts`) behind
+  `NATIVE_EMAIL_SIDEEFFECTS` (default OFF). Representative wiring: crew offer/confirm/
+  cancel. Needs `RESEND_API_KEY` + `EMAIL_FROM` on the Convex deployment to deliver.
+
+## Phase 7 — native search
+
+- **Search indexes** (`convex/schema.ts` `searchIndex`): assets (tag + serial),
+  models/kits/clients/suppliers/projects (name). **Queries** (`convex/search.ts`):
+  org-scoped `withSearchIndex` reads, browser-callable (`requireOrgRead`), bounded, and
+  reactive — replacing the "load the whole org table, JS-filter in the browser" pattern.
+  Empty query → bounded most-recent list. `assets` merges tag + serial (deduped);
+  `projects` excludes templates in JS on the bounded result.
+- **UI:** `ComboboxPicker` gained a backward-compatible async-search mode
+  (`onSearchChange` / `selectedLabel` / `loading`); existing callers are unchanged.
+  Representative cutover: the sub-hire supplier picker (`useSupplierSearch`, debounced,
+  selected label via `getById`). Remaining pickers/tables follow the same shape;
+  multi-field searches (e.g. the model picker's name+manufacturer) need a second index
+  or a denormalized search field before cutover.
 
 ## Conventions
 

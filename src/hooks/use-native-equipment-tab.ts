@@ -20,6 +20,7 @@ import type {
   LineItemData,
 } from "@/components/projects/equipment-rows";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
+import { applyOptimisticEdits, type OptimisticLineEdit } from "@/hooks/use-native-line-item-writes";
 
 /**
  * Feature flag (default OFF) for the native equipment-tab read cutover (Phase 2).
@@ -57,12 +58,21 @@ const toDate = (n: number | null | undefined): Date | null =>
 export function useNativeEquipmentTab(
   projectId: string | undefined,
   orgId: string | undefined,
+  optimisticEdits?: ReadonlyMap<string, OptimisticLineEdit>,
 ): NativeEquipmentTab {
   const enabled = NATIVE_EQUIPMENT_ENABLED && !!projectId && !!orgId;
-  const bundle = useAuthedQuery(
+  const rawBundle = useAuthedQuery(
     api.equipmentTab.bundle,
     enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
   );
+
+  // Overlay optimistic line-item edits (Phase 5d) onto the raw bundle BEFORE
+  // reconstruction, so an edited row updates instantly. Cleared by the caller once
+  // the server write settles; a no-op when there are none. See use-native-line-item-writes.ts.
+  const bundle = useMemo(() => {
+    if (!rawBundle || !optimisticEdits || optimisticEdits.size === 0) return rawBundle;
+    return { ...rawBundle, lineItems: applyOptimisticEdits(rawBundle.lineItems, optimisticEdits) };
+  }, [rawBundle, optimisticEdits]);
 
   // The project doc supplies the rental window the overbooked computation needs.
   const project = useProject(enabled ? projectId : undefined);

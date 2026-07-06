@@ -7,7 +7,39 @@ open). Phase 5 (native writes) is the next major phase.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (2026-07-02)
+## ▶ NEXT SESSION — START HERE (2026-07-06)
+
+**PHASES 4 AND 5 ARE CLOSED.** Read-inversion (Phase 4), write-inversion for all 5
+domains (Phase 5a–c), the write-latency fix (recalc-in-mutation, PR #349), the
+audit-read migration (Phase 5c), and optimistic line-item edit (Phase 5d) are all
+merged. What remains is genuinely separate: Phases 6 (crons/side-effects) + 7 (search),
+and the eventual Postgres decommission (DROP TABLE) once the kept tables shrink.
+
+**Latency fix — DONE + DEPLOYED (PR #349):** `recalculateProjectTotals` was ~3
+sequential server→Convex-Cloud waves on every write (the 6–12s tail). Ported byte-for-
+byte to `convex/lib/recalc.ts` and run in-mutation. Two flags (default OFF, flip in
+Coolify): `NATIVE_RECALC` (one-hop recalc for ALL domains) + the 5 line-item mutations
+recalc in-transaction under `NATIVE_LINEITEM_WRITES`. Parity: `convex/recalc.test.ts`.
+
+**Audit-read migration (Phase 5c) — DONE:** activity-log screens can now read Convex.
+`convex/activityLog.{list,listByEntity,exportRows}` (org-scoped, same filters/pagination/
+user-join as the Prisma path) + `convex/activityLogWrites.record` (idempotent mirror).
+`logActivity` dual-writes Postgres+Convex under `NATIVE_ACTIVITY_WRITES`; screens read
+Convex under `NATIVE_ACTIVITY_READS`. `scripts/convex-backfill-activity-log.ts` loads
+existing history — RUN IT before flipping the read flag. This unblocks dropping the
+Postgres `logActivity` path in decommission. Tests: `convex/activityLog.test.ts`.
+
+**Optimistic line-item edit (Phase 5d) — DONE:** edited rows update with zero latency;
+the real write stays on the `updateLineItem` server action (keeps availability re-check +
+stale-guard + the Postgres org default tax the recalc needs). Overlay-on-bundle pattern
+(`src/hooks/use-native-line-item-writes.ts`), flag `NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC`
+(default OFF). asset-notes (representative) + this are the two live 5d surfaces; rolling
+to add/kit/custom is mechanical and deferred (writes are fast, so low value).
+
+**Still out of scope (by design):** membership/organization writes stay Postgres — Better
+Auth owns them (Tier E). Full resume context + per-PR detail in memory `convex-native-read-layer.md`.
+
+### (superseded) 2026-07-02 status
 
 **Phase 4 COMPLETE + Phase 5 write-inversion COMPLETE.** The remaining work is the
 optional polish (see "Phase 5 remaining" below) + Phases 6–7. Full resume context +

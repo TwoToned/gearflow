@@ -1,5 +1,9 @@
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
+import { nativeActivityWrites } from "@/lib/native-writes";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 interface LogActivityInput {
   organizationId: string;
@@ -18,9 +22,17 @@ interface LogActivityInput {
 }
 
 export async function logActivity(input: LogActivityInput): Promise<void> {
+  // One shared id + timestamp so the Postgres row and the Convex mirror row match
+  // exactly (the mirror is idempotent by this cuid).
+  const id = createId();
+  const createdAt = new Date();
+
+  // Postgres write (unchanged behaviour — best-effort, never throws).
   try {
     await prisma.activityLog.create({
       data: {
+        id,
+        createdAt,
         ...input,
         details: input.details as unknown as Prisma.InputJsonValue,
         metadata: input.metadata as unknown as Prisma.InputJsonValue,
@@ -28,6 +40,35 @@ export async function logActivity(input: LogActivityInput): Promise<void> {
     });
   } catch (error) {
     console.error("Failed to log activity:", error);
+  }
+
+  // Phase 5c: mirror into Convex `activityLogs` so the activity-log screens can read
+  // natively with the COMPLETE cross-domain history. Best-effort — audit must never
+  // break a write. The 5 inverted domains write Convex atomically in-mutation and skip
+  // logActivity, so there's no double-count.
+  if (nativeActivityWrites()) {
+    try {
+      const convex = await getConvexClient();
+      await convex.mutation(api.activityLogWrites.record, {
+        id,
+        organizationId: input.organizationId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        entityName: input.entityName,
+        userId: input.userId,
+        userName: input.userName,
+        summary: input.summary,
+        details: input.details,
+        metadata: input.metadata,
+        projectId: input.projectId,
+        assetId: input.assetId,
+        kitId: input.kitId,
+        createdAt: createdAt.getTime(),
+      });
+    } catch (error) {
+      console.error("Failed to mirror activity to Convex:", error);
+    }
   }
 }
 

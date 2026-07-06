@@ -18,6 +18,11 @@ import {
   refreshProjectOverbooked,
 } from "@/hooks/use-project-equipment";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
+import {
+  NATIVE_LINEITEM_OPTIMISTIC,
+  computeLineTotal,
+  type OptimisticLineEdit,
+} from "@/hooks/use-native-line-item-writes";
 import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
@@ -126,7 +131,26 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // views come from ONE reactive equipmentTab.bundle subscription (reconstructed
   // client-side); writes are still server actions whose convex.mutation pushes the
   // delta to this subscription, so no doorbell→refetch is needed.
-  const native = useNativeEquipmentTab(projectId, orgId);
+  // Optimistic line-item edits (Phase 5d, flag-gated): the edited row updates
+  // instantly by overlaying the pending fields onto the bundle; the real write still
+  // goes through the updateLineItem server action, and the overlay is cleared once it
+  // settles. See use-native-line-item-writes.ts.
+  const [pendingEdits, setPendingEdits] = useState<ReadonlyMap<string, OptimisticLineEdit>>(
+    () => new Map(),
+  );
+  const clearPendingEdit = useCallback((id: string) => {
+    setPendingEdits((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+  const native = useNativeEquipmentTab(
+    projectId,
+    orgId,
+    NATIVE_LINEITEM_OPTIMISTIC ? pendingEdits : undefined,
+  );
 
   // Passive section/group collaboration state: one lock subscription and one
   // comment-count subscription for the project, then row lookups by target key.
@@ -366,12 +390,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const updateLineItemMut = useServerMutation({
     mutationFn: ({ id, data, allowOverbook, baseUpdatedAt }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) =>
       updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false, baseUpdatedAt),
-    onSuccess: () => {
+    onSuccess: (_r: unknown, { id }: { id: string }) => {
       invalidate();
+      // Drop the optimistic overlay — the reactive bundle now carries the server value.
+      clearPendingEdit(id);
       setEditLineItem(null);
       toast.success("Item updated");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, { id }: { id: string }) => {
+      // Rollback: remove the overlay so the row reverts to the server state.
+      clearPendingEdit(id);
+      toast.error(e.message);
+    },
   });
 
   const removeMut = useServerMutation({
@@ -1343,14 +1373,35 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         orgId={orgId}
         isPending={updateLineItemMut.isPending}
         onClose={() => setEditLineItem(null)}
-        onSubmit={(id, data, allowOverbook, baseUpdatedAt) =>
+        onSubmit={(id, data, allowOverbook, baseUpdatedAt) => {
+          // Optimistically overlay the edited fields onto the row (flag-gated) so it
+          // updates instantly; the server action below is still the authoritative write.
+          if (NATIVE_LINEITEM_OPTIMISTIC) {
+            setPendingEdits((prev) => {
+              const next = new Map(prev);
+              next.set(id, {
+                quantity: data.quantity,
+                unitPrice: data.unitPrice,
+                discount: data.discount,
+                description: data.description,
+                notes: data.notes,
+                lineTotal: computeLineTotal(
+                  data.unitPrice,
+                  data.quantity,
+                  data.duration,
+                  data.discount,
+                ),
+              });
+              return next;
+            });
+          }
           updateLineItemMut.mutate({
             id,
             data: data as unknown as Record<string, unknown>,
             allowOverbook,
             baseUpdatedAt,
-          })
-        }
+          });
+        }}
       />
 
       {/* Move-item-to-category dialog (kebab → "Move to category").

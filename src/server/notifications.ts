@@ -101,9 +101,7 @@ export async function pruneStaleDismissals(activeKeys: string[]): Promise<number
   if (stale.length === 0) return 0;
 
   const convex = await getConvexClient();
-  for (const row of stale) {
-    await convex.mutation(api.notificationDismissals.remove, { id: row.id });
-  }
+  await Promise.all(stale.map((row) => convex.mutation(api.notificationDismissals.remove, { id: row.id })));
   return stale.length;
 }
 

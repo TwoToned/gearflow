@@ -458,29 +458,13 @@ export async function seedDefaultProfiles() {
   }
 
   const convex = await getConvexClient();
-  const created: TestProfileRow[] = [];
-  for (const p of toCreate) {
-    const id = createId();
-    const now = Date.now();
-    await convex.mutation(api.testProfiles.create, {
-      id,
-      organizationId,
-      name: p.name,
-      equipmentClass: p.equipmentClass,
-      applianceType: p.applianceType,
-      visualChecks: p.visualChecks,
-      electricalTests: p.electricalTests,
-      thresholds: p.thresholds,
-      requiresSubTests: p.requiresSubTests,
-      defaultSubTestCount: p.defaultSubTestCount,
-      subTestLabel: p.subTestLabel,
-      isDefault: true,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-    created.push(
-      profileRow({
+  const now = Date.now();
+  // Independent default profiles — create them all concurrently (was sequential).
+  // Promise.all preserves order, so `created` keeps the toCreate order.
+  const created: TestProfileRow[] = await Promise.all(
+    toCreate.map(async (p) => {
+      const id = createId();
+      await convex.mutation(api.testProfiles.create, {
         id,
         organizationId,
         name: p.name,
@@ -496,9 +480,26 @@ export async function seedDefaultProfiles() {
         isActive: true,
         createdAt: now,
         updatedAt: now,
-      }),
-    );
-  }
+      });
+      return profileRow({
+        id,
+        organizationId,
+        name: p.name,
+        equipmentClass: p.equipmentClass,
+        applianceType: p.applianceType,
+        visualChecks: p.visualChecks,
+        electricalTests: p.electricalTests,
+        thresholds: p.thresholds,
+        requiresSubTests: p.requiresSubTests,
+        defaultSubTestCount: p.defaultSubTestCount,
+        subTestLabel: p.subTestLabel,
+        isDefault: true,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }),
+  );
 
   await logActivity({
     organizationId,

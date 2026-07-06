@@ -437,15 +437,15 @@ export async function pruneStaleNotificationEmailLogs(): Promise<number> {
   const convex = await getConvexClient();
   const orgs = await prisma.organization.findMany({ select: { id: true } });
 
-  let count = 0;
-  for (const org of orgs) {
-    const logs = await convex.query(api.notificationEmailLogs.list, { orgId: org.id });
-    for (const log of logs) {
-      if ((log.sentAt ?? 0) < cutoffMs) {
-        await convex.mutation(api.notificationEmailLogs.remove, { id: log.id });
-        count += 1;
-      }
-    }
-  }
-  return count;
+  // Read each org's logs concurrently, then remove every stale log concurrently
+  // (flat rows, independent) — was a nested per-org read + per-log delete loop.
+  const perOrgLogs = await Promise.all(
+    orgs.map((org) => convex.query(api.notificationEmailLogs.list, { orgId: org.id })),
+  );
+  const staleLogIds = perOrgLogs
+    .flat()
+    .filter((log) => (log.sentAt ?? 0) < cutoffMs)
+    .map((log) => log.id);
+  await Promise.all(staleLogIds.map((id) => convex.mutation(api.notificationEmailLogs.remove, { id })));
+  return staleLogIds.length;
 }

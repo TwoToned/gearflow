@@ -448,13 +448,15 @@ export async function deleteProjectCategory(categoryId: string) {
 
   // 3. Null out categoryId/groupId on the affected line items (Convex).
   const nowClear = Date.now();
-  for (const li of affected) {
-    await client.mutation(api.projectLineItems.patchLineItem, {
-      id: li.id,
-      set: { updatedAt: nowClear },
-      clear: ["categoryId", "groupId"],
-    });
-  }
+  await Promise.all(
+    affected.map((li) =>
+      client.mutation(api.projectLineItems.patchLineItem, {
+        id: li.id,
+        set: { updatedAt: nowClear },
+        clear: ["categoryId", "groupId"],
+      }),
+    ),
+  );
 
   // 4. Atomic Convex cascade: all groups (+ their slots), all category slots,
   //    then the category — one transaction, no partial-cascade on mid-failure.

@@ -39,6 +39,45 @@ to add/kit/custom is mechanical and deferred (writes are fast, so low value).
 **Still out of scope (by design):** membership/organization writes stay Postgres — Better
 Auth owns them (Tier E). Full resume context + per-PR detail in memory `convex-native-read-layer.md`.
 
+---
+
+### ▶ Phases 6 + 7 — execution targets & autonomous rules (start here for 6/7)
+
+Phases 4 + 5 are closed (above). **Phase 6 (crons/side-effects) + Phase 7 (search) are
+the current target.** Work **autonomously — no questions; keep going to completion; stop
+only for a genuine hard blocker** (secrets exposure, destructive/irreversible data ops,
+unverifiable prod-impacting deploy, spend, security/permission changes outside scope,
+legal/finance/medical, or a blocker making all remaining slices unsafe). One branch + one
+PR per slice; merge when CI passes and safe; `codex review` each diff. Full plan detail in
+§"Phase 6" / §"Phase 7" below; per-PR resume in memory `convex-native-read-layer.md`.
+
+**Phase 6 — greenfield in Convex-land (no `convex/crons.ts`, no Convex actions yet):**
+- **6a crons → `convex/crons.ts` (`cronJobs()`):** port the two Next cron routes
+  (`src/app/api/cron/notifications`, `src/app/api/cron/test-tag-reminders`, both
+  `Bearer CRON_SECRET`) + date-derived jobs (overdue-return checks, maintenance reminders,
+  sub-hire due dates). Keep the old Next route until parity-verified, then remove it + its
+  `CRON_SECRET` wiring.
+- **6b side-effects → Convex actions via `ctx.scheduler.runAfter(0, …)`:** email (Resend,
+  `src/lib/email.ts`) + notifications. Send sites: `notification-email-sender.ts`,
+  `notification-emails.ts`, `test-tag-reminders.ts`, `crew-communication.ts`, org/settings/
+  sso admin emails. Schedule from the committed mutation where the write is native; else
+  invoke the action after the DB commit (or defer to that domain's write inversion, noted).
+  **Idempotency:** actions retry — dedupe sends (already-sent flag / dedupe key).
+
+**Phase 7 — native search (no `searchIndex` in `convex/schema.ts` yet):**
+- Add `searchIndex` for asset tag/serial, project name, kit name, client name (+ heavy
+  pickers). Replace in-JS `.filter()` / whole-table `.collect()`+filter with
+  `withSearchIndex`. Candidate surfaces: `asset-table`, `model-table`, `asset-form`,
+  `bulk-asset-form`, `client-table`, `supplier-table`, `kit-form`, `add-service-dialog`,
+  warehouse `pick-prep-tab`, asset/model pickers. Additive; keep old path until cutover.
+
+**Conventions (unchanged):** Convex filenames camelCase, NO hyphens (broke prod once);
+`throw new ConvexError` never plain `Error`; `createIfMissing` for mirror writes;
+`pnpm exec convex dev --once` after editing `convex/*.ts`; deploy is async — poll
+`https://flow.rvlt.app` for 200/307. **Tier E (auth-in-Convex) stays out of scope.**
+
+---
+
 ### (superseded) 2026-07-02 status
 
 **Phase 4 COMPLETE + Phase 5 write-inversion COMPLETE.** The remaining work is the

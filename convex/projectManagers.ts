@@ -104,3 +104,44 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Apply a manager diff to a project in ONE atomic mutation — collapses the
+ * client's `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(
+ * removeProjectManager)])` fan-out (one round-trip per manager) into a single
+ * call. The server action computes the diff (it needs the current rows for
+ * member validation + audit logging anyway); this mutation just inserts the new
+ * rows (createIfMissing by cuid) and deletes the removed rows.
+ */
+export const applyDiff = mutation({
+  args: {
+    organizationId: v.string(),
+    projectId: v.string(),
+    add: v.array(v.object({ id: v.string(), userId: v.string(), addedAt: v.number() })),
+    removeIds: v.array(v.string()),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    for (const m of a.add) {
+      // Dedupe on (projectId, userId), not the fresh cuid, so two calls racing
+      // from the same starting state can't both insert the same manager (the
+      // by_cuid check would miss it — each generates a different id).
+      const existing = await ctx.db
+        .query("projectManagers")
+        .withIndex("by_projectId_userId", (q) => q.eq("projectId", a.projectId).eq("userId", m.userId))
+        .first();
+      if (existing) continue;
+      await ctx.db.insert("projectManagers", {
+        id: m.id,
+        organizationId: a.organizationId,
+        projectId: a.projectId,
+        userId: m.userId,
+        addedAt: m.addedAt,
+      });
+    }
+    for (const id of a.removeIds) {
+      const doc = await ctx.db.query("projectManagers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (doc) await ctx.db.delete(doc._id);
+    }
+  },
+});

@@ -18,7 +18,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
 import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
-import { addProjectManager, removeProjectManager } from "@/server/project-managers";
+import { setProjectManagers } from "@/server/project-managers";
 import { useClients } from "@/hooks/use-clients";
 import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -199,15 +199,19 @@ export function ProjectWizard({
         ? await updateProject(project.id, data)
         : await createProject({ ...data, isTemplate });
 
-      // Reconcile managers: only touch the delta — never blindly re-add (which
-      // would dupe) or blindly remove. In create mode initialManagerIds is [],
-      // so this reduces to "add all selected".
-      const toAdd = managerIds.filter((id) => !initialManagerIds.includes(id));
-      const toRemove = initialManagerIds.filter((id) => !managerIds.includes(id));
-      await Promise.all([
-        ...toAdd.map((userId) => addProjectManager(result.id, userId)),
-        ...toRemove.map((userId) => removeProjectManager(result.id, userId)),
-      ]);
+      // Reconcile managers to the full selected set in one call — the server
+      // diffs against the current rows (create mode = add all; edit mode = add
+      // /remove only the delta). Was a Promise.all fan-out of one round-trip per
+      // changed manager. Only call when the set actually changed: setProjectManagers
+      // needs project:manage, and an unchanged save must stay a pure
+      // create/update (a non-owner without manage permission would otherwise fail
+      // on a manager no-op).
+      const managersChanged =
+        managerIds.length !== initialManagerIds.length ||
+        managerIds.some((id) => !initialManagerIds.includes(id));
+      if (managersChanged) {
+        await setProjectManagers(result.id, managerIds);
+      }
       return result;
     },
     onSuccess: (result) => {

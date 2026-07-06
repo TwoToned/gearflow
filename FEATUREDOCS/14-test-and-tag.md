@@ -173,3 +173,15 @@ Models can set:
   equipment-class / appliance-type registry `Select`s via `Controller` (explicit
   `SelectValue` children, label fallbacks) instead of `form.watch()`/`setValue` in
   render. Behaviour unchanged.
+
+## Reminder digests & scheduler (Phase 6a)
+
+- `sendTestTagReminderDigests()` + `recalculateAllTestTagStatuses()` in
+  `src/server/test-tag-reminders.ts` recompute asset statuses (CURRENT/DUE_SOON/
+  OVERDUE from `nextDueDate`) then email a per-org digest to admins/owners.
+- Executor route: `POST /api/cron/test-tag-reminders` (also GET), `Bearer ${CRON_SECRET}`.
+- **Scheduler: `convex/crons.ts`** — Convex owns the durable daily schedule;
+  `internal.scheduledJobs.runTestTagReminders` invokes the route once/day (22:00 UTC
+  ≈ 08:00 AEST). Executor stays in Next because it reads org/member/user (Postgres/
+  Better Auth). **Dormant until `ENABLE_CONVEX_CRONS=true`** on the Convex deployment
+  (+ `CONVEX_CRON_TARGET_URL` + `CRON_SECRET`); until then the external cron triggers it.

@@ -4,6 +4,11 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.8.1] - 2026-07-07
+
+### Fixed
+- Tall pop-ups and forms now scroll instead of running off the screen. Any dialog or side sheet whose content is taller than the window now caps at the viewport height and scrolls inside itself, so you no longer have to zoom out to reach the buttons at the bottom. Uses dynamic viewport height so mobile browser bars don't clip the modal.
+
 ## [0.19.8.0] - 2026-07-04
 
 ### Fixed

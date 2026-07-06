@@ -63,7 +63,6 @@ export const prepItems = mutation({
       v.object({
         lineItemId: v.string(),
         assetId: v.optional(v.string()),
-        bulkAssetId: v.optional(v.string()),
         quantity: v.optional(v.number()),
         prepContainer: v.optional(v.union(v.string(), v.null())),
         includeAccessoryIds: v.optional(v.array(v.string())),
@@ -83,7 +82,10 @@ export const prepItems = mutation({
         organizationId: a.organizationId,
         lineItemId: item.lineItemId,
         assetId: item.assetId ?? null,
-        bulkAssetId: item.assetId ? null : (item.bulkAssetId ?? line.bulkAssetId ?? null),
+        // Bulk asset is ALWAYS derived from the line (never client-supplied), so
+        // a crafted request can't prep a line against an arbitrary bulk asset —
+        // matching prepItemDirect, which likewise passes only line.bulkAssetId.
+        bulkAssetId: item.assetId ? null : (line.bulkAssetId ?? null),
         quantity: item.quantity,
         prepContainer: item.prepContainer ?? undefined,
         includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,

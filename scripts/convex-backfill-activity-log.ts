@@ -16,9 +16,14 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../convex/_generated/api";
 
 const BATCH = 500;
+// Process each batch with bounded concurrency. Two reasons: (1) speed — thousands of
+// sequential HTTP round-trips to Convex Cloud take far too long; (2) the service token
+// has a 5-min TTL, and `getConvexClient()` only re-mints it WHEN CALLED, so we must
+// re-fetch the client per mutation (cheap — cached until ~30s before expiry) rather
+// than hold one client for the whole run (which expires mid-run).
+const CONCURRENCY = 15;
 
 async function main() {
-  const convex = await getConvexClient();
   const total = await prisma.activityLog.count();
   console.log(`Found ${total} activityLog rows in Prisma.`);
 
@@ -36,27 +41,34 @@ async function main() {
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1].id;
 
-    for (const r of rows) {
-      const res = await convex.mutation(api.activityLogWrites.record, {
-        id: r.id,
-        organizationId: r.organizationId,
-        action: r.action,
-        entityType: r.entityType,
-        entityId: r.entityId,
-        entityName: r.entityName,
-        userId: r.userId ?? undefined,
-        userName: r.userName,
-        summary: r.summary,
-        details: r.details ?? undefined,
-        metadata: r.metadata ?? undefined,
-        projectId: r.projectId ?? undefined,
-        assetId: r.assetId ?? undefined,
-        kitId: r.kitId ?? undefined,
-        createdAt: r.createdAt.getTime(),
-      });
-      if (res.created) created++;
-      else skipped++;
+    let idx = 0;
+    async function worker() {
+      while (idx < rows.length) {
+        const r = rows[idx++];
+        // Re-fetch per mutation so a long run keeps a fresh (auto-refreshed) token.
+        const convex = await getConvexClient();
+        const res = await convex.mutation(api.activityLogWrites.record, {
+          id: r.id,
+          organizationId: r.organizationId,
+          action: r.action,
+          entityType: r.entityType,
+          entityId: r.entityId,
+          entityName: r.entityName,
+          userId: r.userId ?? undefined,
+          userName: r.userName,
+          summary: r.summary,
+          details: r.details ?? undefined,
+          metadata: r.metadata ?? undefined,
+          projectId: r.projectId ?? undefined,
+          assetId: r.assetId ?? undefined,
+          kitId: r.kitId ?? undefined,
+          createdAt: r.createdAt.getTime(),
+        });
+        if (res.created) created++;
+        else skipped++;
+      }
     }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     console.log(`  …processed ${created + skipped}/${total}`);
   }
 

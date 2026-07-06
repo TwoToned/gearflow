@@ -22,6 +22,7 @@ import {
   paginate,
   getAssetById,
   getAssetByAssetTag,
+  getAssetsByIds,
   getBulkAssetById,
   mapConvexAssetToPrisma,
 } from "@/lib/assets-read";
@@ -548,50 +549,54 @@ export async function createAssets(
   try {
     const convex = await getConvexClient();
     const now = Date.now();
-    const createdRows = [];
-    for (const { tag, serialNumber } of assets) {
-      // DUP GUARD per tag (no Convex unique index).
-      const dup = await getAssetByAssetTag(organizationId, tag);
-      if (dup) {
-        throw new UserFacingError({
-          code: "DUPLICATE_ASSET_TAG",
-          title: "Duplicate asset tag",
-          message: `Asset tag "${tag}" already exists.`,
-          hint: "Use a different asset tag.",
-        });
-      }
-      const newId = createId();
-      await convex.mutation(api.assets.create, {
-        id: newId,
-        organizationId,
-        modelId: parsed.modelId,
-        assetTag: tag,
-        serialNumber: serialNumber || parsed.serialNumber || undefined,
-        customName: parsed.customName || undefined,
-        status: parsed.status,
-        condition: parsed.condition,
-        purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
-        purchasePrice: parsed.purchasePrice != null ? Number(parsed.purchasePrice) : undefined,
-        purchaseSupplier: parsed.purchaseSupplier || undefined,
-        supplierId: parsed.supplierId || undefined,
-        warrantyExpiry: parsed.warrantyExpiry ? new Date(parsed.warrantyExpiry).getTime() : undefined,
-        notes: parsed.notes || undefined,
-        locationId: parsed.locationId || undefined,
-        customFieldValues,
-        barcode: parsed.barcode || tag,
-        qrCode: tag,
-        images: parsed.images || undefined,
-        isActive: parsed.isActive,
-        tags: parsed.tags || undefined,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const created = await getAssetById(newId);
-      if (!created) throw new Error("Asset create read-back failed: " + newId);
-      createdRows.push(mapConvexAssetToPrisma(created));
-    }
-    results = createdRows;
+    // Build every asset payload in-memory, then insert them all in ONE atomic
+    // mutation (with an in-transaction dup-tag guard) + ONE batched read-back —
+    // was 3 sequential round-trips per asset (dup-guard read + create + read-back).
+    const payloads = assets.map(({ tag, serialNumber }) => ({
+      id: createId(),
+      organizationId,
+      modelId: parsed.modelId,
+      assetTag: tag,
+      serialNumber: serialNumber || parsed.serialNumber || undefined,
+      customName: parsed.customName || undefined,
+      status: parsed.status,
+      condition: parsed.condition,
+      purchaseDate: parsed.purchaseDate ? new Date(parsed.purchaseDate).getTime() : undefined,
+      purchasePrice: parsed.purchasePrice != null ? Number(parsed.purchasePrice) : undefined,
+      purchaseSupplier: parsed.purchaseSupplier || undefined,
+      supplierId: parsed.supplierId || undefined,
+      warrantyExpiry: parsed.warrantyExpiry ? new Date(parsed.warrantyExpiry).getTime() : undefined,
+      notes: parsed.notes || undefined,
+      locationId: parsed.locationId || undefined,
+      customFieldValues,
+      barcode: parsed.barcode || tag,
+      qrCode: tag,
+      images: parsed.images || undefined,
+      isActive: parsed.isActive,
+      tags: parsed.tags || undefined,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    const { ids } = await convex.mutation(api.assets.createMany, { assets: payloads });
+    const createdDocs = await getAssetsByIds(organizationId, ids);
+    const byId = new Map(createdDocs.map((d) => [d.id, d]));
+    // Preserve input order (getAssetsByIds may reorder).
+    results = ids.map((id) => {
+      const doc = byId.get(id);
+      if (!doc) throw new Error("Asset create read-back failed: " + id);
+      return mapConvexAssetToPrisma(doc);
+    });
   } catch (e: unknown) {
+    // The batch mutation throws a structured ConvexError on a duplicate tag.
+    const data = (e as { data?: { code?: string; tag?: string } })?.data;
+    if (data?.code === "DUPLICATE_ASSET_TAG") {
+      throw new UserFacingError({
+        code: "DUPLICATE_ASSET_TAG",
+        title: "Duplicate asset tag",
+        message: `Asset tag "${data.tag}" already exists.`,
+        hint: "Use a different asset tag.",
+      });
+    }
     const translated = translatePrismaError(e);
     if (translated) throw translated;
     throw e;
@@ -608,41 +613,47 @@ export async function createAssets(
       : (orgTT.defaultIntervalMonths || 3);
     const convexForTT = await getConvexClient();
     const ttNow = Date.now();
-    for (const asset of results) {
-      await convexForTT.mutation(api.testTagAssets.createIfMissing, {
-        id: createId(),
-        organizationId,
-        testTagId: asset.assetTag,
-        description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${asset.assetTag})`,
-        equipmentClass: (model.defaultEquipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
-        applianceType: (model.defaultApplianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
-        ...(model.manufacturer && { make: model.manufacturer }),
-        ...(model.modelNumber && { modelName: model.modelNumber }),
-        ...(asset.serialNumber && { serialNumber: asset.serialNumber }),
-        testIntervalMonths: intervalMonths,
-        status: "NOT_YET_TESTED",
-        assetId: asset.id,
-        isActive: true,
-        createdAt: ttNow,
-        updatedAt: ttNow,
-      });
-    }
+    // Independent T&T rows — register them concurrently (was sequential).
+    await Promise.all(
+      results.map((asset) =>
+        convexForTT.mutation(api.testTagAssets.createIfMissing, {
+          id: createId(),
+          organizationId,
+          testTagId: asset.assetTag,
+          description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${asset.assetTag})`,
+          equipmentClass: (model.defaultEquipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
+          applianceType: (model.defaultApplianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
+          ...(model.manufacturer && { make: model.manufacturer }),
+          ...(model.modelNumber && { modelName: model.modelNumber }),
+          ...(asset.serialNumber && { serialNumber: asset.serialNumber }),
+          testIntervalMonths: intervalMonths,
+          status: "NOT_YET_TESTED",
+          assetId: asset.id,
+          isActive: true,
+          createdAt: ttNow,
+          updatedAt: ttNow,
+        }),
+      ),
+    );
   }
 
-  for (const result of results) {
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "asset",
-      entityId: result.id,
-      entityName: result.assetTag,
-      summary: `Created asset ${result.assetTag}`,
-      details: { created: { assetTag: result.assetTag, modelId: parsed.modelId } },
-      assetId: result.id,
-    });
-  }
+  // One audit entry per created asset — write them concurrently (was sequential).
+  await Promise.all(
+    results.map((result) =>
+      logActivity({
+        organizationId,
+        userId,
+        userName,
+        action: "CREATE",
+        entityType: "asset",
+        entityId: result.id,
+        entityName: result.assetTag,
+        summary: `Created asset ${result.assetTag}`,
+        details: { created: { assetTag: result.assetTag, modelId: parsed.modelId } },
+        assetId: result.id,
+      }),
+    ),
+  );
 
   return serialize(results);
 }

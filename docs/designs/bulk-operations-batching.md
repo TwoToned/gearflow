@@ -1,8 +1,9 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete. **Wave 1a (prep #1–4) shipped** — `prepItemsBatch` +
-Convex `checkRecordOps.prepItems`, all 4 warehouse prep loops rewired, parity test
-green. Created 2026-07-06.
+**Status:** audit complete; **all Class 1 + Class 2 waves shipped** (prep, deprep,
+project managers, crew time, kits, project duplicate/template, sub-hires, bulk
+asset create, model rate/T&T + reorder, and the Class 2 mirror-loop cascades) plus
+the read-side asset-picker availability fix. Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -70,7 +71,7 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 | 2 | ✅ warehouse page — `for (const bi of bulkNoCheckItems)` nested `for (let i=0;i<bi.quantity` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", bulk items × qty | **HIGH** (10×5=50 calls) | ✅ client-expanded qty into `prepItemsBatch` (merged with #3 into one call) |
 | 3 | ✅ warehouse page — `for (const item of readyItems)`/`readyNoCheckItems` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", serialized | HIGH | ✅ `prepItemsBatch` |
 | 4 | ✅ warehouse page — asset-picker confirm IIFE `for (... of withoutChecks) await prepItemDirect` | `prepItemDirect` | asset-picker confirm | MED | ✅ `prepItemsBatch` |
-| 5 | warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | new `deprepItemsBatch(projectId, items[])` |
+| 5 | ✅ warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | ✅ `deprepItemsBatch(projectId, ops[])` (item + kit ops) |
 | 6 | warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | new `checkOutKitsBatch` |
 | 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |
 | 8 | `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | new `setProjectManagers(projectId, userIds[])` (diff server-side) |

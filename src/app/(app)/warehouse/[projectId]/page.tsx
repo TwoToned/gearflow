@@ -111,8 +111,8 @@ import {
   prepItemDirect,
   prepItemsBatch,
   getAssetAccessories,
-  deprepItem,
   deprepKit,
+  deprepItemsBatch,
   prepKitChildren,
   completeCheckAndPack,
   completeCheckAndFlag,
@@ -766,14 +766,13 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
+  // Batched deprep — reverse prep for every selected item + kit in one call.
+  // (Drives the deprep buttons' pending state via `.isPending`.)
   const deprepMutation = useServerMutation({
-    mutationFn: (args: string | { lineItemId: string; quantity?: number }) => {
-      const lineItemId = typeof args === "string" ? args : args.lineItemId;
-      const quantity = typeof args === "string" ? 1 : args.quantity;
-      return deprepItem(projectId, lineItemId, quantity);
-    },
-    onSuccess: () => {
-      toast.success("Item removed from prep");
+    mutationFn: (ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }>) =>
+      deprepItemsBatch(projectId, ops),
+    onSuccess: (_res, ops) => {
+      toast.success(`Removed ${ops.length} from prep`);
       invalidate();
     },
     onError: (e) => showError(e),
@@ -2028,20 +2027,17 @@ function WarehouseProjectPage({
       }
     }
 
-    // Fire direct deprep for items without checks
-    for (const d of directDeprep) {
-      if (d.isKit) {
-        deprepKit(projectId, d.lineItemId)
-          .then(() => {
-            toast.success("Kit removed from prep");
-            invalidate();
-          })
-          .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
-      } else if (d.quantity) {
-        deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
-      } else {
-        deprepMutation.mutate(d.lineItemId);
-      }
+    // Fire direct deprep for items + kits without checks in one batch call
+    // (was one round-trip per selected item/kit). Ops keep their array order so
+    // any shared-lineItemId sequencing is preserved server-side.
+    if (directDeprep.length > 0) {
+      deprepMutation.mutate(
+        directDeprep.map((d) => ({
+          lineItemId: d.lineItemId,
+          quantity: d.quantity,
+          isKit: d.isKit,
+        })),
+      );
     }
 
     // Start check queue for items that need it

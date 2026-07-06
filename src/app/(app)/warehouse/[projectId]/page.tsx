@@ -33,6 +33,8 @@ import {
   checkInItems,
   checkOutKit,
   checkInKit,
+  checkOutKitsBatch,
+  checkInKitsBatch,
   undeployItems,
   unreturnItems,
   undeprepLine,
@@ -763,6 +765,28 @@ function WarehouseProjectPage({
     mutationFn: (data: { kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) =>
       checkInKit(projectId, data.kitId, data.returnCondition),
     onSuccess: () => invalidate(),
+    onError: (e) => showError(e),
+  });
+
+  // Bulk kit deploy/return — one round-trip for all selected kits (was one
+  // checkOutKit/checkInKit per kit). Per-kit errors come back from the server.
+  type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string }[] };
+  const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
+    mutationFn: (kitIds: string[]) => checkOutKitsBatch(projectId, kitIds),
+    onSuccess: (res) => {
+      if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
+      invalidate();
+    },
+    onError: (e) => showError(e),
+  });
+  const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
+    mutationFn: (kits) => checkInKitsBatch(projectId, kits),
+    onSuccess: (res) => {
+      if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
+      invalidate();
+    },
     onError: (e) => showError(e),
   });
 
@@ -1917,12 +1941,12 @@ function WarehouseProjectPage({
       }
     }
 
-    // Deploy kits directly
-    for (const kitItemId of kitLineItemIds) {
-      const li = lineItems.find((l) => l.id === kitItemId);
-      if (li?.kitId) {
-        kitCheckOutMutation.mutate(li.kitId);
-      }
+    // Deploy kits directly — one batch call for all selected kits.
+    const kitIdsToDeploy = kitLineItemIds
+      .map((kitItemId) => lineItems.find((l) => l.id === kitItemId)?.kitId)
+      .filter((id): id is string => !!id);
+    if (kitIdsToDeploy.length > 0) {
+      kitBatchOutMutation.mutate(kitIdsToDeploy);
     }
 
     if (serializedLineItemIds.length === 0 && bulkQtyMap.size === 0) return;
@@ -2173,7 +2197,10 @@ function WarehouseProjectPage({
       }
     }
 
-    // Return kits (including prep-kits) — check verification first
+    // Return kits (including prep-kits) — check verification first. Kits that
+    // pass the gates (verified + no check flow) are collected and returned in
+    // one batch call after the loop; gated kits stay on their interactive paths.
+    const readyKitReturns: Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }> = [];
     for (const kitId of kitIds) {
       const kitLi = lineItems.find((l) => l.kitId === kitId && !l.isKitChild);
       if (kitLi) {
@@ -2198,8 +2225,11 @@ function WarehouseProjectPage({
       const rc = returnCondition as "GOOD" | "DAMAGED" | "MISSING";
       const started = kitLiForCheck ? startKitCheckFlow(kitId, kitLiForCheck, "RETURN", rc) : false;
       if (!started) {
-        kitCheckInMutation.mutate({ kitId, returnCondition: rc });
+        readyKitReturns.push({ kitId, returnCondition: rc });
       }
+    }
+    if (readyKitReturns.length > 0) {
+      kitBatchInMutation.mutate(readyKitReturns);
     }
 
     // Return non-kit items

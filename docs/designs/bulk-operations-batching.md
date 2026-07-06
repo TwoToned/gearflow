@@ -1,6 +1,10 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete, fixes not started. Created 2026-07-06.
+**Status:** audit complete. **Wave 2 #6–7 (bulk kit deploy/return) shipped** —
+`checkOutKitsBatch` / `checkInKitsBatch` (loop the existing atomic warehouseOps
+kit mutations with per-kit error isolation), both warehouse bulk-kit loops
+rewired (return keeps its interactive verification/check-flow gates), parity test
+green. Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -69,8 +73,8 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 | 3 | warehouse page — `for (const item of readyItems)`/`readyNoCheckItems` → `prepItemDirect` | `prepItemDirect` | "Prep Selected", serialized | HIGH | route to `prepItemsBatch` |
 | 4 | warehouse page — asset-picker confirm IIFE `for (... of withoutChecks) await prepItemDirect` | `prepItemDirect` | asset-picker confirm | MED | route to `prepItemsBatch` |
 | 5 | warehouse page — deprep handler loop → `deprepItem` / `deprepKit` | `deprepItem`,`deprepKit` | "Deprep" selected (unbounded) | HIGH | new `deprepItemsBatch(projectId, items[])` |
-| 6 | warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | new `checkOutKitsBatch` |
-| 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |
+| 6 | ✅ warehouse page — `for (const kitItemId of kitLineItemIds)` → `checkOutKit` | `checkOutKit` | bulk-deploy kits | MED | ✅ `checkOutKitsBatch` |
+| 7 | ✅ warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | ✅ `checkInKitsBatch` (only the gate-passing kits; verification/check-flow kits stay interactive) |
 | 8 | `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | new `setProjectManagers(projectId, userIds[])` (diff server-side) |
 | 9 | `src/components/projects/project-form.tsx` — same manager add/remove fan-out | `addProjectManager`/`removeProjectManager` | manager selection delta on edit | HIGH | reuse `setProjectManagers` |
 | 10 | `src/components/projects/equipment-tab.tsx` — multi-select move, `Promise.all(...map(moveLineItemToGroup))` | `moveLineItemToGroup` | drag N selected line items to a group | HIGH | new `moveLineItemsToGroup(moves[])` |

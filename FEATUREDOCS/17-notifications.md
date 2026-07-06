@@ -25,7 +25,8 @@
 - Settings page: `/account/notifications`.
 - Templates: `src/lib/notification-emails.ts` — one factory per type returning `{ subject, html }`.
 - Orchestrator: `sendNotificationEmails()` in `src/server/notification-email-sender.ts`. Iterates orgs, fans out to active (non-banned) members of each org, checks the per-type pref flag, dedupes via `NotificationEmailLog`, sends through `sendEmail()`.
-- Cron endpoint: `POST /api/cron/notifications` (also accepts GET for Vercel Cron). Auth: `Bearer ${CRON_SECRET}`. Recommended cadence: every 15 min — the dedupe log makes over-firing safe.
+- Cron endpoint: `POST /api/cron/notifications` (also accepts GET for Vercel Cron). Auth: `Bearer ${CRON_SECRET}`. Cadence: every 15 min — the dedupe log makes over-firing safe.
+- **Scheduler (Phase 6a): `convex/crons.ts`.** Convex owns the durable schedule; `internal.scheduledJobs.runNotificationEmails` (a Convex internalAction) invokes the route above on a 15-minute interval. The executor logic stays in the Next route because it fans out to org/member/user rows whose source of truth is Postgres/Better Auth (the Convex mirrors are not verified-complete in prod). **Dormant until `ENABLE_CONVEX_CRONS=true`** on the Convex deployment (plus `CONVEX_CRON_TARGET_URL` + `CRON_SECRET`); until then the external cron remains the trigger. See `convex/scheduledJobs.ts` for the full rationale and the deferred route-removal note.
 - `pending_invitation` notifications are intentionally NOT re-emailed by the cron (Better Auth's organization plugin already emails the invite link on creation). The flag exists for consistency in the bell-dropdown view.
 - Day-bucketed aggregate keys (e.g. `crew-pending-offers:2026-05-14`) ensure aggregate notifications email at most once per day.
 

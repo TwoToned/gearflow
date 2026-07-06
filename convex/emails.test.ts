@@ -4,6 +4,15 @@ import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 
+// The delivery action constructs `new Resend(apiKey)` only when RESEND_API_KEY is
+// set; this mock makes that send fail so the retry path is exercised. Tests that
+// want the mock (no-key) path simply leave RESEND_API_KEY unset.
+vi.mock("resend", () => ({
+  Resend: vi.fn().mockImplementation(() => ({
+    emails: { send: vi.fn(async () => ({ data: null, error: { message: "boom" } })) },
+  })),
+}));
+
 const modules = import.meta.glob("./**/*.ts");
 
 const SERVICE = { subject: "gearflow-service", svc: true };
@@ -16,6 +25,17 @@ const args = {
   subject: "You have a crew offer",
   html: "<p>hi</p>",
 };
+
+function ledgerRows(t: ReturnType<typeof convexTest>, key: string) {
+  // Full-scan + JS filter (test data is tiny). Avoids `.withIndex` here, which
+  // trips a TS instantiation-depth quirk in convex-test's `t.run` ctx typing for
+  // a freshly-added table on this large schema (the same index works fine in the
+  // production query in emails.ts).
+  return t.run(async (ctx) => {
+    const rows = await ctx.db.query("sentEmails").collect();
+    return rows.filter((r) => r.idempotencyKey === key);
+  });
+}
 
 describe("emails.enqueue — auth + scheduling", () => {
   test("requires the service token (a user token is rejected)", async () => {
@@ -33,7 +53,6 @@ describe("emails.enqueue — auth + scheduling", () => {
 
   test("does not re-schedule when the key has already been delivered", async () => {
     const t = convexTest(schema, modules);
-    // Simulate a prior successful send by seeding the ledger row.
     await t.run(async (ctx) => {
       await ctx.db.insert("sentEmails", {
         idempotencyKey: args.idempotencyKey,
@@ -54,73 +73,33 @@ describe("emails.enqueue — auth + scheduling", () => {
   });
 });
 
-describe("emails.claim / release — idempotency ledger", () => {
-  test("first claim wins; a concurrent claim of the same key is rejected", async () => {
+describe("emails.isSent / markSent — delivered ledger", () => {
+  test("isSent flips false → true and markSent is idempotent", async () => {
     const t = convexTest(schema, modules);
-    const first = await t.mutation(internal.emails.claim, {
+    expect(await t.query(internal.emails.isSent, { idempotencyKey: "k1" })).toBe(false);
+
+    await t.mutation(internal.emails.markSent, {
       idempotencyKey: "k1",
       to: args.to,
       subject: args.subject,
       now: NOW,
     });
-    expect(first).toEqual({ claimed: true });
+    expect(await t.query(internal.emails.isSent, { idempotencyKey: "k1" })).toBe(true);
 
-    const second = await t.mutation(internal.emails.claim, {
+    // A duplicate markSent leaves exactly one row (does not overwrite sentAt).
+    await t.mutation(internal.emails.markSent, {
       idempotencyKey: "k1",
       to: args.to,
       subject: args.subject,
-      now: NOW + 1,
+      now: NOW + 999,
     });
-    expect(second).toEqual({ claimed: false });
-
-    // Exactly one ledger row exists for the key.
-    const rows = await t.run(async (ctx) =>
-      ctx.db
-        .query("sentEmails")
-        .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", "k1"))
-        .collect(),
-    );
+    const rows = await ledgerRows(t, "k1");
     expect(rows).toHaveLength(1);
     expect(rows[0].sentAt).toBe(NOW);
   });
-
-  test("release deletes the claim so a later attempt can re-claim (re-send)", async () => {
-    const t = convexTest(schema, modules);
-    await t.mutation(internal.emails.claim, {
-      idempotencyKey: "k2",
-      to: args.to,
-      subject: args.subject,
-      now: NOW,
-    });
-    await t.mutation(internal.emails.release, { idempotencyKey: "k2" });
-
-    const rows = await t.run(async (ctx) =>
-      ctx.db
-        .query("sentEmails")
-        .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", "k2"))
-        .collect(),
-    );
-    expect(rows).toHaveLength(0);
-
-    // Re-claim now succeeds.
-    const reclaim = await t.mutation(internal.emails.claim, {
-      idempotencyKey: "k2",
-      to: args.to,
-      subject: args.subject,
-      now: NOW + 5,
-    });
-    expect(reclaim).toEqual({ claimed: true });
-  });
-
-  test("release is a no-op on an unknown key", async () => {
-    const t = convexTest(schema, modules);
-    await expect(
-      t.mutation(internal.emails.release, { idempotencyKey: "nope" }),
-    ).resolves.toBeNull();
-  });
 });
 
-describe("emailActions.deliver — dedupe + mock delivery", () => {
+describe("emailActions.deliver — mock delivery + dedupe", () => {
   const savedKey = process.env.RESEND_API_KEY;
   beforeEach(() => {
     delete process.env.RESEND_API_KEY; // force the mock path (no external send)
@@ -128,43 +107,52 @@ describe("emailActions.deliver — dedupe + mock delivery", () => {
   afterEach(() => {
     if (savedKey === undefined) delete process.env.RESEND_API_KEY;
     else process.env.RESEND_API_KEY = savedKey;
-    vi.restoreAllMocks();
   });
 
-  test("claims then mock-delivers when no RESEND_API_KEY is set, keeping the claim", async () => {
+  test("mock-delivers when no RESEND_API_KEY, records the ledger, and later re-delivery skips", async () => {
     const t = convexTest(schema, modules);
-    const res = await t.action(internal.emailActions.deliver, {
-      idempotencyKey: "k3",
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-    });
+    const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k2", attempt: 1 });
     expect(res).toEqual({ mock: true });
+    expect(await ledgerRows(t, "k2")).toHaveLength(1);
 
-    // The claim is retained (mock "succeeds"), so a re-delivery skips.
-    const again = await t.action(internal.emailActions.deliver, {
-      idempotencyKey: "k3",
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-    });
+    const again = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k2", attempt: 1 });
     expect(again).toEqual({ skipped: true });
   });
 
-  test("skips delivery for an already-claimed key", async () => {
+  test("skips delivery for an already-delivered key", async () => {
     const t = convexTest(schema, modules);
-    await t.mutation(internal.emails.claim, {
-      idempotencyKey: "k4",
+    await t.mutation(internal.emails.markSent, {
+      idempotencyKey: "k3",
       to: args.to,
       subject: args.subject,
       now: NOW,
     });
-    const res = await t.action(internal.emailActions.deliver, {
-      idempotencyKey: "k4",
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-    });
+    const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k3", attempt: 1 });
     expect(res).toEqual({ skipped: true });
+  });
+});
+
+describe("emailActions.deliver — bounded retry on failure", () => {
+  const savedKey = process.env.RESEND_API_KEY;
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "re_realish_key"; // trigger the (mocked, failing) Resend send
+  });
+  afterEach(() => {
+    if (savedKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = savedKey;
+  });
+
+  test("reschedules with an incremented attempt and writes no ledger row", async () => {
+    const t = convexTest(schema, modules);
+    const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k4", attempt: 1 });
+    expect(res).toEqual({ retrying: true, attempt: 2 });
+    expect(await ledgerRows(t, "k4")).toHaveLength(0); // NOT marked sent — will retry
+  });
+
+  test("gives up (failed, no ledger row) after the final attempt", async () => {
+    const t = convexTest(schema, modules);
+    const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k5", attempt: 3 });
+    expect(res).toEqual({ failed: true, attempt: 3 });
+    expect(await ledgerRows(t, "k5")).toHaveLength(0);
   });
 });

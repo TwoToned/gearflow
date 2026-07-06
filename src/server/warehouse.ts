@@ -592,6 +592,73 @@ export async function checkInKit(
   return serialize({ success: true, ...res });
 }
 
+/**
+ * Bulk-deploy many kits in ONE server round-trip. Replaces the warehouse
+ * "Deploy Selected" loop that fired one checkOutKit round-trip per kit. The
+ * project-wide blocking-comment gate is checked once; each kit's atomic checkout
+ * mutation runs in its own transaction with per-kit error isolation (one kit's
+ * T&T preflight failure doesn't sink the rest — matching the old independent
+ * per-kit mutations). Returns succeeded kit ids + per-kit errors.
+ */
+export async function checkOutKitsBatch(projectId: string, kitIds: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const unique = [...new Set(kitIds)];
+  if (unique.length === 0) return serialize({ succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] });
+
+  // Project-wide blocker gate (kit checkout has no line scope) — check once.
+  await assertNoBlockingComments(organizationId, projectId, { actionLabel: "check out this kit" });
+
+  const convex = await getConvexClient();
+  const now = Date.now();
+  const succeeded: string[] = [];
+  const errors: { kitId: string; message: string }[] = [];
+  for (const kitId of unique) {
+    try {
+      await convex.mutation(api.warehouseOps.checkoutKit, { organizationId, projectId, userId, kitId, now });
+      succeeded.push(kitId);
+      await logActivity({
+        organizationId, userId, userName, action: "CHECK_OUT", entityType: "kit",
+        entityId: kitId, entityName: `Kit ${kitId}`, summary: "Checked out kit with all contents", projectId, kitId,
+      });
+    } catch (e) {
+      errors.push({ kitId, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return serialize({ succeeded, errors });
+}
+
+/**
+ * Bulk-return many kits in ONE server round-trip. Replaces the warehouse
+ * "Return Selected" loop that fired one checkInKit round-trip per kit (for the
+ * kits that pass the interactive verification/check-flow gates). Each kit's
+ * atomic check-in runs in its own transaction with per-kit error isolation.
+ */
+export async function checkInKitsBatch(
+  projectId: string,
+  kits: Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>,
+) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+  if (kits.length === 0) return serialize({ succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] });
+
+  const convex = await getConvexClient();
+  const now = Date.now();
+  const succeeded: string[] = [];
+  const errors: { kitId: string; message: string }[] = [];
+  for (const { kitId, returnCondition } of kits) {
+    try {
+      await convex.mutation(api.warehouseOps.checkinKit, { organizationId, projectId, userId, kitId, returnCondition, now });
+      succeeded.push(kitId);
+      await logActivity({
+        organizationId, userId, userName, action: "CHECK_IN", entityType: "kit",
+        entityId: kitId, entityName: `Kit ${kitId}`, summary: `Checked in kit (condition: ${returnCondition})`, projectId, kitId,
+      });
+    } catch (e) {
+      errors.push({ kitId, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return serialize({ succeeded, errors });
+}
+
 export async function getScanLog(params?: {
   projectId?: string;
   assetId?: string;

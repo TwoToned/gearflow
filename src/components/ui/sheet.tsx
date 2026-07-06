@@ -31,7 +31,7 @@ SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
   cn(
-    "fixed z-50 flex flex-col gap-4 p-6",
+    "fixed z-50 flex flex-col gap-4 p-6 overflow-y-auto overscroll-contain",
     "bg-elev text-ink border-2 border-border shadow-[var(--sh-card),var(--lit)]",
     "transition ease-in-out duration-300",
     "data-[state=open]:animate-in data-[state=closed]:animate-out",
@@ -40,8 +40,8 @@ const sheetVariants = cva(
   {
     variants: {
       side: {
-        top: "inset-x-0 top-0 rounded-b-[var(--radius)] border-t-0 border-b-border data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
-        bottom: "inset-x-0 bottom-0 rounded-t-[var(--radius)] border-b-0 border-t-border data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+        top: "inset-x-0 top-0 max-h-[calc(100dvh-2rem)] rounded-b-[var(--radius)] border-t-0 border-b-border data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+        bottom: "inset-x-0 bottom-0 max-h-[calc(100dvh-2rem)] rounded-t-[var(--radius)] border-b-0 border-t-border data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
         left: "inset-y-0 left-0 h-full w-3/4 max-w-sm rounded-r-[var(--radius)] border-l-0 border-r-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
         right: "inset-y-0 right-0 h-full w-3/4 max-w-sm rounded-l-[var(--radius)] border-r-0 border-l-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
       },

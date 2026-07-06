@@ -202,8 +202,16 @@ export function ProjectWizard({
       // Reconcile managers to the full selected set in one call — the server
       // diffs against the current rows (create mode = add all; edit mode = add
       // /remove only the delta). Was a Promise.all fan-out of one round-trip per
-      // changed manager.
-      await setProjectManagers(result.id, managerIds);
+      // changed manager. Only call when the set actually changed: setProjectManagers
+      // needs project:manage, and an unchanged save must stay a pure
+      // create/update (a non-owner without manage permission would otherwise fail
+      // on a manager no-op).
+      const managersChanged =
+        managerIds.length !== initialManagerIds.length ||
+        managerIds.some((id) => !initialManagerIds.includes(id));
+      if (managersChanged) {
+        await setProjectManagers(result.id, managerIds);
+      }
       return result;
     },
     onSuccess: (result) => {

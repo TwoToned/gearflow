@@ -123,7 +123,13 @@ export const applyDiff = mutation({
   handler: async (ctx, a) => {
     await requireService(ctx);
     for (const m of a.add) {
-      const existing = await ctx.db.query("projectManagers").withIndex("by_cuid", (q) => q.eq("id", m.id)).unique();
+      // Dedupe on (projectId, userId), not the fresh cuid, so two calls racing
+      // from the same starting state can't both insert the same manager (the
+      // by_cuid check would miss it — each generates a different id).
+      const existing = await ctx.db
+        .query("projectManagers")
+        .withIndex("by_projectId_userId", (q) => q.eq("projectId", a.projectId).eq("userId", m.userId))
+        .first();
       if (existing) continue;
       await ctx.db.insert("projectManagers", {
         id: m.id,

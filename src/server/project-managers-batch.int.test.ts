@@ -114,6 +114,37 @@ describe("setProjectManagers — parity with the add/remove fan-out", () => {
     expect(rows[0].userId).toBe(u1.id);
   });
 
+  it("applyDiff dedupes on (projectId, userId), not the cuid (double-submit safe)", async () => {
+    // Simulates two saves racing from the same empty starting state: each
+    // computes toAdd=[u1] and mints a DIFFERENT cuid. A by_cuid guard would let
+    // both survive; the by_projectId_userId guard collapses them to one row.
+    const org = await createOrgFixture();
+    const actor = await createUserFixture(org.id, "owner");
+    const u1 = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: actor.id, userName: "Tester" };
+
+    const project = await createProjectFixture(org.id);
+    const convex = await getConvexClient();
+    await convex.mutation(api.projectManagers.applyDiff, {
+      organizationId: org.id,
+      projectId: project.id,
+      add: [{ id: createId(), userId: u1.id, addedAt: Date.now() }],
+      removeIds: [],
+    });
+    await convex.mutation(api.projectManagers.applyDiff, {
+      organizationId: org.id,
+      projectId: project.id,
+      add: [{ id: createId(), userId: u1.id, addedAt: Date.now() }],
+      removeIds: [],
+    });
+
+    const rows = await convex.query(api.projectManagers.listByProject, {
+      projectId: project.id,
+      orgId: org.id,
+    });
+    expect(rows).toHaveLength(1);
+  });
+
   it("rejects a non-member and writes nothing", async () => {
     const org = await createOrgFixture();
     const actor = await createUserFixture(org.id, "owner");

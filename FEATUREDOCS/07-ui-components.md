@@ -56,6 +56,17 @@ Motion components in `src/components/ui/motion.tsx` (`FadeIn`, `StaggerList`, `S
 - **Dialog**: Centered modal. Full-screen on mobile with safe area padding via `style` prop
 - **Sheet**: Side drawer (sidebar). Safe area padding merged into `SheetContent` via extracted `style` prop
 
+### Overflow: modals scroll by default — don't spill off-screen
+`DialogContent` and `SheetContent` both cap their height and scroll internally out
+of the box, so tall forms never overflow past the viewport (the old bug: content
+ran off the top/bottom with no scrollbar, forcing users to zoom out).
+- `DialogContent` (centered): `max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain`
+- `SheetContent` base: `overflow-y-auto overscroll-contain`; `top`/`bottom` variants also cap at `max-h-[calc(100dvh-2rem)]` (`left`/`right` are already `h-full`)
+- Uses `dvh` (dynamic viewport height) so mobile browser chrome doesn't clip the modal.
+- Per-dialog overrides still win via `tailwind-merge`: pass your own `max-h-*` /
+  `overflow-*` in the `className` (e.g. `flex flex-col` + inner scroll region, or the
+  full-screen mobile `h-[100dvh]` pattern) and it replaces the default cleanly.
+
 ## Base UI Gotchas
 - Checkbox uses `indeterminate` boolean prop, not string value
 - SelectValue can't resolve text from portal-rendered items — pass explicit label children

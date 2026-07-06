@@ -127,6 +127,21 @@ describe("checkOut/checkInKitsBatch — parity with the per-kit loop", () => {
     expect(sb).toEqual(sa);
   });
 
+  it("checkInKitsBatch dedupes repeated kit ids (no double-restore)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const b = await buildKit(org.id, user.id, `KD-${createId().slice(0, 6)}`);
+    await checkOutKit(b.project.id, b.kit.id);
+
+    const res = await checkInKitsBatch(b.project.id, [
+      { kitId: b.kit.id, returnCondition: "GOOD" },
+      { kitId: b.kit.id, returnCondition: "GOOD" },
+    ]);
+    expect(res.succeeded).toEqual([b.kit.id]); // only once, despite two entries
+  });
+
   it("partial success: an unknown kit id errors, the valid kit still deploys", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

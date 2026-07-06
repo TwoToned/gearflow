@@ -638,13 +638,18 @@ export async function checkInKitsBatch(
   kits: Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>,
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
-  if (kits.length === 0) return serialize({ succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] });
+  // Dedupe by kitId (keep the first occurrence) — checkinKit restores the kit's
+  // bulk contents each call, so returning the same kit twice would overstate
+  // availability + double-log. (checkOutKitsBatch dedupes with `new Set`.)
+  const seen = new Set<string>();
+  const uniqueKits = kits.filter((k) => (seen.has(k.kitId) ? false : (seen.add(k.kitId), true)));
+  if (uniqueKits.length === 0) return serialize({ succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] });
 
   const convex = await getConvexClient();
   const now = Date.now();
   const succeeded: string[] = [];
   const errors: { kitId: string; message: string }[] = [];
-  for (const { kitId, returnCondition } of kits) {
+  for (const { kitId, returnCondition } of uniqueKits) {
     try {
       await convex.mutation(api.warehouseOps.checkinKit, { organizationId, projectId, userId, kitId, returnCondition, now });
       succeeded.push(kitId);

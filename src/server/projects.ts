@@ -1406,12 +1406,14 @@ export async function deleteProject(id: string) {
   if (checkedOutKitIds.length > 0) {
     const allKitSerialized = await getKitSerializedItemsByOrg(organizationId);
     const checkedOutKitIdSet = new Set(checkedOutKitIds);
-    for (const kitId of checkedOutKitIds) {
-      await convex.mutation(api.kits.update, {
-        id: kitId,
-        patch: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
-      });
-    }
+    await Promise.all(
+      checkedOutKitIds.map((kitId) =>
+        convex.mutation(api.kits.update, {
+          id: kitId,
+          patch: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
+        }),
+      ),
+    );
     for (const ks of allKitSerialized) {
       if (checkedOutKitIdSet.has(ks.kitId)) kitAssetIds.push(ks.assetId);
     }
@@ -1428,18 +1430,20 @@ export async function deleteProject(id: string) {
   // Remove the project's line items from Convex. The project↔line-item FK is
   // dropped, so prisma.project.delete no longer cascades — explicitly cascade
   // each top-level line (removeLineItemCascade handles its children + units).
-  for (const li of lineItems) {
-    if (li.parentLineItemId == null) {
-      await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
-    }
-  }
+  // Fire concurrently (each top-level line is independent) — was one sequential
+  // Convex round-trip per line, so a 200-line project took 200 sequential calls.
+  await Promise.all(
+    lineItems
+      .filter((li) => li.parentLineItemId == null)
+      .map((li) => convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id })),
+  );
 
   // Tidy the remaining Convex sub-tables / crew cascade, then delete the project
   // doc. The project + all its sub-tables are Convex-only now (no Prisma FK
   // cascade remains — dropped in Phase C #254), so each is removed explicitly.
-  for (const aid of crewAssignmentIds) {
-    await convex.mutation(api.crewAssignments.deleteCascade, { id: aid });
-  }
+  await Promise.all(
+    crewAssignmentIds.map((aid) => convex.mutation(api.crewAssignments.deleteCascade, { id: aid })),
+  );
   // Delete Convex-only sub-table rows (PM/tasks/services).
   const [pmRows, taskRows, serviceRows] = await Promise.all([
     convex.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),

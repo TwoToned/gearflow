@@ -546,13 +546,14 @@ export async function deleteKit(id: string) {
 
   // Clean up kit-scoped metadata that the cascade doesn't cover. kitCheckItem
   // rows are removed via their dedicated mutation; kitMedia rows (Convex-only,
-  // Phase C) are removed directly below.
-  for (const row of kitCheckItemRows) await convexKits.mutation(api.kitCheckItems.remove, { id: row.id });
-  // kitMedia is Convex-only (Phase C); remove the kit's media rows directly (the
-  // old syncMediaForParent reconcile is gone with the mirror). Files are left on
-  // S3, as the prior cascade did.
+  // Phase C) are removed directly below. Files are left on S3, as the prior
+  // cascade did. Both sets are independent rows — fire concurrently (was one
+  // sequential Convex round-trip per row).
   const kitMediaRows = await getKitMediaFromConvex(id);
-  for (const m of kitMediaRows) await convexKits.mutation(api.kitMedia.remove, { id: m.id });
+  await Promise.all([
+    ...kitCheckItemRows.map((row) => convexKits.mutation(api.kitCheckItems.remove, { id: row.id })),
+    ...kitMediaRows.map((m) => convexKits.mutation(api.kitMedia.remove, { id: m.id })),
+  ]);
 
   if (!nativeKitWrites()) {
     await logActivity({

@@ -88,6 +88,15 @@ template), `src/server/project-managers.ts`, line-item move action, crew time-en
 Mostly `for (const x) await removeXFromConvex(x.id)` in cascade delete/archive. Fix by
 `Promise.all` or a batched Convex mutation. No per-click UX impact; improves cascades.
 
+**Sweep started (2026-07-06):** the highest-cardinality cascades are done via
+`Promise.all` — `models.ts` deleteModel (assets + bulk assets), `projects.ts`
+deleteProject (line-item cascade + crew-assignment cascade + kit resets — the
+200-line cascade was the worst), `kits.ts` deleteKit (check-items + media),
+`supplier-orders.ts` (order items). Remaining (lower cardinality / need review):
+`models.ts` bulkUpdateRates, `warehouse.ts` force-return, `project-categories.ts`,
+`sub-hires.ts`, `line-items.ts`, `document-templates.ts`, `crew-assignments.ts`,
+`crew-scheduling-mirror.ts`, `site-admin.ts`.
+
 | File (grep anchor) | Looped mirror call | Cascade trigger |
 |---|---|---|
 | `src/server/models.ts` archiveModel | `removeAssetFromConvex`/`removeBulkAssetFromConvex` per asset | archive model w/ many assets |

@@ -1,19 +1,48 @@
 # Convex-Native Read Layer — Migration Design
 
-**Status:** IN PROGRESS — Phases 0–3 COMPLETE (reads native). Phase 4 in flight (4 PRs
-open). Phase 5 (native writes) is the next major phase.
+**Status:** ✅ COMPLETE (Phases 0–7). Reads native (0–4), writes native (5), background
+jobs/side-effects (6), and search (7) all shipped + deployed. Only the out-of-scope
+Tier E (auth into Convex) and the eventual Postgres DROP-TABLE decommission remain.
 **Author:** autoplan research session, 2026-06-28
 **Related:** [[convex-phase5-auth-bridge]], [[convex-hybrid-migration]], `perf-convex-efficiency-2026-06.md`, memory `perf-round-trip-bundles.md`
 
 ---
 
-## ▶ NEXT SESSION — START HERE (2026-07-06)
+## ▶ NEXT SESSION — START HERE (2026-07-07)
 
-**PHASES 4 AND 5 ARE CLOSED.** Read-inversion (Phase 4), write-inversion for all 5
-domains (Phase 5a–c), the write-latency fix (recalc-in-mutation, PR #349), the
-audit-read migration (Phase 5c), and optimistic line-item edit (Phase 5d) are all
-merged. What remains is genuinely separate: Phases 6 (crons/side-effects) + 7 (search),
-and the eventual Postgres decommission (DROP TABLE) once the kept tables shrink.
+**PHASES 6 + 7 ARE NOW CLOSED — the Convex-native migration is COMPLETE.** With Phases
+0–5 already done, the final two phases shipped (2026-07-07) and deployed to prod:
+
+- **6a crons (PR #367):** `convex/crons.ts` (`cronJobs()`) + `convex/scheduledJobs.ts`
+  internalActions. Convex owns the durable SCHEDULE; the two jobs (notification emails
+  15m, test-tag digests daily) invoke the existing Next `/api/cron/*` executor routes via
+  `fetch` + `Bearer CRON_SECRET`. The executor stays in Next (not a full native port)
+  because both pipelines fan out to org/member/user rows sourced from Postgres/Better
+  Auth (§7 do-not-touch), whose Convex mirrors are not verified-complete in prod. DORMANT
+  until `ENABLE_CONVEX_CRONS=true` + `CONVEX_CRON_TARGET_URL` + `CRON_SECRET` on the
+  Convex deployment. Route removal deferred until the mirrors are verified + email parity
+  is checkable live. Date-derived reminders (overdue-return, maintenance) already ride
+  `sendNotificationEmails`; no sub-hire-due-date job exists to port.
+- **6b side-effects (PR #368):** durable idempotent email layer — `sentEmails` ledger +
+  `convex/emails.ts` (`enqueue` service-only mutation → `ctx.scheduler.runAfter(0,
+  deliver)`; `isSent`/`markSent`) + `convex/emailActions.ts` (`"use node"` `deliver`:
+  check ledger → Resend send → mark). At-least-once with bounded retry (3 attempts,
+  0/60/300s) + Resend `Idempotency-Key` for provider-side dedupe. Server sends route via
+  `deliverSideEffectEmail()` behind `NATIVE_EMAIL_SIDEEFFECTS` (default OFF). Representative
+  wiring: crew offer/confirm/cancel. Needs `RESEND_API_KEY`+`EMAIL_FROM` on the Convex
+  deployment to deliver. Bulk + org/settings/SSO admin sends = mechanical follow-up.
+- **7 search (PR #369):** `searchIndex`es (assets tag+serial, models/kits/clients/
+  suppliers/projects name) + `convex/search.ts` org-scoped `withSearchIndex` queries
+  (bounded, reactive, empty→recent). `ComboboxPicker` gained a backward-compatible async
+  mode (`onSearchChange`/`selectedLabel`/`loading`) + `useDebouncedValue`. Representative
+  cutover: the sub-hire supplier picker (`useSupplierSearch`) — the one live/unflagged UI
+  change. Remaining pickers/tables = follow-up; multi-field searches (e.g. model
+  name+manufacturer) need a 2nd index or a denormalized search field first.
+
+**What remains is genuinely separate:** the eventual Postgres DROP-TABLE decommission
+once the kept tables shrink, and Tier E (auth into Convex) which is out of scope by
+design. The Phase-6 flags + `NATIVE_EMAIL_SIDEEFFECTS` are OFF — merging changed nothing
+live; flip them in Coolify / the Convex deployment env after a dogfood.
 
 **Latency fix — DONE + DEPLOYED (PR #349):** `recalculateProjectTotals` was ~3
 sequential server→Convex-Cloud waves on every write (the 6–12s tail). Ported byte-for-
@@ -41,10 +70,13 @@ Auth owns them (Tier E). Full resume context + per-PR detail in memory `convex-n
 
 ---
 
-### ▶ Phases 6 + 7 — execution targets & autonomous rules (start here for 6/7)
+### ✅ Phases 6 + 7 — DONE (2026-07-07; PRs #367/#368/#369, merged + deployed)
 
-Phases 4 + 5 are closed (above). **Phase 6 (crons/side-effects) + Phase 7 (search) are
-the current target.** Work **autonomously — no questions; keep going to completion; stop
+**These phases are complete — see the top-of-file resume pointer for the shipped detail.**
+The targets/rules below are retained as the historical execution brief.
+
+Phases 4 + 5 are closed (above). **Phase 6 (crons/side-effects) + Phase 7 (search) were
+the target.** Work **autonomously — no questions; keep going to completion; stop
 only for a genuine hard blocker** (secrets exposure, destructive/irreversible data ops,
 unverifiable prod-impacting deploy, spend, security/permission changes outside scope,
 legal/finance/medical, or a blocker making all remaining slices unsafe). One branch + one

@@ -54,6 +54,16 @@ export const nativeActivityReads = (): boolean =>
   process.env.NATIVE_ACTIVITY_READS === "true";
 
 /**
+ * Phase 6b — route post-write email side-effects through the Convex durable,
+ * idempotent scheduler (`api.emails.enqueue` → `internal.emailActions.deliver`)
+ * instead of an inline `sendEmail()` on the request path. Server-side runtime env
+ * (Coolify, no rebuild), default OFF. Flip only after the Convex deployment has
+ * `RESEND_API_KEY` + `EMAIL_FROM` set and a preview dogfood confirms delivery.
+ */
+export const nativeEmailSideEffects = (): boolean =>
+  process.env.NATIVE_EMAIL_SIDEEFFECTS === "true";
+
+/**
  * Map an assetWrites mutation's `ConvexError({ code })` back to the rich
  * UserFacingError (title + hint) the server-action path threw, so the toast UX is
  * identical whether the write ran natively or on the legacy path. Non-matching

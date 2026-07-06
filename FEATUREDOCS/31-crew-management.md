@@ -276,6 +276,16 @@ create/update permission gates.
 | `sendCancellationEmail(assignmentId)` | crew.update | Send cancellation email |
 | `sendBulkMessage(projectId, message, filter?)` | crew.update | Email all active crew on project |
 
+**Phase 6b — durable email side-effects.** The offer/confirmation/cancellation
+sends route through `deliverSideEffectEmail()` (`src/lib/email-side-effect.ts`).
+When `NATIVE_EMAIL_SIDEEFFECTS=true`, the send is enqueued on the Convex durable
+scheduler (`api.emails.enqueue` → `internal.emailActions.deliver`) — off the
+request path, retry-safe via a `sentEmails` idempotency ledger keyed on the offer
+token (or a per-send nonce for confirm/cancel). Default OFF → inline `sendEmail()`
+as before. Requires `RESEND_API_KEY` + `EMAIL_FROM` on the Convex deployment to
+actually deliver. `sendBulkMessage` and the org/settings/SSO admin sends are a
+mechanical follow-up (same helper).
+
 ### API Routes
 - `GET /api/crew/respond/[token]?action=accept|decline` — Public, token-based response page
 - Returns styled HTML confirmation page after updating assignment status

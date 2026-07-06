@@ -417,12 +417,17 @@ export async function archiveModel(id: string) {
     convexForAssets.query(api.assets.listByModel, { modelId: id, orgId: organizationId }),
     convexForAssets.query(api.bulkAssets.listByModel, { modelId: id, orgId: organizationId }),
   ]);
-  for (const a of assetsToRemove) {
-    if (a.organizationId === organizationId) await convexForAssets.mutation(api.assets.remove, { id: a.id });
-  }
-  for (const b of bulkToRemove) {
-    if (b.organizationId === organizationId) await convexForAssets.mutation(api.bulkAssets.remove, { id: b.id });
-  }
+  // Fire the removals concurrently (independent rows, no ordering dependency) —
+  // was one sequential Convex round-trip per asset. A model with many assets
+  // otherwise took N sequential HTTP calls to delete.
+  await Promise.all([
+    ...assetsToRemove
+      .filter((a) => a.organizationId === organizationId)
+      .map((a) => convexForAssets.mutation(api.assets.remove, { id: a.id })),
+    ...bulkToRemove
+      .filter((b) => b.organizationId === organizationId)
+      .map((b) => convexForAssets.mutation(api.bulkAssets.remove, { id: b.id })),
+  ]);
 
   // Soft archive — models are Convex-only. Org-guard via the prior doc.
   const existing = await getModelById(id);

@@ -256,7 +256,9 @@ export async function deleteSupplierOrder(id: string) {
 
   const convex = await getConvexClient();
   const items = await getSupplierOrderItems(id);
-  for (const it of items) await convex.mutation(api.supplierOrderItems.remove, { id: it.id });
+  // Remove the order's items concurrently before the order row (independent
+  // rows) — was one sequential Convex round-trip per item.
+  await Promise.all(items.map((it) => convex.mutation(api.supplierOrderItems.remove, { id: it.id })));
   await convex.mutation(api.supplierOrders.remove, { id });
 
   await logActivity({

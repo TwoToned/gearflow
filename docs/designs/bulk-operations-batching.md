@@ -1,6 +1,11 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
-**Status:** audit complete, fixes not started. Created 2026-07-06.
+**Status:** audit complete. **Wave 2 #11 (crew time entries) shipped** —
+`createTimeEntries(data, crewMemberIds[])` + Convex `crewTimeEntries.createMany`,
+both crew/timesheets loops rewired (partial-success preserved), parity test
+green. **#10 is obsolete** (no multi-select move fan-out in the current code —
+move is single-item dialog-driven; reordering already uses batch array actions).
+Created 2026-07-06.
 **Owner intent:** the app "takes ages" on bulk actions (select many assets → prep,
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
@@ -73,8 +78,8 @@ are in `src/app/(app)/warehouse/[projectId]/page.tsx`.
 | 7 | warehouse page — kit return loop → `checkInKit` | `checkInKit` | bulk-return kits | MED | new `checkInKitsBatch` |
 | 8 | `src/components/projects/project-wizard.tsx` — `Promise.all([...toAdd.map(addProjectManager), ...toRemove.map(removeProjectManager)])` | `addProjectManager`/`removeProjectManager` | manager selection delta on create | HIGH | new `setProjectManagers(projectId, userIds[])` (diff server-side) |
 | 9 | `src/components/projects/project-form.tsx` — same manager add/remove fan-out | `addProjectManager`/`removeProjectManager` | manager selection delta on edit | HIGH | reuse `setProjectManagers` |
-| 10 | `src/components/projects/equipment-tab.tsx` — multi-select move, `Promise.all(...map(moveLineItemToGroup))` | `moveLineItemToGroup` | drag N selected line items to a group | HIGH | new `moveLineItemsToGroup(moves[])` |
-| 11 | `src/app/(app)/crew/timesheets/page.tsx` **and** `src/app/(app)/crew/page.tsx` — `for (const crewId of selectedCrewIds) await createTimeEntry(...)` | `createTimeEntry` | log time for N selected crew | HIGH | new `createTimeEntries(data, crewMemberIds[])` (`createMany`) |
+| 10 | ⛔ OBSOLETE — no multi-select move fan-out exists in current `equipment-tab.tsx`. Move is single-item (two dialogs → one `moveLineItemToGroup`); group/category **reordering** already uses batch array actions (`reorderProjectGroups`/`reorderProjectCategories` take `orderedIds[]`). Nothing to batch. | — | — | — | — (no change) |
+| 11 | ✅ `src/app/(app)/crew/timesheets/page.tsx` **and** `src/app/(app)/crew/page.tsx` — `for (const crewId of selectedCrewIds) await createTimeEntry(...)` | `createTimeEntry` | log time for N selected crew | HIGH | ✅ `createTimeEntries(data, crewMemberIds[])` (Convex `createMany`, partial-success preserved) |
 
 Single-item actions live in: `src/server/check-records.ts` (`prepItemDirect` 334,
 `pullItem` 220, `deprepItem` 394, `unpackItem` 625, `deprepKit`, `prepKitChildren`),

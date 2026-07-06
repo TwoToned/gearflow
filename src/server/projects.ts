@@ -1036,101 +1036,114 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
         updatedAt: dupNow,
       });
 
-      for (const child of li.childLineItems ?? []) {
-        await client.mutation(api.projectLineItems.create, {
-          id: createId(),
+      // Children reference the parent's pre-generated id (Convex has no FK), so
+      // they can all be created concurrently after the parent insert.
+      await Promise.all(
+        (li.childLineItems ?? []).map((child) =>
+          client.mutation(api.projectLineItems.create, {
+            id: createId(),
+            organizationId,
+            projectId: newProjectId,
+            ...(newCategoryId ? { categoryId: newCategoryId } : {}),
+            ...(newGroupId ? { groupId: newGroupId } : {}),
+            ...(child.type ? { type: child.type } : {}),
+            ...(child.modelId ? { modelId: child.modelId } : {}),
+            ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
+            ...(child.description != null ? { description: child.description } : {}),
+            ...(child.quantity != null ? { quantity: child.quantity } : {}),
+            ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
+            ...(child.pricingType ? { pricingType: child.pricingType } : {}),
+            ...(child.duration != null ? { duration: Number(child.duration) } : {}),
+            ...(child.discount != null ? { discount: Number(child.discount) } : {}),
+            ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+            ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
+            ...(child.groupName != null ? { groupName: child.groupName } : {}),
+            ...(child.notes != null ? { notes: child.notes } : {}),
+            ...(child.childKind ? { childKind: child.childKind } : {}),
+            isKitChild: true,
+            parentLineItemId: parentId,
+            status: "QUOTED",
+            createdAt: dupNow,
+            updatedAt: dupNow,
+          }),
+        ),
+      );
+    }
+    // All ids are pre-generated (catIdMap/groupIdMap) and Convex has no FK, so
+    // each level's inserts are independent — create them concurrently. Was a
+    // sequential mutation per category / group / line item / manager (a 50–500
+    // line project = that many sequential Convex round-trips).
+    await Promise.all(
+      sortedSourceCategories.map((cat) =>
+        client.mutation(api.projectCategories.createIfMissing, {
+          id: catIdMap.get(cat.id)!,
           organizationId,
-          projectId: newProjectId,
-          ...(newCategoryId ? { categoryId: newCategoryId } : {}),
-          ...(newGroupId ? { groupId: newGroupId } : {}),
-          ...(child.type ? { type: child.type } : {}),
-          ...(child.modelId ? { modelId: child.modelId } : {}),
-          ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
-          ...(child.description != null ? { description: child.description } : {}),
-          ...(child.quantity != null ? { quantity: child.quantity } : {}),
-          ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
-          ...(child.pricingType ? { pricingType: child.pricingType } : {}),
-          ...(child.duration != null ? { duration: Number(child.duration) } : {}),
-          ...(child.discount != null ? { discount: Number(child.discount) } : {}),
-          ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
-          ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
-          ...(child.groupName != null ? { groupName: child.groupName } : {}),
-          ...(child.notes != null ? { notes: child.notes } : {}),
-          ...(child.childKind ? { childKind: child.childKind } : {}),
-          isKitChild: true,
-          parentLineItemId: parentId,
-          status: "QUOTED",
+          projectId: result.id,
+          name: cat.name,
+          sortOrder: cat.sortOrder ?? 0,
           createdAt: dupNow,
           updatedAt: dupNow,
-        });
-      }
-    }
-    for (const cat of sortedSourceCategories) {
-      await client.mutation(api.projectCategories.createIfMissing, {
-        id: catIdMap.get(cat.id)!,
-        organizationId,
-        projectId: result.id,
-        name: cat.name,
-        sortOrder: cat.sortOrder ?? 0,
-        createdAt: dupNow,
-        updatedAt: dupNow,
-      });
-    }
-    for (const group of sourceGroups) {
-      const newCatId = group.categoryId ? catIdMap.get(group.categoryId) : undefined;
-      await client.mutation(api.projectGroups.createIfMissing, {
-        id: groupIdMap.get(group.id)!,
-        organizationId,
-        projectId: result.id,
-        categoryId: newCatId,
-        title: group.title,
-        description: group.description,
-        quantity: group.quantity,
-        price: group.price ?? undefined,
-        suggestedPrice: group.suggestedPrice ?? undefined,
-        rentalPeriod: group.rentalPeriod ?? undefined,
-        rentalQuantity: group.rentalQuantity ?? undefined,
-        sortOrder: group.sortOrder ?? 0,
-        createdAt: dupNow,
-        updatedAt: dupNow,
-      });
-    }
+        }),
+      ),
+    );
+    await Promise.all(
+      sourceGroups.map((group) =>
+        client.mutation(api.projectGroups.createIfMissing, {
+          id: groupIdMap.get(group.id)!,
+          organizationId,
+          projectId: result.id,
+          categoryId: group.categoryId ? catIdMap.get(group.categoryId) : undefined,
+          title: group.title,
+          description: group.description,
+          quantity: group.quantity,
+          price: group.price ?? undefined,
+          suggestedPrice: group.suggestedPrice ?? undefined,
+          rentalPeriod: group.rentalPeriod ?? undefined,
+          rentalQuantity: group.rentalQuantity ?? undefined,
+          sortOrder: group.sortOrder ?? 0,
+          createdAt: dupNow,
+          updatedAt: dupNow,
+        }),
+      ),
+    );
 
     // Copy line items (Convex-only) using the pre-generated category/group IDs.
+    // copyLineItem keeps parent-before-children internally; the top-level copies
+    // run concurrently across groups/categories/uncategorized.
+    const lineItemTasks: Promise<void>[] = [];
     for (const cat of sortedSourceCategories) {
       const newCatId = catIdMap.get(cat.id)!;
       const catGroups = (groupsByCatId.get(cat.id) ?? [])
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-
       for (const group of catGroups) {
         const newGroupId = groupIdMap.get(group.id)!;
         for (const li of lineItemsByGroupId.get(group.id) ?? []) {
-          await copyLineItem(li, result.id, newCatId, newGroupId);
+          lineItemTasks.push(copyLineItem(li, result.id, newCatId, newGroupId));
         }
       }
-
-      // Copy standalone line items in category (groupId=null)
+      // Standalone line items in category (groupId=null)
       for (const li of lineItemsByCatId.get(cat.id) ?? []) {
-        await copyLineItem(li, result.id, newCatId, null);
+        lineItemTasks.push(copyLineItem(li, result.id, newCatId, null));
       }
     }
-
-    // Copy uncategorized line items
-    const uncategorizedLineItems = allSourceLineItems.filter((li) => !li.categoryId && !li.groupId);
-    for (const li of uncategorizedLineItems) {
-      await copyLineItem(li, result.id, null, null);
+    // Uncategorized line items
+    for (const li of allSourceLineItems.filter((li) => !li.categoryId && !li.groupId)) {
+      lineItemTasks.push(copyLineItem(li, result.id, null, null));
     }
+    await Promise.all(lineItemTasks);
 
     // Copy project managers directly to Convex (Convex-only after Phase B).
-    for (const pm of sourceProjectManagers) {
-      await client.mutation(api.projectManagers.createIfMissing, {
-        id: createId(),
-        organizationId,
-        projectId: result.id,
-        userId: pm.userId,
-        addedAt: dupNow,
-      });
-    }
+    await Promise.all(
+      sourceProjectManagers.map((pm) =>
+        client.mutation(api.projectManagers.createIfMissing, {
+          id: createId(),
+          organizationId,
+          projectId: result.id,
+          userId: pm.userId,
+          addedAt: dupNow,
+        }),
+      ),
+    );
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1212,31 +1225,38 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
     if (!result) throw new Error("Template create failed");
 
     // Create the copied line items in Convex (project row is Prisma; lines Convex).
+    // Each top-level line creates its parent then (concurrently) its children;
+    // the top-level lines run concurrently too — was one sequential Convex
+    // round-trip per parent AND per child.
     const tNow = Date.now();
-    for (const li of sourceLineItems) {
-      const parentId = createId();
-      await convexForTemplate.mutation(api.projectLineItems.create, {
-        id: parentId, organizationId, projectId: result.id, type: li.type,
-        modelId: li.modelId || undefined, bulkAssetId: li.bulkAssetId || undefined, kitId: li.kitId || undefined,
-        supplierId: li.supplierId || undefined, description: li.description || undefined, quantity: li.quantity,
-        unitPrice: li.unitPrice ?? undefined, pricingType: li.pricingType, duration: li.duration,
-        discount: li.discount ?? undefined, lineTotal: li.lineTotal ?? undefined, sortOrder: li.sortOrder,
-        groupName: li.groupName || undefined, notes: li.notes || undefined, isOptional: li.isOptional,
-        showSubhireOnDocs: li.showSubhireOnDocs, isKitChild: false, pricingMode: li.pricingMode || undefined,
-        status: "QUOTED", createdAt: tNow, updatedAt: tNow,
-      });
-      for (const child of li.childLineItems ?? []) {
+    await Promise.all(
+      sourceLineItems.map(async (li) => {
+        const parentId = createId();
         await convexForTemplate.mutation(api.projectLineItems.create, {
-          id: createId(), organizationId, projectId: result.id, type: child.type,
-          modelId: child.modelId || undefined, bulkAssetId: child.bulkAssetId || undefined,
-          description: child.description || undefined, quantity: child.quantity, unitPrice: child.unitPrice ?? undefined,
-          pricingType: child.pricingType, duration: child.duration, discount: child.discount ?? undefined,
-          lineTotal: child.lineTotal ?? undefined, sortOrder: child.sortOrder, groupName: child.groupName || undefined,
-          notes: child.notes || undefined, isKitChild: true, parentLineItemId: parentId, status: "QUOTED",
-          createdAt: tNow, updatedAt: tNow,
+          id: parentId, organizationId, projectId: result.id, type: li.type,
+          modelId: li.modelId || undefined, bulkAssetId: li.bulkAssetId || undefined, kitId: li.kitId || undefined,
+          supplierId: li.supplierId || undefined, description: li.description || undefined, quantity: li.quantity,
+          unitPrice: li.unitPrice ?? undefined, pricingType: li.pricingType, duration: li.duration,
+          discount: li.discount ?? undefined, lineTotal: li.lineTotal ?? undefined, sortOrder: li.sortOrder,
+          groupName: li.groupName || undefined, notes: li.notes || undefined, isOptional: li.isOptional,
+          showSubhireOnDocs: li.showSubhireOnDocs, isKitChild: false, pricingMode: li.pricingMode || undefined,
+          status: "QUOTED", createdAt: tNow, updatedAt: tNow,
         });
-      }
-    }
+        await Promise.all(
+          (li.childLineItems ?? []).map((child) =>
+            convexForTemplate.mutation(api.projectLineItems.create, {
+              id: createId(), organizationId, projectId: result.id, type: child.type,
+              modelId: child.modelId || undefined, bulkAssetId: child.bulkAssetId || undefined,
+              description: child.description || undefined, quantity: child.quantity, unitPrice: child.unitPrice ?? undefined,
+              pricingType: child.pricingType, duration: child.duration, discount: child.discount ?? undefined,
+              lineTotal: child.lineTotal ?? undefined, sortOrder: child.sortOrder, groupName: child.groupName || undefined,
+              notes: child.notes || undefined, isKitChild: true, parentLineItemId: parentId, status: "QUOTED",
+              createdAt: tNow, updatedAt: tNow,
+            }),
+          ),
+        );
+      }),
+    );
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1325,11 +1345,11 @@ export async function deleteTemplate(id: string) {
     projectId: id,
     orgId: organizationId,
   });
-  for (const li of templateLineItems) {
-    if (li.parentLineItemId == null) {
-      await convexForDelete.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id });
-    }
-  }
+  await Promise.all(
+    templateLineItems
+      .filter((li) => li.parentLineItemId == null)
+      .map((li) => convexForDelete.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id })),
+  );
   await convexForDelete.mutation(api.projects.remove, { id });
   return { success: true };
 }

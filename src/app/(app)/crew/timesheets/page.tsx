@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/select";
 import {
   getAllTimeEntries,
-  createTimeEntry,
+  createTimeEntries,
   updateTimeEntry,
   deleteTimeEntry,
   submitTimeEntries,
@@ -766,17 +766,11 @@ function LogTimeDialog({
     if (isGeneral) data.assignmentId = "";
     setSubmitting(true);
     try {
-      let successCount = 0;
-      const errors: string[] = [];
-      for (const crewId of selectedCrewIds) {
-        try {
-          await createTimeEntry({ ...data, crewMemberId: crewId });
-          successCount++;
-        } catch (e: any) {
-          const crew = crewList?.find((c: any) => c.id === crewId);
-          errors.push(`${crew?.firstName || ""} ${crew?.lastName || ""}: ${e.message}`);
-        }
-      }
+      // One batch call for all selected crew — the server validates each crew
+      // member individually and returns per-crew errors, preserving the old
+      // loop's partial-success behaviour.
+      const res = await createTimeEntries(data, selectedCrewIds);
+      const successCount = res.created.length;
       if (successCount > 0) {
         toast.success(
           `${successCount} time ${successCount === 1 ? "entry" : "entries"} added`
@@ -785,12 +779,18 @@ function LogTimeDialog({
         // (crew dashboard) are cross-route readers that remount on navigation.
         onSaved?.();
       }
-      if (errors.length > 0) {
-        toast.error(`${errors.length} failed: ${errors[0]}`);
+      if (res.errors.length > 0) {
+        const first = res.errors[0];
+        const crew = crewList?.find((c: any) => c.id === first.crewMemberId);
+        toast.error(
+          `${res.errors.length} failed: ${crew?.firstName || ""} ${crew?.lastName || ""}: ${first.message}`,
+        );
       }
       if (successCount > 0) {
         onOpenChange(false);
       }
+    } catch (e: any) {
+      toast.error(e.message);
     } finally {
       setSubmitting(false);
     }

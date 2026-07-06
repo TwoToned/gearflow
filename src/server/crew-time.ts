@@ -279,6 +279,135 @@ export async function createTimeEntry(data: CrewTimeEntryFormValues) {
   return serialize(created ? mapTimeEntry(created) : null);
 }
 
+/**
+ * Log the same time entry for many crew members in ONE server round-trip + ONE
+ * atomic Convex insert. Replaces the client-side
+ * `for (const crewId of selectedCrewIds) await createTimeEntry({ ...data, crewMemberId: crewId })`
+ * loop (one round-trip per selected crew) on the crew + timesheets pages.
+ *
+ * Preserves the loop's PARTIAL-SUCCESS behaviour: each crew member (and, if the
+ * entry is linked to an assignment, the assignment match) is validated
+ * individually; valid entries are written together and invalid ones come back in
+ * `errors` — so one bad crew member doesn't sink the rest, exactly as the old
+ * per-item try/catch did. Same per-entry audit log as createTimeEntry.
+ */
+export async function createTimeEntries(
+  data: CrewTimeEntryFormValues,
+  crewMemberIds: string[]
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "crew",
+    "create"
+  );
+
+  const uniqueCrewIds = [...new Set(crewMemberIds)];
+  if (uniqueCrewIds.length === 0) {
+    return serialize({ created: [] as string[], errors: [] as { crewMemberId: string; message: string }[] });
+  }
+
+  // Parse the shared fields once (crewMemberId is overridden per entry below).
+  const parsed = crewTimeEntrySchema.parse({ ...data, crewMemberId: uniqueCrewIds[0] });
+  const assignmentId = parsed.assignmentId || null;
+  const totalHours = calculateTotalHours(
+    parsed.startTime,
+    parsed.endTime,
+    parsed.breakMinutes ?? 0
+  );
+  const dateMs = new Date(parsed.date as unknown as string).getTime();
+
+  const members = await getCrewMembersByOrg(organizationId);
+  const memberById = new Map(members.map((m) => [m.id, m]));
+
+  // Resolve the assignment once (shared across the batch). Per-crew match is
+  // checked below so a mismatched crew errors individually (as the loop did).
+  let assignment: Awaited<ReturnType<typeof getAssignmentById>> | null = null;
+  let projectName = parsed.description || "General";
+  if (assignmentId) {
+    assignment = await getAssignmentById(assignmentId);
+    if (!assignment || assignment.organizationId !== organizationId) {
+      throw new Error("Assignment not found");
+    }
+    const projects = await getProjectsByOrg(organizationId);
+    projectName = projects.find((p) => p.id === assignment!.projectId)?.name ?? projectName;
+  }
+
+  const now = Date.now();
+  const errors: { crewMemberId: string; message: string }[] = [];
+  const toCreate: {
+    doc: {
+      id: string;
+      organizationId: string;
+      assignmentId?: string;
+      crewMemberId: string;
+      description?: string;
+      date: number;
+      startTime: string;
+      endTime: string;
+      breakMinutes: number;
+      totalHours: number;
+      status: "DRAFT";
+      notes?: string;
+      createdAt: number;
+      updatedAt: number;
+    };
+    crewName: string;
+  }[] = [];
+
+  for (const crewId of uniqueCrewIds) {
+    const crewMember = memberById.get(crewId);
+    if (!crewMember) {
+      errors.push({ crewMemberId: crewId, message: "Crew member not found" });
+      continue;
+    }
+    if (assignmentId && assignment && assignment.crewMemberId !== crewId) {
+      errors.push({ crewMemberId: crewId, message: "Crew member does not match assignment" });
+      continue;
+    }
+    toCreate.push({
+      doc: {
+        id: createId(),
+        organizationId,
+        ...(assignmentId ? { assignmentId } : {}),
+        crewMemberId: crewId,
+        ...(parsed.description ? { description: parsed.description } : {}),
+        date: dateMs,
+        startTime: parsed.startTime,
+        endTime: parsed.endTime,
+        breakMinutes: parsed.breakMinutes ?? 0,
+        totalHours,
+        status: "DRAFT",
+        ...(parsed.notes ? { notes: parsed.notes } : {}),
+        createdAt: now,
+        updatedAt: now,
+      },
+      crewName: `${crewMember.firstName} ${crewMember.lastName}`,
+    });
+  }
+
+  const created: string[] = [];
+  if (toCreate.length > 0) {
+    const convex = await getConvexClient();
+    await convex.mutation(api.crewTimeEntries.createMany, {
+      entries: toCreate.map((t) => t.doc),
+    });
+    for (const t of toCreate) {
+      created.push(t.doc.crewMemberId);
+      await logActivity({
+        organizationId,
+        userId,
+        userName,
+        action: "CREATE",
+        entityType: "crew_time_entry",
+        entityId: t.doc.id,
+        entityName: t.crewName,
+        summary: `Logged time for ${t.crewName} on ${projectName}`,
+      });
+    }
+  }
+
+  return serialize({ created, errors });
+}
+
 export async function updateTimeEntry(
   id: string,
   data: CrewTimeEntryFormValues

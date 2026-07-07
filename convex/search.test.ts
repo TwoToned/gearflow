@@ -11,13 +11,17 @@ const OTHER = "org_2";
 const asUser = (orgId: string) => ({ subject: "user_1", orgId });
 const NOW = 1_700_000_000_000;
 
+// NOTE: every `models` fixture sets `manufacturer` (even ""). Real Convex tolerates a
+// search over an absent optional searchField (unmatched, no error), but convex-test's
+// mock `evaluateSearchFilter` calls `.split()` on the raw value and throws on undefined
+// — so the two-index models query needs the field present in tests only.
 describe("search.models", () => {
   test("matches by name, is org-scoped, and honours the query", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Shure SM58", isActive: true, createdAt: NOW });
-      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Sennheiser MD421", isActive: true, createdAt: NOW });
-      await ctx.db.insert("models", { id: "m3", organizationId: OTHER, name: "Shure SM7B", isActive: true, createdAt: NOW });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Shure SM58", manufacturer: "", isActive: true, createdAt: NOW });
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Sennheiser MD421", manufacturer: "", isActive: true, createdAt: NOW });
+      await ctx.db.insert("models", { id: "m3", organizationId: OTHER, name: "Shure SM7B", manufacturer: "", isActive: true, createdAt: NOW });
     });
 
     const hits = await t.withIdentity(asUser(ORG)).query(api.search.models, { orgId: ORG, query: "Shure" });
@@ -31,44 +35,44 @@ describe("search.models", () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       for (let i = 0; i < 5; i++) {
-        await ctx.db.insert("models", { id: `m${i}`, organizationId: ORG, name: `Widget ${i}`, isActive: true, createdAt: NOW });
+        await ctx.db.insert("models", { id: `m${i}`, organizationId: ORG, name: `Widget ${i}`, manufacturer: "", isActive: true, createdAt: NOW });
       }
     });
     const hits = await t.withIdentity(asUser(ORG)).query(api.search.models, { orgId: ORG, query: "Widget", limit: 2 });
     expect(hits.length).toBe(2);
   });
-});
 
-describe("search.assets — tag or serial", () => {
-  test("matches by asset tag or serial number, merged + deduped", async () => {
+  test("matches by manufacturer too, merged + deduped with name hits", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "CAM-001", serialNumber: "SN-ABC", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "LENS-050", serialNumber: "CAM-XYZ", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", manufacturer: "Shure", isActive: true, createdAt: NOW });
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Shure clone", manufacturer: "Generic", isActive: true, createdAt: NOW });
     });
-    // "CAM" matches a1 by tag and a2 by serial → both, deduped.
-    const hits = await t.withIdentity(asUser(ORG)).query(api.search.assets, { orgId: ORG, query: "CAM" });
-    expect(hits.map((a) => a.id).sort()).toEqual(["a1", "a2"]);
-
-    const byTag = await t.withIdentity(asUser(ORG)).query(api.search.assets, { orgId: ORG, query: "LENS" });
-    expect(byTag.map((a) => a.id)).toEqual(["a2"]);
+    // "Shure" matches m1 by manufacturer AND m2 by name → both, deduped.
+    const hits = await t.withIdentity(asUser(ORG)).query(api.search.models, { orgId: ORG, query: "Shure" });
+    expect(hits.map((m) => m.id).sort()).toEqual(["m1", "m2"]);
   });
 });
 
-describe("search.projects — excludes templates", () => {
-  test("templates are filtered out unless includeTemplates", async () => {
+describe("search.kits — tag or name, prep excluded", () => {
+  test("matches by assetTag or name (merged) and excludes prep kits by default", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Festival Main Stage", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "T-1", name: "Festival Template", status: "CONFIRMED", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-001", name: "Audio Rig", isActive: true, isPrep: false, createdAt: NOW });
+      await ctx.db.insert("kits", { id: "k2", organizationId: ORG, assetTag: "AUDIO-99", name: "Spare", isActive: true, isPrep: false, createdAt: NOW });
+      await ctx.db.insert("kits", { id: "kp", organizationId: ORG, assetTag: "KIT-PREP", name: "Audio Prep", isActive: true, isPrep: true, createdAt: NOW });
     });
-    const hits = await t.withIdentity(asUser(ORG)).query(api.search.projects, { orgId: ORG, query: "Festival" });
-    expect(hits.map((p) => p.id)).toEqual(["p1"]);
+    // "Audio" matches k1 (name) + kp (name) + k2 (tag AUDIO-99) — but kp is prep → excluded.
+    const hits = await t.withIdentity(asUser(ORG)).query(api.search.kits, { orgId: ORG, query: "Audio" });
+    expect(hits.map((k) => k.id).sort()).toEqual(["k1", "k2"]);
 
-    const withTemplates = await t
-      .withIdentity(asUser(ORG))
-      .query(api.search.projects, { orgId: ORG, query: "Festival", includeTemplates: true });
-    expect(withTemplates.map((p) => p.id).sort()).toEqual(["p1", "p2"]);
+    // "KIT-001" matches by tag.
+    const byTag = await t.withIdentity(asUser(ORG)).query(api.search.kits, { orgId: ORG, query: "KIT-001" });
+    expect(byTag.map((k) => k.id)).toEqual(["k1"]);
+
+    // includePrep surfaces the prep kit.
+    const withPrep = await t.withIdentity(asUser(ORG)).query(api.search.kits, { orgId: ORG, query: "Audio", includePrep: true });
+    expect(withPrep.map((k) => k.id).sort()).toEqual(["k1", "k2", "kp"]);
   });
 });
 

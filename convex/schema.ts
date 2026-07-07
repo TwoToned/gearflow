@@ -261,7 +261,12 @@ export default defineSchema({
     .index("by_defaultTestProfileId", ["defaultTestProfileId"])
     .index("by_organizationId_sku", ["organizationId", "sku"])
     .index("by_isActive", ["isActive"])
-    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] })
+    // Second index so the model picker (label = "{manufacturer} {name}") matches a
+    // manufacturer term too — merged with name hits in convex/search.ts, the same
+    // multi-index pattern assets uses for assetTag + serialNumber (no denormalized
+    // field / backfill needed).
+    .searchIndex("search_manufacturer", { searchField: "manufacturer", filterFields: ["organizationId", "isActive"] }),
 
   // Supplier
   suppliers: defineTable({
@@ -472,7 +477,14 @@ export default defineSchema({
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
     .index("by_isActive", ["isActive"])
-    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
+    // isPrep is a filterField so the picker can exclude prep kits IN the search
+    // (exact parity with the old `isActive===true && isPrep===false` JS filter) —
+    // no post-filtering the bounded page (which could drop valid non-prep matches).
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive", "isPrep"] })
+    // Second index so the kit picker (label = "{assetTag} - {name}") matches a tag
+    // term too — merged with name hits in convex/search.ts (the assets tag+serial
+    // pattern; no denormalized field / backfill needed).
+    .searchIndex("search_assetTag", { searchField: "assetTag", filterFields: ["organizationId", "isActive", "isPrep"] }),
 
   // KitSerializedItem
   kitSerializedItems: defineTable({
@@ -554,9 +566,11 @@ export default defineSchema({
     .index("by_parentAssetId", ["parentAssetId"])
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
-    .index("by_isActive", ["isActive"])
-    .searchIndex("search_assetTag", { searchField: "assetTag", filterFields: ["organizationId", "isActive"] })
-    .searchIndex("search_serialNumber", { searchField: "serialNumber", filterFields: ["organizationId", "isActive"] }),
+    .index("by_isActive", ["isActive"]),
+  // (No asset search index: the tag+serial search + its `convex/search.ts` query were
+  // removed 2026-07-07 — every asset picker is a multi-select builder/table whose
+  // chips need per-id label resolution, not a single-select combobox. Re-add both
+  // alongside a real consumer.)
 
   // BulkAsset
   bulkAssets: defineTable({
@@ -773,8 +787,10 @@ export default defineSchema({
     .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
     .index("by_isTemplate", ["isTemplate"])
-    .index("by_organizationId_status", ["organizationId", "status"])
-    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isTemplate"] }),
+    .index("by_organizationId_status", ["organizationId", "status"]),
+  // (No project search index: the app never picks a project in a combobox — projects
+  // are created/edited, never selected — so its `convex/search.ts` query was removed
+  // 2026-07-07. Re-add both alongside a real single-select project picker.)
 
   // ProjectLineItem
   projectLineItems: defineTable({

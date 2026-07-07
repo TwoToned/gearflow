@@ -25,8 +25,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useKits } from "@/hooks/use-kits";
+import { useKitSearch, useKit } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 type KitPricingMode = "KIT_PRICE" | "ITEMIZED";
 
@@ -63,22 +64,26 @@ export function KitAddForm({
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
 
-  // Reactive kit list (Convex). The org-scoped list returns all kits; re-apply
-  // getKits's default filter (active, non-prep) and assetTag sort client-side,
-  // and resolve the category name from the reactive categories list.
-  const kits = useKits(orgId);
+  // Phase 7 — native INDEXED kit search (name OR assetTag, prep excluded server-side,
+  // bounded + reactive) instead of loading the whole org list to JS-filter. Debounced
+  // as the user types; re-apply the active filter + resolve the category name.
+  const [kitQuery, setKitQuery] = useState("");
+  const debouncedKitQuery = useDebouncedValue(kitQuery, 200);
+  const kits = useKitSearch(orgId, debouncedKitQuery);
   const categories = useCategories(orgId);
   const kitOptions = useMemo(() => {
     const categoryNameById = new Map((categories ?? []).map((c) => [c.id, c.name]));
     return (kits ?? [])
-      .filter((kit) => kit.isActive === true && kit.isPrep === false)
-      .sort((a, b) => a.assetTag.localeCompare(b.assetTag))
+      .filter((kit) => kit.isActive === true)
       .map((kit) => ({
         value: kit.id,
         label: `${kit.assetTag} - ${kit.name}`,
         description: kit.categoryId ? categoryNameById.get(kit.categoryId) : undefined,
       }));
   }, [kits, categories]);
+  // Resolve the selected kit's label directly (it may not be in the current search page).
+  const selectedKit = useKit(selectedKitId || undefined);
+  const selectedKitLabel = selectedKit ? `${selectedKit.assetTag} - ${selectedKit.name}` : undefined;
 
   const { data: kitAvailability } = useServerQuery({
     queryKey: ["kit-availability", orgId, selectedKitId, projectId],
@@ -131,6 +136,9 @@ export function KitAddForm({
               value={selectedKitId}
               onChange={setSelectedKitId}
               options={kitOptions}
+              onSearchChange={setKitQuery}
+              loading={kits === undefined}
+              selectedLabel={selectedKitLabel}
               placeholder="Search kits…"
               searchPlaceholder="Search by tag or name…"
               emptyMessage="No kits found."

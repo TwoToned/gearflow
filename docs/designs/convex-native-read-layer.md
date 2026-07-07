@@ -52,10 +52,22 @@ convention violations (`collaboration.ts` addComment, `lib/fulfillment.ts` — t
    five composites** (`kitDetail`/`assetDetail`/`warehouseDetail`/`projectEquipment`/
    `equipmentTab`.test.ts): `not.toHaveProperty` on the PII/storageKey fields + a recursive
    no-leak guard. Reconstruct consumers compile + their unit tests pass unchanged.
-3. **Phase 7 mostly dead code.** 6 of 7 `convex/search.ts` queries have no `src/` consumer
-   (only the supplier picker is wired). Wire the remaining pickers (asset/model/kit/client/
-   project), or explicitly scope them out. Multi-field pickers need a 2nd index / denormalized
-   field first.
+3. ~~**Phase 7 mostly dead code.**~~ **✅ DONE (2026-07-07, PR `fix/convex-native-search-pickers`).**
+   Wired three more pickers to native indexed search (bounded + reactive, replacing whole-org
+   load + JS-filter): **clients** → project-wizard (`useClientSearch`); **models** → equipment-
+   add-form (`useModelSearch`); **kits** → kit-add-form (`useKitSearch`). Multi-field cases got a
+   2nd search index + merge (the assets tag+serial pattern, no backfill): **models** name **+**
+   `search_manufacturer`; **kits** name **+** `search_assetTag`, with active + non-prep filtered
+   IN the search via `filterFields` (`.eq("isActive",true).eq("isPrep",false)`, exact parity with
+   the old JS filter, no post-filtering the bounded page; `includePrep` opt-in). Each cutover
+   resolves the selected row's label via a getById hook (may be off the current search page) —
+   same pattern as the supplier cutover. **Scoped out + deleted (query + index + hook):**
+   `search.projects` (the app never picks a project in a combobox — projects are created/edited,
+   never selected) and `search.assets` (every asset consumer is a MULTI-select builder/table
+   whose selected chips need per-id label resolution the bounded search page can't give); both are
+   trivially re-addable with a real single-select consumer (noted in `schema.ts` + `search.ts`).
+   `convex/search.test.ts` covers the manufacturer + assetTag merges + prep exclusion. Every
+   remaining `search.ts` query now has a live consumer.
 4. **No `usePaginatedQuery` anywhere (§6).** Detail composites `.collect()` per-entity lists
    (bounded, low practical risk); revisit if any single entity's line-item list can get large.
 

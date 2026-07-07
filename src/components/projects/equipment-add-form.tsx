@@ -25,7 +25,8 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
-import { useModels } from "@/hooks/use-models";
+import { useModelSearch, useModel } from "@/hooks/use-models";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,14 +92,14 @@ export function EquipmentAddForm({
     },
   });
 
-  // Reactive models (Convex). Org-scoped list returns all models; re-apply
-  // getModels's default active filter and name sort client-side.
-  const modelDocs = useModels(orgId);
+  // Phase 7 — native INDEXED model search (name OR manufacturer, bounded + reactive)
+  // instead of loading the whole org catalog to JS-filter. Debounced as the user types;
+  // re-apply getModels' active filter on the bounded result set.
+  const [modelQuery, setModelQuery] = useState("");
+  const debouncedModelQuery = useDebouncedValue(modelQuery, 200);
+  const modelDocs = useModelSearch(orgId, debouncedModelQuery);
   const activeModels = useMemo(
-    () =>
-      [...(modelDocs ?? [])]
-        .filter((m) => m.isActive === true)
-        .sort((a, b) => a.name.localeCompare(b.name)),
+    () => [...(modelDocs ?? [])].filter((m) => m.isActive === true),
     [modelDocs],
   );
 
@@ -118,7 +119,12 @@ export function EquipmentAddForm({
     description: [m.manufacturer, m.modelNumber].filter(Boolean).join(" - ") || undefined,
   }));
 
-  const selectedModel = activeModels.find((m) => m.id === selectedModelId);
+  // Resolve the selected model directly (it may not be in the current search page) so
+  // the trigger label + the modelId effect below don't depend on the search results.
+  const selectedModel = useModel(selectedModelId || undefined) ?? undefined;
+  const selectedModelLabel = selectedModel
+    ? `${selectedModel.manufacturer ? `${selectedModel.manufacturer} ` : ""}${selectedModel.name}`
+    : undefined;
 
   // Model-based availability check (works with or without dates)
   const { data: availability, isLoading: availabilityLoading } = useServerQuery({
@@ -158,11 +164,11 @@ export function EquipmentAddForm({
   // When a model is selected, update form fields
   // Don't set unitPrice here — server-side optimizer will auto-price if billing period + rates exist
   useEffect(() => {
-    if (selectedModel) {
-      form.setValue("modelId", selectedModel.id);
+    if (selectedModelId) {
+      form.setValue("modelId", selectedModelId);
       form.setValue("assetId", undefined);
     }
-  }, [selectedModel, form]);
+  }, [selectedModelId, form]);
 
   // When asset is looked up, populate form
   useEffect(() => {
@@ -289,6 +295,9 @@ export function EquipmentAddForm({
                   value={selectedModelId}
                   onChange={(val) => setSelectedModelId(val)}
                   options={modelOptions}
+                  onSearchChange={setModelQuery}
+                  loading={modelDocs === undefined}
+                  selectedLabel={selectedModelLabel}
                   placeholder="Search models…"
                   searchPlaceholder="Search by name, manufacturer…"
                   emptyMessage="No models found."

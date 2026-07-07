@@ -43,6 +43,16 @@ export interface ReserveItemsInput {
   confirm?: boolean;
 }
 
+/** Per-model availability outcome, returned on a preview so an agent can resolve conflicts. */
+export interface ReservePreviewItem {
+  modelId: string;
+  requested: number;
+  available: number;
+  sufficient: boolean;
+  /** Names/numbers of projects competing for the same stock in the window. */
+  conflicts: string[];
+}
+
 /** Result of a reserve, whether previewed or committed. */
 export interface ReserveResult {
   reservationId: string | null; // null on a pure preview
@@ -52,6 +62,8 @@ export interface ReserveResult {
   lineItemIds: string[];
   /** Human-readable summary the agent can relay ("Reserve 3x Model-X on Project-42"). */
   summary: string;
+  /** Present on a preview (dryRun): per-item availability so the agent can decide before committing. */
+  preview?: ReservePreviewItem[];
 }
 
 /** The availability-atomic write, implemented by the Convex mutation adapter. */

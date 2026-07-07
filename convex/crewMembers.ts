@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext, redactFields } from "./lib/auth";
+import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -93,7 +94,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("crewMembers", args);
+    const _id = await ctx.db.insert("crewMembers", args);
+    await bumpCountersForTable(ctx, "crewMembers", null, args);
+    return _id;
   },
 });
 
@@ -136,6 +139,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("crewMembers", args);
+    await bumpCountersForTable(ctx, "crewMembers", null, args);
     return { _id, created: true };
   },
 });
@@ -183,6 +187,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await bumpCountersForTable(ctx, "crewMembers", doc, { ...doc, ...safePatch });
     return doc._id;
   },
 });
@@ -194,6 +199,7 @@ export const remove = mutation({
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("crewMembers not found: " + id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "crewMembers", doc, null);
   },
 });
 
@@ -216,6 +222,7 @@ export const patchMember = mutation({
     delete patch.id;
     for (const f of clear ?? []) patch[f] = undefined;
     await ctx.db.patch(doc._id, patch);
+    await bumpCountersForTable(ctx, "crewMembers", doc, { ...doc, ...patch });
     return doc._id;
   },
 });

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -103,7 +104,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("projects", args);
+    const _id = await ctx.db.insert("projects", args);
+    await bumpCountersForTable(ctx, "projects", null, args);
+    return _id;
   },
 });
 
@@ -161,6 +164,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("projects", args);
+    await bumpCountersForTable(ctx, "projects", null, args);
     return { _id, created: true };
   },
 });
@@ -223,6 +227,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await bumpCountersForTable(ctx, "projects", doc, { ...doc, ...safePatch });
     return doc._id;
   },
 });
@@ -234,6 +239,7 @@ export const remove = mutation({
     const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("projects not found: " + id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "projects", doc, null);
   },
 });
 
@@ -322,6 +328,7 @@ export const createWithUniqueNumber = mutation({
       .unique();
     if (clash) return { created: false, id: clash.id };
     await ctx.db.insert("projects", args);
+    await bumpCountersForTable(ctx, "projects", null, args);
     return { created: true, id: args.id };
   },
 });
@@ -344,6 +351,7 @@ export const patchProject = mutation({
     const patch: Record<string, unknown> = { ...set };
     for (const k of clear ?? []) patch[k] = undefined;
     await ctx.db.patch(doc._id, patch);
+    await bumpCountersForTable(ctx, "projects", doc, { ...doc, ...patch });
     return doc._id;
   },
 });

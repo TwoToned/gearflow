@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -111,7 +112,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("crewAssignments", args);
+    const _id = await ctx.db.insert("crewAssignments", args);
+    await bumpCountersForTable(ctx, "crewAssignments", null, args);
+    return _id;
   },
 });
 
@@ -150,6 +153,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("crewAssignments", args);
+    await bumpCountersForTable(ctx, "crewAssignments", null, args);
     return { _id, created: true };
   },
 });
@@ -193,6 +197,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...safePatch });
     return doc._id;
   },
 });
@@ -204,6 +209,7 @@ export const remove = mutation({
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("crewAssignments not found: " + id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, null);
   },
 });
 
@@ -255,6 +261,7 @@ export const patchAssignment = mutation({
     const patch: Record<string, unknown> = { ...set };
     for (const k of clear ?? []) patch[k] = undefined;
     await ctx.db.patch(doc._id, patch);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
     return doc._id;
   },
 });
@@ -272,6 +279,7 @@ export const deleteCascade = mutation({
     const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
     for (const e of entries) await ctx.db.delete(e._id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, null);
   },
 });
 
@@ -314,6 +322,7 @@ export const createServiceAssignment = mutation({
       .first();
     if (dupe) return { created: false, id: dupe.id };
     await ctx.db.insert("crewAssignments", args);
+    await bumpCountersForTable(ctx, "crewAssignments", null, args);
     return { created: true, id: args.id };
   },
 });

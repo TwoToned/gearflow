@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -11,6 +12,10 @@ import * as enums from "./lib/validators";
  * actions, which still own permission/validation/audit). Org-scoped reads
  * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
+ *
+ * COUNTER MAINTENANCE (§3.6): the mutating funcs keep the dashboardCounters row in
+ * sync in-transaction via bumpCountersForTable (convex/lib/counters.ts). Emitted by
+ * the generator for the five counted tables — re-add on regen. See FEATUREDOCS/54.
  */
 
 export const list = query({
@@ -129,7 +134,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("assets", args);
+    const _id = await ctx.db.insert("assets", args);
+    await bumpCountersForTable(ctx, "assets", null, args);
+    return _id;
   },
 });
 
@@ -187,6 +194,7 @@ export const createMany = mutation({
         .first();
       if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag });
       await ctx.db.insert("assets", a);
+      await bumpCountersForTable(ctx, "assets", null, a);
       ids.push(a.id);
     }
     return { ids };
@@ -230,6 +238,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("assets", args);
+    await bumpCountersForTable(ctx, "assets", null, args);
     return { _id, created: true };
   },
 });
@@ -275,6 +284,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...safePatch });
     return doc._id;
   },
 });
@@ -286,6 +296,7 @@ export const remove = mutation({
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("assets not found: " + id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "assets", doc, null);
   },
 });
 
@@ -341,6 +352,7 @@ export const patchAsset = mutation({
     if (!doc) throw new ConvexError("assets not found: " + id);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
+      await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...set });
       return doc._id;
     }
     const { _id, _creationTime, ...rest } = doc;
@@ -350,6 +362,7 @@ export const patchAsset = mutation({
       delete merged[k];
     }
     await ctx.db.replace(doc._id, merged as typeof rest);
+    await bumpCountersForTable(ctx, "assets", doc, merged);
     return doc._id;
   },
 });
@@ -376,6 +389,7 @@ export const bulkUpdate = mutation({
       if (!doc || doc.organizationId !== organizationId) continue;
       if (cl.length === 0) {
         await ctx.db.patch(doc._id, set);
+        await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...set });
       } else {
         const { _id, _creationTime, ...rest } = doc;
         const merged: Record<string, unknown> = { ...rest, ...set };
@@ -384,6 +398,7 @@ export const bulkUpdate = mutation({
           delete merged[k];
         }
         await ctx.db.replace(doc._id, merged as typeof rest);
+        await bumpCountersForTable(ctx, "assets", doc, merged);
       }
       n++;
     }

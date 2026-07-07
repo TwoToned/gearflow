@@ -6,6 +6,7 @@ import {
   type Resource,
   type PermissionMap,
 } from "./permissions";
+import type { ActorContext } from "./actor-context";
 
 /**
  * Get the current organization context for server-side operations.
@@ -82,14 +83,21 @@ async function resolvePermissions(
 }
 
 /**
- * Check if the current user has a specific permission in the active org.
- * Throws if not permitted. Works for both built-in and custom roles.
+ * Core permission check against an EXPLICIT actor context. Shared by the session
+ * path (`requirePermission`) and the API-key path. Does the member/role lookup +
+ * `hasPermission` against the actor's org+user; it never reads the request or
+ * session, so it runs identically for a UI session and an API key acting as a user.
+ *
+ * For `apiKey` actors, effective permission is the intersection of the acting
+ * user's live RBAC (checked here) and the key's `scopes` (checked separately at
+ * the API boundary before this is called) — see docs/designs/api-mcp-agent-access.md.
  */
-export async function requirePermission(
+export async function resolvePermissionForActor(
+  actor: ActorContext,
   resource: Resource,
   action: string,
 ): Promise<{ organizationId: string; userId: string; userName: string }> {
-  const { organizationId, userId, userName } = await getOrgContext();
+  const { organizationId, userId, userName } = actor;
 
   const member = await prisma.member.findFirst({
     where: { organizationId, userId },
@@ -113,6 +121,29 @@ export async function requirePermission(
   }
 
   return { organizationId, userId, userName };
+}
+
+/**
+ * Check that a caller has a specific permission in the active org. Throws if not
+ * permitted. Works for both built-in and custom roles.
+ *
+ * By default the caller is the current Better Auth session (existing web-UI
+ * behaviour — unchanged). Pass an explicit `actor` to check on behalf of an API
+ * key or any other resolved identity, reusing the exact same RBAC logic.
+ */
+export async function requirePermission(
+  resource: Resource,
+  action: string,
+  actor?: ActorContext,
+): Promise<{ organizationId: string; userId: string; userName: string }> {
+  let resolvedActor = actor;
+  if (!resolvedActor) {
+    // Session path: derive the actor from the request, exactly as before.
+    const { organizationId, userId, userName } = await getOrgContext();
+    resolvedActor = { organizationId, userId, userName, actorType: "session" };
+  }
+
+  return resolvePermissionForActor(resolvedActor, resource, action);
 }
 
 /**

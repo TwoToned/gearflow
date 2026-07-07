@@ -11,6 +11,7 @@ import {
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import type { ActorContext } from "@/lib/actor-context";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { nativeLineItemWrites, nativeRecalc, mapNativeWriteError } from "@/lib/native-writes";
@@ -59,8 +60,11 @@ async function readBackLine(id: string) {
   return { ...line, asset, bulkAsset };
 }
 
-export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false, includeAccessories = true) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false, includeAccessories = true, actor?: ActorContext) {
+  // `actor` lets the API/MCP layer drive this exact guarded path on behalf of an
+  // API key (actorType "apiKey") instead of a Better Auth session. When omitted,
+  // the acting identity is the current session — unchanged web-UI behaviour.
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items", actor);
   const parsed = lineItemSchema.parse(data);
 
   // Server-side availability enforcement for equipment.
@@ -1138,9 +1142,15 @@ export async function checkAvailability(
   modelId: string,
   rentalStartDate?: Date | string | null,
   rentalEndDate?: Date | string | null,
-  excludeProjectId?: string
+  excludeProjectId?: string,
+  actor?: ActorContext
 ) {
-  const { organizationId } = await getOrgContext();
+  // `actor` (API/MCP path) supplies the org directly; membership + RBAC are
+  // already validated upstream (authorizeApiOperation) before this read runs.
+  // Without it, resolve the org from the current session, as before.
+  const { organizationId } = actor
+    ? { organizationId: actor.organizationId }
+    : await getOrgContext();
 
   const hasDates = !!rentalStartDate && !!rentalEndDate;
   const startDate = hasDates ? new Date(rentalStartDate) : null;

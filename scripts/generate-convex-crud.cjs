@@ -65,6 +65,14 @@ const BROWSER_READABLE = new Set([
   "supplierOrders", "warehouseCloses", "savedReports", "savedTableViews",
 ]);
 
+// Tables whose rows feed a denormalised dashboard counter (convex/dashboardCounters.ts,
+// §3.6). Their mutating funcs keep the counter row in sync IN-TRANSACTION via
+// bumpCountersForTable (convex/lib/counters.ts) — a per-write delta so the native
+// dashboard never scans the whole-org registry on view. `reconcile` stays as the
+// drift backstop. The dispatch is generic (keyed by table); the contribution
+// predicates live in counters.ts and must match computeCounters.
+const COUNTED = new Set(["assets", "bulkAssets", "projects", "crewMembers", "crewAssignments"]);
+
 // Browser-readable tables that also get a per-project list (they carry a
 // projectId and the UI subscribes by project, not whole-org). Emits
 // `listByProject({ projectId, orgId })` guarded by requireOrgRead.
@@ -149,9 +157,14 @@ for (const mdl of models) {
     ? `import { requireOrgRead, requireOrgReadDoc, requireService${redactedFields ? ", getAuthContext, redactFields" : ""} } from "./lib/auth";\n`
     : `import { requireService } from "./lib/auth";\n`;
 
+  // Counter-maintained tables (§3.6) import the in-transaction dispatch helper.
+  const counted = COUNTED.has(key);
+  const bump = (before, after) => (counted ? `\n    await bumpCountersForTable(ctx, "${key}", ${before}, ${after});` : "");
+
   let out = `import { v } from "convex/values";\n`;
   out += `import { query, mutation } from "./_generated/server";\n`;
   out += authImports;
+  if (counted) out += `import { bumpCountersForTable } from "./lib/counters";\n`;
   if (usesEnums) out += `import * as enums from "./lib/validators";\n`;
   out += `\n`;
   out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${browserReadable ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (not on the browser-readable allowlist)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
@@ -180,22 +193,24 @@ for (const mdl of models) {
     out += `export const listByParent = query({\n  args: { parentId: v.string() },\n  handler: async (ctx, { parentId }) => {\n    await requireService(ctx);\n    return await ctx.db\n      .query("${key}")\n      .withIndex("by_${pfk}", (q) => q.eq("${pfk}", parentId))\n      .collect();\n  },\n});\n\n`;
   }
 
-  out += `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    return await ctx.db.insert("${key}", args);\n  },\n});\n\n`;
+  out += counted
+    ? `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    const _id = await ctx.db.insert("${key}", args);${bump("null", "args")}\n    return _id;\n  },\n});\n\n`
+    : `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    return await ctx.db.insert("${key}", args);\n  },\n});\n\n`;
 
   // Atomic, idempotent create for backfills (security review P0-2): the check +
   // insert happen inside ONE serializable Convex mutation, so a concurrent
   // dual-write can't race a query-then-create into duplicate \`id\` rows.
-  out += `export const createIfMissing = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    const existing = await ctx.db.query("${key}").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();\n    if (existing) return { _id: existing._id, created: false };\n    const _id = await ctx.db.insert("${key}", args);\n    return { _id, created: true };\n  },\n});\n\n`;
+  out += `export const createIfMissing = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    const existing = await ctx.db.query("${key}").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();\n    if (existing) return { _id: existing._id, created: false };\n    const _id = await ctx.db.insert("${key}", args);${bump("null", "args")}\n    return { _id, created: true };\n  },\n});\n\n`;
 
   // organizationId is set on create and IMMUTABLE thereafter (security review
   // P1-1): strip it from the patch so no write can move a row across tenants,
   // even if a future server bug spreads user input into the patch.
   const patchExpr = mdl.orgScoped
-    ? `const safePatch = { ...patch };\n    delete safePatch.organizationId;\n    await ctx.db.patch(doc._id, safePatch);`
-    : `await ctx.db.patch(doc._id, patch);`;
+    ? `const safePatch = { ...patch };\n    delete safePatch.organizationId;\n    await ctx.db.patch(doc._id, safePatch);${bump("doc", "{ ...doc, ...safePatch }")}`
+    : `await ctx.db.patch(doc._id, patch);${bump("doc", "{ ...doc, ...patch }")}`;
   out += `export const update = mutation({\n  args: {\n    id: ${idValidator},\n    patch: v.object({\n${patchArgs}\n    }),\n  },\n  handler: async (ctx, { id, patch }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    ${patchExpr}\n    return doc._id;\n  },\n});\n\n`;
 
-  out += `export const remove = mutation({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.delete(doc._id);\n  },\n});\n`;
+  out += `export const remove = mutation({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.delete(doc._id);${bump("doc", "null")}\n  },\n});\n`;
 
   fs.writeFileSync(path.join(ROOT, "convex", `${key}.ts`), out);
   written++;

@@ -2144,11 +2144,14 @@ export default defineSchema({
   // Denormalised dashboard stat counters (Phase 3). One row per org holding the
   // counts getDashboardStats used to derive by whole-org `.collect()` + JS count
   // — read O(1) by the native dashboard instead of scanning the asset registry /
-  // line-item table. Maintained incrementally by `dashboardCounters.bump` from the
-  // write paths + authoritatively recomputed by `dashboardCounters.reconcile`
-  // (backfill + drift correction). Date-derived metrics (maintenanceDue,
-  // overdueReturns) are NOT stored here — they're computed at read from bounded
-  // indexed queries (nothing writes at the moment a date passes).
+  // line-item table. Maintained IN-TRANSACTION on every counted write via
+  // `bumpCountersForTable` / `bump*Counters` (convex/lib/counters.ts), wired into the
+  // generated + custom + native (`*Writes.ts`) mutations and the warehouseOps status
+  // choke point (§3.6). `dashboardCounters.reconcile` recomputes authoritatively
+  // (backfill + periodic drift backstop; `updatedAt` = last reconcile).
+  // Date-derived metrics (maintenanceDue, overdueReturns) are NOT stored here —
+  // they're computed at read from bounded indexed queries (nothing writes at the
+  // moment a date passes).
   dashboardCounters: defineTable({
     organizationId: v.string(),
     activeAssets: v.number(),

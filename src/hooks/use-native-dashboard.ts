@@ -14,6 +14,11 @@ import { api } from "../../convex/_generated/api";
 export const NATIVE_DASHBOARD_ENABLED = process.env.NEXT_PUBLIC_NATIVE_DASHBOARD === "true";
 
 const MINUTE = 60_000;
+// Counters are maintained per-write in-transaction (convex/lib/counters.ts), so the
+// on-view reconcile is now only a DRIFT BACKSTOP — throttle it to a long window
+// (≤ once/hour/org) instead of the old per-minute refresh, so the whole-org
+// `.collect()` recompute stays off the hot path.
+const RECONCILE_BACKSTOP_MS = 60 * MINUTE;
 
 export interface NativeDashboardStats {
   totalAssets: number;
@@ -32,9 +37,10 @@ export interface NativeDashboardStats {
  * metrics computed at read. Reactive over the WebSocket (re-runs when counters or
  * the date-derived source rows change, and each minute as `now` rolls over).
  *
- * Also fires a THROTTLED `reconcileIfStale` once on mount so the counters self-heal
- * on view (≤ once per 60s per org) without per-write-site bumps — a fresh row is a
- * cheap no-op. Skips entirely unless the flag is on and the org id is known.
+ * Counters are maintained per-write in-transaction (convex/lib/counters.ts); this
+ * hook also fires a THROTTLED `reconcileIfStale` once on mount as a DRIFT BACKSTOP
+ * (≤ once/hour/org) so any residual drift self-heals and a brand-new org gets its
+ * row — a fresh row is a cheap no-op. Skips unless the flag is on and orgId is known.
  */
 export function useNativeDashboardStats(
   orgId: string | undefined,
@@ -55,8 +61,9 @@ export function useNativeDashboardStats(
   useEffect(() => {
     if (!enabled || !isAuthenticated || !orgId || firedFor.current === orgId) return;
     firedFor.current = orgId;
-    // Best-effort: keep counters fresh on view, throttled to ≤ once/60s per org.
-    void reconcileIfStale({ orgId, now: Date.now(), maxAgeMs: MINUTE }).catch(() => {});
+    // Best-effort drift backstop: reconcile only if the row is stale by the long
+    // backstop window (per-write deltas keep it fresh in between). ≤ once/hour/org.
+    void reconcileIfStale({ orgId, now: Date.now(), maxAgeMs: RECONCILE_BACKSTOP_MS }).catch(() => {});
   }, [enabled, isAuthenticated, orgId, reconcileIfStale]);
 
   return { data, isLoading: enabled && data === undefined };

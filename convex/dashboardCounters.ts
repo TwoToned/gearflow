@@ -9,10 +9,16 @@ import { requireService, requireOrgRead } from "./lib/auth";
  * + JS counting — so the native dashboard reads them O(1) instead of scanning the
  * asset registry / line-item table (the top Convex-limit risk in the migration).
  *
- * Maintenance: `reconcile` recomputes all six from source (backfill + drift
- * correction); `bump` adjusts a single field incrementally from the write paths
- * (asset/bulk/project/crew create/delete/status-change). The date-derived metrics
- * (maintenanceDue, overdueReturns) are NOT stored — `dashboardStats.bundle`
+ * Maintenance (§3.6): the six counters are kept fresh IN-TRANSACTION on every
+ * counted write by `convex/lib/counters.ts` (`bumpCountersForTable` for the
+ * generated CRUD + per-entity `bump*Counters` for the custom / native / warehouseOps
+ * sites) — a signed delta applied in the same mutation as the data change, so the
+ * native dashboard never has to scan the whole-org registry on view. `reconcile`
+ * recomputes all six from source (backfill + a PERIODIC DRIFT BACKSTOP, no longer
+ * the primary freshness mechanism — the client now throttles `reconcileIfStale` to a
+ * long window). `bump` (this file) is the legacy single-field public entry point,
+ * retained for the reconcile parity test + any future service hook. The date-derived
+ * metrics (maintenanceDue, overdueReturns) are NOT stored — `dashboardStats.bundle`
  * computes them at read from bounded indexed queries.
  */
 
@@ -89,12 +95,15 @@ export const reconcile = mutation({
 });
 
 /**
- * Throttled reconcile triggered by the native dashboard on view: recompute only
- * when the row is missing or older than `maxAgeMs`. This keeps counters fresh
- * without per-write-site bumps or a global cron — and because it's throttled, a
- * fresh row makes it a cheap no-op (no whole-org scan). Gated on requireOrgRead so
- * an org member can only refresh their own org's counters. `now` is passed (Convex
- * mutations can't read the clock).
+ * DRIFT BACKSTOP — throttled reconcile triggered by the native dashboard on view:
+ * recompute only when the row is missing or its last reconcile (`updatedAt`) is
+ * older than `maxAgeMs`. Counters are now primarily maintained per-write
+ * (convex/lib/counters.ts); this catches any residual drift (a missed write site, a
+ * clamp) and creates the row for a brand-new org on first view. Because it's
+ * throttled to a long window (client passes ~1h) a populated row is a cheap no-op —
+ * no whole-org scan on the hot path. Gated on requireOrgRead so an org member can
+ * only refresh their own org's counters. `now` is passed (Convex mutations can't
+ * read the clock).
  */
 export const reconcileIfStale = mutation({
   args: { orgId: v.string(), now: v.number(), maxAgeMs: v.number() },

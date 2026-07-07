@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import { bumpAssetCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -110,6 +111,7 @@ export const archiveNative = mutation({
     }
 
     await ctx.db.patch(asset._id, { isActive: false, status: "RETIRED", updatedAt: now });
+    await bumpAssetCounters(ctx, orgId, asset, { isActive: false, status: "RETIRED" });
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -196,6 +198,7 @@ export const deleteNative = mutation({
     }
 
     await ctx.db.delete(asset._id);
+    await bumpAssetCounters(ctx, orgId, asset, null);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -310,6 +313,7 @@ export const createNative = mutation({
     }
 
     await ctx.db.insert("assets", fields);
+    await bumpAssetCounters(ctx, fields.organizationId, null, fields);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -372,6 +376,7 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchAsset pattern.
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
+      await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...set });
     } else {
       const { _id, _creationTime, ...rest } = doc;
       const merged: Record<string, unknown> = { ...rest, ...set };
@@ -380,6 +385,7 @@ export const updateNative = mutation({
         delete merged[k];
       }
       await ctx.db.replace(doc._id, merged as typeof rest);
+      await bumpAssetCounters(ctx, orgId, doc, merged);
     }
 
     const finalTag = set.assetTag ?? doc.assetTag;

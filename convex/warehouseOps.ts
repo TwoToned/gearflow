@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { bumpAssetCounters } from "./lib/counters";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
 import { adjustBulkAvailability, coalesceAdjustments, type BulkAdjustment } from "./lib/inventory";
 import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
@@ -69,6 +70,7 @@ async function checkOutSerializedItem(
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
   await scanLog(ctx, { organizationId: p.organizationId, assetId: p.targetAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes ?? undefined });
   return "done";
 }
@@ -144,7 +146,10 @@ async function checkoutAccessoryChildren(
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
       const asset = await assetByCuid(ctx, u.assetId);
-      if (asset) await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+      if (asset) {
+        await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+        await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
+      }
       assetsTouched.push(u.assetId);
       await scanLog(ctx, { organizationId: p.organizationId, assetId: u.assetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: "Accessory — moved with parent" });
     } else if (u.bulkAssetId) {
@@ -346,6 +351,9 @@ async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, loc
     } else {
       await ctx.db.patch(a._id, { status: status as typeof a.status, updatedAt: now });
     }
+    // §3.6 dashboard counter: this is the choke point for warehouse status churn
+    // (nearly every check-out/-in/force-return funnels here). isActive is untouched.
+    await bumpAssetCounters(ctx, a.organizationId, a, { isActive: a.isActive, status });
   }
 }
 

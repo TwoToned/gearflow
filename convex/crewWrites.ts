@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import { bumpCrewMemberCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -64,6 +65,7 @@ export const createNative = mutation({
       .first();
     if (!existing) {
       await ctx.db.insert("crewMembers", fields);
+      await bumpCrewMemberCounters(ctx, fields.organizationId, null, fields);
     }
 
     await writeActivityLog(ctx, {
@@ -107,6 +109,7 @@ export const updateNative = mutation({
     const NEVER_CLEAR = new Set(["id", "organizationId"]);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set as Record<string, unknown>);
+      await bumpCrewMemberCounters(ctx, orgId, doc, { ...doc, ...(set as Record<string, unknown>) });
     } else {
       const { _id, _creationTime, ...rest } = doc;
       const merged: Record<string, unknown> = { ...rest, ...(set as Record<string, unknown>) };
@@ -115,6 +118,7 @@ export const updateNative = mutation({
         delete merged[k];
       }
       await ctx.db.replace(doc._id, merged as typeof rest);
+      await bumpCrewMemberCounters(ctx, orgId, doc, merged);
     }
 
     await writeActivityLog(ctx, {
@@ -157,6 +161,7 @@ export const deleteNative = mutation({
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
     await ctx.db.delete(doc._id);
+    await bumpCrewMemberCounters(ctx, orgId, doc, null);
 
     await writeActivityLog(ctx, {
       id: auditId,

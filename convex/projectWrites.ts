@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { projectWriteFields } from "./projects";
 
@@ -44,6 +45,7 @@ export const updateStatusNative = mutation({
 
     const from = project.status ?? "";
     await ctx.db.patch(project._id, { status, updatedAt: now });
+    await bumpProjectCounters(ctx, orgId, project, { ...project, status });
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -118,6 +120,7 @@ export const archiveNative = mutation({
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
     await ctx.db.patch(project._id, { status: "CANCELLED", updatedAt: now });
+    await bumpProjectCounters(ctx, orgId, project, { ...project, status: "CANCELLED" });
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -166,6 +169,7 @@ export const updateNative = mutation({
     const setObj = (set ?? {}) as Record<string, unknown>;
     if (clear.length === 0) {
       await ctx.db.patch(project._id, setObj);
+      await bumpProjectCounters(ctx, orgId, project, { ...project, ...setObj });
     } else {
       const { _id, _creationTime, ...rest } = project;
       const merged: Record<string, unknown> = { ...rest, ...setObj };
@@ -174,6 +178,7 @@ export const updateNative = mutation({
         delete merged[k];
       }
       await ctx.db.replace(project._id, merged as typeof rest);
+      await bumpProjectCounters(ctx, orgId, project, merged);
     }
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
@@ -225,6 +230,7 @@ export const createNative = mutation({
     if (clash) return { created: false as const, id: clash.id };
 
     await ctx.db.insert("projects", fields);
+    await bumpProjectCounters(ctx, fields.organizationId, null, fields);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -268,6 +274,7 @@ export const deleteNative = mutation({
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
     await ctx.db.delete(project._id);
+    await bumpProjectCounters(ctx, orgId, project, null);
 
     await writeActivityLog(ctx, {
       id: auditId,

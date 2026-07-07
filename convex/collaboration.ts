@@ -433,7 +433,7 @@ export const addComment = mutation({
     // reopen first (which requires project manage_line_items). This keeps the
     // resolved state authoritative instead of silently reopening on any reply.
     if (thread.status === "resolved") {
-      throw new Error(
+      throw new ConvexError(
         "This discussion is resolved. Reopen it before replying.",
       );
     }

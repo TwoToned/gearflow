@@ -11,6 +11,7 @@
  *
  * Keep behaviour in lockstep with the source until the Prisma version is deleted.
  */
+import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
 import {
@@ -197,7 +198,7 @@ export async function returnLineUnits(
   const now = Date.now();
   const lineItem = await lineDocByCuid(ctx, args.lineItemId);
   if (!lineItem || lineItem.projectId !== args.projectId || lineItem.organizationId !== args.organizationId) {
-    throw new Error("line item not found for return");
+    throw new ConvexError("line item not found for return");
   }
   const units = await lineUnits(ctx, lineItem.id);
 

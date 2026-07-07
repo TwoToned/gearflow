@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   Bookmark,
   SlidersHorizontal,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,7 @@ const settingsNav: SettingsNavSection[] = [
     label: "Integrations",
     items: [
       { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" },
+      { title: "API Keys", href: "/settings/api-keys", icon: KeyRound, permission: "orgSettings" },
     ],
   },
 ];

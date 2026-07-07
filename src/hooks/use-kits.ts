@@ -25,3 +25,15 @@ export function useKits(orgId: string | undefined): KitDoc[] | undefined {
 export function useKit(id: string | undefined): KitDoc | null | undefined {
   return useAuthedQuery(api.kits.getById, id ? { id } : "skip");
 }
+
+/**
+ * Phase 7 — reactive INDEXED kit search (`api.search.kits`, by name) instead of
+ * loading the whole org list to JS-filter. `query === ""` returns a bounded
+ * most-recent list. Pass `orgId: undefined` to skip.
+ */
+export function useKitSearch(
+  orgId: string | undefined,
+  query: string,
+): KitDoc[] | undefined {
+  return useAuthedQuery(api.search.kits, orgId ? { orgId, query } : "skip");
+}

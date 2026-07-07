@@ -25,3 +25,15 @@ export function useModels(orgId: string | undefined): ModelDoc[] | undefined {
 export function useModel(id: string | undefined): ModelDoc | null | undefined {
   return useAuthedQuery(api.models.getById, id ? { id } : "skip");
 }
+
+/**
+ * Phase 7 — reactive INDEXED model search (`api.search.models`, matches name OR
+ * manufacturer) instead of loading the whole org catalog to JS-filter. `query === ""`
+ * returns a bounded most-recent list. Pass `orgId: undefined` to skip.
+ */
+export function useModelSearch(
+  orgId: string | undefined,
+  query: string,
+): ModelDoc[] | undefined {
+  return useAuthedQuery(api.search.models, orgId ? { orgId, query } : "skip");
+}

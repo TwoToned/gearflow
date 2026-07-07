@@ -24,3 +24,15 @@ export function useClients(orgId: string | undefined): ClientDoc[] | undefined {
 export function useClient(id: string | undefined): ClientDoc | null | undefined {
   return useAuthedQuery(api.clients.getById, id ? { id } : "skip");
 }
+
+/**
+ * Phase 7 — reactive INDEXED client search (`api.search.clients`, by name) instead of
+ * loading the whole org list to JS-filter. `query === ""` returns a bounded
+ * most-recent list. Pass `orgId: undefined` to skip.
+ */
+export function useClientSearch(
+  orgId: string | undefined,
+  query: string,
+): ClientDoc[] | undefined {
+  return useAuthedQuery(api.search.clients, orgId ? { orgId, query } : "skip");
+}

@@ -19,7 +19,8 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
 import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
 import { setProjectManagers } from "@/server/project-managers";
-import { useClients } from "@/hooks/use-clients";
+import { useClientSearch, useClient } from "@/hooks/use-clients";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { getOrgMembers } from "@/server/org-members";
@@ -129,7 +130,11 @@ export function ProjectWizard({
     enabled: !isTemplate && !isEditing && !!orgId,
   });
 
-  const clients = useClients(orgId);
+  // Phase 7 — native INDEXED client search (bounded, reactive) instead of loading the
+  // whole org list to JS-filter. Debounced as the user types.
+  const [clientQuery, setClientQuery] = useState("");
+  const debouncedClientQuery = useDebouncedValue(clientQuery, 200);
+  const clients = useClientSearch(orgId, debouncedClientQuery);
   const clientOptions = (clients ?? []).map((c) => ({ value: c.id, label: c.name, description: c.contactName || undefined }));
   const rawLocations = useLocations(orgId) ?? [];
   const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
@@ -183,6 +188,8 @@ export function ProjectWizard({
   });
 
   const v = form.watch();
+  // Resolve the selected client's label directly (it may not be in the current search page).
+  const selectedClientName = useClient(v.clientId || undefined)?.name;
 
   // Pre-fill the project code from the org's next sequence so the (now required)
   // field is populated by default — the user accepts it or types their own.
@@ -287,6 +294,7 @@ export function ProjectWizard({
               <Field label="Client">
                 <Controller control={form.control} name="clientId" render={({ field }) => (
                   <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={clientOptions}
+                    onSearchChange={setClientQuery} loading={clients === undefined} selectedLabel={selectedClientName}
                     placeholder="Select client…" searchPlaceholder="Search clients…" allowClear
                     onCreateNew={() => setQuickClient(true)} createNewLabel="New client" emptyMessage="No clients found." />
                 )} />

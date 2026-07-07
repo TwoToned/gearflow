@@ -2,12 +2,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-// Mock convex/react so we can observe exactly what `useQuery` is called with for
-// each auth state — that argument (real args vs the "skip" sentinel) IS the fix.
+// Mock so we can observe exactly what `useQuery` is called with for each auth
+// state — that argument (real args vs the "skip" sentinel) IS the fix. `useQuery`
+// now comes from the convex-helpers CACHE hooks (Phase 0 keep-alive); `useConvexAuth`
+// still comes from convex/react. Mock both modules accordingly.
 const useConvexAuth = vi.fn();
 const useQuery = vi.fn();
 vi.mock("convex/react", () => ({
   useConvexAuth: () => useConvexAuth() as { isLoading: boolean; isAuthenticated: boolean },
+}));
+vi.mock("convex-helpers/react/cache/hooks", () => ({
   useQuery: (...args: unknown[]) => useQuery(...args) as unknown,
 }));
 

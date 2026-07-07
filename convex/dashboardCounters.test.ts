@@ -133,4 +133,69 @@ describe("dashboardCounters", () => {
       t.withIdentity(asUser("other")).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW }),
     ).rejects.toThrow();
   });
+
+  // §3.6: the per-write in-transaction deltas (convex/lib/counters.ts, wired into
+  // the generated + custom mutations) must keep the counter row EQUAL to the
+  // authoritative reconcile recompute after an arbitrary sequence of writes.
+  test("counters stay equal to the reconcile recompute after a write sequence", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const svc = t.withIdentity(SERVICE);
+    // Backfill so the row exists — per-write deltas require it (an absent row is
+    // left for reconcile to seed accurately; see the next test).
+    await svc.mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
+
+    // ── Assets ──
+    await svc.mutation(api.assets.create, { id: "a5", organizationId: ORG, modelId: "m1", assetTag: "a5", status: "CHECKED_OUT", isActive: true }); // +active +checkedOut
+    await svc.mutation(api.assets.patchAsset, { id: "a1", set: { status: "CHECKED_OUT" }, clear: [] }); // AVAILABLE→CHECKED_OUT: +checkedOut
+    await svc.mutation(api.assets.patchAsset, { id: "a2", set: { isActive: false }, clear: [] }); // active checked-out → inactive: -active -checkedOut
+    await svc.mutation(api.assets.remove, { id: "a5" }); // -active -checkedOut
+
+    // ── Bulk ──
+    await svc.mutation(api.bulkAssets.create, { id: "b4", organizationId: ORG, modelId: "m1", assetTag: "b4", totalQuantity: 20, isActive: true }); // +20
+    await svc.mutation(api.bulkAssets.patchBulkAsset, { id: "b1", set: { totalQuantity: 7 }, clear: [] }); // 10→7: -3
+    await svc.mutation(api.bulkAssets.patchBulkAsset, { id: "b2", set: { isActive: false }, clear: [] }); // active 5 → inactive: -5
+
+    // ── Projects ──
+    await svc.mutation(api.projects.createWithUniqueNumber, { id: "p5", organizationId: ORG, projectNumber: "P5", name: "P5", status: "PREPPING", isTemplate: false }); // +active
+    await svc.mutation(api.projects.patchProject, { id: "p1", set: { status: "QUOTED" }, clear: [] }); // CONFIRMED→QUOTED: -active
+    await svc.mutation(api.projects.remove, { id: "pov" }); // active CHECKED_OUT: -active
+
+    // ── Crew ──
+    await svc.mutation(api.crewMembers.create, { id: "c4", organizationId: ORG, firstName: "c4", lastName: "X", status: "ACTIVE" }); // +active
+    await svc.mutation(api.crewMembers.patchMember, { id: "c1", set: { status: "INACTIVE" } }); // -active
+
+    // ── Assignments ──
+    await svc.mutation(api.crewAssignments.create, { id: "ca4", organizationId: ORG, projectId: "p2", crewMemberId: "c2", status: "OFFERED" }); // +pending
+    await svc.mutation(api.crewAssignments.patchAssignment, { id: "ca1", set: { status: "ACCEPTED" } }); // OFFERED→ACCEPTED: -pending
+    await svc.mutation(api.crewAssignments.deleteCascade, { id: "ca2" }); // PENDING: -pending
+
+    // Row as maintained by the per-write deltas.
+    const maintained = await t.withIdentity(asUser(ORG)).query(api.dashboardCounters.getByOrg, { orgId: ORG });
+    // Authoritative recompute from source — must match the maintained values exactly.
+    const recomputed = await svc.mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW + 1 });
+
+    expect({
+      activeAssets: maintained?.activeAssets,
+      checkedOutAssets: maintained?.checkedOutAssets,
+      bulkQuantity: maintained?.bulkQuantity,
+      activeProjects: maintained?.activeProjects,
+      activeCrew: maintained?.activeCrew,
+      pendingCrewOffers: maintained?.pendingCrewOffers,
+    }).toEqual(recomputed);
+  });
+
+  test("a per-write delta against a not-yet-backfilled org is skipped (reconcile seeds it)", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const svc = t.withIdentity(SERVICE);
+    // No reconcile yet → row absent. A counted write must NOT create a partial row
+    // (a delta can't reconstruct the pre-existing population).
+    await svc.mutation(api.assets.create, { id: "a9", organizationId: ORG, modelId: "m1", assetTag: "a9", status: "AVAILABLE", isActive: true });
+    const before = await t.withIdentity(asUser(ORG)).query(api.dashboardCounters.getByOrg, { orgId: ORG });
+    expect(before).toBeNull();
+    // First reconcile creates it accurately (includes a9 → a1, a2, a9 active).
+    const values = await svc.mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
+    expect(values.activeAssets).toBe(3);
+  });
 });

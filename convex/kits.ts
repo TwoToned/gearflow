@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import * as enums from "./lib/validators";
 
@@ -227,6 +228,8 @@ async function releaseAsset(ctx: MutationCtx, assetId: string, now: number) {
   if (!asset) return;
   const { _id, _creationTime, kitId: _k, ...rest } = asset;
   await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now });
+  // §3.6 dashboard counter: releasing a checked-out kit asset back to AVAILABLE.
+  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "AVAILABLE" });
 }
 
 async function getAssetDoc(ctx: MutationCtx, id: string) {

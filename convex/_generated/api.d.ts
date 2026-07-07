@@ -60,6 +60,7 @@ import type * as kits from "../kits.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_bulkCheckin from "../lib/bulkCheckin.js";
+import type * as lib_counters from "../lib/counters.js";
 import type * as lib_fulfillment from "../lib/fulfillment.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
@@ -184,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   "lib/audit": typeof lib_audit;
   "lib/auth": typeof lib_auth;
   "lib/bulkCheckin": typeof lib_bulkCheckin;
+  "lib/counters": typeof lib_counters;
   "lib/fulfillment": typeof lib_fulfillment;
   "lib/inventory": typeof lib_inventory;
   "lib/lineItemUnits": typeof lib_lineItemUnits;

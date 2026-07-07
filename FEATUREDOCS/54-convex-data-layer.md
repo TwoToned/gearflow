@@ -154,6 +154,25 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
+**Dashboard counter maintenance (§3.6).** Five tables — `assets`, `bulkAssets`,
+`projects`, `crewMembers`, `crewAssignments` — feed the denormalised
+`dashboardCounters` row (one per org: `activeAssets`, `checkedOutAssets`,
+`bulkQuantity`, `activeProjects`, `activeCrew`, `pendingCrewOffers`). For those
+tables the generator emits an in-transaction `bumpCountersForTable(ctx, "<table>",
+before, after)` call in `create` / `createIfMissing` / `update` / `remove`, so the
+counter row is kept correct **on the same write** — the native dashboard reads it
+O(1) and never scans the whole-org registry on view. The delta logic +
+per-entity contribution predicates live in
+[`convex/lib/counters.ts`](../convex/lib/counters.ts) (they must match
+`computeCounters` in `dashboardCounters.ts`). The **custom** (`patchAsset`,
+`bulkUpdate`, `patchProject`, `createWithUniqueNumber`, `patchMember`,
+`patchAssignment`, `createServiceAssignment`, `deleteCascade`), **native**
+(`convex/*Writes.ts`), and **warehouse-status** (`warehouseOps.ts setAssetsStatus`
++ the two direct checkout patches, `kits.ts releaseAsset`) write sites call the same
+helpers by hand. `dashboardCounters.reconcile` stays as the drift backstop (backfill
++ a throttled on-view recompute, ~1×/h/org). Re-add the generated bumps on a
+`pnpm convex:crud` regen (they're in the generator template + the CUSTOM markers).
+
 ## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets done)
 
 > **Two cutover strategies have emerged.** **Hard cutover** (Clients): Convex is

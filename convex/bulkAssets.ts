@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { bumpCountersForTable } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import * as enums from "./lib/validators";
 
@@ -111,7 +112,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("bulkAssets", args);
+    const _id = await ctx.db.insert("bulkAssets", args);
+    await bumpCountersForTable(ctx, "bulkAssets", null, args);
+    return _id;
   },
 });
 
@@ -137,6 +140,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("bulkAssets", args);
+    await bumpCountersForTable(ctx, "bulkAssets", null, args);
     return { _id, created: true };
   },
 });
@@ -167,6 +171,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...safePatch });
     return doc._id;
   },
 });
@@ -178,6 +183,7 @@ export const remove = mutation({
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("bulkAssets not found: " + id);
     await ctx.db.delete(doc._id);
+    await bumpCountersForTable(ctx, "bulkAssets", doc, null);
   },
 });
 
@@ -216,6 +222,7 @@ export const patchBulkAsset = mutation({
     if (!doc) throw new ConvexError("bulkAssets not found: " + id);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
+      await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...set });
       return doc._id;
     }
     const { _id, _creationTime, ...rest } = doc;
@@ -225,6 +232,7 @@ export const patchBulkAsset = mutation({
       delete merged[k];
     }
     await ctx.db.replace(doc._id, merged as typeof rest);
+    await bumpCountersForTable(ctx, "bulkAssets", doc, merged);
     return doc._id;
   },
 });

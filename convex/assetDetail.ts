@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { pick, FILE_META_FIELDS } from "./lib/dto";
 
 /**
  * BROWSER-facing composite for the ASSET detail page (Phase 2 native reads).
@@ -74,7 +75,11 @@ async function readAssetDetail(ctx: QueryCtx, assetId: string, orgId: string) {
   const maintenanceRecords = inOrg(await pr(refMaintIds.map((id) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique())));
 
   const refFileIds = uniq([...assetMedia.map((m) => m.fileId), ...modelMedia.map((m) => m.fileId)]);
-  const files = inOrg(await pr(refFileIds.map((id) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).unique())));
+  // Allowlist DTO (§3.5): media rendering needs the URLs + display metadata; never
+  // the file `storageKey` (the S3/blob object key) or `uploadedById`.
+  const files = inOrg(await pr(refFileIds.map((id) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).unique()))).map((f) =>
+    pick(f, FILE_META_FIELDS),
+  );
 
   return {
     asset,

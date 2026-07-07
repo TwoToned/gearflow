@@ -55,4 +55,25 @@ describe("equipmentTab.bundle — auth gating + shape", () => {
       .query(api.equipmentTab.bundle, { projectId: "p1", orgId: ORG });
     expect(res.lineItems).toEqual([]);
   });
+
+  test("never carries user PII / file storageKey (§3.5 no-leak guard)", async () => {
+    const t = convexTest(schema, modules);
+    await seedViewer(t);
+    const res = await t.withIdentity(asUser(ORG)).query(api.equipmentTab.bundle, { projectId: "p1", orgId: ORG });
+    // No `users`/`fileUploads` are joined here; guard against a future one leaking
+    // an S3 storage key or Better-Auth PII.
+    expect(res).not.toHaveProperty("users");
+    expect(res).not.toHaveProperty("files");
+    const forbidden = ["storageKey", "email", "emailVerified", "banReason", "twoFactorEnabled"];
+    const scan = (value: unknown): void => {
+      if (Array.isArray(value)) value.forEach(scan);
+      else if (value && typeof value === "object") {
+        for (const [k, v] of Object.entries(value)) {
+          expect(forbidden).not.toContain(k);
+          scan(v);
+        }
+      }
+    };
+    scan(res);
+  });
 });

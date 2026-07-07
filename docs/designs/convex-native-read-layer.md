@@ -37,12 +37,21 @@ convention violations (`collaboration.ts` addComment, `lib/fulfillment.ts` — t
    convex-test proves the maintained row equals the reconcile recompute after a mixed write
    sequence (`dashboardCounters.test.ts`). Every dimension is per-write maintained — none
    left on reconcile-primary.
-2. **Raw-doc browser/detail composites (Phase 1–2).** `projectEquipment.browserBundle`,
-   `equipmentTab.bundle`, `warehouseDetail`/`kitDetail`/`assetDetail` return raw Convex docs
-   (incl. `warehouseDetail` raw `units`) rather than allowlisted DTOs, with no field-absence
-   tests (§3.5). Mitigated today by equal-permission RBAC gating (a reader already gets these
-   via the server action), so not urgent — but a future sensitive column could leak silently.
-   Add field-absence tests or DTO allowlists.
+2. ~~**Raw-doc browser/detail composites (Phase 1–2).**~~ **✅ DONE (2026-07-07, PR
+   `fix/convex-composite-dtos`).** Audit finding: the only genuinely-sensitive over-exposures
+   were `kitDetail.users` (Better-Auth PII — email/role/banReason/twoFactorEnabled) and
+   `kitDetail`/`assetDetail` `fileUploads` (the S3 `storageKey` + `uploadedById`). Those are now
+   **allowlist DTOs** via `convex/lib/dto.ts` `pick()`: `users` → `{id,name}`, `files` →
+   `{id,url,thumbnailUrl}` (kit) / `+{fileName,fileSize,mimeType}` (asset). The other joined
+   collections (assets/bulkAssets/kits/models/suppliers/categories/projects/lineItems/units/
+   clients/locations) are **already browser-readable via the generated thin CRUD** (parity with
+   the server action — the composite adds no exposure), and they flow into `Doc<>`-typed
+   reconstruct mappers, so narrowing them is pure churn with zero marginal security; a future
+   secret column on such a table must be redacted at the generator's `REDACTED_FIELDS` layer
+   (where `crewMembers.icalToken` already lives). **Field-absence convex-tests added for all
+   five composites** (`kitDetail`/`assetDetail`/`warehouseDetail`/`projectEquipment`/
+   `equipmentTab`.test.ts): `not.toHaveProperty` on the PII/storageKey fields + a recursive
+   no-leak guard. Reconstruct consumers compile + their unit tests pass unchanged.
 3. **Phase 7 mostly dead code.** 6 of 7 `convex/search.ts` queries have no `src/` consumer
    (only the supplier picker is wired). Wire the remaining pickers (asset/model/kit/client/
    project), or explicitly scope them out. Multi-field pickers need a 2nd index / denormalized

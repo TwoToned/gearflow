@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
 
 /**
  * BROWSER-facing composite for the KIT detail page (Phase 2 native reads). Returns
@@ -79,8 +80,12 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
     bulkAssets,
     models: inOrg(modelDocs),
     projects: inOrg(projectDocs),
-    users: userDocs.filter((u): u is NonNullable<typeof u> => u !== null),
-    files: inOrg(fileDocs),
+    // Allowlist DTOs (§3.5): the kit page needs only the scanner's { id, name } and
+    // the media file URLs — never `users` PII (email/role/…) or the file storageKey.
+    users: userDocs
+      .filter((u): u is NonNullable<typeof u> => u !== null)
+      .map((u) => pick(u, USER_PUBLIC_FIELDS)),
+    files: inOrg(fileDocs).map((f) => pick(f, FILE_URL_FIELDS)),
     location: location && location.organizationId === orgId ? location : null,
     category: category && category.organizationId === orgId ? category : null,
   };

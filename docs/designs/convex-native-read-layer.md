@@ -22,13 +22,21 @@ convention violations (`collaboration.ts` addComment, `lib/fulfillment.ts` — t
 `/not found/i` message would have been masked in prod, breaking the mirror tolerance).
 
 ### Remaining compliance follow-ups (tracked, non-blocking — all behind OFF flags)
-1. **Dashboard counters not write-maintained (Phase 3, highest limit-risk).** `dashboardCounters.bump`
-   has zero production callers; freshness comes from `reconcileIfStale` → whole-org
-   `.collect()` over assets/bulkAssets/projects/crew/assignments (throttled ≤1/60s/org).
-   Fine at current tenant sizes; a 32k-doc/16MiB risk as tenants grow. Either wire `bump`
-   into the counted write paths (§3.6's stated requirement) or accept reconcile-on-view and
-   fix the now-inaccurate `schema.ts` "maintained by bump" comment. Decide before enabling
-   `NEXT_PUBLIC_NATIVE_DASHBOARD` for a large tenant.
+1. ~~**Dashboard counters not write-maintained (Phase 3, highest limit-risk).**~~ **✅ DONE
+   (2026-07-07, PR `fix/convex-dashboard-counters-writepath`).** The six counters are now
+   maintained IN-TRANSACTION on every counted write via `convex/lib/counters.ts`
+   (`bumpCountersForTable` generic dispatch wired into the generated CRUD create/
+   createIfMissing/update/remove for the 5 counted tables + emitted by
+   `generate-convex-crud.cjs` for regen-safety; per-entity `bump*Counters` hand-wired into
+   the CUSTOM mutations, the native `*Writes.ts`, `warehouseOps.ts setAssetsStatus` [the
+   single status choke point covering ~25 call sites] + its 2 direct checkout patches, and
+   `kits.ts releaseAsset`). Predicates match `computeCounters` (parity by construction). A
+   delta against a not-yet-backfilled org is skipped (reconcile seeds it accurately).
+   `reconcile`/`reconcileIfStale` kept as a drift backstop, now throttled to ~1×/h/org (was
+   ≤1/60s) so the whole-org `.collect()` is off the hot path. `schema.ts` comment fixed.
+   convex-test proves the maintained row equals the reconcile recompute after a mixed write
+   sequence (`dashboardCounters.test.ts`). Every dimension is per-write maintained — none
+   left on reconcile-primary.
 2. **Raw-doc browser/detail composites (Phase 1–2).** `projectEquipment.browserBundle`,
    `equipmentTab.bundle`, `warehouseDetail`/`kitDetail`/`assetDetail` return raw Convex docs
    (incl. `warehouseDetail` raw `units`) rather than allowlisted DTOs, with no field-absence

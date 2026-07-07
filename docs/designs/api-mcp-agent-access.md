@@ -1,4 +1,12 @@
 <!-- STATUS: APPROVED 2026-07-07 (via /autoplan — CEO + Eng + DX, dual-model review) -->
+<!-- IMPLEMENTATION 2026-07-07 (PR #378): backend vertical BUILT + unit-tested (56 tests). See FEATUREDOCS/55. -->
+<!-- Built: ActorContext seam, ApiKey model+auth, scope∩RBAC gate, reserve_items service, reserve write via -->
+<!-- guarded addLineItem, Prisma idempotency, REST (/api/v1/whoami, /api/v1/reserve-items), MCP (/api/v1/mcp), -->
+<!-- key-management server actions. Remaining: availability-atomic Convex mutation (TOCTOU hardening), -->
+<!-- reservation DRAFT/TTL/provenance schema, asset-specific holds, key-management settings UI + onboarding, -->
+<!-- webhooks. Integration verified via PR preview deploy (no local Convex/DB in the worktree). -->
+<!-- ⚠ NOT merged to prod: needs preview integration test + key-creation UI + human merge decision. -->
+
 <!-- Full review artifact + decision audit trail: ~/.gstack/projects/TwoToned-gearflow/jayden-worktree-bridge-cse_01F1scZAF9AgfUgiUhzWSRTi-design-20260707-153700.md -->
 # GearFlow — Agent-Accessible API + MCP
 

@@ -243,7 +243,9 @@ export function ProjectWizard({
   };
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
-  const clientName = clientOptions.find((c) => c.value === v.clientId)?.label;
+  // Prefer the getById-resolved name (the selected client may be off the current
+  // bounded search page — e.g. editing an older project or after another search).
+  const clientName = selectedClientName ?? clientOptions.find((c) => c.value === v.clientId)?.label;
   const locationName = locationOptions.find((l) => l.value === v.locationId)?.label;
   const typeName = TYPE_OPTIONS.find((t) => t.value === v.type)?.label;
 

@@ -59,7 +59,7 @@ describe("search.kits — tag or name, prep excluded", () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-001", name: "Audio Rig", isActive: true, isPrep: false, createdAt: NOW });
-      await ctx.db.insert("kits", { id: "k2", organizationId: ORG, assetTag: "AUDIO-99", name: "Spare", isActive: true, createdAt: NOW }); // isPrep undefined → included
+      await ctx.db.insert("kits", { id: "k2", organizationId: ORG, assetTag: "AUDIO-99", name: "Spare", isActive: true, isPrep: false, createdAt: NOW });
       await ctx.db.insert("kits", { id: "kp", organizationId: ORG, assetTag: "KIT-PREP", name: "Audio Prep", isActive: true, isPrep: true, createdAt: NOW });
     });
     // "Audio" matches k1 (name) + kp (name) + k2 (tag AUDIO-99) — but kp is prep → excluded.

@@ -477,11 +477,14 @@ export default defineSchema({
     .index("by_organizationId_assetTag", ["organizationId", "assetTag"])
     .index("by_status", ["status"])
     .index("by_isActive", ["isActive"])
-    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] })
+    // isPrep is a filterField so the picker can exclude prep kits IN the search
+    // (exact parity with the old `isActive===true && isPrep===false` JS filter) —
+    // no post-filtering the bounded page (which could drop valid non-prep matches).
+    .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive", "isPrep"] })
     // Second index so the kit picker (label = "{assetTag} - {name}") matches a tag
     // term too — merged with name hits in convex/search.ts (the assets tag+serial
     // pattern; no denormalized field / backfill needed).
-    .searchIndex("search_assetTag", { searchField: "assetTag", filterFields: ["organizationId", "isActive"] }),
+    .searchIndex("search_assetTag", { searchField: "assetTag", filterFields: ["organizationId", "isActive", "isPrep"] }),
 
   // KitSerializedItem
   kitSerializedItems: defineTable({

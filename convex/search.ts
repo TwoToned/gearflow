@@ -46,13 +46,15 @@ export const models = query({
         .order("desc")
         .take(take);
     }
+    // isActive is filtered IN the search (exact parity with the pickers' active-only
+    // filter) so no post-filter drops valid rows out of the bounded page.
     const byName = await ctx.db
       .query("models")
-      .withSearchIndex("search_name", (s) => s.search("name", q).eq("organizationId", orgId))
+      .withSearchIndex("search_name", (s) => s.search("name", q).eq("organizationId", orgId).eq("isActive", true))
       .take(take);
     const byManufacturer = await ctx.db
       .query("models")
-      .withSearchIndex("search_manufacturer", (s) => s.search("manufacturer", q).eq("organizationId", orgId))
+      .withSearchIndex("search_manufacturer", (s) => s.search("manufacturer", q).eq("organizationId", orgId).eq("isActive", true))
       .take(take);
     const seen = new Set(byName.map((m) => m._id));
     const merged = [...byName];
@@ -83,25 +85,36 @@ export const kits = query({
     await requireOrgRead(ctx, orgId);
     const take = clampLimit(limit);
     const q = term.trim();
-    // isPrep is optional (often undefined for normal kits), so a `.eq("isPrep", false)`
-    // filterField would miss undefined rows. Filter in JS on the bounded result set.
-    const keep = (k: { isPrep?: boolean }) => includePrep || !k.isPrep;
     if (!q) {
+      // Unfocused fallback: bounded recent list, active + non-prep (matches the
+      // pickers' `isActive===true && isPrep===false`). JS-filter over a small window.
       const rows = await ctx.db
         .query("kits")
         .withIndex("by_organizationId", (x) => x.eq("organizationId", orgId))
         .order("desc")
         .take(take * 2);
-      return rows.filter(keep).slice(0, take);
+      return rows
+        .filter((k) => k.isActive === true && (includePrep || k.isPrep === false))
+        .slice(0, take);
     }
+    // Filter active + (non-prep unless includePrep) IN the search via filterFields —
+    // exact parity with the old JS filter and no post-filter that could drop valid
+    // non-prep matches out of the bounded page (codex P2). isPrep uses .eq(false), so
+    // a kit with isPrep unset is excluded — same as the old `isPrep === false`.
     const byName = await ctx.db
       .query("kits")
-      .withSearchIndex("search_name", (s) => s.search("name", q).eq("organizationId", orgId))
-      .take(take * 2);
+      .withSearchIndex("search_name", (s) => {
+        const base = s.search("name", q).eq("organizationId", orgId).eq("isActive", true);
+        return includePrep ? base : base.eq("isPrep", false);
+      })
+      .take(take);
     const byTag = await ctx.db
       .query("kits")
-      .withSearchIndex("search_assetTag", (s) => s.search("assetTag", q).eq("organizationId", orgId))
-      .take(take * 2);
+      .withSearchIndex("search_assetTag", (s) => {
+        const base = s.search("assetTag", q).eq("organizationId", orgId).eq("isActive", true);
+        return includePrep ? base : base.eq("isPrep", false);
+      })
+      .take(take);
     const seen = new Set(byName.map((k) => k._id));
     const merged = [...byName];
     for (const k of byTag) {
@@ -110,7 +123,7 @@ export const kits = query({
         merged.push(k);
       }
     }
-    return merged.filter(keep).slice(0, take);
+    return merged.slice(0, take);
   },
 });
 

@@ -1,7 +1,12 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
 import type { OptionalRestArgsOrSkip } from "convex/react";
+// Phase 0: use the CACHE package's useQuery (keep-alive across navigation) rather
+// than convex/react's — `ConvexQueryCacheProvider` is mounted in convex-provider.tsx
+// but only these hooks read it, so the default hooks left this cache inert.
+// Signature is identical, so it stays a drop-in and auth-gating below is unchanged.
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReference } from "convex/server";
 
 /**

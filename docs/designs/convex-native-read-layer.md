@@ -8,6 +8,42 @@ Tier E (auth into Convex) and the eventual Postgres DROP-TABLE decommission rema
 
 ---
 
+## ✅ Post-migration compliance review (2026-07-07)
+
+Two independent reviews (4 parallel audit agents + a Codex pass) verified all 7 phases
+are on `main`. Verdict: **present and substantially compliant**; Phases 4 & 5 clean
+(the Phase-5 "cardinal sin" — a native mutation relaxing the guard while bypassing
+invariants+audit — is **absent**; the only unaudited natives, `reorderNative`/
+`recalcNative`, are correctly unaudited at parity with their legacy paths). Everything
+ships behind default-OFF flags. **Fixed immediately** (PR: `fix/convex-native-review-nits`):
+the inert Phase-0 cache (`useAuthedQuery` now uses `convex-helpers/react/cache/hooks` so
+the mounted `ConvexQueryCacheProvider` actually caches), and two plain-`Error`-in-mutation
+convention violations (`collaboration.ts` addComment, `lib/fulfillment.ts` — the latter's
+`/not found/i` message would have been masked in prod, breaking the mirror tolerance).
+
+### Remaining compliance follow-ups (tracked, non-blocking — all behind OFF flags)
+1. **Dashboard counters not write-maintained (Phase 3, highest limit-risk).** `dashboardCounters.bump`
+   has zero production callers; freshness comes from `reconcileIfStale` → whole-org
+   `.collect()` over assets/bulkAssets/projects/crew/assignments (throttled ≤1/60s/org).
+   Fine at current tenant sizes; a 32k-doc/16MiB risk as tenants grow. Either wire `bump`
+   into the counted write paths (§3.6's stated requirement) or accept reconcile-on-view and
+   fix the now-inaccurate `schema.ts` "maintained by bump" comment. Decide before enabling
+   `NEXT_PUBLIC_NATIVE_DASHBOARD` for a large tenant.
+2. **Raw-doc browser/detail composites (Phase 1–2).** `projectEquipment.browserBundle`,
+   `equipmentTab.bundle`, `warehouseDetail`/`kitDetail`/`assetDetail` return raw Convex docs
+   (incl. `warehouseDetail` raw `units`) rather than allowlisted DTOs, with no field-absence
+   tests (§3.5). Mitigated today by equal-permission RBAC gating (a reader already gets these
+   via the server action), so not urgent — but a future sensitive column could leak silently.
+   Add field-absence tests or DTO allowlists.
+3. **Phase 7 mostly dead code.** 6 of 7 `convex/search.ts` queries have no `src/` consumer
+   (only the supplier picker is wired). Wire the remaining pickers (asset/model/kit/client/
+   project), or explicitly scope them out. Multi-field pickers need a 2nd index / denormalized
+   field first.
+4. **No `usePaginatedQuery` anywhere (§6).** Detail composites `.collect()` per-entity lists
+   (bounded, low practical risk); revisit if any single entity's line-item list can get large.
+
+---
+
 ## ▶ NEXT SESSION — START HERE (2026-07-07)
 
 **PHASES 6 + 7 ARE NOW CLOSED — the Convex-native migration is COMPLETE.** With Phases

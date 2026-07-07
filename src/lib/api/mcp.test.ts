@@ -13,7 +13,7 @@ vi.mock("@/lib/api/reserve-port", () => ({ convexReservationPort: {} }));
 vi.mock("@/lib/api-key", () => ({ getApiKeyActorContext: vi.fn(), ApiKeyAuthError: class extends Error { code = "INVALID_KEY"; } }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
-import { handleMcpMessage, MCP_TOOLS } from "@/lib/api/mcp";
+import { handleMcpMessage, MCP_TOOLS, type JsonRpcRequest } from "@/lib/api/mcp";
 import { ApiKeyAuthError } from "@/lib/api-key";
 
 const actor: ActorContext = {
@@ -48,7 +48,7 @@ describe("handleMcpMessage — protocol", () => {
 
   it("returns null (no body) for notifications", async () => {
     const res = await handleMcpMessage(
-      { jsonrpc: "2.0", method: "notifications/initialized" } as any,
+      { jsonrpc: "2.0", method: "notifications/initialized" } as JsonRpcRequest,
       null,
     );
     expect(res).toBeNull();

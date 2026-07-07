@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ActorContext } from "../actor-context";
-import type { ReservationPort, ReserveResult } from "@/lib/api/reserve-items";
+import type { ReservationPort, ReserveResult, ReserveItemsInput } from "@/lib/api/reserve-items";
+
+type ReserveArgs = Parameters<ReservationPort["reserve"]>[0];
 
 const memberFindFirst = vi.fn();
 vi.mock("@/lib/prisma", () => ({
@@ -28,8 +30,8 @@ function actorWith(scopes: string[]): ActorContext {
 
 const OK_SCOPES = ["project:manage_line_items"];
 
-function fakePort(): ReservationPort & { calls: any[] } {
-  const calls: any[] = [];
+function fakePort(): ReservationPort & { calls: ReserveArgs[] } {
+  const calls: ReserveArgs[] = [];
   return {
     calls,
     reserve: vi.fn(async (args) => {
@@ -81,7 +83,9 @@ describe("reserveItems — guard + contract", () => {
     // reserveItems only reads projectId/items, and org comes from the actor.
     await reserveItems(
       actorWith(OK_SCOPES),
-      { ...validInput, confirm: true, idempotencyKey: "idem_1", organizationId: "org_EVIL" } as any,
+      // organizationId is NOT a field of ReserveItemsInput — an attacker adding it
+      // must be ignored. Cast through unknown to smuggle the extra field past the type.
+      ({ ...validInput, confirm: true, idempotencyKey: "idem_1", organizationId: "org_EVIL" } as unknown) as ReserveItemsInput,
       port,
     );
     expect(port.calls[0].organizationId).toBe("org_1");

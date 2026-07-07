@@ -19,6 +19,10 @@ export function middleware(request: NextRequest) {
   // - Org calendar feeds: /api/calendar/[token]/[feed]
   // - Crew iCal feeds: /api/crew/calendar/[token] (but NOT /api/crew/calendar/assignment/)
   // - Offer responses: /api/crew/respond/[token]
+  // - Agent-accessible API + MCP: /api/v1/* authenticate via `Authorization: Bearer`
+  //   (an API key, NOT a session cookie), so they must NOT be redirected to /login.
+  //   The route handlers do their own bearer auth and return a structured 401. See
+  //   docs/designs/api-mcp-agent-access.md.
   if (
     pathname.startsWith("/api/calendar/") ||
     (pathname.startsWith("/api/crew/calendar/") &&
@@ -28,7 +32,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/warehouse/display/") ||
     pathname.startsWith("/auditor/") ||
     pathname.startsWith("/api/auditor/") ||
-    pathname.startsWith("/api/cron/")
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/v1/")
   ) {
     return NextResponse.next();
   }

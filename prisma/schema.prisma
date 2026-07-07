@@ -54,6 +54,8 @@ model User {
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
   warehouseDashboardTokens  WarehouseDashboardToken[]
   testTagAuditorTokens      TestTagAuditorToken[]
+  apiKeysActingAs           ApiKey[]                    @relation("ApiKeyActingUser")
+  createdApiKeys            ApiKey[]                    @relation("ApiKeyCreatedBy")
   checkItems                CheckItem[]
   checkRecords              CheckRecord[]               @relation("CheckRecordPerformedBy")
   warehouseCloses           WarehouseClose[]            @relation("WarehouseClosedBy")
@@ -140,6 +142,10 @@ model Organization {
   metadata       String? // JSON string for extended org settings
   defaultTaxRate Decimal? @db.Decimal(5, 2)
 
+  // Org-wide API kill switch: when set, ALL of this org's API keys are rejected
+  // regardless of per-key state (instant blast-radius containment).
+  apiKillSwitchAt DateTime?
+
   members     Member[]
   invitations Invitation[]
   customRoles CustomRole[]
@@ -190,6 +196,7 @@ model Organization {
   pendingSSOApprovals      PendingSSOApproval[]
   warehouseDashboardTokens WarehouseDashboardToken[]
   testTagAuditorTokens     TestTagAuditorToken[]
+  apiKeys                  ApiKey[]
   wooCommerceIntegration   WooCommerceIntegration?
   wooCommerceOrderLogs     WooCommerceOrderLog[]
   checkItems               CheckItem[]
@@ -2723,6 +2730,41 @@ model TestTagAuditorToken {
 
   @@index([organizationId])
   @@map("test_tag_auditor_token")
+}
+
+// ─── API / MCP access keys ───────────────────────────────────────────────────
+// Hardened, org-scoped bearer keys for the agent-accessible API + MCP layer.
+// Generalizes the TestTagAuditorToken pattern: hash-only (no raw token stored),
+// a display `prefix`, resource:action `scopes`, and an `actingUser` whose live
+// RBAC bounds the key. See docs/designs/api-mcp-agent-access.md.
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String // Human label, e.g. "Booking agent (Claude)"
+  prefix    String // Non-secret display prefix, e.g. "gf_live_ab12" (first chars of the key)
+  tokenHash String  @unique // SHA-256 of the full secret — the ONLY copy we keep
+  scopes    String  @default("[]") // JSON array of resource:action strings, e.g. ["assets:read","project:manage_line_items"]
+  isActive  Boolean @default(true)
+
+  // The user this key acts AS. Effective permission = intersection(this user's
+  // live RBAC, `scopes`). Deactivating/demoting the user immediately narrows the key.
+  actingUserId String
+  actingUser   User   @relation("ApiKeyActingUser", fields: [actingUserId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation("ApiKeyCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  expiresAt     DateTime? // Optional hard expiry
+  lastUsedAt    DateTime? // Updated on each successful auth (observability)
+  lastRotatedAt DateTime? // Set when the secret is rotated
+  revokedAt     DateTime? // Set on single-key revocation (isActive also flipped false)
+  createdAt     DateTime  @default(now())
+
+  @@index([organizationId])
+  @@index([actingUserId])
+  @@map("api_key")
 }
 
 // ─── WooCommerce Integration ─────────────────────────────────────────────────

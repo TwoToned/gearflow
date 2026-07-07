@@ -68,8 +68,33 @@ convention violations (`collaboration.ts` addComment, `lib/fulfillment.ts` — t
    trivially re-addable with a real single-select consumer (noted in `schema.ts` + `search.ts`).
    `convex/search.test.ts` covers the manufacturer + assetTag merges + prep exclusion. Every
    remaining `search.ts` query now has a live consumer.
-4. **No `usePaginatedQuery` anywhere (§6).** Detail composites `.collect()` per-entity lists
-   (bounded, low practical risk); revisit if any single entity's line-item list can get large.
+4. ~~**No `usePaginatedQuery` anywhere (§6).**~~ **✅ AUDITED — no pagination needed
+   (2026-07-07, PR `fix/convex-pagination-audit`).** Went through every `.collect()` in the
+   browser composites (asset/kit/warehouse/project-equipment/equipment-tab detail):
+   - **Per-entity child lists are bounded by business reality, not data volume:** asset
+     children / bulk-children / test-tags / maintenance-links / model-accessories / media
+     (per one asset or model), kit members + media (per one kit), project structure
+     (categories / groups / sub-hires / category-slots / sub-hire groups+items). Each is
+     dozens, low-hundreds worst case — nowhere near 32k docs / 16 MiB. The asset & kit
+     "usage line items" and kit "scan logs" lists are already **sorted + sliced to 20**.
+   - **The one collection that scales with data volume** is a single project's
+     `projectLineItems` (+ their `projectLineItemUnits`) in `warehouseDetail` /
+     `projectEquipment` / `equipmentTab`. Realistic projects are hundreds — low-thousands of
+     lines, well under the limits; only a pathological mega-project (≈16k+ line-items/units in
+     ONE project) would approach the per-query read cap.
+   - **`usePaginatedQuery` does NOT fit that surface:** these bundles render a full
+     hierarchical equipment TREE (categories → groups → lines → children → units) AND feed
+     the overbooking / availability computation, both of which need the *entire* line-item set
+     at once — a paginated page would break grouping + the availability math. So the correct
+     mitigation if a tenant ever nears the cap is bundle-splitting / client virtualization,
+     NOT pagination. (`projectEquipment` also loads the whole-org model/supplier/category
+     attach maps — a whole-org read, separate from these per-entity lists; the referenced-only
+     point-read pattern `equipmentTab`/`warehouseDetail` already use is the fix there, again
+     not pagination.)
+
+   Conclusion: no `.collect()` here warrants `usePaginatedQuery` today; adding it would break
+   the tree renders for no real-world benefit. Re-evaluate the project line-item/unit bundles
+   (bundle-split or virtualize) if a single tenant's largest project approaches ~10k lines.
 
 ---
 

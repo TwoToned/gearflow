@@ -150,6 +150,12 @@ API-key management (`api-keys.*`) **is** exposed but every operation is `dangero
 needs `orgSettings:update` scope plus `confirm` + `idempotencyKey`. Do not put that scope on
 an agent's key unless you intend it to mint credentials.
 
+**No privilege escalation through minting.** `assertScopesWithinActor` (`src/lib/api-key.ts`)
+rejects any `createApiKey` whose requested scopes exceed the *creating key's own* scopes —
+so a key holding only `orgSettings:update` cannot mint itself a `*` key and escape the limits
+its operator set. `*` is grantable only by a `*` holder; `asset:*` only by `*` or `asset:*`.
+Human sessions are exempt: the acting user's role is already the intended authority.
+
 ## Testing
 
 ~106 unit tests across `src/lib/api/*` and `src/lib/request-actor.test.ts`, covering the
@@ -173,8 +179,6 @@ rejected rather than dropped.
   parity test first).
 - **Reservation state**: lands as a normal (QUOTED) line; a first-class `DRAFT`/hold status
   + `reservationExpiresAt` TTL + `createdByApiKeyId` provenance are the next schema step.
-- **No scope-escalation guard on `createApiKey`**: a key holding `orgSettings:update` can
-  mint a key with broader scopes than its own. Fix: reject scopes exceeding the creator's.
 - **Registry drift is not CI-enforced**: `npm run api:registry` is manual. Adding a server
   action does not expose it until someone regenerates. A CI check that regenerates and
   fails on a diff would close this.

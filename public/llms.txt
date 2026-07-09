@@ -1,0 +1,347 @@
+# GearFlow API + MCP — Agent Guide
+
+> GearFlow is a rental / asset-management platform for AV and theatre production
+> companies. This document is written for an AI agent (or the developer wiring one
+> up). It is the complete, self-contained reference for the agent-accessible API and
+> MCP server: how to authenticate, the tools available, how reservations work, and
+> how to recover from every error. If you are an agent, you can rely on this file
+> alone — no other page is required.
+
+Base URL: `https://flow.rvlt.app`
+API version: `v1` (all paths are under `/api/v1`; every response carries an
+`X-GearFlow-API-Version: v1` header)
+Docs URL (this file): `https://flow.rvlt.app/llms.txt`
+
+---
+
+## 1. What you can do
+
+The API exposes **capability verbs**, not raw database CRUD. Each verb is a rental
+workflow action, and every verb is bound by the same protections the human web app
+enforces: role-based permissions (RBAC), overbooking prevention, and an audit log.
+
+Current v1 verbs:
+
+| Verb | Kind | What it does |
+|------|------|--------------|
+| `whoami` | read | Confirm your key works; see the org, acting user, and scopes it grants. |
+| `reserve_items` | write | Hold gear (models) on a project. Preview availability first, then commit. |
+
+More verbs (asset-specific holds, dispatch/return, search, webhooks) are planned. Call
+`whoami` and read the MCP `tools/list` for the authoritative, always-current set.
+
+---
+
+## 2. Authentication
+
+Every request authenticates with an **API key** sent as a Bearer token:
+
+```
+Authorization: Bearer gf_live_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Properties of a key you must understand:
+
+- **Org-scoped.** A key belongs to exactly one GearFlow organization. You never pass
+  an `organizationId` — it is bound to the key. Any org id you put in a request body
+  is ignored.
+- **Acts as a user.** Each key acts on behalf of a specific GearFlow user. Your
+  effective permission is the **intersection** of (a) the key's scopes and (b) that
+  user's live role. A broadly-scoped key still cannot exceed the user's role; if the
+  user is later demoted or deactivated, the key is narrowed immediately.
+- **Scoped.** Scopes are `resource:action` strings (for example
+  `project:manage_line_items`), or `*` for everything the user's role allows. A verb
+  is rejected with `MISSING_SCOPE` if the key lacks the required scope.
+- **Secret shown once.** The raw key is displayed only when created; only a hash is
+  stored. If you lose it, create a new one.
+
+### Getting a key
+
+A GearFlow admin (a user with the `orgSettings` permission) creates keys in the web
+app: **Settings → Integrations → API Keys → Create key**. That screen returns the
+secret once and shows a ready-to-paste MCP config. An agent cannot mint its own key;
+ask the operator to create one and give it to you.
+
+---
+
+## 3. Connect over MCP (recommended for agents)
+
+GearFlow runs an MCP (Model Context Protocol) server at:
+
+```
+https://flow.rvlt.app/api/v1/mcp
+```
+
+Transport: Streamable HTTP, JSON-RPC 2.0. Authenticate with the same
+`Authorization: Bearer <key>` header.
+
+### Client config
+
+Most MCP clients (Claude Desktop, Cursor, OpenClaw, custom) accept a server entry
+like this:
+
+```json
+{
+  "mcpServers": {
+    "gearflow": {
+      "url": "https://flow.rvlt.app/api/v1/mcp",
+      "headers": { "Authorization": "Bearer gf_live_YOUR_KEY" }
+    }
+  }
+}
+```
+
+After adding it and restarting the client, you will have the `whoami` and
+`reserve_items` tools. **Call `whoami` first** to confirm the connection and see your
+scopes.
+
+### MCP methods supported
+
+- `initialize` → returns `protocolVersion`, `capabilities`, and
+  `serverInfo` (`{ "name": "gearflow", "version": "v1" }`).
+- `tools/list` → the current tools with full JSON-Schema input definitions and
+  prose descriptions (the descriptions are the source of truth for arguments).
+- `tools/call` → run a tool. Requires the Bearer header.
+- `notifications/*` → accepted, answered with HTTP 202, no body.
+
+A tool that fails returns a normal JSON-RPC `result` with `isError: true` and a
+`content[0].text` that is the JSON error envelope (see §6) — NOT a JSON-RPC protocol
+error. Read that envelope to decide what to do next.
+
+---
+
+## 4. Use over REST (for scripts / non-MCP callers)
+
+Same auth, same behavior, plain HTTP + JSON.
+
+- `GET /api/v1` — index: version, endpoints, docs link (no auth required).
+- `GET /api/v1/whoami` — identity + scopes for your key.
+- `POST /api/v1/reserve-items` — the reserve verb (preview or commit).
+
+Example:
+
+```bash
+curl -H "Authorization: Bearer gf_live_YOUR_KEY" \
+  https://flow.rvlt.app/api/v1/whoami
+```
+
+---
+
+## 5. Tool / endpoint reference
+
+### 5.1 `whoami`
+
+Verify the key and see what it can do. Read-only. No arguments.
+
+MCP: `tools/call` with `{ "name": "whoami", "arguments": {} }`
+REST: `GET /api/v1/whoami`
+
+Response:
+
+```json
+{
+  "apiVersion": "v1",
+  "organizationId": "org_abc123",
+  "actingUserId": "user_abc123",
+  "actingUserName": "Ada Lovelace",
+  "actorType": "apiKey",
+  "apiKeyId": "key_abc123",
+  "scopes": ["project:manage_line_items"]
+}
+```
+
+Use it to confirm which scopes you hold before attempting a write.
+
+### 5.2 `reserve_items`
+
+Hold gear on a project. This is a two-step, safe-by-default flow: **preview** (no
+write) then **commit**.
+
+MCP: `tools/call` with `{ "name": "reserve_items", "arguments": { ... } }`
+REST: `POST /api/v1/reserve-items` with the arguments as the JSON body.
+
+Arguments:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `projectId` | string | yes | The project to reserve onto. Must exist in your org. |
+| `items` | array | yes | One or more `{ "modelId": string, "quantity": integer≥1 }`. v1 is model-based only (no `assetId`). |
+| `confirm` | boolean | no | `false` (default) = preview, writes nothing. `true` = commit. |
+| `idempotencyKey` | string | when `confirm=true` | A unique id for this reservation so a retry can't double-book. See §7. |
+
+Required scope: `project:manage_line_items` (and the acting user's role must allow it).
+
+**Preview** (`confirm` omitted or `false`) — returns availability without writing:
+
+```json
+{
+  "reservationId": null,
+  "committed": false,
+  "replayed": false,
+  "lineItemIds": [],
+  "summary": "Ready to reserve 1 item(s) on Acme Show.",
+  "preview": [
+    { "modelId": "model_x", "requested": 2, "available": 5, "sufficient": true, "conflicts": [] }
+  ]
+}
+```
+
+If `sufficient` is `false` for any item, do not commit that quantity — reduce it, pick
+a different model, or tell the operator. `conflicts` lists the other projects competing
+for the same stock in the window.
+
+**Commit** (`confirm: true` + `idempotencyKey`) — creates the holds:
+
+```json
+{
+  "reservationId": "li_abc123",
+  "committed": true,
+  "replayed": false,
+  "lineItemIds": ["li_abc123"],
+  "summary": "Reserved 1 item(s) on Acme Show."
+}
+```
+
+`replayed: true` means this exact request (same `idempotencyKey`) already ran and you
+are seeing the original result — a success, not an error. Do not retry further.
+
+Notes on behavior:
+- A reservation lands as a **quote-stage line item** on the project (a non-committing
+  hold), reversible by a human in the app. It counts against availability.
+- Availability is enforced (overbooking is rejected with `INVENTORY_CONFLICT`). You
+  cannot override it from the API.
+- The write is attributed in the org's audit log to the acting user + this key.
+
+Recommended pattern: **always preview first**, show the operator what you intend, then
+commit with a fresh `idempotencyKey`.
+
+---
+
+## 6. Errors — the envelope and every code
+
+Every error (REST body and MCP `isError` tool result) uses ONE shape:
+
+```json
+{
+  "error": {
+    "code": "MISSING_SCOPE",
+    "message": "This API key is missing the 'project:manage_line_items' scope.",
+    "retryable": false,
+    "requiredScope": "project:manage_line_items",
+    "details": { },
+    "documentation_url": "https://flow.rvlt.app/llms.txt"
+  }
+}
+```
+
+- `code` is a stable machine string — branch on it, never parse `message`.
+- `retryable` tells you whether the SAME request may succeed later.
+- `requiredScope` is present on `MISSING_SCOPE`.
+- `details` carries typed, per-code data (e.g. availability conflicts).
+
+Code table:
+
+| code | HTTP | retryable | Meaning → what you should do |
+|------|------|-----------|------------------------------|
+| `INVALID_KEY` | 401 | no | Missing/unknown key. Check the `Authorization: Bearer` header; ask the operator for a valid key. |
+| `KEY_INACTIVE` | 401 | no | The key was revoked. Ask the operator for a new key. |
+| `KEY_EXPIRED` | 401 | no | The key passed its expiry. Ask the operator for a new key. |
+| `ORG_KILL_SWITCH` | 403 | no | The org disabled all API access. Stop; ask the operator to re-enable it. |
+| `MISSING_SCOPE` | 403 | no | The key lacks `requiredScope`. Ask the operator to add that scope (fixable by a human, not by retrying). |
+| `FORBIDDEN` | 403 | no | The acting user's role forbids this action entirely. Not fixable by adding a scope. |
+| `VALIDATION_ERROR` | 400 | no | The request shape is wrong. Read `details` (it names the bad field) and fix the arguments. |
+| `IDEMPOTENCY_KEY_REQUIRED` | 400 | no | You set `confirm: true` without an `idempotencyKey`. Add a unique one and retry. |
+| `INVENTORY_CONFLICT` | 409 | no | Not enough free stock (or a booking rule blocked it). Read `details`; reduce quantity, choose another model, or change dates. |
+| `STALE_PREVIEW` | 409 | yes | A preview token expired or stock changed. Re-preview, then commit. |
+| `NOT_FOUND` | 404 | no | The `projectId` (or other resource) doesn't exist in your org. Verify the id. |
+| `INTERNAL` | 500 | yes | Unexpected server error. Retry with backoff; if it persists, tell the operator. |
+
+Golden rule for agents: **if `retryable` is `false`, do not retry the same request** —
+change the input or ask the operator. Only retry `retryable: true` codes, with backoff.
+
+---
+
+## 7. Idempotency
+
+Any committing write takes an `idempotencyKey`: a unique string YOU generate for each
+distinct intended action (a UUID is ideal). If the network drops and you retry with the
+SAME key, GearFlow returns the ORIGINAL result (`replayed: true`) instead of performing
+the action twice. Reuse the same key ONLY for a retry of the exact same request; use a
+NEW key for a new reservation. Previews (`confirm: false`) never need one.
+
+---
+
+## 8. Versioning
+
+- The path is versioned: everything is under `/api/v1`.
+- Every response carries `X-GearFlow-API-Version: v1`.
+- MCP `serverInfo.version` is `v1`.
+- Additive changes (new tools, new optional fields) are non-breaking and can appear
+  without a version bump — discover them via `tools/list` rather than hard-coding.
+- Breaking changes will ship under a new version path; `/api/v1` keeps working during
+  any migration window.
+
+---
+
+## 9. Limits and safety
+
+- **Org kill switch.** An operator can instantly disable ALL of an org's keys; you will
+  then get `ORG_KILL_SWITCH` on every call. Stop and tell the operator.
+- **Key revocation / expiry.** A single key can be revoked or expire → `KEY_INACTIVE` /
+  `KEY_EXPIRED`.
+- **Overbooking is always enforced** on writes; there is no override from the API.
+- Per-key rate limits and outbound webhooks are planned but not yet enforced in v1. Be a
+  good citizen: prefer previewing over hammering, and don't poll in tight loops.
+
+---
+
+## 10. Worked examples
+
+### 10.1 MCP: confirm, preview, then reserve
+
+```jsonc
+// 1) confirm the connection
+→ {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}
+← {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":
+     "{\"organizationId\":\"org_1\",\"actingUserName\":\"Ada\",\"scopes\":[\"project:manage_line_items\"]}"}]}}
+
+// 2) preview availability (no write)
+→ {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reserve_items",
+     "arguments":{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}]}}}
+← ... result.content[0].text = {"committed":false,"preview":[{"modelId":"model_x","requested":2,"available":5,"sufficient":true,"conflicts":[]}], ...}
+
+// 3) commit (idempotencyKey required)
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"reserve_items",
+     "arguments":{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}],
+                  "confirm":true,"idempotencyKey":"a1b2c3-unique"}}}
+← ... result.content[0].text = {"committed":true,"reservationId":"li_1","lineItemIds":["li_1"], ...}
+```
+
+### 10.2 REST: preview then commit
+
+```bash
+# preview
+curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
+  -H "Authorization: Bearer gf_live_YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}]}'
+
+# commit
+curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
+  -H "Authorization: Bearer gf_live_YOUR_KEY" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: a1b2c3-unique" \
+  -d '{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}],"confirm":true}'
+```
+
+(REST accepts the idempotency key either as the `Idempotency-Key` header or an
+`idempotencyKey` body field.)
+
+---
+
+## 11. Quick reference
+
+- Auth: `Authorization: Bearer gf_live_...`
+- MCP: `POST https://flow.rvlt.app/api/v1/mcp` (JSON-RPC 2.0)
+- REST: `GET /api/v1/whoami`, `POST /api/v1/reserve-items`, `GET /api/v1`
+- Always `whoami` first. Always preview before you commit. Commits need an `idempotencyKey`.
+- On error: branch on `code`; only retry when `retryable` is `true`.
+- Org is bound to the key — never send an org id.

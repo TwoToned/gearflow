@@ -174,7 +174,11 @@ export default function ApiKeysSettingsPage() {
               Connect AI agents and scripts to GearFlow. Each key acts on behalf of a user
               and is bound by that user&apos;s permissions. Point an MCP client at{" "}
               <code className="text-xs">/api/v1/mcp</code> or call the REST API with{" "}
-              <code className="text-xs">Authorization: Bearer</code>.
+              <code className="text-xs">Authorization: Bearer</code>. Full agent docs:{" "}
+              <a href="/llms.txt" target="_blank" rel="noreferrer" className="underline">
+                /llms.txt
+              </a>
+              .
             </p>
           </div>
           {canEdit && (

@@ -36,6 +36,9 @@ const STATUS_BY_CODE: Record<string, number> = {
   NOT_FOUND: 404,
 };
 
+/** The agent-facing docs. Attached to every error so an agent can self-serve recovery. */
+export const API_DOCS_URL = "https://flow.rvlt.app/llms.txt";
+
 export interface ErrorEnvelope {
   error: {
     code: string;
@@ -43,6 +46,7 @@ export interface ErrorEnvelope {
     retryable: boolean;
     requiredScope?: string;
     details?: Record<string, unknown>;
+    documentation_url: string;
   };
 }
 
@@ -62,6 +66,7 @@ export function toErrorEnvelope(err: unknown): { status: number; body: ErrorEnve
           retryable: err.retryable,
           requiredScope: err.requiredScope,
           details: err.details,
+          documentation_url: API_DOCS_URL,
         },
       },
     };
@@ -76,6 +81,7 @@ export function toErrorEnvelope(err: unknown): { status: number; body: ErrorEnve
           message: err.message,
           retryable: false,
           requiredScope: err.requiredScope,
+          documentation_url: API_DOCS_URL,
         },
       },
     };
@@ -88,6 +94,7 @@ export function toErrorEnvelope(err: unknown): { status: number; body: ErrorEnve
         code: "INTERNAL",
         message: "An unexpected error occurred.",
         retryable: true,
+        documentation_url: API_DOCS_URL,
       },
     },
   };

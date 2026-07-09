@@ -1,4 +1,5 @@
 import type { MutationCtx } from "../_generated/server";
+import { applyProjectAllocation } from "./allocation";
 
 /**
  * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).
@@ -104,5 +105,21 @@ export async function recalcProjectTotals(
     total,
     margin,
     updatedAt: now,
+  });
+
+  // 7. Push the revenue we just booked down onto the gear that earned it, so
+  // per-model ROI is answerable. Deliberately hung off recalc rather than given
+  // its own trigger list: every line-item / group / service / sub-hire write in
+  // the app already funnels through here, so there is no write path that can
+  // forget to allocate. Reuses the groups/lines already read above; line patches
+  // are diffed, so an edit that moves no allocation costs no writes.
+  // See convex/lib/allocation.ts + docs/revenue-allocation-design.md.
+  await applyProjectAllocation(ctx, {
+    projectId,
+    orgId,
+    rentalPeriod: project.defaultRentalPeriod,
+    groups,
+    lines: projectLines,
+    now,
   });
 }

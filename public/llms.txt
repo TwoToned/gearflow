@@ -49,6 +49,62 @@ a typo is **rejected**, not ignored.
 Operations are named `<module>.<function>`, e.g. `projects.getProjects`,
 `maintenance.createMaintenanceRecord`, `warehouse.checkOutItems`.
 
+### `describe_operation` gives you real JSON Schema
+
+Each parameter comes back with a `schema` field: JSON Schema (draft 2020-12) generated
+from the same Zod validator the operation enforces. It lists the exact field names,
+types, enums, and which are required. Build your argument object from `schema`.
+
+The `type` field alongside it is only the TypeScript source text. When a parameter has
+no `schema` (a handful of operations whose types aren't Zod-backed), `type` is all there
+is — and you should expect to iterate against `VALIDATION_ERROR`, whose `details.expected`
+tells you the parameter names.
+
+Curated tools carry the same generated schema in their `inputSchema`, so `create_client`
+already tells you `name` is required and `type` must be one of `COMPANY`, `INDIVIDUAL`,
+`VENUE`, `PRODUCTION_COMPANY`. You do not need to call `describe_operation` for those.
+
+### Project dates — read this before you ask "when is this job?"
+
+A project carries six nullable date fields, and most jobs set only some of them. There
+is **no** `startDate` field. Do not guess one; a field that does not exist comes back as
+`null`, not as an error.
+
+| Field | Meaning |
+|-------|---------|
+| `eventStartDate` / `eventEndDate` | When the show actually happens. |
+| `rentalStartDate` / `rentalEndDate` | The window the gear is committed for. **This is what availability and overbooking run on.** |
+| `loadInDate` / `loadOutDate` | The logistics moments either side. |
+
+**Use `primaryDateRange`.** Every project returned by `list_projects` and `get_project`
+now carries a resolved answer:
+
+```json
+"primaryDateRange": { "start": "2026-08-01T09:00:00.000Z", "end": "2026-08-03T22:00:00.000Z", "source": "event" }
+```
+
+`source` is `event`, `rental`, `load`, or `none` — it tells you which pair the range came
+from, so you can say "the show runs Aug 1-3" versus "the gear is out Jul 30 - Aug 5"
+without guessing. `start` and `end` are ISO 8601, and a single-day job reports
+`end === start` rather than a null end. `source: "none"` means the project is genuinely
+undated.
+
+It is in the **list** response, so "what's coming up?" is one call:
+
+```bash
+curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"arguments":{"params":{"status":"CONFIRMED","sortBy":"rentalStartDate","sortOrder":"asc","pageSize":50}}}' \
+  https://flow.rvlt.app/api/v1/ops/projects.getProjects
+```
+
+`getProjects` also accepts `search`, `status`, `type`, `clientId`, `rentalStartDate`,
+`rentalEndDate`, `page`, `pageSize`, `sortBy`, `sortOrder`. Filter and sort server-side
+rather than fetching each project individually.
+
+**One caveat that matters:** `primaryDateRange` is the *human* answer. For availability,
+overbooking or reservations, always use `rentalStartDate`/`rentalEndDate`, or just call
+`check_availability` — the inventory maths runs on the rental window, not the event.
+
 ### Writes that need an explicit confirmation
 
 Two classes of write refuse to run on a first, unconfirmed call:
@@ -132,6 +188,14 @@ After adding it and restarting the client, you will have the full tool set.
 **Call `whoami` first** to confirm the connection and see your scopes — it also reports
 `operationsAvailable`, the number of operations your key can reach.
 
+### If you only see two tools
+
+MCP clients fetch `tools/list` once when they connect and cache it. If your client shows
+only `whoami` and `reserve_items`, it is holding a tool list from before this surface
+shipped. **Reconnect the server** and you will get all of them. The server advertises
+`capabilities.tools.listChanged: true` to signal the list is not immutable, but it cannot
+push you an update over request/response HTTP — reconnecting is the fix.
+
 ### MCP methods supported
 
 - `initialize` → returns `protocolVersion`, `capabilities`, and
@@ -159,6 +223,10 @@ Same auth, same behavior, plain HTTP + JSON.
   `{ "arguments": {...}, "confirm": true, "idempotencyKey": "..." }`
   (`Idempotency-Key` header also accepted).
 - `POST /api/v1/reserve-items` — the reserve verb (preview or commit).
+- `GET /api/v1/openapi.json` — OpenAPI 3.1 for the whole surface (no auth). This is for
+  humans, SDK generators and request-validation tooling. It describes every operation and
+  is large; **agents should use the discovery endpoints above instead**, which are filtered
+  to your key's scopes.
 
 Example — find and read a project:
 
@@ -460,7 +528,10 @@ You want to log a maintenance record, but there is no named tool for it.
   `POST /api/v1/reserve-items`, `GET /api/v1`
 - Always `whoami` first. Prefer a named tool; fall back to
   `list_operations` → `describe_operation` → `call_operation`.
-- Never guess argument names — unknown args are rejected, not ignored.
+- Never guess argument names — unknown args are rejected, not ignored. `describe_operation`
+  returns real JSON Schema per parameter; build from that.
+- Projects: use `primaryDateRange` (in the list response). There is no `startDate` field.
+  For availability, use `rentalStartDate`/`rentalEndDate` or `check_availability`.
 - Irreversible / stock-affecting writes need `confirm: true` + `idempotencyKey`.
   Treat `CONFIRMATION_REQUIRED` as a prompt to check with the human, not a formality.
 - On error: branch on `code`; only retry when `retryable` is `true`.

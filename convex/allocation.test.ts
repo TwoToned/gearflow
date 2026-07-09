@@ -1,0 +1,561 @@
+// @vitest-environment node
+import { describe, test, expect } from "vitest";
+import {
+  allocateProject,
+  largestRemainder,
+  rollupByModel,
+  isRoiCounted,
+  type AllocLine,
+  type AllocModel,
+  type AllocGroup,
+} from "./lib/allocation";
+
+/**
+ * The money gate for revenue allocation (docs/revenue-allocation-design.md).
+ *
+ * The invariant every one of these tests is really checking: the parts sum to the
+ * pool, exactly, in cents. A leak here doesn't throw — it silently skews every ROI
+ * number in the app, forever, in a direction nobody can spot by eye.
+ */
+
+// ── fixtures ─────────────────────────────────────────────────────────────────
+
+const M = (id: string, o: Partial<AllocModel> = {}): AllocModel => ({ id, ...o });
+
+const L = (id: string, o: Partial<AllocLine> = {}): AllocLine => ({
+  id,
+  quantity: 1,
+  duration: 1,
+  sortOrder: 0,
+  status: "CONFIRMED",
+  ...o,
+});
+
+const models = (...ms: AllocModel[]) => new Map(ms.map((m) => [m.id, m]));
+const kitAlloc = (kitId: string, pcts: Record<string, number>) =>
+  new Map([[kitId, new Map(Object.entries(pcts))]]);
+const noKits = new Map<string, Map<string, number>>();
+
+const run = (
+  lines: AllocLine[],
+  opts: {
+    groups?: AllocGroup[];
+    models?: Map<string, AllocModel>;
+    kitAllocations?: Map<string, Map<string, number>>;
+    rentalPeriod?: string;
+  } = {},
+) =>
+  allocateProject({
+    lines,
+    groups: opts.groups ?? [],
+    models: opts.models ?? new Map(),
+    kitAllocations: opts.kitAllocations ?? noKits,
+    rentalPeriod: opts.rentalPeriod,
+  });
+
+const rev = (r: Map<string, { allocatedRevenue: number | null }>, id: string) =>
+  r.get(id)!.allocatedRevenue;
+const basis = (r: Map<string, { allocationBasis: string }>, id: string) =>
+  r.get(id)!.allocationBasis;
+
+/**
+ * Sum the leaves and return dollars. Adds in CENTS deliberately: summing dollars
+ * as floats reintroduces exactly the drift the engine exists to avoid, and would
+ * make this helper report 899.9999999999999 for a correct $900 split.
+ */
+const sumOf = (
+  r: Map<string, { allocatedRevenue: number | null; allocationBasis: string }>,
+  ids: string[],
+) =>
+  ids.reduce((s, id) => s + Math.round((r.get(id)!.allocatedRevenue ?? 0) * 100), 0) / 100;
+
+// ── largestRemainder ─────────────────────────────────────────────────────────
+
+describe("largestRemainder", () => {
+  test("distributes every cent, never more, never less", () => {
+    const shares = largestRemainder(10_000, [1, 1, 1], [0, 1, 2]);
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(10_000);
+    expect(shares).toEqual([3334, 3333, 3333]);
+  });
+
+  test("hands leftover cents to the largest remainders, not the first rows", () => {
+    // 100c across weights 1,1,2 → 25/25/50 exactly; add a cent of slack.
+    const shares = largestRemainder(101, [1, 1, 2], [0, 1, 2]);
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(101);
+  });
+
+  test("zero total weight falls back to an equal split", () => {
+    expect(largestRemainder(900, [0, 0, 0], [0, 1, 2])).toEqual([300, 300, 300]);
+  });
+
+  test("is deterministic under tied remainders (breaks on order)", () => {
+    const a = largestRemainder(100, [1, 1, 1], [0, 1, 2]);
+    const b = largestRemainder(100, [1, 1, 1], [0, 1, 2]);
+    expect(a).toEqual(b);
+    expect(a.reduce((x, y) => x + y, 0)).toBe(100);
+  });
+
+  test("a zero or negative pool allocates nothing", () => {
+    expect(largestRemainder(0, [3, 1], [0, 1])).toEqual([0, 0]);
+    expect(largestRemainder(-500, [3, 1], [0, 1])).toEqual([0, 0]);
+  });
+});
+
+// ── standalone lines ─────────────────────────────────────────────────────────
+
+describe("standalone lines", () => {
+  test("a plain gear line is allocated its own lineTotal, DIRECT", () => {
+    const r = run([L("a", { modelId: "m1", lineTotal: 250 })]);
+    expect(rev(r, "a")).toBe(250);
+    expect(basis(r, "a")).toBe("DIRECT");
+  });
+
+  test("a $0 line is NO_REVENUE, not DIRECT", () => {
+    const r = run([L("a", { modelId: "m1", lineTotal: 0 })]);
+    expect(rev(r, "a")).toBe(0);
+    expect(basis(r, "a")).toBe("NO_REVENUE");
+  });
+
+  test("custom and container lines carry null — nothing to attribute", () => {
+    const r = run([
+      L("custom", { lineTotal: 500, isCustomItem: true }),
+      L("case", { lineTotal: 20, isContainerLineItem: true }),
+    ]);
+    expect(rev(r, "custom")).toBeNull();
+    expect(basis(r, "custom")).toBe("EXCLUDED_NON_GEAR");
+    expect(rev(r, "case")).toBeNull();
+  });
+
+  test("cancelled and optional lines earn zero and dilute nothing", () => {
+    const r = run([
+      L("x", { modelId: "m1", lineTotal: 100, status: "CANCELLED" }),
+      L("y", { modelId: "m1", lineTotal: 100, isOptional: true }),
+    ]);
+    expect(rev(r, "x")).toBe(0);
+    expect(basis(r, "x")).toBe("NO_REVENUE");
+    expect(rev(r, "y")).toBe(0);
+  });
+});
+
+// ── kits ─────────────────────────────────────────────────────────────────────
+
+describe("kits — Approach A", () => {
+  /** The worked example from the design doc: RF Kit 1 at $900. */
+  const rfKit = () => [
+    L("kit", { kitId: "k1", lineTotal: 900 }),
+    L("rx", { parentLineItemId: "kit", modelId: "rx", quantity: 4, sortOrder: 1 }),
+    L("bp", { parentLineItemId: "kit", modelId: "bp", quantity: 4, sortOrder: 2 }),
+    L("hs", { parentLineItemId: "kit", modelId: "hs", quantity: 4, sortOrder: 3 }),
+    L("swb", { parentLineItemId: "kit", modelId: "swb", sortOrder: 4 }),
+    L("sw", { parentLineItemId: "kit", modelId: "sw", sortOrder: 5 }),
+    L("belt", { parentLineItemId: "kit", modelId: "belt", quantity: 4, sortOrder: 6 }),
+    L("case", { parentLineItemId: "kit", modelId: "case", sortOrder: 7 }),
+  ];
+  const rfPcts = { rx: 35, bp: 25, hs: 15, swb: 10, sw: 8, belt: 5, case: 2 };
+  const leaves = ["rx", "bp", "hs", "swb", "sw", "belt", "case"];
+
+  test("saved percentages split the kit price exactly as configured", () => {
+    const r = run(rfKit(), { kitAllocations: kitAlloc("k1", rfPcts) });
+
+    expect(rev(r, "rx")).toBe(315);
+    expect(rev(r, "bp")).toBe(225);
+    expect(rev(r, "hs")).toBe(135);
+    expect(rev(r, "swb")).toBe(90);
+    expect(rev(r, "sw")).toBe(72);
+    expect(rev(r, "belt")).toBe(45);
+    expect(rev(r, "case")).toBe(18);
+    expect(basis(r, "rx")).toBe("KIT_PERCENT");
+    expect(sumOf(r, leaves)).toBe(900);
+  });
+
+  test("the kit parent takes no share — it has no model to credit", () => {
+    const r = run(rfKit(), { kitAllocations: kitAlloc("k1", rfPcts) });
+    expect(rev(r, "kit")).toBeNull();
+    expect(basis(r, "kit")).toBe("EXCLUDED_NON_GEAR");
+  });
+
+  test("percentages summing to 99.99 still allocate the whole pool", () => {
+    const r = run(rfKit(), {
+      kitAllocations: kitAlloc("k1", { ...rfPcts, case: 1.99 }),
+    });
+    expect(sumOf(r, leaves)).toBe(900);
+  });
+
+  test("one model spread over several lines splits that model's percent by qty", () => {
+    // Same model on two rows (2 units + 6 units) → 25% / 75% of its 40%.
+    const r = run(
+      [
+        L("kit", { kitId: "k1", lineTotal: 1000 }),
+        L("a", { parentLineItemId: "kit", modelId: "rx", quantity: 2, sortOrder: 1 }),
+        L("b", { parentLineItemId: "kit", modelId: "rx", quantity: 6, sortOrder: 2 }),
+        L("c", { parentLineItemId: "kit", modelId: "bp", quantity: 1, sortOrder: 3 }),
+      ],
+      { kitAllocations: kitAlloc("k1", { rx: 40, bp: 60 }) },
+    );
+    expect(rev(r, "a")).toBe(100);
+    expect(rev(r, "b")).toBe(300);
+    expect(rev(r, "c")).toBe(600);
+    expect(sumOf(r, ["a", "b", "c"])).toBe(1000);
+  });
+
+  test("a STALE allocation is ignored, not trusted, and never blocks the booking", () => {
+    // Kit gained a model (`new`) that the saved allocation doesn't cover — the sort
+    // of drift a warehouse asset swap causes without touching the allocation form.
+    const lines = [
+      ...rfKit(),
+      L("new", { parentLineItemId: "kit", modelId: "new", sortOrder: 8 }),
+    ];
+    const r = run(lines, {
+      kitAllocations: kitAlloc("k1", rfPcts),
+      models: models(M("rx", { dailyRate: 100 }), M("new", { dailyRate: 100 })),
+    });
+
+    expect(basis(r, "rx")).toBe("WEIGHTED");
+    expect(rev(r, "new")).toBeGreaterThan(0);
+    expect(sumOf(r, [...leaves, "new"])).toBe(900);
+  });
+
+  test("KIT_PRICE children with no allocation are weighted by model day rate", () => {
+    const r = run(
+      [
+        L("kit", { kitId: "k1", lineTotal: 300 }),
+        L("a", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("b", { parentLineItemId: "kit", modelId: "belt", sortOrder: 2 }),
+      ],
+      { models: models(M("rx", { dailyRate: 90 }), M("belt", { dailyRate: 10 })) },
+    );
+    expect(rev(r, "a")).toBe(270);
+    expect(rev(r, "b")).toBe(30);
+    expect(basis(r, "a")).toBe("WEIGHTED");
+  });
+
+  test("ITEMIZED children are weighted by their own lineTotal", () => {
+    const r = run([
+      L("kit", { kitId: "k1", lineTotal: 500 }),
+      L("a", { parentLineItemId: "kit", modelId: "rx", lineTotal: 300, sortOrder: 1 }),
+      L("b", { parentLineItemId: "kit", modelId: "bp", lineTotal: 100, sortOrder: 2 }),
+    ]);
+    // Kit sold at $500 against $400 of itemised parts — everyone scales up.
+    expect(rev(r, "a")).toBe(375);
+    expect(rev(r, "b")).toBe(125);
+    expect(sumOf(r, ["a", "b"])).toBe(500);
+  });
+
+  test("no rate anywhere falls back to replacement cost", () => {
+    const r = run(
+      [
+        L("kit", { kitId: "k1", lineTotal: 100 }),
+        L("a", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("b", { parentLineItemId: "kit", modelId: "belt", sortOrder: 2 }),
+      ],
+      { models: models(M("rx", { replacementCost: 1900 }), M("belt", { replacementCost: 100 })) },
+    );
+    expect(rev(r, "a")).toBe(95);
+    expect(rev(r, "b")).toBe(5);
+  });
+
+  test("nothing to weight on at all → equal split, nothing invisible", () => {
+    const r = run([
+      L("kit", { kitId: "k1", lineTotal: 90 }),
+      L("a", { parentLineItemId: "kit", modelId: "x", sortOrder: 1 }),
+      L("b", { parentLineItemId: "kit", modelId: "y", sortOrder: 2 }),
+      L("c", { parentLineItemId: "kit", modelId: "z", sortOrder: 3 }),
+    ]);
+    expect(rev(r, "a")).toBe(30);
+    expect(rev(r, "c")).toBe(30);
+    expect(basis(r, "a")).toBe("EQUAL_SPLIT");
+  });
+
+  test("an unpriced kit gives its children nothing — can't split nothing", () => {
+    const r = run([
+      L("kit", { kitId: "k1" }),
+      L("a", { parentLineItemId: "kit", modelId: "rx" }),
+    ]);
+    expect(rev(r, "a")).toBe(0);
+    expect(basis(r, "a")).toBe("NO_REVENUE");
+  });
+
+  test("a cancelled kit child dilutes nothing; siblings take the whole pool", () => {
+    const r = run(
+      [
+        L("kit", { kitId: "k1", lineTotal: 100 }),
+        L("a", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("dead", { parentLineItemId: "kit", modelId: "bp", sortOrder: 2, status: "CANCELLED" }),
+      ],
+      { models: models(M("rx", { dailyRate: 1 }), M("bp", { dailyRate: 1 })) },
+    );
+    expect(rev(r, "a")).toBe(100);
+    expect(rev(r, "dead")).toBe(0);
+  });
+});
+
+// ── groups ───────────────────────────────────────────────────────────────────
+
+describe("groups — Approach B", () => {
+  /** The worked example from the design doc: $1,250 nominal sold at $400. */
+  const vocalRf = () => ({
+    groups: [{ id: "g1", price: 400, quantity: 1 }],
+    lines: [
+      L("rx", { groupId: "g1", modelId: "rx", quantity: 4, lineTotal: 600, sortOrder: 1 }),
+      L("sk", { groupId: "g1", modelId: "sk", quantity: 4, lineTotal: 320, sortOrder: 2 }),
+      L("hs", { groupId: "g1", modelId: "hs", quantity: 4, lineTotal: 240, sortOrder: 3 }),
+      L("swb", { groupId: "g1", modelId: "swb", lineTotal: 45, sortOrder: 4 }),
+      L("belt", { groupId: "g1", modelId: "belt", quantity: 4, lineTotal: 40, sortOrder: 5 }),
+      L("case", { groupId: "g1", modelId: "case", lineTotal: 5, sortOrder: 6 }),
+    ],
+  });
+  const ids = ["rx", "sk", "hs", "swb", "belt", "case"];
+
+  test("a discounted bundle gives everyone a proportional haircut", () => {
+    const { groups, lines } = vocalRf();
+    const r = run(lines, { groups });
+
+    expect(rev(r, "rx")).toBe(192);
+    expect(rev(r, "sk")).toBeCloseTo(102.4, 2);
+    expect(rev(r, "hs")).toBeCloseTo(76.8, 2);
+    expect(rev(r, "swb")).toBeCloseTo(14.4, 2);
+    expect(rev(r, "belt")).toBeCloseTo(12.8, 2);
+    expect(rev(r, "case")).toBeCloseTo(1.6, 2);
+    expect(basis(r, "rx")).toBe("WEIGHTED");
+  });
+
+  test("the split sums to the bundle price to the cent", () => {
+    const { groups, lines } = vocalRf();
+    expect(sumOf(run(lines, { groups }), ids)).toBe(400);
+  });
+
+  test("the pool is price × quantity, not price", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", lineTotal: 1, sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", lineTotal: 1, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 100, quantity: 3 }] },
+    );
+    expect(sumOf(r, ["a", "b"])).toBe(300);
+  });
+
+  test("an awkward price still sums exactly — no leaked cents", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", lineTotal: 1, sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", lineTotal: 1, sortOrder: 2 }),
+        L("c", { groupId: "g1", modelId: "m3", lineTotal: 1, sortOrder: 3 }),
+      ],
+      { groups: [{ id: "g1", price: 100.01, quantity: 1 }] },
+    );
+    const total = ["a", "b", "c"].reduce(
+      (s, id) => s + Math.round(rev(r, id)! * 100),
+      0,
+    );
+    expect(total).toBe(10_001);
+  });
+
+  test("an unpriced group allocates nothing to its members", () => {
+    const r = run([L("a", { groupId: "g1", modelId: "m1", lineTotal: 50 })], {
+      groups: [{ id: "g1", price: null, quantity: 1 }],
+    });
+    expect(rev(r, "a")).toBe(0);
+    expect(basis(r, "a")).toBe("NO_REVENUE");
+  });
+
+  test("custom items in a group are extras on top — they don't dilute the bundle", () => {
+    // recalcProjectTotals bills them separately, so they must take no pool share.
+    const r = run(
+      [
+        L("gear", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
+        L("extra", { groupId: "g1", lineTotal: 999, isCustomItem: true, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 100, quantity: 1 }] },
+    );
+    expect(rev(r, "gear")).toBe(100);
+    expect(rev(r, "extra")).toBeNull();
+  });
+
+  test("weekly rental periods weight on weeklyRate", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 100, quantity: 1 }],
+        models: models(
+          M("m1", { dailyRate: 50, weeklyRate: 30 }),
+          M("m2", { dailyRate: 50, weeklyRate: 70 }),
+        ),
+        rentalPeriod: "WEEKLY",
+      },
+    );
+    expect(rev(r, "a")).toBe(30);
+    expect(rev(r, "b")).toBe(70);
+  });
+});
+
+// ── sub-hire ─────────────────────────────────────────────────────────────────
+
+describe("sub-hire lines", () => {
+  test("consume pool weight but never count as our revenue", () => {
+    const r = run(
+      [
+        L("owned", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
+        L("hired", { groupId: "g1", modelId: "m1", lineTotal: 100, subHireId: "sh1", sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 200, quantity: 1 }] },
+    );
+
+    // Owned gear takes its honest half — not the whole $200.
+    expect(rev(r, "owned")).toBe(100);
+    expect(basis(r, "owned")).toBe("WEIGHTED");
+    expect(rev(r, "hired")).toBe(100);
+    expect(basis(r, "hired")).toBe("EXCLUDED_SUBHIRE");
+
+    // ...and only the owned half reaches model ROI, even though both rows carry m1.
+    const lines = [
+      L("owned", { modelId: "m1" }),
+      L("hired", { modelId: "m1", subHireId: "sh1" }),
+    ];
+    expect(rollupByModel(lines, r).get("m1")).toBe(100);
+  });
+
+  test("a sub-hire subtree is excluded wholesale", () => {
+    const r = run([
+      L("shg", { lineTotal: 500, subHireId: "sh1", kitId: "k1" }),
+      L("child", { parentLineItemId: "shg", modelId: "m1", subHireId: "sh1" }),
+    ]);
+    expect(basis(r, "child")).toBe("EXCLUDED_SUBHIRE");
+    expect(isRoiCounted(basis(r, "child"))).toBe(false);
+  });
+});
+
+// ── composition ──────────────────────────────────────────────────────────────
+
+describe("composition", () => {
+  test("a kit inside a group: the group slice flows down to the kit's children", () => {
+    const r = run(
+      [
+        L("kit", { groupId: "g1", kitId: "k1", lineTotal: 900, sortOrder: 1 }),
+        L("rx", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("bp", { parentLineItemId: "kit", modelId: "bp", sortOrder: 2 }),
+        L("loose", { groupId: "g1", modelId: "loose", lineTotal: 100, sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 500, quantity: 1 }],
+        kitAllocations: kitAlloc("k1", { rx: 70, bp: 30 }),
+      },
+    );
+
+    // Group: kit is worth 900 of 1000 nominal → $450; loose gear takes $50.
+    expect(rev(r, "loose")).toBe(50);
+    // Kit layer: that $450 splits 70/30, per the kit's saved allocation.
+    expect(rev(r, "rx")).toBe(315);
+    expect(rev(r, "bp")).toBe(135);
+    expect(basis(r, "rx")).toBe("KIT_PERCENT");
+    expect(sumOf(r, ["rx", "bp", "loose"])).toBe(500);
+  });
+
+  test("an unpriced kit in a group is still weighted by its contents' nominal value", () => {
+    const r = run(
+      [
+        L("kit", { groupId: "g1", kitId: "k1", sortOrder: 1 }),
+        L("rx", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("loose", { groupId: "g1", modelId: "loose", sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 400, quantity: 1 }],
+        models: models(M("rx", { dailyRate: 300 }), M("loose", { dailyRate: 100 })),
+      },
+    );
+    // The kit has no lineTotal of its own, so rule 2 can't apply to the group's
+    // members; rule 3 values the kit at the sum of its contents.
+    expect(rev(r, "rx")).toBe(300);
+    expect(rev(r, "loose")).toBe(100);
+  });
+
+  test("accessories take a share of their parent's line — they are not free", () => {
+    const r = run(
+      [
+        L("hh", { modelId: "hh", lineTotal: 206, sortOrder: 1 }),
+        L("batt", {
+          parentLineItemId: "hh",
+          modelId: "batt",
+          sortOrder: 2,
+        }),
+      ],
+      { models: models(M("hh", { dailyRate: 100 }), M("batt", { dailyRate: 3 })) },
+    );
+    // The parent is both a leaf and a container: it keeps its own share.
+    expect(rev(r, "hh")).toBe(200);
+    expect(rev(r, "batt")).toBe(6);
+    expect(sumOf(r, ["hh", "batt"])).toBe(206);
+  });
+
+  test("three levels deep: group → kit → child → accessory", () => {
+    const r = run(
+      [
+        L("kit", { groupId: "g1", kitId: "k1", lineTotal: 100, sortOrder: 1 }),
+        L("rx", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("psu", { parentLineItemId: "rx", modelId: "psu", sortOrder: 1 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 100, quantity: 1 }],
+        models: models(M("rx", { dailyRate: 90 }), M("psu", { dailyRate: 10 })),
+      },
+    );
+    expect(rev(r, "rx")).toBe(90);
+    expect(rev(r, "psu")).toBe(10);
+    expect(sumOf(r, ["rx", "psu"])).toBe(100);
+  });
+});
+
+// ── rollup ───────────────────────────────────────────────────────────────────
+
+describe("rollupByModel", () => {
+  test("sums a model across every line that earned for it", () => {
+    const lines = [
+      L("a", { modelId: "m1", lineTotal: 100 }),
+      L("b", { modelId: "m1", lineTotal: 50 }),
+      L("c", { modelId: "m2", lineTotal: 25 }),
+    ];
+    const totals = rollupByModel(lines, run(lines));
+    expect(totals.get("m1")).toBe(150);
+    expect(totals.get("m2")).toBe(25);
+  });
+
+  test("skips containers, custom items, and cancelled lines", () => {
+    const lines = [
+      L("kit", { kitId: "k1", lineTotal: 100 }),
+      L("rx", { parentLineItemId: "kit", modelId: "rx" }),
+      L("custom", { lineTotal: 900, isCustomItem: true }),
+      L("dead", { modelId: "rx", lineTotal: 900, status: "CANCELLED" }),
+    ];
+    const totals = rollupByModel(lines, run(lines));
+    expect(totals.get("rx")).toBe(100);
+    expect(totals.size).toBe(1);
+  });
+});
+
+// ── stability ────────────────────────────────────────────────────────────────
+
+describe("stability", () => {
+  test("recomputing an unchanged project produces identical cents", () => {
+    // If this drifts, every no-op write dirties the diff and patches every line.
+    const build = () => [
+      L("kit", { kitId: "k1", lineTotal: 1000 }),
+      L("a", { parentLineItemId: "kit", modelId: "m1", sortOrder: 1 }),
+      L("b", { parentLineItemId: "kit", modelId: "m2", sortOrder: 2 }),
+      L("c", { parentLineItemId: "kit", modelId: "m3", sortOrder: 3 }),
+    ];
+    const first = run(build());
+    const second = run(build());
+    for (const id of ["a", "b", "c"]) expect(rev(second, id)).toBe(rev(first, id));
+    expect(sumOf(first, ["a", "b", "c"])).toBe(1000);
+  });
+
+  test("every line gets a verdict, even an orphan whose parent is gone", () => {
+    const r = run([L("orphan", { parentLineItemId: "missing", modelId: "m1", lineTotal: 10 })]);
+    expect(r.has("orphan")).toBe(true);
+    // Treated as a root rather than silently dropped.
+    expect(rev(r, "orphan")).toBe(10);
+  });
+});

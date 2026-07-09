@@ -197,6 +197,7 @@ model Organization {
   warehouseDashboardTokens WarehouseDashboardToken[]
   testTagAuditorTokens     TestTagAuditorToken[]
   apiKeys                  ApiKey[]
+  webhooks                 Webhook[]
   wooCommerceIntegration   WooCommerceIntegration?
   wooCommerceOrderLogs     WooCommerceOrderLog[]
   checkItems               CheckItem[]
@@ -1095,9 +1096,9 @@ model BulkAsset {
   modelAccessoryUses ModelBulkAccessory[]
   lineItems          ProjectLineItem[]
   lineItemUnits      ProjectLineItemUnit[]
-  scanLogs        AssetScanLog[]
-  testTagAssets   TestTagAsset[]
-  checkRecords    CheckRecord[]
+  scanLogs           AssetScanLog[]
+  testTagAssets      TestTagAsset[]
+  checkRecords       CheckRecord[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1236,7 +1237,7 @@ model MaintenanceRecord {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  assets       MaintenanceRecordAsset[]
+  assets MaintenanceRecordAsset[]
 
   @@index([organizationId])
   @@index([status])
@@ -1244,7 +1245,6 @@ model MaintenanceRecord {
   @@index([projectId])
   @@map("maintenance_record")
 }
-
 
 model MaintenanceRecordAsset {
   id                  String            @id @default(cuid())
@@ -1488,37 +1488,37 @@ model ProjectLineItem {
 // See docs/designs/line-item-fulfillment-model.md.
 
 model ProjectLineItemUnit {
-  id               String           @id @default(cuid())
-  organizationId   String
-  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lineItemId       String
-  lineItem         ProjectLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  ordinal          Int
-  assetId          String?
-  asset            Asset?           @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId      String?
-  bulkAsset        BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  id                String           @id @default(cuid())
+  organizationId    String
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lineItemId        String
+  lineItem          ProjectLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  ordinal           Int
+  assetId           String?
+  asset             Asset?           @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId       String?
+  bulkAsset         BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   // For an ACCESSORY-line unit: the parent unit's asset this accessory travels
   // with (the specific handheld a battery kit is packed under). Null on normal
   // (non-accessory) units. Denormalised link to the parent asset id, mirroring
   // how serialised accessory children use Asset.parentAssetId — lets prep/return
   // and the per-unit docket render scope an accessory to one parent unit.
   parentUnitAssetId String?
-  quantity         Int              @default(1)
-  returnedQuantity Int              @default(0)
-  status           LineItemStatus   @default(CONFIRMED)
-  prepStatus       PrepStatus?
-  prepContainer    String?
-  checkedOutAt     DateTime?
-  checkedOutById   String?
-  returnedAt       DateTime?
-  returnedById     String?
-  returnCondition  ReturnCondition?
-  returnStatus     ReturnStatus?
-  returnNotes      String?
-  checkRecords     CheckRecord[]
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  quantity          Int              @default(1)
+  returnedQuantity  Int              @default(0)
+  status            LineItemStatus   @default(CONFIRMED)
+  prepStatus        PrepStatus?
+  prepContainer     String?
+  checkedOutAt      DateTime?
+  checkedOutById    String?
+  returnedAt        DateTime?
+  returnedById      String?
+  returnCondition   ReturnCondition?
+  returnStatus      ReturnStatus?
+  returnNotes       String?
+  checkRecords      CheckRecord[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@unique([lineItemId, assetId])
   @@unique([lineItemId, ordinal])
@@ -1634,14 +1634,14 @@ model ProjectGroup {
   category       ProjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   title          String
   description    String?
-  quantity       Int             @default(1)
-  price          Decimal?        @db.Decimal(12, 2)
-  suggestedPrice Decimal?        @db.Decimal(12, 2)
+  quantity       Int              @default(1)
+  price          Decimal?         @db.Decimal(12, 2)
+  suggestedPrice Decimal?         @db.Decimal(12, 2)
   rentalPeriod   RentalPeriod?
   rentalQuantity Int?
-  sortOrder      Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  sortOrder      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   lineItems           ProjectLineItem[]
   // Sub-hire placement targets
@@ -1706,14 +1706,14 @@ model GroupTemplate {
 // one of modelId / kitId is set. Kit items expand via addKitLineItem when the
 // template is applied, pulling in the kit's children as usual.
 model GroupTemplateItem {
-  id             String        @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   templateId     String // references a Convex groupTemplates doc; FK dropped Phase B
   modelId        String? // references a Convex models doc; FK dropped Phase B
   kitId          String? // references a Convex kits doc; FK dropped Phase C
-  quantity       Int           @default(1)
-  sortOrder      Int           @default(0)
+  quantity       Int          @default(1)
+  sortOrder      Int          @default(0)
 
   @@index([templateId])
   @@index([modelId])
@@ -2234,12 +2234,12 @@ model CrewMember {
   icalToken   String? @unique
 
   // Relations
-  skills         CrewSkill[]
-  assignments    CrewAssignment[]
-  availability   CrewAvailability[]
-  timeEntries    CrewTimeEntry[]
-  crewRoleId     String?
-  crewRole       CrewRole?           @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
+  skills       CrewSkill[]
+  assignments  CrewAssignment[]
+  availability CrewAvailability[]
+  timeEntries  CrewTimeEntry[]
+  crewRoleId   String?
+  crewRole     CrewRole?          @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
 
   assignedProjectTasks ProjectTask[] @relation("ProjectTaskCrewAssignee")
 
@@ -2653,9 +2653,9 @@ model DocumentTemplate {
   settings String? @db.Text // JSON — TemplateSettings (legacy settings-based config)
 
   // New section-based fields
-  sections        String?        @db.Text // JSON — TemplateSection[] (ordered section list)
+  sections        String? @db.Text // JSON — TemplateSection[] (ordered section list)
   brandTemplateId String? // references a Convex brandTemplates doc (cuid); FK dropped in Phase B
-  thumbnailData   String?        @db.Text // base64 thumbnail image
+  thumbnailData   String? @db.Text // base64 thumbnail image
 
   isDefault    Boolean   @default(false)
   isDraft      Boolean   @default(true)
@@ -2695,10 +2695,10 @@ model WarehouseDashboardToken {
 
   name       String // "Main Warehouse TV", "Loading Dock Screen"
   token      String // Raw access token (for URL display in settings)
-  tokenHash  String    @unique // SHA-256 of the access token (for lookup)
+  tokenHash  String  @unique // SHA-256 of the access token (for lookup)
   locationId String? // Scope to a specific warehouse location — references a Convex locations doc; FK (SetNull) dropped Phase B
-  isActive   Boolean   @default(true)
-  layout     String    @default("standard") // "standard", "compact", "dispatch-only"
+  isActive   Boolean @default(true)
+  layout     String  @default("standard") // "standard", "compact", "dispatch-only"
 
   createdById    String
   createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -2867,7 +2867,6 @@ enum WooOrderLogStatus {
   FAILED
   DUPLICATE
 }
-
 
 // ─── Check Item System ───────────────────────────────────────────────────────
 
@@ -3138,11 +3137,11 @@ model ProjectTask {
 
   title       String
   description String?
-  status      ProjectTaskStatus @default(TODO)
+  status      ProjectTaskStatus   @default(TODO)
   priority    ProjectTaskPriority @default(NORMAL)
   dueDate     DateTime?
   // Manual ordering within a project's list (drag/sort). Lower = higher.
-  sortOrder   Int               @default(0)
+  sortOrder   Int                 @default(0)
   // Optional sub-steps: [{ id, text, done }] — kept inline as JSON, not a table.
   checklist   Json?
 
@@ -3203,4 +3202,81 @@ model SavedTableView {
   @@index([userId, tableId])
   @@index([organizationId])
   @@map("saved_table_view")
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks — outbound events for agents/integrations.
+// See docs/designs/webhooks.md.
+// ---------------------------------------------------------------------------
+
+/// A subscribed endpoint. `secret` must be readable because we sign with it
+/// (HMAC-SHA256); it is shown once at creation and rotatable with a grace window.
+model Webhook {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Human label, e.g. "Booking agent (Hermes)".
+  description String
+  /// Destination. Must be https:// outside development.
+  url         String
+  /// JSON array of event names, e.g. ["project.status_changed"].
+  events      String @default("[]")
+
+  /// Signing secret (whsec_...). Shown once on create; rotatable.
+  secret                  String
+  /// Previous secret, still accepted during a rotation grace window.
+  previousSecret          String?
+  previousSecretExpiresAt DateTime?
+
+  isActive            Boolean   @default(true)
+  /// Stamped when auto-disabled after repeated failures, or on HTTP 410 Gone.
+  disabledAt          DateTime?
+  /// Reset to 0 by any successful delivery. Auto-disable trips at 20.
+  consecutiveFailures Int       @default(0)
+
+  lastDeliveryAt DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([organizationId])
+  @@map("webhook")
+}
+
+/// One attempt-tracked delivery of one event to one endpoint. Doubles as the
+/// queue (claimed by the cron worker) and the operator-facing delivery log.
+model WebhookDelivery {
+  id             String  @id @default(cuid())
+  organizationId String
+  webhookId      String
+  webhook        Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  event   String
+  /// The exact JSON body we POST. Signed as-is, so it must not be re-serialized.
+  payload String
+
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  /// When the next attempt becomes eligible. Exponential backoff.
+  nextAttemptAt  DateTime              @default(now())
+  responseStatus Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime              @default(now())
+
+  @@index([webhookId])
+  @@index([organizationId])
+  /// The worker's claim query: pending rows whose backoff has elapsed.
+  @@index([status, nextAttemptAt])
+  @@map("webhook_delivery")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  /// Retries exhausted, or the endpoint rejected it permanently.
+  FAILED
 }

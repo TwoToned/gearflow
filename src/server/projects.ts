@@ -5,6 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -833,6 +834,17 @@ export async function updateProjectStatus(
       summary: `Changed project ${updated.projectNumber} status from ${project.status} to ${status}`,
       details: { changes: [{ field: "status", from: project.status, to: status }] },
       projectId: updated.id,
+    });
+  }
+
+  // Fired only after the status change committed. Best-effort: never blocks the write.
+  if (project.status !== status) {
+    await emitWebhookEvent(organizationId, "project.status_changed", {
+      projectId: updated.id,
+      projectNumber: updated.projectNumber,
+      name: updated.name,
+      from: project.status,
+      to: status,
     });
   }
 

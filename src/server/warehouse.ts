@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
@@ -370,6 +371,15 @@ export async function checkOutItems(
   const rows = await Promise.all(
     res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
   );
+
+  // Fired only after the gear physically moved. Best-effort: never blocks the write.
+  await emitWebhookEvent(organizationId, "warehouse.checked_out", {
+    projectId,
+    lineItemIds: res.updatedLineIds,
+    assetIds: items.map((i) => i.assetId).filter((a): a is string => Boolean(a)),
+    count: res.updatedLineIds.length,
+  });
+
   return serialize(await attachModelToResults(organizationId, rows));
 }
 

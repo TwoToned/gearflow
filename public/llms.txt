@@ -49,6 +49,11 @@ a typo is **rejected**, not ignored.
 Operations are named `<module>.<function>`, e.g. `projects.getProjects`,
 `maintenance.createMaintenanceRecord`, `warehouse.checkOutItems`.
 
+**Tool names work as aliases.** `describe_operation` and `call_operation` accept either
+the operation name (`assets.getAssets`) or the MCP tool name that runs it
+(`search_assets`), so you never have to rediscover a name when falling back from MCP to
+REST. Each `list_operations` result reports its `mcpTool` when one exists.
+
 ### `describe_operation` gives you real JSON Schema
 
 Each parameter comes back with a `schema` field: JSON Schema (draft 2020-12) generated
@@ -100,6 +105,16 @@ curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json'
 `getProjects` also accepts `search`, `status`, `type`, `clientId`, `rentalStartDate`,
 `rentalEndDate`, `page`, `pageSize`, `sortBy`, `sortOrder`. Filter and sort server-side
 rather than fetching each project individually.
+
+Each line item on `get_project` carries `category` `{id,name}` and `categoryName`, so you
+can group a project's gear by category without resolving ids yourself.
+
+`global_search` needs a query of **at least 2 characters** and returns `{ "results": [] }`
+when nothing matches — an empty result is "no match", not an error.
+
+To size up several models at once use **`check_availability_batch`** (`modelIds: [...]`,
+max 100). It returns `availability` keyed by modelId, each value identical to what
+`check_availability` returns for that model. Do not loop `check_availability`.
 
 **One caveat that matters:** `primaryDateRange` is the *human* answer. For availability,
 overbooking or reservations, always use `rentalStartDate`/`rentalEndDate`, or just call
@@ -217,7 +232,11 @@ Same auth, same behavior, plain HTTP + JSON.
 
 - `GET /api/v1` — index: version, endpoints, docs link (no auth required).
 - `GET /api/v1/whoami` — identity + scopes for your key.
-- `GET /api/v1/operations` — discover operations. Query: `?search=&kind=read|write&module=&limit=`
+- `GET /api/v1/operations` — discover operations, filtered to your key's scopes.
+  Query: `?search=` (matches name + summary), `?kind=read|write`, `?module=` (e.g.
+  `projects`, `warehouse`, `maintenance`), `?limit=` (default 100) and `?offset=` for
+  paging. The response carries `total`, `offset` and `hasMore`. Combine them:
+  `?module=projects&kind=read` gives only the reads on the projects module.
 - `GET /api/v1/operations/{name}` — the call signature of one operation.
 - `POST /api/v1/ops/{name}` — invoke an operation. Body:
   `{ "arguments": {...}, "confirm": true, "idempotencyKey": "..." }`
@@ -426,6 +445,78 @@ Three rules the server enforces, which you must design around:
 
 ---
 
+## 8b. Webhooks — react to events instead of polling
+
+Subscribe an HTTPS endpoint and GearFlow POSTs you a signed event when something happens.
+Manage subscriptions through the normal operations: `webhooks.getWebhookEvents` (what you
+can subscribe to), `webhooks.createWebhook`, `webhooks.getWebhooks`,
+`webhooks.getWebhookDeliveries`, `webhooks.rotateWebhookSecret`, `webhooks.deleteWebhook`.
+
+Creating, rotating or deleting an endpoint is **dangerous**: it needs the
+`orgSettings:update` scope AND `confirm: true` + an `idempotencyKey`. That is deliberate —
+an agent should not be able to quietly redirect an organisation's events.
+
+### Events (v1)
+
+| Event | Fires when |
+|-------|-----------|
+| `project.status_changed` | A project moved to a new status |
+| `line_item.added` | Gear was added to a project |
+| `warehouse.checked_out` | Gear physically left the warehouse |
+| `maintenance.created` | A maintenance record was opened |
+
+### The body you receive
+
+```json
+{
+  "id": "whd_abc123",
+  "event": "project.status_changed",
+  "version": "v1",
+  "createdAt": "2026-07-09T12:00:00.000Z",
+  "organizationId": "org_...",
+  "data": { "projectId": "...", "projectNumber": "P-0001", "name": "...", "from": "QUOTE", "to": "CONFIRMED" }
+}
+```
+
+Headers: `X-GearFlow-Event`, `X-GearFlow-Delivery-Id`, `X-GearFlow-Signature`.
+
+### Verify every delivery. Do not skip this.
+
+```
+X-GearFlow-Signature: t=1783600000,v1=<hex hmac-sha256>
+```
+
+The signed message is `${t}.${rawBody}` — the **raw body bytes**, before any JSON parsing.
+Re-serializing changes key order and breaks the HMAC.
+
+```js
+import { createHmac, timingSafeEqual } from "crypto";
+
+function verify(rawBody, header, secret, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(header.split(",").map((p) => p.trim().split("=")));
+  const t = Number(parts.t);
+  if (Math.abs(Math.floor(Date.now() / 1000) - t) > toleranceSeconds) return false; // replay
+  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
+  const a = Buffer.from(expected), b = Buffer.from(parts.v1);
+  return a.length === b.length && timingSafeEqual(a, b);   // constant time
+}
+```
+
+### Rules you must design around
+
+- **At-least-once, never exactly-once.** Retries reuse the same `id`. **Dedupe on `id`.**
+- **No ordering guarantee.** Deliveries are independent. If order matters, read the state
+  back with `get_project` rather than inferring it from arrival order.
+- **Respond fast with any 2xx.** Do the work asynchronously; we time out at 10 seconds.
+- **Retries** back off 1m, 2m, 4m, 8m, 16m, 32m and then stop.
+- **Return `410 Gone`** to unsubscribe permanently. We disable the endpoint immediately.
+- After 20 consecutive failures we disable the endpoint. Check
+  `webhooks.getWebhookDeliveries` to see exactly what we sent and what came back.
+- Rotating a secret keeps the old one valid for a grace window, so verify against both
+  until it expires.
+
+---
+
 ## 9. Limits and safety
 
 - **Org kill switch.** An operator can instantly disable ALL of an org's keys; you will
@@ -534,5 +625,8 @@ You want to log a maintenance record, but there is no named tool for it.
   For availability, use `rentalStartDate`/`rentalEndDate` or `check_availability`.
 - Irreversible / stock-affecting writes need `confirm: true` + `idempotencyKey`.
   Treat `CONFIRMATION_REQUIRED` as a prompt to check with the human, not a formality.
+- Page `list_operations` with `limit` + `offset`; check `hasMore`.
+- Prefer `check_availability_batch` over looping `check_availability`.
+- Webhooks: verify the signature, dedupe on the envelope `id`, assume no ordering.
 - On error: branch on `code`; only retry when `retryable` is `true`.
 - Org is bound to the key — never send an org id (`orgId` is rejected outright).

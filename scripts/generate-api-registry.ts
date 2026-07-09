@@ -102,11 +102,15 @@ const READ_OVERRIDES = new Set([
   "warehouse-display.validateDisplayToken",
 ]);
 
-/** Irreversible or privilege-sensitive operations. Callers must opt in explicitly. */
+/**
+ * Irreversible or privilege-sensitive WRITES. Callers must opt in explicitly
+ * (`confirm` + `idempotencyKey`). Reads are never `dangerous` — nothing to undo —
+ * so a read in a sensitive module is still gated by its scope, not by confirmation.
+ */
 const DANGEROUS_PREFIXES = [
   "delete", "remove", "archive", "purge", "revoke", "destroy", "drop", "reset", "kill",
 ];
-const DANGEROUS_MODULES = new Set(["api-keys", "custom-roles", "org-members", "sso", "settings"]);
+const DANGEROUS_MODULES = new Set(["api-keys", "custom-roles", "org-members", "sso", "settings", "webhooks"]);
 
 interface Param {
   name: string;
@@ -417,7 +421,7 @@ async function main() {
         resource,
         action,
         params: callerParams,
-        dangerous: isDangerous(fn, moduleName),
+        dangerous: kind === "write" && isDangerous(fn, moduleName),
         summary: extractSummary(stmt, source),
       });
     }

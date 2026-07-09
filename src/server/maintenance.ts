@@ -1,6 +1,7 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
@@ -347,6 +348,15 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
     entityName: parsed.title,
     summary: `Created maintenance record: ${parsed.title}`,
     details: { assetCount: assetIds.length },
+  });
+
+  // Fired only after the record committed. Best-effort: never blocks the write.
+  await emitWebhookEvent(organizationId, "maintenance.created", {
+    maintenanceId: newRecordId,
+    title: parsed.title,
+    assetIds,
+    status: parsed.status ?? null,
+    type: parsed.type ?? null,
   });
 
   return serialize(record);

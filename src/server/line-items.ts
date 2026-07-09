@@ -19,6 +19,7 @@ import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
 import { UserFacingError } from "@/lib/errors";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
@@ -502,6 +503,17 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // the only rejection path in this wave.
     result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
   ]);
+
+  // Fired only after the line item committed. Best-effort: never blocks the write.
+  await emitWebhookEvent(organizationId, "line_item.added", {
+    projectId,
+    lineItemId: result.id,
+    modelId: result.modelId ?? null,
+    quantity: result.quantity ?? null,
+    type: result.type ?? null,
+    description: result.description ?? null,
+  });
+
   return serialize({ ...result, supplier });
 }
 

@@ -94,6 +94,7 @@ const READ_NAME_PATTERN = /search|lookup/i;
 const READ_OVERRIDES = new Set([
   "crew-availability.checkCrewConflicts",
   "line-items.checkAvailability",
+  "line-items.checkAvailabilityBatch",
   "line-items.checkKitAvailability",
   "project-groups.calculateSuggestedPrice",
   "sub-hires.checkSubHireOpportunity",

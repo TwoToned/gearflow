@@ -184,6 +184,27 @@ export const CURATED_TOOLS: CuratedTool[] = [
     },
   },
   {
+    name: "check_availability_batch",
+    operation: "line-items.checkAvailabilityBatch",
+    description:
+      "How many units of MANY models are free over a date range, in ONE call. Read-only. Returns `availability` keyed by modelId, each value identical to what check_availability returns for that model. Prefer this over calling check_availability in a loop. Max 100 models per call. Required scope: project:read.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        modelIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100,
+          description: "The models to check. Duplicates are collapsed.",
+        },
+        rentalStartDate: str("ISO date the hire starts. Optional."),
+        rentalEndDate: str("ISO date the hire ends. Optional."),
+        excludeProjectId: str("Ignore holds belonging to this project. Optional."),
+      },
+      required: ["modelIds"],
+    },
+  },
+  {
     name: "global_search",
     operation: "search.globalSearch",
     description:

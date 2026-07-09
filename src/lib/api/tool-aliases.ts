@@ -27,6 +27,7 @@ export const TOOL_ALIASES: Record<string, string> = {
   list_kits: "kits.listKits",
   get_kit: "kits.getKit",
   check_availability: "line-items.checkAvailability",
+  check_availability_batch: "line-items.checkAvailabilityBatch",
   global_search: "search.globalSearch",
   scan_lookup: "scan-lookup.scanLookup",
   list_clients: "clients.getClients",

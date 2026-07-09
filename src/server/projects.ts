@@ -502,16 +502,27 @@ export async function getProject(id: string) {
     }
   }
 
+  // Line items carry a `categoryId` but the flat list left `category` null, so a
+  // caller grouping gear by category had to resolve every id itself. The names are
+  // already in `categories` (the tree) — attach them here, no extra query.
+  const categoryById = new Map(categories.map((c) => [c.id, { id: c.id, name: c.name }]));
+  const attachCategory = <T extends { categoryId: string | null }>(row: T) => {
+    const category = row.categoryId ? categoryById.get(row.categoryId) ?? null : null;
+    return { category, categoryName: category?.name ?? null };
+  };
+
   const enrichedLineItems = topLineItems.map((li) => {
     const info = overbookedMap.get(li.id);
     return {
       ...li,
+      ...attachCategory(li),
       isOverbooked: !!info,
       overbookedInfo: info ?? null,
       childLineItems: li.childLineItems?.map((child) => {
         const childInfo = overbookedMap.get(child.id);
         return {
           ...child,
+          ...attachCategory(child),
           isOverbooked: !!childInfo,
           overbookedInfo: childInfo ?? null,
         };

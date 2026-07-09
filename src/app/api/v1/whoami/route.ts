@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       {
         headers: {
           "Cache-Control": "no-store",
-          "X-GearFlow-API-Version": "v1",
+          "X-RVLT-Api-Version": "v1",
         },
       },
     );
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const { status, body } = toErrorEnvelope(err);
     return NextResponse.json(body, {
       status,
-      headers: { "X-GearFlow-API-Version": "v1" },
+      headers: { "X-RVLT-Api-Version": "v1" },
     });
   }
 }

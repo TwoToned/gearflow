@@ -32,7 +32,7 @@ describe("handleMcpMessage — protocol", () => {
     const res = await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "initialize" }, "Bearer x");
     expect(res!.result).toMatchObject({
       protocolVersion: expect.any(String),
-      serverInfo: { name: "gearflow", version: "v1" },
+      serverInfo: { name: "rvlt-flow", version: "v1" },
     });
   });
 
@@ -65,7 +65,7 @@ describe("handleMcpMessage — tools/call", () => {
     authenticateApiRequest.mockResolvedValue(actor);
     const res = await handleMcpMessage(
       { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "whoami", arguments: {} } },
-      "Bearer gf_live_x",
+      "Bearer rvlt_live_x",
     );
     const content = (res!.result as { content: { text: string }[] }).content[0].text;
     expect(JSON.parse(content)).toMatchObject({ organizationId: "org_1", actorType: "apiKey" });
@@ -84,7 +84,7 @@ describe("handleMcpMessage — tools/call", () => {
           arguments: { projectId: "p1", items: [{ modelId: "m1", quantity: 2 }], confirm: false },
         },
       },
-      "Bearer gf_live_x",
+      "Bearer rvlt_live_x",
     );
     expect(reserveItems).toHaveBeenCalledWith(
       actor,

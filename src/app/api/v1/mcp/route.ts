@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleMcpMessage, type JsonRpcRequest } from "@/lib/api/mcp";
 
-const V1 = { "X-GearFlow-API-Version": "v1" };
+const V1 = { "X-RVLT-Api-Version": "v1" };
 
 /**
- * POST /api/v1/mcp — GearFlow's MCP server (Streamable HTTP, JSON-RPC 2.0).
+ * POST /api/v1/mcp — RVLT Flow's MCP server (Streamable HTTP, JSON-RPC 2.0).
  *
  * Point an MCP client here with `Authorization: Bearer <api key>`. Supports
  * `initialize`, `tools/list`, and `tools/call` (whoami, reserve_items). Notifications

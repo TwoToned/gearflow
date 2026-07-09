@@ -3,7 +3,7 @@ import { authenticateApiRequest, toErrorEnvelope } from "@/lib/api/http";
 import { reserveItems } from "@/lib/api/reserve-items";
 import { convexReservationPort } from "@/lib/api/reserve-port";
 
-const V1 = { "X-GearFlow-API-Version": "v1" };
+const V1 = { "X-RVLT-Api-Version": "v1" };
 
 /**
  * POST /api/v1/reserve-items

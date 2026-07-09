@@ -81,7 +81,7 @@ function mcpConfig(origin: string, token: string) {
   return JSON.stringify(
     {
       mcpServers: {
-        gearflow: {
+        "rvlt-flow": {
           url: `${origin}/api/v1/mcp`,
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -171,7 +171,7 @@ export default function ApiKeysSettingsPage() {
           <div>
             <h2 className="t-title text-ink">API keys</h2>
             <p className="text-sm text-fg-3 mt-1 max-w-prose">
-              Connect AI agents and scripts to GearFlow. Each key acts on behalf of a user
+              Connect AI agents and scripts to RVLT Flow. Each key acts on behalf of a user
               and is bound by that user&apos;s permissions. Point an MCP client at{" "}
               <code className="text-xs">/api/v1/mcp</code> or call the REST API with{" "}
               <code className="text-xs">Authorization: Bearer</code>. Full agent docs:{" "}

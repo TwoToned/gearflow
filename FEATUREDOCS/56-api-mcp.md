@@ -1,6 +1,6 @@
 # 56 — Agent-Accessible API + MCP
 
-Lets AI agents (Claude, OpenClaw, scripts) and power users read and write GearFlow
+Lets AI agents (Claude, OpenClaw, scripts) and power users read and write RVLT Flow
 through a stable, org-scoped API exposed **MCP-first** with a REST facade. v1 ships a
 "safe rental-ops layer": broad reads + curated preview→commit capability verbs, bound
 by the SAME overbooking / RBAC / audit protections the web UI enforces.
@@ -42,7 +42,7 @@ Design of record: [`docs/designs/api-mcp-agent-access.md`](../docs/designs/api-m
   `POST /reserve-items`. `Authorization: Bearer <key>`. Errors use one agent-native
   envelope (`src/lib/api/http.ts` `toErrorEnvelope`): stable `code`, `retryable`,
   `requiredScope`, typed `details`; unknown errors become an opaque 500. `/v1` +
-  `X-GearFlow-API-Version` header.
+  `X-RVLT-Api-Version` header.
 - **MCP** (`POST /api/v1/mcp`, `src/lib/api/mcp.ts`): JSON-RPC 2.0 Streamable HTTP —
   `initialize`, `tools/list`, `tools/call` for `whoami` + `reserve_items`. Tool
   descriptions are prompt-shaped (prerequisites, effect, preview behaviour, required

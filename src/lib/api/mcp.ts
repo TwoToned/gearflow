@@ -5,7 +5,7 @@ import { ApiError } from "./errors";
 
 /**
  * Minimal MCP (Model Context Protocol) server over Streamable HTTP (JSON-RPC 2.0).
- * Exposes GearFlow capability verbs as MCP tools so an agent (Claude, OpenClaw, …)
+ * Exposes RVLT Flow capability verbs as MCP tools so an agent (Claude, OpenClaw, …)
  * can call them natively. Handles `initialize`, `tools/list`, and `tools/call`;
  * notifications get no response. Tool DESCRIPTIONS are treated as the docs/prompt —
  * each states prerequisites, effect, preview behaviour, required scope, and idempotency.
@@ -14,7 +14,7 @@ import { ApiError } from "./errors";
  */
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
-export const MCP_SERVER_INFO = { name: "gearflow", version: "v1" } as const;
+export const MCP_SERVER_INFO = { name: "rvlt-flow", version: "v1" } as const;
 
 export const MCP_TOOLS = [
   {

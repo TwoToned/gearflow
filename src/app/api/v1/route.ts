@@ -9,10 +9,10 @@ import { API_DOCS_URL } from "@/lib/api/http";
 export function GET() {
   return NextResponse.json(
     {
-      name: "GearFlow API",
+      name: "RVLT Flow API",
       apiVersion: "v1",
       description:
-        "Agent-accessible API + MCP for GearFlow rental/asset management. Authenticate with 'Authorization: Bearer <api key>'. Read the docs before calling.",
+        "Agent-accessible API + MCP for RVLT Flow rental/asset management. Authenticate with 'Authorization: Bearer <api key>'. Read the docs before calling.",
       documentation_url: API_DOCS_URL,
       mcp: {
         url: "/api/v1/mcp",
@@ -24,6 +24,6 @@ export function GET() {
       },
       auth: "Authorization: Bearer <api key> (create one in Settings → Integrations → API Keys)",
     },
-    { headers: { "Cache-Control": "no-store", "X-GearFlow-API-Version": "v1" } },
+    { headers: { "Cache-Control": "no-store", "X-RVLT-Api-Version": "v1" } },
   );
 }

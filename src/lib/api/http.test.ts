@@ -20,8 +20,8 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("extractBearerToken", () => {
   it("pulls the token from a well-formed header (case-insensitive)", () => {
-    expect(extractBearerToken("Bearer gf_live_abc")).toBe("gf_live_abc");
-    expect(extractBearerToken("bearer  gf_live_xyz  ")).toBe("gf_live_xyz");
+    expect(extractBearerToken("Bearer rvlt_live_abc")).toBe("rvlt_live_abc");
+    expect(extractBearerToken("bearer  rvlt_live_xyz  ")).toBe("rvlt_live_xyz");
   });
   it("returns null for missing or malformed headers", () => {
     expect(extractBearerToken(null)).toBeNull();
@@ -77,10 +77,10 @@ describe("authenticateApiRequest", () => {
       scopes: ["assets:read"],
     });
 
-    const actor = await authenticateApiRequest("Bearer gf_live_abc");
+    const actor = await authenticateApiRequest("Bearer rvlt_live_abc");
 
     expect(actor.actorType).toBe("apiKey");
     expect(actor.organizationId).toBe("org_1");
-    expect(getApiKeyActorContext).toHaveBeenCalledWith("gf_live_abc");
+    expect(getApiKeyActorContext).toHaveBeenCalledWith("rvlt_live_abc");
   });
 });

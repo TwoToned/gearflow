@@ -44,15 +44,15 @@ beforeEach(() => {
 
 describe("hashApiKey / generateApiKey", () => {
   it("hashes deterministically and never returns the raw token in the hash", () => {
-    expect(hashApiKey("gf_live_abc")).toBe(hashApiKey("gf_live_abc"));
-    expect(hashApiKey("gf_live_abc")).not.toContain("gf_live_abc");
-    expect(hashApiKey("gf_live_abc")).toHaveLength(64); // sha256 hex
+    expect(hashApiKey("rvlt_live_abc")).toBe(hashApiKey("rvlt_live_abc"));
+    expect(hashApiKey("rvlt_live_abc")).not.toContain("rvlt_live_abc");
+    expect(hashApiKey("rvlt_live_abc")).toHaveLength(64); // sha256 hex
   });
 
   it("generates a key whose prefix is a real substring and whose hash matches", () => {
     const { raw, prefix, tokenHash } = generateApiKey();
     expect(raw.startsWith(prefix)).toBe(true);
-    expect(raw.startsWith("gf_live_")).toBe(true);
+    expect(raw.startsWith("rvlt_live_")).toBe(true);
     expect(tokenHash).toBe(hashApiKey(raw));
     // Two keys never collide.
     expect(generateApiKey().raw).not.toBe(raw);
@@ -116,7 +116,7 @@ describe("getApiKeyActorContext — validation + resolution", () => {
   it("resolves a valid key to an apiKey ActorContext with its scopes", async () => {
     apiKeyFindUnique.mockResolvedValue(keyRow());
 
-    const actor = await getApiKeyActorContext("gf_live_whatever");
+    const actor = await getApiKeyActorContext("rvlt_live_whatever");
 
     expect(actor).toEqual({
       organizationId: "org_1",
@@ -128,7 +128,7 @@ describe("getApiKeyActorContext — validation + resolution", () => {
     });
     // Looked up by hash, not raw token.
     expect(apiKeyFindUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tokenHash: hashApiKey("gf_live_whatever") } }),
+      expect.objectContaining({ where: { tokenHash: hashApiKey("rvlt_live_whatever") } }),
     );
   });
 

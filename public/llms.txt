@@ -1,6 +1,6 @@
-# GearFlow API + MCP — Agent Guide
+# RVLT Flow API + MCP — Agent Guide
 
-> GearFlow is a rental / asset-management platform for AV and theatre production
+> RVLT Flow is a rental / asset-management platform for AV and theatre production
 > companies. This document is written for an AI agent (or the developer wiring one
 > up). It is the complete, self-contained reference for the agent-accessible API and
 > MCP server: how to authenticate, the tools available, how reservations work, and
@@ -9,7 +9,7 @@
 
 Base URL: `https://flow.rvlt.app`
 API version: `v1` (all paths are under `/api/v1`; every response carries an
-`X-GearFlow-API-Version: v1` header)
+`X-RVLT-Api-Version: v1` header)
 Docs URL (this file): `https://flow.rvlt.app/llms.txt`
 
 ---
@@ -37,15 +37,15 @@ More verbs (asset-specific holds, dispatch/return, search, webhooks) are planned
 Every request authenticates with an **API key** sent as a Bearer token:
 
 ```
-Authorization: Bearer gf_live_xxxxxxxxxxxxxxxxxxxxxxxx
+Authorization: Bearer rvlt_live_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Properties of a key you must understand:
 
-- **Org-scoped.** A key belongs to exactly one GearFlow organization. You never pass
+- **Org-scoped.** A key belongs to exactly one RVLT Flow organization. You never pass
   an `organizationId` — it is bound to the key. Any org id you put in a request body
   is ignored.
-- **Acts as a user.** Each key acts on behalf of a specific GearFlow user. Your
+- **Acts as a user.** Each key acts on behalf of a specific RVLT Flow user. Your
   effective permission is the **intersection** of (a) the key's scopes and (b) that
   user's live role. A broadly-scoped key still cannot exceed the user's role; if the
   user is later demoted or deactivated, the key is narrowed immediately.
@@ -57,7 +57,7 @@ Properties of a key you must understand:
 
 ### Getting a key
 
-A GearFlow admin (a user with the `orgSettings` permission) creates keys in the web
+A RVLT Flow admin (a user with the `orgSettings` permission) creates keys in the web
 app: **Settings → Integrations → API Keys → Create key**. That screen returns the
 secret once and shows a ready-to-paste MCP config. An agent cannot mint its own key;
 ask the operator to create one and give it to you.
@@ -66,7 +66,7 @@ ask the operator to create one and give it to you.
 
 ## 3. Connect over MCP (recommended for agents)
 
-GearFlow runs an MCP (Model Context Protocol) server at:
+RVLT Flow runs an MCP (Model Context Protocol) server at:
 
 ```
 https://flow.rvlt.app/api/v1/mcp
@@ -83,9 +83,9 @@ like this:
 ```json
 {
   "mcpServers": {
-    "gearflow": {
+    "rvlt-flow": {
       "url": "https://flow.rvlt.app/api/v1/mcp",
-      "headers": { "Authorization": "Bearer gf_live_YOUR_KEY" }
+      "headers": { "Authorization": "Bearer rvlt_live_YOUR_KEY" }
     }
   }
 }
@@ -98,7 +98,7 @@ scopes.
 ### MCP methods supported
 
 - `initialize` → returns `protocolVersion`, `capabilities`, and
-  `serverInfo` (`{ "name": "gearflow", "version": "v1" }`).
+  `serverInfo` (`{ "name": "rvlt-flow", "version": "v1" }`).
 - `tools/list` → the current tools with full JSON-Schema input definitions and
   prose descriptions (the descriptions are the source of truth for arguments).
 - `tools/call` → run a tool. Requires the Bearer header.
@@ -121,7 +121,7 @@ Same auth, same behavior, plain HTTP + JSON.
 Example:
 
 ```bash
-curl -H "Authorization: Bearer gf_live_YOUR_KEY" \
+curl -H "Authorization: Bearer rvlt_live_YOUR_KEY" \
   https://flow.rvlt.app/api/v1/whoami
 ```
 
@@ -265,7 +265,7 @@ change the input or ask the operator. Only retry `retryable: true` codes, with b
 
 Any committing write takes an `idempotencyKey`: a unique string YOU generate for each
 distinct intended action (a UUID is ideal). If the network drops and you retry with the
-SAME key, GearFlow returns the ORIGINAL result (`replayed: true`) instead of performing
+SAME key, RVLT Flow returns the ORIGINAL result (`replayed: true`) instead of performing
 the action twice. Reuse the same key ONLY for a retry of the exact same request; use a
 NEW key for a new reservation. Previews (`confirm: false`) never need one.
 
@@ -274,7 +274,7 @@ NEW key for a new reservation. Previews (`confirm: false`) never need one.
 ## 8. Versioning
 
 - The path is versioned: everything is under `/api/v1`.
-- Every response carries `X-GearFlow-API-Version: v1`.
+- Every response carries `X-RVLT-Api-Version: v1`.
 - MCP `serverInfo.version` is `v1`.
 - Additive changes (new tools, new optional fields) are non-breaking and can appear
   without a version bump — discover them via `tools/list` rather than hard-coding.
@@ -322,12 +322,12 @@ NEW key for a new reservation. Previews (`confirm: false`) never need one.
 ```bash
 # preview
 curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
-  -H "Authorization: Bearer gf_live_YOUR_KEY" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer rvlt_live_YOUR_KEY" -H "Content-Type: application/json" \
   -d '{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}]}'
 
 # commit
 curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
-  -H "Authorization: Bearer gf_live_YOUR_KEY" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer rvlt_live_YOUR_KEY" -H "Content-Type: application/json" \
   -H "Idempotency-Key: a1b2c3-unique" \
   -d '{"projectId":"proj_42","items":[{"modelId":"model_x","quantity":2}],"confirm":true}'
 ```
@@ -339,7 +339,7 @@ curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
 
 ## 11. Quick reference
 
-- Auth: `Authorization: Bearer gf_live_...`
+- Auth: `Authorization: Bearer rvlt_live_...`
 - MCP: `POST https://flow.rvlt.app/api/v1/mcp` (JSON-RPC 2.0)
 - REST: `GET /api/v1/whoami`, `POST /api/v1/reserve-items`, `GET /api/v1`
 - Always `whoami` first. Always preview before you commit. Commits need an `idempotencyKey`.

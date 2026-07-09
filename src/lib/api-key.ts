@@ -16,7 +16,7 @@ import type { ActorContext } from "./actor-context";
  * See docs/designs/api-mcp-agent-access.md.
  */
 
-const KEY_PREFIX = "gf_live_";
+const KEY_PREFIX = "rvlt_live_";
 
 /** Stable machine-readable reasons an API key can be rejected (mapped to the API error envelope). */
 export type ApiKeyRejectionCode =
@@ -55,7 +55,7 @@ export function generateApiKey(): {
 } {
   const secret = randomBytes(24).toString("hex");
   const raw = `${KEY_PREFIX}${secret}`;
-  // Display prefix: scheme + first 6 chars of the secret, e.g. "gf_live_ab12cd".
+  // Display prefix: scheme + first 6 chars of the secret, e.g. "rvlt_live_ab12cd".
   const prefix = `${KEY_PREFIX}${secret.slice(0, 6)}`;
   return { raw, prefix, tokenHash: hashApiKey(raw) };
 }

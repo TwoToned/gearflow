@@ -7,7 +7,7 @@ vi.mock("@/lib/org-context", () => ({
 }));
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 vi.mock("@/lib/api-key", () => ({
-  generateApiKey: () => ({ raw: "gf_live_SECRET", prefix: "gf_live_ab", tokenHash: "hash_of_secret" }),
+  generateApiKey: () => ({ raw: "rvlt_live_SECRET", prefix: "rvlt_live_ab", tokenHash: "hash_of_secret" }),
 }));
 
 const prismaMock = vi.hoisted(() => ({
@@ -23,14 +23,14 @@ import { logActivity } from "@/lib/activity-log";
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.member.findFirst.mockResolvedValue({ id: "mem_1" });
-  prismaMock.apiKey.create.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "gf_live_ab" });
+  prismaMock.apiKey.create.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "rvlt_live_ab" });
 });
 
 describe("createApiKey", () => {
   it("stores only the hash, returns the raw secret once, and audits", async () => {
     const res = await createApiKey({ name: "Agent", scopes: ["project:manage_line_items"] });
 
-    expect(res.token).toBe("gf_live_SECRET");
+    expect(res.token).toBe("rvlt_live_SECRET");
     const createArg = prismaMock.apiKey.create.mock.calls[0][0];
     expect(createArg.data.tokenHash).toBe("hash_of_secret");
     expect(createArg.data.token).toBeUndefined(); // raw secret is never persisted
@@ -82,7 +82,7 @@ describe("setOrgApiKillSwitch", () => {
 
 describe("listApiKeys", () => {
   it("returns keys + kill-switch state without any secret", async () => {
-    prismaMock.apiKey.findMany.mockResolvedValue([{ id: "key_1", prefix: "gf_live_ab", name: "Agent" }]);
+    prismaMock.apiKey.findMany.mockResolvedValue([{ id: "key_1", prefix: "rvlt_live_ab", name: "Agent" }]);
     prismaMock.organization.findUnique.mockResolvedValue({ apiKillSwitchAt: null });
 
     const res = await listApiKeys();

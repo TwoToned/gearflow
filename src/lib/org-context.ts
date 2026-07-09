@@ -7,12 +7,46 @@ import {
   type PermissionMap,
 } from "./permissions";
 import type { ActorContext } from "./actor-context";
+import { getAmbientActor } from "./request-actor";
+import { requireApiScope } from "./api-key";
 
 /**
  * Get the current organization context for server-side operations.
  * Validates the user's membership and returns scoped query helpers.
+ *
+ * Two paths resolve to the same shape:
+ * - **Ambient actor** (API/MCP): the dispatcher wrapped this call in
+ *   `runWithActor()`, so the identity comes from the API key. No cookie is read.
+ * - **Session** (web UI): the identity comes from the Better Auth cookie. Unchanged.
+ *
+ * Every `src/server/*.ts` action funnels through here, which is why wiring the
+ * ambient actor in at this one point makes the entire action surface callable by
+ * an API key without touching the actions themselves.
  */
 export async function getOrgContext() {
+  const ambient = getAmbientActor();
+  if (ambient) {
+    // The acting user is a real user row; load the profile fields callers rely on
+    // (e.g. `ctx.user.image`). Membership + RBAC are still enforced per-operation
+    // by `requirePermission`, so this lookup grants nothing on its own.
+    const user = await prisma.user.findUnique({
+      where: { id: ambient.userId },
+      select: { id: true, name: true, email: true, image: true },
+    });
+
+    if (!user) {
+      throw new Error("The user this API key acts as no longer exists.");
+    }
+
+    return {
+      organizationId: ambient.organizationId,
+      userId: ambient.userId,
+      userName: ambient.userName,
+      user,
+      session: null,
+    };
+  }
+
   const { session, organizationId } = await requireOrganization();
 
   return {
@@ -127,21 +161,31 @@ export async function resolvePermissionForActor(
  * Check that a caller has a specific permission in the active org. Throws if not
  * permitted. Works for both built-in and custom roles.
  *
- * By default the caller is the current Better Auth session (existing web-UI
- * behaviour — unchanged). Pass an explicit `actor` to check on behalf of an API
- * key or any other resolved identity, reusing the exact same RBAC logic.
+ * Actor resolution, in order: an explicit `actor` argument, then the ambient
+ * actor set by the API dispatcher (`runWithActor`), then the Better Auth session
+ * (the web-UI path — unchanged).
+ *
+ * For API-key actors this ALSO enforces the key's scopes, not just the acting
+ * user's RBAC. That makes scope enforcement follow the real code path rather than
+ * the registry's declared metadata: an action that guards itself with
+ * `requirePermission("project", "delete")` demands the `project:delete` scope even
+ * if the operation registry described it wrongly. Effective permission stays
+ * intersection(live user RBAC, key scopes).
  */
 export async function requirePermission(
   resource: Resource,
   action: string,
   actor?: ActorContext,
 ): Promise<{ organizationId: string; userId: string; userName: string }> {
-  let resolvedActor = actor;
+  let resolvedActor = actor ?? getAmbientActor();
   if (!resolvedActor) {
     // Session path: derive the actor from the request, exactly as before.
     const { organizationId, userId, userName } = await getOrgContext();
     resolvedActor = { organizationId, userId, userName, actorType: "session" };
   }
+
+  // No-op for session actors; throws MISSING_SCOPE for an under-scoped key.
+  requireApiScope(resolvedActor, resource, action);
 
   return resolvePermissionForActor(resolvedActor, resource, action);
 }

@@ -16,12 +16,25 @@ import { requireOrgPermission } from "./lib/auth";
  * and computeOverbookedStatus (kept as-is; see equipment-tab-reconstruct).
  */
 async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string) {
-  const [lineItems, categories, groups, subHires] = await Promise.all([
+  const [rawLineItems, rawCategories, rawGroups, rawSubHires] = await Promise.all([
     ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
   ]);
+
+  // `requireOrgPermission` validates the CALLER's org, not the project's — and it
+  // short-circuits entirely for the service token. `projectId` is caller-supplied,
+  // so without this filter a foreign projectId returns another org's equipment.
+  // Everything below derives from these four, so filtering here covers the whole
+  // bundle (slots come from categories; sub-hire groups/items from subHires).
+  const ownedBy = <T extends { organizationId: string }>(rows: T[]) =>
+    rows.filter((r) => r.organizationId === orgId);
+
+  const lineItems = ownedBy(rawLineItems);
+  const categories = ownedBy(rawCategories);
+  const groups = ownedBy(rawGroups);
+  const subHires = ownedBy(rawSubHires);
 
   // Category slots: one indexed read per category (typically ≤10).
   const slotArrays = await Promise.all(

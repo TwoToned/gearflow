@@ -37,10 +37,13 @@ export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    const rows = await ctx.db
       .query("projectGroups")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect();
+    // See projectLineItems.listByProject: `requireOrgRead` validates the caller's
+    // org, not the project's, and is a no-op for the service token. Filter rows.
+    return rows.filter((r) => r.organizationId === orgId);
   },
 });
 

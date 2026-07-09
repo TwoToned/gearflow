@@ -30,10 +30,12 @@ const STATUS_BY_CODE: Record<string, number> = {
   // request
   VALIDATION_ERROR: 400,
   IDEMPOTENCY_KEY_REQUIRED: 400,
+  CONFIRMATION_REQUIRED: 428, // Precondition Required — resend with confirm=true
   // domain
   INVENTORY_CONFLICT: 409,
   STALE_PREVIEW: 409,
   NOT_FOUND: 404,
+  INTERNAL: 500,
 };
 
 /** The agent-facing docs. Attached to every error so an agent can self-serve recovery. */

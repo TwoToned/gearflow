@@ -13,10 +13,14 @@ export type ApiErrorCode =
   // request shape
   | "VALIDATION_ERROR"
   | "IDEMPOTENCY_KEY_REQUIRED"
+  /** An irreversible or stock-affecting write needs an explicit `confirm: true`. */
+  | "CONFIRMATION_REQUIRED"
   // domain
   | "INVENTORY_CONFLICT"
   | "STALE_PREVIEW"
-  | "NOT_FOUND";
+  | "NOT_FOUND"
+  /** Unexpected server-side failure. Never carries internal detail. */
+  | "INTERNAL";
 
 export interface ApiErrorOptions {
   /** True when the same call may succeed later (rate limit, transient lock, stale preview). */

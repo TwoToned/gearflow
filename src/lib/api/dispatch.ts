@@ -6,7 +6,7 @@ import type { ActorContext } from "../actor-context";
 import type { Resource } from "../permissions";
 import { getConvexClient } from "../convex-client";
 import { authorizeApiOperation } from "./authorize";
-import { ApiError } from "./errors";
+import { ApiError, type ApiErrorCode } from "./errors";
 import { OPERATIONS, MODULE_LOADERS, type OperationMeta } from "./generated/operations";
 import { CONVEX_READS, INJECTED_ARGS, type ConvexReadMeta } from "./convex-reads";
 
@@ -47,6 +47,19 @@ const AVAILABILITY_AFFECTING = new Set([
   "warehouse.checkInKitsBatch",
   "warehouse.bulkForceReturnAssets",
 ]);
+
+/**
+ * Marks a ledger row reserved but not yet completed. Stored in `result` so no
+ * schema migration is needed; it can never collide with a real result because
+ * every real result is JSON.
+ */
+const PENDING_RESULT = "__gearflow_pending__";
+
+/** Marks a ledger row whose operation failed; a replay re-throws the same error. */
+const FAILED_KEY = "__gearflow_failed__";
+
+/** Convex rejects arrays over 1000 ids; reject them here with a usable error. */
+const MAX_ARRAY_ARG = 1000;
 
 export interface InvokeInput {
   operation: string;
@@ -118,6 +131,18 @@ async function runConvexRead(
 
   buildArgList(meta, args); // validates required/unknown args, same rules as actions
 
+  // An oversized id array blows past Convex's document-read limit and surfaces as
+  // a retryable INTERNAL, inviting the agent into a retry loop. Reject it clearly.
+  for (const [key, value] of Object.entries(args)) {
+    if (Array.isArray(value) && value.length > MAX_ARRAY_ARG) {
+      throw new ApiError(
+        "VALIDATION_ERROR",
+        `'${key}' has ${value.length} entries; the maximum is ${MAX_ARRAY_ARG}. Split the request into batches.`,
+        { retryable: false, details: { limit: MAX_ARRAY_ARG, received: value.length } },
+      );
+    }
+  }
+
   const autoArgs = Object.fromEntries(
     Object.entries(meta.autoArgs ?? {}).map(([k, fn]) => [k, fn()]),
   );
@@ -174,12 +199,19 @@ function toApiError(err: unknown, meta: OperationMeta): ApiError {
   }
 
   if (err instanceof Error) {
-    // The guarded actions throw plain Errors for RBAC and lookup failures.
+    // The guarded actions throw plain Errors for RBAC and lookup failures. We
+    // classify on the message but NEVER echo it back — an internal error whose
+    // text happens to contain "not found" (a missing DB relation, say) would
+    // otherwise leak infrastructure detail to the caller.
     if (/permission|not allowed|forbidden|not a member/i.test(err.message)) {
-      return new ApiError("FORBIDDEN", err.message, { retryable: false });
+      return new ApiError("FORBIDDEN", "You don't have permission to perform this action.", {
+        retryable: false,
+      });
     }
     if (/not found|no longer exists/i.test(err.message)) {
-      return new ApiError("NOT_FOUND", err.message, { retryable: false });
+      return new ApiError("NOT_FOUND", "The requested resource was not found in this organization.", {
+        retryable: false,
+      });
     }
   }
 
@@ -269,17 +301,68 @@ export async function invokeOperation(
   const idempotencyKey = input.idempotencyKey;
   const canReplay = meta.kind === "write" && Boolean(idempotencyKey) && Boolean(actor.apiKeyId);
 
+  const ledgerWhere = canReplay
+    ? { apiKeyId_key: { apiKeyId: actor.apiKeyId!, key: idempotencyKey! } }
+    : undefined;
+
+  /** Decide what a pre-existing ledger row means for this request. */
+  const interpretPrior = (prior: { verb: string; result: string }): InvokeResult => {
+    if (prior.verb !== meta.name) {
+      // Reusing a key across operations would otherwise return the FIRST
+      // operation's result and silently skip this one.
+      throw new ApiError(
+        "VALIDATION_ERROR",
+        `idempotencyKey '${idempotencyKey}' was already used for '${prior.verb}'. Use a fresh key for '${meta.name}'.`,
+        { retryable: false, details: { previousOperation: prior.verb } },
+      );
+    }
+    if (prior.result === PENDING_RESULT) {
+      // Reserved but never completed: an earlier attempt died between the effect
+      // and the result write. We cannot know whether it applied, so we must not
+      // re-run it — that is exactly the double-apply this ledger exists to stop.
+      // Deliberately terminal for THIS key: recover by checking whether the
+      // operation applied, then retrying with a fresh key.
+      throw new ApiError(
+        "IDEMPOTENCY_IN_PROGRESS",
+        `A previous call with idempotencyKey '${idempotencyKey}' is still in flight, or was interrupted before recording its outcome. Do not blindly retry: check whether '${meta.name}' applied, then use a fresh idempotencyKey.`,
+        { retryable: false },
+      );
+    }
+
+    const parsed = JSON.parse(prior.result);
+    // A recorded failure replays as the same failure (Stripe's semantics): the
+    // handler may have partially applied before throwing, so re-running it could
+    // double-apply. A fresh key is required to genuinely retry.
+    if (parsed && typeof parsed === "object" && FAILED_KEY in parsed) {
+      const f = parsed[FAILED_KEY] as { code: ApiErrorCode; message: string };
+      throw new ApiError(f.code, f.message, { retryable: false, details: { replayedFailure: true } });
+    }
+
+    return { operation: meta.name, kind: meta.kind, replayed: true, result: parsed };
+  };
+
   if (canReplay) {
-    const prior = await prisma.apiIdempotency.findUnique({
-      where: { apiKeyId_key: { apiKeyId: actor.apiKeyId!, key: idempotencyKey! } },
-    });
-    if (prior) {
-      return {
-        operation: meta.name,
-        kind: meta.kind,
-        replayed: true,
-        result: JSON.parse(prior.result),
-      };
+    const prior = await prisma.apiIdempotency.findUnique({ where: ledgerWhere! });
+    if (prior) return interpretPrior(prior);
+
+    // RESERVE BEFORE EXECUTING. If we recorded only after the effect, a crash (or
+    // an unserializable result) in between would leave no ledger row, and the
+    // retry would apply a stock-moving write twice.
+    try {
+      await prisma.apiIdempotency.create({
+        data: {
+          organizationId: actor.organizationId,
+          apiKeyId: actor.apiKeyId!,
+          key: idempotencyKey!,
+          verb: meta.name,
+          result: PENDING_RESULT,
+        },
+      });
+    } catch {
+      // Lost the race on the unique (apiKeyId, key) index — the winner owns it.
+      const winner = await prisma.apiIdempotency.findUnique({ where: ledgerWhere! });
+      if (winner) return interpretPrior(winner);
+      throw new ApiError("INTERNAL", "Could not reserve the idempotency key.", { retryable: true });
     }
   }
 
@@ -289,37 +372,43 @@ export async function invokeOperation(
   try {
     raw = await runWithActor(actor, () => handler(...argList));
   } catch (err) {
-    throw toApiError(err, meta);
+    const apiErr = toApiError(err, meta);
+    // Record the failure rather than deleting the reservation. A guarded write can
+    // mutate before it throws (addLineItem writes, then reads back), so "the
+    // handler threw" does NOT prove nothing applied — freeing the key would let a
+    // retry apply it a second time. Replaying the error is the safe direction.
+    if (canReplay) {
+      await prisma.apiIdempotency
+        .update({
+          where: ledgerWhere!,
+          data: { result: JSON.stringify({ [FAILED_KEY]: { code: apiErr.code, message: apiErr.message } }) },
+        })
+        .catch(() => {});
+    }
+    throw apiErr;
   }
 
-  const result = serializeResult(raw);
+  let result: unknown;
+  try {
+    result = serializeResult(raw);
+  } catch (err) {
+    // The effect DID apply; only the response could not be encoded. Keep the
+    // reservation (marked applied) so a retry replays instead of re-applying.
+    if (canReplay) {
+      await prisma.apiIdempotency
+        .update({ where: ledgerWhere!, data: { result: JSON.stringify({ applied: true, unserializable: true }) } })
+        .catch(() => {});
+    }
+    throw err;
+  }
 
   if (canReplay) {
-    try {
-      await prisma.apiIdempotency.create({
-        data: {
-          organizationId: actor.organizationId,
-          apiKeyId: actor.apiKeyId!,
-          key: idempotencyKey!,
-          verb: meta.name,
-          result: JSON.stringify(result),
-        },
-      });
-    } catch {
-      // Lost a concurrent race on the unique (apiKeyId, key) index. The winner's
-      // result is the canonical one; return it as a replay.
-      const winner = await prisma.apiIdempotency.findUnique({
-        where: { apiKeyId_key: { apiKeyId: actor.apiKeyId!, key: idempotencyKey! } },
-      });
-      if (winner) {
-        return {
-          operation: meta.name,
-          kind: meta.kind,
-          replayed: true,
-          result: JSON.parse(winner.result),
-        };
-      }
-    }
+    // The effect already applied. If we cannot record the result, still return it —
+    // throwing here would report a successful write as a failure. The row stays
+    // PENDING, so a later retry is refused rather than double-applied.
+    await prisma.apiIdempotency
+      .update({ where: ledgerWhere!, data: { result: JSON.stringify(result) } })
+      .catch(() => {});
   }
 
   return { operation: meta.name, kind: meta.kind, replayed: false, result };

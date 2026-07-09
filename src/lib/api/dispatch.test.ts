@@ -8,6 +8,8 @@ const addLineItem = vi.hoisted(() => vi.fn());
 const authorizeApiOperation = vi.hoisted(() => vi.fn());
 const idempotencyFindUnique = vi.hoisted(() => vi.fn());
 const idempotencyCreate = vi.hoisted(() => vi.fn());
+const idempotencyUpdate = vi.hoisted(() => vi.fn());
+const idempotencyDelete = vi.hoisted(() => vi.fn());
 
 const meta = (over: Partial<OperationMeta> & Pick<OperationMeta, "name">): OperationMeta => ({
   module: "projects",
@@ -77,7 +79,12 @@ vi.mock("../convex-client", () => ({ getConvexClient: vi.fn() }));
 vi.mock("./authorize", () => ({ authorizeApiOperation }));
 vi.mock("../prisma", () => ({
   prisma: {
-    apiIdempotency: { findUnique: idempotencyFindUnique, create: idempotencyCreate },
+    apiIdempotency: {
+      findUnique: idempotencyFindUnique,
+      create: idempotencyCreate,
+      update: idempotencyUpdate,
+      delete: idempotencyDelete,
+    },
   },
 }));
 
@@ -108,6 +115,8 @@ beforeEach(() => {
   });
   idempotencyFindUnique.mockResolvedValue(null);
   idempotencyCreate.mockResolvedValue({});
+  idempotencyUpdate.mockResolvedValue({});
+  idempotencyDelete.mockResolvedValue({});
   getProjects.mockResolvedValue([{ id: "p1", name: "Gig" }]);
   deleteProject.mockResolvedValue({ success: true });
   addLineItem.mockResolvedValue({ id: "li_1" });
@@ -231,32 +240,122 @@ describe("invokeOperation", () => {
     expect(deleteProject).not.toHaveBeenCalled();
   });
 
-  it("commits a confirmed dangerous write and records idempotency", async () => {
-    const res = await invokeOperation(actor, {
-      operation: "projects.deleteProject",
-      arguments: { id: "p1" },
-      confirm: true,
-      idempotencyKey: "idem-1",
+  const dangerousCall = (over: Record<string, unknown> = {}) => ({
+    operation: "projects.deleteProject",
+    arguments: { id: "p1" },
+    confirm: true,
+    idempotencyKey: "idem-1",
+    ...over,
+  });
+
+  it("reserves the idempotency key BEFORE running the handler, then records the result", async () => {
+    const order: string[] = [];
+    idempotencyCreate.mockImplementation(async () => void order.push("reserve"));
+    deleteProject.mockImplementation(async () => {
+      order.push("effect");
+      return { success: true };
     });
-    expect(deleteProject).toHaveBeenCalledWith("p1");
+    idempotencyUpdate.mockImplementation(async () => void order.push("record"));
+
+    const res = await invokeOperation(actor, dangerousCall());
+
+    // Recording only after the effect would leave no ledger row if we crashed
+    // in between — and the retry would delete the project twice.
+    expect(order).toEqual(["reserve", "effect", "record"]);
     expect(res.replayed).toBe(false);
     expect(idempotencyCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ apiKeyId: "key_1", key: "idem-1", verb: "projects.deleteProject" }),
+        data: expect.objectContaining({
+          apiKeyId: "key_1",
+          key: "idem-1",
+          verb: "projects.deleteProject",
+          result: expect.stringContaining("pending"),
+        }),
+      }),
+    );
+    expect(idempotencyUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { result: JSON.stringify({ success: true }) } }),
+    );
+  });
+
+  it("RECORDS the failure instead of freeing the key, because the write may have partially applied", async () => {
+    // addLineItem writes, then reads back. "The handler threw" does not prove
+    // nothing applied — freeing the key would let a retry apply it twice.
+    deleteProject.mockRejectedValue(new Error("boom"));
+    await expect(invokeOperation(actor, dangerousCall())).rejects.toMatchObject({ code: "INTERNAL" });
+    expect(idempotencyDelete).not.toHaveBeenCalled();
+    expect(idempotencyUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { result: expect.stringContaining("__gearflow_failed__") },
       }),
     );
   });
 
-  it("replays a prior idempotent write without re-running the handler", async () => {
-    idempotencyFindUnique.mockResolvedValue({ result: JSON.stringify({ success: true }) });
-    const res = await invokeOperation(actor, {
-      operation: "projects.deleteProject",
-      arguments: { id: "p1" },
-      confirm: true,
-      idempotencyKey: "idem-1",
+  it("replays a recorded failure as the same error, without re-running the handler", async () => {
+    idempotencyFindUnique.mockResolvedValue({
+      verb: "projects.deleteProject",
+      result: JSON.stringify({ __gearflow_failed__: { code: "INVENTORY_CONFLICT", message: "no stock" } }),
     });
+    await expect(invokeOperation(actor, dangerousCall())).rejects.toMatchObject({
+      code: "INVENTORY_CONFLICT",
+    });
+    expect(deleteProject).not.toHaveBeenCalled();
+  });
+
+  it("still returns the result when the final ledger write fails (the effect applied)", async () => {
+    idempotencyUpdate.mockRejectedValue(new Error("db down"));
+    const res = await invokeOperation(actor, dangerousCall());
+    expect(res.replayed).toBe(false);
+    expect(res.result).toEqual({ success: true });
+  });
+
+  it("KEEPS the reservation when the effect applied but the result won't serialize", async () => {
+    // Effect committed; only the response failed to encode. A retry must replay,
+    // not re-apply.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    deleteProject.mockResolvedValue(circular);
+
+    await expect(invokeOperation(actor, dangerousCall())).rejects.toMatchObject({ code: "INTERNAL" });
+    expect(idempotencyDelete).not.toHaveBeenCalled();
+    expect(idempotencyUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { result: JSON.stringify({ applied: true, unserializable: true }) } }),
+    );
+  });
+
+  it("replays a prior idempotent write without re-running the handler", async () => {
+    idempotencyFindUnique.mockResolvedValue({
+      verb: "projects.deleteProject",
+      result: JSON.stringify({ success: true }),
+    });
+    const res = await invokeOperation(actor, dangerousCall());
     expect(res.replayed).toBe(true);
     expect(res.result).toEqual({ success: true });
+    expect(deleteProject).not.toHaveBeenCalled();
+  });
+
+  it("REJECTS reusing an idempotencyKey across different operations", async () => {
+    // Otherwise the caller gets the first operation's stale result and this
+    // operation silently never runs.
+    idempotencyFindUnique.mockResolvedValue({
+      verb: "warehouse.checkOutItems",
+      result: JSON.stringify({ success: true }),
+    });
+    await expect(invokeOperation(actor, dangerousCall())).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    expect(deleteProject).not.toHaveBeenCalled();
+  });
+
+  it("refuses to re-run an interrupted call rather than risk applying it twice", async () => {
+    idempotencyFindUnique.mockResolvedValue({
+      verb: "projects.deleteProject",
+      result: "__gearflow_pending__",
+    });
+    await expect(invokeOperation(actor, dangerousCall())).rejects.toMatchObject({
+      code: "IDEMPOTENCY_IN_PROGRESS",
+      retryable: false,
+    });
     expect(deleteProject).not.toHaveBeenCalled();
   });
 
@@ -264,16 +363,15 @@ describe("invokeOperation", () => {
     idempotencyCreate.mockRejectedValue(new Error("unique constraint"));
     idempotencyFindUnique
       .mockResolvedValueOnce(null) // pre-flight: no prior record
-      .mockResolvedValueOnce({ result: JSON.stringify({ success: "winner" }) });
+      .mockResolvedValueOnce({
+        verb: "projects.deleteProject",
+        result: JSON.stringify({ success: "winner" }),
+      });
 
-    const res = await invokeOperation(actor, {
-      operation: "projects.deleteProject",
-      arguments: { id: "p1" },
-      confirm: true,
-      idempotencyKey: "idem-1",
-    });
+    const res = await invokeOperation(actor, dangerousCall());
     expect(res.replayed).toBe(true);
     expect(res.result).toEqual({ success: "winner" });
+    expect(deleteProject).not.toHaveBeenCalled();
   });
 
   it("commits an ordinary write with no confirm ceremony", async () => {
@@ -288,6 +386,31 @@ describe("invokeOperation", () => {
     await expect(invokeOperation(actor, { operation: "projects.getProjects" })).rejects.toMatchObject(
       { code: "FORBIDDEN" },
     );
+  });
+
+  it("does not echo the raw error message when classifying FORBIDDEN", async () => {
+    getProjects.mockRejectedValue(new Error("permission denied for relation projects at 10.0.0.5"));
+    try {
+      await invokeOperation(actor, { operation: "projects.getProjects" });
+      throw new Error("should have thrown");
+    } catch (e) {
+      const err = e as { code: string; message: string };
+      expect(err.code).toBe("FORBIDDEN");
+      expect(err.message).not.toContain("10.0.0.5");
+      expect(err.message).not.toContain("relation");
+    }
+  });
+
+  it("does not echo the raw error message when classifying NOT_FOUND", async () => {
+    getProjects.mockRejectedValue(new Error('relation "projects_shadow" not found in schema public'));
+    try {
+      await invokeOperation(actor, { operation: "projects.getProjects" });
+      throw new Error("should have thrown");
+    } catch (e) {
+      const err = e as { code: string; message: string };
+      expect(err.code).toBe("NOT_FOUND");
+      expect(err.message).not.toContain("projects_shadow");
+    }
   });
 
   it("maps an unexpected error to an opaque INTERNAL, leaking nothing", async () => {

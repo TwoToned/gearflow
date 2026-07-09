@@ -31,6 +31,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   VALIDATION_ERROR: 400,
   IDEMPOTENCY_KEY_REQUIRED: 400,
   CONFIRMATION_REQUIRED: 428, // Precondition Required — resend with confirm=true
+  IDEMPOTENCY_IN_PROGRESS: 409,
   // domain
   INVENTORY_CONFLICT: 409,
   STALE_PREVIEW: 409,

@@ -307,6 +307,7 @@ Code table:
 | `VALIDATION_ERROR` | 400 | no | The request shape is wrong: an unknown argument name, a missing required one, or an argument (like `orgId`) that is set from your key and may not be passed. Read `details.expected` — it lists the real parameters — then fix and retry. Call `describe_operation` if unsure. |
 | `CONFIRMATION_REQUIRED` | 428 | no | The operation is irreversible or changes stock availability. Re-send with `confirm: true` **and** an `idempotencyKey`. `details.dangerous` says which class it is; `details.hint` may point you at `reserve_items` for a previewable alternative. Consider showing the operator what you are about to do first. |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | no | You set `confirm: true` without an `idempotencyKey`. Add a unique one and retry. |
+| `IDEMPOTENCY_IN_PROGRESS` | 409 | no | An earlier call with this `idempotencyKey` is still running, or died before recording its outcome. We will not re-run it, because it may have already applied. Do NOT loop: check whether the operation took effect (e.g. `get_project`), then use a **fresh** key if it did not. |
 | `INVENTORY_CONFLICT` | 409 | no | Not enough free stock (or a booking rule blocked it). Read `details`; reduce quantity, choose another model, or change dates. |
 | `STALE_PREVIEW` | 409 | yes | A preview token expired or stock changed. Re-preview, then commit. |
 | `NOT_FOUND` | 404 | no | The `projectId` (or other resource) doesn't exist in your org. Verify the id. |
@@ -328,6 +329,20 @@ NEW key for a new reservation. Previews (`confirm: false`) never need one.
 It is **required** for irreversible and stock-affecting operations, and **optional but
 strongly recommended** for every other write — pass one and a dropped connection can
 never cause a duplicate record.
+
+Three rules the server enforces, which you must design around:
+
+1. **One key, one operation.** Reusing a key for a *different* operation is a
+   `VALIDATION_ERROR`, not a replay. Otherwise you would get the first operation's
+   result back and your second operation would silently never run. Generate a fresh
+   key per intended action.
+2. **A failure is replayed as the same failure.** If an operation fails, retrying with
+   the same key returns that same error — because the write may have partially applied
+   before it failed, and re-running it could double-apply. To genuinely retry, use a
+   new key.
+3. **An interrupted call is never re-run automatically.** If a call died before
+   recording its outcome you get `IDEMPOTENCY_IN_PROGRESS`. Verify whether it applied,
+   then use a fresh key. Retrying the same key in a loop will never clear it.
 
 ---
 

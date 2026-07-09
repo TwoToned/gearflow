@@ -199,12 +199,16 @@ async function callTool(
       const tool = CURATED_BY_NAME.get(name);
       if (!tool) throw new ApiError("NOT_FOUND", `Unknown tool: ${name}`);
 
+      // `confirm`/`idempotencyKey` are dispatcher controls, not operation
+      // parameters. Strip them before mapping, or an agent that helpfully passes
+      // them (as call_operation's docs teach) trips the unknown-argument check.
+      const { confirm, idempotencyKey, ...operationArgs } = args;
+
       const res = await invokeOperation(actor, {
         operation: tool.operation,
-        arguments: mapToolArgs(tool, args),
-        // Curated tools are reads and cheap writes only; nothing here is gated.
-        confirm: args.confirm === true,
-        idempotencyKey: args.idempotencyKey as string | undefined,
+        arguments: mapToolArgs(tool, operationArgs),
+        confirm: confirm === true,
+        idempotencyKey: idempotencyKey as string | undefined,
       });
       return unwrap(res);
     }

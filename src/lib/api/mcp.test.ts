@@ -183,6 +183,23 @@ describe("curated tools", () => {
     expect(payload).toEqual([{ id: "p1", name: "Gig" }]);
   });
 
+  it("strips confirm/idempotencyKey from a curated tool's operation arguments", async () => {
+    // An agent that follows call_operation's docs and passes confirm would
+    // otherwise trip the dispatcher's unknown-argument check.
+    invokeOperation.mockResolvedValue({ operation: "clients.createClient", kind: "write", replayed: false, result: { id: "c1" } });
+    await callTool("create_client", {
+      client: { name: "Acme" },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+    expect(invokeOperation).toHaveBeenCalledWith(actor, {
+      operation: "clients.createClient",
+      arguments: { data: { name: "Acme" } },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+  });
+
   it("get_project renames projectId onto the action's `id` parameter", async () => {
     invokeOperation.mockResolvedValue({ operation: "projects.getProject", kind: "read", replayed: false, result: { id: "p1" } });
     await callTool("get_project", { projectId: "p1" });

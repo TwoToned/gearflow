@@ -138,3 +138,19 @@ describe("invokeOperation — Convex reads", () => {
     expect(getOperation("collaboration.listThreads").scope).toBe("project:read");
   });
 });
+
+describe("oversized array arguments", () => {
+  it("rejects an id array beyond the Convex limit instead of letting it fail as a retryable INTERNAL", async () => {
+    const modelIds = Array.from({ length: 1001 }, (_, i) => `m${i}`);
+    await expect(
+      invokeOperation(actor, { operation: "line-items.overbookingBundle", arguments: { modelIds } }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(convexQuery).not.toHaveBeenCalled();
+  });
+
+  it("allows an array at exactly the limit", async () => {
+    const modelIds = Array.from({ length: 1000 }, (_, i) => `m${i}`);
+    await invokeOperation(actor, { operation: "line-items.overbookingBundle", arguments: { modelIds } });
+    expect(convexQuery).toHaveBeenCalled();
+  });
+});

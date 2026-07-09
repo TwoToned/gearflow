@@ -57,13 +57,44 @@ an `idempotencyKey` for:
 Everything else commits directly. `CONFIRMATION_REQUIRED` (428) points stock-affecting
 callers at `reserve_items`, which offers a true preview.
 
+### Idempotency semantics
+
+The `ApiIdempotency` ledger is keyed `(apiKeyId, key)`. Three properties, each learned
+from a review finding:
+
+- **Reserved before the effect.** A row is inserted with a `PENDING` sentinel *before*
+  the handler runs. Recording only afterwards meant a crash (or an unserializable
+  result) in between left no row, so the retry re-applied a stock-moving write.
+- **The verb is checked.** A key reused for a different operation is a
+  `VALIDATION_ERROR`. Before this, it returned the first operation's stored result and
+  the second operation silently never ran.
+- **Failures replay as failures.** A handler that throws does not free the key — a
+  guarded write can mutate before it throws (`addLineItem` writes, then reads back), so
+  "it threw" never proves nothing applied. The error is recorded and replayed; a genuine
+  retry needs a fresh key. An interrupted call yields `IDEMPOTENCY_IN_PROGRESS`, which is
+  deliberately terminal for that key rather than risk a double-apply.
+
 ### The SERVICE-token boundary
 
 `getConvexClient()` attaches a process-global SERVICE token, and Convex's `requireOrgRead`
-short-circuits to *allow* for service callers. Bridged Convex reads therefore carry no
-authorization of their own. Two rules make that safe, both enforced in `runConvexRead`:
-`orgId` is injected from the authenticated actor, and a **caller-supplied `orgId` is a hard
-`VALIDATION_ERROR`**. RBAC runs in Node (`authorizeApiOperation`) before Convex is touched.
+short-circuits to *allow* for service callers (`convex/lib/auth.ts:103`). Bridged Convex reads
+therefore carry no authorization of their own. Two rules make that safe, both enforced in
+`runConvexRead`: `orgId` is injected from the authenticated actor, and a **caller-supplied
+`orgId` is a hard `VALIDATION_ERROR`**. RBAC runs in Node (`authorizeApiOperation`) before
+Convex is touched.
+
+**Injecting `orgId` is necessary but not sufficient.** `requireOrgRead(ctx, orgId)` proves the
+*caller* belongs to `orgId`; it says nothing about whether a caller-supplied `projectId` does.
+Three Convex queries took a bare `projectId` and returned rows with no org filter, so a foreign
+id leaked another org's data: `projectLineItems.listByProject`, `projectGroups.listByProject`,
+and `equipmentTab.bundle`'s four `by_projectId` reads. All three now filter rows by
+`organizationId`. That closed the hole on the UI's user-token path too — the ownership of the
+*id* was never checked on either path.
+
+**Rule for any new bridged read:** if it accepts an id the caller supplies, the Convex handler
+must either scope its index by `orgId` or filter returned rows by `organizationId`. The sibling
+bundles (`projectDetail`, `warehouseDetail`, `kitDetail`, `assetDetail`) load the parent doc and
+return `null` on mismatch — copy that.
 
 ## Auth model
 

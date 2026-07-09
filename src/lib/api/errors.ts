@@ -15,6 +15,8 @@ export type ApiErrorCode =
   | "IDEMPOTENCY_KEY_REQUIRED"
   /** An irreversible or stock-affecting write needs an explicit `confirm: true`. */
   | "CONFIRMATION_REQUIRED"
+  /** A call with this idempotencyKey is in flight, or died before recording its result. */
+  | "IDEMPOTENCY_IN_PROGRESS"
   // domain
   | "INVENTORY_CONFLICT"
   | "STALE_PREVIEW"

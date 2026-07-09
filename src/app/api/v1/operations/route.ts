@@ -5,7 +5,9 @@ import { listOperations } from "@/lib/api/dispatch";
 // AsyncLocalStorage (node:async_hooks) backs the ambient actor.
 export const runtime = "nodejs";
 
-const V1 = { "X-GearFlow-API-Version": "v1" };
+// The operation list is filtered per-key, so it must never be cached by an
+// intermediary that doesn't vary on Authorization.
+const V1 = { "X-GearFlow-API-Version": "v1", "Cache-Control": "no-store" };
 
 /**
  * GET /api/v1/operations — discover every operation this key can call.
@@ -21,12 +23,20 @@ export async function GET(request: NextRequest) {
     const q = request.nextUrl.searchParams;
     const kind = q.get("kind");
 
+    // `?limit=abc` would become NaN and silently return an empty catalogue.
+    const rawLimit = q.get("limit");
+    const parsedLimit = rawLimit === null ? undefined : Number(rawLimit);
+    const limit =
+      parsedLimit !== undefined && Number.isInteger(parsedLimit) && parsedLimit >= 0
+        ? parsedLimit
+        : undefined;
+
     const result = listOperations(actor, {
       search: q.get("search") ?? undefined,
       kind: kind === "read" || kind === "write" ? kind : undefined,
       module: q.get("module") ?? undefined,
       includeUnauthorized: q.get("includeUnauthorized") === "true",
-      limit: q.get("limit") ? Number(q.get("limit")) : undefined,
+      limit,
     });
 
     return NextResponse.json(result, { headers: V1 });

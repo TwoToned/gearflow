@@ -65,11 +65,40 @@ const READ_RESOURCE_BY_MODULE: Record<string, string> = {
   "test-tag-reports": "testTag",
 };
 
-/** Name prefixes that mark an operation as a read. Everything else is a write. */
+/**
+ * RBAC actions that only ever read. An action guarded by one of these is a read
+ * regardless of its name — `crew.getCrewMembers` guards `crew:read`.
+ */
+const READ_ACTIONS = new Set(["read", "view", "export"]);
+
+/**
+ * Name prefixes that mark an UNGUARDED operation as a read. Deliberately excludes
+ * "check": `checkAvailability` reads but `checkOutItems` moves stock, and both are
+ * guarded anyway, so the guard decides.
+ */
 const READ_PREFIXES = [
-  "get", "list", "search", "check", "peek", "count", "fetch",
-  "preview", "lookup", "resolve", "export", "find", "load", "is", "has",
+  "get", "list", "peek", "count", "fetch",
+  "preview", "resolve", "export", "find", "load", "is", "has",
 ];
+
+/** Unguarded reads whose names don't start with a read prefix (globalSearch, scanLookup). */
+const READ_NAME_PATTERN = /search|lookup/i;
+
+/**
+ * Unguarded operations that read but whose names would otherwise classify as writes
+ * (`checkAvailability` reads; `checkOutItems` does not). Misclassifying a read as a
+ * write only costs an unnecessary scope, so "write" is the safe default and this
+ * list is the deliberate, reviewable set of exceptions.
+ */
+const READ_OVERRIDES = new Set([
+  "crew-availability.checkCrewConflicts",
+  "line-items.checkAvailability",
+  "line-items.checkKitAvailability",
+  "project-groups.calculateSuggestedPrice",
+  "sub-hires.checkSubHireOpportunity",
+  "test-tag-auditor.validateAuditorToken",
+  "warehouse-display.validateDisplayToken",
+]);
 
 /** Irreversible or privilege-sensitive operations. Callers must opt in explicitly. */
 const DANGEROUS_PREFIXES = [
@@ -154,6 +183,7 @@ function usesRawSession(node: ts.Node): boolean {
 }
 
 function isRead(fnName: string): boolean {
+  if (READ_NAME_PATTERN.test(fnName)) return true;
   return READ_PREFIXES.some(
     (p) => fnName.startsWith(p) && (fnName.length === p.length || /[A-Z]/.test(fnName[p.length])),
   );
@@ -219,8 +249,16 @@ function main() {
         continue;
       }
 
+      // A guard's action is the strongest signal ("crew:read" is a read no matter
+      // what the function is called). Unguarded functions fall back to their name.
       const guard = findGuard(stmt.body!);
-      const kind: "read" | "write" = guard ? "write" : isRead(fn) ? "read" : "write";
+      const kind: "read" | "write" = guard
+        ? READ_ACTIONS.has(guard.action)
+          ? "read"
+          : "write"
+        : isRead(fn) || READ_OVERRIDES.has(`${moduleName}.${fn}`)
+          ? "read"
+          : "write";
 
       let resource: string;
       let action: string;

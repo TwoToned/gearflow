@@ -3,6 +3,10 @@ import { authenticateApiRequest, toErrorEnvelope } from "@/lib/api/http";
 import { reserveItems } from "@/lib/api/reserve-items";
 import { convexReservationPort } from "@/lib/api/reserve-port";
 
+// The API layer runs guarded server actions inside an AsyncLocalStorage actor
+// (node:async_hooks), so this route must not be edge-rendered.
+export const runtime = "nodejs";
+
 const V1 = { "X-GearFlow-API-Version": "v1" };
 
 /**

@@ -7,7 +7,13 @@ import type { Resource } from "../permissions";
 import { getConvexClient } from "../convex-client";
 import { authorizeApiOperation } from "./authorize";
 import { ApiError, type ApiErrorCode } from "./errors";
-import { OPERATIONS, MODULE_LOADERS, type OperationMeta } from "./generated/operations";
+import {
+  OPERATIONS,
+  MODULE_LOADERS,
+  PARAM_SCHEMAS,
+  type OperationMeta,
+  type JsonSchema,
+} from "./generated/operations";
 import { CONVEX_READS, INJECTED_ARGS, type ConvexReadMeta } from "./convex-reads";
 
 /**
@@ -474,7 +480,16 @@ export function listOperations(
   };
 }
 
-/** Full call signature for one operation. */
+/** The JSON Schema for a parameter, if its type resolved to one. */
+export function schemaForParam(param: { schemaRef?: string }): JsonSchema | undefined {
+  return param.schemaRef ? PARAM_SCHEMAS[param.schemaRef] : undefined;
+}
+
+/**
+ * Full call signature for one operation. `schema` is real JSON Schema (draft
+ * 2020-12) generated from the Zod validator the action enforces — build the
+ * argument from that, not from `type`, which is only the TypeScript text.
+ */
 export function describeOperation(name: string) {
   const meta = getOperation(name);
   return {
@@ -485,10 +500,14 @@ export function describeOperation(name: string) {
     dangerous: meta.dangerous,
     requiresConfirmation: isGuardedWrite(meta),
     summary: meta.summary,
-    parameters: meta.params.map((p) => ({
-      name: p.name,
-      type: p.type,
-      required: !p.optional,
-    })),
+    parameters: meta.params.map((p) => {
+      const schema = schemaForParam(p);
+      return {
+        name: p.name,
+        type: p.type,
+        required: !p.optional,
+        ...(schema ? { schema } : {}),
+      };
+    }),
   };
 }

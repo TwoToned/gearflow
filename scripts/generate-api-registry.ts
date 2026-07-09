@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const SERVER_DIR = path.join(process.cwd(), "src/server");
+const VALIDATIONS_DIR = path.join(process.cwd(), "src/lib/validations");
 const OUT_FILE = path.join(process.cwd(), "src/lib/api/generated/operations.ts");
 
 /**
@@ -110,6 +111,127 @@ interface Param {
   name: string;
   type: string;
   optional: boolean;
+  /** Key into PARAM_SCHEMAS when the type resolves to a Zod schema. */
+  schemaRef?: string;
+}
+
+/**
+ * Resolve `ClientFormValues` → the Zod schema that defines it.
+ *
+ * A parameter typed as a bare type name tells an agent nothing — it cannot
+ * construct the object. But `src/lib/validations/*.ts` already declares
+ * `export type ClientFormValues = z.input<typeof clientSchema>`, so the shape is
+ * right there, machine-readable, next to the code that validates against it.
+ * Scan those declarations, then convert each schema with Zod 4's native
+ * `z.toJSONSchema`. One source of truth for REST docs, MCP tool schemas, and
+ * OpenAPI — they cannot drift.
+ */
+function buildTypeToSchemaMap(): Map<string, { module: string; schemaExport: string }> {
+  const map = new Map<string, { module: string; schemaExport: string }>();
+
+  for (const file of fs.readdirSync(VALIDATIONS_DIR)) {
+    if (!file.endsWith(".ts") || file.includes(".test.")) continue;
+    const moduleName = file.replace(/\.ts$/, "");
+    const source = ts.createSourceFile(
+      path.join(VALIDATIONS_DIR, file),
+      fs.readFileSync(path.join(VALIDATIONS_DIR, file), "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+
+    for (const stmt of source.statements) {
+      if (!ts.isTypeAliasDeclaration(stmt)) continue;
+      if (!stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
+
+      // Match `z.input<typeof fooSchema>` / `z.infer<typeof fooSchema>`.
+      const t = stmt.type;
+      if (!ts.isTypeReferenceNode(t) || !t.typeArguments?.length) continue;
+      const ref = t.typeName.getText(source);
+      if (ref !== "z.input" && ref !== "z.infer") continue;
+
+      const arg = t.typeArguments[0];
+      if (!ts.isTypeQueryNode(arg)) continue;
+      map.set(stmt.name.text, { module: moduleName, schemaExport: arg.exprName.getText(source) });
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Pull the leading named type out of a parameter's type text.
+ * Handles `X`, `X[]`, and `X & { extra?: boolean }`.
+ */
+function namedTypeOf(typeText: string): { name: string; isArray: boolean } | null {
+  const m = /^([A-Z]\w*)(\[\])?(\s*&|$)/.exec(typeText.trim());
+  if (!m) return null;
+  return { name: m[1], isArray: m[2] === "[]" };
+}
+
+/** Convert every named param type we can resolve into a JSON Schema. */
+async function buildParamSchemas(
+  typeTexts: Set<string>,
+  typeMap: Map<string, { module: string; schemaExport: string }>,
+): Promise<{ schemas: Record<string, unknown>; unresolved: string[] }> {
+  const { z } = await import("zod");
+  const schemas: Record<string, unknown> = {};
+  const unresolved: string[] = [];
+  const moduleCache = new Map<string, Record<string, unknown>>();
+
+  // Prisma enums are plain objects of string values — an agent needs the allowed
+  // values, and they aren't in any Zod schema.
+  const prisma = (await import(path.join(process.cwd(), "src/generated/prisma/client"))) as Record<
+    string,
+    unknown
+  >;
+  const asPrismaEnum = (name: string): string[] | null => {
+    const e = prisma[name];
+    if (!e || typeof e !== "object") return null;
+    const values = Object.values(e as Record<string, unknown>);
+    return values.every((v) => typeof v === "string") && values.length ? (values as string[]) : null;
+  };
+
+  for (const typeText of [...typeTexts].sort()) {
+    const named = namedTypeOf(typeText);
+    if (!named) continue; // inline object types already show their fields
+
+    const entry = typeMap.get(named.name);
+    if (!entry) {
+      const enumValues = asPrismaEnum(named.name);
+      if (enumValues) {
+        const base = { type: "string", enum: enumValues };
+        schemas[typeText] = named.isArray ? { type: "array", items: base } : base;
+        continue;
+      }
+      unresolved.push(typeText);
+      continue;
+    }
+
+    try {
+      let mod = moduleCache.get(entry.module);
+      if (!mod) {
+        mod = (await import(path.join(VALIDATIONS_DIR, entry.module))) as Record<string, unknown>;
+        moduleCache.set(entry.module, mod);
+      }
+      const schema = mod[entry.schemaExport];
+      if (!schema) throw new Error(`no export '${entry.schemaExport}'`);
+
+      // `io: "input"` matches `z.input<>` (pre-transform, defaults optional) —
+      // the shape a caller actually sends. `unrepresentable: "any"` keeps
+      // z.date()/z.bigint() from throwing; they become `{}`.
+      const json = z.toJSONSchema(schema as never, {
+        target: "draft-2020-12",
+        io: "input",
+        unrepresentable: "any",
+      });
+
+      schemas[typeText] = named.isArray ? { type: "array", items: json } : json;
+    } catch {
+      unresolved.push(typeText);
+    }
+  }
+
+  return { schemas, unresolved };
 }
 
 interface Operation {
@@ -196,7 +318,8 @@ function isDangerous(fnName: string, moduleName: string): boolean {
   );
 }
 
-function main() {
+async function main() {
+  const typeMap = buildTypeToSchemaMap();
   const files = fs
     .readdirSync(SERVER_DIR)
     .filter((f) => f.endsWith(".ts") && !f.includes(".test.") && !f.includes(".int.test."))
@@ -311,6 +434,18 @@ function main() {
   operations.sort((a, b) => a.name.localeCompare(b.name));
   const sortedModules = [...modules].sort();
 
+  // Resolve every named param type to a JSON Schema, so an agent sees the fields
+  // it must send rather than an opaque type name.
+  const namedTypeTexts = new Set(
+    operations.flatMap((o) => o.params.map((p) => p.type)).filter((t) => /^[A-Z]/.test(t.trim())),
+  );
+  const { schemas, unresolved } = await buildParamSchemas(namedTypeTexts, typeMap);
+  for (const op of operations) {
+    for (const p of op.params) {
+      if (schemas[p.type]) p.schemaRef = p.type;
+    }
+  }
+
   const header = `// AUTO-GENERATED by scripts/generate-api-registry.ts — do not edit by hand.
 // Regenerate with: pnpm exec tsx scripts/generate-api-registry.ts
 //
@@ -322,7 +457,16 @@ export interface OperationParam {
   name: string;
   type: string;
   optional: boolean;
+  /**
+   * Key into {@link PARAM_SCHEMAS} when this parameter's type resolved to a Zod
+   * schema. Absent when the type is an inline object (read \`type\` instead) or
+   * could not be resolved.
+   */
+  schemaRef?: string;
 }
+
+/** JSON Schema (draft 2020-12) per named parameter type, generated from Zod. */
+export type JsonSchema = Record<string, unknown>;
 
 export interface OperationMeta {
   /** Stable id: "<module>.<functionName>". */
@@ -348,7 +492,9 @@ export interface OperationMeta {
       const params = op.params
         .map(
           (p) =>
-            `{ name: ${JSON.stringify(p.name)}, type: ${JSON.stringify(p.type)}, optional: ${p.optional} }`,
+            `{ name: ${JSON.stringify(p.name)}, type: ${JSON.stringify(p.type)}, optional: ${p.optional}` +
+            (p.schemaRef ? `, schemaRef: ${JSON.stringify(p.schemaRef)}` : "") +
+            ` }`,
         )
         .join(", ");
       return (
@@ -376,6 +522,8 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
 ${loaders}
 };
 
+export const PARAM_SCHEMAS: Record<string, JsonSchema> = ${JSON.stringify(schemas, null, 2)};
+
 export const OPERATION_COUNT = ${operations.length};
 `;
 
@@ -389,10 +537,21 @@ export const OPERATION_COUNT = ${operations.length};
     `  ${operations.length} operations across ${sortedModules.length} modules ` +
       `(${reads} read, ${operations.length - reads} write, ${dangerous} dangerous)`,
   );
+  const resolved = Object.keys(schemas).length;
+  console.log(
+    `  ${resolved} named param types resolved to JSON Schema; ${unresolved.length} unresolved`,
+  );
+  if (unresolved.length) {
+    console.log(`  Unresolved (agents see only the TypeScript type text for these):`);
+    for (const u of unresolved) console.log(`    - ${u}`);
+  }
   if (skipped.length) {
     console.log(`  Skipped ${skipped.length}:`);
     for (const s of skipped) console.log(`    - ${s}`);
   }
 }
 
-main();
+main().catch((err) => {
+  console.error(err.message ?? err);
+  process.exit(1);
+});

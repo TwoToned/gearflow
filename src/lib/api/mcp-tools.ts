@@ -1,4 +1,4 @@
-import { OPERATIONS } from "./generated/operations";
+import { OPERATIONS, PARAM_SCHEMAS } from "./generated/operations";
 import { CONVEX_READS } from "./convex-reads";
 
 /** Server actions plus the bridged Convex-only reads. Mirrors dispatch.ALL_OPERATIONS. */
@@ -342,6 +342,42 @@ for (const tool of CURATED_TOOLS) {
     }
   }
 }
+
+/**
+ * Replace each hand-written object placeholder with the REAL generated schema.
+ *
+ * The prose descriptions above ("Project fields: { name (required), clientId?, … }")
+ * were written by reading the code, which means they drift the moment the Zod
+ * validator changes. Where a tool argument maps onto a parameter with a resolved
+ * schema, splice that schema in and keep only the human description. An agent then
+ * gets the exact field names, types, enums and required-ness the action enforces —
+ * instead of guessing (which is how `startDate`, a field that does not exist,
+ * ended up in a real agent's request).
+ */
+function enrichWithGeneratedSchemas(): void {
+  for (const tool of CURATED_TOOLS) {
+    const meta = CATALOGUE[tool.operation];
+    for (const [toolArg, prop] of Object.entries(tool.inputSchema.properties)) {
+      const paramName = tool.argMap?.[toolArg] ?? toolArg;
+      const param = meta.params.find((p) => p.name === paramName);
+      const ref = param?.schemaRef;
+      if (!ref) continue;
+
+      const generated = PARAM_SCHEMAS[ref];
+      if (!generated) continue;
+
+      const description = (prop as { description?: string }).description;
+      // Drop $schema — MCP inputSchema properties are subschemas, not documents.
+      const { $schema: _drop, ...body } = generated as Record<string, unknown>;
+      tool.inputSchema.properties[toolArg] = {
+        ...body,
+        ...(description ? { description } : {}),
+      };
+    }
+  }
+}
+
+enrichWithGeneratedSchemas();
 
 /** Rename a curated tool's arguments onto the underlying operation's parameter names. */
 export function mapToolArgs(

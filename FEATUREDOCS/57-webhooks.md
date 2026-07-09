@@ -48,8 +48,12 @@ Two phases, because **a webhook must never break a business write**:
    throws — an unreachable webhook table must not roll back a warehouse check-out. The
    cost is that a lost enqueue is a lost event, which is the right trade against losing
    the gear movement. It then kicks delivery fire-and-forget.
-2. `deliverPendingWebhooks` POSTs each due row with a 10s timeout. `POST /api/cron/webhooks`
-   (guarded by `CRON_SECRET`) drives the retries.
+2. `deliverPendingWebhooks` **claims** each due row atomically (`UPDATE ... WHERE
+   status='PENDING' AND nextAttemptAt<=now`, pushing `nextAttemptAt` out by a lease and
+   incrementing `attempts`) before POSTing it with a 10s timeout. The claim is what makes
+   the cron worker and the emit fire-and-forget kick safe to run concurrently — without
+   it they'd both send the same row and both write `attempts=1`. `POST /api/cron/webhooks`
+   (guarded by a constant-time `CRON_SECRET` compare) drives the retries.
 
 - **Backoff:** 1m, 2m, 4m, 8m, 16m, 32m, then `FAILED` (6 attempts).
 - **`410 Gone`** is honoured as "unsubscribe me": fail immediately and disable.
@@ -76,21 +80,28 @@ dangerous; nothing there is irreversible.
 
 - The URL must be `https://` (only `http://localhost` in development), so a signed
   payload never crosses the wire in the clear.
-- **SSRF guard** (`url.ts`): private, loopback, CGNAT and link-local hosts are refused —
-  including `169.254.169.254`, the cloud metadata endpoint. Otherwise an org admin could
-  aim a webhook at internal infrastructure and read results back through the delivery
-  log's `responseStatus`.
+- **SSRF guard** (`url.ts`): private, loopback, CGNAT and link-local hosts are refused,
+  across IPv4 **and IPv6** — the WHATWG URL parser folds the sneaky IPv4 spellings
+  (`2130706433`, `0177.0.0.1`, `0x7f.1`, trailing dot, `user@host`) to their real host
+  for us, but IPv6-mapped forms like `[::ffff:169.254.169.254]` (the cloud metadata
+  endpoint) had to be expanded and range-checked explicitly. And `deliver.ts` sets
+  `redirect: "manual"` so a validated endpoint cannot 302 us onto an internal address —
+  without that, the host check is moot. Both were caught by adversarial review before
+  merge.
 - The signing secret is stored readable because we must sign with it. It is shown once at
-  creation and rotatable; rotation keeps the old secret valid for a grace window.
+  creation and rotatable. Rotation is **real**: during the grace window every delivery is
+  signed with BOTH the new and the old secret (two `v1=` values in the header), so a
+  consumer that hasn't swapped yet keeps verifying. Signing only with the new secret would
+  break every consumer the instant the operator rotated.
 
 ## Known limitations
 
 - **No ordering guarantee.** Deliveries are independent. A consumer needing order must
   read state back (`get_project`).
 - **At-least-once, never exactly-once.** Dedupe on the envelope `id`.
-- **DNS rebinding is not closed.** `url.ts` validates the hostname at creation; a name
-  that resolves to a private address *at delivery time* still gets through. Closing it
-  needs resolution-time address pinning.
+- **DNS rebinding is not closed.** `url.ts` validates the hostname (and blocks manual
+  redirects), but a name that resolves to a private address *at delivery time* still gets
+  through. Closing it needs resolution-time address pinning — noted as follow-up.
 - **No replay endpoint.** The delivery log records what happened; re-sending is an
   operator action.
 - Delivery is a Postgres table plus a cron worker, not a queue. If volume demands it,

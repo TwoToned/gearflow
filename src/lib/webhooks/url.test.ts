@@ -18,6 +18,7 @@ describe("validateWebhookUrl", () => {
   describe("SSRF: private and loopback hosts", () => {
     const blocked = [
       "https://localhost/x",
+      "https://sub.localhost/x", // resolves to loopback
       "https://127.0.0.1/x",
       "https://10.1.2.3/x",
       "https://172.16.0.1/x",
@@ -25,6 +26,20 @@ describe("validateWebhookUrl", () => {
       "https://192.168.1.1/x",
       "https://100.64.0.1/x", // CGNAT
       "https://169.254.169.254/latest/meta-data", // cloud metadata endpoint
+      "https://0.0.0.0/x",
+      // The WHATWG URL parser normalises these IPv4 spellings to 127.0.0.1:
+      "https://2130706433/x", // decimal
+      "https://0177.0.0.1/x", // octal
+      "https://0x7f.0.0.1/x", // hex
+      "https://127.0.0.1./x", // trailing dot
+      "https://evil.com@127.0.0.1/x", // userinfo — real host is 127.0.0.1
+      // IPv6, the class the first cut missed entirely:
+      "https://[::1]/x",
+      "https://[::ffff:127.0.0.1]/x", // IPv4-mapped loopback
+      "https://[::ffff:169.254.169.254]/x", // IPv4-mapped metadata endpoint
+      "https://[0:0:0:0:0:ffff:a00:1]/x", // IPv4-mapped 10.0.0.1, fully expanded
+      "https://[fc00::1]/x", // unique-local
+      "https://[fe80::1]/x", // link-local
     ];
     for (const url of blocked) {
       it(`rejects ${url}`, () => {
@@ -35,6 +50,7 @@ describe("validateWebhookUrl", () => {
     it("allows a public address that merely looks adjacent", () => {
       expect(validateWebhookUrl("https://172.32.0.1/x").ok).toBe(true);
       expect(validateWebhookUrl("https://11.0.0.1/x").ok).toBe(true);
+      expect(validateWebhookUrl("https://[2606:4700:4700::1111]/x").ok).toBe(true); // public IPv6 (1.1.1.1)
     });
   });
 

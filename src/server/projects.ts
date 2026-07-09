@@ -839,7 +839,7 @@ export async function updateProjectStatus(
 
   // Fired only after the status change committed. Best-effort: never blocks the write.
   if (project.status !== status) {
-    await emitWebhookEvent(organizationId, "project.status_changed", {
+    void emitWebhookEvent(organizationId, "project.status_changed", {
       projectId: updated.id,
       projectNumber: updated.projectNumber,
       name: updated.name,

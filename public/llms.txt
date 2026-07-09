@@ -478,7 +478,9 @@ an agent should not be able to quietly redirect an organisation's events.
 }
 ```
 
-Headers: `X-GearFlow-Event`, `X-GearFlow-Delivery-Id`, `X-GearFlow-Signature`.
+Headers: `X-GearFlow-Event`, `X-GearFlow-Delivery-Id`, `X-GearFlow-Signature`. The
+signature carries `t=<unix>` and one or more `v1=<hmac>` values (two during a secret
+rotation window — accept the delivery if ANY matches).
 
 ### Verify every delivery. Do not skip this.
 
@@ -492,13 +494,31 @@ Re-serializing changes key order and breaks the HMAC.
 ```js
 import { createHmac, timingSafeEqual } from "crypto";
 
-function verify(rawBody, header, secret, toleranceSeconds = 300) {
-  const parts = Object.fromEntries(header.split(",").map((p) => p.trim().split("=")));
-  const t = Number(parts.t);
+// `secrets` is an array: during a rotation window a delivery is signed with the
+// old and the new secret (two `v1=` values), so accept either.
+function verify(rawBody, header, secrets, toleranceSeconds = 300) {
+  let t;
+  const signatures = [];
+  for (const part of header.split(",")) {
+    const eq = part.indexOf("=");           // split on the FIRST '=' only
+    if (eq === -1) continue;
+    const key = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (key === "t") t = Number(value);
+    else if (key === "v1") signatures.push(value);
+  }
+  if (!Number.isInteger(t) || signatures.length === 0) return false;
   if (Math.abs(Math.floor(Date.now() / 1000) - t) > toleranceSeconds) return false; // replay
-  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
-  const a = Buffer.from(expected), b = Buffer.from(parts.v1);
-  return a.length === b.length && timingSafeEqual(a, b);   // constant time
+
+  for (const secret of [].concat(secrets)) {
+    const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
+    const a = Buffer.from(expected);
+    for (const sig of signatures) {
+      const b = Buffer.from(sig);
+      if (a.length === b.length && timingSafeEqual(a, b)) return true;  // constant time
+    }
+  }
+  return false;
 }
 ```
 

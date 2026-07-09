@@ -18,6 +18,11 @@ export const MAX_ATTEMPTS = 6;
 /** Consecutive failures before an endpoint is disabled and stops generating load. */
 export const AUTO_DISABLE_AFTER = 20;
 const REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * How long a claimed delivery is invisible to other workers. Comfortably longer than
+ * the request timeout, so a crashed worker's row becomes retryable rather than stuck.
+ */
+const LEASE_MS = 60_000;
 
 function backoffMs(attempts: number): number {
   return 2 ** (attempts - 1) * 60_000;
@@ -41,7 +46,13 @@ async function attemptOne(
     payload: string;
     attempts: number;
     createdAt: Date;
-    webhook: { id: string; url: string; secret: string };
+    webhook: {
+      id: string;
+      url: string;
+      secret: string;
+      previousSecret: string | null;
+      previousSecretExpiresAt: Date | null;
+    };
   },
   doFetch: FetchLike,
   now: Date,
@@ -58,8 +69,20 @@ async function attemptOne(
   // change key order and break the HMAC, so the body is built once, here.
   const rawBody = JSON.stringify(envelope);
   const timestamp = Math.floor(now.getTime() / 1000);
-  const signature = signWebhookPayload(rawBody, delivery.webhook.secret, timestamp);
-  const attempts = delivery.attempts + 1;
+
+  // During a rotation grace window, sign with BOTH secrets (two `v1=` values) so a
+  // consumer that hasn't swapped yet still verifies. Signing only with the new secret
+  // would break every consumer the moment the operator rotated.
+  const secrets = [delivery.webhook.secret];
+  const previousStillValid =
+    delivery.webhook.previousSecret &&
+    delivery.webhook.previousSecretExpiresAt &&
+    delivery.webhook.previousSecretExpiresAt > now;
+  if (previousStillValid) secrets.push(delivery.webhook.previousSecret!);
+
+  const signature = signWebhookPayload(rawBody, secrets, timestamp);
+  // `attempts` was already incremented atomically when this row was claimed.
+  const attempts = delivery.attempts;
 
   let responseStatus: number | undefined;
   let error: string | undefined;
@@ -70,6 +93,10 @@ async function attemptOne(
     try {
       const res = await doFetch(delivery.webhook.url, {
         method: "POST",
+        // Do NOT follow redirects. A validated endpoint could otherwise 302 us onto
+        // an internal address (169.254.169.254, 10.x, …), defeating the SSRF guard in
+        // url.ts entirely. A 3xx is simply a failed delivery.
+        redirect: "manual",
         headers: {
           "content-type": "application/json",
           "user-agent": "GearFlow-Webhooks/v1",
@@ -96,7 +123,7 @@ async function attemptOne(
     await prisma.$transaction([
       prisma.webhookDelivery.update({
         where: { id: delivery.id },
-        data: { status: "SUCCEEDED", attempts, responseStatus, deliveredAt: now, lastError: null },
+        data: { status: "SUCCEEDED", responseStatus, deliveredAt: now, lastError: null },
       }),
       prisma.webhook.update({
         where: { id: delivery.webhook.id },
@@ -119,9 +146,9 @@ async function attemptOne(
     where: { id: delivery.id },
     data: {
       status: exhausted ? "FAILED" : "PENDING",
-      attempts,
       responseStatus,
       lastError: failureMessage,
+      // Overwrites the claim lease with the real backoff.
       nextAttemptAt: exhausted ? now : new Date(now.getTime() + backoffMs(attempts)),
     },
   });
@@ -159,7 +186,18 @@ export async function deliverPendingWebhooks(opts: {
     where: { status: "PENDING", nextAttemptAt: { lte: now } },
     orderBy: { nextAttemptAt: "asc" },
     take: opts.limit ?? 50,
-    include: { webhook: { select: { id: true, url: true, secret: true, isActive: true } } },
+    include: {
+      webhook: {
+        select: {
+          id: true,
+          url: true,
+          secret: true,
+          previousSecret: true,
+          previousSecretExpiresAt: true,
+          isActive: true,
+        },
+      },
+    },
   });
 
   const outcomes: DeliveryOutcome[] = [];
@@ -173,7 +211,24 @@ export async function deliverPendingWebhooks(opts: {
       outcomes.push({ deliveryId: delivery.id, status: "FAILED", error: "endpoint disabled" });
       continue;
     }
-    outcomes.push(await attemptOne(delivery, doFetch, now));
+
+    // CLAIM the row before sending. The cron worker and every emit fire-and-forget
+    // kick select the same PENDING rows; without an atomic claim they would both POST
+    // it and both write attempts=1 (last-writer-wins), so a failing endpoint would
+    // retry past MAX_ATTEMPTS and consumers would see duplicate bursts.
+    //
+    // Pushing `nextAttemptAt` out by the lease is what makes the claim exclusive: a
+    // concurrent worker's `nextAttemptAt <= now` filter no longer matches the row.
+    const lease = new Date(now.getTime() + LEASE_MS);
+    const claim = await prisma.webhookDelivery.updateMany({
+      where: { id: delivery.id, status: "PENDING", nextAttemptAt: { lte: now } },
+      data: { attempts: { increment: 1 }, nextAttemptAt: lease },
+    });
+    if (claim.count === 0) continue; // someone else owns this attempt
+
+    outcomes.push(
+      await attemptOne({ ...delivery, attempts: delivery.attempts + 1 }, doFetch, now),
+    );
   }
 
   return {

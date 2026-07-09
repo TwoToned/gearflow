@@ -21,10 +21,16 @@ describe("generateWebhookSecret", () => {
 
 describe("parseSignatureHeader", () => {
   it("parses t and v1", () => {
-    expect(parseSignatureHeader("t=123,v1=abc")).toEqual({ t: 123, v1: "abc" });
+    expect(parseSignatureHeader("t=123,v1=abc")).toEqual({ t: 123, v1: ["abc"] });
+  });
+  it("collects every v1 — a rotation-window delivery carries two", () => {
+    expect(parseSignatureHeader("t=123,v1=abc,v1=def")).toEqual({ t: 123, v1: ["abc", "def"] });
   });
   it("tolerates whitespace, extra parts and reordering", () => {
-    expect(parseSignatureHeader("v1=abc, t=123 , v0=ignored")).toEqual({ t: 123, v1: "abc" });
+    expect(parseSignatureHeader("v1=abc, t=123 , v0=ignored")).toEqual({ t: 123, v1: ["abc"] });
+  });
+  it("does not truncate a value containing '='", () => {
+    expect(parseSignatureHeader("t=123,v1=ab=cd")!.v1).toEqual(["ab=cd"]);
   });
   it("rejects malformed input", () => {
     expect(parseSignatureHeader("garbage")).toBeNull();
@@ -69,7 +75,7 @@ describe("verifyWebhookSignature", () => {
 
   it("cannot be replayed by moving the timestamp forward — that breaks the HMAC", () => {
     const captured = parseSignatureHeader(signWebhookPayload(BODY, SECRET, NOW))!;
-    const forged = `t=${NOW + 10},v1=${captured.v1}`;
+    const forged = `t=${NOW + 10},v1=${captured.v1[0]}`;
     expect(
       verifyWebhookSignature({ rawBody: BODY, header: forged, secrets: [SECRET], nowSeconds: NOW + 10 }),
     ).toEqual({ valid: false, reason: "mismatch" });
@@ -82,16 +88,18 @@ describe("verifyWebhookSignature", () => {
     ).toEqual({ valid: true });
   });
 
-  it("accepts either secret during a rotation grace window", () => {
-    const signedWithOld = signWebhookPayload(BODY, "whsec_old", NOW);
-    expect(
-      verifyWebhookSignature({
-        rawBody: BODY,
-        header: signedWithOld,
-        secrets: ["whsec_new", "whsec_old"],
-        nowSeconds: NOW,
-      }),
-    ).toEqual({ valid: true });
+  it("signs with BOTH secrets during a rotation window, so an un-rotated consumer still verifies", () => {
+    // The whole point of the grace window. Signing only with the new secret would
+    // break every consumer the instant the operator rotated.
+    const header = signWebhookPayload(BODY, ["whsec_new", "whsec_old"], NOW);
+    expect(header.match(/v1=/g)).toHaveLength(2);
+
+    // A consumer still holding only the OLD secret verifies.
+    expect(verifyWebhookSignature({ rawBody: BODY, header, secrets: ["whsec_old"], nowSeconds: NOW })).toEqual({ valid: true });
+    // A consumer that already swapped to the NEW secret verifies.
+    expect(verifyWebhookSignature({ rawBody: BODY, header, secrets: ["whsec_new"], nowSeconds: NOW })).toEqual({ valid: true });
+    // An unrelated secret still does not.
+    expect(verifyWebhookSignature({ rawBody: BODY, header, secrets: ["whsec_other"], nowSeconds: NOW }).valid).toBe(false);
   });
 
   it("rejects a missing or malformed header", () => {

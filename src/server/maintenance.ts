@@ -351,7 +351,7 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
   });
 
   // Fired only after the record committed. Best-effort: never blocks the write.
-  await emitWebhookEvent(organizationId, "maintenance.created", {
+  void emitWebhookEvent(organizationId, "maintenance.created", {
     maintenanceId: newRecordId,
     title: parsed.title,
     assetIds,

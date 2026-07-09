@@ -24,23 +24,35 @@ export function generateWebhookSecret(): string {
   return `${SECRET_PREFIX}${randomBytes(24).toString("hex")}`;
 }
 
-/** The value of the `X-GearFlow-Signature` header for this body at this time. */
+/**
+ * The value of the `X-GearFlow-Signature` header.
+ *
+ * Accepts MORE THAN ONE secret and emits one `v1=` per secret. That is what makes a
+ * rotation grace window real: during the window we sign with both the new and the old
+ * secret, so a consumer that hasn't swapped yet still verifies. (Multiple `v1` values
+ * is the same shape Stripe uses for exactly this reason.)
+ */
 export function signWebhookPayload(
   rawBody: string,
-  secret: string,
+  secrets: string | string[],
   timestampSeconds: number,
 ): string {
-  const signature = createHmac("sha256", secret)
-    .update(`${timestampSeconds}.${rawBody}`)
-    .digest("hex");
-  return `t=${timestampSeconds},v1=${signature}`;
+  const list = Array.isArray(secrets) ? secrets : [secrets];
+  const signatures = list.map(
+    (secret) => `v1=${createHmac("sha256", secret).update(`${timestampSeconds}.${rawBody}`).digest("hex")}`,
+  );
+  return [`t=${timestampSeconds}`, ...signatures].join(",");
 }
 
-/** Parse `t=...,v1=...`. Tolerates extra/reordered parts; returns null if malformed. */
-export function parseSignatureHeader(header: string): { t: number; v1: string } | null {
+/**
+ * Parse `t=...,v1=...[,v1=...]`. Tolerates extra/reordered parts and collects EVERY
+ * `v1` — a rotation-window delivery carries two. Splitting on the first `=` only, so
+ * a value containing `=` is not truncated. Returns null if malformed.
+ */
+export function parseSignatureHeader(header: string): { t: number; v1: string[] } | null {
   const parts = header.split(",").map((p) => p.trim());
   let t: number | undefined;
-  let v1: string | undefined;
+  const v1: string[] = [];
 
   for (const part of parts) {
     const eq = part.indexOf("=");
@@ -50,12 +62,12 @@ export function parseSignatureHeader(header: string): { t: number; v1: string } 
     if (key === "t") {
       const parsed = Number(value);
       if (Number.isInteger(parsed)) t = parsed;
-    } else if (key === "v1") {
-      v1 = value;
+    } else if (key === "v1" && value) {
+      v1.push(value);
     }
   }
 
-  return t !== undefined && v1 ? { t, v1 } : null;
+  return t !== undefined && v1.length > 0 ? { t, v1 } : null;
 }
 
 function constantTimeEquals(a: string, b: string): boolean {
@@ -90,11 +102,15 @@ export function verifyWebhookSignature(args: {
   const tolerance = args.toleranceSeconds ?? SIGNATURE_TOLERANCE_SECONDS;
   if (Math.abs(now - parsed.t) > tolerance) return { valid: false, reason: "expired" };
 
+  // Any presented signature matching any accepted secret is enough. Both loops are
+  // over short, fixed lists, and the compare inside is constant-time.
   for (const secret of args.secrets) {
     const expected = createHmac("sha256", secret)
       .update(`${parsed.t}.${args.rawBody}`)
       .digest("hex");
-    if (constantTimeEquals(expected, parsed.v1)) return { valid: true };
+    for (const presented of parsed.v1) {
+      if (constantTimeEquals(expected, presented)) return { valid: true };
+    }
   }
 
   return { valid: false, reason: "mismatch" };

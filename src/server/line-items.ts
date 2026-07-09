@@ -505,7 +505,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   ]);
 
   // Fired only after the line item committed. Best-effort: never blocks the write.
-  await emitWebhookEvent(organizationId, "line_item.added", {
+  void emitWebhookEvent(organizationId, "line_item.added", {
     projectId,
     lineItemId: result.id,
     modelId: result.modelId ?? null,

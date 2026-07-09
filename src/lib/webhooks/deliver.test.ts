@@ -3,12 +3,13 @@ import { verifyWebhookSignature } from "./sign";
 
 const findMany = vi.hoisted(() => vi.fn());
 const deliveryUpdate = vi.hoisted(() => vi.fn());
+const deliveryUpdateMany = vi.hoisted(() => vi.fn());
 const webhookUpdate = vi.hoisted(() => vi.fn());
 const transaction = vi.hoisted(() => vi.fn());
 
 vi.mock("../prisma", () => ({
   prisma: {
-    webhookDelivery: { findMany, update: deliveryUpdate },
+    webhookDelivery: { findMany, update: deliveryUpdate, updateMany: deliveryUpdateMany },
     webhook: { update: webhookUpdate },
     $transaction: transaction,
   },
@@ -26,7 +27,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   payload: JSON.stringify({ projectId: "p1", from: "QUOTE", to: "CONFIRMED" }),
   attempts: 0,
   createdAt: NOW,
-  webhook: { id: "wh_1", url: "https://hooks.example.com/x", secret: SECRET, isActive: true },
+  webhook: { id: "wh_1", url: "https://hooks.example.com/x", secret: SECRET, previousSecret: null, previousSecretExpiresAt: null, isActive: true },
   ...over,
 });
 
@@ -35,6 +36,7 @@ const okResponse = (status = 200) => ({ status }) as Response;
 beforeEach(() => {
   vi.clearAllMocks();
   deliveryUpdate.mockResolvedValue({});
+  deliveryUpdateMany.mockResolvedValue({ count: 1 });
   webhookUpdate.mockResolvedValue({ consecutiveFailures: 1 });
   transaction.mockResolvedValue([]);
 });
@@ -86,20 +88,48 @@ describe("deliverPendingWebhooks — success", () => {
 });
 
 describe("deliverPendingWebhooks — retries", () => {
+  it("claims the row atomically (increment attempts) BEFORE sending", async () => {
+    findMany.mockResolvedValue([row({ attempts: 0 })]);
+    await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse()), now: NOW });
+    const claim = deliveryUpdateMany.mock.calls[0][0];
+    expect(claim.where).toMatchObject({ id: "whd_1", status: "PENDING" });
+    expect(claim.data.attempts).toEqual({ increment: 1 });
+  });
+
+  it("does NOT send when the claim is lost to a concurrent worker", async () => {
+    findMany.mockResolvedValue([row({ attempts: 0 })]);
+    deliveryUpdateMany.mockResolvedValue({ count: 0 }); // someone else claimed it
+    const fetchImpl = vi.fn();
+    const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.processed).toBe(0);
+  });
+
   it("schedules exponential backoff and stays PENDING while attempts remain", async () => {
-    findMany.mockResolvedValue([row({ attempts: 2 })]);
+    findMany.mockResolvedValue([row({ attempts: 2 })]); // claim -> attempts 3
     await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
 
     const data = deliveryUpdate.mock.calls[0][0].data;
     expect(data.status).toBe("PENDING");
-    expect(data.attempts).toBe(3);
     expect(data.lastError).toBe("HTTP 500");
+    // The claim already bumped attempts to 3; the failure write must not bump it again.
+    expect(data.attempts).toBeUndefined();
     // attempt 3 -> 2^2 = 4 minutes
     expect(new Date(data.nextAttemptAt).getTime() - NOW.getTime()).toBe(4 * 60_000);
   });
 
+  it("does not follow redirects — a 3xx is a failed delivery, never an internal hop", async () => {
+    findMany.mockResolvedValue([row()]);
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse(302));
+    await deliverPendingWebhooks({ fetchImpl, now: NOW });
+    expect(fetchImpl.mock.calls[0][1].redirect).toBe("manual");
+    // 302 is not 2xx, so it is recorded as a failure.
+    expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("PENDING");
+    expect(deliveryUpdate.mock.calls[0][0].data.lastError).toBe("HTTP 302");
+  });
+
   it("gives up after MAX_ATTEMPTS", async () => {
-    findMany.mockResolvedValue([row({ attempts: MAX_ATTEMPTS - 1 })]);
+    findMany.mockResolvedValue([row({ attempts: MAX_ATTEMPTS - 1 })]); // claim -> MAX_ATTEMPTS
     const res = await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
 
     expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("FAILED");
@@ -168,5 +198,35 @@ describe("deliverPendingWebhooks — claiming", () => {
         where: { status: "PENDING", nextAttemptAt: { lte: NOW } },
       }),
     );
+  });
+});
+
+describe("deliverPendingWebhooks — secret rotation", () => {
+  it("signs with both secrets during the grace window, so an un-rotated consumer verifies", async () => {
+    const { verifyWebhookSignature } = await import("./sign");
+    const future = new Date(NOW.getTime() + 30 * 60_000);
+    findMany.mockResolvedValue([
+      row({ webhook: { id: "wh_1", url: "https://x/h", secret: "whsec_new", previousSecret: "whsec_old", previousSecretExpiresAt: future, isActive: true } }),
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse());
+    await deliverPendingWebhooks({ fetchImpl, now: NOW });
+
+    const init = fetchImpl.mock.calls[0][1];
+    const header = (init.headers as Record<string, string>)["X-GearFlow-Signature"];
+    expect(header.match(/v1=/g)).toHaveLength(2);
+    const nowSeconds = Math.floor(NOW.getTime() / 1000);
+    expect(verifyWebhookSignature({ rawBody: init.body as string, header, secrets: ["whsec_old"], nowSeconds }).valid).toBe(true);
+    expect(verifyWebhookSignature({ rawBody: init.body as string, header, secrets: ["whsec_new"], nowSeconds }).valid).toBe(true);
+  });
+
+  it("drops the previous secret once its grace window has expired", async () => {
+    const past = new Date(NOW.getTime() - 60_000);
+    findMany.mockResolvedValue([
+      row({ webhook: { id: "wh_1", url: "https://x/h", secret: "whsec_new", previousSecret: "whsec_old", previousSecretExpiresAt: past, isActive: true } }),
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse());
+    await deliverPendingWebhooks({ fetchImpl, now: NOW });
+    const header = (fetchImpl.mock.calls[0][1].headers as Record<string, string>)["X-GearFlow-Signature"];
+    expect(header.match(/v1=/g)).toHaveLength(1);
   });
 });

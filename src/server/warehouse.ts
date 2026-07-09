@@ -373,7 +373,7 @@ export async function checkOutItems(
   );
 
   // Fired only after the gear physically moved. Best-effort: never blocks the write.
-  await emitWebhookEvent(organizationId, "warehouse.checked_out", {
+  void emitWebhookEvent(organizationId, "warehouse.checked_out", {
     projectId,
     lineItemIds: res.updatedLineIds,
     assetIds: items.map((i) => i.assetId).filter((a): a is string => Boolean(a)),

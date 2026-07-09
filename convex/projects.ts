@@ -238,6 +238,14 @@ export const remove = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("projects not found: " + id);
+    // The revenue rollup is a Convex-only cache with no FK to cascade through. ROI
+    // queries already skip rows whose project is gone, so this is hygiene rather
+    // than correctness — but one orphan per model per deleted project adds up.
+    const rollups = await ctx.db
+      .query("projectModelRevenues")
+      .withIndex("by_projectId", (q) => q.eq("projectId", id))
+      .collect();
+    for (const r of rollups) await ctx.db.delete(r._id);
     await ctx.db.delete(doc._id);
     await bumpCountersForTable(ctx, "projects", doc, null);
   },

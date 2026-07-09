@@ -1,7 +1,13 @@
 # Revenue Allocation for Gear ROI
 
-> Status: **design approved, implementation in progress** (branch `feat/revenue-allocation-roi`).
-> Implementation notes live in [FEATUREDOCS/57](../FEATUREDOCS/57-revenue-allocation-roi.md).
+> Status: **built** (branch `feat/revenue-allocation-roi`). This document is the *rationale* —
+> why each rule exists, and the eight corrections made to the original sketch. For what the code
+> actually does and where it lives, read [FEATUREDOCS/57](../FEATUREDOCS/57-revenue-allocation-roi.md).
+>
+> Two further bugs were found by an independent review of the engine after it was written, and are
+> covered by tests: group pools must round the *product* of price × quantity (rounding the price
+> first allocates money the project never charged), and a `parentLineItemId` cycle has no root, so
+> its pool silently vanished until stranded components were promoted to roots.
 
 ## Problem
 

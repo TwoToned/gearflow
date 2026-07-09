@@ -4,6 +4,24 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.20.0.0] - 2026-07-09
+
+### Added
+
+- **The API and MCP server now cover everything the app can do.** All 537 operations — every read and every write the web UI performs — are callable by an API key. Each one runs the same guarded code the UI runs, so role permissions, overbooking prevention, validation and the audit log all still apply.
+- **New REST endpoints:** `GET /api/v1/operations` discovers what your key can call, `GET /api/v1/operations/{name}` returns an operation's exact arguments, and `POST /api/v1/ops/{name}` invokes it.
+- **The MCP server now exposes 27 tools.** Around 22 named tools cover the common flows — `list_projects`, `get_project`, `search_assets`, `check_availability`, `global_search`, `list_kits` and more — so an agent can answer "show me the projects" directly. `list_operations`, `describe_operation` and `call_operation` reach everything else without flooding the agent's context.
+- Irreversible operations (delete, remove, archive, revoke) and stock-affecting ones (check-out, check-in, adding line items) now refuse to run unless you pass `confirm: true` and an idempotency key, so an agent cannot delete a project or pull gear on a half-considered first call.
+- Agent docs at `/llms.txt` now describe the full surface: the discovery loop, the confirmation rails, idempotency rules, and every error code with its recovery action.
+
+### Fixed
+
+- **Cross-organisation data leak.** Three Convex queries (`projectLineItems.listByProject`, `projectGroups.listByProject`, and the equipment-tab bundle) returned rows for any project id without checking which organisation owned it. Anyone who could guess a project id from another organisation could read its booked gear, equipment groups, categories and sub-hires. All three now filter by organisation. This affected the web app as well as the API.
+- **API keys could grant themselves more power than they had.** A key allowed to manage organisation settings could mint a new key with unlimited scopes. A key can now only create keys with scopes it already holds.
+- **Retrying a write could apply it twice, or silently skip it.** The idempotency ledger now reserves the key before the write rather than after, refuses a key reused for a different operation, and replays a recorded failure instead of re-running work that may have partially applied.
+- API errors no longer echo raw internal error text when reporting a permission or not-found failure.
+- Oversized id lists are rejected with a clear message instead of failing as a retryable server error.
+
 ## [0.19.8.1] - 2026-07-07
 
 ### Fixed

@@ -5,7 +5,11 @@
 <!-- key-management server actions. Remaining: availability-atomic Convex mutation (TOCTOU hardening), -->
 <!-- reservation DRAFT/TTL/provenance schema, asset-specific holds, key-management settings UI + onboarding, -->
 <!-- webhooks. Integration verified via PR preview deploy (no local Convex/DB in the worktree). -->
-<!-- ⚠ NOT merged to prod: needs preview integration test + key-creation UI + human merge decision. -->
+<!-- SHIPPED to prod 2026-07-07 (PR #378 + #379 middleware hotfix); agent docs PR #380. -->
+<!-- 2026-07-09: FULL COVERAGE. Ambient ActorContext (AsyncLocalStorage) lets an API key drive -->
+<!-- all ~508 server actions unmodified; AST-generated operation registry; +29 bridged Convex-only -->
+<!-- reads = 537 operations. REST /operations + /ops/{name}; MCP 27 tools (curated + dynamic -->
+<!-- dispatch). confirm+idempotency rails on dangerous/stock-affecting writes. See FEATUREDOCS/56. -->
 
 <!-- Full review artifact + decision audit trail: ~/.gstack/projects/TwoToned-gearflow/jayden-worktree-bridge-cse_01F1scZAF9AgfUgiUhzWSRTi-design-20260707-153700.md -->
 # GearFlow — Agent-Accessible API + MCP
@@ -26,6 +30,20 @@ bound by exactly the overbooking / RBAC / audit protections a human operator has
 
 Primary consumer (v1): **internal agents + power users** (same-org, scoped keys). Not a public third-party
 developer platform yet — that is a deliberate later step on a trust ramp (internal → per-org power users → public).
+
+> **SUPERSEDED IN PART (2026-07-09).** The section below argued for a curated verb set over
+> full coverage. That shipped, and then an agent asked to "view projects" and found no tool
+> for it — the curated set was too thin to be useful. Coverage is now **complete** (537
+> operations, every app read and write), which turned out to be *compatible* with the safety
+> argument rather than opposed to it. The reason: the objection was to exposing **raw
+> table-level CRUD**, which bypasses workflow invariants. What is exposed instead is the
+> **server-action layer** — the same guarded functions the UI calls — so every business rule,
+> RBAC check and audit write applies unchanged. Raw Convex/Prisma CRUD is still never called
+> directly (invariant 2 below holds).
+>
+> The safety machinery this document specifies is retained and generalised: preview→commit
+> survives as `reserve_items`; irreversible and stock-affecting writes now require
+> `confirm: true` + `idempotencyKey`. See FEATUREDOCS/56.
 
 ## The core decision: capability actions, not raw CRUD
 

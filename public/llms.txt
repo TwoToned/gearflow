@@ -16,19 +16,56 @@ Docs URL (this file): `https://flow.rvlt.app/llms.txt`
 
 ## 1. What you can do
 
-The API exposes **capability verbs**, not raw database CRUD. Each verb is a rental
-workflow action, and every verb is bound by the same protections the human web app
-enforces: role-based permissions (RBAC), overbooking prevention, and an audit log.
+**Everything a human can do in the web app.** Every read and every write the GearFlow
+UI performs is exposed as an *operation* — 537 of them — and each one runs the exact
+same guarded code path the UI runs. That means the same role-based permissions (RBAC),
+the same overbooking prevention, the same validation, and the same audit log. There is
+no separate, weaker API back door.
 
-Current v1 verbs:
+The surface is arranged in two tiers, because 537 tools would overwhelm any agent:
 
-| Verb | Kind | What it does |
-|------|------|--------------|
-| `whoami` | read | Confirm your key works; see the org, acting user, and scopes it grants. |
-| `reserve_items` | write | Hold gear (models) on a project. Preview availability first, then commit. |
+**Tier 1 — named tools** for the common flows. Roughly 27 of them: `list_projects`,
+`get_project`, `create_project`, `search_assets`, `get_asset`, `list_models`,
+`list_kits`, `get_kit`, `check_availability`, `global_search`, `scan_lookup`,
+`list_clients`, `create_client`, `list_crew`, `list_locations`, `list_suppliers`,
+`get_pull_sheet`, `get_project_tasks`, `get_activity_log`, `get_dashboard`,
+`reserve_items`, `whoami`, and the tier-2 tools below. Use these first — they are
+easier to call correctly.
 
-More verbs (asset-specific holds, dispatch/return, search, webhooks) are planned. Call
-`whoami` and read the MCP `tools/list` for the authoritative, always-current set.
+**Tier 2 — dynamic dispatch** for the long tail (everything else: maintenance,
+sub-hires, test-and-tag, warehouse check-in/out, custom fields, suppliers orders,
+crew scheduling, saved views, settings, …):
+
+| Tool | Endpoint | What it does |
+|------|----------|--------------|
+| `list_operations` | `GET /api/v1/operations` | Discover operations. Filtered to what YOUR key can actually call. |
+| `describe_operation` | `GET /api/v1/operations/{name}` | The exact call signature: parameters, types, required scope. |
+| `call_operation` | `POST /api/v1/ops/{name}` | Run any operation by name. |
+
+The loop is: `list_operations` (search) → `describe_operation` (get the arguments) →
+`call_operation` (run it). Never guess argument names — they are validated strictly and
+a typo is **rejected**, not ignored.
+
+Operations are named `<module>.<function>`, e.g. `projects.getProjects`,
+`maintenance.createMaintenanceRecord`, `warehouse.checkOutItems`.
+
+### Writes that need an explicit confirmation
+
+Two classes of write refuse to run on a first, unconfirmed call:
+
+- **Irreversible** operations (`delete*`, `remove*`, `archive*`, `revoke*`, …) and
+  anything touching org settings, roles, SSO, or API keys.
+- **Stock-affecting** operations (adding line items, warehouse check-out / check-in).
+
+Both require `confirm: true` **and** an `idempotencyKey`. Without them you get
+`CONFIRMATION_REQUIRED` (HTTP 428) or `IDEMPOTENCY_KEY_REQUIRED` (400) telling you
+exactly what is missing. Every other write commits directly.
+
+`list_operations` and `describe_operation` report this per-operation as
+`requiresConfirmation` and `dangerous`, so you can check before you call.
+
+For reservations, prefer the `reserve_items` verb: it can *preview* availability and
+conflicts without writing anything.
 
 ---
 
@@ -91,9 +128,9 @@ like this:
 }
 ```
 
-After adding it and restarting the client, you will have the `whoami` and
-`reserve_items` tools. **Call `whoami` first** to confirm the connection and see your
-scopes.
+After adding it and restarting the client, you will have the full tool set.
+**Call `whoami` first** to confirm the connection and see your scopes — it also reports
+`operationsAvailable`, the number of operations your key can reach.
 
 ### MCP methods supported
 
@@ -116,13 +153,31 @@ Same auth, same behavior, plain HTTP + JSON.
 
 - `GET /api/v1` — index: version, endpoints, docs link (no auth required).
 - `GET /api/v1/whoami` — identity + scopes for your key.
+- `GET /api/v1/operations` — discover operations. Query: `?search=&kind=read|write&module=&limit=`
+- `GET /api/v1/operations/{name}` — the call signature of one operation.
+- `POST /api/v1/ops/{name}` — invoke an operation. Body:
+  `{ "arguments": {...}, "confirm": true, "idempotencyKey": "..." }`
+  (`Idempotency-Key` header also accepted).
 - `POST /api/v1/reserve-items` — the reserve verb (preview or commit).
 
-Example:
+Example — find and read a project:
 
 ```bash
-curl -H "Authorization: Bearer gf_live_YOUR_KEY" \
-  https://flow.rvlt.app/api/v1/whoami
+# 1. what can this key do?
+curl -H "Authorization: Bearer $KEY" https://flow.rvlt.app/api/v1/whoami
+
+# 2. list projects
+curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"arguments":{"params":{"search":"Hamlet"}}}' \
+  https://flow.rvlt.app/api/v1/ops/projects.getProjects
+
+# 3. find an operation you don't know the name of
+curl -H "Authorization: Bearer $KEY" \
+  'https://flow.rvlt.app/api/v1/operations?search=maintenance&kind=write'
+
+# 4. learn its arguments, then call it
+curl -H "Authorization: Bearer $KEY" \
+  https://flow.rvlt.app/api/v1/operations/maintenance.createMaintenanceRecord
 ```
 
 ---
@@ -249,7 +304,8 @@ Code table:
 | `ORG_KILL_SWITCH` | 403 | no | The org disabled all API access. Stop; ask the operator to re-enable it. |
 | `MISSING_SCOPE` | 403 | no | The key lacks `requiredScope`. Ask the operator to add that scope (fixable by a human, not by retrying). |
 | `FORBIDDEN` | 403 | no | The acting user's role forbids this action entirely. Not fixable by adding a scope. |
-| `VALIDATION_ERROR` | 400 | no | The request shape is wrong. Read `details` (it names the bad field) and fix the arguments. |
+| `VALIDATION_ERROR` | 400 | no | The request shape is wrong: an unknown argument name, a missing required one, or an argument (like `orgId`) that is set from your key and may not be passed. Read `details.expected` — it lists the real parameters — then fix and retry. Call `describe_operation` if unsure. |
+| `CONFIRMATION_REQUIRED` | 428 | no | The operation is irreversible or changes stock availability. Re-send with `confirm: true` **and** an `idempotencyKey`. `details.dangerous` says which class it is; `details.hint` may point you at `reserve_items` for a previewable alternative. Consider showing the operator what you are about to do first. |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | no | You set `confirm: true` without an `idempotencyKey`. Add a unique one and retry. |
 | `INVENTORY_CONFLICT` | 409 | no | Not enough free stock (or a booking rule blocked it). Read `details`; reduce quantity, choose another model, or change dates. |
 | `STALE_PREVIEW` | 409 | yes | A preview token expired or stock changed. Re-preview, then commit. |
@@ -268,6 +324,10 @@ distinct intended action (a UUID is ideal). If the network drops and you retry w
 SAME key, GearFlow returns the ORIGINAL result (`replayed: true`) instead of performing
 the action twice. Reuse the same key ONLY for a retry of the exact same request; use a
 NEW key for a new reservation. Previews (`confirm: false`) never need one.
+
+It is **required** for irreversible and stock-affecting operations, and **optional but
+strongly recommended** for every other write — pass one and a dropped connection can
+never cause a duplicate record.
 
 ---
 
@@ -335,13 +395,58 @@ curl -s -X POST https://flow.rvlt.app/api/v1/reserve-items \
 (REST accepts the idempotency key either as the `Idempotency-Key` header or an
 `idempotencyKey` body field.)
 
+### 10.3 MCP: reaching the long tail with dynamic dispatch
+
+You want to log a maintenance record, but there is no named tool for it.
+
+```jsonc
+// 1) find it. results are filtered to what YOUR key may call.
+→ {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_operations",
+     "arguments":{"search":"maintenance","kind":"write"}}}
+← ... {"total":3,"operations":[
+       {"name":"maintenance.createMaintenanceRecord","kind":"write","scope":"maintenance:create",
+        "dangerous":false,"requiresConfirmation":false,"summary":"..."}, ...]}
+
+// 2) learn the exact arguments — never guess them
+→ {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"describe_operation",
+     "arguments":{"operation":"maintenance.createMaintenanceRecord"}}}
+← ... {"parameters":[{"name":"data","type":"MaintenanceFormValues","required":true}], ...}
+
+// 3) run it. an ordinary write, so no confirm needed.
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"call_operation",
+     "arguments":{"operation":"maintenance.createMaintenanceRecord",
+                  "arguments":{"data":{"assetId":"asset_9","issue":"Cracked XLR socket"}},
+                  "idempotencyKey":"mnt-2026-07-09-001"}}}
+← ... {"operation":"maintenance.createMaintenanceRecord","kind":"write","replayed":false,"result":{...}}
+```
+
+### 10.4 MCP: a destructive operation refuses the first call
+
+```jsonc
+→ {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"call_operation",
+     "arguments":{"operation":"projects.deleteProject","arguments":{"id":"proj_42"}}}}
+← isError:true, {"error":{"code":"CONFIRMATION_REQUIRED","retryable":false,
+     "message":"'projects.deleteProject' is irreversible. Re-send with confirm=true and an idempotencyKey once you are certain.",
+     "details":{"dangerous":true}}}
+
+// This is your cue to CHECK WITH THE OPERATOR, not to blindly re-send with confirm:true.
+→ ... "arguments":{"operation":"projects.deleteProject","arguments":{"id":"proj_42"},
+                   "confirm":true,"idempotencyKey":"del-proj42-once"}
+← {"operation":"projects.deleteProject","kind":"write","replayed":false,"result":{...}}
+```
+
 ---
 
 ## 11. Quick reference
 
 - Auth: `Authorization: Bearer gf_live_...`
 - MCP: `POST https://flow.rvlt.app/api/v1/mcp` (JSON-RPC 2.0)
-- REST: `GET /api/v1/whoami`, `POST /api/v1/reserve-items`, `GET /api/v1`
-- Always `whoami` first. Always preview before you commit. Commits need an `idempotencyKey`.
+- REST: `GET /api/v1/whoami`, `GET /api/v1/operations`, `POST /api/v1/ops/{name}`,
+  `POST /api/v1/reserve-items`, `GET /api/v1`
+- Always `whoami` first. Prefer a named tool; fall back to
+  `list_operations` → `describe_operation` → `call_operation`.
+- Never guess argument names — unknown args are rejected, not ignored.
+- Irreversible / stock-affecting writes need `confirm: true` + `idempotencyKey`.
+  Treat `CONFIRMATION_REQUIRED` as a prompt to check with the human, not a formality.
 - On error: branch on `code`; only retry when `retryable` is `true`.
-- Org is bound to the key — never send an org id.
+- Org is bound to the key — never send an org id (`orgId` is rejected outright).

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
+import { resolvePrimaryDateRange } from "@/lib/project-dates";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -320,6 +321,9 @@ export async function getProjects(params?: {
     ...p,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
     location: p.locationId ? locationMap.get(p.locationId) ?? null : null,
+    // One resolved answer to "when is this job", so a caller never has to guess
+    // among six nullable date fields. See src/lib/project-dates.ts.
+    primaryDateRange: resolvePrimaryDateRange(p),
   }));
 
   // includeLineItems: the slim `{id,status,type,isKitChild}` list (status !=
@@ -516,7 +520,13 @@ export async function getProject(id: string) {
   });
 
   // `client` fetched in wave 1 (Convex), attached here.
-  return serialize({ ...project, categories, client, lineItems: enrichedLineItems });
+  return serialize({
+    ...project,
+    primaryDateRange: resolvePrimaryDateRange(project),
+    categories,
+    client,
+    lineItems: enrichedLineItems,
+  });
 }
 
 export async function createProject(data: ProjectFormValues & { isTemplate?: boolean }) {

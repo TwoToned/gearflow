@@ -9,7 +9,16 @@ export interface OperationParam {
   name: string;
   type: string;
   optional: boolean;
+  /**
+   * Key into {@link PARAM_SCHEMAS} when this parameter's type resolved to a Zod
+   * schema. Absent when the type is an inline object (read `type` instead) or
+   * could not be resolved.
+   */
+  schemaRef?: string;
 }
+
+/** JSON Schema (draft 2020-12) per named parameter type, generated from Zod. */
+export type JsonSchema = Record<string, unknown>;
 
 export interface OperationMeta {
   /** Stable id: "<module>.<functionName>". */
@@ -37,8 +46,8 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "api-keys.listApiKeys": { name: "api-keys.listApiKeys", module: "api-keys", fn: "listApiKeys", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: true, summary: "List this org's API keys (never returns a secret — only the display prefix). */" },
   "api-keys.revokeApiKey": { name: "api-keys.revokeApiKey", module: "api-keys", fn: "revokeApiKey", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Revoke a single key (deactivate + stamp revokedAt). Idempotent. */" },
   "api-keys.setOrgApiKillSwitch": { name: "api-keys.setOrgApiKillSwitch", module: "api-keys", fn: "setOrgApiKillSwitch", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "enabled", type: "boolean", optional: false }], dangerous: true, summary: "Flip the org-wide API kill switch. When on, EVERY key for this org is rejected" },
-  "asset-accessories.addBulkChildToAsset": { name: "asset-accessories.addBulkChildToAsset", module: "asset-accessories", fn: "addBulkChildToAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "data", type: "AssetBulkChildFormValues", optional: false }], dangerous: false, summary: "Attach a bulk asset as an accessory (e.g. \"this light ships with 2 clamps\")." },
-  "asset-accessories.addSerializedChildToAsset": { name: "asset-accessories.addSerializedChildToAsset", module: "asset-accessories", fn: "addSerializedChildToAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "data", type: "AssetSerializedChildFormValues", optional: false }], dangerous: false, summary: "Child assets / accessories." },
+  "asset-accessories.addBulkChildToAsset": { name: "asset-accessories.addBulkChildToAsset", module: "asset-accessories", fn: "addBulkChildToAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "data", type: "AssetBulkChildFormValues", optional: false, schemaRef: "AssetBulkChildFormValues" }], dangerous: false, summary: "Attach a bulk asset as an accessory (e.g. \"this light ships with 2 clamps\")." },
+  "asset-accessories.addSerializedChildToAsset": { name: "asset-accessories.addSerializedChildToAsset", module: "asset-accessories", fn: "addSerializedChildToAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "data", type: "AssetSerializedChildFormValues", optional: false, schemaRef: "AssetSerializedChildFormValues" }], dangerous: false, summary: "Child assets / accessories." },
   "asset-accessories.getAvailableAccessoryAssets": { name: "asset-accessories.getAvailableAccessoryAssets", module: "asset-accessories", fn: "getAvailableAccessoryAssets", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "parentAssetId", type: "string", optional: false }], dangerous: false, summary: "Serialised assets eligible to become an accessory of `parentAssetId`:" },
   "asset-accessories.removeBulkChildFromAsset": { name: "asset-accessories.removeBulkChildFromAsset", module: "asset-accessories", fn: "removeBulkChildFromAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "bulkChildId", type: "string", optional: false }], dangerous: true, summary: "Detach a bulk accessory; restores DEDICATED stock to the shared pool. */" },
   "asset-accessories.removeSerializedChildFromAsset": { name: "asset-accessories.removeSerializedChildFromAsset", module: "asset-accessories", fn: "removeSerializedChildFromAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "parentAssetId", type: "string", optional: false }, { name: "childAssetId", type: "string", optional: false }], dangerous: true, summary: "Detach a serialised accessory from its parent. */" },
@@ -48,35 +57,35 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "asset-media.setAssetPrimaryPhoto": { name: "asset-media.setAssetPrimaryPhoto", module: "asset-media", fn: "setAssetPrimaryPhoto", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "assetId", type: "string", optional: false }, { name: "mediaId", type: "string", optional: false }], dangerous: false, summary: "" },
   "assets.archiveAsset": { name: "assets.archiveAsset", module: "assets", fn: "archiveAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "assets.bulkUpdateAssets": { name: "assets.bulkUpdateAssets", module: "assets", fn: "bulkUpdateAssets", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "ids", type: "string[]", optional: false }, { name: "data", type: "{ status?: string; condition?: string; locationId?: string | null; }", optional: false }], dangerous: false, summary: "" },
-  "assets.createAsset": { name: "assets.createAsset", module: "assets", fn: "createAsset", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false }], dangerous: false, summary: "" },
-  "assets.createAssets": { name: "assets.createAssets", module: "assets", fn: "createAssets", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false }, { name: "assets", type: "{ tag: string; serialNumber?: string }[]", optional: false }], dangerous: false, summary: "" },
+  "assets.createAsset": { name: "assets.createAsset", module: "assets", fn: "createAsset", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }], dangerous: false, summary: "" },
+  "assets.createAssets": { name: "assets.createAssets", module: "assets", fn: "createAssets", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }, { name: "assets", type: "{ tag: string; serialNumber?: string }[]", optional: false }], dangerous: false, summary: "" },
   "assets.deleteAsset": { name: "assets.deleteAsset", module: "assets", fn: "deleteAsset", kind: "write", resource: "asset", action: "delete", scope: "asset:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "assets.getAsset": { name: "assets.getAsset", module: "assets", fn: "getAsset", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "assets.getAssetRegistryPhotos": { name: "assets.getAssetRegistryPhotos", module: "assets", fn: "getAssetRegistryPhotos", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [], dangerous: false, summary: "Primary photos for the reactive registry table. Both maps now come off the" },
   "assets.getAssets": { name: "assets.getAssets", module: "assets", fn: "getAssets", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "params", type: "{ search?: string; categoryId?: string; status?: string; condition?: string; locationId?: string; modelId?: string; isActive?: boolean; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; filters?: Record<string, FilterValue>; }", optional: true }], dangerous: false, summary: "" },
-  "assets.updateAsset": { name: "assets.updateAsset", module: "assets", fn: "updateAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "AssetFormValues", optional: false }], dangerous: false, summary: "" },
+  "assets.updateAsset": { name: "assets.updateAsset", module: "assets", fn: "updateAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }], dangerous: false, summary: "" },
   "assets.updateAssetNotes": { name: "assets.updateAssetNotes", module: "assets", fn: "updateAssetNotes", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
   "availability.getAssetBookings": { name: "availability.getAssetBookings", module: "availability", fn: "getAssetBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "assetId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific serialized asset within a date range." },
   "availability.getCalendarData": { name: "availability.getCalendarData", module: "availability", fn: "getCalendarData", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "params", type: "{ startDate: string; endDate: string; }", optional: false }], dangerous: false, summary: "" },
   "availability.getKitBookings": { name: "availability.getKitBookings", module: "availability", fn: "getKitBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "kitId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific kit within a date range." },
   "availability.getModelBookings": { name: "availability.getModelBookings", module: "availability", fn: "getModelBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "modelId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific model within a date range." },
-  "brand-templates.createBrandTemplate": { name: "brand-templates.createBrandTemplate", module: "brand-templates", fn: "createBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "data", type: "CreateBrandTemplateValues", optional: false }], dangerous: false, summary: "Create a new brand template." },
+  "brand-templates.createBrandTemplate": { name: "brand-templates.createBrandTemplate", module: "brand-templates", fn: "createBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "data", type: "CreateBrandTemplateValues", optional: false, schemaRef: "CreateBrandTemplateValues" }], dangerous: false, summary: "Create a new brand template." },
   "brand-templates.deleteBrandTemplate": { name: "brand-templates.deleteBrandTemplate", module: "brand-templates", fn: "deleteBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Delete a brand template. Unlinks any document templates using it." },
   "brand-templates.getBrandTemplate": { name: "brand-templates.getBrandTemplate", module: "brand-templates", fn: "getBrandTemplate", kind: "read", resource: "document", action: "read", scope: "document:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Get a single brand template with full settings." },
   "brand-templates.getBrandTemplates": { name: "brand-templates.getBrandTemplates", module: "brand-templates", fn: "getBrandTemplates", kind: "read", resource: "document", action: "read", scope: "document:read", params: [], dangerous: false, summary: "List all brand templates for the current org." },
   "brand-templates.setDefaultBrandTemplate": { name: "brand-templates.setDefaultBrandTemplate", module: "brand-templates", fn: "setDefaultBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Set a brand template as the org default." },
   "brand-templates.unsetDefaultBrandTemplate": { name: "brand-templates.unsetDefaultBrandTemplate", module: "brand-templates", fn: "unsetDefaultBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Remove a brand template's default status." },
-  "brand-templates.updateBrandTemplate": { name: "brand-templates.updateBrandTemplate", module: "brand-templates", fn: "updateBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "data", type: "UpdateBrandTemplateValues", optional: false }], dangerous: false, summary: "Update a brand template." },
+  "brand-templates.updateBrandTemplate": { name: "brand-templates.updateBrandTemplate", module: "brand-templates", fn: "updateBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "data", type: "UpdateBrandTemplateValues", optional: false, schemaRef: "UpdateBrandTemplateValues" }], dangerous: false, summary: "Update a brand template." },
   "bulk-assets.archiveBulkAsset": { name: "bulk-assets.archiveBulkAsset", module: "bulk-assets", fn: "archiveBulkAsset", kind: "write", resource: "bulkAsset", action: "update", scope: "bulkAsset:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
-  "bulk-assets.createBulkAsset": { name: "bulk-assets.createBulkAsset", module: "bulk-assets", fn: "createBulkAsset", kind: "write", resource: "bulkAsset", action: "create", scope: "bulkAsset:create", params: [{ name: "data", type: "BulkAssetFormValues", optional: false }], dangerous: false, summary: "" },
+  "bulk-assets.createBulkAsset": { name: "bulk-assets.createBulkAsset", module: "bulk-assets", fn: "createBulkAsset", kind: "write", resource: "bulkAsset", action: "create", scope: "bulkAsset:create", params: [{ name: "data", type: "BulkAssetFormValues", optional: false, schemaRef: "BulkAssetFormValues" }], dangerous: false, summary: "" },
   "bulk-assets.deleteBulkAsset": { name: "bulk-assets.deleteBulkAsset", module: "bulk-assets", fn: "deleteBulkAsset", kind: "write", resource: "bulkAsset", action: "delete", scope: "bulkAsset:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "bulk-assets.getBulkAsset": { name: "bulk-assets.getBulkAsset", module: "bulk-assets", fn: "getBulkAsset", kind: "read", resource: "bulkAsset", action: "read", scope: "bulkAsset:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "bulk-assets.getBulkAssets": { name: "bulk-assets.getBulkAssets", module: "bulk-assets", fn: "getBulkAssets", kind: "read", resource: "bulkAsset", action: "read", scope: "bulkAsset:read", params: [{ name: "params", type: "{ search?: string; categoryId?: string; status?: string; locationId?: string; modelId?: string; isActive?: boolean; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "" },
-  "bulk-assets.updateBulkAsset": { name: "bulk-assets.updateBulkAsset", module: "bulk-assets", fn: "updateBulkAsset", kind: "write", resource: "bulkAsset", action: "update", scope: "bulkAsset:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "BulkAssetFormValues", optional: false }], dangerous: false, summary: "" },
+  "bulk-assets.updateBulkAsset": { name: "bulk-assets.updateBulkAsset", module: "bulk-assets", fn: "updateBulkAsset", kind: "write", resource: "bulkAsset", action: "update", scope: "bulkAsset:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "BulkAssetFormValues", optional: false, schemaRef: "BulkAssetFormValues" }], dangerous: false, summary: "" },
   "bulk-assets.updateBulkAssetNotes": { name: "bulk-assets.updateBulkAssetNotes", module: "bulk-assets", fn: "updateBulkAssetNotes", kind: "write", resource: "bulkAsset", action: "update", scope: "bulkAsset:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
   "bulk-checkin.checkInBulkTotals": { name: "bulk-checkin.checkInBulkTotals", module: "bulk-checkin", fn: "checkInBulkTotals", kind: "write", resource: "warehouse", action: "check_in", scope: "warehouse:check_in", params: [{ name: "projectId", type: "string", optional: false }, { name: "returns", type: "Array<{ key: string; quantity: number; condition?: ReturnCondition }>", optional: false }], dangerous: false, summary: "" },
   "bulk-checkin.getBulkCheckInTotals": { name: "bulk-checkin.getBulkCheckInTotals", module: "bulk-checkin", fn: "getBulkCheckInTotals", kind: "read", resource: "warehouse", action: "read", scope: "warehouse:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
-  "categories.createCategory": { name: "categories.createCategory", module: "categories", fn: "createCategory", kind: "write", resource: "model", action: "create", scope: "model:create", params: [{ name: "data", type: "CategoryFormValues", optional: false }], dangerous: false, summary: "" },
+  "categories.createCategory": { name: "categories.createCategory", module: "categories", fn: "createCategory", kind: "write", resource: "model", action: "create", scope: "model:create", params: [{ name: "data", type: "CategoryFormValues", optional: false, schemaRef: "CategoryFormValues" }], dangerous: false, summary: "" },
   "categories.deleteCategory": { name: "categories.deleteCategory", module: "categories", fn: "deleteCategory", kind: "write", resource: "model", action: "delete", scope: "model:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "categories.getCaseCategoryIds": { name: "categories.getCaseCategoryIds", module: "categories", fn: "getCaseCategoryIds", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Get category + all descendant IDs for container cases." },
   "categories.getCategories": { name: "categories.getCategories", module: "categories", fn: "getCategories", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Equipment Categories are CONVEX-ONLY (Phase B write inversion): every" },
@@ -84,19 +93,19 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "categories.getCategoryCounts": { name: "categories.getCategoryCounts", module: "categories", fn: "getCategoryCounts", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Per-category model + kit counts (categoryId -> counts). Cross-domain: models" },
   "categories.getCategoryTree": { name: "categories.getCategoryTree", module: "categories", fn: "getCategoryTree", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Category tree — READ FROM CONVEX (Phase A). Tree rebuilt client-side from the" },
   "categories.searchContainerAssets": { name: "categories.searchContainerAssets", module: "categories", fn: "searchContainerAssets", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "query", type: "string", optional: true }], dangerous: false, summary: "---------------------------------------------------------------------------" },
-  "categories.updateCategory": { name: "categories.updateCategory", module: "categories", fn: "updateCategory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CategoryFormValues", optional: false }], dangerous: false, summary: "" },
-  "category-slots.createCategoryAndPlaceGroup": { name: "category-slots.createCategoryAndPlaceGroup", module: "category-slots", fn: "createCategoryAndPlaceGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "CreateCategoryAndPlaceGroupInput", optional: false }], dangerous: false, summary: "Atomic: create a new ProjectCategory and place a single group (project" },
+  "categories.updateCategory": { name: "categories.updateCategory", module: "categories", fn: "updateCategory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CategoryFormValues", optional: false, schemaRef: "CategoryFormValues" }], dangerous: false, summary: "" },
+  "category-slots.createCategoryAndPlaceGroup": { name: "category-slots.createCategoryAndPlaceGroup", module: "category-slots", fn: "createCategoryAndPlaceGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "CreateCategoryAndPlaceGroupInput", optional: false, schemaRef: "CreateCategoryAndPlaceGroupInput" }], dangerous: false, summary: "Atomic: create a new ProjectCategory and place a single group (project" },
   "category-slots.getUncategorizedProjectGroups": { name: "category-slots.getUncategorizedProjectGroups", module: "category-slots", fn: "getUncategorizedProjectGroups", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "Project groups with no category placement (`categoryId` absent/null in Convex)." },
   "category-slots.getUncategorizedSubHireGroups": { name: "category-slots.getUncategorizedSubHireGroups", module: "category-slots", fn: "getUncategorizedSubHireGroups", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "── Reads ───────────────────────────────────────────────────────────────────" },
-  "category-slots.moveProjectGroupToCategory": { name: "category-slots.moveProjectGroupToCategory", module: "category-slots", fn: "moveProjectGroupToCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "MoveProjectGroupToCategoryInput", optional: false }], dangerous: false, summary: "Move a ProjectGroup to a different ProjectCategory, or to the" },
-  "category-slots.moveSubHireGroupToCategory": { name: "category-slots.moveSubHireGroupToCategory", module: "category-slots", fn: "moveSubHireGroupToCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "MoveSubHireGroupToCategoryInput", optional: false }], dangerous: false, summary: "── Mutations ───────────────────────────────────────────────────────────────" },
-  "category-slots.reorderMixedGroupsInCategory": { name: "category-slots.reorderMixedGroupsInCategory", module: "category-slots", fn: "reorderMixedGroupsInCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "ReorderMixedGroupsInCategoryInput", optional: false }], dangerous: false, summary: "Reorder the mixed ProjectGroup + SubHireGroup list within a single" },
+  "category-slots.moveProjectGroupToCategory": { name: "category-slots.moveProjectGroupToCategory", module: "category-slots", fn: "moveProjectGroupToCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "MoveProjectGroupToCategoryInput", optional: false, schemaRef: "MoveProjectGroupToCategoryInput" }], dangerous: false, summary: "Move a ProjectGroup to a different ProjectCategory, or to the" },
+  "category-slots.moveSubHireGroupToCategory": { name: "category-slots.moveSubHireGroupToCategory", module: "category-slots", fn: "moveSubHireGroupToCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "MoveSubHireGroupToCategoryInput", optional: false, schemaRef: "MoveSubHireGroupToCategoryInput" }], dangerous: false, summary: "── Mutations ───────────────────────────────────────────────────────────────" },
+  "category-slots.reorderMixedGroupsInCategory": { name: "category-slots.reorderMixedGroupsInCategory", module: "category-slots", fn: "reorderMixedGroupsInCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "input", type: "ReorderMixedGroupsInCategoryInput", optional: false, schemaRef: "ReorderMixedGroupsInCategoryInput" }], dangerous: false, summary: "Reorder the mixed ProjectGroup + SubHireGroup list within a single" },
   "changelog.getBuildInfo": { name: "changelog.getBuildInfo", module: "changelog", fn: "getBuildInfo", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
   "changelog.getChangelog": { name: "changelog.getChangelog", module: "changelog", fn: "getChangelog", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
   "check-items.addCheckItemToKit": { name: "check-items.addCheckItemToKit", module: "check-items", fn: "addCheckItemToKit", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "checkItemId", type: "string", optional: false }], dangerous: false, summary: "" },
   "check-items.addCheckItemToModel": { name: "check-items.addCheckItemToModel", module: "check-items", fn: "addCheckItemToModel", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "checkItemId", type: "string", optional: false }], dangerous: false, summary: "" },
   "check-items.bulkAddCheckItemsToModels": { name: "check-items.bulkAddCheckItemsToModels", module: "check-items", fn: "bulkAddCheckItemsToModels", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "modelIds", type: "string[]", optional: false }, { name: "checkItemIds", type: "string[]", optional: false }], dangerous: false, summary: "─── Bulk Model Check Items ──────────────────────────────────────────────────" },
-  "check-items.createCheckItem": { name: "check-items.createCheckItem", module: "check-items", fn: "createCheckItem", kind: "write", resource: "checkItem", action: "create", scope: "checkItem:create", params: [{ name: "data", type: "CheckItemFormValues", optional: false }], dangerous: false, summary: "" },
+  "check-items.createCheckItem": { name: "check-items.createCheckItem", module: "check-items", fn: "createCheckItem", kind: "write", resource: "checkItem", action: "create", scope: "checkItem:create", params: [{ name: "data", type: "CheckItemFormValues", optional: false, schemaRef: "CheckItemFormValues" }], dangerous: false, summary: "" },
   "check-items.deleteCheckItem": { name: "check-items.deleteCheckItem", module: "check-items", fn: "deleteCheckItem", kind: "write", resource: "checkItem", action: "delete", scope: "checkItem:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "check-items.getCheckItem": { name: "check-items.getCheckItem", module: "check-items", fn: "getCheckItem", kind: "read", resource: "checkItem", action: "read", scope: "checkItem:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "check-items.getCheckItemCounts": { name: "check-items.getCheckItemCounts", module: "check-items", fn: "getCheckItemCounts", kind: "read", resource: "checkItem", action: "read", scope: "checkItem:read", params: [], dangerous: false, summary: "Per-check-item usage counts (checkItemId -> { modelCheckItems, checkRecords })." },
@@ -106,12 +115,12 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "check-items.removeCheckItemFromKit": { name: "check-items.removeCheckItemFromKit", module: "check-items", fn: "removeCheckItemFromKit", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "checkItemId", type: "string", optional: false }], dangerous: true, summary: "" },
   "check-items.removeCheckItemFromModel": { name: "check-items.removeCheckItemFromModel", module: "check-items", fn: "removeCheckItemFromModel", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "checkItemId", type: "string", optional: false }], dangerous: true, summary: "" },
   "check-items.reorderKitCheckItems": { name: "check-items.reorderKitCheckItems", module: "check-items", fn: "reorderKitCheckItems", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "orderedCheckItemIds", type: "string[]", optional: false }], dangerous: false, summary: "" },
-  "check-items.reorderModelCheckItems": { name: "check-items.reorderModelCheckItems", module: "check-items", fn: "reorderModelCheckItems", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "data", type: "ReorderModelCheckItemsValues", optional: false }], dangerous: false, summary: "" },
-  "check-items.updateCheckItem": { name: "check-items.updateCheckItem", module: "check-items", fn: "updateCheckItem", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CheckItemFormValues", optional: false }], dangerous: false, summary: "" },
+  "check-items.reorderModelCheckItems": { name: "check-items.reorderModelCheckItems", module: "check-items", fn: "reorderModelCheckItems", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "data", type: "ReorderModelCheckItemsValues", optional: false, schemaRef: "ReorderModelCheckItemsValues" }], dangerous: false, summary: "" },
+  "check-items.updateCheckItem": { name: "check-items.updateCheckItem", module: "check-items", fn: "updateCheckItem", kind: "write", resource: "checkItem", action: "update", scope: "checkItem:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CheckItemFormValues", optional: false, schemaRef: "CheckItemFormValues" }], dangerous: false, summary: "" },
   "check-records.completeCheckAndDeprep": { name: "check-records.completeCheckAndDeprep", module: "check-records", fn: "completeCheckAndDeprep", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "data", type: "{ projectId: string; lineItemId: string; assetId?: string; bulkAssetId?: string | null; checks: CheckRecordFormValues[]; }", optional: false }], dangerous: false, summary: "Write RETURN-context check records for an already-returned item and deprep it" },
-  "check-records.completeCheckAndFlag": { name: "check-records.completeCheckAndFlag", module: "check-records", fn: "completeCheckAndFlag", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "data", type: "CompleteCheckAndFlagValues", optional: false }], dangerous: false, summary: "─── Composite: Check + Flag (prep flow — faulty/TT overdue) ───────────────" },
-  "check-records.completeCheckAndPack": { name: "check-records.completeCheckAndPack", module: "check-records", fn: "completeCheckAndPack", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "data", type: "CompleteCheckAndPackValues", optional: false }], dangerous: false, summary: "─── Composite: Check + Prep (prep flow — saves checks + sets PACKED, no deploy) ─" },
-  "check-records.completeCheckAndStore": { name: "check-records.completeCheckAndStore", module: "check-records", fn: "completeCheckAndStore", kind: "write", resource: "warehouse", action: "check_in", scope: "warehouse:check_in", params: [{ name: "data", type: "CompleteCheckAndStoreValues", optional: false }], dangerous: false, summary: "─── Composite: Check + Store (return flow) ─────────────────────────────────" },
+  "check-records.completeCheckAndFlag": { name: "check-records.completeCheckAndFlag", module: "check-records", fn: "completeCheckAndFlag", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "data", type: "CompleteCheckAndFlagValues", optional: false, schemaRef: "CompleteCheckAndFlagValues" }], dangerous: false, summary: "─── Composite: Check + Flag (prep flow — faulty/TT overdue) ───────────────" },
+  "check-records.completeCheckAndPack": { name: "check-records.completeCheckAndPack", module: "check-records", fn: "completeCheckAndPack", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "data", type: "CompleteCheckAndPackValues", optional: false, schemaRef: "CompleteCheckAndPackValues" }], dangerous: false, summary: "─── Composite: Check + Prep (prep flow — saves checks + sets PACKED, no deploy) ─" },
+  "check-records.completeCheckAndStore": { name: "check-records.completeCheckAndStore", module: "check-records", fn: "completeCheckAndStore", kind: "write", resource: "warehouse", action: "check_in", scope: "warehouse:check_in", params: [{ name: "data", type: "CompleteCheckAndStoreValues", optional: false, schemaRef: "CompleteCheckAndStoreValues" }], dangerous: false, summary: "─── Composite: Check + Store (return flow) ─────────────────────────────────" },
   "check-records.deprepItem": { name: "check-records.deprepItem", module: "check-records", fn: "deprepItem", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }, { name: "quantity", type: "number", optional: true }], dangerous: false, summary: "" },
   "check-records.deprepItemsBatch": { name: "check-records.deprepItemsBatch", module: "check-records", fn: "deprepItemsBatch", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "ops", type: "Array<{ lineItemId: string; quantity?: number; isKit?: boolean }>", optional: false }], dangerous: false, summary: "Batch deprep: reverse prep for many selected items + kits in ONE server" },
   "check-records.deprepKit": { name: "check-records.deprepKit", module: "check-records", fn: "deprepKit", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "parentLineItemId", type: "string", optional: false }], dangerous: false, summary: "Reverse prep for a kit: set parent + all children/grandchildren back to PENDING." },
@@ -123,18 +132,18 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "check-records.prepItemsBatch": { name: "check-records.prepItemsBatch", module: "check-records", fn: "prepItemsBatch", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "items", type: "Array<{ lineItemId: string; assetId?: string; quantity?: number; prepContainer?: string | null; includeAccessoryIds?: string[]; }>", optional: false }], dangerous: false, summary: "Batch prep: pack many units in ONE server round-trip + ONE atomic Convex" },
   "check-records.prepKitChildren": { name: "check-records.prepKitChildren", module: "check-records", fn: "prepKitChildren", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "parentLineItemId", type: "string", optional: false }], dangerous: false, summary: "Mark all children of a kit line item as prepped (prepStatus=PACKED)." },
   "check-records.pullItem": { name: "check-records.pullItem", module: "check-records", fn: "pullItem", kind: "write", resource: "warehouse", action: "check_out", scope: "warehouse:check_out", params: [{ name: "projectId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }], dangerous: false, summary: "─── Pull / Unpack (intermediate status before check form) ──────────────────" },
-  "check-records.saveAdHocCheck": { name: "check-records.saveAdHocCheck", module: "check-records", fn: "saveAdHocCheck", kind: "write", resource: "warehouse", action: "scan", scope: "warehouse:scan", params: [{ name: "data", type: "SubmitChecksFormValues", optional: false }], dangerous: false, summary: "─── Ad-Hoc Check ───────────────────────────────────────────────────────────" },
-  "check-records.saveChildItemChecks": { name: "check-records.saveChildItemChecks", module: "check-records", fn: "saveChildItemChecks", kind: "write", resource: "warehouse", action: "update", scope: "warehouse:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }, { name: "assetId", type: "string | undefined", optional: false }, { name: "bulkAssetId", type: "string | undefined", optional: false }, { name: "context", type: "\"PREP\" | \"RETURN\"", optional: false }, { name: "checks", type: "CheckRecordFormValues[]", optional: false }], dangerous: false, summary: "Save check records for a single child item (PER_ITEM mode)." },
-  "check-records.saveKitLevelChecks": { name: "check-records.saveKitLevelChecks", module: "check-records", fn: "saveKitLevelChecks", kind: "write", resource: "warehouse", action: "update", scope: "warehouse:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "kitId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }, { name: "context", type: "\"PREP\" | \"RETURN\"", optional: false }, { name: "checks", type: "CheckRecordFormValues[]", optional: false }], dangerous: false, summary: "─── Kit Check Actions ──────────────────────────────────────────────────────" },
+  "check-records.saveAdHocCheck": { name: "check-records.saveAdHocCheck", module: "check-records", fn: "saveAdHocCheck", kind: "write", resource: "warehouse", action: "scan", scope: "warehouse:scan", params: [{ name: "data", type: "SubmitChecksFormValues", optional: false, schemaRef: "SubmitChecksFormValues" }], dangerous: false, summary: "─── Ad-Hoc Check ───────────────────────────────────────────────────────────" },
+  "check-records.saveChildItemChecks": { name: "check-records.saveChildItemChecks", module: "check-records", fn: "saveChildItemChecks", kind: "write", resource: "warehouse", action: "update", scope: "warehouse:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }, { name: "assetId", type: "string | undefined", optional: false }, { name: "bulkAssetId", type: "string | undefined", optional: false }, { name: "context", type: "\"PREP\" | \"RETURN\"", optional: false }, { name: "checks", type: "CheckRecordFormValues[]", optional: false, schemaRef: "CheckRecordFormValues[]" }], dangerous: false, summary: "Save check records for a single child item (PER_ITEM mode)." },
+  "check-records.saveKitLevelChecks": { name: "check-records.saveKitLevelChecks", module: "check-records", fn: "saveKitLevelChecks", kind: "write", resource: "warehouse", action: "update", scope: "warehouse:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "kitId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }, { name: "context", type: "\"PREP\" | \"RETURN\"", optional: false }, { name: "checks", type: "CheckRecordFormValues[]", optional: false, schemaRef: "CheckRecordFormValues[]" }], dangerous: false, summary: "─── Kit Check Actions ──────────────────────────────────────────────────────" },
   "check-records.unpackItem": { name: "check-records.unpackItem", module: "check-records", fn: "unpackItem", kind: "write", resource: "warehouse", action: "check_in", scope: "warehouse:check_in", params: [{ name: "projectId", type: "string", optional: false }, { name: "lineItemId", type: "string", optional: false }], dangerous: false, summary: "" },
   "client-media.addClientMedia": { name: "client-media.addClientMedia", module: "client-media", fn: "addClientMedia", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "data", type: "{ clientId: string; fileId: string; type?: MediaType; displayName?: string; }", optional: false }], dangerous: false, summary: "clientMedia + its file_upload are Convex-only (Phase C). See media-write.ts." },
   "client-media.removeClientMedia": { name: "client-media.removeClientMedia", module: "client-media", fn: "removeClientMedia", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "mediaId", type: "string", optional: false }], dangerous: true, summary: "" },
   "clients.archiveClient": { name: "clients.archiveClient", module: "clients", fn: "archiveClient", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
-  "clients.createClient": { name: "clients.createClient", module: "clients", fn: "createClient", kind: "write", resource: "client", action: "create", scope: "client:create", params: [{ name: "data", type: "ClientFormValues", optional: false }], dangerous: false, summary: "" },
+  "clients.createClient": { name: "clients.createClient", module: "clients", fn: "createClient", kind: "write", resource: "client", action: "create", scope: "client:create", params: [{ name: "data", type: "ClientFormValues", optional: false, schemaRef: "ClientFormValues" }], dangerous: false, summary: "" },
   "clients.getClient": { name: "clients.getClient", module: "clients", fn: "getClient", kind: "read", resource: "client", action: "read", scope: "client:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "clients.getClientProjectCounts": { name: "clients.getClientProjectCounts", module: "clients", fn: "getClientProjectCounts", kind: "read", resource: "client", action: "read", scope: "client:read", params: [], dangerous: false, summary: "Project counts per client (clientId -> count). From Convex." },
   "clients.getClients": { name: "clients.getClients", module: "clients", fn: "getClients", kind: "read", resource: "client", action: "read", scope: "client:read", params: [{ name: "params", type: "{ search?: string; type?: string; isActive?: boolean; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "" },
-  "clients.updateClient": { name: "clients.updateClient", module: "clients", fn: "updateClient", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ClientFormValues", optional: false }], dangerous: false, summary: "" },
+  "clients.updateClient": { name: "clients.updateClient", module: "clients", fn: "updateClient", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ClientFormValues", optional: false, schemaRef: "ClientFormValues" }], dangerous: false, summary: "" },
   "clients.updateClientNotes": { name: "clients.updateClientNotes", module: "clients", fn: "updateClientNotes", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
   "collaboration.acquireLock": { name: "collaboration.acquireLock", module: "collaboration", fn: "acquireLock", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "entityType", type: "string", optional: false }, { name: "entityId", type: "string", optional: false }, { name: "targetType", type: "string", optional: false }, { name: "targetId", type: "string", optional: false }, { name: "clientSessionId", type: "string", optional: false }], dangerous: false, summary: "─── Locks ────────────────────────────────────────────────────────────────────" },
   "collaboration.addComment": { name: "collaboration.addComment", module: "collaboration", fn: "addComment", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "threadId", type: "string", optional: false }, { name: "body", type: "string", optional: false }, { name: "options", type: "{ mentionUserIds?: string[] }", optional: true }], dangerous: false, summary: "" },
@@ -148,17 +157,17 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "collaboration.setReviewMarker": { name: "collaboration.setReviewMarker", module: "collaboration", fn: "setReviewMarker", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "entityType", type: "string", optional: false }, { name: "entityId", type: "string", optional: false }, { name: "targetType", type: "string", optional: false }, { name: "targetId", type: "string", optional: false }, { name: "status", type: "\"needs_review\" | \"follow_up\" | \"resolved\"", optional: false }, { name: "reason", type: "string", optional: true }, { name: "note", type: "string", optional: true }], dangerous: false, summary: "─── Review Markers ──────────────────────────────────────────────────────────" },
   "collaboration.setThreadBlocking": { name: "collaboration.setThreadBlocking", module: "collaboration", fn: "setThreadBlocking", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "threadId", type: "string", optional: false }, { name: "isBlocking", type: "boolean", optional: false }], dangerous: false, summary: "" },
   "collaboration.takeoverLock": { name: "collaboration.takeoverLock", module: "collaboration", fn: "takeoverLock", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "entityId", type: "string", optional: false }, { name: "targetId", type: "string", optional: false }, { name: "entityType", type: "string", optional: false }, { name: "targetType", type: "string", optional: false }, { name: "clientSessionId", type: "string", optional: false }], dangerous: false, summary: "" },
-  "crew-assignments.createAssignment": { name: "crew-assignments.createAssignment", module: "crew-assignments", fn: "createAssignment", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "CrewAssignmentFormValues", optional: false }], dangerous: false, summary: "" },
+  "crew-assignments.createAssignment": { name: "crew-assignments.createAssignment", module: "crew-assignments", fn: "createAssignment", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "CrewAssignmentFormValues", optional: false, schemaRef: "CrewAssignmentFormValues" }], dangerous: false, summary: "" },
   "crew-assignments.deleteAssignment": { name: "crew-assignments.deleteAssignment", module: "crew-assignments", fn: "deleteAssignment", kind: "write", resource: "crew", action: "delete", scope: "crew:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "crew-assignments.deleteShift": { name: "crew-assignments.deleteShift", module: "crew-assignments", fn: "deleteShift", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "shiftId", type: "string", optional: false }], dangerous: true, summary: "" },
   "crew-assignments.generateShifts": { name: "crew-assignments.generateShifts", module: "crew-assignments", fn: "generateShifts", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "assignmentId", type: "string", optional: false }], dangerous: false, summary: "─── Shifts ──────────────────────────────────────────────────────────────────" },
   "crew-assignments.getCrewMembersForAssignment": { name: "crew-assignments.getCrewMembersForAssignment", module: "crew-assignments", fn: "getCrewMembersForAssignment", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "projectId", type: "string", optional: false }, { name: "search", type: "string", optional: true }, { name: "dateRange", type: "{ start: string; end: string }", optional: true }], dangerous: false, summary: "─── Helpers ─────────────────────────────────────────────────────────────────" },
   "crew-assignments.getProjectCrew": { name: "crew-assignments.getProjectCrew", module: "crew-assignments", fn: "getProjectCrew", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "─── Assignments ─────────────────────────────────────────────────────────────" },
   "crew-assignments.getProjectLabourCost": { name: "crew-assignments.getProjectLabourCost", module: "crew-assignments", fn: "getProjectLabourCost", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "─── Labour Cost ─────────────────────────────────────────────────────────────" },
-  "crew-assignments.updateAssignment": { name: "crew-assignments.updateAssignment", module: "crew-assignments", fn: "updateAssignment", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewAssignmentFormValues", optional: false }], dangerous: false, summary: "" },
+  "crew-assignments.updateAssignment": { name: "crew-assignments.updateAssignment", module: "crew-assignments", fn: "updateAssignment", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewAssignmentFormValues", optional: false, schemaRef: "CrewAssignmentFormValues" }], dangerous: false, summary: "" },
   "crew-assignments.updateAssignmentStatus": { name: "crew-assignments.updateAssignmentStatus", module: "crew-assignments", fn: "updateAssignmentStatus", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "status", type: "string", optional: false }], dangerous: false, summary: "" },
-  "crew-assignments.updateShift": { name: "crew-assignments.updateShift", module: "crew-assignments", fn: "updateShift", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "shiftId", type: "string", optional: false }, { name: "data", type: "CrewShiftFormValues", optional: false }], dangerous: false, summary: "" },
-  "crew-availability.addAvailability": { name: "crew-availability.addAvailability", module: "crew-availability", fn: "addAvailability", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "data", type: "CrewAvailabilityFormValues", optional: false }], dangerous: false, summary: "" },
+  "crew-assignments.updateShift": { name: "crew-assignments.updateShift", module: "crew-assignments", fn: "updateShift", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "shiftId", type: "string", optional: false }, { name: "data", type: "CrewShiftFormValues", optional: false, schemaRef: "CrewShiftFormValues" }], dangerous: false, summary: "" },
+  "crew-availability.addAvailability": { name: "crew-availability.addAvailability", module: "crew-availability", fn: "addAvailability", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "data", type: "CrewAvailabilityFormValues", optional: false, schemaRef: "CrewAvailabilityFormValues" }], dangerous: false, summary: "" },
   "crew-availability.checkCrewConflicts": { name: "crew-availability.checkCrewConflicts", module: "crew-availability", fn: "checkCrewConflicts", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "crewMemberId", type: "string", optional: false }, { name: "startDate", type: "string", optional: false }, { name: "endDate", type: "string", optional: false }, { name: "excludeAssignmentId", type: "string", optional: true }], dangerous: false, summary: "" },
   "crew-availability.getCrewAvailability": { name: "crew-availability.getCrewAvailability", module: "crew-availability", fn: "getCrewAvailability", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "crewMemberId", type: "string", optional: false }, { name: "startDate", type: "string", optional: true }, { name: "endDate", type: "string", optional: true }], dangerous: false, summary: "─── Availability CRUD ──────────────────────────────────────────────────────" },
   "crew-availability.getCrewAvailabilityStatus": { name: "crew-availability.getCrewAvailabilityStatus", module: "crew-availability", fn: "getCrewAvailabilityStatus", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "crewMemberIds", type: "string[]", optional: false }, { name: "startDate", type: "string", optional: false }, { name: "endDate", type: "string", optional: false }], dangerous: false, summary: "─── Availability Status for Crew List ──────────────────────────────────────" },
@@ -181,8 +190,8 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "crew-dashboard.getPendingTimeEntries": { name: "crew-dashboard.getPendingTimeEntries", module: "crew-dashboard", fn: "getPendingTimeEntries", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [], dangerous: false, summary: "" },
   "crew-dashboard.getUpcomingShifts": { name: "crew-dashboard.getUpcomingShifts", module: "crew-dashboard", fn: "getUpcomingShifts", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [], dangerous: false, summary: "" },
   "crew-time.approveTimeEntries": { name: "crew-time.approveTimeEntries", module: "crew-time", fn: "approveTimeEntries", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "ids", type: "string[]", optional: false }], dangerous: false, summary: "" },
-  "crew-time.createTimeEntries": { name: "crew-time.createTimeEntries", module: "crew-time", fn: "createTimeEntries", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewTimeEntryFormValues", optional: false }, { name: "crewMemberIds", type: "string[]", optional: false }], dangerous: false, summary: "Log the same time entry for many crew members in ONE server round-trip + ONE" },
-  "crew-time.createTimeEntry": { name: "crew-time.createTimeEntry", module: "crew-time", fn: "createTimeEntry", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewTimeEntryFormValues", optional: false }], dangerous: false, summary: "─── CRUD ───────────────────────────────────────────────────────────────────" },
+  "crew-time.createTimeEntries": { name: "crew-time.createTimeEntries", module: "crew-time", fn: "createTimeEntries", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewTimeEntryFormValues", optional: false, schemaRef: "CrewTimeEntryFormValues" }, { name: "crewMemberIds", type: "string[]", optional: false }], dangerous: false, summary: "Log the same time entry for many crew members in ONE server round-trip + ONE" },
+  "crew-time.createTimeEntry": { name: "crew-time.createTimeEntry", module: "crew-time", fn: "createTimeEntry", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewTimeEntryFormValues", optional: false, schemaRef: "CrewTimeEntryFormValues" }], dangerous: false, summary: "─── CRUD ───────────────────────────────────────────────────────────────────" },
   "crew-time.deleteTimeEntry": { name: "crew-time.deleteTimeEntry", module: "crew-time", fn: "deleteTimeEntry", kind: "write", resource: "crew", action: "delete", scope: "crew:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "crew-time.disputeTimeEntry": { name: "crew-time.disputeTimeEntry", module: "crew-time", fn: "disputeTimeEntry", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "reason", type: "string", optional: true }], dangerous: false, summary: "" },
   "crew-time.exportTimesheetCSV": { name: "crew-time.exportTimesheetCSV", module: "crew-time", fn: "exportTimesheetCSV", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "filters", type: "{ dateFrom?: string; dateTo?: string; crewMemberId?: string; projectId?: string; status?: string; }", optional: true }], dangerous: false, summary: "─── CSV Export ──────────────────────────────────────────────────────────────" },
@@ -190,8 +199,8 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "crew-time.getTimeEntriesForMember": { name: "crew-time.getTimeEntriesForMember", module: "crew-time", fn: "getTimeEntriesForMember", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "crewMemberId", type: "string", optional: false }], dangerous: false, summary: "" },
   "crew-time.getTimeEntriesForProject": { name: "crew-time.getTimeEntriesForProject", module: "crew-time", fn: "getTimeEntriesForProject", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
   "crew-time.submitTimeEntries": { name: "crew-time.submitTimeEntries", module: "crew-time", fn: "submitTimeEntries", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "ids", type: "string[]", optional: false }], dangerous: false, summary: "─── Status Transitions ─────────────────────────────────────────────────────" },
-  "crew-time.updateTimeEntry": { name: "crew-time.updateTimeEntry", module: "crew-time", fn: "updateTimeEntry", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewTimeEntryFormValues", optional: false }], dangerous: false, summary: "" },
-  "crew.createCrewMember": { name: "crew.createCrewMember", module: "crew", fn: "createCrewMember", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewMemberFormValues", optional: false }], dangerous: false, summary: "" },
+  "crew-time.updateTimeEntry": { name: "crew-time.updateTimeEntry", module: "crew-time", fn: "updateTimeEntry", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewTimeEntryFormValues", optional: false, schemaRef: "CrewTimeEntryFormValues" }], dangerous: false, summary: "" },
+  "crew.createCrewMember": { name: "crew.createCrewMember", module: "crew", fn: "createCrewMember", kind: "write", resource: "crew", action: "create", scope: "crew:create", params: [{ name: "data", type: "CrewMemberFormValues", optional: false, schemaRef: "CrewMemberFormValues" }], dangerous: false, summary: "" },
   "crew.deleteCrewMember": { name: "crew.deleteCrewMember", module: "crew", fn: "deleteCrewMember", kind: "write", resource: "crew", action: "delete", scope: "crew:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "crew.getCrewDepartments": { name: "crew.getCrewDepartments", module: "crew", fn: "getCrewDepartments", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [], dangerous: false, summary: "Get distinct departments for filter options */" },
   "crew.getCrewMemberById": { name: "crew.getCrewMemberById", module: "crew", fn: "getCrewMemberById", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -204,14 +213,14 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "crew.getMyCrewMemberId": { name: "crew.getMyCrewMemberId", module: "crew", fn: "getMyCrewMemberId", kind: "read", resource: "crew", action: "read", scope: "crew:read", params: [], dangerous: false, summary: "Get the current user's crew member ID (if they have a linked crew profile) */" },
   "crew.getOrgUsersForCrewLink": { name: "crew.getOrgUsersForCrewLink", module: "crew", fn: "getOrgUsersForCrewLink", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [], dangerous: false, summary: "Get org users that can be linked to crew members */" },
   "crew.linkCrewMemberToUser": { name: "crew.linkCrewMemberToUser", module: "crew", fn: "linkCrewMemberToUser", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "userId", type: "string | null", optional: false }], dangerous: false, summary: "Link/unlink a crew member to a platform user */" },
-  "crew.updateCrewMember": { name: "crew.updateCrewMember", module: "crew", fn: "updateCrewMember", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewMemberFormValues", optional: false }], dangerous: false, summary: "" },
+  "crew.updateCrewMember": { name: "crew.updateCrewMember", module: "crew", fn: "updateCrewMember", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CrewMemberFormValues", optional: false, schemaRef: "CrewMemberFormValues" }], dangerous: false, summary: "" },
   "crew.updateCrewMemberImage": { name: "crew.updateCrewMemberImage", module: "crew", fn: "updateCrewMemberImage", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "id", type: "string", optional: false }, { name: "image", type: "string | null", optional: false }], dangerous: false, summary: "Update crew member profile image */" },
-  "custom-fields.createCustomFieldDefinition": { name: "custom-fields.createCustomFieldDefinition", module: "custom-fields", fn: "createCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "input", type: "CustomFieldDefinitionInput", optional: false }], dangerous: false, summary: "" },
+  "custom-fields.createCustomFieldDefinition": { name: "custom-fields.createCustomFieldDefinition", module: "custom-fields", fn: "createCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "input", type: "CustomFieldDefinitionInput", optional: false, schemaRef: "CustomFieldDefinitionInput" }], dangerous: false, summary: "" },
   "custom-fields.deleteCustomFieldDefinition": { name: "custom-fields.deleteCustomFieldDefinition", module: "custom-fields", fn: "deleteCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Delete a definition. Values already stored in entity customFieldValues" },
-  "custom-fields.getActiveCustomFields": { name: "custom-fields.getActiveCustomFields", module: "custom-fields", fn: "getActiveCustomFields", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "entityType", type: "CustomFieldEntity", optional: true }], dangerous: false, summary: "Active definitions only — what the entity create/edit form renders." },
-  "custom-fields.getCustomFieldDefinitions": { name: "custom-fields.getCustomFieldDefinitions", module: "custom-fields", fn: "getCustomFieldDefinitions", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "entityType", type: "CustomFieldEntity", optional: true }], dangerous: false, summary: "Custom field definitions are CONVEX-ONLY (Phase B write inversion): every" },
+  "custom-fields.getActiveCustomFields": { name: "custom-fields.getActiveCustomFields", module: "custom-fields", fn: "getActiveCustomFields", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "entityType", type: "CustomFieldEntity", optional: true, schemaRef: "CustomFieldEntity" }], dangerous: false, summary: "Active definitions only — what the entity create/edit form renders." },
+  "custom-fields.getCustomFieldDefinitions": { name: "custom-fields.getCustomFieldDefinitions", module: "custom-fields", fn: "getCustomFieldDefinitions", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "entityType", type: "CustomFieldEntity", optional: true, schemaRef: "CustomFieldEntity" }], dangerous: false, summary: "Custom field definitions are CONVEX-ONLY (Phase B write inversion): every" },
   "custom-fields.reorderCustomFieldDefinitions": { name: "custom-fields.reorderCustomFieldDefinitions", module: "custom-fields", fn: "reorderCustomFieldDefinitions", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "orderedIds", type: "string[]", optional: false }], dangerous: false, summary: "Persist a new sort order in one shot (drag-reorder on the settings page). */" },
-  "custom-fields.updateCustomFieldDefinition": { name: "custom-fields.updateCustomFieldDefinition", module: "custom-fields", fn: "updateCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "input", type: "CustomFieldDefinitionUpdateInput", optional: false }], dangerous: false, summary: "" },
+  "custom-fields.updateCustomFieldDefinition": { name: "custom-fields.updateCustomFieldDefinition", module: "custom-fields", fn: "updateCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "input", type: "CustomFieldDefinitionUpdateInput", optional: false, schemaRef: "CustomFieldDefinitionUpdateInput" }], dangerous: false, summary: "" },
   "custom-roles.createCustomRole": { name: "custom-roles.createCustomRole", module: "custom-roles", fn: "createCustomRole", kind: "write", resource: "orgMembers", action: "update_role", scope: "orgMembers:update_role", params: [{ name: "data", type: "{ name: string; description?: string; color?: string; ssoGroupClaim?: string; permissions: PermissionMap; }", optional: false }], dangerous: true, summary: "─── Write ──────────────────────────────────────────────────────────────────" },
   "custom-roles.deleteCustomRole": { name: "custom-roles.deleteCustomRole", module: "custom-roles", fn: "deleteCustomRole", kind: "write", resource: "orgMembers", action: "update_role", scope: "orgMembers:update_role", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Delete a custom role. Fails if any members are assigned to it. */" },
   "custom-roles.duplicateCustomRole": { name: "custom-roles.duplicateCustomRole", module: "custom-roles", fn: "duplicateCustomRole", kind: "write", resource: "orgMembers", action: "update_role", scope: "orgMembers:update_role", params: [{ name: "id", type: "string", optional: false }, { name: "newName", type: "string", optional: false }], dangerous: true, summary: "Duplicate a custom role with a new name */" },
@@ -223,7 +232,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "document-templates.getDocumentTemplates": { name: "document-templates.getDocumentTemplates", module: "document-templates", fn: "getDocumentTemplates", kind: "read", resource: "document", action: "read", scope: "document:read", params: [], dangerous: false, summary: "List all document templates for the current org, plus virtual system defaults." },
   "document-templates.getPublishedTemplatesForDropdown": { name: "document-templates.getPublishedTemplatesForDropdown", module: "document-templates", fn: "getPublishedTemplatesForDropdown", kind: "read", resource: "document", action: "read", scope: "document:read", params: [], dangerous: false, summary: "Get published templates grouped by doc type for the document generation dropdown." },
   "group-templates.applyGroupTemplate": { name: "group-templates.applyGroupTemplate", module: "group-templates", fn: "applyGroupTemplate", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "{ templateId: string; categoryId: string; title: string }", optional: false }], dangerous: false, summary: "" },
-  "group-templates.createGroupTemplate": { name: "group-templates.createGroupTemplate", module: "group-templates", fn: "createGroupTemplate", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "data", type: "GroupTemplateFormValues", optional: false }], dangerous: false, summary: "" },
+  "group-templates.createGroupTemplate": { name: "group-templates.createGroupTemplate", module: "group-templates", fn: "createGroupTemplate", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "data", type: "GroupTemplateFormValues", optional: false, schemaRef: "GroupTemplateFormValues" }], dangerous: false, summary: "" },
   "group-templates.deleteGroupTemplate": { name: "group-templates.deleteGroupTemplate", module: "group-templates", fn: "deleteGroupTemplate", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "templateId", type: "string", optional: false }], dangerous: true, summary: "" },
   "group-templates.getGroupTemplates": { name: "group-templates.getGroupTemplates", module: "group-templates", fn: "getGroupTemplates", kind: "read", resource: "project", action: "read", scope: "project:read", params: [], dangerous: false, summary: "Group templates are SPLIT-STORE (Phase B write inversion):" },
   "group-templates.saveGroupAsTemplate": { name: "group-templates.saveGroupAsTemplate", module: "group-templates", fn: "saveGroupAsTemplate", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "groupId", type: "string", optional: false }, { name: "name", type: "string", optional: false }, { name: "description", type: "string", optional: true }], dangerous: false, summary: "" },
@@ -232,12 +241,12 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "kit-media.getKitMedia": { name: "kit-media.getKitMedia", module: "kit-media", fn: "getKitMedia", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [{ name: "kitId", type: "string", optional: false }], dangerous: false, summary: "" },
   "kit-media.removeKitMedia": { name: "kit-media.removeKitMedia", module: "kit-media", fn: "removeKitMedia", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "mediaId", type: "string", optional: false }], dangerous: true, summary: "" },
   "kit-media.setKitPrimaryPhoto": { name: "kit-media.setKitPrimaryPhoto", module: "kit-media", fn: "setKitPrimaryPhoto", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "mediaId", type: "string", optional: false }], dangerous: false, summary: "" },
-  "kits.addBulkItemToKit": { name: "kits.addBulkItemToKit", module: "kits", fn: "addBulkItemToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "data", type: "KitBulkItemFormValues", optional: false }], dangerous: false, summary: "" },
+  "kits.addBulkItemToKit": { name: "kits.addBulkItemToKit", module: "kits", fn: "addBulkItemToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "data", type: "KitBulkItemFormValues", optional: false, schemaRef: "KitBulkItemFormValues" }], dangerous: false, summary: "" },
   "kits.addSerializedItemsToKit": { name: "kits.addSerializedItemsToKit", module: "kits", fn: "addSerializedItemsToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "items", type: "Array<{ assetId: string; position?: string }>", optional: false }], dangerous: false, summary: "Batch add multiple serialized assets." },
-  "kits.addSerializedItemToKit": { name: "kits.addSerializedItemToKit", module: "kits", fn: "addSerializedItemToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "data", type: "KitSerializedItemFormValues", optional: false }], dangerous: false, summary: "" },
+  "kits.addSerializedItemToKit": { name: "kits.addSerializedItemToKit", module: "kits", fn: "addSerializedItemToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "data", type: "KitSerializedItemFormValues", optional: false, schemaRef: "KitSerializedItemFormValues" }], dangerous: false, summary: "" },
   "kits.archiveKit": { name: "kits.archiveKit", module: "kits", fn: "archiveKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "---------------------------------------------------------------------------" },
   "kits.canDeleteKit": { name: "kits.canDeleteKit", module: "kits", fn: "canDeleteKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "---------------------------------------------------------------------------" },
-  "kits.createKit": { name: "kits.createKit", module: "kits", fn: "createKit", kind: "write", resource: "kit", action: "create", scope: "kit:create", params: [{ name: "data", type: "KitFormValues", optional: false }], dangerous: false, summary: "" },
+  "kits.createKit": { name: "kits.createKit", module: "kits", fn: "createKit", kind: "write", resource: "kit", action: "create", scope: "kit:create", params: [{ name: "data", type: "KitFormValues", optional: false, schemaRef: "KitFormValues" }], dangerous: false, summary: "" },
   "kits.deleteKit": { name: "kits.deleteKit", module: "kits", fn: "deleteKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "---------------------------------------------------------------------------" },
   "kits.getAvailableAssetsForKit": { name: "kits.getAvailableAssetsForKit", module: "kits", fn: "getAvailableAssetsForKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [{ name: "modelId", type: "string", optional: true }], dangerous: false, summary: "Serialized assets not in any kit. Reads off the dual-written Convex `assets`" },
   "kits.getAvailableBulkAssetsForKit": { name: "kits.getAvailableBulkAssetsForKit", module: "kits", fn: "getAvailableBulkAssetsForKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [], dangerous: false, summary: "Bulk assets with available quantity. Reads off the dual-written Convex" },
@@ -245,34 +254,34 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "kits.getKitCounts": { name: "kits.getKitCounts", module: "kits", fn: "getKitCounts", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [], dangerous: false, summary: "Per-kit member-item counts + primary photo (kitId -> meta)." },
   "kits.removeBulkItemFromKit": { name: "kits.removeBulkItemFromKit", module: "kits", fn: "removeBulkItemFromKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "bulkItemId", type: "string", optional: false }], dangerous: true, summary: "" },
   "kits.removeSerializedItemFromKit": { name: "kits.removeSerializedItemFromKit", module: "kits", fn: "removeSerializedItemFromKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "assetId", type: "string", optional: false }], dangerous: true, summary: "" },
-  "kits.updateKit": { name: "kits.updateKit", module: "kits", fn: "updateKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "KitFormValues", optional: false }], dangerous: false, summary: "" },
+  "kits.updateKit": { name: "kits.updateKit", module: "kits", fn: "updateKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "KitFormValues", optional: false, schemaRef: "KitFormValues" }], dangerous: false, summary: "" },
   "kits.updateKitNotes": { name: "kits.updateKitNotes", module: "kits", fn: "updateKitNotes", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
-  "line-items.addCustomLineItem": { name: "line-items.addCustomLineItem", module: "line-items", fn: "addCustomLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "CustomLineItemFormValues", optional: false }], dangerous: false, summary: "" },
+  "line-items.addCustomLineItem": { name: "line-items.addCustomLineItem", module: "line-items", fn: "addCustomLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "CustomLineItemFormValues", optional: false, schemaRef: "CustomLineItemFormValues" }], dangerous: false, summary: "" },
   "line-items.addKitLineItem": { name: "line-items.addKitLineItem", module: "line-items", fn: "addKitLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "kitId", type: "string", optional: false }, { name: "pricingMode", type: "\"KIT_PRICE\" | \"ITEMIZED\"", optional: true }, { name: "unitPrice", type: "number", optional: true }, { name: "groupName", type: "string", optional: true }, { name: "categoryId", type: "string", optional: true }, { name: "groupId", type: "string", optional: true }, { name: "emitActivity", type: "unknown", optional: true }], dangerous: false, summary: "" },
-  "line-items.addLineItem": { name: "line-items.addLineItem", module: "line-items", fn: "addLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "LineItemFormValues", optional: false }, { name: "allowOverbook", type: "unknown", optional: true }, { name: "forceSeparate", type: "unknown", optional: true }, { name: "includeAccessories", type: "unknown", optional: true }], dangerous: false, summary: "" },
+  "line-items.addLineItem": { name: "line-items.addLineItem", module: "line-items", fn: "addLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "LineItemFormValues", optional: false, schemaRef: "LineItemFormValues" }, { name: "allowOverbook", type: "unknown", optional: true }, { name: "forceSeparate", type: "unknown", optional: true }, { name: "includeAccessories", type: "unknown", optional: true }], dangerous: false, summary: "" },
   "line-items.checkAvailability": { name: "line-items.checkAvailability", module: "line-items", fn: "checkAvailability", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "modelId", type: "string", optional: false }, { name: "rentalStartDate", type: "Date | string | null", optional: true }, { name: "rentalEndDate", type: "Date | string | null", optional: true }, { name: "excludeProjectId", type: "string", optional: true }], dangerous: false, summary: "" },
   "line-items.checkKitAvailability": { name: "line-items.checkKitAvailability", module: "line-items", fn: "checkKitAvailability", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "kitId", type: "string", optional: false }, { name: "rentalStartDate", type: "Date | string", optional: false }, { name: "rentalEndDate", type: "Date | string", optional: false }, { name: "excludeProjectId", type: "string", optional: true }], dangerous: false, summary: "" },
   "line-items.lookupAssetByTag": { name: "line-items.lookupAssetByTag", module: "line-items", fn: "lookupAssetByTag", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "assetTag", type: "string", optional: false }, { name: "rentalStartDate", type: "Date | string", optional: true }, { name: "rentalEndDate", type: "Date | string", optional: true }, { name: "excludeProjectId", type: "string", optional: true }], dangerous: false, summary: "" },
   "line-items.recalculateProjectTotals": { name: "line-items.recalculateProjectTotals", module: "line-items", fn: "recalculateProjectTotals", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "Recalculate all project financial totals from source data." },
   "line-items.removeLineItem": { name: "line-items.removeLineItem", module: "line-items", fn: "removeLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "line-items.reorderLineItems": { name: "line-items.reorderLineItems", module: "line-items", fn: "reorderLineItems", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "itemIds", type: "string[]", optional: false }, { name: "groupUpdates", type: "{ id: string; groupName: string | null }[]", optional: true }], dangerous: false, summary: "" },
-  "line-items.updateLineItem": { name: "line-items.updateLineItem", module: "line-items", fn: "updateLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "LineItemFormValues", optional: false }, { name: "allowOverbook", type: "unknown", optional: true }, { name: "baseUpdatedAt", type: "string | number | null", optional: true }], dangerous: false, summary: "" },
+  "line-items.updateLineItem": { name: "line-items.updateLineItem", module: "line-items", fn: "updateLineItem", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "LineItemFormValues", optional: false, schemaRef: "LineItemFormValues" }, { name: "allowOverbook", type: "unknown", optional: true }, { name: "baseUpdatedAt", type: "string | number | null", optional: true }], dangerous: false, summary: "" },
   "location-media.addLocationMedia": { name: "location-media.addLocationMedia", module: "location-media", fn: "addLocationMedia", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "data", type: "{ locationId: string; fileId: string; type?: MediaType; displayName?: string; }", optional: false }], dangerous: false, summary: "locationMedia + its file_upload are Convex-only (Phase C). See media-write.ts." },
   "location-media.removeLocationMedia": { name: "location-media.removeLocationMedia", module: "location-media", fn: "removeLocationMedia", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "mediaId", type: "string", optional: false }], dangerous: true, summary: "" },
-  "locations.createLocation": { name: "locations.createLocation", module: "locations", fn: "createLocation", kind: "write", resource: "location", action: "create", scope: "location:create", params: [{ name: "data", type: "LocationFormValues", optional: false }], dangerous: false, summary: "" },
+  "locations.createLocation": { name: "locations.createLocation", module: "locations", fn: "createLocation", kind: "write", resource: "location", action: "create", scope: "location:create", params: [{ name: "data", type: "LocationFormValues", optional: false, schemaRef: "LocationFormValues" }], dangerous: false, summary: "" },
   "locations.deleteLocation": { name: "locations.deleteLocation", module: "locations", fn: "deleteLocation", kind: "write", resource: "location", action: "delete", scope: "location:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "locations.getLocation": { name: "locations.getLocation", module: "locations", fn: "getLocation", kind: "read", resource: "location", action: "read", scope: "location:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Detail-page composite — READ FROM CONVEX (Phase B). The deep Prisma include" },
   "locations.getLocationCounts": { name: "locations.getLocationCounts", module: "locations", fn: "getLocationCounts", kind: "read", resource: "location", action: "read", scope: "location:read", params: [], dangerous: false, summary: "Asset + bulk-asset + kit counts per location (locationId -> counts)." },
   "locations.getLocations": { name: "locations.getLocations", module: "locations", fn: "getLocations", kind: "read", resource: "location", action: "read", scope: "location:read", params: [{ name: "params", type: "{ search?: string; type?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "Locations list — READ FROM CONVEX. Filter/sort/paginate + the parent name" },
-  "locations.updateLocation": { name: "locations.updateLocation", module: "locations", fn: "updateLocation", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "LocationFormValues", optional: false }], dangerous: false, summary: "" },
+  "locations.updateLocation": { name: "locations.updateLocation", module: "locations", fn: "updateLocation", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "LocationFormValues", optional: false, schemaRef: "LocationFormValues" }], dangerous: false, summary: "" },
   "locations.updateLocationNotes": { name: "locations.updateLocationNotes", module: "locations", fn: "updateLocationNotes", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
-  "maintenance.createMaintenanceRecord": { name: "maintenance.createMaintenanceRecord", module: "maintenance", fn: "createMaintenanceRecord", kind: "write", resource: "maintenance", action: "create", scope: "maintenance:create", params: [{ name: "data", type: "MaintenanceFormValues", optional: false }], dangerous: false, summary: "" },
+  "maintenance.createMaintenanceRecord": { name: "maintenance.createMaintenanceRecord", module: "maintenance", fn: "createMaintenanceRecord", kind: "write", resource: "maintenance", action: "create", scope: "maintenance:create", params: [{ name: "data", type: "MaintenanceFormValues", optional: false, schemaRef: "MaintenanceFormValues" }], dangerous: false, summary: "" },
   "maintenance.deleteMaintenanceRecord": { name: "maintenance.deleteMaintenanceRecord", module: "maintenance", fn: "deleteMaintenanceRecord", kind: "write", resource: "maintenance", action: "delete", scope: "maintenance:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "maintenance.getAssetsForMaintenanceSelect": { name: "maintenance.getAssetsForMaintenanceSelect", module: "maintenance", fn: "getAssetsForMaintenanceSelect", kind: "read", resource: "maintenance", action: "read", scope: "maintenance:read", params: [], dangerous: false, summary: "" },
   "maintenance.getMaintenanceRecord": { name: "maintenance.getMaintenanceRecord", module: "maintenance", fn: "getMaintenanceRecord", kind: "read", resource: "maintenance", action: "read", scope: "maintenance:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "maintenance.getMaintenanceRecords": { name: "maintenance.getMaintenanceRecords", module: "maintenance", fn: "getMaintenanceRecords", kind: "read", resource: "maintenance", action: "read", scope: "maintenance:read", params: [{ name: "params", type: "{ search?: string; status?: string; type?: string; assetId?: string; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "" },
-  "maintenance.updateMaintenanceRecord": { name: "maintenance.updateMaintenanceRecord", module: "maintenance", fn: "updateMaintenanceRecord", kind: "write", resource: "maintenance", action: "update", scope: "maintenance:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "MaintenanceFormValues", optional: false }], dangerous: false, summary: "" },
-  "model-accessories.addModelBulkAccessory": { name: "model-accessories.addModelBulkAccessory", module: "model-accessories", fn: "addModelBulkAccessory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "data", type: "ModelBulkAccessoryFormValues", optional: false }], dangerous: false, summary: "Model-level bulk accessories — \"every asset of this model ships with N of" },
+  "maintenance.updateMaintenanceRecord": { name: "maintenance.updateMaintenanceRecord", module: "maintenance", fn: "updateMaintenanceRecord", kind: "write", resource: "maintenance", action: "update", scope: "maintenance:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "MaintenanceFormValues", optional: false, schemaRef: "MaintenanceFormValues" }], dangerous: false, summary: "" },
+  "model-accessories.addModelBulkAccessory": { name: "model-accessories.addModelBulkAccessory", module: "model-accessories", fn: "addModelBulkAccessory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "data", type: "ModelBulkAccessoryFormValues", optional: false, schemaRef: "ModelBulkAccessoryFormValues" }], dangerous: false, summary: "Model-level bulk accessories — \"every asset of this model ships with N of" },
   "model-accessories.removeModelBulkAccessory": { name: "model-accessories.removeModelBulkAccessory", module: "model-accessories", fn: "removeModelBulkAccessory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "accessoryId", type: "string", optional: false }], dangerous: true, summary: "Detach a model-level bulk accessory. Past project expansions are" },
   "model-media.addModelMedia": { name: "model-media.addModelMedia", module: "model-media", fn: "addModelMedia", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "data", type: "{ modelId: string; fileId: string; type: MediaType; displayName?: string; }", optional: false }], dangerous: false, summary: "modelMedia + its file_upload are Convex-only (Phase C). See media-write.ts." },
   "model-media.getModelMedia": { name: "model-media.getModelMedia", module: "model-media", fn: "getModelMedia", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "modelId", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -281,13 +290,13 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "model-media.setModelPrimaryPhoto": { name: "model-media.setModelPrimaryPhoto", module: "model-media", fn: "setModelPrimaryPhoto", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "modelId", type: "string", optional: false }, { name: "mediaId", type: "string", optional: false }], dangerous: false, summary: "" },
   "models.archiveModel": { name: "models.archiveModel", module: "models", fn: "archiveModel", kind: "write", resource: "model", action: "delete", scope: "model:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "models.bulkUpdateRates": { name: "models.bulkUpdateRates", module: "models", fn: "bulkUpdateRates", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "modelIds", type: "string[]", optional: false }, { name: "rateType", type: "\"dailyRate\" | \"weeklyRate\" | \"monthlyRate\"", optional: false }, { name: "operation", type: "\"set\" | \"multiply\" | \"increase_percent\"", optional: false }, { name: "value", type: "number", optional: false }], dangerous: false, summary: "" },
-  "models.createModel": { name: "models.createModel", module: "models", fn: "createModel", kind: "write", resource: "model", action: "create", scope: "model:create", params: [{ name: "data", type: "ModelFormValues", optional: false }], dangerous: false, summary: "" },
+  "models.createModel": { name: "models.createModel", module: "models", fn: "createModel", kind: "write", resource: "model", action: "create", scope: "model:create", params: [{ name: "data", type: "ModelFormValues", optional: false, schemaRef: "ModelFormValues" }], dangerous: false, summary: "" },
   "models.getModel": { name: "models.getModel", module: "models", fn: "getModel", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Detail-page composite. Models are Convex-only (Phase B), so the deep Prisma" },
   "models.getModelCounts": { name: "models.getModelCounts", module: "models", fn: "getModelCounts", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Per-model asset/bulk-asset counts + primary photo (modelId -> meta)." },
   "models.getModels": { name: "models.getModels", module: "models", fn: "getModels", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "params", type: "{ search?: string; categoryId?: string; assetType?: \"SERIALIZED\" | \"BULK\"; isActive?: boolean; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; filters?: Record<string, FilterValue>; }", optional: true }], dangerous: false, summary: "Paginated model list — read from the reactive Convex `models` mirror." },
-  "models.updateModel": { name: "models.updateModel", module: "models", fn: "updateModel", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ModelFormValues", optional: false }], dangerous: false, summary: "" },
+  "models.updateModel": { name: "models.updateModel", module: "models", fn: "updateModel", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ModelFormValues", optional: false, schemaRef: "ModelFormValues" }], dangerous: false, summary: "" },
   "notification-preferences.getNotificationPreferences": { name: "notification-preferences.getNotificationPreferences", module: "notification-preferences", fn: "getNotificationPreferences", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "userNotificationPreference is CONVEX-ONLY (bucket-2 Phase B write inversion):" },
-  "notification-preferences.updateNotificationPreferences": { name: "notification-preferences.updateNotificationPreferences", module: "notification-preferences", fn: "updateNotificationPreferences", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "input", type: "NotificationPreferenceValues", optional: false }], dangerous: false, summary: "Upsert the current user's preferences. Returns the saved values." },
+  "notification-preferences.updateNotificationPreferences": { name: "notification-preferences.updateNotificationPreferences", module: "notification-preferences", fn: "updateNotificationPreferences", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "input", type: "NotificationPreferenceValues", optional: false, schemaRef: "NotificationPreferenceValues" }], dangerous: false, summary: "Upsert the current user's preferences. Returns the saved values." },
   "notifications.dismissNotification": { name: "notifications.dismissNotification", module: "notifications", fn: "dismissNotification", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "notificationKey", type: "string", optional: false }], dangerous: false, summary: "Persist a notification dismissal for the current user. Idempotent — calling" },
   "notifications.getDismissedKeys": { name: "notifications.getDismissedKeys", module: "notifications", fn: "getDismissedKeys", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "Return the set of notification keys (i.e. AppNotification.id values) the" },
   "notifications.getNotifications": { name: "notifications.getNotifications", module: "notifications", fn: "getNotifications", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
@@ -303,7 +312,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "org-members.removeOrgMember": { name: "org-members.removeOrgMember", module: "org-members", fn: "removeOrgMember", kind: "write", resource: "orgMembers", action: "remove", scope: "orgMembers:remove", params: [{ name: "memberId", type: "string", optional: false }], dangerous: true, summary: "" },
   "org-members.revokeInvitation": { name: "org-members.revokeInvitation", module: "org-members", fn: "revokeInvitation", kind: "write", resource: "orgMembers", action: "invite", scope: "orgMembers:invite", params: [{ name: "invitationId", type: "string", optional: false }], dangerous: true, summary: "" },
   "org-members.transferOwnership": { name: "org-members.transferOwnership", module: "org-members", fn: "transferOwnership", kind: "write", resource: "orgMembers", action: "update", scope: "orgMembers:update", params: [{ name: "newOwnerId", type: "string", optional: false }], dangerous: true, summary: "" },
-  "project-categories.createProjectCategory": { name: "project-categories.createProjectCategory", module: "project-categories", fn: "createProjectCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectCategoryFormValues", optional: false }], dangerous: false, summary: "── Writes ───────────────────────────────────────────────────────────────────" },
+  "project-categories.createProjectCategory": { name: "project-categories.createProjectCategory", module: "project-categories", fn: "createProjectCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectCategoryFormValues", optional: false, schemaRef: "ProjectCategoryFormValues" }], dangerous: false, summary: "── Writes ───────────────────────────────────────────────────────────────────" },
   "project-categories.deleteProjectCategory": { name: "project-categories.deleteProjectCategory", module: "project-categories", fn: "deleteProjectCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "categoryId", type: "string", optional: false }], dangerous: true, summary: "" },
   "project-categories.getProjectCategories": { name: "project-categories.getProjectCategories", module: "project-categories", fn: "getProjectCategories", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-categories.getProjectOverbookedStatus": { name: "project-categories.getProjectOverbookedStatus", module: "project-categories", fn: "getProjectOverbookedStatus", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "Returns a map of lineItemId → overbookedInfo for all line items in a project." },
@@ -314,7 +323,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "project-groups.acceptAllSuggestedPrices": { name: "project-groups.acceptAllSuggestedPrices", module: "project-groups", fn: "acceptAllSuggestedPrices", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "categoryId", type: "string", optional: true }], dangerous: false, summary: "" },
   "project-groups.acceptSuggestedPrice": { name: "project-groups.acceptSuggestedPrice", module: "project-groups", fn: "acceptSuggestedPrice", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "groupId", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-groups.calculateSuggestedPrice": { name: "project-groups.calculateSuggestedPrice", module: "project-groups", fn: "calculateSuggestedPrice", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "groupId", type: "string", optional: false }], dangerous: false, summary: "Calculate the suggested price for a group based on its line items' rates." },
-  "project-groups.createProjectGroup": { name: "project-groups.createProjectGroup", module: "project-groups", fn: "createProjectGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectGroupFormValues", optional: false }], dangerous: false, summary: "" },
+  "project-groups.createProjectGroup": { name: "project-groups.createProjectGroup", module: "project-groups", fn: "createProjectGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectGroupFormValues", optional: false, schemaRef: "ProjectGroupFormValues" }], dangerous: false, summary: "" },
   "project-groups.deleteProjectGroup": { name: "project-groups.deleteProjectGroup", module: "project-groups", fn: "deleteProjectGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "groupId", type: "string", optional: false }], dangerous: true, summary: "" },
   "project-groups.moveLineItemToGroup": { name: "project-groups.moveLineItemToGroup", module: "project-groups", fn: "moveLineItemToGroup", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "data", type: "{ lineItemId: string; targetGroupId: string | null; targetCategoryId: string | null }", optional: false }], dangerous: false, summary: "" },
   "project-groups.reorderProjectGroups": { name: "project-groups.reorderProjectGroups", module: "project-groups", fn: "reorderProjectGroups", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "categoryId", type: "string", optional: false }, { name: "orderedIds", type: "string[]", optional: false }], dangerous: false, summary: "" },
@@ -330,8 +339,8 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "project-services.bulkUpdateServiceStatus": { name: "project-services.bulkUpdateServiceStatus", module: "project-services", fn: "bulkUpdateServiceStatus", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "ids", type: "string[]", optional: false }, { name: "status", type: "\"PLANNED\" | \"CONFIRMED\" | \"IN_PROGRESS\" | \"COMPLETED\" | \"CANCELLED\"", optional: false }], dangerous: false, summary: "" },
   "project-services.cloneServicesFromProject": { name: "project-services.cloneServicesFromProject", module: "project-services", fn: "cloneServicesFromProject", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "targetProjectId", type: "string", optional: false }, { name: "sourceProjectId", type: "string", optional: false }], dangerous: false, summary: "─── Clone Services (Phase 9 — Expansion #2) ─────────────────────────────────" },
   "project-services.convertLineItemToService": { name: "project-services.convertLineItemToService", module: "project-services", fn: "convertLineItemToService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "lineItemId", type: "string", optional: false }], dangerous: false, summary: "─── Convert Line Item to Service (Phase 7) ──────────────────────────────────" },
-  "project-services.createProjectService": { name: "project-services.createProjectService", module: "project-services", fn: "createProjectService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectServiceFormValues", optional: false }], dangerous: false, summary: "" },
-  "project-services.createServiceTemplate": { name: "project-services.createServiceTemplate", module: "project-services", fn: "createServiceTemplate", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "ServiceTemplateFormValues", optional: false }], dangerous: false, summary: "" },
+  "project-services.createProjectService": { name: "project-services.createProjectService", module: "project-services", fn: "createProjectService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "data", type: "ProjectServiceFormValues", optional: false, schemaRef: "ProjectServiceFormValues" }], dangerous: false, summary: "" },
+  "project-services.createServiceTemplate": { name: "project-services.createServiceTemplate", module: "project-services", fn: "createServiceTemplate", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "ServiceTemplateFormValues", optional: false, schemaRef: "ServiceTemplateFormValues" }], dangerous: false, summary: "" },
   "project-services.deleteProjectService": { name: "project-services.deleteProjectService", module: "project-services", fn: "deleteProjectService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "project-services.deleteServiceTemplate": { name: "project-services.deleteServiceTemplate", module: "project-services", fn: "deleteServiceTemplate", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "project-services.generateCrewMessage": { name: "project-services.generateCrewMessage", module: "project-services", fn: "generateCrewMessage", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "crewMemberId", type: "string", optional: false }], dangerous: false, summary: "─── Crew Notification Message (Phase 10 — Expansion #3) ─────────────────────" },
@@ -340,12 +349,12 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "project-services.getProjectServiceById": { name: "project-services.getProjectServiceById", module: "project-services", fn: "getProjectServiceById", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-services.getProjectServices": { name: "project-services.getProjectServices", module: "project-services", fn: "getProjectServices", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "─── Service CRUD ─────────────────────────────────────────────────────────────" },
   "project-services.getProjectServicesSummary": { name: "project-services.getProjectServicesSummary", module: "project-services", fn: "getProjectServicesSummary", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "─── Services Financial Summary ───────────────────────────────────────────────" },
-  "project-services.getServiceCostHistory": { name: "project-services.getServiceCostHistory", module: "project-services", fn: "getServiceCostHistory", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "organizationId", type: "string", optional: false }, { name: "serviceType", type: "ServiceType", optional: false }, { name: "limit", type: "unknown", optional: true }], dangerous: false, summary: "─── Service Cost History (Phase 12 — Expansion #6) ──────────────────────────" },
+  "project-services.getServiceCostHistory": { name: "project-services.getServiceCostHistory", module: "project-services", fn: "getServiceCostHistory", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "organizationId", type: "string", optional: false }, { name: "serviceType", type: "ServiceType", optional: false, schemaRef: "ServiceType" }, { name: "limit", type: "unknown", optional: true }], dangerous: false, summary: "─── Service Cost History (Phase 12 — Expansion #6) ──────────────────────────" },
   "project-services.getServiceTemplates": { name: "project-services.getServiceTemplates", module: "project-services", fn: "getServiceTemplates", kind: "read", resource: "project", action: "read", scope: "project:read", params: [], dangerous: false, summary: "─── Service Templates ────────────────────────────────────────────────────────" },
-  "project-services.updateProjectService": { name: "project-services.updateProjectService", module: "project-services", fn: "updateProjectService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ProjectServiceFormValues", optional: false }], dangerous: false, summary: "" },
+  "project-services.updateProjectService": { name: "project-services.updateProjectService", module: "project-services", fn: "updateProjectService", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ProjectServiceFormValues", optional: false, schemaRef: "ProjectServiceFormValues" }], dangerous: false, summary: "" },
   "project-services.updateServiceCrewStatus": { name: "project-services.updateServiceCrewStatus", module: "project-services", fn: "updateServiceCrewStatus", kind: "write", resource: "crew", action: "update", scope: "crew:update", params: [{ name: "serviceId", type: "string", optional: false }, { name: "status", type: "\"OFFERED\" | \"CONFIRMED\" | \"CANCELLED\"", optional: false }], dangerous: false, summary: "" },
   "project-services.updateServiceStatus": { name: "project-services.updateServiceStatus", module: "project-services", fn: "updateServiceStatus", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "status", type: "\"PLANNED\" | \"CONFIRMED\" | \"IN_PROGRESS\" | \"COMPLETED\" | \"CANCELLED\"", optional: false }], dangerous: false, summary: "" },
-  "project-services.updateServiceTemplate": { name: "project-services.updateServiceTemplate", module: "project-services", fn: "updateServiceTemplate", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ServiceTemplateFormValues", optional: false }], dangerous: false, summary: "" },
+  "project-services.updateServiceTemplate": { name: "project-services.updateServiceTemplate", module: "project-services", fn: "updateServiceTemplate", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ServiceTemplateFormValues", optional: false, schemaRef: "ServiceTemplateFormValues" }], dangerous: false, summary: "" },
   "project-tasks.createProjectTask": { name: "project-tasks.createProjectTask", module: "project-tasks", fn: "createProjectTask", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "data", type: "{ projectId: string; title: string; description?: string | null; status?: ProjectTaskStatus; priority?: ProjectTaskPriority; dueDate?: string | null; assigneeUserId?: string | null; assigneeCrewId?: string | null; checklist?: ChecklistItem[] | null; }", optional: false }], dangerous: false, summary: "" },
   "project-tasks.deleteProjectTask": { name: "project-tasks.deleteProjectTask", module: "project-tasks", fn: "deleteProjectTask", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "project-tasks.getMyOpenTasks": { name: "project-tasks.getMyOpenTasks", module: "project-tasks", fn: "getMyOpenTasks", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "limit", type: "unknown", optional: true }], dangerous: false, summary: "" },
@@ -354,7 +363,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "project-tasks.reorderProjectTasks": { name: "project-tasks.reorderProjectTasks", module: "project-tasks", fn: "reorderProjectTasks", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "projectId", type: "string", optional: false }, { name: "orderedIds", type: "string[]", optional: false }], dangerous: false, summary: "Persist a new ordering for a project's tasks." },
   "project-tasks.updateProjectTask": { name: "project-tasks.updateProjectTask", module: "project-tasks", fn: "updateProjectTask", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "{ title?: string; description?: string | null; status?: ProjectTaskStatus; priority?: ProjectTaskPriority; dueDate?: string | null; assigneeUserId?: string | null; assigneeCrewId?: string | null; checklist?: ChecklistItem[] | null; }", optional: false }], dangerous: false, summary: "" },
   "projects.archiveProject": { name: "projects.archiveProject", module: "projects", fn: "archiveProject", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
-  "projects.createProject": { name: "projects.createProject", module: "projects", fn: "createProject", kind: "write", resource: "project", action: "create", scope: "project:create", params: [{ name: "data", type: "ProjectFormValues & { isTemplate?: boolean }", optional: false }], dangerous: false, summary: "" },
+  "projects.createProject": { name: "projects.createProject", module: "projects", fn: "createProject", kind: "write", resource: "project", action: "create", scope: "project:create", params: [{ name: "data", type: "ProjectFormValues & { isTemplate?: boolean }", optional: false, schemaRef: "ProjectFormValues & { isTemplate?: boolean }" }], dangerous: false, summary: "" },
   "projects.deleteProject": { name: "projects.deleteProject", module: "projects", fn: "deleteProject", kind: "write", resource: "project", action: "delete", scope: "project:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "projects.deleteTemplate": { name: "projects.deleteTemplate", module: "projects", fn: "deleteTemplate", kind: "write", resource: "project", action: "delete", scope: "project:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "projects.duplicateProject": { name: "projects.duplicateProject", module: "projects", fn: "duplicateProject", kind: "write", resource: "project", action: "create", scope: "project:create", params: [{ name: "sourceId", type: "string", optional: false }, { name: "newProjectNumber", type: "string", optional: false }, { name: "newName", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -365,7 +374,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "projects.getTemplates": { name: "projects.getTemplates", module: "projects", fn: "getTemplates", kind: "read", resource: "project", action: "read", scope: "project:read", params: [], dangerous: false, summary: "" },
   "projects.peekNextProjectNumber": { name: "projects.peekNextProjectNumber", module: "projects", fn: "peekNextProjectNumber", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "override", type: "{ format?: string; reset?: IncrementReset; padding?: number; }", optional: true }], dangerous: false, summary: "Preview the next auto project number WITHOUT incrementing the counter. Powers" },
   "projects.saveAsTemplate": { name: "projects.saveAsTemplate", module: "projects", fn: "saveAsTemplate", kind: "write", resource: "project", action: "create", scope: "project:create", params: [{ name: "projectId", type: "string", optional: false }, { name: "templateName", type: "string", optional: false }], dangerous: false, summary: "" },
-  "projects.updateProject": { name: "projects.updateProject", module: "projects", fn: "updateProject", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ProjectFormValues", optional: false }], dangerous: false, summary: "" },
+  "projects.updateProject": { name: "projects.updateProject", module: "projects", fn: "updateProject", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ProjectFormValues", optional: false, schemaRef: "ProjectFormValues" }], dangerous: false, summary: "" },
   "projects.updateProjectNotes": { name: "projects.updateProjectNotes", module: "projects", fn: "updateProjectNotes", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "field", type: "\"crewNotes\" | \"internalNotes\" | \"clientNotes\"", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
   "projects.updateProjectStatus": { name: "projects.updateProjectStatus", module: "projects", fn: "updateProjectStatus", kind: "write", resource: "project", action: "update", scope: "project:update", params: [{ name: "id", type: "string", optional: false }, { name: "status", type: "ProjectFormValues[\"status\"]", optional: false }], dangerous: false, summary: "" },
   "reservation-conflicts.getProjectConflicts": { name: "reservation-conflicts.getProjectConflicts", module: "reservation-conflicts", fn: "getProjectConflicts", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -424,11 +433,11 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "sub-hires.updateSubHireGroup": { name: "sub-hires.updateSubHireGroup", module: "sub-hires", fn: "updateSubHireGroup", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "groupId", type: "string", optional: false }, { name: "input", type: "unknown", optional: false }], dangerous: false, summary: "" },
   "sub-hires.updateSubHireItem": { name: "sub-hires.updateSubHireItem", module: "sub-hires", fn: "updateSubHireItem", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "itemId", type: "string", optional: false }, { name: "input", type: "unknown", optional: false }], dangerous: false, summary: "" },
   "sub-hires.updateSubHireOrderPricing": { name: "sub-hires.updateSubHireOrderPricing", module: "sub-hires", fn: "updateSubHireOrderPricing", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "subHireId", type: "string", optional: false }, { name: "input", type: "unknown", optional: false }], dangerous: false, summary: "" },
-  "sub-hires.updateSubHirePaymentStatus": { name: "sub-hires.updateSubHirePaymentStatus", module: "sub-hires", fn: "updateSubHirePaymentStatus", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "id", type: "string", optional: false }, { name: "paymentStatus", type: "SubHirePaymentStatus", optional: false }], dangerous: false, summary: "─── Payment Status ─────────────────────────────────────────────────────────" },
+  "sub-hires.updateSubHirePaymentStatus": { name: "sub-hires.updateSubHirePaymentStatus", module: "sub-hires", fn: "updateSubHirePaymentStatus", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "id", type: "string", optional: false }, { name: "paymentStatus", type: "SubHirePaymentStatus", optional: false, schemaRef: "SubHirePaymentStatus" }], dangerous: false, summary: "─── Payment Status ─────────────────────────────────────────────────────────" },
   "sub-hires.updateSubHirePlacement": { name: "sub-hires.updateSubHirePlacement", module: "sub-hires", fn: "updateSubHirePlacement", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "entityType", type: "\"order\" | \"group\" | \"item\"", optional: false }, { name: "entityId", type: "string", optional: false }, { name: "input", type: "unknown", optional: false }], dangerous: false, summary: "─── Placement ──────────────────────────────────────────────────────────────" },
-  "sub-hires.updateSubHireStatus": { name: "sub-hires.updateSubHireStatus", module: "sub-hires", fn: "updateSubHireStatus", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "id", type: "string", optional: false }, { name: "newStatus", type: "SubHireStatus", optional: false }], dangerous: false, summary: "" },
-  "supplier-orders.addOrderItem": { name: "supplier-orders.addOrderItem", module: "supplier-orders", fn: "addOrderItem", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "orderId", type: "string", optional: false }, { name: "data", type: "SupplierOrderItemFormValues", optional: false }], dangerous: false, summary: "" },
-  "supplier-orders.createSupplierOrder": { name: "supplier-orders.createSupplierOrder", module: "supplier-orders", fn: "createSupplierOrder", kind: "write", resource: "supplier", action: "create", scope: "supplier:create", params: [{ name: "data", type: "SupplierOrderFormValues", optional: false }], dangerous: false, summary: "" },
+  "sub-hires.updateSubHireStatus": { name: "sub-hires.updateSubHireStatus", module: "sub-hires", fn: "updateSubHireStatus", kind: "write", resource: "subHire", action: "update", scope: "subHire:update", params: [{ name: "id", type: "string", optional: false }, { name: "newStatus", type: "SubHireStatus", optional: false, schemaRef: "SubHireStatus" }], dangerous: false, summary: "" },
+  "supplier-orders.addOrderItem": { name: "supplier-orders.addOrderItem", module: "supplier-orders", fn: "addOrderItem", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "orderId", type: "string", optional: false }, { name: "data", type: "SupplierOrderItemFormValues", optional: false, schemaRef: "SupplierOrderItemFormValues" }], dangerous: false, summary: "" },
+  "supplier-orders.createSupplierOrder": { name: "supplier-orders.createSupplierOrder", module: "supplier-orders", fn: "createSupplierOrder", kind: "write", resource: "supplier", action: "create", scope: "supplier:create", params: [{ name: "data", type: "SupplierOrderFormValues", optional: false, schemaRef: "SupplierOrderFormValues" }], dangerous: false, summary: "" },
   "supplier-orders.deleteSupplierOrder": { name: "supplier-orders.deleteSupplierOrder", module: "supplier-orders", fn: "deleteSupplierOrder", kind: "write", resource: "supplier", action: "delete", scope: "supplier:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "supplier-orders.getSupplierOrderById": { name: "supplier-orders.getSupplierOrderById", module: "supplier-orders", fn: "getSupplierOrderById", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "supplier-orders.getSupplierOrders": { name: "supplier-orders.getSupplierOrders", module: "supplier-orders", fn: "getSupplierOrders", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "params", type: "{ supplierId?: string; type?: string; status?: string; search?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: false }], dangerous: false, summary: "" },
@@ -436,7 +445,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "supplier-orders.updateOrderItem": { name: "supplier-orders.updateOrderItem", module: "supplier-orders", fn: "updateOrderItem", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "itemId", type: "string", optional: false }, { name: "data", type: "Partial<SupplierOrderItemFormValues>", optional: false }], dangerous: false, summary: "" },
   "supplier-orders.updateSupplierOrder": { name: "supplier-orders.updateSupplierOrder", module: "supplier-orders", fn: "updateSupplierOrder", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "Partial<SupplierOrderFormValues>", optional: false }], dangerous: false, summary: "" },
   "supplier-orders.updateSupplierOrderStatus": { name: "supplier-orders.updateSupplierOrderStatus", module: "supplier-orders", fn: "updateSupplierOrderStatus", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "id", type: "string", optional: false }, { name: "status", type: "string", optional: false }], dangerous: false, summary: "" },
-  "suppliers.createSupplier": { name: "suppliers.createSupplier", module: "suppliers", fn: "createSupplier", kind: "write", resource: "supplier", action: "create", scope: "supplier:create", params: [{ name: "data", type: "SupplierFormValues", optional: false }], dangerous: false, summary: "" },
+  "suppliers.createSupplier": { name: "suppliers.createSupplier", module: "suppliers", fn: "createSupplier", kind: "write", resource: "supplier", action: "create", scope: "supplier:create", params: [{ name: "data", type: "SupplierFormValues", optional: false, schemaRef: "SupplierFormValues" }], dangerous: false, summary: "" },
   "suppliers.deleteSupplier": { name: "suppliers.deleteSupplier", module: "suppliers", fn: "deleteSupplier", kind: "write", resource: "supplier", action: "delete", scope: "supplier:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "suppliers.getSupplierAssets": { name: "suppliers.getSupplierAssets", module: "suppliers", fn: "getSupplierAssets", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "supplierId", type: "string", optional: false }, { name: "params", type: "{ page?: number; pageSize?: number; }", optional: false }], dangerous: false, summary: "" },
   "suppliers.getSupplierById": { name: "suppliers.getSupplierById", module: "suppliers", fn: "getSupplierById", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -444,7 +453,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "suppliers.getSuppliers": { name: "suppliers.getSuppliers", module: "suppliers", fn: "getSuppliers", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [], dangerous: false, summary: "" },
   "suppliers.getSuppliersPaginated": { name: "suppliers.getSuppliersPaginated", module: "suppliers", fn: "getSuppliersPaginated", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "params", type: "{ search?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: false }], dangerous: false, summary: "" },
   "suppliers.getSupplierSubhires": { name: "suppliers.getSupplierSubhires", module: "suppliers", fn: "getSupplierSubhires", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "supplierId", type: "string", optional: false }, { name: "params", type: "{ page?: number; pageSize?: number; }", optional: false }], dangerous: false, summary: "" },
-  "suppliers.updateSupplier": { name: "suppliers.updateSupplier", module: "suppliers", fn: "updateSupplier", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "SupplierFormValues", optional: false }], dangerous: false, summary: "" },
+  "suppliers.updateSupplier": { name: "suppliers.updateSupplier", module: "suppliers", fn: "updateSupplier", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "SupplierFormValues", optional: false, schemaRef: "SupplierFormValues" }], dangerous: false, summary: "" },
   "tags.getOrgTags": { name: "tags.getOrgTags", module: "tags", fn: "getOrgTags", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [], dangerous: false, summary: "Get all distinct tags used across the organization." },
   "test-tag-assets.backfillTestTagAssets": { name: "test-tag-assets.backfillTestTagAssets", module: "test-tag-assets", fn: "backfillTestTagAssets", kind: "write", resource: "testTag", action: "update", scope: "testTag:update", params: [], dangerous: false, summary: "Auto-register all serialized assets whose model requires T&T" },
   "test-tag-assets.createTestTagAsset": { name: "test-tag-assets.createTestTagAsset", module: "test-tag-assets", fn: "createTestTagAsset", kind: "write", resource: "testTag", action: "create", scope: "testTag:create", params: [{ name: "data", type: "{ testTagId?: string; description: string; equipmentClass?: string; applianceType?: string; make?: string; modelName?: string; serialNumber?: string; location?: string; testIntervalMonths?: number; testProfileId?: string; outletCount?: number; notes?: string; assetId?: string; bulkAssetId?: string; }", optional: false }], dangerous: false, summary: "" },
@@ -498,7 +507,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "test-tag-reports.getSessionReportData": { name: "test-tag-reports.getSessionReportData", module: "test-tag-reports", fn: "getSessionReportData", kind: "read", resource: "testTag", action: "read", scope: "testTag:read", params: [{ name: "filters", type: "ReportFilters", optional: false }], dangerous: false, summary: "─── 3. TEST SESSION ────────────────────────────────────────────────────────" },
   "test-tag-reports.getTesterActivityReportData": { name: "test-tag-reports.getTesterActivityReportData", module: "test-tag-reports", fn: "getTesterActivityReportData", kind: "read", resource: "testTag", action: "read", scope: "testTag:read", params: [{ name: "filters", type: "ReportFilters", optional: false }], dangerous: false, summary: "─── 7. TESTER ACTIVITY ─────────────────────────────────────────────────────" },
   "warehouse-close.batchCloseOut": { name: "warehouse-close.batchCloseOut", module: "warehouse-close", fn: "batchCloseOut", kind: "write", resource: "warehouse", action: "close", scope: "warehouse:close", params: [{ name: "projectIds", type: "string[]", optional: false }], dangerous: false, summary: "─── Batch Close Out ────────────────────────────────────────────────────────" },
-  "warehouse-close.closeOutProject": { name: "warehouse-close.closeOutProject", module: "warehouse-close", fn: "closeOutProject", kind: "write", resource: "warehouse", action: "close", scope: "warehouse:close", params: [{ name: "data", type: "WarehouseCloseFormValues", optional: false }], dangerous: false, summary: "─── Close Out Project ──────────────────────────────────────────────────────" },
+  "warehouse-close.closeOutProject": { name: "warehouse-close.closeOutProject", module: "warehouse-close", fn: "closeOutProject", kind: "write", resource: "warehouse", action: "close", scope: "warehouse:close", params: [{ name: "data", type: "WarehouseCloseFormValues", optional: false, schemaRef: "WarehouseCloseFormValues" }], dangerous: false, summary: "─── Close Out Project ──────────────────────────────────────────────────────" },
   "warehouse-close.getCloseOutSummary": { name: "warehouse-close.getCloseOutSummary", module: "warehouse-close", fn: "getCloseOutSummary", kind: "write", resource: "warehouse", action: "close", scope: "warehouse:close", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "─── Close-Out Summary ──────────────────────────────────────────────────────" },
   "warehouse-display.createDisplayToken": { name: "warehouse-display.createDisplayToken", module: "warehouse-display", fn: "createDisplayToken", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "{ name: string; locationId?: string | null; layout?: string; }", optional: false }], dangerous: false, summary: "" },
   "warehouse-display.getDisplayTokens": { name: "warehouse-display.getDisplayTokens", module: "warehouse-display", fn: "getDisplayTokens", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
@@ -537,7 +546,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "woocommerce.processWooCommerceOrder": { name: "woocommerce.processWooCommerceOrder", module: "woocommerce", fn: "processWooCommerceOrder", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "orgId", type: "string", optional: false }, { name: "order", type: "WooOrder", optional: false }, { name: "integration", type: "WooCommerceIntegrationConfig", optional: false }, { name: "existingLogId", type: "string", optional: true }], dangerous: false, summary: "" },
   "woocommerce.regenerateWebhookSecret": { name: "woocommerce.regenerateWebhookSecret", module: "woocommerce", fn: "regenerateWebhookSecret", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [], dangerous: false, summary: "" },
   "woocommerce.retryFailedOrder": { name: "woocommerce.retryFailedOrder", module: "woocommerce", fn: "retryFailedOrder", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "logId", type: "string", optional: false }], dangerous: false, summary: "" },
-  "woocommerce.updateWooCommerceIntegration": { name: "woocommerce.updateWooCommerceIntegration", module: "woocommerce", fn: "updateWooCommerceIntegration", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "WooCommerceIntegrationFormValues", optional: false }], dangerous: false, summary: "" },
+  "woocommerce.updateWooCommerceIntegration": { name: "woocommerce.updateWooCommerceIntegration", module: "woocommerce", fn: "updateWooCommerceIntegration", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "WooCommerceIntegrationFormValues", optional: false, schemaRef: "WooCommerceIntegrationFormValues" }], dangerous: false, summary: "" },
 };
 
 /** Lazy per-module loaders so a single operation call doesn't pull in all of src/server. */
@@ -612,6 +621,3648 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "warehouse-close": () => import("@/server/warehouse-close"),
   "warehouse-display": () => import("@/server/warehouse-display"),
   "woocommerce": () => import("@/server/woocommerce"),
+};
+
+export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
+  "AssetBulkChildFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "bulkAssetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "allocationMode": {
+        "default": "SHIPS_WITH",
+        "type": "string",
+        "enum": [
+          "SHIPS_WITH",
+          "DEDICATED"
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "bulkAssetId",
+      "quantity"
+    ]
+  },
+  "AssetFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "modelId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "assetTag": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "serialNumber": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "customName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "status": {
+        "default": "AVAILABLE",
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "CHECKED_OUT",
+          "IN_MAINTENANCE",
+          "RETIRED",
+          "LOST",
+          "RESERVED"
+        ]
+      },
+      "condition": {
+        "default": "NEW",
+        "type": "string",
+        "enum": [
+          "NEW",
+          "GOOD",
+          "FAIR",
+          "POOR",
+          "DAMAGED"
+        ]
+      },
+      "purchaseDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "purchasePrice": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "purchaseSupplier": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "supplierId": {
+        "type": "string"
+      },
+      "purchaseOrderNumber": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "warrantyExpiry": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "customFieldValues": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "barcode": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "images": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "modelId",
+      "assetTag"
+    ]
+  },
+  "AssetSerializedChildFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "childAssetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "childAssetId"
+    ]
+  },
+  "BulkAssetFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "modelId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "assetTag": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "totalQuantity": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "purchasePricePerUnit": {
+        "type": "number",
+        "minimum": 0
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "status": {
+        "default": "ACTIVE",
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "LOW_STOCK",
+          "OUT_OF_STOCK",
+          "RETIRED"
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "modelId",
+      "assetTag"
+    ]
+  },
+  "CategoryFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "parentId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "icon": {
+        "type": "string",
+        "maxLength": 10
+      },
+      "sortOrder": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "CheckItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "type": {
+        "default": "PASS_FAIL",
+        "type": "string",
+        "enum": [
+          "PASS_FAIL",
+          "NOTES",
+          "MEASUREMENT",
+          "DROPDOWN"
+        ]
+      },
+      "category": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "measurementUnit": {
+        "type": "string",
+        "maxLength": 20
+      },
+      "measurementMin": {
+        "type": "number"
+      },
+      "measurementMax": {
+        "type": "number"
+      },
+      "dropdownOptions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "isFail": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "label"
+          ]
+        }
+      }
+    },
+    "required": [
+      "label"
+    ]
+  },
+  "CheckRecordFormValues[]": {
+    "type": "array",
+    "items": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "checkItemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOTES_ONLY"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "photos": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "checkItemId",
+        "result"
+      ]
+    }
+  },
+  "ClientFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "type": {
+        "default": "COMPANY",
+        "type": "string",
+        "enum": [
+          "COMPANY",
+          "INDIVIDUAL",
+          "VENUE",
+          "PRODUCTION_COMPANY"
+        ]
+      },
+      "contactName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "contactEmail": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200,
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "contactPhone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "billingAddress": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "billingLatitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "billingLongitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "shippingLatitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "shippingLongitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "taxId": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "paymentTerms": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "defaultDiscount": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "CompleteCheckAndFlagValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "lineItemId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "assetId": {
+        "type": "string"
+      },
+      "bulkAssetId": {
+        "type": "string"
+      },
+      "checks": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "checkItemId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "PASS",
+                "FAIL",
+                "NOTES_ONLY"
+              ]
+            },
+            "value": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "photos": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "checkItemId",
+            "result"
+          ]
+        }
+      },
+      "flagType": {
+        "type": "string",
+        "enum": [
+          "FLAGGED_FAULTY",
+          "FLAGGED_TT_OVERDUE"
+        ]
+      }
+    },
+    "required": [
+      "projectId",
+      "lineItemId",
+      "checks",
+      "flagType"
+    ]
+  },
+  "CompleteCheckAndPackValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "lineItemId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "assetId": {
+        "type": "string"
+      },
+      "bulkAssetId": {
+        "type": "string"
+      },
+      "prepContainer": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "checks": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "checkItemId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "PASS",
+                "FAIL",
+                "NOTES_ONLY"
+              ]
+            },
+            "value": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "photos": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "checkItemId",
+            "result"
+          ]
+        }
+      },
+      "includeAccessoryIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "projectId",
+      "lineItemId",
+      "checks"
+    ]
+  },
+  "CompleteCheckAndStoreValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "lineItemId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "assetId": {
+        "type": "string"
+      },
+      "bulkAssetId": {
+        "type": "string"
+      },
+      "checks": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "checkItemId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "PASS",
+                "FAIL",
+                "NOTES_ONLY"
+              ]
+            },
+            "value": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "photos": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "checkItemId",
+            "result"
+          ]
+        }
+      },
+      "condition": {
+        "type": "string",
+        "enum": [
+          "GOOD",
+          "DAMAGED",
+          "MISSING"
+        ]
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "projectId",
+      "lineItemId",
+      "checks",
+      "condition"
+    ]
+  },
+  "CreateBrandTemplateValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "headerSettings": {
+        "type": "object",
+        "properties": {
+          "logoMode": {
+            "type": "string",
+            "enum": [
+              "logo",
+              "icon",
+              "none"
+            ]
+          },
+          "showOrgName": {
+            "type": "boolean"
+          },
+          "showOrgAddress": {
+            "type": "boolean"
+          },
+          "showOrgPhone": {
+            "type": "boolean"
+          },
+          "showOrgEmail": {
+            "type": "boolean"
+          },
+          "showOrgWebsite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "logoMode",
+          "showOrgName",
+          "showOrgAddress",
+          "showOrgPhone",
+          "showOrgEmail",
+          "showOrgWebsite"
+        ]
+      },
+      "footerSettings": {
+        "type": "object",
+        "properties": {
+          "showFooter": {
+            "type": "boolean"
+          },
+          "primaryText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "secondaryText": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "showFooter",
+          "primaryText",
+          "secondaryText"
+        ]
+      },
+      "accentColor": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      }
+    },
+    "required": [
+      "name",
+      "headerSettings",
+      "footerSettings"
+    ]
+  },
+  "CreateCategoryAndPlaceGroupInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "slot": {
+        "type": "object",
+        "properties": {
+          "projectGroupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subHireGroupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "required": [
+      "projectId",
+      "name",
+      "slot"
+    ]
+  },
+  "CrewAssignmentFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "crewMemberId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "crewRoleId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "status": {
+        "default": "PENDING",
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "OFFERED",
+          "ACCEPTED",
+          "DECLINED",
+          "CONFIRMED",
+          "CANCELLED",
+          "COMPLETED"
+        ]
+      },
+      "phase": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "BUMP_IN",
+              "EVENT",
+              "BUMP_OUT",
+              "DELIVERY",
+              "PICKUP",
+              "SETUP",
+              "REHEARSAL",
+              "FULL_DURATION"
+            ]
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "isProjectManager": {
+        "default": false,
+        "type": "boolean"
+      },
+      "startDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "startTime": {
+        "type": "string",
+        "maxLength": 5
+      },
+      "endDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "endTime": {
+        "type": "string",
+        "maxLength": 5
+      },
+      "rateOverride": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "rateType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "HOURLY",
+              "DAILY",
+              "FLAT"
+            ]
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "estimatedHours": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "internalNotes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "generateShifts": {
+        "default": false,
+        "type": "boolean"
+      },
+      "serviceId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      }
+    },
+    "required": [
+      "crewMemberId"
+    ]
+  },
+  "CrewAvailabilityFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "crewMemberId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "startDate": {},
+      "endDate": {},
+      "type": {
+        "default": "UNAVAILABLE",
+        "type": "string",
+        "enum": [
+          "UNAVAILABLE",
+          "TENTATIVE",
+          "PREFERRED"
+        ]
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "isAllDay": {
+        "default": true,
+        "type": "boolean"
+      },
+      "startTime": {
+        "type": "string",
+        "maxLength": 5
+      },
+      "endTime": {
+        "type": "string",
+        "maxLength": 5
+      }
+    },
+    "required": [
+      "crewMemberId",
+      "startDate",
+      "endDate"
+    ]
+  },
+  "CrewMemberFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "firstName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "lastName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "email": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200,
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "type": {
+        "default": "FREELANCER",
+        "type": "string",
+        "enum": [
+          "EMPLOYEE",
+          "FREELANCER",
+          "CONTRACTOR",
+          "VOLUNTEER"
+        ]
+      },
+      "status": {
+        "default": "ACTIVE",
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "ON_LEAVE",
+          "ARCHIVED"
+        ]
+      },
+      "department": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "crewRoleId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "defaultDayRate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "defaultHourlyRate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "overtimeMultiplier": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "currency": {
+        "type": "string",
+        "maxLength": 10
+      },
+      "address": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "addressLatitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "addressLongitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "emergencyContactName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "emergencyContactPhone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "dateOfBirth": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "abnOrGst": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "userId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "firstName",
+      "lastName"
+    ]
+  },
+  "CrewShiftFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "date": {},
+      "callTime": {
+        "type": "string",
+        "maxLength": 5
+      },
+      "endTime": {
+        "type": "string",
+        "maxLength": 5
+      },
+      "breakMinutes": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        ]
+      },
+      "location": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "status": {
+        "default": "SCHEDULED",
+        "type": "string",
+        "enum": [
+          "SCHEDULED",
+          "IN_PROGRESS",
+          "COMPLETED",
+          "CANCELLED",
+          "NO_SHOW"
+        ]
+      }
+    },
+    "required": [
+      "date"
+    ]
+  },
+  "CrewTimeEntryFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "assignmentId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "crewMemberId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 500
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "date": {},
+      "startTime": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 5
+      },
+      "endTime": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 5
+      },
+      "breakMinutes": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "crewMemberId",
+      "date",
+      "startTime",
+      "endTime"
+    ]
+  },
+  "CustomFieldDefinitionInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "entityType": {
+        "default": "ASSET",
+        "type": "string",
+        "enum": [
+          "ASSET",
+          "BULK_ASSET",
+          "KIT",
+          "PROJECT"
+        ]
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "fieldKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+      },
+      "fieldType": {
+        "default": "TEXT",
+        "type": "string",
+        "enum": [
+          "TEXT",
+          "NUMBER",
+          "DATE",
+          "SELECT",
+          "BOOLEAN"
+        ]
+      },
+      "options": {
+        "default": [],
+        "maxItems": 50,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": {
+        "default": false,
+        "type": "boolean"
+      },
+      "helpText": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "sortOrder": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "label",
+      "fieldKey"
+    ]
+  },
+  "CustomFieldDefinitionUpdateInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "fieldType": {
+        "type": "string",
+        "enum": [
+          "TEXT",
+          "NUMBER",
+          "DATE",
+          "SELECT",
+          "BOOLEAN"
+        ]
+      },
+      "options": {
+        "default": [],
+        "maxItems": 50,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": {
+        "default": false,
+        "type": "boolean"
+      },
+      "helpText": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "sortOrder": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "label",
+      "fieldType"
+    ]
+  },
+  "CustomFieldEntity": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": [
+      "ASSET",
+      "BULK_ASSET",
+      "KIT",
+      "PROJECT"
+    ]
+  },
+  "CustomLineItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "quantity": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 99999
+      },
+      "unitPrice": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 999999.99
+      },
+      "pricingType": {
+        "default": "FLAT",
+        "type": "string",
+        "enum": [
+          "PER_DAY",
+          "PER_WEEK",
+          "FLAT",
+          "PER_HOUR"
+        ]
+      },
+      "duration": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3650
+      },
+      "discount": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 999999.99
+      },
+      "categoryId": {
+        "type": "string"
+      },
+      "groupId": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "isOptional": {
+        "default": false,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "description"
+    ]
+  },
+  "GroupTemplateFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "items": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "modelId": {
+              "type": "string"
+            },
+            "kitId": {
+              "type": "string"
+            },
+            "quantity": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999
+            },
+            "sortOrder": {
+              "default": 0,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    },
+    "required": [
+      "name",
+      "items"
+    ]
+  },
+  "KitBulkItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "bulkAssetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "position": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "bulkAssetId",
+      "quantity"
+    ]
+  },
+  "KitFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "assetTag": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "categoryId": {
+        "type": "string"
+      },
+      "status": {
+        "default": "AVAILABLE",
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "CHECKED_OUT",
+          "IN_MAINTENANCE",
+          "RETIRED",
+          "INCOMPLETE"
+        ]
+      },
+      "condition": {
+        "default": "NEW",
+        "type": "string",
+        "enum": [
+          "NEW",
+          "GOOD",
+          "FAIR",
+          "POOR",
+          "DAMAGED"
+        ]
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "weight": {
+        "type": "number",
+        "minimum": 0
+      },
+      "caseType": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "caseDimensions": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "purchaseDate": {
+        "anyOf": [
+          {},
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "purchasePrice": {
+        "type": "number",
+        "minimum": 0
+      },
+      "image": {
+        "type": "string"
+      },
+      "images": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "checkMode": {
+        "default": "KIT_LEVEL",
+        "type": "string",
+        "enum": [
+          "KIT_LEVEL",
+          "PER_ITEM"
+        ]
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name",
+      "assetTag"
+    ]
+  },
+  "KitSerializedItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "assetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "position": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "assetId"
+    ]
+  },
+  "LineItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "type": {
+        "default": "EQUIPMENT",
+        "type": "string",
+        "enum": [
+          "EQUIPMENT",
+          "SERVICE",
+          "LABOUR",
+          "TRANSPORT",
+          "MISC"
+        ]
+      },
+      "modelId": {
+        "type": "string"
+      },
+      "assetId": {
+        "type": "string"
+      },
+      "bulkAssetId": {
+        "type": "string"
+      },
+      "categoryId": {
+        "type": "string"
+      },
+      "groupId": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "quantity": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 99999
+      },
+      "unitPrice": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 999999.99
+      },
+      "pricingType": {
+        "default": "PER_DAY",
+        "type": "string",
+        "enum": [
+          "PER_DAY",
+          "PER_WEEK",
+          "FLAT",
+          "PER_HOUR",
+          "OPTIMIZED"
+        ]
+      },
+      "duration": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3650
+      },
+      "discount": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 999999.99
+      },
+      "priceBreakdown": {
+        "type": "string"
+      },
+      "priceOverridden": {
+        "default": false,
+        "type": "boolean"
+      },
+      "overrideReason": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "groupName": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "isOptional": {
+        "default": false,
+        "type": "boolean"
+      },
+      "showSubhireOnDocs": {
+        "default": false,
+        "type": "boolean"
+      },
+      "supplierId": {
+        "type": "string"
+      },
+      "subhireOrderNumber": {
+        "type": "string",
+        "maxLength": 100
+      }
+    }
+  },
+  "LocationFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "address": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "latitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "longitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "type": {
+        "default": "WAREHOUSE",
+        "type": "string",
+        "enum": [
+          "WAREHOUSE",
+          "VENUE",
+          "VEHICLE",
+          "OFFSITE"
+        ]
+      },
+      "isDefault": {
+        "default": false,
+        "type": "boolean"
+      },
+      "parentId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "MaintenanceFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "assetId": {
+        "type": "string"
+      },
+      "assetIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "type": {
+        "default": "REPAIR",
+        "type": "string",
+        "enum": [
+          "REPAIR",
+          "PREVENTATIVE",
+          "TEST_AND_TAG",
+          "INSPECTION",
+          "CLEANING",
+          "FIRMWARE_UPDATE"
+        ]
+      },
+      "status": {
+        "default": "SCHEDULED",
+        "type": "string",
+        "enum": [
+          "SCHEDULED",
+          "AWAITING_PARTS",
+          "IN_PROGRESS",
+          "QA",
+          "COMPLETED",
+          "CANCELLED"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "reportedById": {
+        "type": "string"
+      },
+      "assignedToId": {
+        "type": "string"
+      },
+      "scheduledDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "completedDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "cost": {
+        "type": "number",
+        "minimum": 0
+      },
+      "partsUsed": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "photos": {
+        "default": [],
+        "maxItems": 20,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "result": {
+        "type": "string",
+        "enum": [
+          "PASS",
+          "FAIL",
+          "CONDITIONAL"
+        ]
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "nextDueDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      }
+    },
+    "required": [
+      "title"
+    ]
+  },
+  "ModelBulkAccessoryFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "bulkAssetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "required": [
+      "bulkAssetId",
+      "quantity"
+    ]
+  },
+  "ModelFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "manufacturer": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "modelNumber": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "sku": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "categoryId": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "image": {
+        "type": "string"
+      },
+      "images": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "manuals": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "specifications": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "customFields": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "defaultRentalPrice": {
+        "type": "number",
+        "minimum": 0
+      },
+      "dailyRate": {
+        "type": "number",
+        "minimum": 0
+      },
+      "weeklyRate": {
+        "type": "number",
+        "minimum": 0
+      },
+      "monthlyRate": {
+        "type": "number",
+        "minimum": 0
+      },
+      "defaultPurchasePrice": {
+        "type": "number",
+        "minimum": 0
+      },
+      "replacementCost": {
+        "type": "number",
+        "minimum": 0
+      },
+      "weight": {
+        "type": "number",
+        "minimum": 0
+      },
+      "powerDraw": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "requiresTestAndTag": {
+        "default": false,
+        "type": "boolean"
+      },
+      "testAndTagIntervalDays": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        ]
+      },
+      "defaultTestProfileId": {
+        "type": "string"
+      },
+      "defaultEquipmentClass": {
+        "type": "string",
+        "enum": [
+          "CLASS_I",
+          "CLASS_II",
+          "CLASS_II_DOUBLE_INSULATED",
+          "LEAD_CORD_ASSEMBLY"
+        ]
+      },
+      "defaultApplianceType": {
+        "type": "string",
+        "enum": [
+          "APPLIANCE",
+          "CORD_SET",
+          "EXTENSION_LEAD",
+          "POWER_BOARD",
+          "RCD_PORTABLE",
+          "RCD_FIXED",
+          "THREE_PHASE",
+          "MICROWAVE",
+          "OTHER"
+        ]
+      },
+      "maintenanceIntervalDays": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "assetType": {
+        "default": "SERIALIZED",
+        "type": "string",
+        "enum": [
+          "SERIALIZED",
+          "BULK"
+        ]
+      },
+      "barcodeLabelTemplate": {
+        "type": "string"
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "MoveProjectGroupToCategoryInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "groupId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "categoryId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "groupId",
+      "categoryId"
+    ]
+  },
+  "MoveSubHireGroupToCategoryInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "groupId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "categoryId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "groupId",
+      "categoryId"
+    ]
+  },
+  "NotificationPreferenceValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "overdueMaintenance": {
+        "type": "boolean"
+      },
+      "overdueReturn": {
+        "type": "boolean"
+      },
+      "upcomingProject": {
+        "type": "boolean"
+      },
+      "pendingInvitation": {
+        "type": "boolean"
+      },
+      "pendingOffers": {
+        "type": "boolean"
+      },
+      "pendingTimesheets": {
+        "type": "boolean"
+      },
+      "flaggedAsset": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "overdueMaintenance",
+      "overdueReturn",
+      "upcomingProject",
+      "pendingInvitation",
+      "pendingOffers",
+      "pendingTimesheets",
+      "flaggedAsset"
+    ]
+  },
+  "ProjectCategoryFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "sortOrder": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "ProjectFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectNumber": {
+        "default": "",
+        "type": "string",
+        "maxLength": 50
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "clientId": {
+        "type": "string"
+      },
+      "status": {
+        "default": "ENQUIRY",
+        "type": "string",
+        "enum": [
+          "ENQUIRY",
+          "QUOTING",
+          "QUOTED",
+          "CONFIRMED",
+          "PREPPING",
+          "CHECKED_OUT",
+          "ON_SITE",
+          "RETURNED",
+          "COMPLETED",
+          "INVOICED",
+          "CANCELLED"
+        ]
+      },
+      "type": {
+        "default": "OTHER",
+        "type": "string",
+        "enum": [
+          "DRY_HIRE",
+          "WET_HIRE",
+          "INSTALLATION",
+          "TOUR",
+          "CORPORATE",
+          "THEATRE",
+          "FESTIVAL",
+          "CONFERENCE",
+          "OTHER"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "siteContactName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "siteContactPhone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "siteContactEmail": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200,
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "loadInDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "loadInTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "eventStartDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "eventStartTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "eventEndDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "eventEndTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "loadOutDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "loadOutTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "rentalStartDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "rentalEndDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "defaultRentalPeriod": {
+        "type": "string",
+        "enum": [
+          "DAILY",
+          "WEEKLY"
+        ]
+      },
+      "defaultRentalQuantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "taxRate": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "crewNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "internalNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "clientNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "discountPercent": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "depositPercent": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "depositPaid": {
+        "type": "number",
+        "minimum": 0
+      },
+      "invoicedTotal": {
+        "type": "number",
+        "minimum": 0
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "ProjectFormValues & { isTemplate?: boolean }": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectNumber": {
+        "default": "",
+        "type": "string",
+        "maxLength": 50
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "clientId": {
+        "type": "string"
+      },
+      "status": {
+        "default": "ENQUIRY",
+        "type": "string",
+        "enum": [
+          "ENQUIRY",
+          "QUOTING",
+          "QUOTED",
+          "CONFIRMED",
+          "PREPPING",
+          "CHECKED_OUT",
+          "ON_SITE",
+          "RETURNED",
+          "COMPLETED",
+          "INVOICED",
+          "CANCELLED"
+        ]
+      },
+      "type": {
+        "default": "OTHER",
+        "type": "string",
+        "enum": [
+          "DRY_HIRE",
+          "WET_HIRE",
+          "INSTALLATION",
+          "TOUR",
+          "CORPORATE",
+          "THEATRE",
+          "FESTIVAL",
+          "CONFERENCE",
+          "OTHER"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "locationId": {
+        "type": "string"
+      },
+      "siteContactName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "siteContactPhone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "siteContactEmail": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200,
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "loadInDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "loadInTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "eventStartDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "eventStartTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "eventEndDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "eventEndTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "loadOutDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "loadOutTime": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "rentalStartDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "rentalEndDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "defaultRentalPeriod": {
+        "type": "string",
+        "enum": [
+          "DAILY",
+          "WEEKLY"
+        ]
+      },
+      "defaultRentalQuantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "taxRate": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "crewNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "internalNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "clientNotes": {
+        "type": "string",
+        "maxLength": 5000
+      },
+      "discountPercent": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "depositPercent": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "depositPaid": {
+        "type": "number",
+        "minimum": 0
+      },
+      "invoicedTotal": {
+        "type": "number",
+        "minimum": 0
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "ProjectGroupFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "categoryId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "quantity": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "price": {
+        "type": "number",
+        "minimum": 0
+      },
+      "rentalPeriod": {
+        "type": "string",
+        "enum": [
+          "DAILY",
+          "WEEKLY"
+        ]
+      },
+      "rentalQuantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "sortOrder": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "categoryId",
+      "title"
+    ]
+  },
+  "ProjectServiceFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": [
+          "DELIVERY",
+          "PICKUP",
+          "BUMP_IN",
+          "BUMP_OUT",
+          "LABOUR",
+          "MISC"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "date": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "endDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "startTime": {
+        "type": "string"
+      },
+      "endTime": {
+        "type": "string"
+      },
+      "scheduledTime": {
+        "type": "string"
+      },
+      "estimatedDuration": {
+        "type": "number"
+      },
+      "address": {
+        "type": "string"
+      },
+      "latitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "longitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "showOnDocuments": {
+        "default": false,
+        "type": "boolean"
+      },
+      "unitPrice": {
+        "type": "number"
+      },
+      "quantity": {
+        "default": 1,
+        "type": "number",
+        "minimum": 1
+      },
+      "pricingType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "PER_DAY",
+              "PER_HOUR",
+              "FLAT"
+            ]
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "duration": {
+        "type": "number"
+      },
+      "discount": {
+        "type": "number"
+      },
+      "taxable": {
+        "default": true,
+        "type": "boolean"
+      },
+      "costTotal": {
+        "type": "number",
+        "minimum": 0
+      },
+      "vehicleDescription": {
+        "type": "string"
+      },
+      "numberOfTrips": {
+        "type": "number"
+      },
+      "crewCountRequired": {
+        "type": "number"
+      },
+      "crewRoleId": {
+        "type": "string"
+      },
+      "crewMemberIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "type",
+      "title"
+    ]
+  },
+  "ReorderMixedGroupsInCategoryInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "categoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "orderedIds": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 4
+        }
+      }
+    },
+    "required": [
+      "categoryId",
+      "orderedIds"
+    ]
+  },
+  "ReorderModelCheckItemsValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "modelId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "orderedCheckItemIds": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "required": [
+      "modelId",
+      "orderedCheckItemIds"
+    ]
+  },
+  "ServiceTemplateFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": [
+          "DELIVERY",
+          "PICKUP",
+          "BUMP_IN",
+          "BUMP_OUT",
+          "LABOUR",
+          "MISC"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": {
+        "type": "string"
+      },
+      "defaultCrewCount": {
+        "type": "number"
+      },
+      "defaultVehicle": {
+        "type": "string"
+      },
+      "defaultPricingType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "PER_DAY",
+              "PER_HOUR",
+              "FLAT"
+            ]
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "defaultUnitPrice": {
+        "type": "number"
+      },
+      "showOnDocuments": {
+        "default": false,
+        "type": "boolean"
+      },
+      "isAutoAdded": {
+        "default": false,
+        "type": "boolean"
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "type",
+      "title"
+    ]
+  },
+  "ServiceType": {
+    "type": "string",
+    "enum": [
+      "DELIVERY",
+      "PICKUP",
+      "BUMP_IN",
+      "BUMP_OUT",
+      "LABOUR",
+      "MISC"
+    ]
+  },
+  "SubHirePaymentStatus": {
+    "type": "string",
+    "enum": [
+      "UNPAID",
+      "PARTIALLY_PAID",
+      "PAID"
+    ]
+  },
+  "SubHireStatus": {
+    "type": "string",
+    "enum": [
+      "DRAFT",
+      "CONFIRMED",
+      "ON_HIRE",
+      "RETURNED",
+      "CANCELLED"
+    ]
+  },
+  "SubmitChecksFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "lineItemId": {
+        "type": "string"
+      },
+      "assetId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "bulkAssetId": {
+        "type": "string"
+      },
+      "context": {
+        "type": "string",
+        "enum": [
+          "PREP",
+          "RETURN",
+          "AD_HOC"
+        ]
+      },
+      "checks": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "checkItemId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "PASS",
+                "FAIL",
+                "NOTES_ONLY"
+              ]
+            },
+            "value": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "photos": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "checkItemId",
+            "result"
+          ]
+        }
+      }
+    },
+    "required": [
+      "assetId",
+      "context",
+      "checks"
+    ]
+  },
+  "SupplierFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "contactName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "email": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200,
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "website": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "address": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "latitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "longitude": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "accountNumber": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "paymentTerms": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "defaultLeadTime": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "tags": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "isActive": {
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "SupplierOrderFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supplierId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "orderNumber": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "PURCHASE",
+          "SUBHIRE",
+          "REPAIR",
+          "LABOUR",
+          "OTHER"
+        ]
+      },
+      "status": {
+        "default": "DRAFT",
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "ORDERED",
+          "PARTIAL",
+          "RECEIVED",
+          "CANCELLED"
+        ]
+      },
+      "orderDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "expectedDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "receivedDate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {}
+        ]
+      },
+      "projectId": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "supplierId",
+      "orderNumber",
+      "type"
+    ]
+  },
+  "SupplierOrderItemFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "quantity": {
+        "default": 1,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "unitPrice": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": ""
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      },
+      "modelId": {
+        "type": "string"
+      },
+      "assetId": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 1000
+      }
+    },
+    "required": [
+      "description"
+    ]
+  },
+  "UpdateBrandTemplateValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "headerSettings": {
+        "type": "object",
+        "properties": {
+          "logoMode": {
+            "type": "string",
+            "enum": [
+              "logo",
+              "icon",
+              "none"
+            ]
+          },
+          "showOrgName": {
+            "type": "boolean"
+          },
+          "showOrgAddress": {
+            "type": "boolean"
+          },
+          "showOrgPhone": {
+            "type": "boolean"
+          },
+          "showOrgEmail": {
+            "type": "boolean"
+          },
+          "showOrgWebsite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "logoMode",
+          "showOrgName",
+          "showOrgAddress",
+          "showOrgPhone",
+          "showOrgEmail",
+          "showOrgWebsite"
+        ]
+      },
+      "footerSettings": {
+        "type": "object",
+        "properties": {
+          "showFooter": {
+            "type": "boolean"
+          },
+          "primaryText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "secondaryText": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "showFooter",
+          "primaryText",
+          "secondaryText"
+        ]
+      },
+      "accentColor": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      }
+    },
+    "required": [
+      "id"
+    ]
+  },
+  "WarehouseCloseFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "projectId"
+    ]
+  },
+  "WooCommerceIntegrationFormValues": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "isEnabled": {
+        "default": false,
+        "type": "boolean"
+      },
+      "storeUrl": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uri"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "productMatchField": {
+        "default": "sku",
+        "type": "string",
+        "enum": [
+          "sku",
+          "custom_field",
+          "name"
+        ]
+      },
+      "customFieldKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "rentalStartKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "rentalEndKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "eventStartKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "deliveryAddressKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "notesKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "locationMetaKey": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "defaultLocationId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "const": ""
+          }
+        ]
+      },
+      "dateFormat": {
+        "default": "auto",
+        "type": "string",
+        "enum": [
+          "auto",
+          "DD/MM/YYYY",
+          "MM/DD/YYYY",
+          "ISO"
+        ]
+      },
+      "defaultProjectType": {
+        "default": "DRY_HIRE",
+        "type": "string",
+        "enum": [
+          "DRY_HIRE",
+          "WET_HIRE",
+          "INSTALLATION",
+          "TOUR",
+          "CORPORATE",
+          "THEATRE",
+          "FESTIVAL",
+          "CONFERENCE",
+          "OTHER"
+        ]
+      },
+      "autoConfirmEnquiry": {
+        "default": false,
+        "type": "boolean"
+      },
+      "notifyUserIds": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
 };
 
 export const OPERATION_COUNT = 508;

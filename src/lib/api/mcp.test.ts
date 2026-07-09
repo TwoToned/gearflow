@@ -69,6 +69,39 @@ describe("handleMcpMessage — protocol", () => {
     expect(reserve.description).toMatch(/project:manage_line_items/);
   });
 
+  it("advertises tools.listChanged so a stale tool list is detectable", async () => {
+    const res = await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "initialize" }, null);
+    expect((res!.result as { capabilities: { tools: { listChanged?: boolean } } }).capabilities.tools)
+      .toEqual({ listChanged: true });
+  });
+
+  it("gives curated write tools the REAL generated schema, not a prose placeholder", () => {
+    // Hand-written descriptions drift the moment the Zod validator changes. An agent
+    // must see the exact fields, enums and required-ness the action enforces.
+    const createClient = CURATED_TOOLS.find((t) => t.name === "create_client")!;
+    const client = createClient.inputSchema.properties.client as {
+      type: string;
+      required: string[];
+      properties: Record<string, { enum?: string[] }>;
+      description?: string;
+      $schema?: string;
+    };
+    expect(client.type).toBe("object");
+    expect(client.required).toEqual(["name"]);
+    expect(Object.keys(client.properties)).toContain("contactEmail");
+    expect(client.properties.type.enum).toContain("PRODUCTION_COMPANY");
+    // The human description survives the splice.
+    expect(client.description).toBeTruthy();
+    // Subschemas are not standalone documents.
+    expect(client.$schema).toBeUndefined();
+  });
+
+  it("leaves inline-typed params alone (their fields are already in the type text)", () => {
+    const listProjects = CURATED_TOOLS.find((t) => t.name === "list_projects")!;
+    const filters = listProjects.inputSchema.properties.filters as { properties?: unknown };
+    expect(filters.properties).toBeUndefined();
+  });
+
   it("keeps the tool list small enough for an agent to reason over", () => {
     // The whole point of the curated + dynamic-dispatch split. If this trips,
     // move the new tool behind call_operation rather than raising the bound.

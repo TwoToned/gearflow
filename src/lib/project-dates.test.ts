@@ -1,0 +1,98 @@
+import { describe, it, expect } from "vitest";
+import { resolvePrimaryDateRange } from "./project-dates";
+
+const iso = (s: string) => new Date(s).toISOString();
+
+describe("resolvePrimaryDateRange", () => {
+  it("prefers the event window — what a human means by 'when is this job'", () => {
+    expect(
+      resolvePrimaryDateRange({
+        eventStartDate: "2026-08-01T09:00:00Z",
+        eventEndDate: "2026-08-03T22:00:00Z",
+        rentalStartDate: "2026-07-30T00:00:00Z",
+        rentalEndDate: "2026-08-05T00:00:00Z",
+        loadInDate: "2026-07-31T06:00:00Z",
+      }),
+    ).toEqual({
+      start: iso("2026-08-01T09:00:00Z"),
+      end: iso("2026-08-03T22:00:00Z"),
+      source: "event",
+    });
+  });
+
+  it("falls back to the rental window when there is no event date", () => {
+    expect(
+      resolvePrimaryDateRange({
+        rentalStartDate: "2026-07-30T00:00:00Z",
+        rentalEndDate: "2026-08-05T00:00:00Z",
+        loadInDate: "2026-07-31T06:00:00Z",
+      }),
+    ).toEqual({
+      start: iso("2026-07-30T00:00:00Z"),
+      end: iso("2026-08-05T00:00:00Z"),
+      source: "rental",
+    });
+  });
+
+  it("falls back to load-in/out last", () => {
+    const r = resolvePrimaryDateRange({
+      loadInDate: "2026-07-31T06:00:00Z",
+      loadOutDate: "2026-08-06T06:00:00Z",
+    });
+    expect(r.source).toBe("load");
+    expect(r.start).toBe(iso("2026-07-31T06:00:00Z"));
+  });
+
+  it("reports source 'none' for an undated project instead of guessing", () => {
+    expect(resolvePrimaryDateRange({})).toEqual({ start: null, end: null, source: "none" });
+    expect(resolvePrimaryDateRange({ eventStartDate: null, rentalStartDate: undefined })).toEqual({
+      start: null,
+      end: null,
+      source: "none",
+    });
+  });
+
+  it("never straddles two meanings: the end comes from the same pair as the start", () => {
+    // Event start but no event end, with a rental end present. The rental end must
+    // NOT be spliced onto the event start — that range would mean nothing.
+    const r = resolvePrimaryDateRange({
+      eventStartDate: "2026-08-01T09:00:00Z",
+      rentalEndDate: "2026-08-05T00:00:00Z",
+    });
+    expect(r.source).toBe("event");
+    expect(r.end).toBe(iso("2026-08-01T09:00:00Z")); // single-day, not the rental end
+  });
+
+  it("treats a single-day job as end === start, not a null end", () => {
+    const r = resolvePrimaryDateRange({ eventStartDate: "2026-08-01T09:00:00Z" });
+    expect(r.start).toBe(r.end);
+  });
+
+  it("skips a pair whose start is missing even if its end is set", () => {
+    const r = resolvePrimaryDateRange({
+      eventEndDate: "2026-08-03T00:00:00Z",
+      rentalStartDate: "2026-07-30T00:00:00Z",
+      rentalEndDate: "2026-08-05T00:00:00Z",
+    });
+    expect(r.source).toBe("rental");
+  });
+
+  it("accepts Date objects, epoch millis, and ISO strings alike", () => {
+    const target = iso("2026-08-01T09:00:00Z");
+    const asDate = resolvePrimaryDateRange({ eventStartDate: new Date("2026-08-01T09:00:00Z") });
+    const asEpoch = resolvePrimaryDateRange({
+      eventStartDate: new Date("2026-08-01T09:00:00Z").getTime(),
+    });
+    const asString = resolvePrimaryDateRange({ eventStartDate: "2026-08-01T09:00:00Z" });
+    expect([asDate.start, asEpoch.start, asString.start]).toEqual([target, target, target]);
+  });
+
+  it("ignores an unparseable date rather than emitting Invalid Date", () => {
+    const r = resolvePrimaryDateRange({
+      eventStartDate: "not a date",
+      rentalStartDate: "2026-07-30T00:00:00Z",
+    });
+    expect(r.source).toBe("rental");
+    expect(r.start).toBe(iso("2026-07-30T00:00:00Z"));
+  });
+});

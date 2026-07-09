@@ -24,6 +24,7 @@ export function GET() {
         describe_operation: "GET /api/v1/operations/{name}",
         invoke_operation: "POST /api/v1/ops/{name}",
         reserve_items: "POST /api/v1/reserve-items",
+        openapi: "GET /api/v1/openapi.json",
       },
       coverage:
         "Every read and write the web app can perform is exposed as an operation. Start at GET /api/v1/operations to discover what your key can call.",

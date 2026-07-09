@@ -57,6 +57,39 @@ an `idempotencyKey` for:
 Everything else commits directly. `CONFIRMATION_REQUIRED` (428) points stock-affecting
 callers at `reserve_items`, which offers a true preview.
 
+### Generated parameter schemas (the discoverability fix)
+
+`scripts/generate-api-registry.ts` resolves each named parameter type back to the Zod
+schema that declares it (`export type ClientFormValues = z.input<typeof clientSchema>` in
+`src/lib/validations/*.ts`), then converts it with Zod 4's native `z.toJSONSchema` into
+JSON Schema draft 2020-12. Prisma enums fall back to `{ type: "string", enum: [...] }`.
+
+Result: **52 of 57 named types resolved**; the 5 misses are plain TS interfaces with no
+Zod behind them (`ActivityLogFilters`, `ReportFilters`, `WooOrder`, …) and the generator
+prints them rather than hiding them. Emitted as `PARAM_SCHEMAS`, keyed by type text.
+
+Three consumers, one source, so they cannot drift:
+- `describe_operation` returns `schema` per parameter.
+- Curated MCP tools splice the real schema into their `inputSchema`
+  (`enrichWithGeneratedSchemas`), replacing hand-written prose placeholders.
+- `GET /api/v1/openapi.json` builds every `requestBody` from it.
+
+Why it mattered: 93 of 508 operations took a parameter typed as a bare name like
+`ClientFormValues`. An agent saw a type name and nothing else, so it could not construct
+the object — it could only guess. Reads were discoverable; **writes mostly were not**.
+
+### Project dates
+
+`src/lib/project-dates.ts` resolves the six nullable date fields into one
+`primaryDateRange = { start, end, source }`, attached to `getProjects` and `getProject`.
+Precedence is by start date: `event` → `rental` → `load`, with the end taken from the
+**same** pair so a range never straddles two meanings. `source: "none"` for undated
+projects; single-day jobs report `end === start`.
+
+This is the human answer. Availability and overbooking still run on
+`rentalStartDate`/`rentalEndDate` (`overbooking-core.ts:104`) — documented loudly in
+`llms.txt`, because conflating the two would silently corrupt inventory reasoning.
+
 ### Idempotency semantics
 
 The `ApiIdempotency` ledger is keyed `(apiKeyId, key)`. Three properties, each learned
@@ -166,6 +199,33 @@ index) returns the docs URL + endpoints; every error envelope carries `documenta
 
 `src/server/api-keys.ts`: `createApiKey` (returns the raw secret ONCE; acting user must be
 a member), `revokeApiKey`, `setOrgApiKillSwitch`, `listApiKeys` — org-settings-guarded + audited.
+
+## OpenAPI
+
+`GET /api/v1/openapi.json` (unauthenticated) serves an OpenAPI **3.1** document built from
+`ALL_OPERATIONS`, cached per process. 3.1 specifically, because its schema objects are
+JSON Schema 2020-12 — the same dialect `PARAM_SCHEMAS` and MCP `inputSchema` already speak,
+so one generator feeds all three. Under 3.0 you would be converting between near-miss
+dialects forever.
+
+Carries `x-required-scope`, `x-kind` and `x-dangerous` per operation, and marks
+`confirm` + `idempotencyKey` as required on guarded writes. Shared responses are `$ref`-ed
+into `components/responses` — inlining them across 540 paths made the document 1.5 MB;
+it is now ~740 KB, and a test enforces the ceiling.
+
+**Not the agent path.** It describes every operation and is large. Agents use
+`GET /api/v1/operations` (scope-filtered, paginated) + `describe_operation`. OpenAPI exists
+for humans, SDK generation, and request-validation tooling. Swagger UI is deliberately not
+served — the primary consumer is an agent, and agents read `llms.txt` and tool schemas.
+
+## MCP staleness
+
+`initialize` advertises `capabilities.tools.listChanged: true`. MCP clients fetch
+`tools/list` once and cache it, and this transport is request/response, so the server
+cannot push an update — a client that connected before a deploy keeps serving the old list
+until it reconnects. That is exactly how a real agent ended up seeing only the two tools
+that predated the coverage work. The capability makes the staleness detectable; reconnecting
+is the fix, and `llms.txt` says so.
 
 ## Excluded from the API
 

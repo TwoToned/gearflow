@@ -237,7 +237,13 @@ export async function handleMcpMessage(
         id,
         result: {
           protocolVersion: MCP_PROTOCOL_VERSION,
-          capabilities: { tools: {} },
+          // `listChanged` tells a client the tool list is not immutable. We cannot
+          // PUSH the notification over plain request/response HTTP, so a client that
+          // caches the list from a previous connection will keep serving a stale one
+          // until it reconnects — which is exactly how an agent ended up seeing only
+          // the two tools that existed before a deploy. Advertising the capability at
+          // least makes the staleness detectable.
+          capabilities: { tools: { listChanged: true } },
           serverInfo: MCP_SERVER_INFO,
         },
       };

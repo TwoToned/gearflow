@@ -43,6 +43,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ModelChecksTab } from "@/components/assets/model-checks-tab";
+import { ModelRoiTab } from "@/components/assets/model-roi-tab";
 import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
 import { ModelAccessoriesManager } from "@/components/assets/model-accessories-manager";
 
@@ -236,7 +237,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <DetailLayout>
           {/* Main content (left) */}
           <DetailMain>
-            <Tabs defaultValue="details">
+            {/* `?tab=roi` deep-links from the Fleet ROI table. */}
+            <Tabs defaultValue={searchParams.get("tab") ?? "details"}>
               <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="w-max sm:w-auto">
                   <TabsTrigger value="details">Details</TabsTrigger>
@@ -246,6 +248,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <TabsTrigger value="photos">Photos ({photos.length})</TabsTrigger>
                   <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
                   <TabsTrigger value="checks">Checks</TabsTrigger>
+                  <TabsTrigger value="roi">ROI</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -542,6 +545,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <ModelChecksTab modelId={id} />
                   <ModelFailureAnalytics modelId={id} />
                 </div>
+              </TabsContent>
+
+              <TabsContent value="roi" className="mt-4">
+                <ModelRoiTab modelId={id} />
               </TabsContent>
             </Tabs>
           </DetailMain>

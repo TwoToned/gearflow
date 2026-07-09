@@ -1,0 +1,179 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Info } from "lucide-react";
+
+import { Stat } from "@/components/ui/stat";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { getModelRoi } from "@/server/roi";
+import { formatCurrency, formatDate } from "@/lib/formatters";
+import {
+  formatPayback,
+  defaultRoiWindow,
+  ROI_SCOPE_LABELS,
+  type RoiScope,
+} from "@/lib/roi";
+import { PaybackBar } from "@/components/roi/payback-bar";
+
+/**
+ * What this model has earned, against what it cost to own.
+ *
+ * Revenue comes from the allocation snapshot — every line item's share of the kit
+ * or bundle price it was part of — so gear that only ever ships inside a kit still
+ * reports earnings. See docs/revenue-allocation-design.md.
+ */
+
+type ModelRoi = Awaited<ReturnType<typeof getModelRoi>>;
+
+export function ModelRoiTab({ modelId }: { modelId: string }) {
+  const [scope, setScope] = useState<RoiScope>("earned");
+  const [allTime, setAllTime] = useState(false);
+
+  const window = useMemo(() => (allTime ? undefined : defaultRoiWindow()), [allTime]);
+
+  const { data, isLoading } = useServerQuery({
+    queryKey: ["model-roi", modelId, scope, allTime],
+    queryFn: () =>
+      getModelRoi(modelId, { scope, from: window?.from, to: window?.to }) as Promise<ModelRoi>,
+  });
+
+  if (isLoading || !data) return <Skeleton className="h-72 w-full" />;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={scope} onValueChange={(v) => setScope(v as RoiScope)}>
+          <SelectTrigger className="h-8 w-56">
+            <SelectValue>{ROI_SCOPE_LABELS[scope]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(ROI_SCOPE_LABELS) as RoiScope[]).map((s) => (
+              <SelectItem key={s} value={s}>
+                {ROI_SCOPE_LABELS[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={allTime ? "all" : "12m"} onValueChange={(v) => setAllTime(v === "all")}>
+          <SelectTrigger className="h-8 w-44">
+            <SelectValue>{allTime ? "All time" : "Last 12 months"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="12m">Last 12 months</SelectItem>
+            <SelectItem value="all">All time</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label="How revenue is attributed" className="text-faint hover:text-muted">
+              <Info className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            Revenue is this model&rsquo;s share of every job it went out on — including
+            its slice of any kit or bundle price. Sub-hired units are excluded: that
+            wasn&rsquo;t your capital.
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+          <Stat bright figure={formatCurrency(data.revenue)} label="Revenue attributed" />
+        </div>
+        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+          <Stat
+            figure={data.fleetCost != null ? formatCurrency(data.fleetCost) : "—"}
+            label={`Fleet cost (${data.unitsOwned} unit${data.unitsOwned === 1 ? "" : "s"})`}
+          />
+        </div>
+        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+          <Stat figure={formatPayback(data.payback)} label="Paid for itself" />
+        </div>
+        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+          <Stat
+            figure={data.revenuePerUnit != null ? formatCurrency(data.revenuePerUnit) : "—"}
+            label="Revenue per unit"
+          />
+        </div>
+      </div>
+
+      {data.fleetCost == null ? (
+        <p className="text-caption text-muted">
+          {data.unitsOwned === 0
+            ? "No units of this model are in the fleet, so there is no capital to measure against."
+            : "Set a replacement cost on this model to see how far it is from paying for itself."}
+        </p>
+      ) : (
+        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="text-card-title text-ink">Cost recovered</p>
+            <p className="text-caption tabular-nums text-muted">
+              {data.stillToRecover! > 0
+                ? `${formatCurrency(data.stillToRecover!)} to break even`
+                : "Fully recovered"}
+            </p>
+          </div>
+          <PaybackBar payback={data.payback} />
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-card-title text-ink mb-3">
+          Where it earned ({data.projects.length} project
+          {data.projects.length === 1 ? "" : "s"})
+        </h4>
+        {data.projects.length === 0 ? (
+          <EmptyState
+            title="No revenue in this window"
+            description="Widen the date range, or include booked work that hasn't been invoiced yet."
+          />
+        ) : (
+          <div className="overflow-hidden rounded-md border border-line">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-line bg-paper-2">
+                  <th className="px-3 py-2 text-left text-caption text-muted">Project</th>
+                  <th className="px-3 py-2 text-left text-caption text-muted">Status</th>
+                  <th className="px-3 py-2 text-left text-caption text-muted">Rental start</th>
+                  <th className="px-3 py-2 text-right text-caption text-muted">Attributed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.projects.map((p) => (
+                  <tr key={p.projectId} className="border-b border-line last:border-0">
+                    <td className="px-3 py-2 text-table-cell">
+                      <Link href={`/projects/${p.projectId}`} className="text-link hover:underline">
+                        {p.projectNumber} — {p.name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-table-cell text-muted">{p.status}</td>
+                    <td className="px-3 py-2 text-table-cell text-muted">
+                      {p.date ? formatDate(new Date(p.date)) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-table-cell tabular-nums text-ink">
+                      {formatCurrency(p.revenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -353,6 +353,15 @@ describe("groups — Approach B", () => {
     expect(total).toBe(10_001);
   });
 
+  test("the pool rounds the product, not the price", () => {
+    // recalcProjectTotals bills `price × quantity` and rounds the sum. Rounding the
+    // price to cents first would allocate $0.02 against a $0.01 charge.
+    const r = run([L("a", { groupId: "g1", modelId: "m1", lineTotal: 1 })], {
+      groups: [{ id: "g1", price: 0.005, quantity: 2 }],
+    });
+    expect(rev(r, "a")).toBe(0.01);
+  });
+
   test("an unpriced group allocates nothing to its members", () => {
     const r = run([L("a", { groupId: "g1", modelId: "m1", lineTotal: 50 })], {
       groups: [{ id: "g1", price: null, quantity: 1 }],
@@ -615,5 +624,41 @@ describe("stability", () => {
     expect(r.has("orphan")).toBe(true);
     // Treated as a root rather than silently dropped.
     expect(rev(r, "orphan")).toBe(10);
+  });
+
+  test("a parent cycle doesn't strand the pool, hang, or blow the stack", () => {
+    // No line in a cycle is a root, so nothing would traverse it and the kit's $100
+    // would silently vanish from every model inside it.
+    const r = run(
+      [
+        L("a", { parentLineItemId: "b", kitId: "k1", lineTotal: 100, sortOrder: 1 }),
+        L("b", { parentLineItemId: "a", modelId: "m1", sortOrder: 2 }),
+      ],
+      { models: models(M("m1", { dailyRate: 5 })) },
+    );
+    expect(sumOf(r, ["b"])).toBe(100);
+  });
+
+  test("a self-parenting line still gets allocated", () => {
+    const r = run([L("a", { parentLineItemId: "a", modelId: "m1", lineTotal: 42 })]);
+    expect(rev(r, "a")).toBe(42);
+  });
+
+  test("a three-line cycle terminates and allocates the whole pool", () => {
+    const r = run(
+      [
+        L("a", { parentLineItemId: "c", modelId: "m1", lineTotal: 90, sortOrder: 1 }),
+        L("b", { parentLineItemId: "a", modelId: "m2", sortOrder: 2 }),
+        L("c", { parentLineItemId: "b", modelId: "m3", sortOrder: 3 }),
+      ],
+      {
+        models: models(
+          M("m1", { dailyRate: 1 }),
+          M("m2", { dailyRate: 1 }),
+          M("m3", { dailyRate: 1 }),
+        ),
+      },
+    );
+    expect(sumOf(r, ["a", "b", "c"])).toBe(90);
   });
 });

@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
-import { mutation } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { mutation, query } from "./_generated/server";
+import { requireOrgPermission, requireService } from "./lib/auth";
 import { applyProjectAllocation } from "./lib/allocation";
 
 /**
@@ -48,5 +48,28 @@ export const recomputeForProject = mutation({
     });
 
     return { ok: true as const, lines: lines.length };
+  },
+});
+
+/**
+ * Page through an org's project ids, for the backfill script.
+ *
+ * Paginated rather than collected: a large org's project table can exceed a single
+ * query's read limit, and a backfill that silently stops at 16k projects would
+ * leave a slice of the fleet reporting $0 forever. SERVICE-only — not a runtime read.
+ */
+export const listProjectIdsPage = query({
+  args: { orgId: v.string(), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { orgId, cursor }) => {
+    await requireService(ctx);
+    const res = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .paginate({ cursor, numItems: 200 });
+    return {
+      ids: res.page.filter((p) => !p.isTemplate).map((p) => p.id),
+      isDone: res.isDone,
+      continueCursor: res.continueCursor,
+    };
   },
 });

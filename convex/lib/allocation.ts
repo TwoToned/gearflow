@@ -336,6 +336,36 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
 
   const roots = lines.filter((l) => !l.parentLineItemId || !byId.has(l.parentLineItemId));
 
+  /**
+   * A parentLineItemId cycle has no root, so nothing would ever traverse it and its
+   * pool would silently vanish — a priced kit trapped in one would report $0 for
+   * every model inside it. The FK makes a cycle all but impossible; losing money
+   * quietly if one ever appears is not acceptable anyway.
+   *
+   * Promote the lowest member of each unreachable component to a root and cut its
+   * parent edge, so the component becomes a tree, gets allocated, and terminates.
+   */
+  const reachable = new Set<string>();
+  const walk = (l: AllocLine) => {
+    if (reachable.has(l.id)) return;
+    reachable.add(l.id);
+    for (const c of childrenOf.get(l.id) ?? []) walk(c);
+  };
+  for (const r of roots) walk(r);
+
+  if (reachable.size < lines.length) {
+    const stranded = lines
+      .filter((l) => !reachable.has(l.id))
+      .sort((a, b) => sortKey(a) - sortKey(b) || a.id.localeCompare(b.id));
+    for (const l of stranded) {
+      if (reachable.has(l.id)) continue;
+      const siblings = childrenOf.get(l.parentLineItemId!) ?? [];
+      childrenOf.set(l.parentLineItemId!, siblings.filter((s) => s.id !== l.id));
+      roots.push(l);
+      walk(l);
+    }
+  }
+
   // Grouped roots: the pool is the BUNDLE price, not the sum of the members'
   // lineTotals — recalcProjectTotals bills `group.price × group.quantity`, so a
   // grouped member's own lineTotal never reaches project revenue.
@@ -343,7 +373,10 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     const members = roots.filter(
       (l) => l.groupId === g.id && !isInactive(l) && !isNonGear(l),
     );
-    const poolCents = Math.max(0, toCents(g.price) * Math.max(0, g.quantity ?? 0));
+    // Round the PRODUCT, not the price: recalcProjectTotals bills `price × quantity`
+    // and rounds the sum, so rounding the price first would allocate a pool the
+    // project never charged for.
+    const poolCents = Math.max(0, Math.round((g.price ?? 0) * Math.max(0, g.quantity ?? 0) * 100));
 
     if (members.length === 0) continue;
     if (members.length === 1) {

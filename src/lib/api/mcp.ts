@@ -7,9 +7,9 @@ import {
   invokeOperation,
   listOperations,
   describeOperation,
+  TOTAL_OPERATIONS,
   type InvokeResult,
 } from "./dispatch";
-import { OPERATION_COUNT } from "./generated/operations";
 
 /**
  * MCP (Model Context Protocol) server over Streamable HTTP (JSON-RPC 2.0).
@@ -74,21 +74,22 @@ const META_TOOLS = [
   {
     name: "list_operations",
     description:
-      `Discover operations beyond the named tools. GearFlow exposes ${OPERATION_COUNT} operations — everything the web app can do — and the named tools cover only the common ones. Results are filtered to what YOUR key is scoped for. Read-only. Each result says whether it is 'dangerous' and whether it 'requiresConfirmation'. Then call describe_operation for the exact arguments, and call_operation to run it.`,
+      `Discover operations beyond the named tools. GearFlow exposes ${TOTAL_OPERATIONS} operations — everything the web app can do — and the named tools cover only the common ones. Results are filtered to what YOUR key is scoped for. Read-only. Each result says whether it is 'dangerous' and whether it 'requiresConfirmation'. Then call describe_operation for the exact arguments, and call_operation to run it.`,
     inputSchema: {
       type: "object",
       properties: {
         search: { type: "string", description: "Match against operation name and summary, e.g. 'maintenance' or 'invoice'." },
         kind: { type: "string", enum: ["read", "write"], description: "Only reads, or only writes." },
         module: { type: "string", description: "Restrict to one module, e.g. 'projects' or 'warehouse'." },
-        limit: { type: "integer", description: "Max results (default 100)." },
+        limit: { type: "integer", description: "Max results per page (default 100)." },
+        offset: { type: "integer", description: "Skip this many results. Page with limit+offset; the response reports total, offset and hasMore." },
       },
     },
   },
   {
     name: "describe_operation",
     description:
-      "Get the exact call signature of one operation: its parameters (name, type, required), the scope it needs, and whether it requires confirm=true. Read-only. Always call this before call_operation — argument names are validated strictly and a typo is rejected, not ignored.",
+      "Get the exact call signature of one operation: its parameters, each with real JSON Schema, the scope it needs, and whether it requires confirm=true. Read-only. Accepts either an operation name (assets.getAssets) or the MCP tool name that runs it (search_assets). Always call this before call_operation — argument names are validated strictly and a typo is rejected, not ignored.",
     inputSchema: {
       type: "object",
       properties: {
@@ -100,7 +101,7 @@ const META_TOOLS = [
   {
     name: "call_operation",
     description:
-      "Run any operation by name — the escape hatch that makes every app read and write reachable. Pass arguments keyed by parameter name exactly as describe_operation reports them. Irreversible operations (delete/remove/archive) and stock-affecting ones (check-out, check-in, adding line items) refuse to run unless you pass confirm=true AND an idempotencyKey; you will get CONFIRMATION_REQUIRED or IDEMPOTENCY_KEY_REQUIRED telling you which is missing. Everything else commits directly. The operation runs as your key's acting user under the same permissions and business rules as the web UI.",
+      "Run any operation by name — the escape hatch that makes every app read and write reachable. Accepts an operation name or an MCP tool name as an alias. Pass arguments keyed by parameter name exactly as describe_operation reports them. Irreversible operations (delete/remove/archive) and stock-affecting ones (check-out, check-in, adding line items) refuse to run unless you pass confirm=true AND an idempotencyKey; you will get CONFIRMATION_REQUIRED or IDEMPOTENCY_KEY_REQUIRED telling you which is missing. Everything else commits directly. The operation runs as your key's acting user under the same permissions and business rules as the web UI.",
     inputSchema: {
       type: "object",
       properties: {
@@ -180,6 +181,7 @@ async function callTool(
         kind: args.kind as "read" | "write" | undefined,
         module: args.module as string | undefined,
         limit: typeof args.limit === "number" ? args.limit : undefined,
+        offset: typeof args.offset === "number" ? args.offset : undefined,
       });
 
     case "describe_operation":

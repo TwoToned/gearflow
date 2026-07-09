@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiRequest, toErrorEnvelope, API_DOCS_URL } from "@/lib/api/http";
+import { listOperations } from "@/lib/api/dispatch";
 
 // The API layer runs guarded server actions inside an AsyncLocalStorage actor
 // (node:async_hooks), so this route must not be edge-rendered.
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest) {
         actorType: actor.actorType,
         apiKeyId: actor.apiKeyId ?? null,
         scopes: actor.scopes ?? [],
+        // Same field MCP's whoami returns, so an agent on either transport can see
+        // how much of the surface its key reaches without a second call.
+        operationsAvailable: listOperations(actor, { limit: 0 }).total,
         documentation_url: API_DOCS_URL,
       },
       {

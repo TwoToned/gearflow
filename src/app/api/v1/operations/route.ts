@@ -12,7 +12,7 @@ const V1 = { "X-GearFlow-API-Version": "v1", "Cache-Control": "no-store" };
 /**
  * GET /api/v1/operations — discover every operation this key can call.
  *
- * Query: ?search=&kind=read|write&module=&limit=&includeUnauthorized=true
+ * Query: ?search=&kind=read|write&module=&limit=&offset=&includeUnauthorized=true
  * By default the list is filtered to the key's scopes, so it reflects real
  * capability rather than the full catalogue. Each entry says whether it is
  * `dangerous` and whether it `requiresConfirmation`.
@@ -24,12 +24,13 @@ export async function GET(request: NextRequest) {
     const kind = q.get("kind");
 
     // `?limit=abc` would become NaN and silently return an empty catalogue.
-    const rawLimit = q.get("limit");
-    const parsedLimit = rawLimit === null ? undefined : Number(rawLimit);
-    const limit =
-      parsedLimit !== undefined && Number.isInteger(parsedLimit) && parsedLimit >= 0
-        ? parsedLimit
-        : undefined;
+    const nonNegativeInt = (raw: string | null): number | undefined => {
+      if (raw === null) return undefined;
+      const n = Number(raw);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    };
+    const limit = nonNegativeInt(q.get("limit"));
+    const offset = nonNegativeInt(q.get("offset"));
 
     const result = listOperations(actor, {
       search: q.get("search") ?? undefined,
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
       module: q.get("module") ?? undefined,
       includeUnauthorized: q.get("includeUnauthorized") === "true",
       limit,
+      offset,
     });
 
     return NextResponse.json(result, { headers: V1 });

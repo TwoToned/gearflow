@@ -1,5 +1,6 @@
 import { OPERATIONS, PARAM_SCHEMAS } from "./generated/operations";
 import { CONVEX_READS } from "./convex-reads";
+import { TOOL_ALIASES } from "./tool-aliases";
 
 /** Server actions plus the bridged Convex-only reads. Mirrors dispatch.ALL_OPERATIONS. */
 const CATALOGUE = { ...OPERATIONS, ...CONVEX_READS };
@@ -323,6 +324,27 @@ export const CURATED_TOOLS: CuratedTool[] = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
 ];
+
+/**
+ * The alias map lives in `tool-aliases.ts` (no imports, so `dispatch.ts` can use it
+ * without a cycle). Assert here that it exactly mirrors the curated tools, so the
+ * two can never drift.
+ */
+for (const tool of CURATED_TOOLS) {
+  if (TOOL_ALIASES[tool.name] !== tool.operation) {
+    throw new Error(
+      `Curated MCP tool '${tool.name}' runs '${tool.operation}', but TOOL_ALIASES says ` +
+        `'${TOOL_ALIASES[tool.name] ?? "(missing)"}'. Update src/lib/api/tool-aliases.ts.`,
+    );
+  }
+}
+for (const [toolName, operation] of Object.entries(TOOL_ALIASES)) {
+  if (!CURATED_TOOLS.some((t) => t.name === toolName)) {
+    throw new Error(
+      `TOOL_ALIASES maps '${toolName}' -> '${operation}', but no curated MCP tool by that name exists.`,
+    );
+  }
+}
 
 /** Fail fast at import if a curated tool points at an operation that no longer exists. */
 for (const tool of CURATED_TOOLS) {

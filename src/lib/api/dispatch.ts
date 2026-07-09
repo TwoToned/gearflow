@@ -15,6 +15,7 @@ import {
   type JsonSchema,
 } from "./generated/operations";
 import { CONVEX_READS, INJECTED_ARGS, type ConvexReadMeta } from "./convex-reads";
+import { TOOL_ALIASES, TOOL_BY_OPERATION } from "./tool-aliases";
 
 /**
  * The one chokepoint for invoking any of the app's server actions over the API or
@@ -106,11 +107,17 @@ function isConvexRead(meta: OperationMeta): meta is ConvexReadMeta {
   return "ref" in meta;
 }
 
+/** The number of operations reachable through the API (server actions + Convex reads). */
+export const TOTAL_OPERATIONS = Object.keys(ALL_OPERATIONS).length;
+
 export function getOperation(name: string): OperationMeta {
-  const meta = ALL_OPERATIONS[name];
+  // Accept an MCP tool name as an alias, so an agent moving between MCP and REST
+  // doesn't have to rediscover that `search_assets` is really `assets.getAssets`.
+  const resolved = ALL_OPERATIONS[name] ? name : TOOL_ALIASES[name];
+  const meta = resolved ? ALL_OPERATIONS[resolved] : undefined;
   if (!meta) {
     throw new ApiError("NOT_FOUND", `Unknown operation: '${name}'.`, {
-      details: { hint: "Call 'list_operations' (MCP) or GET /api/v1/operations to discover valid names." },
+      details: { hint: "Call 'list_operations' (MCP) or GET /api/v1/operations to discover valid names. MCP tool names (e.g. 'search_assets') work here too." },
     });
   }
   return meta;
@@ -441,8 +448,16 @@ export function listOperations(
     module?: string;
     includeUnauthorized?: boolean;
     limit?: number;
+    offset?: number;
   } = {},
-): { total: number; returned: number; operations: OperationSummary[] } {
+): {
+  total: number;
+  returned: number;
+  offset: number;
+  /** True when more results exist beyond this page. */
+  hasMore: boolean;
+  operations: OperationSummary[];
+} {
   const scopes = actor.scopes ?? [];
   const grants = (meta: OperationMeta) =>
     actor.actorType !== "apiKey" ||
@@ -463,19 +478,29 @@ export function listOperations(
     );
   }
 
+  // Deterministic order, or paging would return overlapping/missing entries.
+  all.sort((a, b) => a.name.localeCompare(b.name));
+
   const total = all.length;
-  const limited = all.slice(0, opts.limit ?? 100);
+  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = opts.limit ?? 100;
+  const page = all.slice(offset, offset + limit);
 
   return {
     total,
-    returned: limited.length,
-    operations: limited.map((m) => ({
+    returned: page.length,
+    offset,
+    hasMore: offset + page.length < total,
+    operations: page.map((m) => ({
       name: m.name,
       kind: m.kind,
       scope: m.scope,
       dangerous: m.dangerous,
       requiresConfirmation: isGuardedWrite(m),
       summary: m.summary,
+      // The MCP tool that calls this operation, when one exists. Lets an agent
+      // move between the tool name and the operation name in one hop.
+      ...(TOOL_BY_OPERATION[m.name] ? { mcpTool: TOOL_BY_OPERATION[m.name] } : {}),
     })),
   };
 }
@@ -500,6 +525,7 @@ export function describeOperation(name: string) {
     dangerous: meta.dangerous,
     requiresConfirmation: isGuardedWrite(meta),
     summary: meta.summary,
+    ...(TOOL_BY_OPERATION[meta.name] ? { mcpTool: TOOL_BY_OPERATION[meta.name] } : {}),
     parameters: meta.params.map((p) => {
       const schema = schemaForParam(p);
       return {

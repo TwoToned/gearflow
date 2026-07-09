@@ -7,6 +7,7 @@ const deliveryUpdateMany = vi.hoisted(() => vi.fn());
 const webhookUpdate = vi.hoisted(() => vi.fn());
 const transaction = vi.hoisted(() => vi.fn());
 
+vi.mock("./resolve-guard", () => ({ hostResolvesToPrivate: vi.fn().mockResolvedValue(false) }));
 vi.mock("../prisma", () => ({
   prisma: {
     webhookDelivery: { findMany, update: deliveryUpdate, updateMany: deliveryUpdateMany },

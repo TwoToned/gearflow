@@ -86,8 +86,11 @@ dangerous; nothing there is irreversible.
   for us, but IPv6-mapped forms like `[::ffff:169.254.169.254]` (the cloud metadata
   endpoint) had to be expanded and range-checked explicitly. And `deliver.ts` sets
   `redirect: "manual"` so a validated endpoint cannot 302 us onto an internal address —
-  without that, the host check is moot. Both were caught by adversarial review before
-  merge.
+  without that, the host check is moot. And at DELIVERY time (`resolve-guard.ts`) the
+  hostname is resolved and every returned address re-checked, so a plain name that
+  resolves to an internal IP (`metadata.google.internal`, or an attacker A-record →
+  `169.254.169.254`) is refused too — the creation-time check only sees the string. All
+  three holes were caught by adversarial review before merge.
 - The signing secret is stored readable because we must sign with it. It is shown once at
   creation and rotatable. Rotation is **real**: during the grace window every delivery is
   signed with BOTH the new and the old secret (two `v1=` values in the header), so a
@@ -99,9 +102,12 @@ dangerous; nothing there is irreversible.
 - **No ordering guarantee.** Deliveries are independent. A consumer needing order must
   read state back (`get_project`).
 - **At-least-once, never exactly-once.** Dedupe on the envelope `id`.
-- **DNS rebinding is not closed.** `url.ts` validates the hostname (and blocks manual
-  redirects), but a name that resolves to a private address *at delivery time* still gets
-  through. Closing it needs resolution-time address pinning — noted as follow-up.
+- **DNS rebinding (TOCTOU) is not fully closed.** `resolve-guard.ts` resolves the host at
+  send time and re-checks every address, which closes the *static* case (a name that
+  simply points at an internal IP). A name that resolves public here and private a
+  microsecond later at connect still slips through; fully closing it needs pinning the
+  socket to the address we validated. The practical bypass is closed; the theoretical
+  race is not.
 - **No replay endpoint.** The delivery log records what happened; re-sending is an
   operator action.
 - Delivery is a Postgres table plus a cron worker, not a queue. If volume demands it,

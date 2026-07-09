@@ -99,6 +99,13 @@ function isPrivateIpv6(host: string): boolean {
     return isPrivateIpv4(`${a}.${b}.${c}.${d}`);
   }
 
+  // 64:ff9b::/96 — NAT64. Embeds an IPv4 in the low 32 bits; on a network with a
+  // NAT64 gateway this routes to that IPv4, so check the embedded address.
+  if (groups[0] === 0x64 && groups[1] === 0xff9b && groups.slice(2, 6).every((g) => g === 0)) {
+    const a = groups[6] >> 8, b = groups[6] & 0xff, c = groups[7] >> 8, d = groups[7] & 0xff;
+    return isPrivateIpv4(`${a}.${b}.${c}.${d}`);
+  }
+
   if ((groups[0] & 0xfe00) === 0xfc00) return true; // fc00::/7  unique-local
   if ((groups[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
   return false;
@@ -116,6 +123,8 @@ function normaliseHost(hostname: string): string {
   if (host.endsWith(".")) host = host.slice(0, -1);
   return host;
 }
+
+export { normaliseHost };
 
 export function isPrivateHost(hostname: string): boolean {
   const host = normaliseHost(hostname);

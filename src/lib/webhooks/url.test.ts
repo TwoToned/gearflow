@@ -40,6 +40,8 @@ describe("validateWebhookUrl", () => {
       "https://[0:0:0:0:0:ffff:a00:1]/x", // IPv4-mapped 10.0.0.1, fully expanded
       "https://[fc00::1]/x", // unique-local
       "https://[fe80::1]/x", // link-local
+      "https://[64:ff9b::a9fe:a9fe]/x", // NAT64-embedded 169.254.169.254
+      "https://[64:ff9b::7f00:1]/x", // NAT64-embedded 127.0.0.1
     ];
     for (const url of blocked) {
       it(`rejects ${url}`, () => {

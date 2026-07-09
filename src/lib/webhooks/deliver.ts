@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { buildEnvelope, type WebhookEvent } from "./events";
 import { signWebhookPayload } from "./sign";
+import { hostResolvesToPrivate } from "./resolve-guard";
 
 /**
  * The delivery worker. Claims pending deliveries whose backoff has elapsed, POSTs
@@ -87,7 +88,15 @@ async function attemptOne(
   let responseStatus: number | undefined;
   let error: string | undefined;
 
+  // Resolve-time SSRF guard: a plain hostname that resolves to an internal address
+  // (metadata.google.internal, or an attacker A-record -> 169.254.169.254) passed the
+  // creation-time URL check, which only sees the string. Refuse to POST to it.
+  if (await hostResolvesToPrivate(delivery.webhook.url)) {
+    error = "Endpoint resolves to a private or loopback address.";
+  }
+
   try {
+    if (error) throw new Error(error);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {

@@ -52,17 +52,18 @@ of a *single* unit overstates ROI by exactly the unit count — and it overstate
 models you bought the most of, which are precisely the ones the report exists to scrutinise.
 
 ```
-unitsOwned    = COUNT(assets WHERE modelId = M)
-              + SUM(bulkAssets.quantity WHERE modelId = M)
+unitsOwned    = COUNT(assets WHERE modelId = M AND isActive)
+              + SUM(bulkAssets.totalQuantity WHERE modelId = M AND isActive)
 
 fleetCost     = model.replacementCost × unitsOwned
 
 modelROI      = SUM(allocatedRevenue) / fleetCost
 ```
 
-`unitsOwned` is derived from the `assets.by_modelId` and `bulkAssets.by_modelId` indexes. A model
-with `unitsOwned = 0` or `replacementCost = null` has **no ROI** — report it as "—", not as zero
-and not as infinity.
+`unitsOwned` is derived from the `assets.by_modelId` and `bulkAssets.by_modelId` indexes. It uses
+`totalQuantity`, not `availableQuantity` — ROI measures the capital we bought, not how much of it
+happens to be on the shelf today. A model with `unitsOwned = 0` or `replacementCost = null` has
+**no ROI** — report it as "—", not as zero and not as infinity.
 
 Derived metrics worth showing alongside the raw ratio:
 

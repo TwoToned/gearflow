@@ -101,6 +101,7 @@ import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
 import type * as purgeRemovedTables from "../purgeRemovedTables.js";
 import type * as revenueAllocation from "../revenueAllocation.js";
+import type * as roi from "../roi.js";
 import type * as savedTableViews from "../savedTableViews.js";
 import type * as scheduledJobs from "../scheduledJobs.js";
 import type * as search from "../search.js";
@@ -230,6 +231,7 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   purgeRemovedTables: typeof purgeRemovedTables;
   revenueAllocation: typeof revenueAllocation;
+  roi: typeof roi;
   savedTableViews: typeof savedTableViews;
   scheduledJobs: typeof scheduledJobs;
   search: typeof search;

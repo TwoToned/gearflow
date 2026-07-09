@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "api:registry": "tsx scripts/generate-api-registry.ts",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

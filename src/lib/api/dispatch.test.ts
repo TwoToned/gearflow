@@ -70,6 +70,10 @@ vi.mock("./generated/operations", () => ({
   OPERATION_COUNT: 4,
 }));
 
+// This suite exercises the server-action path against a fake registry; the Convex
+// read bridge has its own suite (convex-reads.test.ts).
+vi.mock("./convex-reads", () => ({ CONVEX_READS: {}, INJECTED_ARGS: new Set(["orgId"]) }));
+vi.mock("../convex-client", () => ({ getConvexClient: vi.fn() }));
 vi.mock("./authorize", () => ({ authorizeApiOperation }));
 vi.mock("../prisma", () => ({
   prisma: {

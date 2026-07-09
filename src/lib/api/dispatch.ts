@@ -4,9 +4,11 @@ import { runWithActor } from "../request-actor";
 import { ApiKeyAuthError } from "../api-key";
 import type { ActorContext } from "../actor-context";
 import type { Resource } from "../permissions";
+import { getConvexClient } from "../convex-client";
 import { authorizeApiOperation } from "./authorize";
 import { ApiError } from "./errors";
 import { OPERATIONS, MODULE_LOADERS, type OperationMeta } from "./generated/operations";
+import { CONVEX_READS, INJECTED_ARGS, type ConvexReadMeta } from "./convex-reads";
 
 /**
  * The one chokepoint for invoking any of the app's server actions over the API or
@@ -69,14 +71,59 @@ export function isGuardedWrite(meta: OperationMeta): boolean {
   return meta.kind === "write" && (meta.dangerous || AVAILABILITY_AFFECTING.has(meta.name));
 }
 
+/** The full catalogue: generated server actions + the bridged Convex-only reads. */
+export const ALL_OPERATIONS: Record<string, OperationMeta> = { ...OPERATIONS, ...CONVEX_READS };
+
+// A Convex read must never shadow a server action — the action is the guarded path.
+for (const name of Object.keys(CONVEX_READS)) {
+  if (OPERATIONS[name]) {
+    throw new Error(
+      `Convex read '${name}' collides with a generated server-action operation. Rename it in convex-reads.ts.`,
+    );
+  }
+}
+
+function isConvexRead(meta: OperationMeta): meta is ConvexReadMeta {
+  return "ref" in meta;
+}
+
 export function getOperation(name: string): OperationMeta {
-  const meta = OPERATIONS[name];
+  const meta = ALL_OPERATIONS[name];
   if (!meta) {
     throw new ApiError("NOT_FOUND", `Unknown operation: '${name}'.`, {
       details: { hint: "Call 'list_operations' (MCP) or GET /api/v1/operations to discover valid names." },
     });
   }
   return meta;
+}
+
+/**
+ * Run a bridged Convex query. The SERVICE token bypasses Convex's own org guard,
+ * so `orgId` comes from the AUTHENTICATED actor and a caller-supplied `orgId` is a
+ * hard error — that is the only thing standing between this and a cross-org read.
+ */
+async function runConvexRead(
+  actor: ActorContext,
+  meta: ConvexReadMeta,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const injected = Object.keys(args).filter((k) => INJECTED_ARGS.has(k));
+  if (injected.length) {
+    throw new ApiError(
+      "VALIDATION_ERROR",
+      `'${injected.join(", ")}' is set from your API key and cannot be passed as an argument.`,
+      { retryable: false },
+    );
+  }
+
+  buildArgList(meta, args); // validates required/unknown args, same rules as actions
+
+  const autoArgs = Object.fromEntries(
+    Object.entries(meta.autoArgs ?? {}).map(([k, fn]) => [k, fn()]),
+  );
+
+  const client = await getConvexClient();
+  return client.query(meta.ref, { ...args, ...autoArgs, orgId: actor.organizationId });
 }
 
 /**
@@ -207,6 +254,17 @@ export async function invokeOperation(
     }
   }
 
+  // Convex-only reads: no server action, no idempotency (reads never mutate).
+  if (isConvexRead(meta)) {
+    let raw: unknown;
+    try {
+      raw = await runConvexRead(actor, meta, args);
+    } catch (err) {
+      throw toApiError(err, meta);
+    }
+    return { operation: meta.name, kind: "read", replayed: false, result: serializeResult(raw) };
+  }
+
   const argList = buildArgList(meta, args);
   const idempotencyKey = input.idempotencyKey;
   const canReplay = meta.kind === "write" && Boolean(idempotencyKey) && Boolean(actor.apiKeyId);
@@ -298,7 +356,7 @@ export function listOperations(
     scopes.includes(meta.scope);
 
   const needle = opts.search?.toLowerCase().trim();
-  let all = Object.values(OPERATIONS);
+  let all = Object.values(ALL_OPERATIONS);
 
   if (!opts.includeUnauthorized) all = all.filter(grants);
   if (opts.kind) all = all.filter((m) => m.kind === opts.kind);

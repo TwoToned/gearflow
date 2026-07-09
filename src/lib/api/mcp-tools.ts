@@ -1,4 +1,8 @@
 import { OPERATIONS } from "./generated/operations";
+import { CONVEX_READS } from "./convex-reads";
+
+/** Server actions plus the bridged Convex-only reads. Mirrors dispatch.ALL_OPERATIONS. */
+const CATALOGUE = { ...OPERATIONS, ...CONVEX_READS };
 
 /**
  * The curated MCP tool set.
@@ -142,6 +146,13 @@ export const CURATED_TOOLS: CuratedTool[] = [
         },
       },
     },
+  },
+  {
+    name: "list_kits",
+    operation: "kits.listKits",
+    description:
+      "List every kit (pre-assembled bundles of gear booked as one unit). Read-only. Required scope: kit:read.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "get_kit",
@@ -315,7 +326,7 @@ export const CURATED_TOOLS: CuratedTool[] = [
 
 /** Fail fast at import if a curated tool points at an operation that no longer exists. */
 for (const tool of CURATED_TOOLS) {
-  const meta = OPERATIONS[tool.operation];
+  const meta = CATALOGUE[tool.operation];
   if (!meta) {
     throw new Error(
       `Curated MCP tool '${tool.name}' targets unknown operation '${tool.operation}'. ` +

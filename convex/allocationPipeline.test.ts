@@ -1,8 +1,12 @@
 // @vitest-environment node
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
+import type { Doc } from "./_generated/dataModel";
 import { recalcProjectTotals } from "./lib/recalc";
+
+type T = TestConvex<typeof schema>;
+type NewLine = Omit<Doc<"projectLineItems">, "_id" | "_creationTime">;
 
 const modules = import.meta.glob("./**/*.ts");
 const ORG = "org_1";
@@ -18,17 +22,17 @@ const NOW = 1_700_000_000_000;
  * happily while the pass is never invoked, or writes to nothing.
  */
 
-const line = (o: Record<string, unknown>) => ({
+const line = (o: Partial<NewLine> & { id: string }): NewLine => ({
   organizationId: ORG,
   projectId: "p1",
-  type: "EQUIPMENT" as const,
-  status: "CONFIRMED" as const,
+  type: "EQUIPMENT",
+  status: "CONFIRMED",
   isKitChild: false,
   isOptional: false,
   ...o,
 });
 
-async function seedKitProject(t: ReturnType<typeof convexTest>) {
+async function seedKitProject(t: T) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
@@ -45,12 +49,12 @@ async function seedKitProject(t: ReturnType<typeof convexTest>) {
   });
 }
 
-const readLine = (t: ReturnType<typeof convexTest>, id: string) =>
+const readLine = (t: T, id: string) =>
   t.run(async (ctx) =>
     ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first(),
   );
 
-const readRollup = (t: ReturnType<typeof convexTest>) =>
+const readRollup = (t: T) =>
   t.run(async (ctx) =>
     ctx.db.query("projectModelRevenues").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect(),
   );

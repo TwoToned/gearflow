@@ -50,6 +50,7 @@ import type * as equipmentTab from "../equipmentTab.js";
 import type * as fileUploads from "../fileUploads.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
+import type * as kitAllocations from "../kitAllocations.js";
 import type * as kitBulkItems from "../kitBulkItems.js";
 import type * as kitCheckItems from "../kitCheckItems.js";
 import type * as kitDetail from "../kitDetail.js";
@@ -178,6 +179,7 @@ declare const fullApi: ApiFromModules<{
   fileUploads: typeof fileUploads;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;
+  kitAllocations: typeof kitAllocations;
   kitBulkItems: typeof kitBulkItems;
   kitCheckItems: typeof kitCheckItems;
   kitDetail: typeof kitDetail;

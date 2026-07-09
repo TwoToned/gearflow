@@ -5,6 +5,8 @@ import {
   largestRemainder,
   rollupByModel,
   isRoiCounted,
+  suggestKitAllocation,
+  allocationCoversKit,
   type AllocLine,
   type AllocModel,
   type AllocGroup,
@@ -532,6 +534,62 @@ describe("rollupByModel", () => {
     const totals = rollupByModel(lines, run(lines));
     expect(totals.get("rx")).toBe(100);
     expect(totals.size).toBe(1);
+  });
+});
+
+// ── kit allocation helpers ───────────────────────────────────────────────────
+
+describe("suggestKitAllocation", () => {
+  test("weights by replacement cost × quantity and sums to exactly 100", () => {
+    const s = suggestKitAllocation([
+      { modelId: "rx", quantity: 4, replacementCost: 2000 },
+      { modelId: "belt", quantity: 4, replacementCost: 15 },
+      { modelId: "case", quantity: 1, replacementCost: 200 },
+    ]);
+    expect([...s.values()].reduce((a, b) => a + b, 0)).toBe(100);
+    expect(s.get("rx")!).toBeGreaterThan(s.get("case")!);
+    expect(s.get("case")!).toBeGreaterThan(s.get("belt")!);
+  });
+
+  test("thirds still sum to 100 — the panel never opens on a split it would reject", () => {
+    const s = suggestKitAllocation([
+      { modelId: "a", quantity: 1, replacementCost: 10 },
+      { modelId: "b", quantity: 1, replacementCost: 10 },
+      { modelId: "c", quantity: 1, replacementCost: 10 },
+    ]);
+    expect([...s.values()].reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  test("no replacement cost anywhere falls back to an equal split", () => {
+    const s = suggestKitAllocation([
+      { modelId: "a", quantity: 1, replacementCost: null },
+      { modelId: "b", quantity: 3, replacementCost: null },
+    ]);
+    expect(s.get("a")).toBe(50);
+    expect(s.get("b")).toBe(50);
+  });
+
+  test("an empty kit suggests nothing", () => {
+    expect(suggestKitAllocation([]).size).toBe(0);
+  });
+});
+
+describe("allocationCoversKit", () => {
+  const saved = new Map([["a", 60], ["b", 40]]);
+
+  test("exact cover", () => {
+    expect(allocationCoversKit(saved, ["a", "b"])).toBe(true);
+    // Duplicate rows of the same model are one model as far as cover goes.
+    expect(allocationCoversKit(saved, ["a", "a", "b"])).toBe(true);
+  });
+
+  test("a model the kit gained leaves it uncovered", () => {
+    expect(allocationCoversKit(saved, ["a", "b", "c"])).toBe(false);
+  });
+
+  test("a model the kit lost also leaves it stale", () => {
+    // The remaining percentages no longer add to 100% of what's in the case.
+    expect(allocationCoversKit(saved, ["a"])).toBe(false);
   });
 });
 

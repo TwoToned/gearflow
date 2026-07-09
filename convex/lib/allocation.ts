@@ -219,10 +219,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     //    the allocation, so a stale split is ignored rather than trusted.
     const alloc = kitId ? kitAllocations.get(kitId) : undefined;
     if (alloc && alloc.size > 0 && parts.every((p) => p.modelId)) {
-      const present = new Set(parts.map((p) => p.modelId as string));
-      const covers =
-        present.size === alloc.size && [...present].every((m) => alloc.has(m));
-      if (covers) {
+      if (allocationCoversKit(alloc, parts.map((p) => p.modelId as string))) {
         // A model's percent is shared across the lines carrying it, by quantity —
         // 4 receiver rows in one kit split that model's 35% between them.
         const qtyByModel = new Map<string, number>();
@@ -386,6 +383,47 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   }
 
   return out;
+}
+
+// ── Kit allocation helpers ───────────────────────────────────────────────────
+
+/**
+ * Does this saved split still describe the kit? Exact cover, both ways: a model the
+ * kit gained has no percentage, and a model it lost still holds one. Either way the
+ * split no longer adds to 100% of what's actually in the case, so applying it would
+ * quietly misattribute revenue. Rule 1 is skipped and the kit is flagged stale.
+ */
+export function allocationCoversKit(
+  saved: ReadonlyMap<string, number>,
+  kitModelIds: readonly string[],
+): boolean {
+  const kitModels = new Set(kitModelIds);
+  return kitModels.size === saved.size && [...kitModels].every((m) => saved.has(m));
+}
+
+/**
+ * Cost-weighted default so nobody types percentages from scratch: a $2,000 receiver
+ * earns a bigger slice than a $15 mic belt. Falls back to an equal split when no
+ * model in the kit has a replacement cost.
+ *
+ * Computed in hundredths of a percent with largest-remainder rounding, so the
+ * suggestion always sums to exactly 100.00 and the panel never opens on a split it
+ * would refuse to save.
+ */
+export function suggestKitAllocation(
+  items: readonly { modelId: string; quantity: number; replacementCost?: number | null }[],
+): Map<string, number> {
+  if (items.length === 0) return new Map();
+
+  const weights = items.map(
+    (i) => Math.max(0, Number(i.replacementCost ?? 0)) * Math.max(1, i.quantity),
+  );
+  const shares = largestRemainder(
+    10_000,
+    weights,
+    items.map((_, i) => i),
+  );
+  return new Map(items.map((i, idx) => [i.modelId, shares[idx] / 100]));
 }
 
 /** Roll leaf allocations up to (modelId → dollars), counting only earned bases. */

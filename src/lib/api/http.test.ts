@@ -42,6 +42,8 @@ describe("toErrorEnvelope", () => {
     expect(body.error.code).toBe("MISSING_SCOPE");
     expect(body.error.requiredScope).toBe("project:manage_line_items");
     expect(body.error.retryable).toBe(false);
+    // Every error points the agent at the docs so it can self-serve recovery.
+    expect(body.error.documentation_url).toContain("/llms.txt");
   });
 
   it("maps an ApiKeyAuthError (401/403) preserving its code", () => {

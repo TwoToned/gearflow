@@ -49,6 +49,16 @@ Design of record: [`docs/designs/api-mcp-agent-access.md`](../docs/designs/api-m
   scope, idempotency). Tool failures return a structured `isError` result the agent can
   recover from.
 
+## Agent documentation
+
+`public/llms.txt` (served at `https://flow.rvlt.app/llms.txt`) is the complete,
+self-contained guide an AI agent reads to use the API/MCP: auth, MCP + REST setup,
+every tool/endpoint with schemas, the preview→commit flow, idempotency, the full
+error-code table with recovery actions, versioning, and worked examples. Discovery is
+wired INTO the API so an agent finds it without being told: `GET /api/v1` (unauthenticated
+index) returns the docs URL + endpoints; every error envelope carries `documentation_url`;
+`whoami` returns it too. The settings page links to it for operators.
+
 ## Key management
 
 `src/server/api-keys.ts`: `createApiKey` (returns the raw secret ONCE; acting user must be

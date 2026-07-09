@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateApiRequest, toErrorEnvelope } from "@/lib/api/http";
+import { authenticateApiRequest, toErrorEnvelope, API_DOCS_URL } from "@/lib/api/http";
 
 /**
  * GET /api/v1/whoami
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         actorType: actor.actorType,
         apiKeyId: actor.apiKeyId ?? null,
         scopes: actor.scopes ?? [],
+        documentation_url: API_DOCS_URL,
       },
       {
         headers: {

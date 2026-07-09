@@ -16,7 +16,7 @@ function redirectsToLogin(res: Response): boolean {
 
 describe("middleware — agent API routes bypass the session redirect", () => {
   it("does NOT redirect /api/v1/* to /login (they authenticate via Bearer)", () => {
-    for (const path of ["/api/v1/whoami", "/api/v1/reserve-items", "/api/v1/mcp"]) {
+    for (const path of ["/api/v1", "/api/v1/whoami", "/api/v1/reserve-items", "/api/v1/mcp"]) {
       const res = middleware(req(path)); // no session cookie
       expect(redirectsToLogin(res), `${path} should not redirect to login`).toBe(false);
     }
@@ -30,5 +30,9 @@ describe("middleware — agent API routes bypass the session redirect", () => {
 
   it("still lets the Better Auth routes through", () => {
     expect(redirectsToLogin(middleware(req("/api/auth/session")))).toBe(false);
+  });
+
+  it("serves the agent docs at /llms.txt without a login redirect", () => {
+    expect(redirectsToLogin(middleware(req("/llms.txt")))).toBe(false);
   });
 });

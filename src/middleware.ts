@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", "/api/registration-policy", "/invite", "/two-factor", "/onboarding", "/pending-approval", "/api/integrations/woocommerce/webhook"];
+const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", "/api/registration-policy", "/invite", "/two-factor", "/onboarding", "/pending-approval", "/api/integrations/woocommerce/webhook", "/llms.txt"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -33,6 +33,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/auditor/") ||
     pathname.startsWith("/api/auditor/") ||
     pathname.startsWith("/api/cron/") ||
+    pathname === "/api/v1" ||
     pathname.startsWith("/api/v1/")
   ) {
     return NextResponse.next();

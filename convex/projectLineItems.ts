@@ -41,10 +41,15 @@ export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    const rows = await ctx.db
       .query("projectLineItems")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect();
+    // `requireOrgRead` proves the CALLER belongs to `orgId`. It says nothing about
+    // whether `projectId` does — and it short-circuits entirely for the service
+    // token. Without this row filter, a foreign projectId returns another org's
+    // line items. The sibling bundles (projectDetail, equipmentTab) cross-check too.
+    return rows.filter((r) => r.organizationId === orgId);
   },
 });
 

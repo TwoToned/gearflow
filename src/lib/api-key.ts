@@ -109,6 +109,45 @@ export function requireApiScope(
 }
 
 /**
+ * Does `granting` cover the whole of `scope`? Unlike {@link hasScope} (which asks
+ * about one concrete `resource:action`), this compares a scope STRING that may
+ * itself be a wildcard — so `"*"` is only granted by `"*"`, and `"asset:*"` needs
+ * `"*"` or `"asset:*"`. A malformed scope is never granted.
+ */
+export function isScopeGranted(granting: readonly string[], scope: string): boolean {
+  if (granting.includes("*")) return true;
+  if (scope === "*") return false; // only a `*` holder can grant `*`
+  const [resource, action, ...rest] = scope.split(":");
+  if (!resource || !action || rest.length) return false;
+  return hasScope(granting, resource, action);
+}
+
+/**
+ * Prevent privilege escalation through key minting: a key may never create a key
+ * with scopes broader than its own.
+ *
+ * `orgSettings:update` is what guards `createApiKey`, so without this an agent
+ * holding that one scope could mint itself a `*` key and escape every other limit
+ * its operator set. Sessions are exempt — a human with the RBAC permission is
+ * already bounded by their role, which is the intended authority.
+ */
+export function assertScopesWithinActor(
+  actor: ActorContext,
+  requestedScopes: readonly string[],
+): void {
+  if (actor.actorType !== "apiKey") return;
+  const granting = actor.scopes ?? [];
+  const excessive = requestedScopes.filter((s) => !isScopeGranted(granting, s));
+  if (excessive.length) {
+    throw new ApiKeyAuthError(
+      "MISSING_SCOPE",
+      `An API key cannot create a key with scopes it does not hold: ${excessive.join(", ")}.`,
+      excessive[0],
+    );
+  }
+}
+
+/**
  * Resolve a raw bearer token to an {@link ActorContext}, or throw
  * `ApiKeyAuthError`. Validates, in order: key exists, active + not revoked, not
  * expired, and the org's kill switch is off. Best-effort updates `lastUsedAt`.

@@ -20,6 +20,8 @@ import {
   requireApiScope,
   getApiKeyActorContext,
   ApiKeyAuthError,
+  isScopeGranted,
+  assertScopesWithinActor,
 } from "@/lib/api-key";
 
 function keyRow(overrides: Record<string, unknown> = {}) {
@@ -155,5 +157,78 @@ describe("getApiKeyActorContext — validation + resolution", () => {
       keyRow({ organization: { apiKillSwitchAt: new Date() } }),
     );
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "ORG_KILL_SWITCH" });
+  });
+});
+
+describe("isScopeGranted", () => {
+  it("grants anything to a `*` holder", () => {
+    expect(isScopeGranted(["*"], "*")).toBe(true);
+    expect(isScopeGranted(["*"], "project:delete")).toBe(true);
+    expect(isScopeGranted(["*"], "asset:*")).toBe(true);
+  });
+
+  it("refuses to let a non-`*` holder grant `*`", () => {
+    expect(isScopeGranted(["project:*", "asset:*"], "*")).toBe(false);
+  });
+
+  it("grants a resource wildcard only to a holder of that wildcard", () => {
+    expect(isScopeGranted(["asset:*"], "asset:*")).toBe(true);
+    expect(isScopeGranted(["asset:*"], "asset:delete")).toBe(true);
+    expect(isScopeGranted(["asset:read"], "asset:*")).toBe(false);
+  });
+
+  it("grants an exact scope", () => {
+    expect(isScopeGranted(["project:read"], "project:read")).toBe(true);
+    expect(isScopeGranted(["project:read"], "project:delete")).toBe(false);
+  });
+
+  it("never grants a malformed scope", () => {
+    expect(isScopeGranted(["project:read"], "project")).toBe(false);
+    expect(isScopeGranted(["project:read"], "a:b:c")).toBe(false);
+    expect(isScopeGranted(["project:read"], "")).toBe(false);
+  });
+});
+
+describe("assertScopesWithinActor — key-minting privilege escalation", () => {
+  const key = (scopes: string[]): ActorContext => ({
+    organizationId: "org_1",
+    userId: "u1",
+    userName: "Agent",
+    actorType: "apiKey",
+    apiKeyId: "k1",
+    scopes,
+  });
+
+  it("blocks the escalation: orgSettings:update alone cannot mint a `*` key", () => {
+    expect(() => assertScopesWithinActor(key(["orgSettings:update"]), ["*"])).toThrowError(
+      expect.objectContaining({ code: "MISSING_SCOPE", requiredScope: "*" }),
+    );
+  });
+
+  it("blocks minting any scope the creating key lacks", () => {
+    expect(() =>
+      assertScopesWithinActor(key(["orgSettings:update", "project:read"]), [
+        "project:read",
+        "project:delete",
+      ]),
+    ).toThrowError(expect.objectContaining({ code: "MISSING_SCOPE", requiredScope: "project:delete" }));
+  });
+
+  it("allows minting a key with the same or narrower scopes", () => {
+    expect(() =>
+      assertScopesWithinActor(key(["orgSettings:update", "asset:*"]), ["asset:read"]),
+    ).not.toThrow();
+    expect(() => assertScopesWithinActor(key(["*"]), ["*", "project:delete"])).not.toThrow();
+    expect(() => assertScopesWithinActor(key(["project:read"]), [])).not.toThrow();
+  });
+
+  it("does not constrain a human session (its role is the authority)", () => {
+    const session: ActorContext = {
+      organizationId: "org_1",
+      userId: "u1",
+      userName: "Ada",
+      actorType: "session",
+    };
+    expect(() => assertScopesWithinActor(session, ["*"])).not.toThrow();
   });
 });

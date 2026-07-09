@@ -12,9 +12,17 @@ vi.mock("@/lib/api/reserve-items", () => ({ reserveItems: (...a: unknown[]) => r
 vi.mock("@/lib/api/reserve-port", () => ({ convexReservationPort: {} }));
 vi.mock("@/lib/api-key", () => ({ getApiKeyActorContext: vi.fn(), ApiKeyAuthError: class extends Error { code = "INVALID_KEY"; } }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
+// invokeOperation would load real server actions; stub just that. Discovery
+// (list/describe) stays real so the tests exercise the actual registry.
+const invokeOperation = vi.fn();
+vi.mock("@/lib/api/dispatch", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api/dispatch")>("@/lib/api/dispatch");
+  return { ...actual, invokeOperation: (...a: unknown[]) => invokeOperation(...a) };
+});
 
 import { handleMcpMessage, MCP_TOOLS, type JsonRpcRequest } from "@/lib/api/mcp";
 import { ApiKeyAuthError } from "@/lib/api-key";
+import { CURATED_TOOLS } from "@/lib/api/mcp-tools";
 
 const actor: ActorContext = {
   organizationId: "org_1",
@@ -39,11 +47,38 @@ describe("handleMcpMessage — protocol", () => {
   it("lists the capability tools with rich descriptions", async () => {
     const res = await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, null);
     const tools = (res!.result as { tools: typeof MCP_TOOLS }).tools;
-    expect(tools.map((t) => t.name)).toEqual(["whoami", "reserve_items"]);
+    const names = tools.map((t) => t.name);
+
+    // The meta tools + the dynamic-dispatch trio that reaches the full registry.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "whoami",
+        "reserve_items",
+        "list_operations",
+        "describe_operation",
+        "call_operation",
+      ]),
+    );
+    // The read tools an agent needs to answer "show me the projects" — the gap
+    // that made an agent's first attempt at this fail.
+    expect(names).toEqual(expect.arrayContaining(["list_projects", "get_project", "search_assets"]));
+
     // reserve_items description names its prerequisite + required scope (agent DX).
     const reserve = tools.find((t) => t.name === "reserve_items")!;
     expect(reserve.description).toMatch(/projectId/);
     expect(reserve.description).toMatch(/project:manage_line_items/);
+  });
+
+  it("keeps the tool list small enough for an agent to reason over", () => {
+    // The whole point of the curated + dynamic-dispatch split. If this trips,
+    // move the new tool behind call_operation rather than raising the bound.
+    expect(MCP_TOOLS.length).toBeLessThanOrEqual(40);
+  });
+
+  it("every curated tool declares its required scope in the description", () => {
+    for (const tool of CURATED_TOOLS) {
+      expect(tool.description, `${tool.name} must name its scope`).toMatch(/Required scope: \w+:/);
+    }
   });
 
   it("returns null (no body) for notifications", async () => {
@@ -111,5 +146,137 @@ describe("handleMcpMessage — tools/call", () => {
       "Bearer x",
     );
     expect((res!.result as { isError: boolean }).isError).toBe(true);
+  });
+});
+
+/** Parse a successful tools/call result's JSON payload. */
+async function callTool(name: string, args: Record<string, unknown> = {}) {
+  const res = await handleMcpMessage(
+    { jsonrpc: "2.0", id: 42, method: "tools/call", params: { name, arguments: args } },
+    "Bearer gf_live_x",
+  );
+  const result = res!.result as { isError?: boolean; content: { text: string }[] };
+  return { isError: Boolean(result.isError), payload: JSON.parse(result.content[0].text) };
+}
+
+describe("curated tools", () => {
+  beforeEach(() => authenticateApiRequest.mockResolvedValue(actor));
+
+  it("list_projects runs the projects.getProjects operation", async () => {
+    invokeOperation.mockResolvedValue({
+      operation: "projects.getProjects",
+      kind: "read",
+      replayed: false,
+      result: [{ id: "p1", name: "Gig" }],
+    });
+    const { payload } = await callTool("list_projects", { filters: { search: "Gig" } });
+
+    expect(invokeOperation).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({
+        operation: "projects.getProjects",
+        // `filters` is renamed onto the action's actual `params` argument.
+        arguments: { params: { search: "Gig" } },
+      }),
+    );
+    // The agent gets the projects, not the dispatcher's envelope.
+    expect(payload).toEqual([{ id: "p1", name: "Gig" }]);
+  });
+
+  it("strips confirm/idempotencyKey from a curated tool's operation arguments", async () => {
+    // An agent that follows call_operation's docs and passes confirm would
+    // otherwise trip the dispatcher's unknown-argument check.
+    invokeOperation.mockResolvedValue({ operation: "clients.createClient", kind: "write", replayed: false, result: { id: "c1" } });
+    await callTool("create_client", {
+      client: { name: "Acme" },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+    expect(invokeOperation).toHaveBeenCalledWith(actor, {
+      operation: "clients.createClient",
+      arguments: { data: { name: "Acme" } },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+  });
+
+  it("get_project renames projectId onto the action's `id` parameter", async () => {
+    invokeOperation.mockResolvedValue({ operation: "projects.getProject", kind: "read", replayed: false, result: { id: "p1" } });
+    await callTool("get_project", { projectId: "p1" });
+    expect(invokeOperation).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ arguments: { id: "p1" } }),
+    );
+  });
+});
+
+describe("dynamic dispatch tools", () => {
+  beforeEach(() => authenticateApiRequest.mockResolvedValue(actor));
+
+  it("list_operations returns only what the key is scoped for", async () => {
+    const { payload } = await callTool("list_operations", { search: "project" });
+    // actor holds only project:manage_line_items
+    const scopes: string[] = payload.operations.map((o: { scope: string }) => o.scope);
+    expect(scopes.length).toBeGreaterThan(0);
+    expect(new Set(scopes)).toEqual(new Set(["project:manage_line_items"]));
+  });
+
+  it("list_operations can filter to reads", async () => {
+    const wide = { ...actor, scopes: ["*"] };
+    authenticateApiRequest.mockResolvedValue(wide);
+    const { payload } = await callTool("list_operations", { kind: "read", limit: 5 });
+    expect(payload.operations.every((o: { kind: string }) => o.kind === "read")).toBe(true);
+    expect(payload.total).toBeGreaterThan(100);
+  });
+
+  it("describe_operation returns the real call signature from the registry", async () => {
+    const { payload } = await callTool("describe_operation", { operation: "projects.getProject" });
+    expect(payload).toMatchObject({
+      name: "projects.getProject",
+      kind: "read",
+      scope: "project:read",
+      parameters: [{ name: "id", required: true }],
+    });
+  });
+
+  it("describe_operation surfaces the confirmation requirement for a destructive op", async () => {
+    const { payload } = await callTool("describe_operation", { operation: "projects.deleteProject" });
+    expect(payload).toMatchObject({ dangerous: true, requiresConfirmation: true });
+  });
+
+  it("describe_operation errors structurally on an unknown operation", async () => {
+    const { isError, payload } = await callTool("describe_operation", { operation: "nope.nothing" });
+    expect(isError).toBe(true);
+    expect(payload.error.code).toBe("NOT_FOUND");
+  });
+
+  it("call_operation forwards confirm + idempotencyKey to the dispatcher", async () => {
+    invokeOperation.mockResolvedValue({ operation: "projects.archiveProject", kind: "write", replayed: false, result: { ok: true } });
+    await callTool("call_operation", {
+      operation: "projects.archiveProject",
+      arguments: { id: "p1" },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+    expect(invokeOperation).toHaveBeenCalledWith(actor, {
+      operation: "projects.archiveProject",
+      arguments: { id: "p1" },
+      confirm: true,
+      idempotencyKey: "idem-1",
+    });
+  });
+
+  it("call_operation surfaces CONFIRMATION_REQUIRED as a structured isError result", async () => {
+    const { ApiError } = await import("@/lib/api/errors");
+    invokeOperation.mockRejectedValue(
+      new ApiError("CONFIRMATION_REQUIRED", "needs confirm", { details: { dangerous: true } }),
+    );
+    const { isError, payload } = await callTool("call_operation", {
+      operation: "projects.deleteProject",
+      arguments: { id: "p1" },
+    });
+    expect(isError).toBe(true);
+    expect(payload.error.code).toBe("CONFIRMATION_REQUIRED");
+    expect(payload.error.documentation_url).toBeTruthy();
   });
 });

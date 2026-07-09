@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleMcpMessage, type JsonRpcRequest } from "@/lib/api/mcp";
 
+// The API layer runs guarded server actions inside an AsyncLocalStorage actor
+// (node:async_hooks), so this route must not be edge-rendered.
+export const runtime = "nodejs";
+
 const V1 = { "X-GearFlow-API-Version": "v1" };
 
 /**

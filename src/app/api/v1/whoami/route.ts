@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiRequest, toErrorEnvelope, API_DOCS_URL } from "@/lib/api/http";
 
+// The API layer runs guarded server actions inside an AsyncLocalStorage actor
+// (node:async_hooks), so this route must not be edge-rendered.
+export const runtime = "nodejs";
+
 /**
  * GET /api/v1/whoami
  *

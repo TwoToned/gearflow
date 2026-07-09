@@ -20,8 +20,13 @@ export function GET() {
       },
       endpoints: {
         whoami: "GET /api/v1/whoami",
+        list_operations: "GET /api/v1/operations",
+        describe_operation: "GET /api/v1/operations/{name}",
+        invoke_operation: "POST /api/v1/ops/{name}",
         reserve_items: "POST /api/v1/reserve-items",
       },
+      coverage:
+        "Every read and write the web app can perform is exposed as an operation. Start at GET /api/v1/operations to discover what your key can call.",
       auth: "Authorization: Bearer <api key> (create one in Settings → Integrations → API Keys)",
     },
     { headers: { "Cache-Control": "no-store", "X-GearFlow-API-Version": "v1" } },

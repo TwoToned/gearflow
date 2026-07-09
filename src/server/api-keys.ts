@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { generateApiKey } from "@/lib/api-key";
+import { generateApiKey, assertScopesWithinActor } from "@/lib/api-key";
+import { getAmbientActor } from "@/lib/request-actor";
 
 /**
  * Management for agent-accessible API keys (docs/designs/api-mcp-agent-access.md).
@@ -71,6 +72,12 @@ export async function createApiKey(input: {
   if (!member) throw new Error("The acting user must be a member of this organization.");
 
   const scopes = Array.isArray(input.scopes) ? input.scopes.filter((s) => typeof s === "string") : [];
+
+  // A key may not mint a key more powerful than itself. No-op for human sessions,
+  // which are already bounded by the acting user's role.
+  const actor = getAmbientActor();
+  if (actor) assertScopesWithinActor(actor, scopes);
+
   const { raw, prefix, tokenHash } = generateApiKey();
 
   const created = await prisma.apiKey.create({

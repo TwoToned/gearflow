@@ -4,6 +4,19 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.20.1.0] - 2026-07-09
+
+### Added
+
+- **The API now tells agents the exact shape of every request.** `describe_operation` returns real JSON Schema for each parameter — field names, types, allowed values, and which are required — generated from the same validation rules the operation enforces. Previously 93 operations described their input only as a TypeScript type name, so an agent had to guess. Nearly all of them are writes.
+- **`primaryDateRange` on projects.** A project has six date fields (event, rental, load-in/out), most of them empty, and no obvious primary. Every project now carries one resolved `{ start, end, source }`, in the list response, so answering "what's coming up?" takes a single call instead of one per project. `source` says which pair the answer came from.
+- **OpenAPI 3.1 at `/api/v1/openapi.json`.** The whole surface, generated from the same registry the API runs on, for SDK generation and request-validation tooling.
+- The MCP server now advertises `tools.listChanged`, so a client holding a cached tool list from before a deploy can tell it is out of date. If you only see two tools, reconnect.
+
+### Changed
+
+- Agent docs at `/llms.txt` now document the project date fields and which one to use for availability, how to read parameter schemas, and the reconnect fix for stale MCP tool lists.
+
 ## [0.20.0.0] - 2026-07-09
 
 ### Added

@@ -5,7 +5,7 @@ import * as enums from "./lib/validators";
 /**
  * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
- * 96 tables mirroring the Prisma models. Conventions:
+ * 98 tables mirroring the Prisma models. Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
  *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
@@ -23,8 +23,13 @@ import * as enums from "./lib/validators";
  *  - @unique is NOT enforced by Convex indexes — uniqueness is enforced in the
  *    mutations that own each table. The by_<field> index still exists for lookup.
  *
- * Regenerate with: node scripts/generate-convex-schema.cjs . — if the Prisma
- * schema changes. Review by hand afterwards (generated scaffolding, not final).
+ * DO NOT blindly regenerate. This file has diverged from the generator on purpose:
+ * it carries hand-added search indexes and composite indexes the generator never
+ * emits, and (Phase C) several Convex tables whose Prisma models have already been
+ * stripped. `node scripts/generate-convex-schema.cjs .` currently emits 91 tables
+ * against these 98 — running it over this file DELETES live tables. Use it to see
+ * what a new Prisma model *would* emit (generate into a scratch dir and diff), then
+ * hand-merge that stanza here.
  */
 export default defineSchema({
   // User
@@ -786,6 +791,9 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
+    // Range-scan an org's projects by rental date (fleet ROI window). A prefix
+    // take + filter reads the wrong projects once an org outgrows the cap.
+    .index("by_organizationId_rentalStartDate", ["organizationId", "rentalStartDate"])
     .index("by_isTemplate", ["isTemplate"])
     .index("by_organizationId_status", ["organizationId", "status"]),
   // (No project search index: the app never picks a project in a combobox — projects
@@ -813,6 +821,8 @@ export default defineSchema({
     duration: v.optional(v.number()),
     discount: v.optional(v.number()),
     lineTotal: v.optional(v.number()),
+    allocatedRevenue: v.optional(v.number()),
+    allocationBasis: v.optional(enums.AllocationBasis),
     priceBreakdown: v.optional(v.string()),
     priceOverridden: v.optional(v.boolean()),
     overrideReason: v.optional(v.string()),
@@ -989,6 +999,39 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_userId", ["userId"])
     .index("by_projectId_userId", ["projectId", "userId"]),
+
+  // KitRevenueAllocation — one row per MODEL in a kit (not per member asset).
+  kitRevenueAllocations: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    kitId: v.string(),
+    modelId: v.string(),
+    allocationPercent: v.number(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_kitId_modelId", ["kitId", "modelId"])
+    .index("by_kitId", ["kitId"])
+    .index("by_modelId", ["modelId"]),
+
+  // ProjectModelRevenue — derived rollup, rebuilt by the allocation pass. Pure
+  // cache: safe to delete and rebuild from projectLineItems at any time.
+  projectModelRevenues: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    modelId: v.string(),
+    allocatedRevenue: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId_modelId", ["projectId", "modelId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_modelId", ["modelId"])
+    .index("by_organizationId_modelId", ["organizationId", "modelId"]),
 
   // GroupTemplate
   groupTemplates: defineTable({

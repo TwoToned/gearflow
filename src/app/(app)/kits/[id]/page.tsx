@@ -49,6 +49,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { KitChecksTab } from "@/components/kits/kit-checks-tab";
+import { KitAllocationPanel } from "@/components/kits/kit-allocation-panel";
 import { DeleteKitDialog } from "@/components/kits/delete-kit-dialog";
 import {
   Dialog,
@@ -443,6 +444,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Revenue allocation */}
+          <div id="kit-revenue-allocation">
+            <h3 className="t-heading text-ink mb-3">Revenue allocation</h3>
+            <KitAllocationPanel kitId={id} />
           </div>
 
           {/* History */}

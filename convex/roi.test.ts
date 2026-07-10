@@ -1,0 +1,256 @@
+// @vitest-environment node
+import { convexTest, type TestConvex } from "convex-test";
+import { describe, test, expect } from "vitest";
+import schema from "./schema";
+import type { Doc } from "./_generated/dataModel";
+import { api } from "./_generated/api";
+
+/**
+ * Convex-layer coverage for model/fleet ROI reads. The money-critical branches are
+ * the STATUS filter (a QUOTED or CANCELLED project must not count as earned revenue)
+ * and the DATE window; plus unit tallying for the capital side (totalQuantity on
+ * bulk, isActive exclusion on both).
+ */
+
+const modules = import.meta.glob("./**/*.ts");
+type T = TestConvex<typeof schema>;
+
+const ORG = "org_1";
+const NOW = 1_700_000_000_000;
+const DAY = 86_400_000;
+const SERVICE = { subject: "gearflow-service", svc: true };
+const asService = (t: T) => t.withIdentity(SERVICE);
+// The bases the app treats as "earned" for ROI.
+const COUNTED = ["CONFIRMED", "COMPLETED", "INVOICED", "RETURNED"];
+
+type ProjSeed = {
+  id: string;
+  status: Doc<"projects">["status"];
+  rentalStartDate?: number;
+  createdAt?: number;
+  isTemplate?: boolean;
+};
+
+async function seedProject(t: T, p: ProjSeed, revenues: { modelId: string; revenue: number }[]) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("projects", {
+      id: p.id, organizationId: ORG, projectNumber: p.id.toUpperCase(), name: p.id,
+      status: p.status, isTemplate: p.isTemplate ?? false,
+      rentalStartDate: p.rentalStartDate, createdAt: p.createdAt ?? NOW, updatedAt: NOW,
+    });
+    for (const r of revenues) {
+      await ctx.db.insert("projectModelRevenues", {
+        id: `pmr_${p.id}_${r.modelId}`, organizationId: ORG, projectId: p.id,
+        modelId: r.modelId, allocatedRevenue: r.revenue, updatedAt: NOW,
+      });
+    }
+  });
+}
+
+describe("getModelRoi — status + date filtering", () => {
+  test("counts only projects in the requested status set; a QUOTED/CANCELLED project earns nothing", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 2000 });
+    });
+    await seedProject(t, { id: "won", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 300 }]);
+    await seedProject(t, { id: "quote", status: "QUOTED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 999 }]);
+    await seedProject(t, { id: "dead", status: "CANCELLED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 777 }]);
+    // Template with a counted status must still be excluded.
+    await seedProject(t, { id: "tmpl", status: "COMPLETED", rentalStartDate: NOW, isTemplate: true }, [{ modelId: "rx", revenue: 500 }]);
+
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.revenue).toBe(300);
+    expect(roi.projects.map((p) => p.projectId)).toEqual(["won"]);
+  });
+
+  test("windows on rentalStartDate (falling back to createdAt), inclusive of the bounds", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "early", status: "COMPLETED", rentalStartDate: NOW - 10 * DAY }, [{ modelId: "rx", revenue: 100 }]);
+    await seedProject(t, { id: "mid", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 200 }]);
+    await seedProject(t, { id: "late", status: "COMPLETED", rentalStartDate: NOW + 10 * DAY }, [{ modelId: "rx", revenue: 400 }]);
+
+    const roi = await asService(t).query(api.roi.getModelRoi, {
+      orgId: ORG, modelId: "rx", statuses: COUNTED, from: NOW - 5 * DAY, to: NOW + 5 * DAY,
+    });
+    expect(roi.revenue).toBe(200);
+    expect(roi.projects.map((p) => p.projectId)).toEqual(["mid"]);
+  });
+
+  test("unitsOwned counts active serialized assets + active bulk totalQuantity, excluding retired", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 2000 });
+      // Two active serialized units, one retired (isActive:false) — counts 2.
+      await ctx.db.insert("assets", { id: "s1", organizationId: ORG, modelId: "rx", assetTag: "S1", isActive: true });
+      await ctx.db.insert("assets", { id: "s2", organizationId: ORG, modelId: "rx", assetTag: "S2" }); // undefined isActive counts
+      await ctx.db.insert("assets", { id: "s3", organizationId: ORG, modelId: "rx", assetTag: "S3", isActive: false });
+      // Bulk: totalQuantity 5 active + 8 inactive (excluded) → +5.
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "rx", assetTag: "B1", totalQuantity: 5, isActive: true });
+      await ctx.db.insert("bulkAssets", { id: "b2", organizationId: ORG, modelId: "rx", assetTag: "B2", totalQuantity: 8, isActive: false });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(7); // 2 serialized + 5 bulk
+    expect(roi.replacementCost).toBe(2000);
+  });
+});
+
+describe("fleetRevenue — status + date filtering", () => {
+  test("aggregates by model across counted projects only, tracking projectCount", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "p1", status: "COMPLETED", rentalStartDate: NOW }, [
+      { modelId: "rx", revenue: 100 }, { modelId: "belt", revenue: 10 },
+    ]);
+    await seedProject(t, { id: "p2", status: "INVOICED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 50 }]);
+    await seedProject(t, { id: "p3", status: "QUOTED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 9999 }]);
+
+    const fleet = await asService(t).query(api.roi.fleetRevenue, { orgId: ORG, statuses: COUNTED });
+    const byModel = new Map(fleet.rows.map((r) => [r.modelId, r]));
+    expect(byModel.get("rx")?.revenue).toBe(150); // p1 + p2, QUOTED p3 excluded
+    expect(byModel.get("rx")?.projectCount).toBe(2);
+    expect(byModel.get("belt")?.revenue).toBe(10);
+    expect(fleet.truncated).toBe(false);
+  });
+
+  /**
+   * The window is on rentalStartDate, but creation order does not track rental date:
+   * a project entered today can be for a gig last year. An earlier version took an
+   * index prefix and then filtered, so in-window projects sitting behind newer
+   * out-of-window ones were never read at all.
+   */
+  test("finds an in-window project that was created most recently of all", async () => {
+    const t = convexTest(schema, modules);
+    // Seeded LAST (newest _creationTime) but its rental date is far outside the window.
+    await seedProject(t, { id: "inwindow", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 70 }]);
+    await seedProject(t, { id: "future", status: "COMPLETED", rentalStartDate: NOW + 400 * DAY }, [{ modelId: "rx", revenue: 9999 }]);
+
+    const fleet = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, from: NOW - DAY, to: NOW + DAY,
+    });
+    expect(fleet.rows.find((r) => r.modelId === "rx")?.revenue).toBe(70);
+    expect(fleet.projectsCounted).toBe(1);
+  });
+
+  /**
+   * The budget is spent by ROLLUP ROWS, not by projects. Reading exactly `remaining`
+   * rows on the LAST project fills the budget, exits the loop normally, and would
+   * leave `truncated` false while a model's revenue quietly went missing — which
+   * looks identical to gear that simply didn't earn.
+   */
+  test("a project truncated exactly at the budget boundary still reports truncated", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "p1", status: "COMPLETED", rentalStartDate: NOW }, [
+      { modelId: "a", revenue: 10 },
+      { modelId: "b", revenue: 20 },
+    ]);
+
+    // Budget of exactly 2 rows: p1's page fills it precisely, with nothing left over.
+    const exact = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, rollupBudget: 2,
+    });
+    expect(exact.truncated).toBe(false);
+    expect(exact.projectsCounted).toBe(1);
+
+    // Budget of 1: p1 has more to give, so the report must say so — and must not
+    // ingest a half-read project, because a partial total is a wrong total.
+    const short = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, rollupBudget: 1,
+    });
+    expect(short.truncated).toBe(true);
+    expect(short.projectsCounted).toBe(0);
+    expect(short.rows).toHaveLength(0);
+  });
+
+  test("respects the date window", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "old", status: "COMPLETED", rentalStartDate: NOW - 10 * DAY }, [{ modelId: "rx", revenue: 100 }]);
+    await seedProject(t, { id: "new", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 40 }]);
+    const fleet = await asService(t).query(api.roi.fleetRevenue, { orgId: ORG, statuses: COUNTED, from: NOW - 2 * DAY });
+    const rx = fleet.rows.find((r) => r.modelId === "rx");
+    expect(rx?.revenue).toBe(40);
+    expect(rx?.projectCount).toBe(1);
+  });
+});
+
+describe("fleetInventory — unit tallying + dead-capital rows", () => {
+  test("tallies bulk totalQuantity + active serialized units, excludes inactive units and models", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 2000, manufacturer: "Shure", categoryId: "rf" });
+      await ctx.db.insert("models", { id: "belt", organizationId: ORG, name: "Belt", replacementCost: 15 });
+      await ctx.db.insert("models", { id: "old", organizationId: ORG, name: "Retired model", isActive: false });
+      // rx: 1 active serialized + 1 retired serialized + bulk 4 active + 3 inactive → 5.
+      await ctx.db.insert("assets", { id: "s1", organizationId: ORG, modelId: "rx", assetTag: "S1", isActive: true });
+      await ctx.db.insert("assets", { id: "s2", organizationId: ORG, modelId: "rx", assetTag: "S2", isActive: false });
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "rx", assetTag: "B1", totalQuantity: 4, isActive: true });
+      await ctx.db.insert("bulkAssets", { id: "b2", organizationId: ORG, modelId: "rx", assetTag: "B2", totalQuantity: 3, isActive: false });
+      // belt owns nothing → dead capital, still listed with 0 units.
+    });
+    const inv = await asService(t).query(api.roi.fleetInventory, { orgId: ORG });
+    const byModel = new Map(inv.rows.map((r) => [r.modelId, r]));
+
+    expect(byModel.get("rx")?.unitsOwned).toBe(5);
+    expect(byModel.get("rx")?.manufacturer).toBe("Shure");
+    expect(byModel.get("rx")?.categoryId).toBe("rf");
+    // Zero-revenue / zero-unit model still appears — the point of the report.
+    expect(byModel.get("belt")?.unitsOwned).toBe(0);
+    // Inactive MODEL is filtered out entirely.
+    expect(byModel.has("old")).toBe(false);
+    expect(inv.truncated).toBe(false);
+  });
+});
+
+describe("getModelRoi — tenant isolation", () => {
+  const OTHER = "org_2";
+
+  /**
+   * `models.by_cuid` and `assets.by_modelId` are GLOBAL indexes. `requireOrgRead`
+   * validates the caller's org, not the model's. Before this was fixed, a caller
+   * authorised for their own org could pass another org's modelId and read back its
+   * name, replacement cost, and unit count.
+   */
+  test("refuses a modelId belonging to another org", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "secret", organizationId: OTHER, name: "Their Receiver", replacementCost: 99_000 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: OTHER, modelId: "secret", assetTag: "A1" });
+    });
+
+    await expect(
+      asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "secret", statuses: COUNTED }),
+    ).rejects.toThrow(/not in org/);
+  });
+
+  test("never counts another org's assets toward unitsOwned", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      // Same modelId string present in two orgs (e.g. after a bad import).
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 100 });
+      await ctx.db.insert("assets", { id: "mine", organizationId: ORG, modelId: "rx", assetTag: "M1" });
+      await ctx.db.insert("assets", { id: "theirs", organizationId: OTHER, modelId: "rx", assetTag: "T1" });
+      await ctx.db.insert("bulkAssets", { id: "tb", organizationId: OTHER, modelId: "rx", assetTag: "TB", totalQuantity: 50 });
+    });
+
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(1);
+  });
+});
+
+describe("status gating lives in Convex, not only in the server action", () => {
+  test("a caller asking for QUOTED revenue gets nothing", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "q", status: "QUOTED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 5000 }]);
+    await seedProject(t, { id: "won", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 10 }]);
+
+    // A browser-held user token can call the query directly, bypassing src/lib/roi.ts.
+    const roi = await asService(t).query(api.roi.getModelRoi, {
+      orgId: ORG, modelId: "rx", statuses: ["QUOTED", "CANCELLED", "COMPLETED"],
+    });
+    expect(roi.revenue).toBe(10);
+
+    const fleet = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: ["QUOTED", "ENQUIRY"],
+    });
+    expect(fleet.rows).toHaveLength(0);
+  });
+});

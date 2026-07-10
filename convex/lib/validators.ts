@@ -177,6 +177,15 @@ export const LineItemChildKind = v.union(
   v.literal("KIT"),
   v.literal("ACCESSORY"),
 );
+export const AllocationBasis = v.union(
+  v.literal("DIRECT"),
+  v.literal("KIT_PERCENT"),
+  v.literal("WEIGHTED"),
+  v.literal("EQUAL_SPLIT"),
+  v.literal("EXCLUDED_SUBHIRE"),
+  v.literal("EXCLUDED_NON_GEAR"),
+  v.literal("NO_REVENUE"),
+);
 export const KitCheckMode = v.union(
   v.literal("KIT_LEVEL"),
   v.literal("PER_ITEM"),

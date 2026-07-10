@@ -29,7 +29,9 @@ const buttonVariants = cva(
           "bg-[var(--cream)] text-[var(--cream-ink)] shadow-[var(--sh-cream)] hover:-translate-y-px active:translate-y-[2px] active:shadow-[var(--sh-cream-press)]",
       },
       size: {
-        sm: "h-9 px-4",
+        // `sm` is 36px, under the 44px minimum tap target (§15). Phones get the
+        // full 44px; the compact height returns at `sm:` (640px) and up.
+        sm: "h-11 px-4 sm:h-9",
         default: "h-11 px-5",
         lg: "h-12 px-7 text-[15px]",
         icon: "size-11",

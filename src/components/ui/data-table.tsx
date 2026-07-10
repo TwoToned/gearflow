@@ -80,6 +80,12 @@ export interface ColumnDef<TData> {
   responsiveHide?: "sm" | "md" | "lg" | "xl";
   /** Slot this column occupies in the mobile card. See {@link MobileRole}. */
   mobile?: MobileRole;
+  /**
+   * Tells the mobile card this column has nothing to show for a row, so the meta
+   * pair is dropped instead of rendering the cell's "—" placeholder. Only needed
+   * when the column has a custom `cell` and no `accessorKey` to infer from.
+   */
+  mobileEmpty?: (row: TData) => boolean;
   width?: number | string;
   minWidth?: number;
   align?: "left" | "center" | "right";
@@ -171,15 +177,21 @@ function renderCell<TData>(col: ColumnDef<TData>, row: TData): React.ReactNode {
 }
 
 /**
- * True when a column has nothing to show for this row. Only decidable for
- * accessor-driven columns — a custom `cell` renderer is always rendered, since
- * we can't inspect the ReactNode it returns without rendering it.
+ * True when a column has nothing to show for this row, so the card can drop the
+ * meta pair rather than print a "—" placeholder.
+ *
+ * A custom `cell` renderer can't be introspected without rendering it, so the
+ * checks run in order of what we can actually know: an explicit `mobileEmpty`
+ * predicate, then the accessor value (which most "—" cells are derived from),
+ * and otherwise we assume there's something to show.
  */
 function isCellEmpty<TData>(col: ColumnDef<TData>, row: TData): boolean {
-  if (col.cell) return false;
-  if (!col.accessorKey) return true;
-  const value = getNestedValue(row, col.accessorKey);
-  return value == null || value === "";
+  if (col.mobileEmpty) return col.mobileEmpty(row);
+  if (col.accessorKey) {
+    const value = getNestedValue(row, col.accessorKey);
+    return value == null || value === "";
+  }
+  return !col.cell;
 }
 
 // ─── Mobile Card Column Roles ─────────────────────────────────────────
@@ -261,23 +273,16 @@ function DataTableCards<TData>({
 
         return (
           <li key={rowId}>
+            {/* §15: full-row tap in card mode — the whole card is the target.
+                Deliberately no role="button"/tabIndex: cards embed links and
+                menus, so a button role would nest interactive content, add a
+                redundant tab stop, and flatten the accessible name to the
+                card's entire text. Keyboard users reach the title link, exactly
+                as they do in the desktop table's clickable <tr>. */}
             <Card
               interactive={!!onRowClick}
               className={cn("p-4", isSelected && "bg-select")}
-              // §15: full-row tap in card mode — the whole card is the target.
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              onKeyDown={
-                onRowClick
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onRowClick(row);
-                      }
-                    }
-                  : undefined
-              }
-              role={onRowClick ? "button" : undefined}
-              tabIndex={onRowClick ? 0 : undefined}
             >
               <div className="flex items-start gap-3">
                 {enableRowSelection && (
@@ -294,8 +299,10 @@ function DataTableCards<TData>({
                 )}
 
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                  {/* The title keeps a 12rem floor so a wide badge cluster wraps
+                      onto its own line instead of truncating the name. */}
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
+                    <div className="min-w-[12rem] flex-1">
                       {layout.title && (
                         <div className="font-display text-[15px] font-bold leading-tight tracking-tight">
                           {renderCell(layout.title, row)}
@@ -324,7 +331,9 @@ function DataTableCards<TData>({
                           <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">
                             {col.header}
                           </dt>
-                          <dd className="mt-0.5 truncate text-[13.5px] text-ink">
+                          {/* Wrap rather than truncate: a clipped email or serial
+                              number is unreadable, and cards have vertical room. */}
+                          <dd className="mt-0.5 text-[13.5px] break-words text-ink">
                             {renderCell(col, row)}
                           </dd>
                         </div>
@@ -810,7 +819,10 @@ export function DataTable<TData>({
             onChange={(v) => handleFilterChange(col.id, v)}
           />
         ))}
-        <div className="flex items-center gap-2 ml-auto">
+        {/* Wraps on narrow screens. Without flex-wrap this row overflowed the
+            viewport, and `main` clips rather than scrolls — so the trailing
+            action (New job / New model / Export CSV) was cut off, not reachable. */}
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:flex-nowrap">
           {enableColumnVisibility && onToggleColumnVisibility && (
             <ColumnVisibilityPopover
               columns={columns}

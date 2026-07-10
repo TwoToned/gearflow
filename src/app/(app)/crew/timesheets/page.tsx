@@ -356,7 +356,7 @@ export default function TimesheetsPage() {
         row.status !== "EXPORTED" ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-9" aria-label="Time entry actions">
+              <Button variant="ghost" size="icon" className="size-11 sm:size-9" aria-label="Time entry actions">
                 <MoreHorizontal className="size-5" />
               </Button>
             </DropdownMenuTrigger>

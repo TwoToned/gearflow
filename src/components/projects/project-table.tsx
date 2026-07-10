@@ -226,6 +226,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "total",
     align: "right",
     mobile: "meta",
+    mobileEmpty: (row) => row.total == null,
     cell: (row) => (
       <span className="t-data">
         {row.total != null

@@ -124,6 +124,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     header: "Day rate",
     align: "right",
     responsiveHide: "lg",
+    mobileEmpty: (row) => row.defaultDayRate == null,
     cell: (row) => (
       <span className="font-mono text-table-cell tabular-nums text-ink-2">
         {row.defaultDayRate != null

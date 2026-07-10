@@ -791,6 +791,9 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
+    // Range-scan an org's projects by rental date (fleet ROI window). A prefix
+    // take + filter reads the wrong projects once an org outgrows the cap.
+    .index("by_organizationId_rentalStartDate", ["organizationId", "rentalStartDate"])
     .index("by_isTemplate", ["isTemplate"])
     .index("by_organizationId_status", ["organizationId", "status"]),
   // (No project search index: the app never picks a project in a combobox — projects

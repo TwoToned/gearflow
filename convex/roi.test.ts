@@ -112,6 +112,25 @@ describe("fleetRevenue — status + date filtering", () => {
     expect(fleet.truncated).toBe(false);
   });
 
+  /**
+   * The window is on rentalStartDate, but creation order does not track rental date:
+   * a project entered today can be for a gig last year. An earlier version took an
+   * index prefix and then filtered, so in-window projects sitting behind newer
+   * out-of-window ones were never read at all.
+   */
+  test("finds an in-window project that was created most recently of all", async () => {
+    const t = convexTest(schema, modules);
+    // Seeded LAST (newest _creationTime) but its rental date is far outside the window.
+    await seedProject(t, { id: "inwindow", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 70 }]);
+    await seedProject(t, { id: "future", status: "COMPLETED", rentalStartDate: NOW + 400 * DAY }, [{ modelId: "rx", revenue: 9999 }]);
+
+    const fleet = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, from: NOW - DAY, to: NOW + DAY,
+    });
+    expect(fleet.rows.find((r) => r.modelId === "rx")?.revenue).toBe(70);
+    expect(fleet.projectsCounted).toBe(1);
+  });
+
   test("respects the date window", async () => {
     const t = convexTest(schema, modules);
     await seedProject(t, { id: "old", status: "COMPLETED", rentalStartDate: NOW - 10 * DAY }, [{ modelId: "rx", revenue: 100 }]);

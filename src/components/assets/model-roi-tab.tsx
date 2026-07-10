@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Info } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 
 import { Stat } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,6 +89,16 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
           </TooltipContent>
         </Tooltip>
       </div>
+
+      {data.truncated && (
+        <div className="flex gap-3 rounded-md border border-warn/40 bg-warn-soft p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <p className="text-caption text-ink-2">
+            Showing a partial picture — this model hit a scan limit. Revenue may be
+            understated and payback overstated. Narrow the date range for exact figures.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">

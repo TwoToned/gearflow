@@ -302,8 +302,10 @@ calls it. A browser holds a user token and can call an org-scoped Convex query d
 asking for `QUOTED` revenue has to get nothing back rather than a pipeline number dressed up as
 earnings.
 
-Reports are additionally scoped to a date window on `rentalStartDate` (default: trailing 12 months),
-falling back to `createdAt` where no rental date is set.
+Reports are additionally scoped to a date window on `rentalStartDate` (default: trailing 12 months).
+A windowed fleet report is a **range scan** over `(organizationId, rentalStartDate)`, so a project
+with no rental date sits outside the range and is omitted; the all-time view still sees it, falling
+back to `createdAt` for ordering.
 
 ### Tenant isolation
 

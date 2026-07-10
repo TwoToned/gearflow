@@ -71,3 +71,7 @@ ALTER TABLE "project_model_revenue" ADD CONSTRAINT "project_model_revenue_organi
 -- Both ALTERs are metadata-only (nullable ADD COLUMN, no rewrite) and the new
 -- tables are empty, so no ANALYZE is needed here. The Convex backfill does not
 -- touch Postgres.
+
+-- Composite index for the fleet ROI date-window scan. Without it the report has to
+-- take an index prefix and filter, which reads the wrong projects on a large org.
+CREATE INDEX "project_organizationId_rentalStartDate_idx" ON "project"("organizationId", "rentalStartDate");

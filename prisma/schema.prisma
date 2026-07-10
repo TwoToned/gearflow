@@ -1394,6 +1394,10 @@ model Project {
   @@index([clientId])
   @@index([locationId])
   @@index([rentalStartDate, rentalEndDate])
+  // Lets the fleet ROI report RANGE-SCAN an org's projects by rental date instead
+  // of taking an index prefix and filtering. Without it, a trailing-window report
+  // on a large org reads the wrong projects entirely. See convex/roi.ts.
+  @@index([organizationId, rentalStartDate])
   @@index([isTemplate])
   @@map("project")
 }

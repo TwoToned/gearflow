@@ -35,6 +35,8 @@ const ASSET_CAP = 9000;
 const BULK_ASSET_CAP = 2000;
 /** Rollup rows for one model — i.e. projects that model ever appeared in. */
 const MODEL_ROLLUP_CAP = 2000;
+/** Units of a single model scanned before we stop counting. */
+const UNIT_SCAN_CAP = 5000;
 
 /** A project's date for windowing: when the gear went out, else when it was created. */
 const projectDate = (p: { rentalStartDate?: number; createdAt?: number }): number =>
@@ -66,19 +68,28 @@ const countableStatuses = (requested: readonly string[]): Set<string> =>
  * `by_modelId` is NOT org-scoped. Every row it returns must be filtered on
  * `organizationId` or this counts another tenant's fleet.
  */
-async function unitsOwnedFor(ctx: QueryCtx, orgId: string, modelId: string): Promise<number> {
+async function unitsOwnedFor(
+  ctx: QueryCtx,
+  orgId: string,
+  modelId: string,
+): Promise<{ unitsOwned: number; truncated: boolean }> {
+  // Bounded: `.collect()` on a global index is unbounded, and blowing the read limit
+  // throws the whole report. An undercounted denominator OVERSTATES payback, so a
+  // truncated count has to be visible rather than quietly optimistic.
   const [assets, bulk] = await Promise.all([
-    ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
-    ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
+    ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(UNIT_SCAN_CAP),
+    ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(UNIT_SCAN_CAP),
   ]);
   const mine = <T extends { organizationId: string; isActive?: boolean }>(r: T) =>
     r.organizationId === orgId && r.isActive !== false;
   // totalQuantity, not availableQuantity: ROI is about the capital we bought, not
   // how much of it happens to be on the shelf right now.
-  return (
-    assets.filter(mine).length +
-    bulk.filter(mine).reduce((s, b) => s + (b.totalQuantity ?? 0), 0)
-  );
+  return {
+    unitsOwned:
+      assets.filter(mine).length +
+      bulk.filter(mine).reduce((s, b) => s + (b.totalQuantity ?? 0), 0),
+    truncated: assets.length === UNIT_SCAN_CAP || bulk.length === UNIT_SCAN_CAP,
+  };
 }
 
 /**
@@ -107,10 +118,12 @@ export const getModelRoi = query({
       throw new ConvexError(`model ${modelId} is not in org ${orgId}`);
     }
 
+    // +1 so a full page is distinguishable from a page that exactly fits.
     const rollups = await ctx.db
       .query("projectModelRevenues")
       .withIndex("by_organizationId_modelId", (q) => q.eq("organizationId", orgId).eq("modelId", modelId))
-      .take(MODEL_ROLLUP_CAP);
+      .take(MODEL_ROLLUP_CAP + 1);
+    const rollupsTruncated = rollups.length > MODEL_ROLLUP_CAP;
 
     const projects: {
       projectId: string;
@@ -121,7 +134,7 @@ export const getModelRoi = query({
       revenue: number;
     }[] = [];
 
-    for (const r of rollups) {
+    for (const r of rollups.slice(0, MODEL_ROLLUP_CAP)) {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", r.projectId)).first();
       if (!p || p.isTemplate) continue;
       if (!counted.has(p.status ?? "")) continue;
@@ -140,14 +153,16 @@ export const getModelRoi = query({
 
     projects.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
     const revenueCents = projects.reduce((s, p) => s + Math.round(p.revenue * 100), 0);
+    const units = await unitsOwnedFor(ctx, orgId, modelId);
 
     return {
       modelId,
       modelName: model?.name ?? "Unknown model",
       replacementCost: model?.replacementCost ?? null,
-      unitsOwned: await unitsOwnedFor(ctx, orgId, modelId),
+      unitsOwned: units.unitsOwned,
       revenue: revenueCents / 100,
       projects,
+      truncated: rollupsTruncated || units.truncated,
     };
   },
 });
@@ -168,20 +183,38 @@ export const fleetRevenue = query({
     await requireOrgRead(ctx, orgId);
     const counted = countableStatuses(statuses);
 
-    // NEWEST FIRST. `.take()` returns an index prefix, and the reports open on a
-    // trailing-12-months window. Scanning in insertion order would hand an org with
-    // more than PROJECT_SCAN_CAP projects only its OLDEST ones — so the default view
-    // would report ~nothing, and narrowing the window (which the truncation banner
-    // tells you to do) would not help, because the recent projects were never read.
-    const scanned = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .order("desc")
-      .take(PROJECT_SCAN_CAP);
+    // RANGE-SCAN the window, don't take a prefix and filter it. `.take()` returns an
+    // index prefix; the window is on rentalStartDate, and creation order does not
+    // track rental date (a project entered today can be for a gig last year). Taking
+    // the first N projects by any other ordering reads the wrong ones entirely, and
+    // narrowing the window — which the truncation banner tells you to do — cannot
+    // help, because the in-window projects were never read.
+    //
+    // Trade-off: a project with NO rentalStartDate is outside this index range, so a
+    // windowed report omits it. The all-time view (no bounds) still sees everything.
+    const windowed = from != null || to != null;
+    const scanned = windowed
+      ? await ctx.db
+          .query("projects")
+          .withIndex("by_organizationId_rentalStartDate", (q) => {
+            const base = q.eq("organizationId", orgId);
+            if (from != null && to != null) return base.gte("rentalStartDate", from).lte("rentalStartDate", to);
+            if (from != null) return base.gte("rentalStartDate", from);
+            return base.lte("rentalStartDate", to!);
+          })
+          .order("desc")
+          .take(PROJECT_SCAN_CAP)
+      : await ctx.db
+          .query("projects")
+          .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+          .order("desc")
+          .take(PROJECT_SCAN_CAP);
 
     const inScope = scanned.filter((p) => {
       if (p.isTemplate) return false;
       if (!counted.has(p.status ?? "")) return false;
+      // Redundant inside the range scan; load-bearing for the all-time path, which
+      // has no bounds to scan against.
       const d = projectDate(p);
       return (from == null || d >= from) && (to == null || d <= to);
     });

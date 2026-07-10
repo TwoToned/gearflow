@@ -75,6 +75,10 @@ vi.mock("./generated/operations", () => ({
 // This suite exercises the server-action path against a fake registry; the Convex
 // read bridge has its own suite (convex-reads.test.ts).
 vi.mock("./convex-reads", () => ({ CONVEX_READS: {}, INJECTED_ARGS: new Set(["orgId"]) }));
+vi.mock("./tool-aliases", () => ({
+  TOOL_ALIASES: { list_projects: "projects.getProjects" },
+  TOOL_BY_OPERATION: { "projects.getProjects": "list_projects" },
+}));
 vi.mock("../convex-client", () => ({ getConvexClient: vi.fn() }));
 vi.mock("./authorize", () => ({ authorizeApiOperation }));
 vi.mock("../prisma", () => ({
@@ -127,6 +131,12 @@ describe("getOperation", () => {
     expect(() => getOperation("nope.nothing")).toThrowError(
       expect.objectContaining({ code: "NOT_FOUND" }),
     );
+  });
+
+  it("resolves an MCP tool name as an alias for its operation", () => {
+    // An agent falling back from MCP to REST shouldn't have to rediscover that
+    // `list_projects` is really `projects.getProjects`.
+    expect(getOperation("list_projects").name).toBe("projects.getProjects");
   });
 });
 
@@ -442,6 +452,38 @@ describe("listOperations", () => {
   it("shows everything to a session actor", () => {
     const session: ActorContext = { ...actor, actorType: "session", scopes: undefined };
     expect(listOperations(session).total).toBe(4);
+  });
+
+  it("pages with offset + limit, and reports total/offset/hasMore", () => {
+    const session: ActorContext = { ...actor, actorType: "session", scopes: undefined };
+    const all = listOperations(session, { limit: 100 });
+    expect(all.total).toBe(4);
+
+    const p1 = listOperations(session, { limit: 2, offset: 0 });
+    const p2 = listOperations(session, { limit: 2, offset: 2 });
+    const p3 = listOperations(session, { limit: 2, offset: 4 });
+
+    expect([p1.returned, p2.returned, p3.returned]).toEqual([2, 2, 0]);
+    expect([p1.hasMore, p2.hasMore, p3.hasMore]).toEqual([true, false, false]);
+    expect(p2.offset).toBe(2);
+
+    // Every operation is reachable exactly once across the pages.
+    const seen = [...p1.operations, ...p2.operations].map((o) => o.name);
+    expect(new Set(seen).size).toBe(4);
+    expect(seen).toEqual(all.operations.map((o) => o.name));
+  });
+
+  it("orders deterministically, or paging would drop or duplicate entries", () => {
+    const session: ActorContext = { ...actor, actorType: "session", scopes: undefined };
+    const names = listOperations(session).operations.map((o) => o.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it("reports the MCP tool that runs an operation, when there is one", () => {
+    const session: ActorContext = { ...actor, actorType: "session", scopes: undefined };
+    const ops = listOperations(session).operations as Array<{ name: string; mcpTool?: string }>;
+    expect(ops.find((o) => o.name === "projects.getProjects")?.mcpTool).toBe("list_projects");
+    expect(ops.find((o) => o.name === "projects.deleteProject")?.mcpTool).toBeUndefined();
   });
 
   it("filters by kind and search", () => {

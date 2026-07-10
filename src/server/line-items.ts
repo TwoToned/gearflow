@@ -19,6 +19,7 @@ import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
 import { UserFacingError } from "@/lib/errors";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
@@ -502,6 +503,17 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // the only rejection path in this wave.
     result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
   ]);
+
+  // Fired only after the line item committed. Best-effort: never blocks the write.
+  void emitWebhookEvent(organizationId, "line_item.added", {
+    projectId,
+    lineItemId: result.id,
+    modelId: result.modelId ?? null,
+    quantity: result.quantity ?? null,
+    type: result.type ?? null,
+    description: result.description ?? null,
+  });
+
   return serialize({ ...result, supplier });
 }
 
@@ -1603,4 +1615,63 @@ export async function recalculateProjectTotals(projectId: string) {
     orgId,
     now: Date.now(),
   });
+}
+
+/**
+ * Availability for MANY models in one call.
+ *
+ * `checkAvailability` answers for a single model, so an agent sizing up ten models
+ * paid ten round trips. This runs the same per-model check server-side and returns
+ * a keyed result, collapsing the agent's cost to one request. Each model's answer
+ * is byte-identical to calling `checkAvailability` directly — this is a fan-out,
+ * not a second implementation of the overbooking maths.
+ *
+ * Reads only; capped so a caller can't fan out unboundedly.
+ */
+export async function checkAvailabilityBatch(
+  modelIds: string[],
+  rentalStartDate?: Date | string | null,
+  rentalEndDate?: Date | string | null,
+  excludeProjectId?: string,
+  actor?: ActorContext
+) {
+  if (!Array.isArray(modelIds) || modelIds.length === 0) {
+    throw new UserFacingError({
+      code: "NO_MODELS",
+      title: "No models given",
+      message: "Provide at least one modelId.",
+      field: "modelIds",
+    });
+  }
+
+  const unique = [...new Set(modelIds)];
+  const MAX = 100;
+  if (unique.length > MAX) {
+    throw new UserFacingError({
+      code: "TOO_MANY_MODELS",
+      title: "Too many models",
+      message: `Received ${unique.length} models; the maximum per call is ${MAX}.`,
+      hint: "Split the request into batches.",
+      field: "modelIds",
+    });
+  }
+
+  // Bounded concurrency: each check is its own Convex query, and firing 100 at
+  // once would spike the deployment for no latency gain.
+  const CONCURRENCY = 8;
+  const results: Record<string, Awaited<ReturnType<typeof checkAvailability>>> = {};
+
+  for (let i = 0; i < unique.length; i += CONCURRENCY) {
+    const chunk = unique.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(
+      chunk.map((modelId) =>
+        checkAvailability(modelId, rentalStartDate, rentalEndDate, excludeProjectId, actor)
+      )
+    );
+    chunk.forEach((modelId, idx) => {
+      results[modelId] = settled[idx];
+    });
+  }
+
+  return serialize({ requested: unique.length, availability: results });
 }

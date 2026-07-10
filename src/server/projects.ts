@@ -5,6 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -502,16 +503,27 @@ export async function getProject(id: string) {
     }
   }
 
+  // Line items carry a `categoryId` but the flat list left `category` null, so a
+  // caller grouping gear by category had to resolve every id itself. The names are
+  // already in `categories` (the tree) — attach them here, no extra query.
+  const categoryById = new Map(categories.map((c) => [c.id, { id: c.id, name: c.name }]));
+  const attachCategory = <T extends { categoryId: string | null }>(row: T) => {
+    const category = row.categoryId ? categoryById.get(row.categoryId) ?? null : null;
+    return { category, categoryName: category?.name ?? null };
+  };
+
   const enrichedLineItems = topLineItems.map((li) => {
     const info = overbookedMap.get(li.id);
     return {
       ...li,
+      ...attachCategory(li),
       isOverbooked: !!info,
       overbookedInfo: info ?? null,
       childLineItems: li.childLineItems?.map((child) => {
         const childInfo = overbookedMap.get(child.id);
         return {
           ...child,
+          ...attachCategory(child),
           isOverbooked: !!childInfo,
           overbookedInfo: childInfo ?? null,
         };
@@ -822,6 +834,17 @@ export async function updateProjectStatus(
       summary: `Changed project ${updated.projectNumber} status from ${project.status} to ${status}`,
       details: { changes: [{ field: "status", from: project.status, to: status }] },
       projectId: updated.id,
+    });
+  }
+
+  // Fired only after the status change committed. Best-effort: never blocks the write.
+  if (project.status !== status) {
+    void emitWebhookEvent(organizationId, "project.status_changed", {
+      projectId: updated.id,
+      projectNumber: updated.projectNumber,
+      name: updated.name,
+      from: project.status,
+      to: status,
     });
   }
 

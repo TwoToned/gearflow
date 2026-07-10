@@ -102,6 +102,14 @@ describe("handleMcpMessage — protocol", () => {
     expect(filters.properties).toBeUndefined();
   });
 
+  it("exposes a batch availability tool so an agent needn't loop check_availability", () => {
+    const batch = CURATED_TOOLS.find((t) => t.name === "check_availability_batch")!;
+    expect(batch.operation).toBe("line-items.checkAvailabilityBatch");
+    const modelIds = batch.inputSchema.properties.modelIds as { maxItems: number };
+    expect(modelIds.maxItems).toBe(100);
+    expect(batch.inputSchema.required).toEqual(["modelIds"]);
+  });
+
   it("keeps the tool list small enough for an agent to reason over", () => {
     // The whole point of the curated + dynamic-dispatch split. If this trips,
     // move the new tool behind call_operation rather than raising the bound.

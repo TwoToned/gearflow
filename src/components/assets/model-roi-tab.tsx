@@ -162,8 +162,9 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
             description="Widen the date range, or include booked work that hasn't been invoiced yet."
           />
         ) : (
-          <div className="overflow-hidden rounded-md border border-line">
-            <table className="w-full">
+          /* overflow-x-auto, not overflow-hidden: five columns clip rather than scroll on a phone. */
+          <div className="overflow-x-auto rounded-md border border-line">
+            <table className="w-full min-w-[560px]">
               <thead>
                 <tr className="border-b border-line bg-paper-2">
                   <th className="px-3 py-2 text-left text-caption text-muted">Project</th>

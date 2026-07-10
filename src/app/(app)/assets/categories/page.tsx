@@ -308,12 +308,12 @@ function CategoriesContent() {
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
                         {canCreate && depth === 0 && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCreate(cat.id)} title="Add subcategory">
+                          <Button variant="ghost" size="icon" className="h-11 w-11 md:h-7 md:w-7" onClick={() => openCreate(cat.id)} title="Add subcategory">
                             <Plus className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {canUpdate && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cat)} title="Edit">
+                          <Button variant="ghost" size="icon" className="h-11 w-11 md:h-7 md:w-7" onClick={() => openEdit(cat)} title="Edit">
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
@@ -321,7 +321,7 @@ function CategoriesContent() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-t-out"
+                            className="h-11 w-11 text-t-out md:h-7 md:w-7"
                             title="Delete"
                             onClick={() => setDeleteId(cat.id)}
                           >

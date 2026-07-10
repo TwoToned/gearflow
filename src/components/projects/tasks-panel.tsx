@@ -340,7 +340,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-8 opacity-0 group-hover:opacity-100"
+                              className="size-11 opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 md:size-8"
                               title="Task actions"
                             >
                               <Pencil className="h-3.5 w-3.5" />

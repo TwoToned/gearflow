@@ -133,8 +133,9 @@ export function CategorySection({
         {(onRename || onDelete) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover/cat:opacity-100 transition-opacity">
-                <MoreHorizontal className="h-3 w-3" />
+              {/* Touch has no hover, so the reveal would strand this menu at opacity-0. */}
+              <Button variant="ghost" size="icon" className="h-11 w-11 opacity-0 pointer-coarse:opacity-100 group-hover/cat:opacity-100 transition-opacity md:h-6 md:w-6">
+                <MoreHorizontal className="h-4 w-4 md:h-3 md:w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

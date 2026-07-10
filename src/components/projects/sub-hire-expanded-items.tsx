@@ -62,7 +62,7 @@ export function SubHireExpandedItems({ subHireId, orgId }: SubHireExpandedItemsP
   }
 
   return (
-    <div className="pb-2 ml-4 border-l-2 border-primary/20">
+    <div className="pb-2 ml-4 overflow-x-auto border-l-2 border-primary/20">
       <table className="w-full">
         <tbody>
           {groups.map((group) => {

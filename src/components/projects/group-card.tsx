@@ -123,8 +123,8 @@ export function GroupCard({
           {/* Actions menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreHorizontal className="h-3.5 w-3.5" />
+              <Button variant="ghost" size="icon" className="h-11 w-11 md:h-7 md:w-7">
+                <MoreHorizontal className="h-4 w-4 md:h-3.5 md:w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

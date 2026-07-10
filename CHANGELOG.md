@@ -4,6 +4,34 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.0.0] - 2026-07-10
+
+### Added
+
+- Lists now render as cards on a phone instead of a squeezed table. Each column
+  declares the slot it takes on a card (title, subtitle, badge, meta, actions),
+  and empty values are dropped rather than shown as a dash.
+- Mobile viewport projects for Playwright (iPhone 12, Pixel 5, iPad Mini), whose
+  device profiles carry the coarse pointer that mobile styles depend on.
+- A test that enforces the mobile rules in CI: max two columns, 44px tap targets,
+  and hover-only controls that stay reachable on touch.
+
+### Fixed
+
+- The primary action on six list screens ("New job", "New model", "Export CSV")
+  was cut off at the right edge of a phone and could not be tapped.
+- Controls that only appeared on hover — edit menus, the drag handle, the avatar
+  editor, notification dismiss — were invisible and untappable on any touch
+  device, because a phone has no hover.
+- Buttons, filter chips, pagination and row menus now meet the 44px minimum tap
+  target on a phone while keeping their compact size on desktop.
+- Bulk assets no longer lose the "Available" figure on a card when the quantity
+  is unset.
+- Three-column strips and form rows now fold to two columns or fewer on a phone.
+- Two tables clipped their columns instead of scrolling, putting content past the
+  screen edge out of reach entirely.
+- Long names on a card are no longer truncated by the status badges beside them.
+
 ## [0.22.0.0] - 2026-07-10
 
 ### Added

@@ -178,10 +178,13 @@ export const fleetRevenue = query({
     statuses: v.array(v.string()),
     from: v.optional(v.number()),
     to: v.optional(v.number()),
+    /** Lower the rollup-row budget (e.g. for a cheaper query). Clamped — never raised. */
+    rollupBudget: v.optional(v.number()),
   },
-  handler: async (ctx, { orgId, statuses, from, to }) => {
+  handler: async (ctx, { orgId, statuses, from, to, rollupBudget }) => {
     await requireOrgRead(ctx, orgId);
     const counted = countableStatuses(statuses);
+    const budget = Math.max(1, Math.min(ROLLUP_READ_BUDGET, rollupBudget ?? ROLLUP_READ_BUDGET));
 
     // RANGE-SCAN the window, don't take a prefix and filter it. `.take()` returns an
     // index prefix; the window is on rentalStartDate, and creation order does not
@@ -232,14 +235,27 @@ export const fleetRevenue = query({
     let rowsRead = 0;
 
     for (const p of projects) {
-      if (rowsRead >= ROLLUP_READ_BUDGET) {
+      const remaining = budget - rowsRead;
+      if (remaining <= 0) {
         truncated = true;
         break;
       }
+      // Fetch one MORE than the budget allows, so "exactly filled the budget" is
+      // distinguishable from "had more to give". Taking exactly `remaining` on the
+      // last project would read a partial page, exit the loop normally, and leave
+      // `truncated` false while a model's revenue quietly went missing.
       const rows = await ctx.db
         .query("projectModelRevenues")
         .withIndex("by_projectId", (q) => q.eq("projectId", p.id))
-        .take(ROLLUP_READ_BUDGET - rowsRead);
+        .take(remaining + 1);
+
+      if (rows.length > remaining) {
+        // Don't ingest a half-read project: a partial total is a wrong total, and
+        // it looks exactly like a project whose gear underperformed.
+        truncated = true;
+        break;
+      }
+
       rowsRead += rows.length;
       projectsCounted++;
       for (const r of rows) {

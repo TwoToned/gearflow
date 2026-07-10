@@ -131,6 +131,36 @@ describe("fleetRevenue — status + date filtering", () => {
     expect(fleet.projectsCounted).toBe(1);
   });
 
+  /**
+   * The budget is spent by ROLLUP ROWS, not by projects. Reading exactly `remaining`
+   * rows on the LAST project fills the budget, exits the loop normally, and would
+   * leave `truncated` false while a model's revenue quietly went missing — which
+   * looks identical to gear that simply didn't earn.
+   */
+  test("a project truncated exactly at the budget boundary still reports truncated", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "p1", status: "COMPLETED", rentalStartDate: NOW }, [
+      { modelId: "a", revenue: 10 },
+      { modelId: "b", revenue: 20 },
+    ]);
+
+    // Budget of exactly 2 rows: p1's page fills it precisely, with nothing left over.
+    const exact = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, rollupBudget: 2,
+    });
+    expect(exact.truncated).toBe(false);
+    expect(exact.projectsCounted).toBe(1);
+
+    // Budget of 1: p1 has more to give, so the report must say so — and must not
+    // ingest a half-read project, because a partial total is a wrong total.
+    const short = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: COUNTED, rollupBudget: 1,
+    });
+    expect(short.truncated).toBe(true);
+    expect(short.projectsCounted).toBe(0);
+    expect(short.rows).toHaveLength(0);
+  });
+
   test("respects the date window", async () => {
     const t = convexTest(schema, modules);
     await seedProject(t, { id: "old", status: "COMPLETED", rentalStartDate: NOW - 10 * DAY }, [{ modelId: "rx", revenue: 100 }]);

@@ -4,6 +4,35 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.21.0.0] - 2026-07-10
+
+### Added
+
+- **Fleet ROI report** (`Assets → Fleet ROI`). Every model ranked by what it has earned against
+  what it cost to own, sortable by revenue, payback, or revenue per unit, and filterable by date
+  window and by whether booked-but-uninvoiced work counts. Models with real capital and no revenue
+  get their own "idle capital" figure — the number that tells you what to sell.
+- **ROI tab on every model.** Total revenue attributed, fleet replacement cost, a progress bar to
+  break-even, revenue per unit, and the list of projects that produced it.
+- **Revenue allocation for gear inside kits and bundles.** Until now, gear booked inside a
+  fixed-price kit or a priced group earned nothing on paper — the whole price sat on the parent
+  line, and the models inside it reported $0 forever. A kit's or bundle's price is now split across
+  the gear inside it, so per-model ROI is answerable for equipment that never ships on its own.
+  Accessories take a share too.
+- **Revenue allocation panel on kit detail.** Choose how a kit's price divides across the models
+  inside it. Opens on a suggestion weighted by replacement cost, so the usual answer is just "Save".
+  Change a kit's contents and the panel tells you the split is out of date — bookings quietly fall
+  back to cost weighting rather than misattributing anything, and are never blocked.
+
+### Changed
+
+- Project revenue is attributed after the project discount, not before, so a discounted job credits
+  its gear with what the client actually paid.
+- Sub-hired gear no longer inflates the ROI of the equipment booked alongside it, and is never
+  credited to a model you own.
+- Quotes never count as revenue. Only completed and invoiced projects do, unless you explicitly ask
+  to include booked work.
+
 ## [0.20.1.0] - 2026-07-09
 
 ### Added

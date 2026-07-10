@@ -149,6 +149,18 @@ portals to `<body>` as a sibling, inherits the lock, and every click is swallowe
 (`combobox-picker.tsx`, `tag-input.tsx`) are built on **Radix** Popover for exactly
 this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/07.
 
+### ⚠️ Never regenerate `convex/schema.ts` over itself
+`scripts/generate-convex-schema.cjs` is a **scaffolding** tool, not a source of truth.
+The checked-in schema has diverged on purpose: hand-added `searchIndex`/composite
+indexes the generator never emits, plus (Phase C) Convex tables whose Prisma models
+are already stripped. It currently emits **91 tables against the checked-in 98** —
+running it over the file silently deletes live tables and every search index. To add
+a table: generate into a scratch dir, diff, hand-merge the stanza.
+
+Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
+authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
+be checked against `organizationId`, or you have a cross-tenant read.
+
 ### Prisma v6
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev

@@ -1245,7 +1245,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="size-8"
+                        className="touch-target size-8"
                         title="Edit sub-hire order"
                         onClick={() => {
                           setManagingSubHireId(shId);

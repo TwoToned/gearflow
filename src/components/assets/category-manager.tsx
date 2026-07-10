@@ -256,16 +256,16 @@ export function CategoryManager() {
                       <span className="tabular-nums">{cat._count.children}</span> sub
                     </Badge>
                   )}
-                  <Button variant="ghost" size="icon" className="size-8" aria-label="Add subcategory" onClick={() => openCreate(cat.id)}>
+                  <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Add subcategory" onClick={() => openCreate(cat.id)}>
                     <Plus className="h-3 w-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="size-8" aria-label="Edit category" onClick={() => openEdit(cat)}>
+                  <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Edit category" onClick={() => openEdit(cat)}>
                     <Pencil className="h-3 w-3" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted hover:text-t-out"
+                    className="touch-target size-8 text-muted hover:text-t-out"
                     aria-label="Delete category"
                     onClick={() => setDeleteId(cat.id)}
                   >
@@ -286,13 +286,13 @@ export function CategoryManager() {
                         <Badge status="neutral">
                           <span className="tabular-nums">{child._count.models}</span> models
                         </Badge>
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="Edit subcategory" onClick={() => openEdit(child)}>
+                        <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Edit subcategory" onClick={() => openEdit(child)}>
                           <Pencil className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8 text-muted hover:text-t-out"
+                          className="touch-target size-8 text-muted hover:text-t-out"
                           aria-label="Delete subcategory"
                           onClick={() => setDeleteId(child.id)}
                         >

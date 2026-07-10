@@ -386,7 +386,9 @@ export default function AccountPage() {
               aria-label="Change profile picture"
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                "absolute inset-0 flex items-center justify-center rounded-full bg-scrim opacity-0 transition-opacity group-hover:opacity-100",
+                // Touch has no hover, and a permanent full-bleed scrim would bury
+                // the avatar — so coarse pointers get a 44px camera badge instead.
+                "absolute inset-0 flex items-center justify-center rounded-full bg-scrim opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:inset-auto pointer-coarse:-bottom-1 pointer-coarse:-right-1 pointer-coarse:size-11 pointer-coarse:border-2 pointer-coarse:border-border pointer-coarse:bg-paper pointer-coarse:opacity-100",
                 focusRing,
               )}
             >
@@ -649,7 +651,7 @@ export default function AccountPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-9"
+                      className="touch-target size-9"
                       aria-label="Rename passkey"
                       onClick={() => {
                         setRenamePasskey({ id: pk.id, name: pk.name || "" });
@@ -661,7 +663,7 @@ export default function AccountPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-9"
+                      className="touch-target size-9"
                       aria-label="Delete passkey"
                       onClick={() => setDeletePasskeyId(pk.id)}
                     >
@@ -743,7 +745,7 @@ export default function AccountPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-9"
+                        className="touch-target size-9"
                         aria-label="Revoke session"
                         onClick={() => revokeSessionMutation.mutate(s.id)}
                       >

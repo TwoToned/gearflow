@@ -368,7 +368,7 @@ function AvailabilityPage() {
                           variant="ghost"
                           size="icon"
                           aria-label="Close day detail"
-                          className="-mt-1 -mr-1 size-7 shrink-0"
+                          className="touch-target -mt-1 -mr-1 size-7 shrink-0"
                           onClick={() => setSelectedDay(null)}
                         >
                           <X className="size-3.5" />

@@ -813,7 +813,7 @@ export function CategoryRow({
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity group-hover/cat:opacity-100 focus-visible:opacity-100">
+              <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/cat:opacity-100 focus-visible:opacity-100">
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>

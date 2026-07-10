@@ -842,7 +842,7 @@ export default function CrewMemberDetailPage({
                                       <CanDo resource="crew" action="update">
                                         <DropdownMenu>
                                           <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="size-9" aria-label="Assignment actions">
+                                            <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Assignment actions">
                                               <MoreHorizontal className="size-5" />
                                             </Button>
                                           </DropdownMenuTrigger>
@@ -975,7 +975,7 @@ export default function CrewMemberDetailPage({
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="size-9 text-t-out hover:bg-out-soft"
+                                          className="touch-target size-9 text-t-out hover:bg-out-soft"
                                           aria-label="Remove availability block"
                                           onClick={() => setRemoveAvailId(av.id)}
                                         >
@@ -1148,7 +1148,7 @@ export default function CrewMemberDetailPage({
                                   {entry.status !== "EXPORTED" && (
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="size-9" aria-label="Time entry actions">
+                                        <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Time entry actions">
                                           <MoreHorizontal className="size-5" />
                                         </Button>
                                       </DropdownMenuTrigger>

@@ -338,7 +338,7 @@ function CrewDashboard() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-9 text-ok hover:bg-ok-soft"
+                  className="touch-target size-9 text-ok hover:bg-ok-soft"
                   aria-label="Approve timesheet"
                   title="Approve"
                   onClick={() => approveMutation.mutate([entry.id])}
@@ -349,7 +349,7 @@ function CrewDashboard() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-9 text-warn hover:bg-warn-soft"
+                  className="touch-target size-9 text-warn hover:bg-warn-soft"
                   aria-label="Dispute timesheet"
                   title="Dispute"
                   onClick={() => disputeMutation.mutate(entry.id)}

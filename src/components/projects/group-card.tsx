@@ -72,7 +72,7 @@ export function GroupCard({
         {/* Drag handle — visible on hover only */}
         {dragHandleProps && (
           <div
-            className="flex-none cursor-grab text-fg-4 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-fg-3 active:cursor-grabbing"
+            className="flex-none cursor-grab text-fg-4 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/card:opacity-100 hover:text-fg-3 active:cursor-grabbing"
             onClick={(e) => e.stopPropagation()}
             {...dragHandleProps}
           >

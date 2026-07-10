@@ -188,7 +188,7 @@ export default function TemplatesPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-8"
+                              className="touch-target size-8"
                               title="Edit template"
                               asChild
                             >
@@ -201,7 +201,7 @@ export default function TemplatesPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-8 text-t-out"
+                              className="touch-target size-8 text-t-out"
                               title="Delete template"
                               onClick={() =>
                                 setDeleteTarget({ id: t.id, name: t.name })

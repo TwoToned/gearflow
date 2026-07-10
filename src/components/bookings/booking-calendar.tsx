@@ -258,7 +258,7 @@ export function BookingCalendar({
             <Button
               variant={viewMode === "calendar" ? "primary" : "ghost"}
               size="icon"
-              className="h-8 w-8 rounded-r-none"
+              className="touch-target h-8 w-8 rounded-r-none"
               onClick={() => setViewMode("calendar")}
             >
               <LayoutGrid className="h-4 w-4" />
@@ -266,7 +266,7 @@ export function BookingCalendar({
             <Button
               variant={viewMode === "list" ? "primary" : "ghost"}
               size="icon"
-              className="h-8 w-8 rounded-l-none"
+              className="touch-target h-8 w-8 rounded-l-none"
               onClick={() => setViewMode("list")}
             >
               <List className="h-4 w-4" />
@@ -448,7 +448,7 @@ export function BookingCalendar({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="touch-target h-7 w-7"
                       onClick={() => setSelectedDay(null)}
                     >
                       <X className="h-3.5 w-3.5" />

@@ -103,7 +103,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-7"
+                className="touch-target size-7"
                 onClick={() => remove.mutate(c.id)}
               >
                 <X className="h-3.5 w-3.5" />

@@ -380,7 +380,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-warn"
+                                      className="touch-target h-7 w-7 text-warn"
                                       title="Force return"
                                       onClick={() =>
                                         setForceReturnAssetId({
@@ -447,7 +447,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7"
+                                      className="touch-target h-7 w-7"
                                       title="Edit"
                                       asChild
                                     >
@@ -459,7 +459,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 text-t-out"
+                                        className="touch-target h-7 w-7 text-t-out"
                                         title="Archive"
                                         onClick={() => setArchiveBulkId(ba.id)}
                                       >
@@ -469,7 +469,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 text-t-out"
+                                        className="touch-target h-7 w-7 text-t-out"
                                         title="Delete"
                                         onClick={() => setDeleteBulkId(ba.id)}
                                       >

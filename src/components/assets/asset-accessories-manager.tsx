@@ -154,7 +154,7 @@ export function AssetAccessoriesManager({
               <span className="t-mono text-ink">{c.assetTag}</span>
               <span className="text-muted">{c.model?.name ?? ""}</span>
               <span className="ml-auto text-badge text-muted">accessory</span>
-              <Button size="icon" variant="ghost" className="size-7" onClick={() => removeSerial.mutate(c.id)}>
+              <Button size="icon" variant="ghost" className="touch-target size-7" onClick={() => removeSerial.mutate(c.id)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </li>
@@ -167,7 +167,7 @@ export function AssetAccessoriesManager({
                 {c.allocationMode === "DEDICATED" ? "Dedicated" : "Ships-with"}
               </span>
               <span className="ml-auto text-badge text-muted">accessory</span>
-              <Button size="icon" variant="ghost" className="size-7" onClick={() => removeBulk.mutate(c.id)}>
+              <Button size="icon" variant="ghost" className="touch-target size-7" onClick={() => removeBulk.mutate(c.id)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </li>

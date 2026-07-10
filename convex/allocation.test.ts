@@ -546,6 +546,64 @@ describe("rollupByModel", () => {
   });
 });
 
+// ── project discount ─────────────────────────────────────────────────────────
+
+describe("project discount", () => {
+  test("allocates what was billed, not what was listed", () => {
+    // recalcProjectTotals applies discountPercent to the subtotal; the group and
+    // line prices the allocation pass reads are pre-discount.
+    const r = allocateProject({
+      lines: [L("a", { modelId: "m1", lineTotal: 200 })],
+      groups: [],
+      models: new Map(),
+      kitAllocations: noKits,
+      revenueFactor: 0.75,
+    });
+    expect(rev(r, "a")).toBe(150);
+  });
+
+  test("a fully discounted job credits no gear with revenue", () => {
+    const r = allocateProject({
+      lines: [L("a", { groupId: "g1", modelId: "m1", lineTotal: 100 })],
+      groups: [{ id: "g1", price: 900, quantity: 1 }],
+      models: new Map(),
+      kitAllocations: noKits,
+      revenueFactor: 0,
+    });
+    expect(rev(r, "a")).toBe(0);
+    expect(basis(r, "a")).toBe("NO_REVENUE");
+  });
+
+  test("the discounted pool still splits to the cent", () => {
+    const r = allocateProject({
+      lines: [
+        L("a", { groupId: "g1", modelId: "m1", lineTotal: 1, sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", lineTotal: 1, sortOrder: 2 }),
+        L("c", { groupId: "g1", modelId: "m3", lineTotal: 1, sortOrder: 3 }),
+      ],
+      groups: [{ id: "g1", price: 100, quantity: 1 }],
+      models: new Map(),
+      kitAllocations: noKits,
+      revenueFactor: 1 - 33 / 100,
+    });
+    expect(sumOf(r, ["a", "b", "c"])).toBe(67);
+  });
+
+  test("a nonsense discount is clamped rather than inventing revenue", () => {
+    const over = allocateProject({
+      lines: [L("a", { modelId: "m1", lineTotal: 100 })],
+      groups: [], models: new Map(), kitAllocations: noKits, revenueFactor: 1.5,
+    });
+    expect(rev(over, "a")).toBe(100);
+
+    const under = allocateProject({
+      lines: [L("a", { modelId: "m1", lineTotal: 100 })],
+      groups: [], models: new Map(), kitAllocations: noKits, revenueFactor: -0.5,
+    });
+    expect(rev(under, "a")).toBe(0);
+  });
+});
+
 // ── kit allocation helpers ───────────────────────────────────────────────────
 
 describe("suggestKitAllocation", () => {

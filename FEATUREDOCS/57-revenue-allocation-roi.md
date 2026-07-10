@@ -201,5 +201,19 @@ half-worked must not be mistaken for one that worked.
   hand-merge the stanza.
 - **`bulkAssets.totalQuantity`, not `quantity`** (that's `kitBulkItems`) and not `availableQuantity`
   — ROI is about the capital we bought, not what's on the shelf today.
+- **`by_cuid` and `by_modelId` are global indexes.** `requireOrgRead` validates the *caller's* org,
+  not the *row's*. Any doc fetched by cuid or by modelId must be checked against `organizationId`,
+  or a tenant can read another tenant's model costs by guessing an id.
+- **Status gating lives in the Convex query, not only in `src/server/roi.ts`.** A browser holds a
+  user token and can call an org-scoped query directly.
+- **Pools are scaled by `1 − discountPercent/100`.** Group and line prices are pre-discount;
+  `recalcProjectTotals` discounts the subtotal. Allocating raw prices credits revenue that was
+  never billed.
+- **A cap on projects is not a cap on reads.** Rollup rows per project are unbounded — budget the
+  rows. And scan projects **newest-first**: `.take(n)` is an index prefix, and every report opens on
+  a trailing window.
+- **Allocation is recomputed per project, not frozen.** Any edit to an old project restages its
+  whole split using today's model rates and kit percentages. Only lines with no `lineTotal` of their
+  own (KIT_PRICE kit children, accessories) can actually move.
 - Adding a new line-item *kind* means deciding its `allocationBasis`. If it has a `modelId` and
   isn't ours, it must consume weight and be excluded — see the sub-hire case.

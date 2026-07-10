@@ -118,6 +118,9 @@ export async function recalcProjectTotals(
     projectId,
     orgId,
     rentalPeriod: project.defaultRentalPeriod,
+    // Allocate what was BILLED, not what was listed: the project discount above
+    // never reached the group/line prices the allocation pass reads.
+    discountPercent,
     groups,
     lines: projectLines,
     now,

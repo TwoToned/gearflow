@@ -155,6 +155,39 @@ describe("recalcProjectTotals — allocation lands on the rows", () => {
     expect(await readRollup(t)).toHaveLength(2);
   });
 
+  test("the project discount reaches the allocation, not just the totals", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "COMPLETED", isTemplate: false, taxRate: 10, discountPercent: 25,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", line({ id: "gear", modelId: "rx", lineTotal: 400, sortOrder: 1 }));
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    // Billed 75% of the listed price, so that is what the gear earned.
+    expect((await readLine(t, "gear"))?.allocatedRevenue).toBe(300);
+    expect((await readRollup(t))[0].allocatedRevenue).toBe(300);
+  });
+
+  test("a duplicate rollup row is healed, not double-counted", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitProject(t);
+    await t.run(async (ctx) => {
+      // Convex indexes don't enforce uniqueness — an import or repair script could
+      // leave two rows for the same (project, model). ROI SUMs whatever it finds.
+      await ctx.db.insert("projectModelRevenues", { id: "dup_a", organizationId: ORG, projectId: "p1", modelId: "rx", allocatedRevenue: 111, updatedAt: NOW });
+      await ctx.db.insert("projectModelRevenues", { id: "dup_b", organizationId: ORG, projectId: "p1", modelId: "rx", allocatedRevenue: 222, updatedAt: NOW });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const rows = await readRollup(t);
+    expect(rows.filter((r) => r.modelId === "rx")).toHaveLength(1);
+    expect(rows.reduce((s, r) => s + r.allocatedRevenue, 0)).toBeCloseTo(900, 2);
+  });
+
   test("removing the kit price zeroes its children rather than stranding old values", async () => {
     const t = convexTest(schema, modules);
     await seedKitProject(t);

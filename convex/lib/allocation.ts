@@ -87,6 +87,13 @@ export interface AllocationInput {
   /** kitId → (modelId → percent). Applied only if it exactly covers the kit. */
   kitAllocations: ReadonlyMap<string, ReadonlyMap<string, number>>;
   rentalPeriod?: string | null;
+  /**
+   * What fraction of the listed prices the client is actually billed, after the
+   * project-level discount. `recalcProjectTotals` applies `discountPercent` to the
+   * subtotal, so allocating the undiscounted price would credit gear with revenue
+   * the project never charged — a 100%-discounted job would report full ROI.
+   */
+  revenueFactor?: number;
 }
 
 export interface LineAllocation {
@@ -159,6 +166,12 @@ function rateOf(m: AllocModel | undefined, weekly: boolean): number {
 export function allocateProject(input: AllocationInput): Map<string, LineAllocation> {
   const { lines, groups, models, kitAllocations } = input;
   const weekly = input.rentalPeriod === "WEEKLY";
+  // Clamped: a discountPercent outside 0–100 is bad data, and neither negative
+  // revenue nor revenue above the listed price is a thing we want to invent.
+  const factor = Math.min(1, Math.max(0, input.revenueFactor ?? 1));
+  /** A billed pool, in cents: the listed amount after the project discount. */
+  const poolOf = (amount: number | null | undefined): number =>
+    Math.max(0, Math.round((amount ?? 0) * factor * 100));
   const out = new Map<string, LineAllocation>();
 
   const byId = new Map(lines.map((l) => [l.id, l]));
@@ -376,7 +389,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     // Round the PRODUCT, not the price: recalcProjectTotals bills `price × quantity`
     // and rounds the sum, so rounding the price first would allocate a pool the
     // project never charged for.
-    const poolCents = Math.max(0, Math.round((g.price ?? 0) * Math.max(0, g.quantity ?? 0) * 100));
+    const poolCents = poolOf((g.price ?? 0) * Math.max(0, g.quantity ?? 0));
 
     if (members.length === 0) continue;
     if (members.length === 1) {
@@ -406,7 +419,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       stamp(l, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
       continue;
     }
-    const poolCents = Math.max(0, toCents(l.lineTotal));
+    const poolCents = poolOf(l.lineTotal);
     assign(l, poolCents, poolCents === 0 ? "NO_REVENUE" : "DIRECT");
   }
 
@@ -493,6 +506,8 @@ export async function applyProjectAllocation(
     projectId: string;
     orgId: string;
     rentalPeriod?: string | null;
+    /** Project-level discount, 0–100. Scales every pool to what was actually billed. */
+    discountPercent?: number | null;
     groups: readonly AllocGroup[];
     lines: readonly Doc<"projectLineItems">[];
     now: number;
@@ -525,6 +540,7 @@ export async function applyProjectAllocation(
     models,
     kitAllocations,
     rentalPeriod: args.rentalPeriod,
+    revenueFactor: 1 - Number(args.discountPercent ?? 0) / 100,
   });
 
   for (const line of lines) {
@@ -561,7 +577,17 @@ async function rebuildProjectModelRevenue(
     .query("projectModelRevenues")
     .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
     .collect();
-  const byModel = new Map(existing.map((r) => [r.modelId, r]));
+
+  // Convex indexes don't enforce uniqueness, so a duplicate (projectId, modelId)
+  // could survive an import or a repair script — and ROI SUMs every row it finds.
+  // Keep one per model and delete the rest, so a rebuild heals the table rather
+  // than preserving a double-count forever.
+  const byModel = new Map<string, (typeof existing)[number]>();
+  for (const row of existing) {
+    const kept = byModel.get(row.modelId);
+    if (!kept) byModel.set(row.modelId, row);
+    else await ctx.db.delete(row._id);
+  }
 
   for (const [modelId, revenue] of totals) {
     const row = byModel.get(modelId);

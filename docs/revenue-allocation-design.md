@@ -92,6 +92,17 @@ invariant is:
 SUM(children.allocatedRevenue) == parent's allocation pool     (to the cent)
 ```
 
+### …and "booked" means after the project discount
+
+Group and line prices are pre-discount. `recalcProjectTotals` applies `project.discountPercent` to
+the *subtotal*, so it never touches the numbers the allocation pass reads. Allocating them raw
+would credit gear with revenue the project never charged — a job discounted 100% would report full
+ROI on every piece of gear that went out on it.
+
+Every pool is therefore scaled by `1 − discountPercent/100` before it is split. The factor is
+clamped to `[0, 1]`: a discount outside that range is bad data, and neither negative revenue nor
+revenue above the listed price is something to invent.
+
 ## Correction 3 — sub-hire lines dilute the pool but earn no ROI
 
 The original spec said sub-hire items are "excluded from allocation" and in the very next sentence
@@ -255,10 +266,16 @@ What actually holds:
   funnels through. There is no separate trigger list to keep in sync, and no way to add a code path
   that forgets to allocate.
 - Allocation is **never computed at read time**, and never reads live model prices during a report.
-  That is what makes it a snapshot: *a price change on a model does not move a past project's
-  numbers, because nothing recomputes that project.*
+  Re-pricing a model does not, by itself, move any past project's numbers.
 - Writes are diffed — a line is patched only if its allocation actually changed — so a 200-line
   project doesn't take 200 writes per edit.
+
+**The snapshot is per-project, not per-line, and it is not frozen.** Editing *anything* on an old
+project — a service, a sub-hire, the tax rate — reruns the whole allocation using today's model
+rates and today's kit percentages. Most lines are unaffected, because rule 2 weights on the line's
+own stored `lineTotal`. The lines that can move are the ones with no price of their own: kit
+children under `KIT_PRICE`, and accessories. If you need a booked project's internal split to be
+immutable, freeze it on a terminal status; today it is not.
 
 `CANCELLED` and `isOptional` lines get `allocatedRevenue = 0 / NO_REVENUE`; they neither earn nor
 dilute.
@@ -280,7 +297,20 @@ COMPLETED, INVOICED
 Available as a toggle for pipeline views: `CONFIRMED, PREPPING, CHECKED_OUT, ON_SITE, RETURNED`
 ("booked"). Never counted: `ENQUIRY, QUOTING, QUOTED, CANCELLED`.
 
-Reports are additionally scoped to a date window on `rentalStartDate` (default: trailing 12 months).
+That policy is enforced **inside the Convex query**, not only in the server action that usually
+calls it. A browser holds a user token and can call an org-scoped Convex query directly, so a caller
+asking for `QUOTED` revenue has to get nothing back rather than a pipeline number dressed up as
+earnings.
+
+Reports are additionally scoped to a date window on `rentalStartDate` (default: trailing 12 months),
+falling back to `createdAt` where no rental date is set.
+
+### Tenant isolation
+
+`models.by_cuid`, `assets.by_modelId` and `bulkAssets.by_modelId` are **global** indexes, and
+`requireOrgRead` validates the *caller's* org, not the *row's*. Every row they return must be
+checked against `organizationId` — otherwise a user authorised for their own org can pass another
+org's `modelId` and read back its name, replacement cost and unit count.
 
 ---
 
@@ -365,6 +395,17 @@ That is enough for the current scale and not enough forever. The fleet query rea
 in the window, then their rollup rows, and **surfaces a visible truncation warning** if it hits its
 cap rather than silently reporting a low number. The next step, when it is needed, is a scheduled
 org-level aggregate — not a bigger cap.
+
+Two things a cap has to get right, and both are easy to get wrong:
+
+- **Scan newest-first.** `.take(n)` returns an index *prefix*. Scanning an org's projects in
+  insertion order hands a large org only its oldest ones, so the default trailing-12-months view
+  reports nearly nothing — and narrowing the window, which the truncation banner tells you to do,
+  cannot help, because the recent projects were never read.
+- **Budget the rows, not the parents.** Capping the *project* count doesn't cap documents read: a
+  project carries an unbounded number of models. Cap the rollup rows themselves, or the query blows
+  Convex's ~16k read limit and *throws* — and a report that throws is strictly worse than one that
+  admits it is partial.
 
 ---
 

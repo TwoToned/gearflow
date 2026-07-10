@@ -42,6 +42,7 @@ export const recomputeForProject = mutation({
       projectId,
       orgId,
       rentalPeriod: project.defaultRentalPeriod,
+      discountPercent: project.discountPercent,
       groups,
       lines,
       now,

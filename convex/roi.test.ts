@@ -150,3 +150,58 @@ describe("fleetInventory — unit tallying + dead-capital rows", () => {
     expect(inv.truncated).toBe(false);
   });
 });
+
+describe("getModelRoi — tenant isolation", () => {
+  const OTHER = "org_2";
+
+  /**
+   * `models.by_cuid` and `assets.by_modelId` are GLOBAL indexes. `requireOrgRead`
+   * validates the caller's org, not the model's. Before this was fixed, a caller
+   * authorised for their own org could pass another org's modelId and read back its
+   * name, replacement cost, and unit count.
+   */
+  test("refuses a modelId belonging to another org", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "secret", organizationId: OTHER, name: "Their Receiver", replacementCost: 99_000 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: OTHER, modelId: "secret", assetTag: "A1" });
+    });
+
+    await expect(
+      asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "secret", statuses: COUNTED }),
+    ).rejects.toThrow(/not in org/);
+  });
+
+  test("never counts another org's assets toward unitsOwned", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      // Same modelId string present in two orgs (e.g. after a bad import).
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 100 });
+      await ctx.db.insert("assets", { id: "mine", organizationId: ORG, modelId: "rx", assetTag: "M1" });
+      await ctx.db.insert("assets", { id: "theirs", organizationId: OTHER, modelId: "rx", assetTag: "T1" });
+      await ctx.db.insert("bulkAssets", { id: "tb", organizationId: OTHER, modelId: "rx", assetTag: "TB", totalQuantity: 50 });
+    });
+
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(1);
+  });
+});
+
+describe("status gating lives in Convex, not only in the server action", () => {
+  test("a caller asking for QUOTED revenue gets nothing", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t, { id: "q", status: "QUOTED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 5000 }]);
+    await seedProject(t, { id: "won", status: "COMPLETED", rentalStartDate: NOW }, [{ modelId: "rx", revenue: 10 }]);
+
+    // A browser-held user token can call the query directly, bypassing src/lib/roi.ts.
+    const roi = await asService(t).query(api.roi.getModelRoi, {
+      orgId: ORG, modelId: "rx", statuses: ["QUOTED", "CANCELLED", "COMPLETED"],
+    });
+    expect(roi.revenue).toBe(10);
+
+    const fleet = await asService(t).query(api.roi.fleetRevenue, {
+      orgId: ORG, statuses: ["QUOTED", "ENQUIRY"],
+    });
+    expect(fleet.rows).toHaveLength(0);
+  });
+});

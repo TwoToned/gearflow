@@ -7,7 +7,12 @@ import { AlertTriangle, Info } from "lucide-react";
 import { Stat } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -76,18 +81,23 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
           </SelectContent>
         </Select>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button type="button" aria-label="How revenue is attributed" className="text-faint hover:text-muted">
+        {/* Tooltip throws without a Provider ancestor, and there is no global one.
+            The Trigger renders its own <button>, so props go directly on it. */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger
+              aria-label="How revenue is attributed"
+              className="text-faint hover:text-muted"
+            >
               <Info className="h-4 w-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs">
-            Revenue is this model&rsquo;s share of every job it went out on — including
-            its slice of any kit or bundle price. Sub-hired units are excluded: that
-            wasn&rsquo;t your capital.
-          </TooltipContent>
-        </Tooltip>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              Revenue is this model&rsquo;s share of every job it went out on — including
+              its slice of any kit or bundle price. Sub-hired units are excluded: that
+              wasn&rsquo;t your capital.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {data.truncated && (

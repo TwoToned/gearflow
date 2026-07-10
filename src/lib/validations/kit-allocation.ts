@@ -18,7 +18,12 @@ export const kitAllocationRowSchema = z.object({
     .max(100, "Can't exceed 100%")
     // Two decimals is what the column stores. Accepting more would silently round
     // on write and break the sum-to-100 check the user just watched pass.
-    .refine((n) => Number.isInteger(Math.round(n * 100)), {
+    //
+    // Compare against an epsilon, not `Number.isInteger(Math.round(...))` — Math.round
+    // ALWAYS returns an integer, so that predicate is unconditionally true and the
+    // guard never fires. The epsilon absorbs float representation error: 33.33 * 100
+    // is 3332.9999999999995, which is two decimals despite not being an exact integer.
+    .refine((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-9, {
       message: "At most 2 decimal places",
     }),
 });

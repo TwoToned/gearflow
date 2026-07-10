@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
@@ -523,13 +524,11 @@ function SidebarMenuButton({
       },
       props
     ),
-    render: !tooltip ? (
-      render
-    ) : (
-      <TooltipTrigger asChild>
-        {render as React.ReactElement}
-      </TooltipTrigger>
-    ),
+    // Do NOT swap `render` for a TooltipTrigger here. Callers usually pass children
+    // and no `render`, so that produced `<TooltipTrigger asChild>{undefined}</...>`,
+    // and Radix's Slot renders nothing at all — a silently empty menu item. The
+    // trigger wraps the finished element below instead.
+    render,
     state: {
       slot: "sidebar-menu-button",
       sidebar: "menu-button",
@@ -548,16 +547,21 @@ function SidebarMenuButton({
     }
   }
 
+  // Tooltip throws without a Provider ancestor, and there is no global one — every
+  // consumer wraps its own. Nothing passes `tooltip` today, so this whole branch was
+  // dead code and both bugs in it were invisible. See CLAUDE.md.
   return (
-    <Tooltip>
-      {comp}
-      <TooltipContent
-        side="right"
-        align="center"
-        hidden={state !== "collapsed" || isMobile}
-        {...tooltip}
-      />
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{comp}</TooltipTrigger>
+        <TooltipContent
+          side="right"
+          align="center"
+          hidden={state !== "collapsed" || isMobile}
+          {...tooltip}
+        />
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

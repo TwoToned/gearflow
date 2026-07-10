@@ -73,8 +73,8 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
 ## Mobile Bottom Nav (`src/components/layout/mobile-nav.tsx`)
 - Flow element (NOT position: fixed) — sits at bottom of flex column
 - 5 items, matching DESIGN.md §16: **Dashboard, Jobs, Warehouse, Crew, Assets**
-- **Scanning is not a tab.** The Warehouse screen owns the scan workflow. (An
-  earlier version of this doc described a `Scan` tab; it no longer exists.)
+- Tag entry and lookup live on the Warehouse screen (`warehouse/page.tsx`), not
+  in the nav.
 - Any IA change (add/remove/reorder/rename) must be applied to BOTH
   `mobile-nav.tsx` and `app-sidebar.tsx` in the same PR.
 - The full nav (everything beyond these 5 tabs + user/logout) lives in the

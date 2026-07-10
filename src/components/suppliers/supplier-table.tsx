@@ -25,6 +25,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "name",
     alwaysVisible: true,
     sortKey: "name",
+    mobile: "title",
     cell: (row) => (
       <Link
         href={`/suppliers/${row.id}`}
@@ -41,6 +42,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "contactName",
     sortKey: "contactName",
     responsiveHide: "md",
+    mobile: "subtitle",
     cell: (row) => (
       <span className="text-muted">{row.contactName || "\u2014"}</span>
     ),
@@ -51,6 +53,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "email",
     sortKey: "email",
     responsiveHide: "md",
+    mobile: "meta",
     cell: (row) => (
       <span className="text-muted">{row.email || "\u2014"}</span>
     ),
@@ -60,6 +63,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     header: "Phone",
     accessorKey: "phone",
     responsiveHide: "lg",
+    mobile: "meta",
     cell: (row) => (
       <span className="text-muted">{row.phone || "\u2014"}</span>
     ),
@@ -69,6 +73,8 @@ const columns: ColumnDef<AnySupplier>[] = [
     header: "Account #",
     accessorKey: "accountNumber",
     responsiveHide: "lg",
+    // Rarely scanned on a phone; keep the card to email/phone/counts.
+    mobile: "hidden",
     cell: (row) => (
       <span className="t-mono text-muted">{row.accountNumber || "\u2014"}</span>
     ),
@@ -78,6 +84,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     header: "Orders",
     align: "right",
     responsiveHide: "md",
+    mobile: "meta",
     cell: (row) => <span className="t-data">{row._count?.orders ?? 0}</span>,
   },
   {
@@ -85,6 +92,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     header: "Assets",
     align: "right",
     responsiveHide: "md",
+    mobile: "meta",
     cell: (row) => <span className="t-data">{row._count?.assets ?? 0}</span>,
   },
   {
@@ -93,6 +101,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortKey: "isActive",
     filterable: true,
     filterType: "enum",
+    mobile: "badge",
     filterOptions: [
       { value: "true", label: "Active" },
       { value: "false", label: "Archived" },
@@ -109,6 +118,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortable: false,
     defaultVisible: true,
     responsiveHide: "lg",
+    mobile: "hidden",
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (

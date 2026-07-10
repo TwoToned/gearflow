@@ -34,6 +34,7 @@ const columns: ColumnDef<AnyClient>[] = [
     accessorKey: "name",
     alwaysVisible: true,
     sortKey: "name",
+    mobile: "title",
     cell: (row) => (
       <Link
         href={`/clients/${row.id}`}
@@ -51,6 +52,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "type",
     filterable: true,
     filterType: "enum",
+    mobile: "badge",
     filterOptions: [
       { value: "COMPANY", label: "Company", color: getStatusColor("clientType", "COMPANY").dot },
       { value: "INDIVIDUAL", label: "Individual", color: getStatusColor("clientType", "INDIVIDUAL").dot },
@@ -67,6 +69,7 @@ const columns: ColumnDef<AnyClient>[] = [
     accessorKey: "contactName",
     sortKey: "contactName",
     responsiveHide: "md",
+    mobile: "subtitle",
     cell: (row) => (
       <span className="text-muted">
         {row.contactName || "\u2014"}
@@ -79,6 +82,7 @@ const columns: ColumnDef<AnyClient>[] = [
     accessorKey: "contactEmail",
     sortKey: "contactEmail",
     responsiveHide: "md",
+    mobile: "meta",
     cell: (row) => (
       <span className="text-muted">
         {row.contactEmail || "\u2014"}
@@ -90,12 +94,14 @@ const columns: ColumnDef<AnyClient>[] = [
     header: "Projects",
     sortKey: "name",
     align: "right",
+    mobile: "meta",
     cell: (row) => <span className="t-data">{row._count?.projects ?? 0}</span>,
   },
   {
     id: "isActive",
     header: "Status",
     sortKey: "isActive",
+    mobile: "badge",
     cell: (row) => (
       <Badge status={row.isActive ? "ok" : "overbooked"}>
         {row.isActive ? "Active" : "Archived"}
@@ -108,6 +114,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortable: false,
     defaultVisible: true,
     responsiveHide: "lg",
+    mobile: "hidden",
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (

@@ -88,6 +88,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     accessorKey: "projectNumber",
     sortKey: "projectNumber",
     alwaysVisible: true,
+    mobile: "meta",
     cell: (row) => (
       <Link
         href={`/projects/${row.id}`}
@@ -103,6 +104,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     accessorKey: "name",
     sortKey: "name",
     alwaysVisible: true,
+    mobile: "title",
     cell: (row) => (
       <div className="flex flex-col">
         <div className="flex items-center gap-1.5">
@@ -129,6 +131,9 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     id: "client",
     header: "Client",
     sortKey: "client",
+    // The name cell already renders the client name beneath the title, so a
+    // dedicated card row would just duplicate it.
+    mobile: "hidden",
     cell: (row) => (
       <span className="text-muted">
         {row.client?.name || "—"}
@@ -142,6 +147,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "type",
     filterable: true,
     filterType: "enum",
+    mobile: "badge",
     // Filter-legend dots mirror the type chip module hues (RVLT tokens, no
     // raw Tailwind palette / non-red accents).
     filterOptions: [
@@ -168,6 +174,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "status",
     filterable: true,
     filterType: "enum",
+    mobile: "badge",
     // Dots derive from the status intent map (status-colors.ts) — the single
     // source of truth — instead of hardcoded palette swatches.
     filterOptions: [
@@ -191,6 +198,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     id: "rentalStartDate",
     header: "Dates",
     sortKey: "rentalStartDate",
+    mobile: "meta",
     cell: (row) => {
       const start = row.rentalStartDate as number | null;
       const end = row.rentalEndDate as number | null;
@@ -217,6 +225,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Total",
     sortKey: "total",
     align: "right",
+    mobile: "meta",
     cell: (row) => (
       <span className="t-data">
         {row.total != null
@@ -231,6 +240,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortable: false,
     defaultVisible: true,
     responsiveHide: "lg",
+    mobile: "hidden",
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (

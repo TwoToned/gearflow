@@ -204,6 +204,7 @@ export default function TimesheetsPage() {
       header: "Crew member",
       alwaysVisible: true,
       sortKey: "crewMember",
+      mobile: "title",
       filterable: true,
       filterType: "enum",
       filterKey: "crewMemberId",
@@ -233,6 +234,7 @@ export default function TimesheetsPage() {
       id: "project",
       header: "Project / description",
       sortable: false,
+      mobile: "subtitle",
       cell: (row: any) =>
         row.assignment ? (
           <Link
@@ -275,6 +277,8 @@ export default function TimesheetsPage() {
       header: "Break",
       sortable: false,
       responsiveHide: "md",
+      // Break minutes are low-signal on a phone — keep the card meta grid to the essentials.
+      mobile: "hidden",
       cell: (row: any) => (
         <span className="text-table-cell tabular-nums text-ink-2">
           {row.breakMinutes > 0 ? `${row.breakMinutes}m` : "\u2014"}
@@ -307,6 +311,7 @@ export default function TimesheetsPage() {
         { value: "DISPUTED", label: "Disputed", color: getStatusColor("timeEntry", "DISPUTED").dot },
         { value: "EXPORTED", label: "Exported", color: getStatusColor("timeEntry", "EXPORTED").dot },
       ],
+      mobile: "badge",
       cell: (row: any) => (
         <StatusIndicator
           category="timeEntry"
@@ -346,6 +351,7 @@ export default function TimesheetsPage() {
       sortable: false,
       alwaysVisible: true,
       width: 50,
+      mobile: "actions",
       cell: (row: any) =>
         row.status !== "EXPORTED" ? (
           <DropdownMenu>

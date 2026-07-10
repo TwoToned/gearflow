@@ -30,6 +30,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     accessorKey: "lastName",
     alwaysVisible: true,
     sortKey: "lastName",
+    mobile: "title",
     cell: (row) => {
       const avatarSrc = row.user?.image || row.image;
       const displayName = row.user?.name || `${row.firstName} ${row.lastName}`;
@@ -58,6 +59,8 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     header: "Role",
     sortable: false,
     responsiveHide: "md",
+    // The name cell already prints "role · department" beneath the name.
+    mobile: "hidden",
     cell: (row) => (
       <span className="text-muted">
         {row.crewRole?.name || "\u2014"}
@@ -78,6 +81,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
       { value: "VOLUNTEER", label: "Volunteer" },
     ],
     responsiveHide: "md",
+    mobile: "badge",
     cell: (row) => (
       <Badge status="neutral">{crewMemberTypeLabels[row.type] || formatLabel(row.type)}</Badge>
     ),
@@ -90,6 +94,8 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterable: true,
     filterType: "enum",
     responsiveHide: "lg",
+    // Also carried by the name cell's "role · department" subline.
+    mobile: "hidden",
     cell: (row) => (
       <span className="text-muted">{row.department || "\u2014"}</span>
     ),
@@ -139,6 +145,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
       { value: "ON_LEAVE", label: "On leave", color: getStatusColor("crewMember", "ON_LEAVE").dot },
       { value: "ARCHIVED", label: "Archived", color: getStatusColor("crewMember", "ARCHIVED").dot },
     ],
+    mobile: "badge",
     cell: (row) => (
       <StatusIndicator category="crewMember" value={row.status} label={crewMemberStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
     ),
@@ -149,6 +156,8 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortable: false,
     defaultVisible: false,
     responsiveHide: "lg",
+    // Off by default; keep it out of cards so an enabled tag list can't swamp the badges.
+    mobile: "hidden",
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (

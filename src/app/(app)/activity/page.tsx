@@ -59,6 +59,9 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       header: "Timestamp",
       sortKey: "createdAt",
       alwaysVisible: true,
+      // Most-scanned field, but the actor owns the single subtitle slot, so the
+      // timestamp rides as high-value meta rather than the secondary line.
+      mobile: "meta",
       cell: (row) => (
         <span className="whitespace-nowrap text-sm">
           {format(new Date(row.createdAt), "MMM d, yyyy HH:mm")}
@@ -70,6 +73,8 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       header: "User",
       responsiveHide: "sm",
       sortable: false,
+      mobile: "subtitle", // the actor, under the event summary
+
       cell: (row) => (
         <span className="text-sm">{row.user?.name || row.userName || "\u2014"}</span>
       ),
@@ -80,6 +85,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       accessorKey: "action",
       filterable: true,
       filterType: "enum",
+      mobile: "badge",
       filterOptions: Object.entries(actionLabels).map(([value, label]) => ({ value, label })),
       cell: (row) => (
         <StatusIndicator category="activity" value={row.action} label={actionLabels[row.action] || row.action} variant="pill" />
@@ -104,6 +110,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       header: "Summary",
       accessorKey: "summary",
       sortable: false,
+      mobile: "title",
       cell: (row) => (
         <span className="text-sm max-w-[300px] truncate block">{row.summary}</span>
       ),

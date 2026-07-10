@@ -142,6 +142,23 @@ differently — using the wrong prop is a silent no-op:
   <BreadcrumbLink render={<Link href="/foo" />}>Crumb</BreadcrumbLink>
   ```
 
+**⚠️ `Tooltip` needs a `TooltipProvider` ancestor.** There is **no global provider** —
+every consumer wraps its own. Omit it and the page throws at render time:
+`Error: Tooltip must be used within TooltipProvider`. Typecheck, lint and `next build`
+all pass on the broken form; it only fails when a user opens the thing.
+```tsx
+<TooltipProvider>
+  <Tooltip>
+    {/* Trigger renders a <button> by default — don't nest another one inside it. */}
+    <TooltipTrigger aria-label="Explain"><Info /></TooltipTrigger>
+    <TooltipContent>…</TooltipContent>
+  </Tooltip>
+</TooltipProvider>
+```
+Cover new overlay UI with a jsdom smoke test that actually *renders* it — see
+`src/components/assets/__tests__/model-roi-tab.smoke.test.tsx`, which reproduces this
+exact crash.
+
 **⚠️ NEVER put a Base UI overlay (popover/menu) inside a Radix modal `Dialog`.** A
 Radix modal Dialog sets `pointer-events: none` on `document.body`; a Base UI popup
 portals to `<body>` as a sibling, inherits the lock, and every click is swallowed

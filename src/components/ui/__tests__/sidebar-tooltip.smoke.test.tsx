@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, beforeAll } from "vitest";
 import { render, screen } from "@testing-library/react";
+import Link from "next/link";
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -76,8 +77,8 @@ describe("SidebarMenuButton tooltip smoke", () => {
     expect(screen.getByRole("button", { name: "Projects" })).toBeTruthy();
   });
 
-  // The nav composes with `render={<Link/>}` (Base UI useRender). Combining that with
-  // a tooltip must keep the caller's element, not replace it with a bare button.
+  // The nav composes with `render={<Link/>}` (Base UI useRender) — see app-sidebar.tsx.
+  // Combining that with a tooltip must keep the caller's element, not replace it.
   it("preserves a custom `render` element alongside a tooltip", () => {
     render(
       <SidebarProvider>
@@ -85,7 +86,7 @@ describe("SidebarMenuButton tooltip smoke", () => {
           <SidebarContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<a href="/projects" />} tooltip="Projects">
+                <SidebarMenuButton render={<Link href="/projects" />} tooltip="Projects">
                   Projects
                 </SidebarMenuButton>
               </SidebarMenuItem>

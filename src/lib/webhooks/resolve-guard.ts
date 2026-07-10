@@ -12,7 +12,7 @@ import { isPrivateHost } from "./url";
  * It does not fully close DNS rebinding (a name could resolve to a public IP here and a
  * private one microseconds later at connect), but it closes the far more practical
  * static-resolution bypass. Full closure needs pinning the connection to the address we
- * validated; noted in FEATUREDOCS/57.
+ * validated; noted in FEATUREDOCS/58.
  */
 export async function hostResolvesToPrivate(url: string): Promise<boolean> {
   let hostname: string;

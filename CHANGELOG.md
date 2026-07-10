@@ -4,6 +4,70 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.22.0.0] - 2026-07-10
+
+### Added
+
+- **Fleet ROI report** (`Assets → Fleet ROI`). Every model ranked by what it has earned against
+  what it cost to own, sortable by revenue, payback, or revenue per unit, and filterable by date
+  window and by whether booked-but-uninvoiced work counts. Models with real capital and no revenue
+  get their own "idle capital" figure — the number that tells you what to sell.
+- **ROI tab on every model.** Total revenue attributed, fleet replacement cost, a progress bar to
+  break-even, revenue per unit, and the list of projects that produced it.
+- **Revenue allocation for gear inside kits and bundles.** Until now, gear booked inside a
+  fixed-price kit or a priced group earned nothing on paper — the whole price sat on the parent
+  line, and the models inside it reported $0 forever. A kit's or bundle's price is now split across
+  the gear inside it, so per-model ROI is answerable for equipment that never ships on its own.
+  Accessories take a share too.
+- **Revenue allocation panel on kit detail.** Choose how a kit's price divides across the models
+  inside it. Opens on a suggestion weighted by replacement cost, so the usual answer is just "Save".
+  Change a kit's contents and the panel tells you the split is out of date — bookings quietly fall
+  back to cost weighting rather than misattributing anything, and are never blocked.
+
+### Changed
+
+- Project revenue is attributed after the project discount, not before, so a discounted job credits
+  its gear with what the client actually paid.
+- Sub-hired gear no longer inflates the ROI of the equipment booked alongside it, and is never
+  credited to a model you own.
+- Quotes never count as revenue. Only completed and invoiced projects do, unless you explicitly ask
+  to include booked work.
+
+## [0.21.0.2] - 2026-07-10
+
+### Fixed
+
+- `SidebarMenuButton` would crash the sidebar, and render an empty menu item, if given a
+  `tooltip`. Both faults sat in a branch no caller reached, so nothing surfaced them.
+
+## [0.21.0.1] - 2026-07-10
+
+### Fixed
+
+- The ROI tab on a model page crashed on open. The "how revenue is attributed" tooltip was missing
+  its provider, and nested a button inside the tooltip's own button.
+
+
+## [0.21.0.0] - 2026-07-10
+
+### Added
+
+- **Webhooks.** Subscribe an HTTPS endpoint and GearFlow POSTs you a signed event when something happens, so an agent can react instead of polling. Four events: `project.status_changed`, `line_item.added`, `warehouse.checked_out`, `maintenance.created`. Deliveries are signed (HMAC-SHA256 over the timestamp and body, so they can't be replayed), retried with exponential backoff, logged for debugging, and auto-disabled if an endpoint stays dead. Manage subscriptions through the API like any other operation. Secrets rotate with a grace window during which both the old and new secret verify.
+- **Batch availability.** `check_availability_batch` answers for up to 100 models in one call instead of one call per model.
+- **Project line items now include their category name**, so grouping a project's gear by category takes one call.
+- `list_operations` now supports `offset` for paging — with 537+ operations, everything past the first page was previously unreachable — and reports `total`, `offset` and `hasMore`.
+- MCP tool names work as aliases everywhere: `describe_operation` and `call_operation` accept `search_assets` as readily as `assets.getAssets`, and each operation reports its `mcpTool`.
+- REST `whoami` now returns `operationsAvailable`, matching the MCP tool.
+
+### Fixed
+
+- `list_operations` described the wrong operation count (it said 508 while the endpoint returned 537). Both now agree.
+- `global_search` needs a query of at least 2 characters; the docs now say so, and an empty result means "no match", not an error.
+
+### Security
+
+- The webhook endpoint URL is checked against a strict SSRF policy: private, loopback, link-local, CGNAT and NAT64 addresses are refused across IPv4 and IPv6, redirects are not followed, and the hostname is resolved at delivery time so a name pointing at an internal address is also refused.
+
 ## [0.20.1.0] - 2026-07-09
 
 ### Added

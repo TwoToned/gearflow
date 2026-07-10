@@ -142,12 +142,41 @@ differently — using the wrong prop is a silent no-op:
   <BreadcrumbLink render={<Link href="/foo" />}>Crumb</BreadcrumbLink>
   ```
 
+**⚠️ `Tooltip` needs a `TooltipProvider` ancestor.** There is **no global provider** —
+every consumer wraps its own. Omit it and the page throws at render time:
+`Error: Tooltip must be used within TooltipProvider`. Typecheck, lint and `next build`
+all pass on the broken form; it only fails when a user opens the thing.
+```tsx
+<TooltipProvider>
+  <Tooltip>
+    {/* Trigger renders a <button> by default — don't nest another one inside it. */}
+    <TooltipTrigger aria-label="Explain"><Info /></TooltipTrigger>
+    <TooltipContent>…</TooltipContent>
+  </Tooltip>
+</TooltipProvider>
+```
+Cover new overlay UI with a jsdom smoke test that actually *renders* it — see
+`src/components/assets/__tests__/model-roi-tab.smoke.test.tsx`, which reproduces this
+exact crash.
+
 **⚠️ NEVER put a Base UI overlay (popover/menu) inside a Radix modal `Dialog`.** A
 Radix modal Dialog sets `pointer-events: none` on `document.body`; a Base UI popup
 portals to `<body>` as a sibling, inherits the lock, and every click is swallowed
 (this broke crew/model/supplier pickers in forms). Searchable pickers
 (`combobox-picker.tsx`, `tag-input.tsx`) are built on **Radix** Popover for exactly
 this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/07.
+
+### ⚠️ Never regenerate `convex/schema.ts` over itself
+`scripts/generate-convex-schema.cjs` is a **scaffolding** tool, not a source of truth.
+The checked-in schema has diverged on purpose: hand-added `searchIndex`/composite
+indexes the generator never emits, plus (Phase C) Convex tables whose Prisma models
+are already stripped. It currently emits **91 tables against the checked-in 98** —
+running it over the file silently deletes live tables and every search index. To add
+a table: generate into a scratch dir, diff, hand-merge the stanza.
+
+Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
+authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
+be checked against `organizationId`, or you have a cross-tenant read.
 
 ### Prisma v6
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)

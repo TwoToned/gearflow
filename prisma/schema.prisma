@@ -168,6 +168,8 @@ model Organization {
   kits                     Kit[]
   kitSerializedItems       KitSerializedItem[]
   kitBulkItems             KitBulkItem[]
+  kitRevenueAllocations    KitRevenueAllocation[]
+  projectModelRevenues     ProjectModelRevenue[]
   assetBulkChildren        AssetBulkChild[]
   modelBulkAccessories     ModelBulkAccessory[]
   fileUploads              FileUpload[]
@@ -515,6 +517,28 @@ enum KitPricingMode {
 enum LineItemChildKind {
   KIT
   ACCESSORY
+}
+
+/// How a line item's `allocatedRevenue` was decided. Both an audit trail and a
+/// correctness primitive: ROI aggregation counts a row ONLY when its basis is one
+/// of the four "earned" values. See docs/revenue-allocation-design.md.
+enum AllocationBasis {
+  /// Leaf line priced on its own — allocatedRevenue == lineTotal.
+  DIRECT
+  /// Split by the parent kit's saved per-model allocationPercent.
+  KIT_PERCENT
+  /// Split proportionally by the weight chain (lineTotal -> rate -> replacementCost).
+  WEIGHTED
+  /// Nothing to weight on; the pool was split evenly.
+  EQUAL_SPLIT
+  /// Sub-hired gear. Consumes pool weight (so owned gear isn't over-credited) and
+  /// the number is stored for audit — but it isn't our capital, so it never counts
+  /// toward model ROI.
+  EXCLUDED_SUBHIRE
+  /// Custom / labour / container line. No modelId; nothing to attribute.
+  EXCLUDED_NON_GEAR
+  /// Pool was $0 (unpriced group, $0 kit), or the line is cancelled / optional.
+  NO_REVENUE
 }
 
 enum KitCheckMode {
@@ -1370,6 +1394,10 @@ model Project {
   @@index([clientId])
   @@index([locationId])
   @@index([rentalStartDate, rentalEndDate])
+  // Lets the fleet ROI report RANGE-SCAN an org's projects by rental date instead
+  // of taking an index prefix and filtering. Without it, a trailing-window report
+  // on a large org reads the wrong projects entirely. See convex/roi.ts.
+  @@index([organizationId, rentalStartDate])
   @@index([isTemplate])
   @@map("project")
 }
@@ -1409,6 +1437,13 @@ model ProjectLineItem {
   duration            Int                   @default(1)
   discount            Decimal?              @db.Decimal(10, 2)
   lineTotal           Decimal?              @db.Decimal(12, 2)
+  // This line's share of the revenue it helped generate, in dollars. Written by
+  // the allocation pass inside recalcProjectTotals — never computed at read time,
+  // which is what makes it a snapshot (a later price change on the model does not
+  // move a past project's numbers). `allocationBasis` records HOW it was split and
+  // gates which rows count toward model ROI. See docs/revenue-allocation-design.md.
+  allocatedRevenue    Decimal?              @db.Decimal(12, 2)
+  allocationBasis     AllocationBasis?
   priceBreakdown      String?
   priceOverridden     Boolean               @default(false)
   overrideReason      String?
@@ -1675,6 +1710,69 @@ model ProjectManager {
   @@index([userId])
   @@index([organizationId])
   @@map("project_manager")
+}
+
+// ─── Kit Revenue Allocation ─────────────────────────────────────────────────
+
+// One row per MODEL in a kit — not per member asset. A kit's contents are
+// KitSerializedItem (one row per asset) and KitBulkItem rows; hanging a percentage
+// off those would make the same model appear N times as N percentages to keep in
+// sync, and would break the allocation every time an asset is swapped. Model is
+// also the grain ROI reports on, so this is the natural key.
+//
+// CONVEX-ONLY (Phase C): no Prisma row is ever written. The Convex
+// `kitRevenueAllocations` doc is the sole source of truth; this model exists so
+// scripts/generate-convex-schema.cjs reproduces the table.
+//
+// Percentages are advisory, not load-bearing: the allocation is applied only when
+// the saved model set exactly covers the kit's CURRENT contents. Kit contents can
+// change without ever touching this table (warehouse, CSV import), so the runtime
+// falls through to the weight chain rather than trusting a stale split.
+model KitRevenueAllocation {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kitId             String // references a Convex kits doc; no FK (Phase C)
+  modelId           String // references a Convex models doc; no FK (Phase B)
+  /// 0–100. Validated to sum to 100 (±0.01) per kit on save.
+  allocationPercent Decimal      @db.Decimal(5, 2)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([kitId, modelId])
+  @@index([organizationId])
+  @@index([kitId])
+  @@index([modelId])
+  @@map("kit_revenue_allocation")
+}
+
+// ─── Project Model Revenue (rollup) ─────────────────────────────────────────
+
+// Derived rollup: one row per (project, model), rebuilt wholesale by the same
+// allocation pass that writes ProjectLineItem.allocatedRevenue. Pure cache — safe
+// to delete and rebuild from line items at any time.
+//
+// It exists so the fleet ROI report reads "distinct models per project" instead of
+// "every line item of every project", which does not fit in a Convex query's read
+// budget. See the "Query cost" section of docs/revenue-allocation-design.md.
+//
+// CONVEX-ONLY (Phase C): no Prisma row is ever written.
+model ProjectModelRevenue {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId        String // references a Convex projects doc; no FK (Phase C)
+  modelId          String // references a Convex models doc; no FK (Phase B)
+  /// SUM of this model's ROI-counted allocatedRevenue within this project.
+  allocatedRevenue Decimal      @db.Decimal(12, 2)
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([projectId, modelId])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([modelId])
+  @@index([organizationId, modelId])
+  @@map("project_model_revenue")
 }
 
 // ─── Group Template ─────────────────────────────────────────────────────────

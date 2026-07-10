@@ -18,7 +18,7 @@
  * IPv6-mapped IPv4 pointing at the cloud metadata endpoint) sailed past an
  * IPv4-only check. Every IPv6 form is handled below.
  *
- * Still open, by design, and documented in FEATUREDOCS/57: a hostname that resolves
+ * Still open, by design, and documented in FEATUREDOCS/58: a hostname that resolves
  * to a private address only at *delivery* time (DNS rebinding). Closing that needs
  * resolution-time address pinning. `deliver.ts` sets `redirect: "manual"` so a
  * validated endpoint cannot 302 us onto an internal address either — that redirect

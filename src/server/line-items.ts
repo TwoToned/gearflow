@@ -1605,6 +1605,16 @@ export async function recalculateProjectTotals(projectId: string) {
       updatedAt: Date.now(),
     },
   });
+
+  // Push the booked revenue down onto the gear that earned it (per-model ROI).
+  // The native path does this inline inside recalcNative off reads it already had;
+  // this slow path pays one extra round-trip for it. Flipping NATIVE_RECALC changes
+  // latency, never the numbers. See convex/lib/allocation.ts.
+  await convex.mutation(api.revenueAllocation.recomputeForProject, {
+    projectId,
+    orgId,
+    now: Date.now(),
+  });
 }
 
 /**

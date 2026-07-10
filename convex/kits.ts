@@ -187,6 +187,13 @@ export const remove = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("kits not found: " + id);
+    // Revenue allocation has no FK to cascade through (Convex-only table). Without
+    // this, a recreated kit reusing the id would inherit the old kit's split.
+    const allocations = await ctx.db
+      .query("kitRevenueAllocations")
+      .withIndex("by_kitId", (q) => q.eq("kitId", id))
+      .collect();
+    for (const a of allocations) await ctx.db.delete(a._id);
     await ctx.db.delete(doc._id);
   },
 });

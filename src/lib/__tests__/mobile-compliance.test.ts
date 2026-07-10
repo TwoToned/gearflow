@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, globSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -16,11 +16,21 @@ import path from "node:path";
 
 const SRC = path.resolve(__dirname, "../..");
 
-function sourceFiles(): string[] {
-  return globSync("**/*.tsx", {
-    cwd: SRC,
-    exclude: (p) => p.includes("__tests__") || p.includes("generated"),
-  }).map((p) => path.join(SRC, p));
+/**
+ * Every .tsx under src/, excluding tests and generated code.
+ *
+ * Hand-rolled rather than `fs.globSync`, which only exists on Node 22+ — CI runs
+ * Node 20, where it is `undefined` and every rule below throws.
+ */
+function sourceFiles(dir: string = SRC): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "__tests__" || entry.name === "generated") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...sourceFiles(full));
+    else if (entry.name.endsWith(".tsx")) out.push(full);
+  }
+  return out;
 }
 
 function read(file: string) {

@@ -67,6 +67,12 @@ export interface ColumnDef<TData> {
   id: string;
   header: string;
   accessorKey?: string;
+  /**
+   * MUST be pure and presentational. The desktop table and the mobile card list
+   * are both mounted (the swap is a CSS breakpoint), so this runs twice per row.
+   * A cell that fires an effect, a query, or analytics would double-fire, and a
+   * hard-coded `id`/`htmlFor` would collide. Render-only: links, badges, text.
+   */
   cell?: (row: TData) => React.ReactNode;
   sortable?: boolean;
   sortKey?: string;
@@ -299,10 +305,12 @@ function DataTableCards<TData>({
                 )}
 
                 <div className="min-w-0 flex-1">
-                  {/* The title keeps a 12rem floor so a wide badge cluster wraps
-                      onto its own line instead of truncating the name. */}
+                  {/* The title's 12rem flex-basis makes a wide badge cluster wrap
+                      onto its own line instead of truncating the name. It's a
+                      basis rather than a min-width so the title can still shrink
+                      inside a narrower container (dialog body, side panel). */}
                   <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
-                    <div className="min-w-[12rem] flex-1">
+                    <div className="min-w-0 flex-1 basis-48">
                       {layout.title && (
                         <div className="font-display text-[15px] font-bold leading-tight tracking-tight">
                           {renderCell(layout.title, row)}

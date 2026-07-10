@@ -262,6 +262,9 @@ function useBulkAssetColumns(
       sortKey: "availableQuantity",
       align: "right",
       mobile: "meta",
+      // The cell coalesces null to 0 and still renders the deployment bar, so the
+      // card must keep this pair even when the accessor itself is null.
+      mobileEmpty: () => false,
       cell: (row) => {
         const avail = row.availableQuantity ?? 0;
         const total = row.totalQuantity ?? 0;

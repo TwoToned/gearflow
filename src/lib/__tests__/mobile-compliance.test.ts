@@ -27,22 +27,119 @@ function read(file: string) {
   return { rel: path.relative(SRC, file), text: readFileSync(file, "utf8") };
 }
 
-/** Every `className="..."` / `className={"..."}` string literal in a file. */
+/** Every string literal in a chunk of source. Skips `${...}` interpolations. */
+function stringLiterals(src: string): string[] {
+  const out: string[] = [];
+  const re = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) out.push(m[2].replace(/\$\{[^}]*\}/g, " "));
+  return out;
+}
+
+/**
+ * Every class string in a file, including ones built through `cn(...)`,
+ * ternaries and template literals — the codebase's dominant idioms.
+ *
+ * Known limitation: both arms of a ternary are extracted, so a genuinely
+ * runtime-guarded `cond ? "grid-cols-2" : "grid-cols-3"` would be reported.
+ * No such pattern exists today; if one appears, allowlist the file.
+ */
 function classStrings(text: string): string[] {
   const out: string[] = [];
-  const re = /class[Nn]ame\s*=\s*\{?\s*[`"']([^`"']*)[`"']/g;
+  const re = /class[Nn]ame\s*=\s*/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) out.push(m[1]);
-  // Also catch cn("...", "...") arguments, which is how conditional classes are built.
-  const cnRe = /cn\(([\s\S]*?)\)/g;
-  while ((m = cnRe.exec(text))) {
-    const inner = m[1];
-    const strRe = /[`"']([^`"']*)[`"']/g;
-    let s: RegExpExecArray | null;
-    while ((s = strRe.exec(inner))) out.push(s[1]);
+  while ((m = re.exec(text))) {
+    const rest = text.slice(m.index + m[0].length);
+    if (rest[0] === "{") {
+      // Balanced-brace scan so `cn(a, b && "x")` and nested calls are captured whole.
+      let depth = 0;
+      let end = 0;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === "{") depth++;
+        else if (rest[i] === "}" && --depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      out.push(...stringLiterals(rest.slice(1, end)));
+    } else {
+      out.push(...stringLiterals(rest.slice(0, rest.indexOf(">") + 1)).slice(0, 1));
+    }
   }
   return out;
 }
+
+/**
+ * The full opening tag of every `<TagName ...>` in a file.
+ *
+ * A regex like `/<Button[^>]*>/` cannot do this: JSX props routinely contain
+ * `>` inside `onClick={() => ...}`, which truncates the match before the
+ * className is ever seen. Walk the tag instead, tracking brace and string
+ * depth, and stop at the first `>` that is genuinely at depth zero.
+ */
+function openingTags(text: string, tagName: string): string[] {
+  const out: string[] = [];
+  const re = new RegExp(`<${tagName}\\b`, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    let depth = 0;
+    let quote: string | null = null;
+    for (let i = m.index; i < text.length; i++) {
+      const c = text[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") quote = c;
+      else if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) {
+        out.push(text.slice(m.index, i + 1));
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The scanners must have teeth. An earlier version of this file used
+ * `/<Button[^>]*>/` and `className="..."`, which silently matched nothing for
+ * the codebase's two dominant idioms — an inline `onClick={() => ...}` (whose
+ * `>` truncated the tag) and `className={cn(...)}`. The guard passed because it
+ * was blind, not because the code was clean. These cases lock that shut.
+ */
+describe("compliance scanners see through the codebase's real idioms", () => {
+  it("reads a Button tag past an inline arrow-function prop", () => {
+    const src = `<Button size="icon" onClick={() => go(a > b)} className="size-7" />`;
+    const [tag] = openingTags(src, "Button");
+    expect(tag).toContain('className="size-7"');
+    expect(classStrings(tag).join(" ")).toContain("size-7");
+  });
+
+  it("reads classes out of cn(), ternaries and template literals", () => {
+    const src = `<Button size="icon" className={cn("size-8", open && "bg-elev", \`ring-\${n}\`)} />`;
+    const [tag] = openingTags(src, "Button");
+    const classes = classStrings(tag).join(" ").split(/\s+/);
+    expect(classes).toContain("size-8");
+    expect(classes).toContain("bg-elev");
+  });
+
+  it("actually finds the icon Buttons it claims to police", () => {
+    // If this drops to 0, the scanner has gone blind again and every other
+    // assertion in this file is vacuously true.
+    const found = sourceFiles()
+      .map((f) => openingTags(read(f).text, "Button").filter((t) => /size\s*=\s*"icon"/.test(t)))
+      .reduce((n, tags) => n + tags.length, 0);
+    expect(found).toBeGreaterThan(40);
+  });
+
+  it("counts a bare sub-44px icon Button as a violation", () => {
+    const classes = classStrings(`<Button size="icon" className={cn("size-8")} />`);
+    expect(classes.join(" ").split(/\s+/)).toContain("size-8");
+  });
+});
 
 describe("DESIGN.md §15 — max 2 columns on mobile", () => {
   // Grids that are genuinely N-across by nature, verified legible at 375px.
@@ -100,14 +197,24 @@ describe("DESIGN.md §15 — hover-reveal controls stay reachable on touch", () 
       if (ALLOWED.has(rel)) continue;
 
       for (const cls of classStrings(text)) {
-        const revealsOnHover = /group-hover(\/[\w-]+)?:opacity-100/.test(cls);
-        if (!revealsOnHover) continue;
-        // Only an UNPREFIXED opacity-0 hides the control on a phone. `md:opacity-0`
-        // is already mobile-safe — the control is simply visible below `md`.
-        const hiddenOnMobile = cls.split(/\s+/).includes("opacity-0");
-        if (!hiddenOnMobile) continue;
-        if (cls.includes("pointer-coarse:opacity-100")) continue;
-        violations.push(`${rel} → "${cls.slice(0, 90)}"`);
+        const tokens = cls.split(/\s+/);
+        // The three ways a control gets revealed on hover, and the token that
+        // hides it by default. `opacity-0` is the common one; `hidden` and
+        // `invisible` strand a control on touch just as completely.
+        const reveals: [RegExp, string, string][] = [
+          [/group-hover(\/[\w-]+)?:opacity-100/, "opacity-0", "pointer-coarse:opacity-100"],
+          [/group-hover(\/[\w-]+)?:(flex|block|inline|inline-flex|grid)/, "hidden", "pointer-coarse:"],
+          [/group-hover(\/[\w-]+)?:visible/, "invisible", "pointer-coarse:visible"],
+        ];
+
+        for (const [revealRe, hider, restore] of reveals) {
+          if (!revealRe.test(cls)) continue;
+          // Only an UNPREFIXED hider hides the control on a phone. `md:opacity-0`
+          // is already mobile-safe — the control is simply visible below `md`.
+          if (!tokens.includes(hider)) continue;
+          if (cls.includes(restore)) continue;
+          violations.push(`${rel} → "${cls.slice(0, 90)}"`);
+        }
       }
     }
 
@@ -134,20 +241,17 @@ describe("DESIGN.md §15 — 44px minimum tap target", () => {
       const { rel, text } = read(file);
       if (ALLOWED.has(rel)) continue;
 
-      // Each <Button ... size="icon" ...> opening tag. `[^>]` already spans
-      // newlines, so no dotAll flag (which would need an es2018 target).
-      const btnRe = /<Button\b[^>]*?size="icon"[^>]*?>/g;
-      let m: RegExpExecArray | null;
-      while ((m = btnRe.exec(text))) {
-        const tag = m[0];
-        const clsMatch = /class[Nn]ame\s*=\s*\{?\s*[`"']([^`"']*)[`"']/.exec(tag);
-        if (!clsMatch) continue; // no override — inherits size-11 (44px)
+      for (const tag of openingTags(text, "Button")) {
+        if (!/size\s*=\s*"icon"/.test(tag)) continue;
+
+        const classes = classStrings(tag).join(" ").split(/\s+/).filter(Boolean);
+        if (classes.length === 0) continue; // no override — inherits size-11 (44px)
 
         // DESIGN.md §15 sanctions `.touch-target`, which restores a 44px hit box
         // on coarse pointers without changing the button's visual density.
-        if (clsMatch[1].split(/\s+/).includes("touch-target")) continue;
+        if (classes.includes("touch-target")) continue;
 
-        for (const token of clsMatch[1].split(/\s+/)) {
+        for (const token of classes) {
           if (token.includes(":")) continue; // breakpoint-scoped, desktop-only
           const sz = /^(?:size|h)-(\d+)$/.exec(token);
           // Tailwind spacing: 11 = 2.75rem = 44px. Anything smaller is a violation.

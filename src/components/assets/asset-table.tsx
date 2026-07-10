@@ -52,6 +52,8 @@ function useAssetColumns(
       accessorKey: "assetTag",
       alwaysVisible: true,
       sortKey: "assetTag",
+      // Operators match on tag — strong secondary line under the model name.
+      mobile: "subtitle",
       cell: (row) => (
         <div className="flex items-center gap-3">
           <MediaThumbnail
@@ -75,6 +77,7 @@ function useAssetColumns(
       id: "model",
       header: "Model",
       sortKey: "model",
+      mobile: "title",
       cell: (row) => (
         <div>
           <Link href={`/assets/models/${row.modelId}`} className={cn("text-table-cell hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
@@ -92,6 +95,7 @@ function useAssetColumns(
       accessorKey: "serialNumber",
       sortKey: "serialNumber",
       defaultVisible: true,
+      mobile: "meta",
       cell: (row) => (
         <span className="t-mono text-muted">
           {row.serialNumber || "—"}
@@ -105,6 +109,7 @@ function useAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      mobile: "badge",
       // Dots derive from the status intent map (status-colors.ts) — the single
       // source of truth — instead of hardcoded palette swatches.
       filterOptions: [
@@ -125,6 +130,8 @@ function useAssetColumns(
       sortable: false,
       defaultVisible: true,
       responsiveHide: "md",
+      // Redundant on a card — just re-derives the status badge above.
+      mobile: "hidden",
       cell: (row) => {
         // Text colour derives from the status intent map (status-colors.ts).
         if (row.status === "CHECKED_OUT") {
@@ -150,6 +157,7 @@ function useAssetColumns(
       filterable: true,
       filterType: "enum",
       defaultVisible: false,
+      mobile: "badge",
       // Dots derive from the condition intent map (status-colors.ts).
       filterOptions: [
         { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
@@ -173,6 +181,7 @@ function useAssetColumns(
         label: loc.parent ? `${loc.parent.name} > ${loc.name}` : loc.name,
       })),
       responsiveHide: "md",
+      mobile: "meta",
       cell: (row) => (
         <span className="text-muted">{row.location?.name || "—"}</span>
       ),
@@ -185,6 +194,8 @@ function useAssetColumns(
       filterOptions: categories.map((c) => ({ value: c.id, label: c.name })),
       defaultVisible: false,
       responsiveHide: "lg",
+      // The model cell already prints the category beneath the model name.
+      mobile: "hidden",
       cell: (row) => (
         <span className="text-muted">{row.model?.category?.name || "—"}</span>
       ),
@@ -196,6 +207,8 @@ function useAssetColumns(
       defaultVisible: true,
       responsiveHide: "lg",
       sortable: false,
+      // Long tag lists blow out the card — noise on a phone.
+      mobile: "hidden",
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
@@ -219,6 +232,7 @@ function useBulkAssetColumns(
       accessorKey: "assetTag",
       alwaysVisible: true,
       sortKey: "assetTag",
+      mobile: "subtitle",
       cell: (row) => (
         <Link href={`/assets/registry/${row.id}?type=bulk`} className={cn("t-mono text-muted hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
           {row.assetTag}
@@ -229,6 +243,7 @@ function useBulkAssetColumns(
       id: "model",
       header: "Model",
       sortKey: "model",
+      mobile: "title",
       cell: (row) => (
         <div>
           <Link href={`/assets/models/${row.modelId}`} className={cn("text-table-cell hover:underline hover:text-ink rounded-[var(--r)]", focusRing)} onClick={(e) => e.stopPropagation()}>
@@ -246,6 +261,10 @@ function useBulkAssetColumns(
       accessorKey: "availableQuantity",
       sortKey: "availableQuantity",
       align: "right",
+      mobile: "meta",
+      // The cell coalesces null to 0 and still renders the deployment bar, so the
+      // card must keep this pair even when the accessor itself is null.
+      mobileEmpty: () => false,
       cell: (row) => {
         const avail = row.availableQuantity ?? 0;
         const total = row.totalQuantity ?? 0;
@@ -275,6 +294,7 @@ function useBulkAssetColumns(
       accessorKey: "totalQuantity",
       sortKey: "totalQuantity",
       align: "right",
+      mobile: "meta",
       cell: (row) => <span className="t-data text-muted tabular-nums">{row.totalQuantity}</span>,
     },
     {
@@ -284,6 +304,7 @@ function useBulkAssetColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      mobile: "badge",
       // Dots derive from the bulk-asset intent map (status-colors.ts).
       filterOptions: [
         { value: "ACTIVE", label: "Active", color: getStatusColor("bulkAsset", "ACTIVE").dot },
@@ -305,6 +326,7 @@ function useBulkAssetColumns(
         value: loc.id,
         label: loc.parent ? `${loc.parent.name} > ${loc.name}` : loc.name,
       })),
+      mobile: "meta",
       cell: (row) => (
         <span className="text-muted">{row.location?.name || "—"}</span>
       ),
@@ -315,6 +337,7 @@ function useBulkAssetColumns(
       sortable: false,
       defaultVisible: true,
       responsiveHide: "lg",
+      mobile: "hidden",
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (

@@ -89,6 +89,7 @@ function useModelColumns(
       accessorKey: "name",
       alwaysVisible: true,
       sortKey: "name",
+      mobile: "title",
       cell: (row) => (
         <div className="flex items-center gap-3">
           <MediaThumbnail
@@ -113,6 +114,7 @@ function useModelColumns(
       header: "Manufacturer",
       accessorKey: "manufacturer",
       sortKey: "manufacturer",
+      mobile: "subtitle",
       cell: (row) => (
         <span className="text-muted">{row.manufacturer || "\u2014"}</span>
       ),
@@ -127,6 +129,8 @@ function useModelColumns(
         value: cat.id,
         label: cat.parent ? `${cat.parent.name} \u2192 ${cat.name}` : cat.name,
       })),
+      // Category + Type both render Badge chips \u2014 pair them top-right of the card.
+      mobile: "badge",
       cell: (row) =>
         row.category ? (
           <Badge status="neutral">{row.category.name}</Badge>
@@ -145,6 +149,7 @@ function useModelColumns(
         { value: "SERIALIZED", label: "Serialized" },
         { value: "BULK", label: "Bulk" },
       ],
+      mobile: "badge",
       cell: (row) => (
         <Badge status="neutral">
           {row.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}
@@ -156,6 +161,7 @@ function useModelColumns(
       header: "Assets",
       sortable: false,
       align: "right",
+      mobile: "meta",
       cell: (row) => (
         <span className="t-data tabular-nums text-ink">
           {row._count.assets + row._count.bulkAssets}
@@ -168,6 +174,7 @@ function useModelColumns(
       accessorKey: "dailyRate",
       sortKey: "dailyRate",
       align: "right",
+      mobile: "meta",
       cell: (row) => {
         const hasDaily = row.dailyRate != null;
         const hasWeekly = row.weeklyRate != null;
@@ -194,6 +201,8 @@ function useModelColumns(
       sortable: false,
       defaultVisible: true,
       responsiveHide: "lg",
+      // Long tag lists blow out the card — noise on a phone.
+      mobile: "hidden",
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (

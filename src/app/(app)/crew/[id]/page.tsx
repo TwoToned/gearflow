@@ -515,10 +515,13 @@ export default function CrewMemberDetailPage({
                   {/* Only show upload controls for crew without a linked user (linked users sync from account) */}
                   {!member.user && (
                     <CanDo resource="crew" action="update">
+                      {/* Pointer devices get a hover overlay. Touch has no hover, and a
+                          permanent full-bleed overlay would bury the avatar — so coarse
+                          pointers get a 44px camera badge in the corner instead. */}
                       <button
                         type="button"
                         aria-label="Change profile picture"
-                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-paper/70 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${focusRing}`}
+                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-paper/70 opacity-0 transition-opacity cursor-pointer group-hover:opacity-100 pointer-coarse:inset-auto pointer-coarse:-bottom-1 pointer-coarse:-right-1 pointer-coarse:size-11 pointer-coarse:border-2 pointer-coarse:border-border pointer-coarse:bg-paper pointer-coarse:opacity-100 ${focusRing}`}
                         onClick={() => avatarInputRef.current?.click()}
                       >
                         <Camera className="size-5 text-ink" />
@@ -538,7 +541,7 @@ export default function CrewMemberDetailPage({
                         <button
                           type="button"
                           aria-label="Remove profile picture"
-                          className={`absolute -top-1 -right-1 rounded-full bg-red text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${focusRing}`}
+                          className={`absolute -top-1 -right-1 rounded-full bg-red text-white p-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:p-2.5 pointer-coarse:opacity-100 ${focusRing}`}
                           onClick={() => removeAvatarMutation.mutate()}
                           title="Remove photo"
                         >
@@ -839,7 +842,7 @@ export default function CrewMemberDetailPage({
                                       <CanDo resource="crew" action="update">
                                         <DropdownMenu>
                                           <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="size-9" aria-label="Assignment actions">
+                                            <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Assignment actions">
                                               <MoreHorizontal className="size-5" />
                                             </Button>
                                           </DropdownMenuTrigger>
@@ -972,7 +975,7 @@ export default function CrewMemberDetailPage({
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="size-9 text-t-out hover:bg-out-soft"
+                                          className="touch-target size-9 text-t-out hover:bg-out-soft"
                                           aria-label="Remove availability block"
                                           onClick={() => setRemoveAvailId(av.id)}
                                         >
@@ -1145,7 +1148,7 @@ export default function CrewMemberDetailPage({
                                   {entry.status !== "EXPORTED" && (
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="size-9" aria-label="Time entry actions">
+                                        <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Time entry actions">
                                           <MoreHorizontal className="size-5" />
                                         </Button>
                                       </DropdownMenuTrigger>

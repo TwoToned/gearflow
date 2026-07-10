@@ -241,13 +241,15 @@ export function CategoryManager() {
             const children = childrenOf(cat.id);
             return (
               <div key={cat.id}>
-                <div className="flex items-center gap-2 rounded-[var(--r)] border-2 border-line-2 p-2.5 motion-safe:transition-colors hover:bg-elev">
+                {/* Wraps: on a coarse pointer the three icon buttons are 44px each,
+                    which with both badges overruns a 375px row. */}
+                <div className="flex flex-wrap items-center gap-2 rounded-[var(--r)] border-2 border-line-2 p-2.5 motion-safe:transition-colors hover:bg-elev">
                   {cat.icon ? (
                     <span className="text-base">{cat.icon}</span>
                   ) : (
                     <FolderOpen className="h-4 w-4 text-muted" />
                   )}
-                  <span className="font-medium text-ui-text text-ink flex-1">{cat.name}</span>
+                  <span className="font-medium text-ui-text text-ink flex-1 min-w-0 truncate">{cat.name}</span>
                   <Badge status="neutral">
                     <span className="tabular-nums">{cat._count.models}</span> models
                   </Badge>
@@ -256,16 +258,16 @@ export function CategoryManager() {
                       <span className="tabular-nums">{cat._count.children}</span> sub
                     </Badge>
                   )}
-                  <Button variant="ghost" size="icon" className="size-8" aria-label="Add subcategory" onClick={() => openCreate(cat.id)}>
+                  <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Add subcategory" onClick={() => openCreate(cat.id)}>
                     <Plus className="h-3 w-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="size-8" aria-label="Edit category" onClick={() => openEdit(cat)}>
+                  <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Edit category" onClick={() => openEdit(cat)}>
                     <Pencil className="h-3 w-3" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted hover:text-t-out"
+                    className="touch-target size-8 text-muted hover:text-t-out"
                     aria-label="Delete category"
                     onClick={() => setDeleteId(cat.id)}
                   >
@@ -286,13 +288,13 @@ export function CategoryManager() {
                         <Badge status="neutral">
                           <span className="tabular-nums">{child._count.models}</span> models
                         </Badge>
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="Edit subcategory" onClick={() => openEdit(child)}>
+                        <Button variant="ghost" size="icon" className="touch-target size-8" aria-label="Edit subcategory" onClick={() => openEdit(child)}>
                           <Pencil className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8 text-muted hover:text-t-out"
+                          className="touch-target size-8 text-muted hover:text-t-out"
                           aria-label="Delete subcategory"
                           onClick={() => setDeleteId(child.id)}
                         >

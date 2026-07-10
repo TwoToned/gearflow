@@ -207,7 +207,7 @@ export function MemberList() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="touch-target h-7 w-7"
                       onClick={() =>
                         setRevokeTarget({ id: inv.id, email: inv.email })
                       }
@@ -275,7 +275,7 @@ export function MemberList() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="touch-target h-7 w-7"
                     onClick={() =>
                       setRemoveTarget({
                         id: member.id,

@@ -87,7 +87,7 @@ export function ProjectManagersPanel({
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 text-muted hover:text-ink-2"
+          className="touch-target size-7 text-muted hover:text-ink-2"
           title="Add project manager"
           onClick={() => setShowPicker(!showPicker)}
         >
@@ -124,7 +124,7 @@ export function ProjectManagersPanel({
                 onClick={() => removeMutation.mutate(pm.user.id)}
                 disabled={removeMutation.isPending}
                 className={cn(
-                  "rounded-sm text-faint opacity-0 transition-opacity hover:text-t-out group-hover:opacity-100",
+                  "rounded-sm text-faint opacity-0 transition-opacity pointer-coarse:opacity-100 hover:text-t-out group-hover:opacity-100",
                   focusRing,
                   disabledState,
                 )}

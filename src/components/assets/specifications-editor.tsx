@@ -40,7 +40,7 @@ export function SpecificationsEditor({ value, onChange }: SpecificationsEditorPr
                 value={val}
                 onChange={(e) => onChange({ ...value, [key]: e.target.value })}
               />
-              <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label={`Remove ${key}`} onClick={() => removeSpec(key)}>
+              <Button variant="ghost" size="icon" className="touch-target size-9 shrink-0" aria-label={`Remove ${key}`} onClick={() => removeSpec(key)}>
                 <X className="h-3 w-3" />
               </Button>
             </div>

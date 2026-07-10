@@ -49,6 +49,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       header: "Test tag ID",
       accessorKey: "testTagId",
       alwaysVisible: true,
+      mobile: "title",
       cell: (row) => (
         <span className="t-mono font-medium text-table-cell">{row.testTagId}</span>
       ),
@@ -57,6 +58,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       id: "description",
       header: "Description",
       accessorKey: "description",
+      mobile: "subtitle",
       cell: (row) => (
         <span className="max-w-[200px] truncate block">{row.description}</span>
       ),
@@ -131,6 +133,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
         { value: "NOT_YET_TESTED", label: "Not tested", color: getStatusColor("testTag", "NOT_YET_TESTED").dot },
         { value: "RETIRED", label: "Retired", color: getStatusColor("testTag", "RETIRED").dot },
       ],
+      mobile: "badge",
       cell: (row) => <StatusBadge status={row.status} />,
     },
     {

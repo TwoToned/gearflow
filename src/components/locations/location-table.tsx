@@ -67,6 +67,7 @@ const columns: ColumnDef<LocationRow>[] = [
     accessorKey: "name",
     sortKey: "name",
     alwaysVisible: true,
+    mobile: "title",
     cell: (row) => (
       <div className="flex items-center gap-2" style={{ paddingLeft: row._depth * 24 }}>
         <Link href={`/locations/${row.id}`} className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)}>
@@ -84,6 +85,7 @@ const columns: ColumnDef<LocationRow>[] = [
     accessorKey: "type",
     sortKey: "type",
     responsiveHide: "sm",
+    mobile: "badge",
     filterable: true,
     filterType: "enum",
     filterOptions: [
@@ -102,6 +104,7 @@ const columns: ColumnDef<LocationRow>[] = [
     accessorKey: "address",
     sortKey: "address",
     responsiveHide: "md",
+    mobile: "subtitle",
     cell: (row) => (
       <span className="text-muted">{row.address || "\u2014"}</span>
     ),
@@ -112,6 +115,7 @@ const columns: ColumnDef<LocationRow>[] = [
     sortKey: "name",
     sortable: false,
     align: "right",
+    mobile: "meta",
     cell: (row) => {
       const count = (row._count?.assets || 0) + (row._count?.bulkAssets || 0) + (row._count?.kits || 0);
       return <span className="t-data tabular-nums">{count}</span>;
@@ -122,6 +126,8 @@ const columns: ColumnDef<LocationRow>[] = [
     header: "Tags",
     sortable: false,
     responsiveHide: "lg",
+    // Long tag lists blow out the card — noise on a phone.
+    mobile: "hidden",
     cell: (row) => (
       <div className="flex flex-wrap gap-1">
         {row.tags?.map((tag: string) => (

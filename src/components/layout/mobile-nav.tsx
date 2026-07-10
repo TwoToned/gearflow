@@ -16,10 +16,6 @@ import { cn, focusRing } from "@/lib/utils";
 // Dashboard / Jobs / Warehouse / Crew / Assets. Settings lives in the
 // avatar menu; everything else (Test & Tag, Maintenance, Clients, Suppliers,
 // Locations, Activity) is sidebar-only on larger screens.
-//
-// Scanning is NOT a bottom-nav tab — the Warehouse screen already owns the
-// scan/lookup flow (warehouse/page.tsx), so it stays one screen away there
-// rather than duplicating a shortcut here.
 interface MobileNavItem {
   href: string;
   icon: LucideIcon;

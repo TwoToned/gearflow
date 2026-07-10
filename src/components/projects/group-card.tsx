@@ -72,7 +72,7 @@ export function GroupCard({
         {/* Drag handle — visible on hover only */}
         {dragHandleProps && (
           <div
-            className="flex-none cursor-grab text-fg-4 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-fg-3 active:cursor-grabbing"
+            className="flex-none cursor-grab text-fg-4 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/card:opacity-100 hover:text-fg-3 active:cursor-grabbing"
             onClick={(e) => e.stopPropagation()}
             {...dragHandleProps}
           >
@@ -123,8 +123,8 @@ export function GroupCard({
           {/* Actions menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreHorizontal className="h-3.5 w-3.5" />
+              <Button variant="ghost" size="icon" className="h-11 w-11 md:h-7 md:w-7">
+                <MoreHorizontal className="h-4 w-4 md:h-3.5 md:w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

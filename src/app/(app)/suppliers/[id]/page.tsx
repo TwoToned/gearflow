@@ -244,7 +244,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
             </div>
 
             {/* At-a-glance strip — single surface, vertical dividers */}
-            <div className="grid grid-cols-3 divide-x divide-line rounded-[var(--r)] border border-line bg-paper-2">
+            <div className="grid grid-cols-1 divide-y divide-line rounded-[var(--r)] border border-line bg-paper-2 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
               <GlanceCell figure={atAGlance.totalOrders} label="Total orders" />
               <GlanceCell figure={atAGlance.openOrders} label="Open orders" />
               <GlanceCell figure={formatCurrency(atAGlance.spend)} label="Spend" />

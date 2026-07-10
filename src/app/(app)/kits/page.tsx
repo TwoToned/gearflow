@@ -43,6 +43,8 @@ function useKitColumns(
       accessorKey: "assetTag",
       alwaysVisible: true,
       sortKey: "assetTag",
+      mobile: "subtitle", // tag + thumbnail under the kit name
+
       cell: (row) => (
         <div className="flex items-center gap-3">
           <MediaThumbnail
@@ -62,6 +64,7 @@ function useKitColumns(
       header: "Name",
       accessorKey: "name",
       sortKey: "name",
+      mobile: "title",
       cell: (row) => <span className="font-medium text-ink">{row.name}</span>,
     },
     {
@@ -80,6 +83,7 @@ function useKitColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      mobile: "badge",
       filterOptions: [
         { value: "AVAILABLE", label: "Available", color: getStatusColor("kit", "AVAILABLE").dot },
         { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("kit", "CHECKED_OUT").dot },
@@ -99,6 +103,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       defaultVisible: false,
+      mobile: "badge",
       filterOptions: [
         { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
         { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
@@ -136,6 +141,7 @@ function useKitColumns(
       sortable: false,
       defaultVisible: true,
       responsiveHide: "lg",
+      mobile: "hidden", // low-signal chips; keeps the card to status + 3 meta
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (

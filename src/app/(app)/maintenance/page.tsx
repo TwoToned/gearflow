@@ -55,6 +55,8 @@ function useMaintenanceColumns(
       accessorKey: "title",
       alwaysVisible: true,
       sortKey: "title",
+      mobile: "subtitle", // the serviced asset is the headline; the record title sits under it
+
       cell: (row) => (
         <Link href={`/maintenance/${row.id}`} className={cn("rounded-sm font-medium text-ink hover:underline", focusRing)} onClick={(e) => e.stopPropagation()}>
           {row.title}
@@ -65,6 +67,7 @@ function useMaintenanceColumns(
       id: "asset",
       header: "Asset",
       sortKey: "asset",
+      mobile: "title",
       cell: (row) => {
         const assets = row.assets || [];
         if (assets.length === 0) return "—";
@@ -106,6 +109,8 @@ function useMaintenanceColumns(
       sortKey: "reportedBy",
       defaultVisible: false,
       responsiveHide: "md",
+      mobile: "hidden", // low-signal on a mobile card; off by default on desktop too
+
       cell: (row) => <span className="text-ui-text text-muted">{row.reportedBy?.name || "—"}</span>,
     },
     {
@@ -115,6 +120,7 @@ function useMaintenanceColumns(
       sortKey: "status",
       filterable: true,
       filterType: "enum",
+      mobile: "badge",
       filterOptions: [
         { value: "SCHEDULED", label: "Scheduled", color: getStatusColor("maintenance", "SCHEDULED").dot },
         { value: "AWAITING_PARTS", label: "Awaiting parts", color: getStatusColor("maintenance", "AWAITING_PARTS").dot },
@@ -144,6 +150,7 @@ function useMaintenanceColumns(
       id: "scheduledDate",
       header: "Scheduled",
       sortKey: "scheduledDate",
+      mobile: "meta",
       cell: (row) => (
         <span className="text-ui-text text-muted tabular-nums">
           {row.scheduledDate ? format(new Date(row.scheduledDate), "MMM d, yyyy") : "—"}
@@ -169,6 +176,7 @@ function useMaintenanceColumns(
       filterable: true,
       filterType: "enum",
       defaultVisible: false,
+      mobile: "badge",
       filterOptions: [
         { value: "PASS", label: "Pass", color: getStatusColor("maintenanceResult", "PASS").dot },
         { value: "FAIL", label: "Fail", color: getStatusColor("maintenanceResult", "FAIL").dot },
@@ -192,6 +200,7 @@ function useMaintenanceColumns(
       sortable: false,
       defaultVisible: true,
       responsiveHide: "lg",
+      mobile: "hidden", // low-signal chips on a mobile card
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           {row.tags?.map((tag: string) => (
@@ -207,6 +216,7 @@ function useMaintenanceColumns(
       header: "",
       sortable: false,
       width: 40,
+      mobile: "actions",
       cell: (row) => (
         <CanDo resource="maintenance" action="delete">
           <Button

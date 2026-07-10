@@ -169,7 +169,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-            <Button variant="line" size="sm" className="h-8 gap-1.5 text-xs">
+            <Button variant="line" size="sm" className="h-11 gap-1.5 text-xs sm:h-8">
               <BookmarkPlus className="h-3.5 w-3.5" />
               <span className="max-w-[140px] truncate">{label}</span>
               <ChevronDown className="h-3.5 w-3.5 opacity-60" />

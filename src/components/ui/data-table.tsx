@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Card } from "@/components/ui/card";
 import { FadeIn } from "@/components/ui/motion";
 import {
   Table,
@@ -40,10 +41,38 @@ export interface FilterOption {
   color?: string;
 }
 
+/**
+ * The slot a column occupies in the mobile card layout (DESIGN.md §15 — mobile
+ * uses card lists, not data tables).
+ *
+ * - `title`    — primary identifier, one per card
+ * - `subtitle` — secondary line under the title, one per card
+ * - `badge`    — status pill(s), right-aligned next to the title
+ * - `meta`     — label/value pair in the 2-column meta grid (the default)
+ * - `actions`  — trailing control (e.g. an overflow menu)
+ * - `hidden`   — omitted from the card entirely
+ *
+ * If no column on a table declares a role, the first visible column becomes the
+ * `title` and the rest become `meta`.
+ */
+export type MobileRole =
+  | "title"
+  | "subtitle"
+  | "badge"
+  | "meta"
+  | "actions"
+  | "hidden";
+
 export interface ColumnDef<TData> {
   id: string;
   header: string;
   accessorKey?: string;
+  /**
+   * MUST be pure and presentational. The desktop table and the mobile card list
+   * are both mounted (the swap is a CSS breakpoint), so this runs twice per row.
+   * A cell that fires an effect, a query, or analytics would double-fire, and a
+   * hard-coded `id`/`htmlFor` would collide. Render-only: links, badges, text.
+   */
   cell?: (row: TData) => React.ReactNode;
   sortable?: boolean;
   sortKey?: string;
@@ -53,7 +82,16 @@ export interface ColumnDef<TData> {
   filterKey?: string;
   defaultVisible?: boolean;
   alwaysVisible?: boolean;
+  /** Hides the column below this breakpoint in the desktop table. No effect on cards. */
   responsiveHide?: "sm" | "md" | "lg" | "xl";
+  /** Slot this column occupies in the mobile card. See {@link MobileRole}. */
+  mobile?: MobileRole;
+  /**
+   * Tells the mobile card this column has nothing to show for a row, so the meta
+   * pair is dropped instead of rendering the cell's "—" placeholder. Only needed
+   * when the column has a custom `cell` and no `accessorKey` to infer from.
+   */
+  mobileEmpty?: (row: TData) => boolean;
   width?: number | string;
   minWidth?: number;
   align?: "left" | "center" | "right";
@@ -97,6 +135,12 @@ export interface DataTableProps<TData> {
   emptyPreset?: string;
   toolbarActions?: React.ReactNode;
   toolbarPrefix?: React.ReactNode;
+  /**
+   * Renders a card list instead of the table below `md` (DESIGN.md §15).
+   * Opt out only for genuinely grid-shaped data (matrices, calendars) where a
+   * horizontally scrolling table reads better than cards.
+   */
+  mobileCards?: boolean;
   /** Enables the Saved Views menu in the toolbar (per-user, org-scoped presets). */
   savedViews?: {
     tableId: string;
@@ -127,6 +171,202 @@ function getResponsiveClass(hide?: "sm" | "md" | "lg" | "xl"): string {
     case "xl": return "hidden xl:table-cell";
     default: return "";
   }
+}
+
+// ─── Cell Rendering ───────────────────────────────────────────────────
+
+/** Renders a column's content for a row, falling back to the accessor value. */
+function renderCell<TData>(col: ColumnDef<TData>, row: TData): React.ReactNode {
+  if (col.cell) return col.cell(row);
+  const value = col.accessorKey ? getNestedValue(row, col.accessorKey) : undefined;
+  return value != null ? String(value) : "—";
+}
+
+/**
+ * True when a column has nothing to show for this row, so the card can drop the
+ * meta pair rather than print a "—" placeholder.
+ *
+ * A custom `cell` renderer can't be introspected without rendering it, so the
+ * checks run in order of what we can actually know: an explicit `mobileEmpty`
+ * predicate, then the accessor value (which most "—" cells are derived from),
+ * and otherwise we assume there's something to show.
+ */
+function isCellEmpty<TData>(col: ColumnDef<TData>, row: TData): boolean {
+  if (col.mobileEmpty) return col.mobileEmpty(row);
+  if (col.accessorKey) {
+    const value = getNestedValue(row, col.accessorKey);
+    return value == null || value === "";
+  }
+  return !col.cell;
+}
+
+// ─── Mobile Card Column Roles ─────────────────────────────────────────
+
+interface MobileLayout<TData> {
+  title?: ColumnDef<TData>;
+  subtitle?: ColumnDef<TData>;
+  badges: ColumnDef<TData>[];
+  meta: ColumnDef<TData>[];
+  actions: ColumnDef<TData>[];
+}
+
+/**
+ * Sorts visible columns into mobile card slots. When no column declares a
+ * `mobile` role, falls back to "first column is the title, rest are meta" so
+ * that a table gets a usable card layout without any per-consumer annotation.
+ */
+function getMobileLayout<TData>(columns: ColumnDef<TData>[]): MobileLayout<TData> {
+  const layout: MobileLayout<TData> = { badges: [], meta: [], actions: [] };
+  if (columns.length === 0) return layout;
+
+  if (!columns.some((c) => c.mobile)) {
+    const [first, ...rest] = columns;
+    return { ...layout, title: first, meta: rest };
+  }
+
+  for (const col of columns) {
+    switch (col.mobile ?? "meta") {
+      case "title":
+        layout.title ??= col;
+        break;
+      case "subtitle":
+        layout.subtitle ??= col;
+        break;
+      case "badge":
+        layout.badges.push(col);
+        break;
+      case "actions":
+        layout.actions.push(col);
+        break;
+      case "hidden":
+        break;
+      default:
+        layout.meta.push(col);
+    }
+  }
+  // A table that annotates only badges/meta still needs a headline.
+  layout.title ??= layout.meta.shift();
+  return layout;
+}
+
+// ─── Mobile Card List ─────────────────────────────────────────────────
+
+function DataTableCards<TData>({
+  data,
+  columns,
+  getRowId,
+  onRowClick,
+  enableRowSelection,
+  selectedRows,
+  onToggleRow,
+}: {
+  data: TData[];
+  columns: ColumnDef<TData>[];
+  getRowId: (row: TData) => string;
+  onRowClick?: (row: TData) => void;
+  enableRowSelection: boolean;
+  selectedRows?: Set<string>;
+  onToggleRow: (id: string) => void;
+}) {
+  const layout = getMobileLayout(columns);
+
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {data.map((row) => {
+        const rowId = getRowId(row);
+        const isSelected = enableRowSelection && selectedRows?.has(rowId);
+        const meta = layout.meta.filter((col) => !isCellEmpty(col, row));
+
+        return (
+          <li key={rowId}>
+            {/* §15: full-row tap in card mode — the whole card is the target.
+                Deliberately no role="button"/tabIndex: cards embed links and
+                menus, so a button role would nest interactive content, add a
+                redundant tab stop, and flatten the accessible name to the
+                card's entire text. Keyboard users reach the title link, exactly
+                as they do in the desktop table's clickable <tr>. */}
+            <Card
+              interactive={!!onRowClick}
+              className={cn("p-4", isSelected && "bg-select")}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
+              <div className="flex items-start gap-3">
+                {enableRowSelection && (
+                  <span
+                    className="touch-target -m-2 flex items-center p-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Checkbox
+                      checked={isSelected || false}
+                      onCheckedChange={() => onToggleRow(rowId)}
+                      aria-label="Select row"
+                    />
+                  </span>
+                )}
+
+                <div className="min-w-0 flex-1">
+                  {/* The title's 12rem flex-basis makes a wide badge cluster wrap
+                      onto its own line instead of truncating the name. It's a
+                      basis rather than a min-width so the title can still shrink
+                      inside a narrower container (dialog body, side panel). */}
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
+                    <div className="min-w-0 flex-1 basis-48">
+                      {layout.title && (
+                        <div className="font-display text-[15px] font-bold leading-tight tracking-tight">
+                          {renderCell(layout.title, row)}
+                        </div>
+                      )}
+                      {layout.subtitle && !isCellEmpty(layout.subtitle, row) && (
+                        <div className="mt-0.5 text-[13.5px] text-muted">
+                          {renderCell(layout.subtitle, row)}
+                        </div>
+                      )}
+                    </div>
+                    {layout.badges.length > 0 && (
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                        {layout.badges.map((col) => (
+                          <React.Fragment key={col.id}>{renderCell(col, row)}</React.Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {meta.length > 0 && (
+                    // §15: max 2 columns on mobile, never 3+.
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+                      {meta.map((col) => (
+                        <div key={col.id} className="min-w-0">
+                          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                            {col.header}
+                          </dt>
+                          {/* Wrap rather than truncate: a clipped email or serial
+                              number is unreadable, and cards have vertical room. */}
+                          <dd className="mt-0.5 text-[13.5px] break-words text-ink">
+                            {renderCell(col, row)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+
+                {layout.actions.length > 0 && (
+                  <span
+                    className="shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {layout.actions.map((col) => (
+                      <React.Fragment key={col.id}>{renderCell(col, row)}</React.Fragment>
+                    ))}
+                  </span>
+                )}
+              </div>
+            </Card>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 // ─── Filter Popover ──────────────────────────────────────────────────
@@ -212,7 +452,7 @@ function FilterPopover({
         variant="line"
         size="sm"
         className={cn(
-          "h-8 gap-1.5 text-xs",
+          "h-11 gap-1.5 text-xs sm:h-8",
           hasFilter && "border-primary/50 bg-primary/5 text-primary"
         )}
         onClick={() => setOpen(!open)}
@@ -264,7 +504,7 @@ function FilterPopover({
                   <button
                     key={opt.value}
                     type="button"
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev"
+                    className="flex min-h-11 w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev sm:min-h-0"
                     onClick={() => toggleOption(opt.value)}
                   >
                     <div className={cn(
@@ -345,7 +585,7 @@ function ColumnVisibilityPopover<TData>({
         ref={triggerRef}
         variant="line"
         size="sm"
-        className="h-8 gap-1.5 text-xs"
+        className="h-11 gap-1.5 text-xs sm:h-8"
         onClick={() => setOpen(!open)}
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -365,7 +605,7 @@ function ColumnVisibilityPopover<TData>({
                   key={col.id}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev",
+                    "flex min-h-11 w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-elev sm:min-h-0",
                     col.alwaysVisible && "opacity-50 cursor-not-allowed"
                   )}
                   disabled={col.alwaysVisible}
@@ -494,6 +734,7 @@ export function DataTable<TData>({
   emptyPreset,
   toolbarActions,
   toolbarPrefix,
+  mobileCards = true,
   savedViews,
 }: DataTableProps<TData>) {
   const filterableColumns = columns.filter((c) => c.filterable && c.filterType === "enum" && c.filterOptions);
@@ -586,7 +827,10 @@ export function DataTable<TData>({
             onChange={(v) => handleFilterChange(col.id, v)}
           />
         ))}
-        <div className="flex items-center gap-2 ml-auto">
+        {/* Wraps on narrow screens. Without flex-wrap this row overflowed the
+            viewport, and `main` clips rather than scrolls — so the trailing
+            action (New job / New model / Export CSV) was cut off, not reachable. */}
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:flex-nowrap">
           {enableColumnVisibility && onToggleColumnVisibility && (
             <ColumnVisibilityPopover
               columns={columns}
@@ -617,8 +861,9 @@ export function DataTable<TData>({
         />
       )}
 
-      {/* Table */}
-      <div className="overflow-hidden">
+      {/* Table (desktop). Below `md` this is display:none, so its contents are
+          not announced to screen readers and the card list below takes over. */}
+      <div className={cn("overflow-hidden", mobileCards && "hidden md:block")}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -740,17 +985,52 @@ export function DataTable<TData>({
         </Table>
       </div>
 
+      {/* Card list (mobile) — DESIGN.md §15: mobile uses card lists, not tables. */}
+      {mobileCards && (
+        <div className="md:hidden">
+          {isLoading ? (
+            <div className="flex flex-col gap-2.5">
+              {Array.from({ length: 5 }).map((_, r) => (
+                <Card key={r} className="space-y-3 p-4">
+                  <Skeleton className="h-4 w-1/2 rounded" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Skeleton className="h-3 w-3/4 rounded" />
+                    <Skeleton className="h-3 w-2/3 rounded" />
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : data.length === 0 ? (
+            <EmptyState
+              title={emptyTitle ?? "Nothing here yet"}
+              description={emptyDescription}
+            />
+          ) : (
+            <DataTableCards
+              data={data}
+              columns={visibleColumns}
+              getRowId={getRowId}
+              onRowClick={onRowClick}
+              enableRowSelection={!!enableRowSelection}
+              selectedRows={selectedRows}
+              onToggleRow={toggleSelectRow}
+            />
+          )}
+        </div>
+      )}
+
       {/* Pagination */}
       {(onPageChange || onPageSizeChange) && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
             {onPageSizeChange && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted">Show</span>
                 <select
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
-                  className="flex h-8 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Rows per page"
+                  className="flex h-11 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-8"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -766,10 +1046,22 @@ export function DataTable<TData>({
           </div>
           {onPageChange && (
             <div className="flex gap-2">
-              <Button variant="line" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+              <Button
+                variant="line"
+                size="sm"
+                className="h-11 flex-1 sm:h-8 sm:flex-none"
+                disabled={page <= 1}
+                onClick={() => onPageChange(page - 1)}
+              >
                 Previous
               </Button>
-              <Button variant="line" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+              <Button
+                variant="line"
+                size="sm"
+                className="h-11 flex-1 sm:h-8 sm:flex-none"
+                disabled={page >= totalPages}
+                onClick={() => onPageChange(page + 1)}
+              >
                 Next
               </Button>
             </div>

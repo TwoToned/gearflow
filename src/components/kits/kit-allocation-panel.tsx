@@ -178,8 +178,9 @@ function AllocationEditor({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-md border border-line">
-        <table className="w-full">
+      {/* overflow-x-auto, not overflow-hidden: six columns clip rather than scroll on a phone. */}
+      <div className="overflow-x-auto rounded-md border border-line">
+        <table className="w-full min-w-[640px]">
           <thead>
             <tr className="border-b border-line bg-paper-2">
               <th className="px-3 py-2 text-left text-caption text-muted">Model</th>

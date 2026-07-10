@@ -263,8 +263,9 @@ function AvailabilityPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="t-overline text-muted mb-1">Schedule</p>
-              <div className="flex items-center gap-2">
-                <h1 className="t-title text-ink min-w-[200px]">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* The 200px floor plus the 44px month-nav buttons overflows 375px. */}
+                <h1 className="t-title text-ink sm:min-w-[200px]">
                   {format(currentMonth, "MMMM yyyy")}
                 </h1>
                 <div className="flex items-center gap-1">
@@ -272,7 +273,7 @@ function AvailabilityPage() {
                     variant="ghost"
                     size="icon"
                     aria-label="Previous month"
-                    className="size-9"
+                    className="size-11 sm:size-9"
                     onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
                   >
                     <ChevronLeft className="size-4" />
@@ -281,7 +282,7 @@ function AvailabilityPage() {
                     variant="ghost"
                     size="icon"
                     aria-label="Next month"
-                    className="size-9"
+                    className="size-11 sm:size-9"
                     onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
                   >
                     <ChevronRight className="size-4" />
@@ -367,7 +368,7 @@ function AvailabilityPage() {
                           variant="ghost"
                           size="icon"
                           aria-label="Close day detail"
-                          className="-mt-1 -mr-1 size-7 shrink-0"
+                          className="touch-target -mt-1 -mr-1 size-7 shrink-0"
                           onClick={() => setSelectedDay(null)}
                         >
                           <X className="size-3.5" />

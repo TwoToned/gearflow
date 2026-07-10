@@ -374,7 +374,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-9 text-t-out hover:text-t-out"
+                                className="touch-target size-9 text-t-out hover:text-t-out"
                                 aria-label="Remove asset from kit"
                                 onClick={() => setRemoveAssetId(item.assetId)}
                               >
@@ -429,7 +429,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-9 text-t-out hover:text-t-out"
+                                className="touch-target size-9 text-t-out hover:text-t-out"
                                 aria-label="Remove bulk item from kit"
                                 onClick={() => setRemoveBulkItemId(item.id)}
                               >

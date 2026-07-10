@@ -701,7 +701,7 @@ function ServiceCard({
           <CanDo resource="project" action="update">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8" title="Change status">
+                <Button variant="ghost" size="icon" className="touch-target size-8" title="Change status">
                   <ChevronDown className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
@@ -723,13 +723,13 @@ function ServiceCard({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="ghost" size="icon" className="size-8" onClick={onEdit} title="Edit service">
+            <Button variant="ghost" size="icon" className="touch-target size-8" onClick={onEdit} title="Edit service">
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-t-out"
+              className="touch-target size-8 text-t-out"
               onClick={onDelete}
               title="Delete service"
             >
@@ -1269,8 +1269,9 @@ function ServiceDialog({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
+            /* Date takes the full row on mobile; the two times pair up beneath it. */
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="col-span-2 space-y-1.5 sm:col-span-1">
                 <Label>Date</Label>
                 <Input
                   type="date"

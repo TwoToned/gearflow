@@ -75,6 +75,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
+import { cn } from "@/lib/utils";
 import type { SubHireStatus, SubHirePaymentStatus } from "@/generated/prisma/client";
 
 const paymentStatusLabels: Record<SubHirePaymentStatus, string> = {
@@ -680,10 +681,16 @@ function SubHireManageView({
           </div>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          {/* Summary strip skeleton */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Summary strip skeleton — mirrors the real strip's 2-up mobile layout. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="rounded-md bg-bg-inset p-3 text-center space-y-1.5">
+              <div
+                key={i}
+                className={cn(
+                  "rounded-md bg-bg-inset p-3 text-center space-y-1.5",
+                  i === 3 && "col-span-2 sm:col-span-1",
+                )}
+              >
                 <Skeleton className="h-3 w-10 mx-auto rounded" />
                 <Skeleton className="h-4 w-16 mx-auto rounded" />
               </div>
@@ -810,8 +817,8 @@ function SubHireManageView({
       </DialogHeader>
 
       <div className="space-y-4 py-2">
-        {/* Summary strip */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Summary strip — 2-up on mobile (§15 caps at 2 cols), margin spans the row. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="rounded-md bg-bg-inset p-3 text-center">
             <div className="text-xs text-fg-3">Cost</div>
             <div className="text-sm font-semibold tabular-nums">{formatCurrency(Number(subHire.totalCost))}</div>
@@ -820,7 +827,7 @@ function SubHireManageView({
             <div className="text-xs text-fg-3">Charge</div>
             <div className="text-sm font-semibold tabular-nums">{formatCurrency(Number(subHire.totalCharge))}</div>
           </div>
-          <div className="rounded-md bg-bg-inset p-3 text-center">
+          <div className="col-span-2 rounded-md bg-bg-inset p-3 text-center sm:col-span-1">
             <div className="text-xs text-fg-3">Margin</div>
             <div className={`text-sm font-semibold tabular-nums ${margin > 0 ? "text-success" : margin < 0 ? "text-error" : "text-fg-3"}`}>
               {margin > 0 ? "+" : ""}{formatCurrency(margin)}

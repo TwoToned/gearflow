@@ -1269,8 +1269,9 @@ function ServiceDialog({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
+            /* Date takes the full row on mobile; the two times pair up beneath it. */
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="col-span-2 space-y-1.5 sm:col-span-1">
                 <Label>Date</Label>
                 <Input
                   type="date"

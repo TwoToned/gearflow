@@ -1018,13 +1018,14 @@ export function LineItemRow({
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
           {selectable && (
             <span
-              // Stop the row-click select handler from firing when the checkbox
-              // is clicked (the checkbox owns its own toggle), and capture the
-              // shift key here — Radix's onCheckedChange doesn't forward the event.
-              onClick={(e) => {
-                e.stopPropagation();
+              // Capture the shift key on mousedown — it fires before the click →
+              // onCheckedChange sequence, so the ref is fresh when the checkbox's
+              // change handler reads it (Radix doesn't forward the event). onClick
+              // stops the row-click select handler (the checkbox owns its toggle).
+              onMouseDown={(e) => {
                 shiftKeyRef.current = e.shiftKey;
               }}
+              onClick={(e) => e.stopPropagation()}
               className={cn(
                 "shrink-0 transition-opacity",
                 isSelected || selectionActive

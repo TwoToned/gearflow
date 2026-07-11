@@ -23,7 +23,7 @@ import {
   computeLineTotal,
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
-import { Plus, FolderPlus, FolderTree, Pencil, ChevronDown as ChevronDownIcon } from "lucide-react";
+import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +40,7 @@ import {
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
+  moveLineItemsToGroup,
   updateGroupPrice,
 } from "@/server/project-groups";
 import {
@@ -57,8 +58,19 @@ import {
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
 import { applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
+import {
+  removeLineItem,
+  updateLineItem,
+  reorderLineItems,
+  removeLineItemsBatch,
+  updateLineItemsBatch,
+  type BulkLineItemPatch,
+} from "@/server/line-items";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
+import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -283,6 +295,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
 
+  // Bulk-operations dialog state (act on the current multi-selection).
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkMoveGroupOpen, setBulkMoveGroupOpen] = useState(false);
+  const [bulkMoveCategoryOpen, setBulkMoveCategoryOpen] = useState(false);
+
   // Group edit dialog state
   // EditGroupDialog target — body owns its own form state, keyed by group.id.
   const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
@@ -433,6 +451,54 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     },
     [removeMut],
   );
+
+  // ─── Bulk mutations (operate on the current multi-selection) ───────────────
+
+  const bulkDeleteMut = useServerMutation({
+    mutationFn: (ids: string[]) => removeLineItemsBatch(ids),
+    onSuccess: (r: { removed: number; skipped: number }) => {
+      invalidate();
+      selection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(
+        `Removed ${r.removed} item${r.removed === 1 ? "" : "s"}` +
+          (r.skipped ? ` (${r.skipped} skipped — kit/accessory children)` : ""),
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const bulkEditMut = useServerMutation({
+    mutationFn: ({ ids, patch }: { ids: string[]; patch: BulkLineItemPatch }) =>
+      updateLineItemsBatch(ids, patch),
+    onSuccess: (r: { updated: number; skipped: number }) => {
+      invalidate();
+      selection.clearSelection();
+      setBulkEditOpen(false);
+      toast.success(`Updated ${r.updated} item${r.updated === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const bulkMoveMut = useServerMutation({
+    mutationFn: ({
+      ids,
+      targetGroupId,
+      targetCategoryId,
+    }: {
+      ids: string[];
+      targetGroupId: string | null;
+      targetCategoryId: string | null;
+    }) => moveLineItemsToGroup({ lineItemIds: ids, targetGroupId, targetCategoryId }),
+    onSuccess: (r: { moved: number; skipped: number }) => {
+      invalidate();
+      selection.clearSelection();
+      setBulkMoveGroupOpen(false);
+      setBulkMoveCategoryOpen(false);
+      toast.success(`Moved ${r.moved} item${r.moved === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // No prune needed: a successfully-removed id simply stops matching any rendered
   // row (the refetch drops it). ids are cuids (never reused), so a retained dead id
@@ -651,6 +717,29 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     }
   };
 
+  // ─── Bulk-selection derived state ──────────────────────────────────────────
+  // Every selectable line item's sortable key, and the plain cuids of the ones
+  // currently selected (the payload for the bulk server actions).
+  const allLiSortableIds = allSortableIds.filter((sid) => sid.startsWith("li-"));
+  const selectedLineItemIds = allLiSortableIds
+    .filter((sid) => selection.isSelected(sid))
+    .map((sid) => sid.slice(3));
+  const allLiSelected =
+    allLiSortableIds.length > 0 && selectedLineItemIds.length === allLiSortableIds.length;
+  const someLiSelected = selectedLineItemIds.length > 0;
+
+  const toggleSelectAll = () => {
+    if (allLiSelected) selection.clearSelection();
+    else selection.selectAll(allLiSortableIds);
+  };
+
+  // Checkbox on a line-item row: shift extends a range, otherwise toggle one.
+  const handleSelectChange = (itemId: string, _checked: boolean, shiftKey: boolean) => {
+    const sortableId = `li-${itemId}`;
+    if (shiftKey) selection.selectTo(sortableId, allLiSortableIds);
+    else selection.toggle(sortableId, true);
+  };
+
   // Primary "Add ▾" menu (item / group / category). The three add actions reuse
   // the exact handlers the old three buttons triggered (UnifiedAddDialog,
   // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
@@ -716,6 +805,34 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         </div>
       )}
 
+      {/* Bulk action bar — appears once one or more line items are selected. */}
+      <BulkActionBar
+        count={selectedLineItemIds.length}
+        onClear={selection.clearSelection}
+      >
+        <Button size="sm" variant="line" onClick={() => setBulkEditOpen(true)}>
+          <Pencil className="mr-2 h-3 w-3" />
+          Edit
+        </Button>
+        <Button size="sm" variant="line" onClick={() => setBulkMoveGroupOpen(true)}>
+          <ArrowLeftRight className="mr-2 h-3 w-3" />
+          Move to group
+        </Button>
+        <Button size="sm" variant="line" onClick={() => setBulkMoveCategoryOpen(true)}>
+          <FolderTree className="mr-2 h-3 w-3" />
+          Move to category
+        </Button>
+        <Button
+          size="sm"
+          variant="line"
+          className="text-destructive"
+          onClick={() => setBulkDeleteOpen(true)}
+        >
+          <Trash2 className="mr-2 h-3 w-3" />
+          Delete
+        </Button>
+      </BulkActionBar>
+
       {/* Main table */}
       {(hasCategories || hasUncategorized) && (
         <div className="rounded-[var(--r)] border border-line overflow-x-auto">
@@ -732,7 +849,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             <TableHeader>
             <TableRow>
               <TableHead className="px-1" />
-              <TableHead>Item</TableHead>
+              <TableHead>
+                <div className="flex items-center gap-2">
+                  {allLiSortableIds.length > 0 && (
+                    <Checkbox
+                      aria-label="Select all items"
+                      checked={
+                        allLiSelected ? true : someLiSelected ? "indeterminate" : false
+                      }
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  )}
+                  <span>Item</span>
+                </div>
+              </TableHead>
               <TableHead className="text-center">Qty</TableHead>
               <TableHead className="text-right hidden md:table-cell">Unit price</TableHead>
               {showCostColumn && (
@@ -935,6 +1065,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 showCostColumn={showCostColumn}
                                 isExpanded={expandedParents.has(item.id)}
                                 isSelected={selection.isSelected(`li-${item.id}`)}
+                                selectable={!item.isKitChild}
+                                selectionActive={someLiSelected}
+                                onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                                 onClick={(e) => handleRowClick(item.id, e)}
                                 onToggle={() => toggleParent(item.id)}
                                 onEdit={() => setEditLineItem(item)}
@@ -970,6 +1103,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           isSelected={selection.isSelected(`li-${item.id}`)}
+                          selectable={!item.isKitChild}
+                          selectionActive={someLiSelected}
+                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                           onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
@@ -1016,6 +1152,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     showCostColumn={showCostColumn}
                     isExpanded={expandedParents.has(item.id)}
                     isSelected={selection.isSelected(`li-${item.id}`)}
+                    selectable={!item.isKitChild}
+                    selectionActive={someLiSelected}
+                    onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                     onClick={(e) => handleRowClick(item.id, e)}
                     onToggle={() => toggleParent(item.id)}
                     onEdit={() => setEditLineItem(item)}
@@ -1102,6 +1241,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           isSelected={selection.isSelected(`li-${item.id}`)}
+                          selectable={!item.isKitChild}
+                          selectionActive={someLiSelected}
+                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                           onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
@@ -1432,6 +1574,63 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         onSubmit={(lineItemId, target) =>
           moveLineItemMut.mutate({
             lineItemId,
+            targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
+          })
+        }
+      />
+
+      {/* ─── Bulk-operation dialogs (act on the current multi-selection) ─── */}
+
+      {/* Bulk edit — set shared fields across every selected line item. */}
+      <BulkEditLineItemsDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        count={selectedLineItemIds.length}
+        isPending={bulkEditMut.isPending}
+        onSubmit={(patch) => bulkEditMut.mutate({ ids: selectedLineItemIds, patch })}
+      />
+
+      {/* Bulk delete — typed-confirmation, cascades kit/accessory parents. */}
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Remove selected items"
+        description="This removes the selected line items from the project. Kit/accessory members are removed with their parent."
+        count={selectedLineItemIds.length}
+        itemLabel="line item"
+        confirmLabel={`Remove ${selectedLineItemIds.length} item${
+          selectedLineItemIds.length === 1 ? "" : "s"
+        }`}
+        pending={bulkDeleteMut.isPending}
+        onConfirm={() => bulkDeleteMut.mutate(selectedLineItemIds)}
+      />
+
+      {/* Bulk move to group — reuses the single-item picker with a sentinel id;
+          the echoed id is ignored in favour of the current selection. */}
+      <MoveItemToGroupDialog
+        lineItemId={bulkMoveGroupOpen ? "__bulk__" : null}
+        categories={typedCategories}
+        isPending={bulkMoveMut.isPending}
+        onClose={() => setBulkMoveGroupOpen(false)}
+        onSubmit={(_id, target) =>
+          bulkMoveMut.mutate({
+            ids: selectedLineItemIds,
+            targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
+          })
+        }
+      />
+
+      {/* Bulk move to category — same sentinel reuse. */}
+      <MoveItemToCategoryDialog
+        lineItemId={bulkMoveCategoryOpen ? "__bulk__" : null}
+        categories={typedCategories}
+        isPending={bulkMoveMut.isPending}
+        onClose={() => setBulkMoveCategoryOpen(false)}
+        onSubmit={(_id, target) =>
+          bulkMoveMut.mutate({
+            ids: selectedLineItemIds,
             targetCategoryId: target.categoryId,
             targetGroupId: target.groupId,
           })

@@ -903,6 +903,7 @@ model SubHireGroup {
   quantity         Int               @default(1)
   cost             Decimal?          @db.Decimal(12, 2)
   charge           Decimal?          @db.Decimal(12, 2)
+  discount         Decimal           @default(0) @db.Decimal(5, 2) // % off the group charge (client side), like SubHireItem.discount
   showOnQuote      Boolean           @default(true) // Whether group items appear on client quote/invoice
   showOnDocs       Boolean           @default(false) // Whether to show "sub-hired" label on client docs
   // Placement on project (where the group's parent line item lands)

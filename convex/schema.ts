@@ -417,6 +417,7 @@ export default defineSchema({
     quantity: v.optional(v.number()),
     cost: v.optional(v.number()),
     charge: v.optional(v.number()),
+    discount: v.optional(v.number()),
     showOnQuote: v.optional(v.boolean()),
     showOnDocs: v.optional(v.boolean()),
     targetCategoryId: v.optional(v.string()),

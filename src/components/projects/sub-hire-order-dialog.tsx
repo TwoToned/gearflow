@@ -1404,6 +1404,7 @@ function SubHireGroupEditDialog({
   const [quantity, setQuantity] = useState(1);
   const [cost, setCost] = useState("");
   const [charge, setCharge] = useState("");
+  const [discount, setDiscount] = useState("");
   const [showOnQuote, setShowOnQuote] = useState(true);
   const [showOnDocs, setShowOnDocs] = useState(false);
 
@@ -1413,6 +1414,7 @@ function SubHireGroupEditDialog({
       setQuantity(Number(group.quantity) || 1);
       setCost(group.cost != null ? String(Number(group.cost)) : "");
       setCharge(group.charge != null ? String(Number(group.charge)) : "");
+      setDiscount(group.discount != null && Number(group.discount) > 0 ? String(Number(group.discount)) : "");
       setShowOnQuote(group.showOnQuote ?? true);
       setShowOnDocs(group.showOnDocs ?? false);
     }
@@ -1431,7 +1433,10 @@ function SubHireGroupEditDialog({
   }, 0);
 
   const effectiveCost = cost ? Number(cost) : suggestedCost;
-  const effectiveCharge = charge ? Number(charge) : suggestedCharge;
+  const grossCharge = charge ? Number(charge) : suggestedCharge;
+  const discountPct = discount ? Number(discount) : 0;
+  // Discount reduces the client charge only (parity with item discounts + recalc).
+  const effectiveCharge = grossCharge * (1 - discountPct / 100);
   const margin = effectiveCharge - effectiveCost;
 
   return (
@@ -1517,6 +1522,29 @@ function SubHireGroupEditDialog({
             </p>
           </div>
 
+          {/* Discount — % off the client charge (like the equipment add/edit screen) */}
+          <div className="space-y-2">
+            <Label>
+              Discount (%)
+              <span className="text-fg-4 font-normal ml-1">— off the client charge</span>
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+              placeholder="0"
+              className="w-28"
+            />
+            {discountPct > 0 && grossCharge > 0 && (
+              <p className="text-[11px] text-fg-4">
+                {formatCurrency(grossCharge)} − {discountPct}% = {formatCurrency(effectiveCharge)} to client
+              </p>
+            )}
+          </div>
+
           {/* Margin preview */}
           {(effectiveCost > 0 || effectiveCharge > 0) && (
             <div className="rounded-md bg-bg-inset p-3">
@@ -1560,6 +1588,7 @@ function SubHireGroupEditDialog({
               quantity,
               cost: cost ? Number(cost) : null,
               charge: charge ? Number(charge) : null,
+              discount: discount ? Number(discount) : 0,
               showOnQuote,
               showOnDocs,
             })}

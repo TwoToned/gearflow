@@ -446,6 +446,36 @@ describe("subHireGroupSchema", () => {
     });
   });
 
+  describe("discount (coerce, 0–100, default 0)", () => {
+    it("defaults discount to 0", () => {
+      const result = subHireGroupSchema.safeParse(validMinimalGroup);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discount).toBe(0);
+    });
+
+    it("accepts a percentage in range", () => {
+      const result = subHireGroupSchema.safeParse({ ...validMinimalGroup, discount: 15 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discount).toBe(15);
+    });
+
+    it("coerces a numeric string", () => {
+      const result = subHireGroupSchema.safeParse({ ...validMinimalGroup, discount: "12.5" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discount).toBe(12.5);
+    });
+
+    it("rejects a discount over 100", () => {
+      const result = subHireGroupSchema.safeParse({ ...validMinimalGroup, discount: 101 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a negative discount", () => {
+      const result = subHireGroupSchema.safeParse({ ...validMinimalGroup, discount: -5 });
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe("quantity (coerce, int, min 1, default 1)", () => {
     it("defaults quantity to 1", () => {
       const result = subHireGroupSchema.safeParse(validMinimalGroup);

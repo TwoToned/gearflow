@@ -4,7 +4,23 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.23.6.0] - 2026-07-12
+## [0.24.0.0] - 2026-07-12
+
+### Changed
+
+- Group and kit revenue is now split **per item**, each weighted by its own best signal: its set
+  price, then its usual hire rate, then its replacement cost. So a group can mix a priced item, a
+  rate-only item and a cost-only item and split fairly — instead of one rate-less item forcing the
+  whole group onto cost, or one rated item leaving the others at $0. Where an item has only a
+  replacement cost, that cost is converted to a rate-equivalent (using your own fleet's average
+  rate-to-cost, or ~1.5%/day of value) so it sits sensibly beside a rated item rather than dwarfing
+  it. A fully-rated group still splits purely by rate; an all-cost group purely by cost.
+- An item priced at exactly **$0** is now treated as a freebie — it takes no share of a group or
+  kit's revenue and doesn't count toward ROI. An item with **no price set** ("—") is unchanged: it
+  still earns via its rate or replacement cost.
+
+  Existing projects update to the new split on next save, or all at once via
+  `pnpm convex:backfill:revenue-allocation`.
 
 ### Changed
 

@@ -32,7 +32,10 @@ On `projectLineItems`:
 - `EXCLUDED_SUBHIRE` — sub-hired gear. It **consumes pool weight** (so the owned gear
   beside it isn't over-credited) and the number is stored for audit, but it was never
   our capital, so it earns no ROI.
-- `EXCLUDED_NON_GEAR` — custom / labour / container lines, and kit parents. No `modelId`.
+- `EXCLUDED_NON_GEAR` — custom / labour / container lines, and kit parents. No `modelId`, so
+  never counted toward ROI. A **priced** custom item inside a group is a special case: it is part
+  of the group's flat price, so it **consumes its own `lineTotal` off the pool** (owned gear splits
+  the rest) and is NOT billed on top. An unpriced group's customs still bill on their own line.
 - `NO_REVENUE` — the pool was $0, or the line is cancelled / optional.
 
 ## How it runs

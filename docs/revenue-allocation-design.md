@@ -339,9 +339,16 @@ distribute(pool) into node:
                          recurse into each child with its slice
 ```
 
-Custom items inside a group are "extras on top" — `recalcProjectTotals` adds their `lineTotal` to
-group revenue rather than folding it into the bundle price. So they must **not** dilute the pool:
-they are skipped as participants and tagged `EXCLUDED_NON_GEAR`.
+A **priced** group's flat price is the whole total for everything inside it, custom items included.
+So a priced custom item takes its own `lineTotal` straight **off the pool** (owned gear splits the
+remainder) and is tagged `EXCLUDED_NON_GEAR` — the number is stored for audit but never counts
+toward model ROI, exactly like a sub-hire. It is **not** added on top of the project total. A
+$1,800 custom item in a $2,000 group leaves $200 for the gear. When a group has custom items but no
+gear, the customs absorb the whole pool, so `SUM(children) == pool` still holds.
+
+An **unpriced** group (used purely as an organiser) has no flat price to be part of, so its custom
+items bill on their own — otherwise they'd vanish from the invoice — and `recalcProjectTotals` adds
+their `lineTotal` on top for that case only.
 
 ---
 
@@ -349,7 +356,8 @@ they are skipped as participants and tagged `EXCLUDED_NON_GEAR`.
 
 | Line kind | Detected by | Pool weight | `allocatedRevenue` | Counted in ROI |
 |---|---|---|---|---|
-| Custom / labour | `isCustomItem` | none | `null` | no |
+| Custom in a **priced** group | `isCustomItem` | **its own `lineTotal`** | stored | no |
+| Custom elsewhere / labour | `isCustomItem` | none | `null` | no |
 | Container | `isContainerLineItem` | none | `null` | no |
 | Sub-hire | `subHireId != null` | **yes** | stored | **no** |
 | Cancelled / optional | `status`, `isOptional` | none | `0` | no |

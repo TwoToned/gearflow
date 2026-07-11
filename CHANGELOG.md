@@ -4,6 +4,20 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.1.0] - 2026-07-11
+
+### Changed
+
+- A custom item priced inside a group is now treated as **part of the group's flat price**, not an
+  extra added on top. Previously a $2,000 group with an $1,800 custom item and a couple of headsets
+  was billed $3,800 and handed the headsets the full $2,000 of ROI. Now the group bills $2,000, the
+  custom item's $1,800 comes off the ROI pool, and the headsets get their real ~$200. A group with
+  **no** flat price (used purely as an organiser) still bills its custom items on their own line, so
+  nothing disappears from an invoice.
+
+  Existing projects with a priced custom item inside a group will see their total drop to the group
+  price on next save (the on-top amount is removed).
+
 ## [0.23.0.0] - 2026-07-10
 
 ### Added

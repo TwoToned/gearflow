@@ -179,6 +179,29 @@ Auto-generated via atomic counter in `Organization.metadata.subHireOrderCounter`
 | `src/components/projects/equipment-tab.tsx` | Sub-hire orders section + dialog wiring + expanded items with groups |
 | `src/components/projects/add-equipment-dialog.tsx` | Overbook shortcut callback |
 
+## Performance notes
+
+The Sub-Hire Order **modal** reads through non-reactive server actions
+(`getSubHires` list / `getSubHire` detail) via `createSharedResource`, unlike the
+equipment tab and dashboard which read sub-hire data natively through Convex
+`useQuery` (`api.equipmentTab.bundle` / `api.dashboardSubHire.bundle`). This is
+why the modal feels slower than the tab and why the create→manage handoff shows a
+skeleton while `getSubHire` loads.
+
+Latency reductions applied so far (without changing the read architecture):
+- `getSubHire` scopes its placement-label fetch to the sub-hire's project
+  (`projectCategories.listByProject` / `projectGroups.listByProject`) instead of
+  pulling every category/group in the org.
+- `createSubHire` runs the Prisma order-number reservation and the supplier fetch
+  concurrently and drops a redundant tail round-trip.
+
+**Follow-up (not yet done):** rewire the modal's two reads to Convex `useQuery`
+for true reactivity, so the create→manage handoff is instant and edits stream in
+live. Blocker to note: `getSubHire` enriches with `createdBy` (a Better Auth user
+that lives in **Postgres**, unreadable from a Convex query) and resolved media
+URLs, so a pure `useQuery` bundle needs those handled separately. Worth its own
+PR with browser QA against a seeded project.
+
 ## Migration Strategy
 
 Leave-and-layer. Legacy `isSubhire` line items remain as-is. New sub-hires use the `SubHire` entity. Both "Add Subhire" (legacy line item) and "Sub-Hire Orders" (new dialog) appear in the equipment tab.

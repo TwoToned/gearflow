@@ -245,8 +245,16 @@ export async function getSubHire(id: string) {
       getSupplierById(subHire.supplierId),
       subHire.projectId ? getProjectById(subHire.projectId) : Promise.resolve(null),
       getSubHireMediaFromConvex(subHire.id),
-      client.query(api.projectCategories.list, { orgId: organizationId }),
-      client.query(api.projectGroups.list, { orgId: organizationId }),
+      // Placement labels only ever reference THIS project's categories/groups, so
+      // scope the fetch to the project instead of pulling every category/group in
+      // the org (a large payload for orgs with many projects). A project-less
+      // sub-hire has no placements, so an empty list is correct.
+      subHire.projectId
+        ? client.query(api.projectCategories.listByProject, { projectId: subHire.projectId, orgId: organizationId })
+        : Promise.resolve([]),
+      subHire.projectId
+        ? client.query(api.projectGroups.listByProject, { projectId: subHire.projectId, orgId: organizationId })
+        : Promise.resolve([]),
     ]);
 
   const catLabel = new Map(projectCategories.map((c) => [c.id, { id: c.id, name: c.name }]));
@@ -291,15 +299,19 @@ export async function createSubHire(input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "create");
   const data = subHireSchema.parse(input);
 
-  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
-  // JSON counter, and `organization` stays Prisma forever.
-  const orderNumber = await prisma.$transaction((tx) =>
-    reserveSubHireOrderNumber(tx, organizationId),
-  );
-
   const id = createId();
   const now = Date.now();
   const convex = await getConvexClient();
+
+  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
+  // JSON counter, and `organization` stays Prisma forever. The supplier fetch is
+  // independent of it (and of the create), so run both concurrently instead of
+  // three serial Convex/Postgres round-trips on the create path.
+  const [orderNumber, supplier] = await Promise.all([
+    prisma.$transaction((tx) => reserveSubHireOrderNumber(tx, organizationId)),
+    getSupplierById(data.supplierId),
+  ]);
+
   await convex.mutation(api.subHires.create, {
     id,
     organizationId,
@@ -322,9 +334,6 @@ export async function createSubHire(input: unknown) {
   // Read back the written head (Prisma-row-shaped) for the return value.
   const result = await getSubHireById(id);
   if (!result) throw new Error("Sub-hire not found after create");
-
-  // Supplier lives in Convex — fetch for the log label / return shape.
-  const supplier = await getSupplierById(result.supplierId);
 
   await logActivity({
     organizationId,

@@ -45,7 +45,12 @@ import {
   cloneServicesFromProject,
   convertLineItemToService,
   generateCrewMessage,
+  bulkDeleteProjectServices,
+  bulkUpdateServiceStatus,
 } from "@/server/project-services";
+import { useSelection } from "./use-selection";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { getCrewMembersForAssignment } from "@/server/crew-assignments";
 import {
@@ -228,6 +233,36 @@ export function ServicesPanel({
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Bulk selection ────────────────────────────────────────────────────────
+  const selection = useSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const allServiceIds = (services as ServiceRow[]).map((s) => s.id);
+  const selectedServiceIds = allServiceIds.filter((id) => selection.isSelected(id));
+  const allSelected =
+    allServiceIds.length > 0 && selectedServiceIds.length === allServiceIds.length;
+
+  const bulkDeleteMut = useServerMutation({
+    mutationFn: (ids: string[]) => bulkDeleteProjectServices(ids),
+    onSuccess: (r: { deleted: number; skipped: number }) => {
+      toast.success(`Deleted ${r.deleted} service${r.deleted === 1 ? "" : "s"}`);
+      selection.clearSelection();
+      setBulkDeleteOpen(false);
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkStatusMut = useServerMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: ServiceStatus }) =>
+      bulkUpdateServiceStatus(ids, status),
+    onSuccess: (_r, { ids }) => {
+      toast.success(`Updated ${ids.length} service${ids.length === 1 ? "" : "s"}`);
+      selection.clearSelection();
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const generateMutation = useServerMutation({
     mutationFn: () => generateProjectServices(projectId),
     onSuccess: (result) => {
@@ -392,6 +427,57 @@ export function ServicesPanel({
           />
         )}
 
+        {/* Bulk action bar — appears once one or more services are selected. */}
+        <CanDo resource="project" action="update">
+          <BulkActionBar
+            count={selectedServiceIds.length}
+            onClear={selection.clearSelection}
+            itemLabel="service"
+          >
+            <label className="flex items-center gap-1.5 text-caption text-muted">
+              <Checkbox
+                aria-label="Select all services"
+                checked={allSelected}
+                onCheckedChange={(v: boolean | "indeterminate") =>
+                  v === true
+                    ? selection.selectAll(allServiceIds)
+                    : selection.clearSelection()
+                }
+              />
+              All
+            </label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="line">
+                  Set status
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {(Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((status) => (
+                  <DropdownMenuItem
+                    key={status}
+                    onClick={() =>
+                      bulkStatusMut.mutate({ ids: selectedServiceIds, status })
+                    }
+                  >
+                    {SERVICE_STATUS_LABELS[status]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="sm"
+              variant="line"
+              className="text-destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-3 w-3" />
+              Delete
+            </Button>
+          </BulkActionBar>
+        </CanDo>
+
         {/* Timeline — Date Groups */}
         {hasServices && (
           <StaggerList>
@@ -415,6 +501,9 @@ export function ServicesPanel({
                       <ServiceCard
                         key={service.id}
                         service={service}
+                        selected={selection.isSelected(service.id)}
+                        selectionActive={selectedServiceIds.length > 0}
+                        onSelectChange={() => selection.toggle(service.id, true)}
                         onEdit={() => openEdit(service as unknown as Record<string, unknown>)}
                         onDelete={() => setDeleteTarget({ id: service.id, title: service.title })}
                         onStatusChange={(status) =>
@@ -455,6 +544,18 @@ export function ServicesPanel({
             </div>
           </div>
         )}
+
+        {/* Bulk delete confirmation */}
+        <BulkDeleteDialog
+          open={bulkDeleteOpen}
+          onOpenChange={setBulkDeleteOpen}
+          title="Delete selected services"
+          description="This removes the selected services and their crew assignments from the project."
+          count={selectedServiceIds.length}
+          itemLabel="service"
+          pending={bulkDeleteMut.isPending}
+          onConfirm={() => bulkDeleteMut.mutate(selectedServiceIds)}
+        />
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
@@ -525,12 +626,18 @@ export function ServicesPanel({
 
 function ServiceCard({
   service,
+  selected,
+  selectionActive,
+  onSelectChange,
   onEdit,
   onDelete,
   onStatusChange,
   onCrewMessage,
 }: {
   service: ServiceRow;
+  selected?: boolean;
+  selectionActive?: boolean;
+  onSelectChange?: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: ServiceStatus) => void;
@@ -548,11 +655,27 @@ function ServiceCard({
   ) ?? 0;
 
   return (
-    <div className={`rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)] ${isCancelled ? "opacity-50" : ""}`}>
+    <div className={`group rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)] ${isCancelled ? "opacity-50" : ""} ${selected ? "ring-2 ring-red/40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         {/* Left side */}
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
+            {onSelectChange && (
+              <span
+                className={cn(
+                  "shrink-0 transition-opacity",
+                  selected || selectionActive
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100",
+                )}
+              >
+                <Checkbox
+                  aria-label="Select service"
+                  checked={!!selected}
+                  onCheckedChange={() => onSelectChange()}
+                />
+              </span>
+            )}
             <Icon className="h-4 w-4 text-muted shrink-0" />
             <span className={`font-medium text-ink ${isCancelled ? "line-through" : ""}`}>
               {service.title}

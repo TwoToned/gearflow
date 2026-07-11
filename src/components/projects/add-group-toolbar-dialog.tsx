@@ -73,7 +73,10 @@ function AddGroupToolbarDialogBody({
   onOpenChange,
   onSubmit,
 }: AddGroupToolbarDialogProps) {
-  const [categoryId, setCategoryId] = useState("");
+  // Default to the Uncategorized zone so creating a group is one field (title)
+  // — mirrors how sub-hire groups already default to uncategorised. The user
+  // can still pick a category, but no longer has to before Create enables.
+  const [categoryId, setCategoryId] = useState(UNCATEGORISED_VALUE);
   const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("");
 
@@ -111,7 +114,6 @@ function AddGroupToolbarDialogBody({
             onChange={(e) => setCategoryId(e.target.value)}
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <option value="">Select category...</option>
             <option value={UNCATEGORISED_VALUE}>Uncategorized</option>
             {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>{cat.name}</option>

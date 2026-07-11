@@ -1109,6 +1109,168 @@ export async function removeLineItem(id: string) {
   return serialize({ success: true });
 }
 
+/**
+ * Bulk-remove line items in a single server round-trip.
+ *
+ * Collapses the old N-client-round-trips loop (one `removeLineItem` call per
+ * selected row) into one action: loops the legacy cascade-delete Convex mutation
+ * server-side, then recalcs each affected project ONCE and writes ONE bulk audit.
+ * Child items (kit members, accessory children, sub-hire group children) are
+ * skipped — they are removed via their parent, never individually (same guard as
+ * `removeLineItem`) — and reported back in `skipped`.
+ */
+export async function removeLineItemsBatch(ids: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  if (ids.length === 0) return serialize({ removed: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const docs = await Promise.all(
+    ids.map((id) => convex.query(api.projectLineItems.getById, { id })),
+  );
+
+  const affectedProjectIds = new Set<string>();
+  let removed = 0;
+  let skipped = 0;
+
+  for (const doc of docs) {
+    if (!doc || doc.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    // Only top-level lines are removable directly; children cascade via their
+    // parent (or are simply not touched when selected on their own).
+    if (doc.isKitChild) {
+      skipped++;
+      continue;
+    }
+    await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: doc.id });
+    affectedProjectIds.add(doc.projectId);
+    removed++;
+  }
+
+  await Promise.all([
+    ...Array.from(affectedProjectIds).map((pid) => recalculateProjectTotals(pid)),
+    removed > 0
+      ? logActivity({
+          organizationId,
+          userId,
+          userName,
+          action: "DELETE",
+          entityType: "lineItem",
+          entityId: ids[0],
+          entityName: `${removed} line item${removed === 1 ? "" : "s"}`,
+          summary: `Removed ${removed} line item${removed === 1 ? "" : "s"} from project`,
+          projectId: [...affectedProjectIds][0],
+        })
+      : Promise.resolve(),
+  ]);
+
+  return serialize({ removed, skipped });
+}
+
+/** A shared value to apply to every selected line item in a bulk edit. */
+export interface BulkLineItemPatch {
+  pricingType?: "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR" | "OPTIMIZED";
+  /** `null` or a non-positive value clears the discount. `%` is resolved per-item. */
+  discount?: { mode: "$" | "%"; value: number } | null;
+  /** `null`/empty clears the note. */
+  notes?: string | null;
+  isOptional?: boolean;
+}
+
+/**
+ * Bulk-edit shared fields across selected line items in one server round-trip.
+ *
+ * Only the fields that legitimately apply to many rows are settable (pricing
+ * type, discount, notes, optional flag) — quantity/unit-price/description are
+ * per-item and stay out. A `%` discount is resolved against each item's own base
+ * (unitPrice × quantity × duration). `lineTotal` is recomputed per item whenever
+ * the discount changes. Child items are skipped. Recalc + audit run once at the end.
+ */
+export async function updateLineItemsBatch(ids: string[], patch: BulkLineItemPatch) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const docs = await Promise.all(
+    ids.map((id) => convex.query(api.projectLineItems.getById, { id })),
+  );
+
+  const now = Date.now();
+  const affectedProjectIds = new Set<string>();
+  let updated = 0;
+  let skipped = 0;
+
+  for (const doc of docs) {
+    if (!doc || doc.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    if (doc.isKitChild) {
+      skipped++;
+      continue;
+    }
+
+    const set: Record<string, unknown> = { updatedAt: now };
+    const clear: string[] = [];
+
+    if (patch.pricingType !== undefined) set.pricingType = patch.pricingType;
+    if (patch.isOptional !== undefined) set.isOptional = patch.isOptional;
+    if (patch.notes !== undefined) {
+      if (patch.notes == null || patch.notes === "") clear.push("notes");
+      else set.notes = patch.notes;
+    }
+
+    if (patch.discount !== undefined) {
+      let discountApplied: number | undefined;
+      if (patch.discount == null || patch.discount.value <= 0) {
+        clear.push("discount");
+        discountApplied = undefined;
+      } else if (patch.discount.mode === "%") {
+        const base = (doc.unitPrice ?? 0) * (doc.quantity ?? 0) * (doc.duration ?? 1);
+        discountApplied = roundCurrency((base * patch.discount.value) / 100);
+        set.discount = discountApplied;
+      } else {
+        discountApplied = patch.discount.value;
+        set.discount = discountApplied;
+      }
+      // Discount feeds the stored line total — recompute it from the item's own
+      // price/quantity/duration (unchanged) and the new discount.
+      const lineTotal = calculateLineTotal(
+        doc.unitPrice ?? undefined,
+        doc.quantity ?? 0,
+        doc.duration ?? 1,
+        discountApplied,
+      );
+      if (lineTotal == null) clear.push("lineTotal");
+      else set.lineTotal = lineTotal;
+    }
+
+    await convex.mutation(api.projectLineItems.patchLineItem, { id: doc.id, set, clear });
+    affectedProjectIds.add(doc.projectId);
+    updated++;
+  }
+
+  await Promise.all([
+    ...Array.from(affectedProjectIds).map((pid) => recalculateProjectTotals(pid)),
+    updated > 0
+      ? logActivity({
+          organizationId,
+          userId,
+          userName,
+          action: "UPDATE",
+          entityType: "lineItem",
+          entityId: ids[0],
+          entityName: `${updated} line item${updated === 1 ? "" : "s"}`,
+          summary: `Bulk edited ${updated} line item${updated === 1 ? "" : "s"}`,
+          projectId: [...affectedProjectIds][0],
+        })
+      : Promise.resolve(),
+  ]);
+
+  return serialize({ updated, skipped });
+}
+
 export async function reorderLineItems(
   projectId: string,
   itemIds: string[],

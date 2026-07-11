@@ -6,6 +6,7 @@ import {
   projectGroupSchema,
   updateGroupPriceSchema,
   moveLineItemSchema,
+  moveLineItemsSchema,
   type ProjectGroupFormValues,
 } from "@/lib/validations/project-group";
 import { serialize } from "@/lib/serialize";
@@ -406,6 +407,90 @@ export async function moveLineItemToGroup(
   await recalculateProjectTotals(lineItem.projectId);
 
   return serialize({ success: true });
+}
+
+/**
+ * Bulk variant of {@link moveLineItemToGroup}: move many line items to the same
+ * destination group/category in one server round-trip. Loops the legacy patch
+ * mutation server-side, then recomputes suggested prices for every affected group
+ * (all distinct source groups + the destination) and recalcs each affected
+ * project ONCE. Child items are skipped and reported in `skipped`.
+ */
+export async function moveLineItemsToGroup(data: {
+  lineItemIds: string[];
+  targetGroupId: string | null;
+  targetCategoryId: string | null;
+}) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const parsed = moveLineItemsSchema.parse(data);
+
+  const client = await getConvexClient();
+  const now = Date.now();
+  const affectedGroupIds = new Set<string>();
+  const affectedProjectIds = new Set<string>();
+  let moved = 0;
+  let skipped = 0;
+
+  const items = await Promise.all(
+    parsed.lineItemIds.map((id) => client.query(api.projectLineItems.getById, { id })),
+  );
+
+  for (const lineItem of items) {
+    if (!lineItem || lineItem.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    if (lineItem.isKitChild) {
+      skipped++;
+      continue;
+    }
+    if (lineItem.groupId) affectedGroupIds.add(lineItem.groupId);
+
+    const moveSet: Record<string, unknown> = { updatedAt: now };
+    const moveClear: string[] = [];
+    if (parsed.targetGroupId != null) moveSet.groupId = parsed.targetGroupId;
+    else moveClear.push("groupId");
+    if (parsed.targetCategoryId != null) moveSet.categoryId = parsed.targetCategoryId;
+    else moveClear.push("categoryId");
+
+    await client.mutation(api.projectLineItems.patchLineItem, {
+      id: lineItem.id,
+      set: moveSet,
+      clear: moveClear,
+    });
+    affectedProjectIds.add(lineItem.projectId);
+    moved++;
+  }
+
+  if (parsed.targetGroupId) affectedGroupIds.add(parsed.targetGroupId);
+
+  // Refresh suggested prices for every touched group (sources + destination).
+  for (const gid of affectedGroupIds) {
+    const suggested = await calculateSuggestedPrice(gid);
+    await client.mutation(api.projectGroups.update, {
+      id: gid,
+      patch: { suggestedPrice: suggested, updatedAt: now },
+    });
+  }
+
+  await Promise.all(
+    [...affectedProjectIds].map((pid) => recalculateProjectTotals(pid)),
+  );
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "updated",
+    entityType: "project",
+    entityId: [...affectedProjectIds][0] ?? parsed.lineItemIds[0],
+    entityName: `${moved} line item${moved === 1 ? "" : "s"}`,
+    summary: `Moved ${moved} line item${moved === 1 ? "" : "s"} to ${
+      parsed.targetGroupId ? "group" : "standalone"
+    }`,
+  });
+
+  return serialize({ moved, skipped });
 }
 
 export async function reorderProjectGroups(

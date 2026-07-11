@@ -24,3 +24,10 @@ export const moveLineItemSchema = z.object({
   targetGroupId: z.string().nullable(),
   targetCategoryId: z.string().nullable(),
 });
+
+// Bulk variant: move many line items to the same destination at once.
+export const moveLineItemsSchema = z.object({
+  lineItemIds: z.array(z.string().min(1)).min(1),
+  targetGroupId: z.string().nullable(),
+  targetCategoryId: z.string().nullable(),
+});

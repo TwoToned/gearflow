@@ -209,7 +209,17 @@ describe("kits — Approach A", () => {
     ];
     const r = run(lines, {
       kitAllocations: kitAlloc("k1", rfPcts),
-      models: models(M("rx", { dailyRate: 100 }), M("new", { dailyRate: 100 })),
+      // Every model rated, so the fall-through lands on rate weighting (not equal).
+      models: models(
+        M("rx", { dailyRate: 100 }),
+        M("bp", { dailyRate: 100 }),
+        M("hs", { dailyRate: 100 }),
+        M("swb", { dailyRate: 100 }),
+        M("sw", { dailyRate: 100 }),
+        M("belt", { dailyRate: 100 }),
+        M("case", { dailyRate: 100 }),
+        M("new", { dailyRate: 100 }),
+      ),
     });
 
     expect(basis(r, "rx")).toBe("WEIGHTED");
@@ -266,6 +276,26 @@ describe("kits — Approach A", () => {
     expect(rev(r, "a")).toBe(30);
     expect(rev(r, "c")).toBe(30);
     expect(basis(r, "a")).toBe("EQUAL_SPLIT");
+  });
+
+  test("a MIXED-rate kit uses purchase value, so the rate-less model isn't zeroed", () => {
+    // Only the receiver has a day rate. Splitting on rate would give the beltpack
+    // $0; instead the whole kit falls to replacement cost so both earn their worth.
+    const r = run(
+      [
+        L("kit", { kitId: "k1", lineTotal: 100 }),
+        L("rx", { parentLineItemId: "kit", modelId: "rx", sortOrder: 1 }),
+        L("belt", { parentLineItemId: "kit", modelId: "belt", sortOrder: 2 }),
+      ],
+      {
+        models: models(
+          M("rx", { dailyRate: 50, replacementCost: 1800 }),
+          M("belt", { replacementCost: 200 }), // no rate
+        ),
+      },
+    );
+    expect(rev(r, "rx")).toBe(90); // 1800/2000 × 100
+    expect(rev(r, "belt")).toBe(10); // 200/2000 × 100, not $0
   });
 
   test("an unpriced kit gives its children nothing — can't split nothing", () => {
@@ -440,6 +470,52 @@ describe("groups — Approach B", () => {
     expect(basis(r, "gear")).toBe("NO_REVENUE");
     expect(rev(r, "big")).toBe(1000); // capped at the pool
     expect(sumOf(r, ["gear", "big"])).toBe(1000);
+  });
+
+  test("a group where only some gear is rated splits by purchase value, not $0", () => {
+    // The reported gotcha: one item has a day rate, the rest don't. Splitting on
+    // rate would give the rate-less items $0. Instead the whole group falls to
+    // replacement cost so every item earns its share.
+    const r = run(
+      [
+        L("rated", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
+        L("plainA", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+        L("plainB", { groupId: "g1", modelId: "m3", sortOrder: 3 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 1000, quantity: 1 }],
+        models: models(
+          M("m1", { dailyRate: 50, replacementCost: 200 }),
+          M("m2", { replacementCost: 500 }), // no rate
+          M("m3", { replacementCost: 300 }), // no rate
+        ),
+      },
+    );
+    // Purchase-value split: 200 : 500 : 300 of $1,000.
+    expect(rev(r, "rated")).toBe(200);
+    expect(rev(r, "plainA")).toBe(500);
+    expect(rev(r, "plainB")).toBe(300);
+    expect(basis(r, "plainA")).toBe("WEIGHTED");
+    expect(sumOf(r, ["rated", "plainA", "plainB"])).toBe(1000);
+  });
+
+  test("a FULLY-rated group still splits by hire rate (unchanged)", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 400, quantity: 1 }],
+        // Rates present on both → rate wins over purchase value.
+        models: models(
+          M("m1", { dailyRate: 300, replacementCost: 10 }),
+          M("m2", { dailyRate: 100, replacementCost: 9000 }),
+        ),
+      },
+    );
+    expect(rev(r, "a")).toBe(300); // by rate 300:100, NOT by cost 10:9000
+    expect(rev(r, "b")).toBe(100);
   });
 
   test("weekly rental periods weight on weeklyRate", () => {

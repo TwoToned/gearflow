@@ -1,8 +1,24 @@
 # 59 — Bulk Operations (multi-select)
 
-Multi-select + bulk actions on list/table surfaces. **Phase 1 covers the project
-Equipment / line-items surface**; the shared pieces are built to scale to the
-other project surfaces (services, crew, tasks) and beyond.
+Multi-select + bulk actions on list/table surfaces. Shipped across **all four
+project surfaces** — Equipment (Phase 1), then Services, Crew, and Tasks
+(Phases 2–4). The shared pieces (`useSelection`, `BulkActionBar`,
+`BulkDeleteDialog`) are built to scale to other surfaces beyond projects.
+
+## Other project surfaces (Phases 2–4)
+
+Each surface reuses `useSelection` (plain row ids), renders per-row/-card
+selection checkboxes (hover-reveal + a select-all), and a `BulkActionBar`.
+
+| Surface | Bulk actions | Server actions |
+|---|---|---|
+| **Services** (`services-panel.tsx`) | Set status · Delete | `bulkUpdateServiceStatus` (existed), `bulkDeleteProjectServices` (new — unlink+cascade line item, remove service, cascade crew assignments) |
+| **Crew** (`crew-panel.tsx`) | Set status · Remove | `bulkUpdateAssignmentStatus`, `bulkDeleteAssignments` (new, `crew` update/delete gated; leading checkbox column threaded through `PhaseGroup`) |
+| **Tasks** (`tasks-panel.tsx`) | Move to status · Priority · Delete | `bulkUpdateProjectTasks`, `bulkDeleteProjectTasks` (new) |
+
+All new batch actions follow the same shape: loop the existing single-item
+Convex mutations server-side, then one recalc per affected project (where totals
+apply) + one bulk audit; missing/foreign ids are skipped and reported.
 
 ## What ships in Phase 1
 
@@ -78,11 +94,10 @@ props).
 
 ## Follow-ups
 
-- **Integration tests** for the three batch server actions (mirroring
+- **Integration tests** for the batch server actions (mirroring
   `*-batch.int.test.ts`) — pending; they need the live-Convex int harness.
-- **Phase 2+**: extend selection + a bulk bar to the **Services** (wire the
-  existing `bulkUpdateServiceStatus` + a new bulk delete), **Crew** (new bulk
-  delete / status), and **Tasks** (new bulk update/delete) surfaces.
+- Extend the pattern to non-project surfaces as needed (the primitives are
+  surface-agnostic).
 
 Related: [bulk-operations batching design](../docs/designs/bulk-operations-batching.md),
 [47 Cross-Type Equipment Unification](./47-cross-type-equipment-unification.md).

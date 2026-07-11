@@ -260,13 +260,19 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };
     }
 
-    // 3. Nominal value: what we'd have charged for each part at list rates.
+    // 3. Hire rate × qty. Used ONLY when EVERY participant has a rate. If even one
+    //    item is rate-less, splitting on rates would hand it $0 while the rated
+    //    items took the whole pool — so instead we fall straight through to
+    //    replacement cost (rule 4), keeping the split in one consistent signal and
+    //    leaving nothing at zero. Matches "purchase value whenever rates aren't
+    //    complete." See docs/revenue-allocation-design.md.
     {
       const weights = parts.map(weigh((m) => rateOf(m, weekly)));
-      if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };
+      if (weights.every((w) => w > 0)) return { weights, basis: "WEIGHTED" };
     }
 
-    // 4. Replacement cost as a proxy — dearer gear earns proportionally more.
+    // 4. Replacement cost (purchase value) × qty — dearer gear earns more. This is
+    //    the default whenever the set isn't fully rated, which is the common case.
     {
       const weights = parts.map(weigh((m) => Number(m?.replacementCost ?? 0) || 0));
       if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };

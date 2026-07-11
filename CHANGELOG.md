@@ -4,6 +4,19 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.3.0] - 2026-07-11
+
+### Changed
+
+- Group and kit ROI now splits by **purchase value** (replacement cost × quantity) whenever the
+  items don't *all* have a hire rate. Previously, if one item in a group had a hire rate and the
+  rest didn't, the rate-less items were credited **$0** and the single rated item took the whole
+  group price. Now a set is split by hire rate only when every item has one; otherwise it falls to
+  replacement cost, so nothing is left at zero. A fully-rated group still splits by hire rate.
+
+  For fleets whose gear mostly has no hire rates set, this means group and kit revenue is divided by
+  what each item is worth to replace — the same figure ROI divides by.
+
 ## [0.23.2.0] - 2026-07-11
 
 ### Fixed

@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.1.0] - 2026-07-12
+
+### Added
+
+- Mobile-friendly data tables. The warehouse **pull sheet** now keeps the item name pinned on the left while the quantity, asset-tag and location columns scroll sideways, with smart wrapping so long names, notes and badges never overlap or get cut off. New reusable building blocks — frozen-column tables, a Cards/Table view switch, and Compact/Comfortable/Relaxed row density — that the rest of the mobile redesign builds on. Table preferences are now remembered per user, so shared warehouse devices no longer carry one person's view over to the next.
+
+### Fixed
+
+- "Reset to default" on a list now also clears the saved view, instead of leaving you pinned to it.
+
 ## [0.24.0.0] - 2026-07-12
 
 ### Changed

@@ -85,6 +85,10 @@ Reinforced by:
   from the deletable set — plain deprep can no longer destroy returned history.
 - The append-only `assetScanLog` (CHECK_OUT/CHECK_IN with `assetId` + `projectId`)
   is the durable backstop, surviving return/deprep/close.
+- **Movement history**: each per-unit row has a clock button (`unit-history-popover.tsx`)
+  that, on open, fetches that serial's recent scan events via the existing
+  `getScanLog` action and shows them most-recent-first (action · project · who ·
+  when). Read-only, on-demand — doesn't weigh down the live subscription.
 
 ## Known gaps
 

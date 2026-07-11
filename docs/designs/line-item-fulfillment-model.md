@@ -305,8 +305,8 @@ Shipped (see [FEATUREDOCS/59](../../FEATUREDOCS/59-assets-on-a-job.md)):
 - **History**: RETURNED units are retained through check-in + close-out and shown
   inline, so a finished job still answers "what went out." `deprepItemInner` now
   excludes RETURNED/CANCELLED from deletion; `assetScanLog` is the durable
-  backstop.
+  backstop. A per-unit **movement-history popover** surfaces that ledger on demand
+  (a serial's out/in events, project + who + when).
 
 Open follow-ups: generic/quantity deploys still record no serial (show "N
-deployed — no serials recorded" rather than a fake tag); an optional scan-log
-"movement history" view.
+deployed — no serials recorded" rather than a fake tag).

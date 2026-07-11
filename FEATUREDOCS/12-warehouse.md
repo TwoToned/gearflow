@@ -271,7 +271,7 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
 ## Online Pick List
-Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). See [Child Assets / Accessories](./48-child-assets-accessories.md).
+Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). On mobile the pull sheet uses **`StickyTable`** (frozen checkbox + Item columns, the rest scroll sideways with smart wrapping so nothing overlaps; empty cells render blank, no "—" noise). All sticky/scroll enhancements reset under `@media print`, so the physical printed sheet is unchanged. See `FEATUREDOCS/25-datatable.md` → Mobile data-table primitives. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Warehouse Dashboard Display (TV Screen)
 

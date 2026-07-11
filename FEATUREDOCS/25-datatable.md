@@ -69,3 +69,34 @@ single live localStorage state per table.
 - **Wired on:** all 14 list pages that use `useTablePreferences` (assets, models, clients,
   crew, locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
   damage, timesheets, stocktakes).
+
+## Mobile data-table primitives (mobile-first redesign, Phase 1)
+
+New primitives for rendering tables and dense data on phones without squishing everything
+into cards. Design system: `docs/designs/mobile-data-table-framework.md`.
+
+- **`StickyTable` (`src/components/ui/sticky-table.tsx`)** — a horizontally-scrollable table
+  with a frozen identity column ("Notion-style": the row label stays put while the rest
+  scrolls sideways). It **owns its single scroll container** — do NOT feed it `ui/table.tsx`'s
+  `<Table>` (which already wraps itself in `overflow-auto`); pass a raw `<table>` built from
+  the `TableHeader/TableBody/TableRow/TableCell/TableHead` cell primitives. Freezes the first
+  `frozenColWidths.length` columns via scoped, position-based CSS with cumulative left offsets
+  and a seam shadow. Rows are `vertical-align:top` so wrapping cells grow downward and never
+  overlap (smart wrapping). **Print-safe:** every enhancement (scroll, sticky, min-width, edge
+  fade, col-count hint) is reset under `@media print`, so print-oriented sheets render exactly
+  as before. Props: `frozenColWidths`, `minTableWidth`, `frozenBg`, `colCountHint`.
+- **`ViewModeToggle` / `DensityToggle` (`src/components/ui/density-toggle.tsx`)** — two
+  *separate* axes (eng review): view mode (`Cards | Table`, presentation) vs density
+  (`Compact | Comfortable | Relaxed` = 44/52/60px row height, `DENSITY_ROW_PX`). Comparison/
+  matrix surfaces omit `Cards`. Convenience hooks `useViewModePreference(tableId)` /
+  `useDensityPreference(tableId)` persist per-user.
+- **`usePersistentPref(key, default)` (`src/hooks/use-persistent-pref.ts`)** — localStorage
+  preference **scoped to the signed-in user id**, so shared warehouse devices don't leak one
+  operator's choice to the next. Re-reads the user's stored value when the session resolves
+  after mount (fresh login on a shared tablet). NOTE: `useTablePreferences` still keys by table
+  id alone — migrating its 14 list callers to per-user scoping is a tracked follow-up; new
+  controls should use `usePersistentPref`.
+
+Applied on: the warehouse **pull-sheet** (`warehouse/[projectId]/pull-sheet/page.tsx`) — frozen
+checkbox + Item columns, the rest scroll; empty cells render blank (no "—" noise). See
+`FEATUREDOCS/12-warehouse.md`.

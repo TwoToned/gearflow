@@ -78,6 +78,8 @@ For **ungrouped items**: item target → order default → uncategorized.
 For **sub-hire groups**: group target → order default → uncategorized. Children always follow their parent.
 When `targetGroupId` is set, `categoryId` is resolved from the `ProjectGroup.categoryId`.
 
+**Placement is only ever read from these target fields, never from the generated `ProjectLineItem.groupId/categoryId`.** Because `generateSubHireLineItems` deletes + recreates every sub-hire line on each add/edit, any placement change that lands only on the line item is lost on the next regenerate — the item "pops back out" of its group/category. Therefore every path that repositions a sub-hire-derived line item **must write the placement back to the originating sub-hire entity's target fields**: `moveSubHireGroupToCategory` (group parent) and `moveLineItemToGroup` (standalone item — patches the `SubHireItem`'s `targetGroupId/targetCategoryId`, or the `SubHireGroup`'s for a group parent) both do this.
+
 ### Placement scenarios
 
 | Sub-hire entity | Target | Result on project |

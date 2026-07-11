@@ -383,6 +383,41 @@ export async function checkOutItems(
   return serialize(await attachModelToResults(organizationId, rows));
 }
 
+/**
+ * Reassign a serialised unit to a different line on the same project + model —
+ * corrects which order line a scanned asset auto-picked into (equipment tab).
+ * The physical deployment doesn't change; only the line binding. The atomic move
+ * + both lines' rollup recompute happen in the Convex mutation; the equipment
+ * tab's live subscription reflects it without an explicit revalidate.
+ */
+export async function reassignLineItemUnit(
+  projectId: string,
+  unitId: string,
+  targetLineItemId: string,
+) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.reassignSerialisedUnit, {
+    organizationId,
+    unitId,
+    targetLineItemId,
+  });
+  if (res.moved) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: res.assetTag ?? unitId,
+      entityName: res.assetTag ? `Asset ${res.assetTag}` : `Unit ${unitId}`,
+      summary: `Reassigned ${res.assetTag ?? "unit"} to a different line`,
+      projectId,
+    });
+  }
+  return serialize(res);
+}
+
 export async function checkInItems(
   projectId: string,
   items: Array<{

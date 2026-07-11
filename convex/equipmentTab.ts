@@ -44,6 +44,19 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
   );
   const categorySlots = slotArrays.flat();
 
+  // Per-unit fulfillment rows (which specific serial is prepped/deployed/returned
+  // on each line) — one indexed read per line item, mirroring the pull-sheet /
+  // getProjectForWarehouse reconstructs. Feeds the equipment tab's per-unit asset
+  // display; `ownedBy` re-asserts org ownership (belt-and-braces; units carry
+  // `organizationId`). Every status is kept — RETURNED units are the "what went
+  // out" history and must survive check-in + close-out in this view.
+  const unitArrays = await Promise.all(
+    lineItems.map((li) =>
+      ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", li.id)).collect(),
+    ),
+  );
+  const units = ownedBy(unitArrays.flat());
+
   // Sub-hire groups + items: per sub-hire.
   const subHireIds = subHires.map((s) => s.id);
   const [shGroupArrays, shItemArrays] = await Promise.all([
@@ -98,6 +111,7 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
 
   return {
     lineItems,
+    units,
     categories,
     groups,
     categorySlots,

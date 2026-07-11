@@ -5,6 +5,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // `server-only` is a Next.js build-time guard, not a real runtime package,
+      // so it can't resolve under vitest's node env. Any client component that
+      // imports a server action pulls it transitively — alias it to a no-op (same
+      // stub the integration config uses). See tests/helpers/server-only-stub.ts.
+      "server-only": path.resolve(__dirname, "./tests/helpers/server-only-stub.ts"),
     },
   },
   test: {

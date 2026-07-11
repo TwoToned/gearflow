@@ -31,8 +31,13 @@ import {
   updateAssignment,
   deleteAssignment,
   updateAssignmentStatus,
+  bulkDeleteAssignments,
+  bulkUpdateAssignmentStatus,
   getCrewMembersForAssignment,
 } from "@/server/crew-assignments";
+import { useSelection } from "./use-selection";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { checkCrewConflicts, type CrewConflict } from "@/server/crew-availability";
 import {
   sendCrewOffer,
@@ -177,6 +182,37 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Bulk selection ────────────────────────────────────────────────────────
+  const selection = useSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const allAssignmentIds: string[] = (assignments ?? []).map((a: Assignment) => a.id as string);
+  const selectedAssignmentIds = allAssignmentIds.filter((id) => selection.isSelected(id));
+  const allSelected =
+    allAssignmentIds.length > 0 && selectedAssignmentIds.length === allAssignmentIds.length;
+
+  const bulkDeleteMut = useServerMutation({
+    mutationFn: (ids: string[]) => bulkDeleteAssignments(ids),
+    onSuccess: (r: { deleted: number; skipped: number }) => {
+      toast.success(`Removed ${r.deleted} assignment${r.deleted === 1 ? "" : "s"}`);
+      selection.clearSelection();
+      setBulkDeleteOpen(false);
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkStatusMut = useServerMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
+      bulkUpdateAssignmentStatus(ids, status),
+    onSuccess: (_r, { ids }) => {
+      toast.success(`Updated ${ids.length} assignment${ids.length === 1 ? "" : "s"}`);
+      selection.clearSelection();
+      refreshProjectCrew(projectId);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const pendingCount = assignments?.filter(
     (a: Assignment) => a.status === "PENDING"
   ).length || 0;
@@ -271,6 +307,62 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         </div>
       </div>
 
+      {/* Bulk action bar — appears once one or more assignments are selected. */}
+      <BulkActionBar
+        count={selectedAssignmentIds.length}
+        onClear={selection.clearSelection}
+        itemLabel="assignment"
+      >
+        <CanDo resource="crew" action="update">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="line">
+                Set status
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {(Object.keys(assignmentStatusLabels)).map((status) => (
+                <DropdownMenuItem
+                  key={status}
+                  onClick={() =>
+                    bulkStatusMut.mutate({ ids: selectedAssignmentIds, status })
+                  }
+                >
+                  {assignmentStatusLabels[status]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </CanDo>
+        <CanDo resource="crew" action="delete">
+          <Button
+            size="sm"
+            variant="line"
+            className="text-destructive"
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            <Trash2 className="mr-2 h-3 w-3" />
+            Remove
+          </Button>
+        </CanDo>
+      </BulkActionBar>
+
+      {/* Bulk delete confirmation */}
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Remove selected crew"
+        description="This removes the selected crew assignments (and their shifts + linked time entries) from the project."
+        count={selectedAssignmentIds.length}
+        itemLabel="assignment"
+        confirmLabel={`Remove ${selectedAssignmentIds.length} assignment${
+          selectedAssignmentIds.length === 1 ? "" : "s"
+        }`}
+        pending={bulkDeleteMut.isPending}
+        onConfirm={() => bulkDeleteMut.mutate(selectedAssignmentIds)}
+      />
+
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
         <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 p-7">
@@ -297,6 +389,19 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <CanDo resource="crew" action="delete">
+                    <Checkbox
+                      aria-label="Select all crew"
+                      checked={allSelected}
+                      onCheckedChange={(v: boolean | "indeterminate") =>
+                        v === true
+                          ? selection.selectAll(allAssignmentIds)
+                          : selection.clearSelection()
+                      }
+                    />
+                  </CanDo>
+                </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Phase</TableHead>
@@ -315,6 +420,9 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   <AssignmentRow
                     key={a.id as string}
                     assignment={a}
+                    selected={selection.isSelected(a.id as string)}
+                    selectionActive={selectedAssignmentIds.length > 0}
+                    onSelectChange={() => selection.toggle(a.id as string, true)}
                     onEdit={() => setEditId(a.id as string)}
                     onDelete={() => setRemoveAssignmentId(a.id as string)}
                     onStatusChange={(status) =>
@@ -331,6 +439,9 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   assignments={items!.filter(
                     (a: Assignment) => !a.isProjectManager
                   )}
+                  isSelected={(id) => selection.isSelected(id)}
+                  selectionActive={selectedAssignmentIds.length > 0}
+                  onSelectChange={(id) => selection.toggle(id, true)}
                   onEdit={(id) => setEditId(id)}
                   onDelete={(id) => setRemoveAssignmentId(id)}
                   onStatusChange={(id, status) =>
@@ -346,6 +457,9 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   <AssignmentRow
                     key={a.id as string}
                     assignment={a}
+                    selected={selection.isSelected(a.id as string)}
+                    selectionActive={selectedAssignmentIds.length > 0}
+                    onSelectChange={() => selection.toggle(a.id as string, true)}
                     onEdit={() => setEditId(a.id as string)}
                     onDelete={() => setRemoveAssignmentId(a.id as string)}
                     onStatusChange={(status) =>
@@ -421,6 +535,9 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 function PhaseGroup({
   phase,
   assignments,
+  isSelected,
+  selectionActive,
+  onSelectChange,
   onEdit,
   onDelete,
   onStatusChange,
@@ -428,6 +545,9 @@ function PhaseGroup({
 }: {
   phase: string;
   assignments: Assignment[];
+  isSelected?: (id: string) => boolean;
+  selectionActive?: boolean;
+  onSelectChange?: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onStatusChange: (id: string, status: string) => void;
@@ -437,7 +557,7 @@ function PhaseGroup({
   return (
     <>
       <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
-        <TableCell colSpan={8} className="py-1.5">
+        <TableCell colSpan={9} className="py-1.5">
           <span className="t-overline text-muted">
             {phaseLabels[phase] || phase}
           </span>
@@ -447,6 +567,11 @@ function PhaseGroup({
         <AssignmentRow
           key={a.id as string}
           assignment={a}
+          selected={isSelected?.(a.id as string)}
+          selectionActive={selectionActive}
+          onSelectChange={
+            onSelectChange ? () => onSelectChange(a.id as string) : undefined
+          }
           onEdit={() => onEdit(a.id as string)}
           onDelete={() => onDelete(a.id as string)}
           onStatusChange={(status) => onStatusChange(a.id as string, status)}
@@ -463,12 +588,18 @@ function PhaseGroup({
 
 function AssignmentRow({
   assignment: a,
+  selected,
+  selectionActive,
+  onSelectChange,
   onEdit,
   onDelete,
   onStatusChange,
   onSendOffer,
 }: {
   assignment: Assignment;
+  selected?: boolean;
+  selectionActive?: boolean;
+  onSelectChange?: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: string) => void;
@@ -483,7 +614,25 @@ function AssignmentRow({
   const role = a.crewRole as { name: string; color?: string } | null;
 
   return (
-    <TableRow>
+    <TableRow className={cn("group/row", selected && "bg-select")}>
+      <TableCell className="w-10">
+        {onSelectChange && (
+          <span
+            className={cn(
+              "inline-flex transition-opacity",
+              selected || selectionActive
+                ? "opacity-100"
+                : "opacity-0 pointer-coarse:opacity-100 group-hover/row:opacity-100",
+            )}
+          >
+            <Checkbox
+              aria-label="Select crew assignment"
+              checked={!!selected}
+              onCheckedChange={() => onSelectChange()}
+            />
+          </span>
+        )}
+      </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
           {a.isProjectManager && (

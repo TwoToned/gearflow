@@ -4,6 +4,26 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.4.0] - 2026-07-11
+
+### Added
+
+- **Bulk operations on projects.** Select multiple items on any of the four project surfaces and act
+  on the whole selection at once, instead of repeating the same single-row action over and over.
+  - **Equipment / line items:** row checkboxes with a select-all header, then bulk **delete**,
+    **move to group/category**, and **edit** (set pricing type, discount as $ or %, notes, or the
+    optional flag across the selection).
+  - **Services:** per-card selection with bulk **set status** and **delete**.
+  - **Crew:** a selection column with bulk **set status** and **remove** (respecting crew
+    permissions).
+  - **Tasks:** per-task selection with bulk **move to status**, **set priority**, and **delete**.
+
+### Changed
+
+- Bulk actions run as one batched server request instead of one round-trip per item, so removing or
+  editing many rows lands in a single step (one totals recalc and one audit entry per action)
+  instead of dragging through the list one call at a time.
+
 ## [0.23.3.0] - 2026-07-11
 
 ### Changed

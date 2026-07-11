@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   CalendarClock,
   ListChecks,
+  ChevronDown,
   X,
 } from "lucide-react";
 
@@ -53,7 +54,13 @@ import {
   createProjectTask,
   updateProjectTask,
   deleteProjectTask,
+  bulkUpdateProjectTasks,
+  bulkDeleteProjectTasks,
 } from "@/server/project-tasks";
+import { useSelection } from "./use-selection";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import {
   TASK_STATUS_LABELS,
   TASK_PRIORITY_LABELS,
@@ -168,6 +175,35 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     onError: (e: Error) => toast.error(e.message || "Could not delete task"),
   });
 
+  // ─── Bulk selection ────────────────────────────────────────────────────────
+  const selection = useSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const allTaskIds = tasks.map((t) => t.id);
+  const selectedTaskIds = allTaskIds.filter((id) => selection.isSelected(id));
+  const allSelected = allTaskIds.length > 0 && selectedTaskIds.length === allTaskIds.length;
+
+  const bulkUpdateMut = useServerMutation({
+    mutationFn: (vars: { ids: string[]; patch: Parameters<typeof bulkUpdateProjectTasks>[1] }) =>
+      bulkUpdateProjectTasks(vars.ids, vars.patch),
+    onSuccess: (r: { updated: number; skipped: number }) => {
+      invalidate();
+      selection.clearSelection();
+      toast.success(`Updated ${r.updated} task${r.updated === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update tasks"),
+  });
+
+  const bulkDeleteMut = useServerMutation({
+    mutationFn: (ids: string[]) => bulkDeleteProjectTasks(ids),
+    onSuccess: (r: { deleted: number; skipped: number }) => {
+      invalidate();
+      selection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`Deleted ${r.deleted} task${r.deleted === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not delete tasks"),
+  });
+
   const grouped = useMemo(() => {
     const g: Record<ProjectTaskStatus, Task[]> = { TODO: [], IN_PROGRESS: [], DONE: [] };
     for (const t of tasks) g[t.status]?.push(t);
@@ -234,7 +270,77 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           <p className="text-caption text-muted">Add the first thing this project needs done.</p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-3">
+          {/* Bulk action bar — appears once one or more tasks are selected. */}
+          <BulkActionBar
+            count={selectedTaskIds.length}
+            onClear={selection.clearSelection}
+            itemLabel="task"
+          >
+            <label className="flex items-center gap-1.5 text-caption text-muted">
+              <Checkbox
+                aria-label="Select all tasks"
+                checked={allSelected}
+                onCheckedChange={(v: boolean | "indeterminate") =>
+                  v === true
+                    ? selection.selectAll(allTaskIds)
+                    : selection.clearSelection()
+                }
+              />
+              All
+            </label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="line">
+                  Move to
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {STATUS_ORDER.map((status) => (
+                  <DropdownMenuItem
+                    key={status}
+                    onClick={() =>
+                      bulkUpdateMut.mutate({ ids: selectedTaskIds, patch: { status } })
+                    }
+                  >
+                    {TASK_STATUS_LABELS[status]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="line">
+                  Priority
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {(Object.keys(TASK_PRIORITY_LABELS) as ProjectTaskPriority[]).map((priority) => (
+                  <DropdownMenuItem
+                    key={priority}
+                    onClick={() =>
+                      bulkUpdateMut.mutate({ ids: selectedTaskIds, patch: { priority } })
+                    }
+                  >
+                    {TASK_PRIORITY_LABELS[priority]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="sm"
+              variant="line"
+              className="text-destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-3 w-3" />
+              Delete
+            </Button>
+          </BulkActionBar>
+
+          <div className="space-y-5">
           {STATUS_ORDER.map((status) => {
             const list = grouped[status];
             if (list.length === 0) return null;
@@ -255,7 +361,27 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                       null;
                     const isDone = task.status === "DONE";
                     return (
-                      <div key={task.id} className="group flex items-start gap-3 px-3 py-2.5">
+                      <div
+                        key={task.id}
+                        className={cn(
+                          "group flex items-start gap-3 px-3 py-2.5",
+                          selection.isSelected(task.id) && "bg-select",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 inline-flex shrink-0 transition-opacity",
+                            selection.isSelected(task.id) || selectedTaskIds.length > 0
+                              ? "opacity-100"
+                              : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100",
+                          )}
+                        >
+                          <Checkbox
+                            aria-label="Select task"
+                            checked={selection.isSelected(task.id)}
+                            onCheckedChange={() => selection.toggle(task.id, true)}
+                          />
+                        </span>
                         <button
                           type="button"
                           title="Toggle done"
@@ -366,6 +492,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
               </section>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -374,6 +501,17 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           {openCount} open · {grouped.DONE.length} done
         </p>
       )}
+
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Delete selected tasks"
+        description="This permanently removes the selected tasks from the project."
+        count={selectedTaskIds.length}
+        itemLabel="task"
+        pending={bulkDeleteMut.isPending}
+        onConfirm={() => bulkDeleteMut.mutate(selectedTaskIds)}
+      />
 
       {editing && (
         <TaskEditDialog

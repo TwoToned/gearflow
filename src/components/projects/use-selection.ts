@@ -54,6 +54,12 @@ export function useSelection() {
     lastClickedIdRef.current = id;
   }, []);
 
+  /** Replace the whole selection with exactly these ids (e.g. a select-all). */
+  const selectAll = useCallback((ids: string[]) => {
+    setSelectedIds(new Set(ids));
+    lastClickedIdRef.current = ids.length > 0 ? ids[ids.length - 1] : null;
+  }, []);
+
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
     lastClickedIdRef.current = null;
@@ -71,6 +77,7 @@ export function useSelection() {
     toggle,
     selectTo,
     select,
+    selectAll,
     clearSelection,
     isSelected,
   };

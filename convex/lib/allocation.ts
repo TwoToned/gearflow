@@ -383,22 +383,58 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // lineTotals — recalcProjectTotals bills `group.price × group.quantity`, so a
   // grouped member's own lineTotal never reaches project revenue.
   for (const g of groups) {
-    const members = roots.filter(
-      (l) => l.groupId === g.id && !isInactive(l) && !isNonGear(l),
-    );
+    const inGroup = roots.filter((l) => l.groupId === g.id && !isInactive(l));
+    const gear = inGroup.filter((l) => !isNonGear(l));
+    // A priced custom item inside a group is PART of the group's flat price, not an
+    // extra on top (recalc bills the flat price only). So it takes its own set
+    // amount straight off the pool and the owned gear splits what's left — a $1,800
+    // custom item in a $2,000 group leaves $200 for the gear. It's still excluded
+    // from ROI (no model), but now it consumes rather than being invisible.
+    const customs = inGroup.filter((l) => l.isCustomItem === true);
+
     // Round the PRODUCT, not the price: recalcProjectTotals bills `price × quantity`
     // and rounds the sum, so rounding the price first would allocate a pool the
     // project never charged for.
     const poolCents = poolOf((g.price ?? 0) * Math.max(0, g.quantity ?? 0));
 
-    if (members.length === 0) continue;
-    if (members.length === 1) {
-      assign(members[0], poolCents, poolCents === 0 ? "NO_REVENUE" : "DIRECT");
+    const customCents = customs.map((c) => Math.max(0, poolOf(c.lineTotal)));
+    const customSum = customCents.reduce((a, b) => a + b, 0);
+
+    // Customs come off the top at FACE VALUE and the gear splits the remainder —
+    // BUT only when there is gear to take that remainder AND the customs fit inside
+    // the pool. Otherwise (no gear, or customs priced above the pool) the customs
+    // absorb the WHOLE pool between them, so `SUM(children) == pool` holds in every
+    // branch. Without this, a priced group of custom-only items would silently drop
+    // its leftover (a $100 group with a $40 custom would record only $40).
+    const gearTakesRemainder = gear.length > 0 && customSum <= poolCents;
+    let gearPool: number;
+    if (gearTakesRemainder) {
+      customs.forEach((c, i) =>
+        out.set(c.id, {
+          allocatedRevenue: fromCents(customCents[i]),
+          allocationBasis: "EXCLUDED_NON_GEAR",
+        }),
+      );
+      gearPool = poolCents - customSum;
+    } else {
+      const shares = largestRemainder(poolCents, customCents, customs.map(sortKey));
+      customs.forEach((c, i) =>
+        out.set(c.id, {
+          allocatedRevenue: fromCents(shares[i]),
+          allocationBasis: "EXCLUDED_NON_GEAR",
+        }),
+      );
+      gearPool = 0;
+    }
+
+    if (gear.length === 0) continue;
+    if (gear.length === 1) {
+      assign(gear[0], gearPool, gearPool === 0 ? "NO_REVENUE" : "DIRECT");
       continue;
     }
-    const { weights, basis } = chooseWeights(members, null);
-    const shares = largestRemainder(poolCents, weights, members.map(sortKey));
-    members.forEach((m, i) => assign(m, shares[i], basis));
+    const { weights, basis } = chooseWeights(gear, null);
+    const shares = largestRemainder(gearPool, weights, gear.map(sortKey));
+    gear.forEach((m, i) => assign(m, shares[i], basis));
   }
 
   // Ungrouped roots bill their own lineTotal, so that IS the pool.

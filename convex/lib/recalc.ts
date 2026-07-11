@@ -37,19 +37,26 @@ export async function recalcProjectTotals(
     ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
   ]);
 
-  // 1. Equipment revenue from groups: bundle price × quantity + custom "extras on top".
+  // 1. Equipment revenue from groups. A priced group's flat price is the WHOLE
+  // total for everything inside it — custom items included — so they are NOT added
+  // on top. Only when a group has no flat price do its custom items bill on their
+  // own (a group used purely as an organiser), otherwise they'd vanish from the
+  // invoice. Grouped GEAR never bills its own lineTotal either way.
   const groupRevenue = groups.reduce((sum, g) => {
     const bundlePrice = num(g.price);
-    const customExtras = projectLines
-      .filter(
-        (li) =>
-          li.groupId === g.id &&
-          li.isCustomItem === true &&
-          !li.isOptional &&
-          !li.isKitChild &&
-          li.status !== "CANCELLED",
-      )
-      .reduce((s, li) => s + num(li.lineTotal), 0);
+    const customExtras =
+      bundlePrice > 0
+        ? 0
+        : projectLines
+            .filter(
+              (li) =>
+                li.groupId === g.id &&
+                li.isCustomItem === true &&
+                !li.isOptional &&
+                !li.isKitChild &&
+                li.status !== "CANCELLED",
+            )
+            .reduce((s, li) => s + num(li.lineTotal), 0);
     return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
   }, 0);
 

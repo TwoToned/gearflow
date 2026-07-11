@@ -144,6 +144,55 @@ describe("recalcProjectTotals — allocation lands on the rows", () => {
     expect(rows[0].allocatedRevenue).toBe(100);
   });
 
+  test("a priced custom item in a group is part of the price, not billed on top", async () => {
+    // The reported case: group at $2,000, $1,800 of custom gear, a couple of headsets.
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "COMPLETED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 2000, quantity: 1, sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", line({ id: "headsets", modelId: "hs", groupId: "g1", lineTotal: 200, sortOrder: 1 }));
+      await ctx.db.insert("projectLineItems", line({ id: "custom", groupId: "g1", isCustomItem: true, lineTotal: 1800, sortOrder: 2 }));
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    // Billing: the group's flat $2,000 IS the total — the custom is not added on top.
+    const project = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(project?.equipmentRevenue).toBe(2000);
+
+    // ROI: headsets get $200, custom eats $1,800 but is excluded from the rollup.
+    expect((await readLine(t, "headsets"))?.allocatedRevenue).toBe(200);
+    expect((await readLine(t, "custom"))?.allocatedRevenue).toBe(1800);
+    expect((await readLine(t, "custom"))?.allocationBasis).toBe("EXCLUDED_NON_GEAR");
+
+    const rows = await readRollup(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].modelId).toBe("hs");
+    expect(rows[0].allocatedRevenue).toBe(200);
+  });
+
+  test("an UNPRICED group still bills its custom items on their own", async () => {
+    // A group used purely as an organiser (no flat price) must not silently zero
+    // out the custom lines inside it.
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "COMPLETED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Extras", price: undefined, quantity: 1, sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", line({ id: "delivery", groupId: "g1", isCustomItem: true, lineTotal: 500, sortOrder: 1 }));
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const project = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(project?.equipmentRevenue).toBe(500);
+  });
+
   test("re-running on an unchanged project is a no-op (no cent drift)", async () => {
     const t = convexTest(schema, modules);
     await seedKitProject(t);

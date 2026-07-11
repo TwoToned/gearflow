@@ -1030,7 +1030,7 @@ export function LineItemRow({
                 "shrink-0 transition-opacity",
                 isSelected || selectionActive
                   ? "opacity-100"
-                  : "opacity-0 group-hover/row:opacity-100",
+                  : "opacity-0 pointer-coarse:opacity-100 group-hover/row:opacity-100",
               )}
             >
               <Checkbox

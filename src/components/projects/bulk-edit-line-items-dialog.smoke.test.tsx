@@ -19,10 +19,12 @@ describe("BulkEditLineItemsDialog", () => {
         onSubmit={() => {}}
       />,
     );
-    expect(screen.getByText("Bulk edit 3 items")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Apply to 3 items/ }),
-    ).toBeDisabled();
+    // getByText throws if absent, so reaching here proves it rendered.
+    expect(screen.getByText("Bulk edit 3 items")).toBeTruthy();
+    const apply = screen.getByRole("button", {
+      name: /Apply to 3 items/,
+    }) as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
   });
 
   it("keeps Apply disabled until a field is enabled, then submits only that field", () => {
@@ -36,14 +38,16 @@ describe("BulkEditLineItemsDialog", () => {
       />,
     );
 
-    const apply = screen.getByRole("button", { name: /Apply to 2 items/ });
-    expect(apply).toBeDisabled();
+    const apply = screen.getByRole("button", {
+      name: /Apply to 2 items/,
+    }) as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
 
     // Enable the first field (pricing type). The enable checkboxes are the
     // leading checkbox of each field row.
     const pricingEnable = screen.getAllByRole("checkbox")[0];
     fireEvent.click(pricingEnable);
-    expect(apply).toBeEnabled();
+    expect(apply.disabled).toBe(false);
 
     fireEvent.click(apply);
     expect(onSubmit).toHaveBeenCalledTimes(1);

@@ -666,7 +666,7 @@ function ServiceCard({
                   "shrink-0 transition-opacity",
                   selected || selectionActive
                     ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
+                    : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100",
                 )}
               >
                 <Checkbox

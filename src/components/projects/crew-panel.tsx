@@ -622,7 +622,7 @@ function AssignmentRow({
               "inline-flex transition-opacity",
               selected || selectionActive
                 ? "opacity-100"
-                : "opacity-0 group-hover/row:opacity-100",
+                : "opacity-0 pointer-coarse:opacity-100 group-hover/row:opacity-100",
             )}
           >
             <Checkbox

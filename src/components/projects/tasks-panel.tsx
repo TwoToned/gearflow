@@ -373,7 +373,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                             "mt-0.5 inline-flex shrink-0 transition-opacity",
                             selection.isSelected(task.id) || selectedTaskIds.length > 0
                               ? "opacity-100"
-                              : "opacity-0 group-hover:opacity-100",
+                              : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100",
                           )}
                         >
                           <Checkbox

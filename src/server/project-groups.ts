@@ -377,6 +377,38 @@ export async function moveLineItemToGroup(
     clear: moveClear,
   });
 
+  // If this line item is derived from a sub-hire, persist the placement back to
+  // the originating sub-hire entity's target* fields. generateSubHireLineItems
+  // deletes + recreates every sub-hire line on the next add/edit and resolves
+  // placement ONLY from the sub-hire entity's target*/order-default — it never
+  // reads the projectLineItem's own groupId/categoryId. Without this write-back
+  // the manual move is silently reverted and the item "pops out" of the
+  // group/category the user placed it in (mirrors moveSubHireGroupToCategory,
+  // which already writes targetCategoryId back to the sub-hire group).
+  const subHireGroupId = lineItem.subHireGroupId ?? null;
+  const subHireItemId = lineItem.subHireItemId ?? null;
+  if (subHireGroupId || subHireItemId) {
+    const targetSet: Record<string, unknown> = {};
+    const targetClear: string[] = [];
+    if (parsed.targetGroupId != null) targetSet.targetGroupId = parsed.targetGroupId;
+    else targetClear.push("targetGroupId");
+    if (parsed.targetCategoryId != null) targetSet.targetCategoryId = parsed.targetCategoryId;
+    else targetClear.push("targetCategoryId");
+    if (subHireGroupId) {
+      await client.mutation(api.subHireGroups.patchGroup, {
+        id: subHireGroupId,
+        set: targetSet,
+        clear: targetClear,
+      });
+    } else if (subHireItemId) {
+      await client.mutation(api.subHireItems.patchItem, {
+        id: subHireItemId,
+        set: targetSet,
+        clear: targetClear,
+      });
+    }
+  }
+
   // Recalculate suggestions for both old and new groups in Convex
   const now = Date.now();
   if (oldGroupId) {

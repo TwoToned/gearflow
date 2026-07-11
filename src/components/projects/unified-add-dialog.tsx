@@ -156,6 +156,7 @@ export function UnifiedAddDialog({
             rentalEndDate={rentalEndDate}
             categoryId={categoryId}
             groupId={groupId}
+            categories={categories}
             targetLabel={targetLabel}
             onInvalidate={onInvalidate}
             onClose={handleClose}

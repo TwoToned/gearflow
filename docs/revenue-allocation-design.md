@@ -161,15 +161,22 @@ implementation, one test suite, and one place for the rounding to be right.
 ```
 weightOf(line):
   1. kit allocation percent      -- only when the parent is a kit with a valid saved allocation
-  2. line.lineTotal              -- if > 0. Respects ITEMIZED kits and manual price overrides
-  3. model rate × quantity       -- weeklyRate/dailyRate per the rental period ("nominal value")
-  4. model.replacementCost × qty -- proxy: dearer gear earns proportionally more
+  2. line.lineTotal              -- if EVERY sibling is priced. ITEMIZED kits, manual overrides
+  3. model rate × quantity       -- ONLY if EVERY sibling has a rate (weeklyRate/dailyRate)
+  4. model.replacementCost × qty -- "purchase value" — the default whenever rates aren't complete
   5. 1                           -- equal-split token; nothing is ever invisible
 ```
 
 Each rule is tried across **all** participants before falling through; the chain is chosen once per
 sibling set, never mixed within one. That is what makes the result stable and explainable ("this kit
-was split on replacement cost because none of its models have a day rate").
+was split on replacement cost because not every model has a day rate").
+
+**Rules 2 and 3 are all-or-nothing on purpose.** A rate (or price) is used to weight the split only
+when *every* sibling has one. If even a single item lacks a rate, weighting on rates would hand that
+item **$0** while the rated items took the whole pool — so the set falls straight through to
+replacement cost (purchase value), keeping the split in one consistent signal and leaving nothing at
+zero. In practice, a fleet whose gear mostly has no hire rates set will split every group and kit by
+purchase value, which is both the intended fallback and the same figure ROI divides by.
 
 Rule 2 is why groups behave exactly as the original doc intended without a bespoke code path: a
 group's members are top-level lines that already carry `lineTotal = rate × qty × duration`. When a

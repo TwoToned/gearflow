@@ -7,7 +7,7 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 ## Schema
 
 - **SubHire** — order-level entity: supplier, project, status, dates, totals, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge, paymentStatus (UNPAID/PARTIALLY_PAID/PAID), showOnDocs, defaultTargetCategoryId/defaultTargetGroupId (order-level placement default)
-- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
+- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, **discount (% off the client charge)**, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
 - **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote (include on client quote), showOnDocs (show sub-hire indicator), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
 - **SubHireMedia** — file attachments (quotes, invoices, documents) linked to sub-hire orders via FileUpload join table
 - **SupplierModelRate** — caches last rate per supplier+model pair for pre-fill
@@ -78,6 +78,8 @@ For **ungrouped items**: item target → order default → uncategorized.
 For **sub-hire groups**: group target → order default → uncategorized. Children always follow their parent.
 When `targetGroupId` is set, `categoryId` is resolved from the `ProjectGroup.categoryId`.
 
+**Placement is only ever read from these target fields, never from the generated `ProjectLineItem.groupId/categoryId`.** Because `generateSubHireLineItems` deletes + recreates every sub-hire line on each add/edit, any placement change that lands only on the line item is lost on the next regenerate — the item "pops back out" of its group/category. Therefore every path that repositions a sub-hire-derived line item **must write the placement back to the originating sub-hire entity's target fields**: `moveSubHireGroupToCategory` (group parent) and `moveLineItemToGroup` (standalone item — patches the `SubHireItem`'s `targetGroupId/targetCategoryId`, or the `SubHireGroup`'s for a group parent) both do this.
+
 ### Placement scenarios
 
 | Sub-hire entity | Target | Result on project |
@@ -113,9 +115,14 @@ Sub-hire costs are integrated into the project financial calculations:
 | Field | Formula | Source |
 |-------|---------|--------|
 | `subHireCostTotal` | SUM(subHire.totalCost) for CONFIRMED/ON_HIRE/RETURNED | `recalculateProjectTotals` |
+| sub-hire **revenue** | SUM(subHire line `lineTotal`) — via `equipmentRevenue` | `recalculateProjectTotals` |
 | `margin` | total - (serviceCostTotal + labourCostTotal + **subHireCostTotal**) | `recalculateProjectTotals` |
 
 Sub-hire costs appear in the **Costs** section of the project financial summary alongside service costs and labour costs. DRAFT and CANCELLED sub-hires are excluded from the cost calculation.
+
+**Cost vs revenue use different models — mind the asymmetry.** Cost is *head-driven*: `SUM(subHire.totalCost)`, which includes even `showOnQuote:false` items (cost-only tracking) but excludes whole DRAFT/CANCELLED sub-hires. Revenue is *line-item-driven*: it sums the generated sub-hire `ProjectLineItem.lineTotal`s inside `equipmentRevenue`, so it only counts `showOnQuote` items but is agnostic to the sub-hire's DRAFT/CANCELLED status (line items are generated for DRAFT sub-hires and are not removed on cancel). A DRAFT sub-hire therefore books revenue but no cost until confirmed — intentional (optimistic quote), but a source of "cost missing" confusion.
+
+**Grouped sub-hire revenue (`subHireGroupedRevenue`).** A sub-hire line placed *into a project group* (via `targetGroupId`/order default) carries its own client charge, independent of the host group's bundle price. `equipmentRevenue`'s group term only counts `isCustomItem` extras (and zeroes them for a priced group), so a grouped sub-hire's charge would silently vanish. `recalculateProjectTotals` adds `subHireGroupedRevenue` — every non-child, non-optional sub-hire line with a `groupId` — counted individually, mirroring how the same line bills when ungrouped. Kit-style children (`isKitChild`) are excluded to avoid double-counting against their group parent's charge. Kept byte-for-byte in sync between `src/server/line-items.ts` and `convex/lib/recalc.ts`.
 
 The sub-hire item's `unitCharge` flows to the `ProjectLineItem.unitPrice`, which feeds into `suggestedPrice` for project groups. If the user overrides the group price, that's their business decision. The sub-hire order still tracks the full cost vs charge breakdown for per-order margin analysis.
 
@@ -142,7 +149,7 @@ Line items are generated immediately (even for DRAFT sub-hires) via `syncSubHire
 - **ORDER_TOTAL** — a flat orderTotalCost and optional orderTotalCharge set on the sub-hire itself. Item-level costs are for tracking only. Useful when suppliers don't provide itemized invoices.
 
 ### Group Pricing
-Groups have optional `quantity`, `cost`, and `charge` fields. When `cost` is set, it overrides the sum of items' costs for that group in `recalculateSubHireTotals`. Same for `charge`. The group edit dialog shows suggested values from items and a live margin preview. Group `charge` flows to the parent line item's `unitPrice` using `KIT_PRICE` mode.
+Groups have optional `quantity`, `cost`, and `charge` fields plus a `discount` (%, default 0). When `cost` is set, it overrides the sum of items' costs for that group in `recalculateSubHireTotals`. Same for `charge`. **`discount` reduces the client charge only** (not the supplier cost) — parity with `SubHireItem.discount` — and is applied both in `recalculateSubHireTotals` (`charge × qty × (1 − discount/100)`) and in `generateSubHireLineItems` (the group parent line item's `lineTotal`, with `discount` stored on the parent for display). The group edit dialog exposes Cost, Charge, and **Discount (%)** — matching the equipment add/edit screen — with suggested values from items and a live margin preview net of the discount. Group `charge` flows to the parent line item's `unitPrice` using `KIT_PRICE` mode.
 
 ### Line Item Sync
 Editing a sub-hire item when the sub-hire is CONFIRMED or ON_HIRE updates the corresponding `ProjectLineItem` (including `showSubhireOnDocs`) and recalculates project totals.
@@ -178,6 +185,29 @@ Auto-generated via atomic counter in `Organization.metadata.subHireOrderCounter`
 | `src/components/projects/sub-hire-order-dialog.tsx` | Dialog component (list/create/manage views, item form, PlacementPicker, item row with showOnDocs) |
 | `src/components/projects/equipment-tab.tsx` | Sub-hire orders section + dialog wiring + expanded items with groups |
 | `src/components/projects/add-equipment-dialog.tsx` | Overbook shortcut callback |
+
+## Performance notes
+
+The Sub-Hire Order **modal** reads through non-reactive server actions
+(`getSubHires` list / `getSubHire` detail) via `createSharedResource`, unlike the
+equipment tab and dashboard which read sub-hire data natively through Convex
+`useQuery` (`api.equipmentTab.bundle` / `api.dashboardSubHire.bundle`). This is
+why the modal feels slower than the tab and why the create→manage handoff shows a
+skeleton while `getSubHire` loads.
+
+Latency reductions applied so far (without changing the read architecture):
+- `getSubHire` scopes its placement-label fetch to the sub-hire's project
+  (`projectCategories.listByProject` / `projectGroups.listByProject`) instead of
+  pulling every category/group in the org.
+- `createSubHire` runs the Prisma order-number reservation and the supplier fetch
+  concurrently and drops a redundant tail round-trip.
+
+**Follow-up (not yet done):** rewire the modal's two reads to Convex `useQuery`
+for true reactivity, so the create→manage handoff is instant and edits stream in
+live. Blocker to note: `getSubHire` enriches with `createdBy` (a Better Auth user
+that lives in **Postgres**, unreadable from a Convex query) and resolved media
+URLs, so a pure `useQuery` bundle needs those handled separately. Worth its own
+PR with browser QA against a seeded project.
 
 ## Migration Strategy
 

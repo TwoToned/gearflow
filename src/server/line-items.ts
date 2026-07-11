@@ -1700,7 +1700,27 @@ export async function recalculateProjectTotals(projectId: string) {
     )
     .reduce((sum, li) => sum + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
 
-  const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
+  // 2b. Sub-hire line items placed INTO a project group. A sub-hire carries its
+  // OWN client charge, independent of the host group's bundle price — but the
+  // group revenue in (1) only counts isCustomItem extras (and a priced group
+  // zeroes them entirely), so a grouped sub-hire's charge would silently vanish.
+  // Count each grouped sub-hire line's charge individually, mirroring how the
+  // SAME line bills when ungrouped in (2). Kit-style children (isKitChild) are
+  // excluded to avoid double-counting against their group parent's charge — the
+  // identical exclusion (2) applies to ungrouped sub-hire groups. Kept
+  // byte-for-byte in sync with convex/lib/recalc.ts.
+  const subHireGroupedRevenue = projectLines
+    .filter(
+      (li) =>
+        li.groupId != null &&
+        li.subHireId != null &&
+        !li.isOptional &&
+        !li.isKitChild &&
+        li.status !== "CANCELLED",
+    )
+    .reduce((sum, li) => sum + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
+
+  const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue + subHireGroupedRevenue);
 
   // 3. Service financials. project_service is Convex-only — read the org's
   // services and filter to this project's non-CANCELLED rows in JS (replaces the

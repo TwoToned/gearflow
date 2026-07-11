@@ -34,7 +34,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlacementFields } from "./placement-fields";
+import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 type AddMode = "model" | "asset-tag";
@@ -77,6 +78,7 @@ export function EquipmentAddForm({
   const [lookupTag, setLookupTag] = useState("");
   const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
   const [duplicateAction, setDuplicateAction] = useState<"combine" | "separate">("combine");
   const [includeAccessories, setIncludeAccessories] = useState(true);
@@ -108,10 +110,9 @@ export function EquipmentAddForm({
   // `enabled: !categoryId` (no fetch).
   const { data: categoriesData } = useProjectCategories(categoryId ? undefined : projectId);
 
-  const categoryOptions = (categoriesData ?? []).map((c: { id: string; name: string }) => ({
-    value: c.id,
-    label: c.name,
-  }));
+  // CategoryData[] (id, name, groups) for the shared PlacementFields picker —
+  // getProjectCategories already includes each category's groups.
+  const placementCategories = (categoriesData ?? []) as unknown as CategoryData[];
 
   const modelOptions = activeModels.map((m) => ({
     value: m.id,
@@ -192,9 +193,10 @@ export function EquipmentAddForm({
         disc = Math.round((gross * Number(disc)) / 100 * 100) / 100;
       }
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
+      const effectiveGroupId = groupId || selectedGroupId || undefined;
       return addLineItem(
         projectId,
-        { ...data, discount: disc, categoryId: effectiveCategoryId, groupId },
+        { ...data, discount: disc, categoryId: effectiveCategoryId, groupId: effectiveGroupId },
         overbookConfirmed,
         duplicateAction === "separate",
         includeAccessories
@@ -572,29 +574,16 @@ export function EquipmentAddForm({
             <div className="rounded-[var(--r)] border border-line bg-paper-2/50 px-3 py-2 text-caption text-ink-2">
               Adding to <span className="font-medium text-ink">{targetLabel}</span>
             </div>
-          ) : categoryOptions.length > 0 ? (
-            <Field label="Category">
-              <Select
-                value={selectedCategoryId || "__none__"}
-                onValueChange={(val) => setSelectedCategoryId(val === "__none__" ? "" : val)}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {selectedCategoryId
-                      ? categoryOptions.find((c: { value: string; label: string }) => c.value === selectedCategoryId)?.label ?? "No category"
-                      : "No category"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No category</SelectItem>
-                  {categoryOptions.map((c: { value: string; label: string }) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+          ) : placementCategories.length > 0 ? (
+            <PlacementFields
+              categories={placementCategories}
+              categoryId={selectedCategoryId}
+              groupId={selectedGroupId}
+              onChange={({ categoryId, groupId }) => {
+                setSelectedCategoryId(categoryId);
+                setSelectedGroupId(groupId);
+              }}
+            />
           ) : null}
 
           <Field label="Notes">

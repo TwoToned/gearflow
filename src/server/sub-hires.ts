@@ -245,8 +245,16 @@ export async function getSubHire(id: string) {
       getSupplierById(subHire.supplierId),
       subHire.projectId ? getProjectById(subHire.projectId) : Promise.resolve(null),
       getSubHireMediaFromConvex(subHire.id),
-      client.query(api.projectCategories.list, { orgId: organizationId }),
-      client.query(api.projectGroups.list, { orgId: organizationId }),
+      // Placement labels only ever reference THIS project's categories/groups, so
+      // scope the fetch to the project instead of pulling every category/group in
+      // the org (a large payload for orgs with many projects). A project-less
+      // sub-hire has no placements, so an empty list is correct.
+      subHire.projectId
+        ? client.query(api.projectCategories.listByProject, { projectId: subHire.projectId, orgId: organizationId })
+        : Promise.resolve([]),
+      subHire.projectId
+        ? client.query(api.projectGroups.listByProject, { projectId: subHire.projectId, orgId: organizationId })
+        : Promise.resolve([]),
     ]);
 
   const catLabel = new Map(projectCategories.map((c) => [c.id, { id: c.id, name: c.name }]));
@@ -291,15 +299,19 @@ export async function createSubHire(input: unknown) {
   const { organizationId, userId, userName } = await requirePermission("subHire", "create");
   const data = subHireSchema.parse(input);
 
-  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
-  // JSON counter, and `organization` stays Prisma forever.
-  const orderNumber = await prisma.$transaction((tx) =>
-    reserveSubHireOrderNumber(tx, organizationId),
-  );
-
   const id = createId();
   const now = Date.now();
   const convex = await getConvexClient();
+
+  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
+  // JSON counter, and `organization` stays Prisma forever. The supplier fetch is
+  // independent of it (and of the create), so run both concurrently instead of
+  // three serial Convex/Postgres round-trips on the create path.
+  const [orderNumber, supplier] = await Promise.all([
+    prisma.$transaction((tx) => reserveSubHireOrderNumber(tx, organizationId)),
+    getSupplierById(data.supplierId),
+  ]);
+
   await convex.mutation(api.subHires.create, {
     id,
     organizationId,
@@ -322,9 +334,6 @@ export async function createSubHire(input: unknown) {
   // Read back the written head (Prisma-row-shaped) for the return value.
   const result = await getSubHireById(id);
   if (!result) throw new Error("Sub-hire not found after create");
-
-  // Supplier lives in Convex — fetch for the log label / return shape.
-  const supplier = await getSupplierById(result.supplierId);
 
   await logActivity({
     organizationId,
@@ -756,7 +765,7 @@ async function recalculateSubHireTotals(subHireId: string) {
       const groupChargeHandled = new Set<string>();
       for (const group of groups) {
         if (group.charge != null) {
-          totalCharge += Number(group.charge) * group.quantity;
+          totalCharge += Number(group.charge) * group.quantity * (1 - Number(group.discount ?? 0) / 100);
           groupChargeHandled.add(group.id);
         }
       }
@@ -778,7 +787,7 @@ async function recalculateSubHireTotals(subHireId: string) {
         groupCostHandled.add(group.id);
       }
       if (group.charge != null) {
-        totalCharge += Number(group.charge) * group.quantity;
+        totalCharge += Number(group.charge) * group.quantity * (1 - Number(group.discount ?? 0) / 100);
         groupChargeHandled.add(group.id);
       }
     }
@@ -920,10 +929,14 @@ async function generateSubHireLineItems(
     // showSubhireOnDocs: use group-level toggle, falling back to any item's showOnDocs
     const showAsSubhired = group.showOnDocs || group.items.some((i) => i.showOnDocs);
 
-    // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups)
+    // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups).
+    // A group-level discount (%) reduces the client charge (parity with recalculateSubHireTotals).
     const hasGroupCharge = group.charge != null;
     const groupCharge = hasGroupCharge ? Number(group.charge) : 0;
-    const groupLineTotal = hasGroupCharge ? roundCurrency(groupCharge * group.quantity) : 0;
+    const groupDiscount = Number(group.discount ?? 0);
+    const groupLineTotal = hasGroupCharge
+      ? roundCurrency(groupCharge * group.quantity * (1 - groupDiscount / 100))
+      : 0;
 
     // Create parent line item for the group (Convex; isKitChild/parentLineItemId/
     // subHire* require the full-field generated create).
@@ -937,6 +950,7 @@ async function generateSubHireLineItems(
       description: group.title,
       quantity: group.quantity,
       unitPrice: hasGroupCharge ? groupCharge : 0,
+      discount: groupDiscount,
       lineTotal: groupLineTotal,
       pricingMode: hasGroupCharge ? "KIT_PRICE" : "ITEMIZED",
       subHireId: subHire.id,
@@ -1284,6 +1298,7 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     quantity: data.quantity ?? 1,
     cost: data.cost != null ? data.cost : undefined,
     charge: data.charge != null ? data.charge : undefined,
+    discount: data.discount ?? 0,
     showOnQuote: data.showOnQuote ?? true,
     showOnDocs: data.showOnDocs ?? false,
     sortOrder: nextSort,
@@ -1325,6 +1340,7 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
 
   const set: Record<string, unknown> = {
     title: data.title,
+    discount: data.discount ?? 0,
     showOnQuote: data.showOnQuote,
     showOnDocs: data.showOnDocs,
   };

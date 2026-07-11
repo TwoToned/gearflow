@@ -38,6 +38,7 @@ export const subHireGroupSchema = z.object({
   quantity: z.coerce.number().int().min(1).default(1),
   cost: z.coerce.number().min(0).optional().nullable(),
   charge: z.coerce.number().min(0).optional().nullable(),
+  discount: z.coerce.number().min(0).max(100).default(0),
   showOnQuote: z.boolean().default(true),
   showOnDocs: z.boolean().default(false),
   sortOrder: z.coerce.number().int().optional(),

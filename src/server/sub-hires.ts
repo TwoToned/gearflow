@@ -756,7 +756,7 @@ async function recalculateSubHireTotals(subHireId: string) {
       const groupChargeHandled = new Set<string>();
       for (const group of groups) {
         if (group.charge != null) {
-          totalCharge += Number(group.charge) * group.quantity;
+          totalCharge += Number(group.charge) * group.quantity * (1 - Number(group.discount ?? 0) / 100);
           groupChargeHandled.add(group.id);
         }
       }
@@ -778,7 +778,7 @@ async function recalculateSubHireTotals(subHireId: string) {
         groupCostHandled.add(group.id);
       }
       if (group.charge != null) {
-        totalCharge += Number(group.charge) * group.quantity;
+        totalCharge += Number(group.charge) * group.quantity * (1 - Number(group.discount ?? 0) / 100);
         groupChargeHandled.add(group.id);
       }
     }
@@ -920,10 +920,14 @@ async function generateSubHireLineItems(
     // showSubhireOnDocs: use group-level toggle, falling back to any item's showOnDocs
     const showAsSubhired = group.showOnDocs || group.items.some((i) => i.showOnDocs);
 
-    // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups)
+    // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups).
+    // A group-level discount (%) reduces the client charge (parity with recalculateSubHireTotals).
     const hasGroupCharge = group.charge != null;
     const groupCharge = hasGroupCharge ? Number(group.charge) : 0;
-    const groupLineTotal = hasGroupCharge ? roundCurrency(groupCharge * group.quantity) : 0;
+    const groupDiscount = Number(group.discount ?? 0);
+    const groupLineTotal = hasGroupCharge
+      ? roundCurrency(groupCharge * group.quantity * (1 - groupDiscount / 100))
+      : 0;
 
     // Create parent line item for the group (Convex; isKitChild/parentLineItemId/
     // subHire* require the full-field generated create).
@@ -937,6 +941,7 @@ async function generateSubHireLineItems(
       description: group.title,
       quantity: group.quantity,
       unitPrice: hasGroupCharge ? groupCharge : 0,
+      discount: groupDiscount,
       lineTotal: groupLineTotal,
       pricingMode: hasGroupCharge ? "KIT_PRICE" : "ITEMIZED",
       subHireId: subHire.id,
@@ -1284,6 +1289,7 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     quantity: data.quantity ?? 1,
     cost: data.cost != null ? data.cost : undefined,
     charge: data.charge != null ? data.charge : undefined,
+    discount: data.discount ?? 0,
     showOnQuote: data.showOnQuote ?? true,
     showOnDocs: data.showOnDocs ?? false,
     sortOrder: nextSort,
@@ -1325,6 +1331,7 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
 
   const set: Record<string, unknown> = {
     title: data.title,
+    discount: data.discount ?? 0,
     showOnQuote: data.showOnQuote,
     showOnDocs: data.showOnDocs,
   };

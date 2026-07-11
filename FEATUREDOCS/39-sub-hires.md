@@ -7,7 +7,7 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 ## Schema
 
 - **SubHire** — order-level entity: supplier, project, status, dates, totals, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge, paymentStatus (UNPAID/PARTIALLY_PAID/PAID), showOnDocs, defaultTargetCategoryId/defaultTargetGroupId (order-level placement default)
-- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
+- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, **discount (% off the client charge)**, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
 - **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote (include on client quote), showOnDocs (show sub-hire indicator), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
 - **SubHireMedia** — file attachments (quotes, invoices, documents) linked to sub-hire orders via FileUpload join table
 - **SupplierModelRate** — caches last rate per supplier+model pair for pre-fill
@@ -142,7 +142,7 @@ Line items are generated immediately (even for DRAFT sub-hires) via `syncSubHire
 - **ORDER_TOTAL** — a flat orderTotalCost and optional orderTotalCharge set on the sub-hire itself. Item-level costs are for tracking only. Useful when suppliers don't provide itemized invoices.
 
 ### Group Pricing
-Groups have optional `quantity`, `cost`, and `charge` fields. When `cost` is set, it overrides the sum of items' costs for that group in `recalculateSubHireTotals`. Same for `charge`. The group edit dialog shows suggested values from items and a live margin preview. Group `charge` flows to the parent line item's `unitPrice` using `KIT_PRICE` mode.
+Groups have optional `quantity`, `cost`, and `charge` fields plus a `discount` (%, default 0). When `cost` is set, it overrides the sum of items' costs for that group in `recalculateSubHireTotals`. Same for `charge`. **`discount` reduces the client charge only** (not the supplier cost) — parity with `SubHireItem.discount` — and is applied both in `recalculateSubHireTotals` (`charge × qty × (1 − discount/100)`) and in `generateSubHireLineItems` (the group parent line item's `lineTotal`, with `discount` stored on the parent for display). The group edit dialog exposes Cost, Charge, and **Discount (%)** — matching the equipment add/edit screen — with suggested values from items and a live margin preview net of the discount. Group `charge` flows to the parent line item's `unitPrice` using `KIT_PRICE` mode.
 
 ### Line Item Sync
 Editing a sub-hire item when the sub-hire is CONFIRMED or ON_HIRE updates the corresponding `ProjectLineItem` (including `showSubhireOnDocs`) and recalculates project totals.

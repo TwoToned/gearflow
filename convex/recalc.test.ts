@@ -29,7 +29,8 @@ describe("recalcProjectTotals — totals parity", () => {
       await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 50 });
       // Optional line: excluded.
       await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: true, lineTotal: 999 });
-      // Grouped custom extra: +25 on top of the bundle.
+      // Grouped custom item: PART of the group's flat price, NOT an extra on top.
+      // The group is priced (100), so this 25 is covered by the bundle, not added.
       await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, isCustomItem: true, groupId: "g1", lineTotal: 25 });
       // Service: billable revenue 30, cost 20.
       await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Design", status: "CONFIRMED", showOnDocuments: true, lineTotal: 30, costTotal: 20 });
@@ -41,19 +42,19 @@ describe("recalcProjectTotals — totals parity", () => {
     });
 
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
-    // equipmentRevenue = group 200 + custom extra 25 + standalone 50 = 275
-    expect(p?.equipmentRevenue).toBe(275);
-    // subtotal = equipment 275 + serviceRevenue 30 = 305
-    expect(p?.subtotal).toBe(305);
+    // equipmentRevenue = group 200 (custom is INSIDE the flat price) + standalone 50 = 250
+    expect(p?.equipmentRevenue).toBe(250);
+    // subtotal = equipment 250 + serviceRevenue 30 = 280
+    expect(p?.subtotal).toBe(280);
     expect(p?.serviceCostTotal).toBe(20);
     expect(p?.labourCostTotal).toBe(40);
     expect(p?.subHireCostTotal).toBe(15);
     expect(p?.discountAmount).toBe(0);
-    // tax 10% of 305 = 30.5
-    expect(p?.taxAmount).toBe(30.5);
-    expect(p?.total).toBe(335.5);
-    // margin = total 335.5 - (svc 20 + labour 40 + subhire 15 = 75) = 260.5
-    expect(p?.margin).toBe(260.5);
+    // tax 10% of 280 = 28
+    expect(p?.taxAmount).toBe(28);
+    expect(p?.total).toBe(308);
+    // margin = total 308 - (svc 20 + labour 40 + subhire 15 = 75) = 233
+    expect(p?.margin).toBe(233);
     expect(p?.updatedAt).toBe(NOW + 1);
   });
 

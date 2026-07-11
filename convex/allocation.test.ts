@@ -370,17 +370,76 @@ describe("groups — Approach B", () => {
     expect(basis(r, "a")).toBe("NO_REVENUE");
   });
 
-  test("custom items in a group are extras on top — they don't dilute the bundle", () => {
-    // recalcProjectTotals bills them separately, so they must take no pool share.
+  test("a priced custom item takes its set price off the pool; gear splits the rest", () => {
+    // The real use case: a group priced at $2,000 with $1,800 of custom gear and a
+    // couple of headsets. The headsets must get ~$200, not the whole $2,000.
+    const r = run(
+      [
+        L("headsets", { groupId: "g1", modelId: "hs", lineTotal: 200, sortOrder: 1 }),
+        L("customGear", { groupId: "g1", lineTotal: 1800, isCustomItem: true, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 2000, quantity: 1 }] },
+    );
+    expect(rev(r, "headsets")).toBe(200);
+    expect(rev(r, "customGear")).toBe(1800);
+    // The custom's $1,800 is stored but stays OUT of ROI — it's not a model.
+    expect(basis(r, "customGear")).toBe("EXCLUDED_NON_GEAR");
+    expect(sumOf(r, ["headsets", "customGear"])).toBe(2000);
+    // Only the headsets' $200 reaches model ROI.
+    expect(rollupByModel([L("headsets", { modelId: "hs" })], r).get("hs")).toBe(200);
+  });
+
+  test("several custom items each come off the top before gear splits", () => {
     const r = run(
       [
         L("gear", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
-        L("extra", { groupId: "g1", lineTotal: 999, isCustomItem: true, sortOrder: 2 }),
+        L("c1", { groupId: "g1", lineTotal: 300, isCustomItem: true, sortOrder: 2 }),
+        L("c2", { groupId: "g1", lineTotal: 200, isCustomItem: true, sortOrder: 3 }),
       ],
+      { groups: [{ id: "g1", price: 1000, quantity: 1 }] },
+    );
+    expect(rev(r, "c1")).toBe(300);
+    expect(rev(r, "c2")).toBe(200);
+    expect(rev(r, "gear")).toBe(500); // 1000 - 300 - 200
+    expect(sumOf(r, ["gear", "c1", "c2"])).toBe(1000);
+  });
+
+  test("a $0 custom item consumes nothing — gear keeps the whole pool", () => {
+    const r = run(
+      [
+        L("gear", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
+        L("note", { groupId: "g1", lineTotal: 0, isCustomItem: true, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 500, quantity: 1 }] },
+    );
+    expect(rev(r, "gear")).toBe(500);
+    expect(rev(r, "note")).toBe(0);
+  });
+
+  test("a priced group of custom-only items attributes the whole pool (nothing dropped)", () => {
+    // No gear to take the remainder, so the customs must absorb the full pool —
+    // otherwise the leftover ($100 − $40) would silently vanish.
+    const r = run(
+      [L("c", { groupId: "g1", lineTotal: 40, isCustomItem: true, sortOrder: 1 })],
       { groups: [{ id: "g1", price: 100, quantity: 1 }] },
     );
-    expect(rev(r, "gear")).toBe(100);
-    expect(rev(r, "extra")).toBeNull();
+    expect(rev(r, "c")).toBe(100);
+    expect(basis(r, "c")).toBe("EXCLUDED_NON_GEAR");
+    expect(sumOf(r, ["c"])).toBe(100);
+  });
+
+  test("custom priced above the group total leaves gear at zero, pool still balances", () => {
+    const r = run(
+      [
+        L("gear", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
+        L("big", { groupId: "g1", lineTotal: 5000, isCustomItem: true, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 1000, quantity: 1 }] },
+    );
+    expect(rev(r, "gear")).toBe(0);
+    expect(basis(r, "gear")).toBe("NO_REVENUE");
+    expect(rev(r, "big")).toBe(1000); // capped at the pool
+    expect(sumOf(r, ["gear", "big"])).toBe(1000);
   });
 
   test("weekly rental periods weight on weeklyRate", () => {

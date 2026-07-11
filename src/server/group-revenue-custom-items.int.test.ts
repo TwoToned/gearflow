@@ -1,20 +1,22 @@
 /**
- * Integration tests for the Wave 2 fix that makes custom items in groups
- * contribute to the project total.
+ * Integration tests for how custom items in a group contribute to project revenue.
  *
- * The bug: custom items have no `modelId` so calculateSuggestedPrice
- * couldn't compute their price, and recalculateProjectTotals only read
- * the bundle `ProjectGroup.price` — so a custom item placed in a group
- * was invisible to the project total.
+ * The rule (revenue-allocation change):
+ *   - A PRICED group's flat price is the whole total for everything inside it, so a
+ *     custom item is PART of that price and is NOT added on top.
+ *   - An UNPRICED group (used purely as an organiser) has no flat price to be part
+ *     of, so its custom items still bill on their own — otherwise they'd vanish from
+ *     the invoice.
  *
- * The fix in recalculateProjectTotals:
- *   groupRevenue = (group.price × group.quantity) + Σ(custom items' lineTotal in group)
+ *   groupRevenue = (group.price × group.quantity)
+ *                + (group.price > 0 ? 0 : Σ custom items' lineTotal in group)
  *
- * The fix in calculateSuggestedPrice:
- *   When iterating group.lineItems, check isCustomItem first and use
- *   the item's own lineTotal instead of reaching for model.dailyRate.
+ * calculateSuggestedPrice is unchanged: equipment-only, never custom items.
  *
- * These tests verify both paths with real Prisma queries.
+ * These tests verify the formula with real Prisma queries. (History: the earlier
+ * "Wave 2 fix" made custom-in-group bill on top unconditionally; that inflated ROI
+ * for the gear beside a big custom line and double-counted against a flat price, so
+ * the flat-price case now treats the custom as inside the bundle.)
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -119,10 +121,15 @@ async function calculateGroupRevenue(projectId: string): Promise<number> {
 
   return groups.reduce((sum, g) => {
     const bundlePrice = g.price != null ? Number(g.price) : 0;
-    const customExtras = g.lineItems.reduce(
-      (s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0),
-      0,
-    );
+    // A priced group covers its customs inside the flat price; only an unpriced
+    // group bills them on their own. Mirror of convex/lib/recalc.ts.
+    const customExtras =
+      bundlePrice > 0
+        ? 0
+        : g.lineItems.reduce(
+            (s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0),
+            0,
+          );
     return sum + bundlePrice * g.quantity + customExtras;
   }, 0);
 }
@@ -154,7 +161,7 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     await testPrisma.$disconnect();
   });
 
-  it("custom item in a group contributes its lineTotal to group revenue", async () => {
+  it("a custom item in a PRICED group is inside the price, not added on top", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     await createModelFixture(org.id);
@@ -164,17 +171,17 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
       quantity: 1,
     });
 
-    // Bundle price is $500. Custom item adds $100 on top.
+    // The $500 flat price already covers this custom item — it is NOT $600.
     await createCustomLineItem(org.id, project.id, {
       lineTotal: 100,
       groupId: group.id,
     });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(600); // 500 (bundle) + 100 (custom)
+    expect(groupRevenue).toBe(500); // flat price only
   });
 
-  it("multiple custom items in a group all contribute", async () => {
+  it("multiple custom items in a PRICED group are all covered by the flat price", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     const project = await createProjectFixture(org.id);
@@ -190,21 +197,39 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
       lineTotal: 75,
       groupId: group.id,
     });
-    await createCustomLineItem(org.id, project.id, {
-      lineTotal: 25,
-      groupId: group.id,
-    });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(350); // 200 + 50 + 75 + 25
+    expect(groupRevenue).toBe(200); // flat price only; the customs sit inside it
   });
 
-  it("optional custom items do NOT contribute to revenue", async () => {
+  it("custom items in an UNPRICED group still bill on their own", async () => {
+    // A group with no flat price is just an organiser — its customs must still show.
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     const project = await createProjectFixture(org.id);
     const group = await createProjectGroupFixture(org.id, project.id, {
-      price: 300,
+      price: 0,
+    });
+
+    await createCustomLineItem(org.id, project.id, {
+      lineTotal: 50,
+      groupId: group.id,
+    });
+    await createCustomLineItem(org.id, project.id, {
+      lineTotal: 75,
+      groupId: group.id,
+    });
+
+    const groupRevenue = await calculateGroupRevenue(project.id);
+    expect(groupRevenue).toBe(125); // 0 bundle + 50 + 75
+  });
+
+  it("in an unpriced group, optional custom items still do NOT contribute", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const group = await createProjectGroupFixture(org.id, project.id, {
+      price: 0,
     });
 
     await createCustomLineItem(org.id, project.id, {
@@ -218,15 +243,15 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(400); // 300 + 100, not 300 + 100 + 999
+    expect(groupRevenue).toBe(100); // 100, not 100 + 999
   });
 
-  it("CANCELLED custom items do NOT contribute", async () => {
+  it("in an unpriced group, CANCELLED custom items still do NOT contribute", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     const project = await createProjectFixture(org.id);
     const group = await createProjectGroupFixture(org.id, project.id, {
-      price: 100,
+      price: 0,
     });
 
     await createCustomLineItem(org.id, project.id, {
@@ -240,7 +265,7 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(150); // 100 + 50, the cancelled $200 is excluded
+    expect(groupRevenue).toBe(50); // the cancelled $200 is excluded
   });
 
   it("standalone (ungrouped) custom items contribute via the standalone query", async () => {
@@ -260,9 +285,7 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     expect(standaloneRevenue).toBe(250); // standalone path picks it up
   });
 
-  it("group with custom items + bundle quantity > 1 multiplies bundle but not custom", async () => {
-    // Quantity multiplier applies to the bundle price (the "package deal"),
-    // but custom items are individually billed — they're not part of the bundle.
+  it("a priced group's total is price × quantity, with customs inside it", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     const project = await createProjectFixture(org.id);
@@ -277,7 +300,7 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(350); // (100 × 3) + 50
+    expect(groupRevenue).toBe(300); // (100 × 3); the custom is covered by the price
   });
 
   it("regression: calculateSuggestedPrice excludes custom items (no double-count on Accept Suggested)", async () => {
@@ -330,16 +353,23 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
   });
 
   it("regression: kit-child custom items do NOT double-count", async () => {
-    // The query filters isKitChild: false. Even if a custom-flagged item
-    // somehow had isKitChild=true (data corruption scenario), it shouldn't
-    // appear in group revenue.
+    // The query filters isKitChild: false. Even if a custom-flagged item somehow had
+    // isKitChild=true (data corruption scenario), it shouldn't appear in group
+    // revenue. Uses an UNPRICED group so a normal custom WOULD contribute — that
+    // isolates the kit-child filter rather than the priced-group exclusion.
     const org = await createOrgFixture();
     await createUserFixture(org.id);
     const project = await createProjectFixture(org.id);
     const group = await createProjectGroupFixture(org.id, project.id, {
-      price: 100,
+      price: 0,
     });
 
+    // A normal custom that DOES contribute.
+    await createCustomLineItem(org.id, project.id, {
+      lineTotal: 75,
+      groupId: group.id,
+    });
+    // A kit-child custom that must be filtered out.
     await testPrisma.projectLineItem.create({
       data: {
         organizationId: org.id,
@@ -360,6 +390,6 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
     });
 
     const groupRevenue = await calculateGroupRevenue(project.id);
-    expect(groupRevenue).toBe(100); // kit-child filtered out, only bundle remains
+    expect(groupRevenue).toBe(75); // only the normal custom; kit-child filtered out
   });
 });

@@ -1506,16 +1506,23 @@ export async function recalculateProjectTotals(projectId: string) {
   // added to a group is invisible to the project total.
   const groupRevenue = groups.reduce((sum, g) => {
     const bundlePrice = g.price != null ? Number(g.price) : 0;
-    const customExtras = projectLines
-      .filter(
-        (li) =>
-          li.groupId === g.id &&
-          li.isCustomItem === true &&
-          !li.isOptional &&
-          !li.isKitChild &&
-          li.status !== "CANCELLED",
-      )
-      .reduce((s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
+    // A priced group's flat price covers everything inside it, custom items
+    // included — so they're not added on top. Only an UNPRICED group bills its
+    // custom items on their own (otherwise they'd vanish from the invoice). Kept
+    // byte-for-byte in sync with convex/lib/recalc.ts.
+    const customExtras =
+      bundlePrice > 0
+        ? 0
+        : projectLines
+            .filter(
+              (li) =>
+                li.groupId === g.id &&
+                li.isCustomItem === true &&
+                !li.isOptional &&
+                !li.isKitChild &&
+                li.status !== "CANCELLED",
+            )
+            .reduce((s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
     return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
   }, 0);
 

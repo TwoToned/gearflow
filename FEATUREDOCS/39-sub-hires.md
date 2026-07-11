@@ -113,9 +113,14 @@ Sub-hire costs are integrated into the project financial calculations:
 | Field | Formula | Source |
 |-------|---------|--------|
 | `subHireCostTotal` | SUM(subHire.totalCost) for CONFIRMED/ON_HIRE/RETURNED | `recalculateProjectTotals` |
+| sub-hire **revenue** | SUM(subHire line `lineTotal`) — via `equipmentRevenue` | `recalculateProjectTotals` |
 | `margin` | total - (serviceCostTotal + labourCostTotal + **subHireCostTotal**) | `recalculateProjectTotals` |
 
 Sub-hire costs appear in the **Costs** section of the project financial summary alongside service costs and labour costs. DRAFT and CANCELLED sub-hires are excluded from the cost calculation.
+
+**Cost vs revenue use different models — mind the asymmetry.** Cost is *head-driven*: `SUM(subHire.totalCost)`, which includes even `showOnQuote:false` items (cost-only tracking) but excludes whole DRAFT/CANCELLED sub-hires. Revenue is *line-item-driven*: it sums the generated sub-hire `ProjectLineItem.lineTotal`s inside `equipmentRevenue`, so it only counts `showOnQuote` items but is agnostic to the sub-hire's DRAFT/CANCELLED status (line items are generated for DRAFT sub-hires and are not removed on cancel). A DRAFT sub-hire therefore books revenue but no cost until confirmed — intentional (optimistic quote), but a source of "cost missing" confusion.
+
+**Grouped sub-hire revenue (`subHireGroupedRevenue`).** A sub-hire line placed *into a project group* (via `targetGroupId`/order default) carries its own client charge, independent of the host group's bundle price. `equipmentRevenue`'s group term only counts `isCustomItem` extras (and zeroes them for a priced group), so a grouped sub-hire's charge would silently vanish. `recalculateProjectTotals` adds `subHireGroupedRevenue` — every non-child, non-optional sub-hire line with a `groupId` — counted individually, mirroring how the same line bills when ungrouped. Kit-style children (`isKitChild`) are excluded to avoid double-counting against their group parent's charge. Kept byte-for-byte in sync between `src/server/line-items.ts` and `convex/lib/recalc.ts`.
 
 The sub-hire item's `unitCharge` flows to the `ProjectLineItem.unitPrice`, which feeds into `suggestedPrice` for project groups. If the user overrides the group price, that's their business decision. The sub-hire order still tracks the full cost vs charge breakdown for per-order margin analysis.
 

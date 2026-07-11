@@ -20,13 +20,13 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StickyTable } from "@/components/ui/sticky-table";
 
 const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
@@ -244,14 +244,23 @@ export default function PullSheetPage({
               {group.name}
             </h3>
             <div className="rounded-[var(--r-lg)] border border-line print:border-black">
-              <Table>
+              {/* Screen: frozen checkbox + Item columns, the rest scroll sideways
+                  (smart-wrapping, no overlap). Print: StickyTable resets to a normal
+                  full-width table so the physical sheet is unchanged. */}
+              <StickyTable
+                frozenColWidths={[40, 180]}
+                minTableWidth={600}
+                colCountHint={5}
+                frozenBg="var(--paper)"
+              >
+                <table className="w-full caption-bottom text-[13.5px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10 print:w-8" />
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-center w-16">Qty</TableHead>
-                    <TableHead>Asset tag</TableHead>
-                    <TableHead>Location</TableHead>
+                    <TableHead className="w-[180px] min-w-[180px] print:w-auto">Item</TableHead>
+                    <TableHead className="text-center w-16 whitespace-nowrap">Qty</TableHead>
+                    <TableHead className="min-w-[120px] whitespace-nowrap">Asset tag</TableHead>
+                    <TableHead className="min-w-[130px]">Location</TableHead>
                   </TableRow>
                 </TableHeader>
                 {group.items.map((item) => {
@@ -275,13 +284,16 @@ export default function PullSheetPage({
 
                     return (
                       <TableBody key={item.id as string} className="print:[break-inside:avoid]">
-                        <TableRow className={isGroupParent ? "bg-paper-2/40" : ""}>
+                        {/* Kit-parent tint is print-only: on screen the frozen cells
+                            paint a solid surface, so a row-wide tint would show a seam
+                            between the frozen and scrolling halves. Print is unchanged. */}
+                        <TableRow className={isGroupParent ? "print:bg-paper-2/40" : ""}>
                           <TableCell className="text-center">
                             {isGroupParent
                               ? <Container className="h-4 w-4 text-muted print:text-black" />
                               : <Square className="h-4 w-4 text-muted print:text-black" />}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="min-w-[180px]">
                             <span className={isGroupParent ? "font-bold text-ink" : "font-medium text-ink"}>
                               {isGroupParent ? `[Kit] ${itemName}` : itemName}
                             </span>
@@ -293,14 +305,14 @@ export default function PullSheetPage({
                               <p className="text-caption text-muted mt-0.5">via {supplier.name}</p>
                             )}
                           </TableCell>
-                          <TableCell className="text-center tabular-nums">
+                          <TableCell className="text-center tabular-nums whitespace-nowrap">
                             {isGroupParent ? children.length : qty}
                           </TableCell>
-                          <TableCell className="t-mono text-muted">
-                            {isGroupParent ? (kit?.assetTag || "—") : (assetTag || "—")}
+                          <TableCell className="t-mono text-muted whitespace-nowrap min-w-[120px]">
+                            {isGroupParent ? (kit?.assetTag || "") : (assetTag || "")}
                           </TableCell>
-                          <TableCell className="text-table-cell text-muted">
-                            {asset?.location?.name || "—"}
+                          <TableCell className="text-table-cell text-muted min-w-[130px]">
+                            {asset?.location?.name || ""}
                           </TableCell>
                         </TableRow>
                         {/* Kit children */}
@@ -322,12 +334,12 @@ export default function PullSheetPage({
                                   <span className="text-table-cell text-muted">{childName}</span>
                                   {childOverbookedInfo && <PullSheetOverbookedBadge info={childOverbookedInfo} />}
                                 </TableCell>
-                                <TableCell className="text-center text-table-cell tabular-nums">{childQty}</TableCell>
-                                <TableCell className="t-mono text-muted">
-                                  {childAsset?.assetTag || childBulk?.assetTag || "—"}
+                                <TableCell className="text-center text-table-cell tabular-nums whitespace-nowrap">{childQty}</TableCell>
+                                <TableCell className="t-mono text-muted whitespace-nowrap">
+                                  {childAsset?.assetTag || childBulk?.assetTag || ""}
                                 </TableCell>
                                 <TableCell className="text-caption text-muted">
-                                  {childAsset?.location?.name || "—"}
+                                  {childAsset?.location?.name || ""}
                                 </TableCell>
                               </TableRow>
                               {/* Quantity expansion for kit children with qty > 1 */}
@@ -364,7 +376,8 @@ export default function PullSheetPage({
                       </TableBody>
                     );
                   })}
-              </Table>
+                </table>
+              </StickyTable>
             </div>
           </div>
         ))

@@ -94,6 +94,15 @@ export interface AllocationInput {
    * the project never charged — a 100%-discounted job would report full ROI.
    */
   revenueFactor?: number;
+  /**
+   * Rental dollars per dollar of replacement cost, per rental period — used to turn
+   * a cost-only item's replacement cost into a rate-equivalent so it can be weighed
+   * in the SAME unit as a rated item (rental rates run ~1–2%/day of value). Derived
+   * from the org's own rated+costed models where possible; ~0.015/day otherwise. It
+   * cancels out in an all-cost set, so it only bites where a group mixes rated and
+   * cost-only gear.
+   */
+  rateFactor?: number;
 }
 
 export interface LineAllocation {
@@ -161,6 +170,30 @@ function rateOf(m: AllocModel | undefined, weekly: boolean): number {
   return Number(r) || 0;
 }
 
+/**
+ * The fleet's own rental-rate-per-dollar-of-replacement-cost — the median ratio
+ * across models that have BOTH a rate and a cost. Used to turn a cost-only item into
+ * a rate-equivalent so it can be weighed beside a rated item in the same unit.
+ *
+ * Returns null when fewer than 3 models carry both (too little to trust a derived
+ * factor); the caller then uses a conventional default (~1–2%/day of value).
+ */
+export function deriveRateFactor(
+  models: Iterable<AllocModel>,
+  weekly: boolean,
+): number | null {
+  const ratios: number[] = [];
+  for (const m of models) {
+    const r = rateOf(m, weekly);
+    const c = Number(m.replacementCost ?? 0) || 0;
+    if (r > 0 && c > 0) ratios.push(r / c);
+  }
+  if (ratios.length < 3) return null;
+  ratios.sort((a, b) => a - b);
+  const mid = Math.floor(ratios.length / 2);
+  return ratios.length % 2 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2;
+}
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 export function allocateProject(input: AllocationInput): Map<string, LineAllocation> {
@@ -169,10 +202,28 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // Clamped: a discountPercent outside 0–100 is bad data, and neither negative
   // revenue nor revenue above the listed price is a thing we want to invent.
   const factor = Math.min(1, Math.max(0, input.revenueFactor ?? 1));
+  // Fleet rate-per-dollar-of-cost. A weekly split needs a weekly-scale factor, so
+  // the default is bumped when no derived value is supplied (weekly rates ≈ 3× daily).
+  const rateFactor =
+    input.rateFactor != null && input.rateFactor > 0
+      ? input.rateFactor
+      : weekly
+        ? 0.05
+        : 0.015;
   /** A billed pool, in cents: the listed amount after the project discount. */
   const poolOf = (amount: number | null | undefined): number =>
     Math.max(0, Math.round((amount ?? 0) * factor * 100));
   const out = new Map<string, LineAllocation>();
+
+  // An item explicitly priced at $0 is a freebie — it takes NO share of any split
+  // and never counts toward ROI. (A price-less item shows "—" / null, which is
+  // different: that one still earns via its rate or cost.) Pre-stamped so every
+  // participant filter and the child-fallback passes skip it cleanly.
+  const isFreebie = (l: AllocLine): boolean =>
+    l.lineTotal === 0 && !isInactive(l) && !isNonGear(l);
+  for (const l of lines) {
+    if (isFreebie(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
+  }
 
   const byId = new Map(lines.map((l) => [l.id, l]));
   const childrenOf = new Map<string, AllocLine[]>();
@@ -186,36 +237,59 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     else childrenOf.set(l.parentLineItemId, [l]);
   }
 
-  /** Children eligible to take a share of their parent's pool. */
+  /** Children eligible to take a share of their parent's pool (freebies excluded). */
   const participantsOf = (l: AllocLine): AllocLine[] =>
-    (childrenOf.get(l.id) ?? []).filter((c) => !isInactive(c) && !isNonGear(c));
+    (childrenOf.get(l.id) ?? []).filter(
+      (c) => !isInactive(c) && !isNonGear(c) && !isFreebie(c),
+    );
 
   const sortKey = (l: AllocLine): number => l.sortOrder ?? 0;
 
-  type ValueOf = (m: AllocModel | undefined) => number;
-
-  /** What this line alone is worth, ignoring anything hanging off it. */
-  const ownValue = (l: AllocLine, valueOf: ValueOf): number =>
-    l.modelId ? valueOf(models.get(l.modelId)) * qtyOf(l) * durOf(l) : 0;
-
   /**
-   * "What is this node worth, before we know what the client paid?" Recurses into
-   * containers — a kit parent has no modelId of its own, so it is worth the sum of
-   * its contents. That is what lets a kit sit inside a group and be weighted fairly
-   * against the loose gear beside it.
-   *
-   * Used for SIBLINGS. A node weighed against its OWN children must use `ownValue`
-   * instead, or it counts those children twice: once in its own weight and again in
-   * theirs, and the parent walks off with a share that belongs to its accessories.
+   * One item's rate signal in rental dollars — its usual hire rate, else its
+   * replacement cost turned into a rate-equivalent (× rateFactor). Ignores any set
+   * price (that's handled by the caller). Same unit throughout, so a rate-only and a
+   * cost-only item can be weighed together; rateFactor cancels out in an all-cost
+   * set, so it only matters in a genuinely mixed one.
    */
-  const nominal = (l: AllocLine, valueOf: ValueOf): number =>
-    ownValue(l, valueOf) +
-    participantsOf(l).reduce((s, c) => s + nominal(c, valueOf), 0);
+  const rateOrCost = (l: AllocLine): number => {
+    if (!l.modelId) return 0;
+    const m = models.get(l.modelId);
+    const rate = rateOf(m, weekly);
+    if (rate > 0) return rate * qtyOf(l) * durOf(l);
+    const cost = Number(m?.replacementCost ?? 0) || 0;
+    if (cost > 0) return cost * rateFactor * qtyOf(l) * durOf(l);
+    return 0;
+  };
 
   /**
-   * Pick ONE rule for the whole sibling set (never mixed within a set — that is
-   * what makes a split explainable). Returns the weights plus the basis to stamp
-   * on the leaves beneath.
+   * A node's whole-subtree value: its set price if it has one, else its own rate/cost
+   * plus its contents.
+   *
+   * A priced node's price IS the value of the whole node+contents — a $100 kit is
+   * worth $100, so we do NOT also add its members (that double-counted a priced kit
+   * against the loose gear beside it in a group). We only recurse into a node with no
+   * price of its own — an unpriced kit is worth the sum of what's inside it.
+   */
+  const subtreeWeight = (l: AllocLine): number => {
+    const price = l.lineTotal;
+    if (price != null && Number(price) > 0) return Number(price);
+    return rateOrCost(l) + participantsOf(l).reduce((s, c) => s + subtreeWeight(c), 0);
+  };
+
+  /**
+   * Weight of one participant in a split. A node weighed against its OWN children
+   * (`selfId` — the accessory-parent case) counts only ITSELF, by rate/cost, never
+   * its price (its price IS the pool being divided). Every other participant counts
+   * its whole subtree, each node picking price → rate → cost on its own.
+   */
+  const participantWeight = (p: AllocLine, selfId?: string): number =>
+    p.id === selfId ? rateOrCost(p) : subtreeWeight(p);
+
+  /**
+   * The weights for a sibling set plus the basis to stamp beneath. A saved kit
+   * split wins if it still describes the kit; otherwise every item is weighted by
+   * its own best available signal; if nothing has a signal, the pool is split even.
    */
   function chooseWeights(
     parts: readonly AllocLine[],
@@ -223,10 +297,6 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     /** Set when `parts[0]` is the parent competing with its own children. */
     selfId?: string,
   ): { weights: number[]; basis: AllocationBasisValue } {
-    // Siblings are worth their whole subtree; the parent is worth only itself.
-    const weigh = (valueOf: ValueOf) => (p: AllocLine) =>
-      p.id === selfId ? ownValue(p, valueOf) : nominal(p, valueOf);
-
     // 1. The kit's saved per-model split — but only if it still describes the kit.
     //    Contents change from the warehouse and CSV import without ever touching
     //    the allocation, so a stale split is ignored rather than trusted.
@@ -247,38 +317,13 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       }
     }
 
-    // 2. Own lineTotal. Covers ITEMIZED kits and manual price overrides, and makes
-    //    a group priced at its suggestedPrice allocate each member its own total.
-    //    Requires ALL siblings priced — a half-priced set would starve the rest.
-    //
-    //    Skipped when the parent is in the roster: the parent's lineTotal IS the
-    //    pool being divided, so using it as a weight would hand the parent a share
-    //    proportional to the whole. (Its accessory children are never priced, so
-    //    this rule could not have fired anyway — the guard is for when they are.)
-    if (!selfId && parts.every((p) => p.lineTotal != null)) {
-      const weights = parts.map((p) => Math.max(0, Number(p.lineTotal)));
-      if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };
-    }
+    // 2. Per-item weight: price → rate → cost-equivalent, decided for each item on
+    //    its own and all in the same unit. A group may mix priced, rate-only and
+    //    cost-only gear and still split fairly.
+    const weights = parts.map((p) => participantWeight(p, selfId));
+    if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };
 
-    // 3. Hire rate × qty. Used ONLY when EVERY participant has a rate. If even one
-    //    item is rate-less, splitting on rates would hand it $0 while the rated
-    //    items took the whole pool — so instead we fall straight through to
-    //    replacement cost (rule 4), keeping the split in one consistent signal and
-    //    leaving nothing at zero. Matches "purchase value whenever rates aren't
-    //    complete." See docs/revenue-allocation-design.md.
-    {
-      const weights = parts.map(weigh((m) => rateOf(m, weekly)));
-      if (weights.every((w) => w > 0)) return { weights, basis: "WEIGHTED" };
-    }
-
-    // 4. Replacement cost (purchase value) × qty — dearer gear earns more. This is
-    //    the default whenever the set isn't fully rated, which is the common case.
-    {
-      const weights = parts.map(weigh((m) => Number(m?.replacementCost ?? 0) || 0));
-      if (weights.some((w) => w > 0)) return { weights, basis: "WEIGHTED" };
-    }
-
-    // 5. Nothing to weight on. Never leave gear invisible.
+    // 3. Nothing to weight on. Never leave gear invisible.
     return { weights: parts.map(() => 1), basis: "EQUAL_SPLIT" };
   }
 
@@ -390,7 +435,9 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // grouped member's own lineTotal never reaches project revenue.
   for (const g of groups) {
     const inGroup = roots.filter((l) => l.groupId === g.id && !isInactive(l));
-    const gear = inGroup.filter((l) => !isNonGear(l));
+    // Freebies ($0 items) are pre-stamped and take no share — the paying gear splits
+    // the whole pool between them.
+    const gear = inGroup.filter((l) => !isNonGear(l) && !isFreebie(l));
     // A priced custom item inside a group is PART of the group's flat price, not an
     // extra on top (recalc bills the flat price only). So it takes its own set
     // amount straight off the pool and the owned gear splits what's left — a $1,800
@@ -433,6 +480,10 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       gearPool = 0;
     }
 
+    // No paying gear (all freebies, or an empty group). Whatever the customs didn't
+    // consume is genuinely unattributable — nothing owned earned it — so it's left
+    // off ROI. The group's price still bills; it just credits no model. (SUM(children)
+    // == pool holds whenever there IS a paying participant.)
     if (gear.length === 0) continue;
     if (gear.length === 1) {
       assign(gear[0], gearPool, gearPool === 0 ? "NO_REVENUE" : "DIRECT");
@@ -468,6 +519,14 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // Anything unreachable (orphaned child of a non-participating parent).
   for (const l of lines) {
     if (!out.has(l.id)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
+  }
+
+  // Freebies are ALWAYS $0 / excluded, no matter what a subtree pass stamped on the
+  // way through — e.g. a freebie nested under a sub-hire is first stamped with the
+  // sub-hire's audit value by the wholesale `stamp`. This final override is the
+  // single source of truth for "$0 means excluded."
+  for (const l of lines) {
+    if (isFreebie(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
   }
 
   return out;
@@ -576,6 +635,7 @@ export async function applyProjectAllocation(
     kitAllocations.set(kitId, new Map(rows.map((r) => [r.modelId, r.allocationPercent])));
   }
 
+  const weekly = args.rentalPeriod === "WEEKLY";
   const result = allocateProject({
     lines,
     groups,
@@ -583,6 +643,8 @@ export async function applyProjectAllocation(
     kitAllocations,
     rentalPeriod: args.rentalPeriod,
     revenueFactor: 1 - Number(args.discountPercent ?? 0) / 100,
+    // Prefer the fleet's own rate/cost relationship; fall back to the engine default.
+    rateFactor: deriveRateFactor(models.values(), weekly) ?? undefined,
   });
 
   for (const line of lines) {

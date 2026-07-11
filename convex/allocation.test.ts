@@ -7,6 +7,7 @@ import {
   isRoiCounted,
   suggestKitAllocation,
   allocationCoversKit,
+  deriveRateFactor,
   type AllocLine,
   type AllocModel,
   type AllocGroup,
@@ -45,6 +46,7 @@ const run = (
     models?: Map<string, AllocModel>;
     kitAllocations?: Map<string, Map<string, number>>;
     rentalPeriod?: string;
+    rateFactor?: number;
   } = {},
 ) =>
   allocateProject({
@@ -53,6 +55,7 @@ const run = (
     models: opts.models ?? new Map(),
     kitAllocations: opts.kitAllocations ?? noKits,
     rentalPeriod: opts.rentalPeriod,
+    rateFactor: opts.rateFactor,
   });
 
 const rev = (r: Map<string, { allocatedRevenue: number | null }>, id: string) =>
@@ -278,9 +281,9 @@ describe("kits — Approach A", () => {
     expect(basis(r, "a")).toBe("EQUAL_SPLIT");
   });
 
-  test("a MIXED-rate kit uses purchase value, so the rate-less model isn't zeroed", () => {
-    // Only the receiver has a day rate. Splitting on rate would give the beltpack
-    // $0; instead the whole kit falls to replacement cost so both earn their worth.
+  test("a MIXED-rate kit weights each item on its own signal (rate vs cost-equivalent)", () => {
+    // rx has a rate → weighted on its rate. belt has none → weighted on its
+    // replacement cost turned into a rate-equivalent. belt still earns, not $0.
     const r = run(
       [
         L("kit", { kitId: "k1", lineTotal: 100 }),
@@ -288,14 +291,17 @@ describe("kits — Approach A", () => {
         L("belt", { parentLineItemId: "kit", modelId: "belt", sortOrder: 2 }),
       ],
       {
+        // rateFactor 0.02: rx weight = 96 (rate), belt weight = 200 × 0.02 = 4.
+        rateFactor: 0.02,
         models: models(
-          M("rx", { dailyRate: 50, replacementCost: 1800 }),
-          M("belt", { replacementCost: 200 }), // no rate
+          M("rx", { dailyRate: 96 }),
+          M("belt", { replacementCost: 200 }), // no rate → cost-equivalent
         ),
       },
     );
-    expect(rev(r, "rx")).toBe(90); // 1800/2000 × 100
-    expect(rev(r, "belt")).toBe(10); // 200/2000 × 100, not $0
+    expect(rev(r, "rx")).toBe(96);
+    expect(rev(r, "belt")).toBe(4); // not $0
+    expect(sumOf(r, ["rx", "belt"])).toBe(100);
   });
 
   test("an unpriced kit gives its children nothing — can't split nothing", () => {
@@ -472,34 +478,76 @@ describe("groups — Approach B", () => {
     expect(sumOf(r, ["gear", "big"])).toBe(1000);
   });
 
-  test("a group where only some gear is rated splits by purchase value, not $0", () => {
-    // The reported gotcha: one item has a day rate, the rest don't. Splitting on
-    // rate would give the rate-less items $0. Instead the whole group falls to
-    // replacement cost so every item earns its share.
+  test("per-item: a group mixes a priced, a rate-only and a cost-only item, all fairly", () => {
+    // Each item weighted by its own best signal, all in the same unit:
+    //   A = its set price 300; B = its rate 100; C = cost 4000 × 0.02 = 80.
     const r = run(
       [
-        L("rated", { groupId: "g1", modelId: "m1", lineTotal: 100, sortOrder: 1 }),
-        L("plainA", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
-        L("plainB", { groupId: "g1", modelId: "m3", sortOrder: 3 }),
+        L("priced", { groupId: "g1", modelId: "m1", lineTotal: 300, sortOrder: 1 }),
+        L("rateOnly", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+        L("costOnly", { groupId: "g1", modelId: "m3", sortOrder: 3 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 960, quantity: 1 }],
+        rateFactor: 0.02,
+        models: models(
+          M("m2", { dailyRate: 100 }), // rate only
+          M("m3", { replacementCost: 4000 }), // cost only
+        ),
+      },
+    );
+    // Weights 300 : 100 : 80 → of $960: 600 : 200 : 160.
+    expect(rev(r, "priced")).toBe(600);
+    expect(rev(r, "rateOnly")).toBe(200);
+    expect(rev(r, "costOnly")).toBe(160); // not $0
+    expect(sumOf(r, ["priced", "rateOnly", "costOnly"])).toBe(960);
+  });
+
+  test("an all-cost group splits purely by cost — the rate factor cancels out", () => {
+    // Every item falls to its cost, so the factor is a common multiplier and
+    // disappears from the ratio. Split is 200 : 500 : 300.
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+        L("c", { groupId: "g1", modelId: "m3", sortOrder: 3 }),
       ],
       {
         groups: [{ id: "g1", price: 1000, quantity: 1 }],
         models: models(
-          M("m1", { dailyRate: 50, replacementCost: 200 }),
-          M("m2", { replacementCost: 500 }), // no rate
-          M("m3", { replacementCost: 300 }), // no rate
+          M("m1", { replacementCost: 200 }),
+          M("m2", { replacementCost: 500 }),
+          M("m3", { replacementCost: 300 }),
         ),
       },
     );
-    // Purchase-value split: 200 : 500 : 300 of $1,000.
-    expect(rev(r, "rated")).toBe(200);
-    expect(rev(r, "plainA")).toBe(500);
-    expect(rev(r, "plainB")).toBe(300);
-    expect(basis(r, "plainA")).toBe("WEIGHTED");
-    expect(sumOf(r, ["rated", "plainA", "plainB"])).toBe(1000);
+    expect(rev(r, "a")).toBe(200);
+    expect(rev(r, "b")).toBe(500);
+    expect(rev(r, "c")).toBe(300);
   });
 
-  test("a FULLY-rated group still splits by hire rate (unchanged)", () => {
+  test("a PRICED kit in a group weighs by its kit price, not price + contents", () => {
+    // Regression: subtreeWeight once added a priced kit's own price AND its
+    // children, so a $100 kit next to $100 of loose gear took two-thirds instead of
+    // half. A priced node's price is the whole value of its contents.
+    const r = run(
+      [
+        L("kit", { groupId: "g1", kitId: "k1", lineTotal: 100, sortOrder: 1 }),
+        L("child", { parentLineItemId: "kit", modelId: "m1", sortOrder: 1 }),
+        L("loose", { groupId: "g1", modelId: "m2", lineTotal: 100, sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 200, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 })), // child has a rate — must NOT be added
+      },
+    );
+    // kit weighs 100 (its price), loose weighs 100 → even split.
+    expect(rev(r, "child")).toBe(100); // the kit's whole $100 slice
+    expect(rev(r, "loose")).toBe(100);
+    expect(sumOf(r, ["child", "loose"])).toBe(200);
+  });
+
+  test("a FULLY-rated group splits by hire rate, not cost", () => {
     const r = run(
       [
         L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
@@ -507,7 +555,6 @@ describe("groups — Approach B", () => {
       ],
       {
         groups: [{ id: "g1", price: 400, quantity: 1 }],
-        // Rates present on both → rate wins over purchase value.
         models: models(
           M("m1", { dailyRate: 300, replacementCost: 10 }),
           M("m2", { dailyRate: 100, replacementCost: 9000 }),
@@ -655,6 +702,103 @@ describe("composition", () => {
 });
 
 // ── rollup ───────────────────────────────────────────────────────────────────
+
+describe("$0 items are excluded from the split", () => {
+  test("an explicit $0 gear item takes no share; the rest split the whole pool", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", lineTotal: 600, sortOrder: 1 }),
+        L("free", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
+        L("b", { groupId: "g1", modelId: "m3", lineTotal: 400, sortOrder: 3 }),
+      ],
+      { groups: [{ id: "g1", price: 1000, quantity: 1 }] },
+    );
+    expect(rev(r, "free")).toBe(0);
+    expect(basis(r, "free")).toBe("NO_REVENUE");
+    // a and b split the full $1,000 by their prices (600:400), free gets nothing.
+    expect(rev(r, "a")).toBe(600);
+    expect(rev(r, "b")).toBe(400);
+    expect(sumOf(r, ["a", "b", "free"])).toBe(1000);
+  });
+
+  test("$0 is excluded even when the rest of the group is on rate/cost", () => {
+    // "free" has a rated model but is priced $0 → still excluded (not a rate share).
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("free", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 500, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 100 })),
+      },
+    );
+    expect(rev(r, "free")).toBe(0);
+    expect(rev(r, "a")).toBe(500); // takes the whole pool
+  });
+
+  test("a freebie nested under a sub-hire is still $0, not the sub-hire's audit value", () => {
+    // The sub-hire subtree is stamped wholesale with its pool value; the freebie
+    // must be forced back to $0 so it never shows a non-zero number.
+    const r = run([
+      L("sh", { lineTotal: 100, subHireId: "s1", kitId: "k1", sortOrder: 1 }),
+      L("free", { parentLineItemId: "sh", modelId: "m1", lineTotal: 0, subHireId: "s1", sortOrder: 1 }),
+    ]);
+    expect(rev(r, "free")).toBe(0);
+    expect(basis(r, "free")).toBe("NO_REVENUE");
+  });
+
+  test("$0 and '—' behave differently: $0 excluded, '—' earns via its rate", () => {
+    const r = run(
+      [
+        L("priced", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("dash", { groupId: "g1", modelId: "m2", sortOrder: 2 }), // lineTotal undefined
+        L("zero", { groupId: "g1", modelId: "m3", lineTotal: 0, sortOrder: 3 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 300, quantity: 1 }],
+        models: models(
+          M("m1", { dailyRate: 100 }),
+          M("m2", { dailyRate: 200 }), // "—" line → uses this rate
+          M("m3", { dailyRate: 999 }), // ignored: line is $0
+        ),
+      },
+    );
+    expect(rev(r, "zero")).toBe(0);
+    // priced + dash split $300 by rate 100:200.
+    expect(rev(r, "priced")).toBe(100);
+    expect(rev(r, "dash")).toBe(200);
+  });
+});
+
+describe("deriveRateFactor", () => {
+  const M2 = (rate: number | null, cost: number | null): AllocModel => ({
+    id: `m${rate}-${cost}`,
+    dailyRate: rate ?? undefined,
+    replacementCost: cost ?? undefined,
+  });
+
+  test("returns the median rate/cost ratio over models that have both", () => {
+    const f = deriveRateFactor(
+      [M2(20, 1000), M2(30, 1000), M2(40, 1000)], // ratios 0.02, 0.03, 0.04
+      false,
+    );
+    expect(f).toBe(0.03);
+  });
+
+  test("ignores models missing a rate or a cost", () => {
+    const f = deriveRateFactor(
+      [M2(20, 1000), M2(null, 1000), M2(40, 1000), M2(60, 1000)], // 0.02, 0.04, 0.06
+      false,
+    );
+    expect(f).toBe(0.04);
+  });
+
+  test("returns null when fewer than 3 models carry both (too little to trust)", () => {
+    expect(deriveRateFactor([M2(20, 1000), M2(30, 1000)], false)).toBeNull();
+    expect(deriveRateFactor([], false)).toBeNull();
+  });
+});
 
 describe("rollupByModel", () => {
   test("sums a model across every line that earned for it", () => {

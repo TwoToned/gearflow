@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { render, screen } from "@testing-library/react";
+import type { CategoryData } from "../equipment-rows";
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -11,10 +12,10 @@ beforeAll(() => {
 });
 
 import { PlacementFields } from "../placement-fields";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const categories = [
   { id: "c1", name: "Audio", sortOrder: 0, groups: [{ id: "g1", title: "PA System" }] },
-] as any;
+] as unknown as CategoryData[];
 
 describe("PlacementFields — shared Category + Group box (issue #1)", () => {
   it("renders both a Category and a Group picker with the Uncategorized/No-group defaults", () => {

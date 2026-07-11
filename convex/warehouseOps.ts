@@ -15,6 +15,7 @@ import {
   returnLineUnits,
   checkinAccessoryChildren,
 } from "./lib/fulfillment";
+import { nextOrdinal } from "./lib/lineItemUnits";
 
 /**
  * Warehouse checkout / check-in — Convex port of warehouse.ts checkOutItems /
@@ -999,5 +1000,74 @@ export const checkInBulkTotals = mutation({
       summary.push({ key: req.key, quantity: distributed, condition });
     }
     return { returned: summary };
+  },
+});
+
+/**
+ * Reassign a serialised unit from its current line to another line on the SAME
+ * project + SAME model — the "correct the auto-pick" action from the equipment
+ * tab. The physical asset does NOT move (same project, same deployment); only
+ * which order line it fulfils changes. Both lines' rollups are recomputed.
+ *
+ * Guards (all ConvexError so the payload survives the prod boundary):
+ *  - unit must be serialised (has assetId) and not RETURNED/CANCELLED (history);
+ *  - target line must be same org, same project, same model as the asset;
+ *  - the asset can't already be on the target line (unique (line, asset));
+ *  - the target line can't be over-assigned past its quantity.
+ * Permission / activity-log stay in the server action (this is service-only).
+ */
+export const reassignSerialisedUnit = mutation({
+  args: {
+    organizationId: v.string(),
+    unitId: v.string(),
+    targetLineItemId: v.string(),
+  },
+  handler: async (ctx, { organizationId, unitId, targetLineItemId }) => {
+    await requireService(ctx);
+    const unit = await unitByCuid(ctx, unitId);
+    if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
+    if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) units can be reassigned");
+    if (unit.status === "RETURNED" || unit.status === "CANCELLED") {
+      throw new ConvexError("Returned units are history and can't be reassigned");
+    }
+    const sourceLineId = unit.lineItemId;
+    if (sourceLineId === targetLineItemId) return { moved: false as const };
+
+    const [sourceLine, targetLine, asset] = await Promise.all([
+      lineByCuid(ctx, sourceLineId),
+      lineByCuid(ctx, targetLineItemId),
+      assetByCuid(ctx, unit.assetId),
+    ]);
+    if (!sourceLine) throw new ConvexError("Source line not found");
+    if (!targetLine || targetLine.organizationId !== organizationId) throw new ConvexError("Target line not found in this organization");
+    if (targetLine.projectId !== sourceLine.projectId) throw new ConvexError("Can only reassign within the same project");
+    if (!asset || asset.organizationId !== organizationId) throw new ConvexError("Asset not found in this organization");
+    if (!asset.modelId || targetLine.modelId !== asset.modelId) throw new ConvexError("That line is a different model");
+    if (targetLine.isKitChild) throw new ConvexError("Kit members are fulfilled by the kit; reassign the kit instead");
+
+    const clash = await ctx.db
+      .query("projectLineItemUnits")
+      .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", targetLineItemId).eq("assetId", unit.assetId!))
+      .unique();
+    if (clash) throw new ConvexError(`${asset.assetTag} is already on the target line`);
+
+    const targetSiblings = await lineUnits(ctx, targetLineItemId);
+    const assigned = targetSiblings.filter((u) => u.status !== "CANCELLED").length;
+    if (assigned >= (targetLine.quantity ?? 0)) throw new ConvexError("Target line is already fully assigned");
+
+    const now = Date.now();
+    await ctx.db.patch(unit._id, {
+      lineItemId: targetLineItemId,
+      ordinal: nextOrdinal(targetSiblings),
+      updatedAt: now,
+    });
+    await syncLineItemRollup(ctx, sourceLineId);
+    await syncLineItemRollup(ctx, targetLineItemId);
+    return {
+      moved: true as const,
+      assetTag: asset.assetTag,
+      fromLineItemId: sourceLineId,
+      toLineItemId: targetLineItemId,
+    };
   },
 });

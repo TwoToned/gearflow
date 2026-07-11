@@ -307,6 +307,7 @@ export {
 } from "./equipment-row-descriptors";
 import { describeRow, unitFulfillmentBadge } from "./equipment-row-descriptors";
 import { useReassign } from "./reassign-context";
+import { UnitHistoryPopover } from "./unit-history-popover";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -1285,6 +1286,10 @@ export function LineItemRow({
           {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
           <TableCell className="text-right hidden sm:table-cell t-data" />
           <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-1">
+            {unit.asset?.id && unit.asset.assetTag && (
+              <UnitHistoryPopover assetId={unit.asset.id} assetTag={unit.asset.assetTag} />
+            )}
             {(() => {
               // Reassign only makes sense for a still-assigned serialised unit
               // with somewhere else to go. Returned units are history.
@@ -1321,6 +1326,7 @@ export function LineItemRow({
                 </DropdownMenu>
               );
             })()}
+            </div>
           </TableCell>
         </TableRow>
       );

@@ -306,6 +306,7 @@ export {
   type RowDescriptor,
 } from "./equipment-row-descriptors";
 import { describeRow, unitFulfillmentBadge } from "./equipment-row-descriptors";
+import { useReassign } from "./reassign-context";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -888,6 +889,12 @@ export function LineItemRow({
   const expandableUnits = hasUnitRows
     ? (item.units ?? []).filter((u) => u.asset?.assetTag || u.bulkAsset?.assetTag)
     : [];
+  // Reassign wiring (null when no provider, e.g. read-only surfaces). Candidate
+  // targets are other same-model lines on this project.
+  const reassignCtx = useReassign();
+  const reassignTargets = reassignCtx
+    ? (reassignCtx.targetsByModel.get(item.modelId ?? "") ?? []).filter((t) => t.id !== item.id)
+    : [];
 
   // Collaboration: reactive lock and review marker for this row
   const liveLock = useAuthedQuery(
@@ -1277,7 +1284,44 @@ export function LineItemRow({
           <TableCell className="text-right hidden md:table-cell t-data" />
           {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
           <TableCell className="text-right hidden sm:table-cell t-data" />
-          <TableCell />
+          <TableCell className="text-right">
+            {(() => {
+              // Reassign only makes sense for a still-assigned serialised unit
+              // with somewhere else to go. Returned units are history.
+              const canReassign =
+                reassignCtx &&
+                unit.asset &&
+                unit.status !== "RETURNED" &&
+                unit.status !== "CANCELLED" &&
+                reassignTargets.length > 0;
+              if (!canReassign) return null;
+              const pending = reassignCtx!.pendingUnitId === unit.id;
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" disabled={pending} className="h-7 px-2 text-caption text-muted hover:text-ink">
+                      {pending ? "Moving…" : "Reassign"}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Move {tag} to…</DropdownMenuLabel>
+                      {reassignTargets.map((t) => (
+                        <DropdownMenuItem
+                          key={t.id}
+                          disabled={t.full}
+                          onClick={() => reassignCtx!.reassign(unit.id, t.id)}
+                        >
+                          {t.label}
+                          {t.full ? " · full" : ""}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })()}
+          </TableCell>
         </TableRow>
       );
     })}

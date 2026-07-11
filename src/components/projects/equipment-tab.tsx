@@ -106,6 +106,8 @@ import {
   type MixedGroupSlot,
   type OverbookedInfo,
 } from "./equipment-rows";
+import { ReassignProvider, type ReassignTarget } from "./reassign-context";
+import { reassignLineItemUnit } from "@/server/warehouse";
 import { useSelection } from "./use-selection";
 import { targetKey } from "@/lib/collaboration-targets";
 
@@ -312,6 +314,56 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const uncategorizedItems = native.uncategorizedItems;
   const uncategorizedSubHireGroups = native.uncategorizedSubHireGroups;
   const uncategorizedProjectGroups = native.uncategorizedProjectGroups;
+
+  // ── Reassign: candidate same-model target lines for the per-unit picker, plus
+  // the move handler. Built from the reconstructed tree so a unit can be moved to
+  // any other line of its model on this project. The label carries the container
+  // (category / group) so two same-model lines are distinguishable.
+  const [reassignPendingUnitId, setReassignPendingUnitId] = useState<string | null>(null);
+  const reassignTargetsByModel = React.useMemo(() => {
+    const map = new Map<string, ReassignTarget[]>();
+    const add = (line: LineItemData, context: string) => {
+      // These scopes are already top-level (reconstruct excludes kit children).
+      if (!line.modelId || line.isKitChild) return;
+      const assigned = Math.max(line.units?.length ?? 0, line.asset?.assetTag ? 1 : 0);
+      const label =
+        line.description && line.description !== line.model?.name
+          ? `${context} · ${line.description}`
+          : context;
+      const arr = map.get(line.modelId) ?? [];
+      arr.push({ id: line.id, label, full: assigned >= (line.quantity ?? 0) });
+      map.set(line.modelId, arr);
+    };
+    for (const cat of categories as CategoryData[]) {
+      for (const li of cat.lineItems ?? []) add(li, cat.name);
+      for (const g of cat.groups ?? []) for (const li of g.lineItems ?? []) add(li, `${cat.name} › ${g.title}`);
+    }
+    for (const li of uncategorizedItems as LineItemData[]) add(li, "Uncategorised");
+    for (const g of uncategorizedProjectGroups as GroupData[]) for (const li of g.lineItems ?? []) add(li, g.title);
+    return map;
+  }, [categories, uncategorizedItems, uncategorizedProjectGroups]);
+
+  const handleReassignUnit = useCallback(
+    (unitId: string, targetLineItemId: string) => {
+      setReassignPendingUnitId(unitId);
+      reassignLineItemUnit(projectId, unitId, targetLineItemId)
+        .then((res) => {
+          if (res.moved) toast.success(`Moved ${res.assetTag ?? "unit"} to a different line`);
+        })
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Couldn't reassign that unit"))
+        .finally(() => setReassignPendingUnitId(null));
+    },
+    [projectId],
+  );
+
+  const reassignValue = React.useMemo(
+    () => ({
+      targetsByModel: reassignTargetsByModel,
+      reassign: handleReassignUnit,
+      pendingUnitId: reassignPendingUnitId,
+    }),
+    [reassignTargetsByModel, handleReassignUnit, reassignPendingUnitId],
+  );
   const overbookedMap = native.overbookedMap;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const projectSubHires = native.projectSubHires as any[];
@@ -688,6 +740,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   );
 
   return (
+    <ReassignProvider value={reassignValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
           inline in this toolbar. The quiet margin toggle always stays here. */}
@@ -1531,5 +1584,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         }}
       />
     </div>
+    </ReassignProvider>
   );
 }

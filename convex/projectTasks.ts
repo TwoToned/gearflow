@@ -138,3 +138,53 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── Bulk (multi-select) operations ────────────────────────────────────────
+// One mutation round-trip for an N-task bulk action instead of one server→Convex
+// call per row. Org-scoped per row (by_cuid is global); foreign rows skipped.
+
+/** Bulk-apply a shared patch to N tasks. `patch` carries the resolved shared
+ *  fields (status / priority / dueDate ms / assignee); the DONE completedAt stamp
+ *  is derived per row against its own current status. */
+export const updateMany = mutation({
+  args: { ids: v.array(v.string()), orgId: v.string(), patch: v.any(), now: v.number() },
+  handler: async (ctx, { ids, orgId, patch, now }) => {
+    await requireService(ctx);
+    const p = patch as Record<string, unknown>;
+    const projectIds = new Set<string>();
+    let updated = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
+      const applied: Record<string, unknown> = { ...p, updatedAt: now };
+      delete applied.organizationId;
+      if (p.status !== undefined && p.status !== doc.status) {
+        applied.completedAt = p.status === "DONE" ? now : null;
+      }
+      await ctx.db.patch(doc._id, applied);
+      projectIds.add(doc.projectId);
+      updated++;
+    }
+    return { updated, skipped, projectIds: [...projectIds] };
+  },
+});
+
+/** Bulk-delete N tasks in one pass. */
+export const removeMany = mutation({
+  args: { ids: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { ids, orgId }) => {
+    await requireService(ctx);
+    const projectIds = new Set<string>();
+    let deleted = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
+      await ctx.db.delete(doc._id);
+      projectIds.add(doc.projectId);
+      deleted++;
+    }
+    return { deleted, skipped, projectIds: [...projectIds] };
+  },
+});

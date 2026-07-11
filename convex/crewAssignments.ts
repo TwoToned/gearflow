@@ -283,6 +283,67 @@ export const deleteCascade = mutation({
   },
 });
 
+// ─── Bulk (multi-select) operations ────────────────────────────────────────
+// Collapse an N-assignment bulk action into ONE mutation round-trip: the loop
+// runs backend-local instead of one server→Convex call per row. Org-scoped per
+// row (by_cuid is global); foreign rows skipped and reported.
+
+/** Bulk cascade-delete N assignments (+ shifts + linked time entries) in one pass. */
+export const deleteManyCascade = mutation({
+  args: { ids: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { ids, orgId }) => {
+    await requireService(ctx);
+    const projectIds = new Set<string>();
+    let deleted = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
+      const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+      for (const s of shifts) await ctx.db.delete(s._id);
+      const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+      for (const e of entries) await ctx.db.delete(e._id);
+      await ctx.db.delete(doc._id);
+      await bumpCountersForTable(ctx, "crewAssignments", doc, null);
+      projectIds.add(doc.projectId);
+      deleted++;
+    }
+    return { deleted, skipped, projectIds: [...projectIds] };
+  },
+});
+
+/** Bulk status change across N assignments in one pass. Mirrors updateAssignmentStatus'
+ *  first-transition CONFIRMED stamp per row. */
+export const patchManyStatus = mutation({
+  args: {
+    ids: v.array(v.string()),
+    orgId: v.string(),
+    status: enums.AssignmentStatus,
+    confirmedById: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { ids, orgId, status, confirmedById, now }) => {
+    await requireService(ctx);
+    const projectIds = new Set<string>();
+    let updated = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
+      const patch: Record<string, unknown> = { status, updatedAt: now };
+      if (status === "CONFIRMED" && !doc.confirmedAt) {
+        patch.confirmedAt = now;
+        patch.confirmedById = confirmedById;
+      }
+      await ctx.db.patch(doc._id, patch);
+      await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
+      projectIds.add(doc.projectId);
+      updated++;
+    }
+    return { updated, skipped, projectIds: [...projectIds] };
+  },
+});
+
 /**
  * Create a service-derived assignment, enforcing the partial-unique invariant
  * `(projectId, crewMemberId, serviceId)` (the Prisma

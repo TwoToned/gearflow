@@ -459,44 +459,44 @@ export async function moveLineItemsToGroup(data: {
   const client = await getConvexClient();
   const now = Date.now();
   const affectedGroupIds = new Set<string>();
-  const affectedProjectIds = new Set<string>();
-  let moved = 0;
-  let skipped = 0;
 
-  const items = await Promise.all(
-    parsed.lineItemIds.map((id) => client.query(api.projectLineItems.getById, { id })),
-  );
+  // ONE read for all selected rows (to collect their current groups for the
+  // suggested-price refresh), then build a single move patch per row.
+  const items = await client.query(api.projectLineItems.listByIdsForOrg, {
+    ids: parsed.lineItemIds,
+    orgId: organizationId,
+  });
 
+  const moveSetBase: Record<string, unknown> = { updatedAt: now };
+  const moveClear: string[] = [];
+  if (parsed.targetGroupId != null) moveSetBase.groupId = parsed.targetGroupId;
+  else moveClear.push("groupId");
+  if (parsed.targetCategoryId != null) moveSetBase.categoryId = parsed.targetCategoryId;
+  else moveClear.push("categoryId");
+
+  const patchItems: { id: string; set: Record<string, unknown>; clear: string[] }[] = [];
+  let skipped = parsed.lineItemIds.length - items.length;
   for (const lineItem of items) {
-    if (!lineItem || lineItem.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
     if (lineItem.isKitChild) {
       skipped++;
       continue;
     }
     if (lineItem.groupId) affectedGroupIds.add(lineItem.groupId);
-
-    const moveSet: Record<string, unknown> = { updatedAt: now };
-    const moveClear: string[] = [];
-    if (parsed.targetGroupId != null) moveSet.groupId = parsed.targetGroupId;
-    else moveClear.push("groupId");
-    if (parsed.targetCategoryId != null) moveSet.categoryId = parsed.targetCategoryId;
-    else moveClear.push("categoryId");
-
-    await client.mutation(api.projectLineItems.patchLineItem, {
-      id: lineItem.id,
-      set: moveSet,
-      clear: moveClear,
-    });
-    affectedProjectIds.add(lineItem.projectId);
-    moved++;
+    patchItems.push({ id: lineItem.id, set: moveSetBase, clear: moveClear });
   }
+
+  if (patchItems.length === 0) return serialize({ moved: 0, skipped });
+
+  // ONE backend-local write pass for every moved row.
+  const { updated: moved, projectIds: affectedProjectIds } = await client.mutation(
+    api.projectLineItems.patchMany,
+    { orgId: organizationId, items: patchItems },
+  );
 
   if (parsed.targetGroupId) affectedGroupIds.add(parsed.targetGroupId);
 
   // Refresh suggested prices for every touched group (sources + destination).
+  // Bounded by the number of distinct groups, not the number of items.
   for (const gid of affectedGroupIds) {
     const suggested = await calculateSuggestedPrice(gid);
     await client.mutation(api.projectGroups.update, {
@@ -506,7 +506,7 @@ export async function moveLineItemsToGroup(data: {
   }
 
   await Promise.all(
-    [...affectedProjectIds].map((pid) => recalculateProjectTotals(pid)),
+    affectedProjectIds.map((pid: string) => recalculateProjectTotals(pid)),
   );
 
   await logActivity({
@@ -515,7 +515,7 @@ export async function moveLineItemsToGroup(data: {
     userName,
     action: "updated",
     entityType: "project",
-    entityId: [...affectedProjectIds][0] ?? parsed.lineItemIds[0],
+    entityId: affectedProjectIds[0] ?? parsed.lineItemIds[0],
     entityName: `${moved} line item${moved === 1 ? "" : "s"}`,
     summary: `Moved ${moved} line item${moved === 1 ? "" : "s"} to ${
       parsed.targetGroupId ? "group" : "standalone"

@@ -389,20 +389,11 @@ export async function bulkDeleteAssignments(ids: string[]) {
   if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const affectedProjectIds = new Set<string>();
-  let deleted = 0;
-  let skipped = 0;
-
-  for (const id of ids) {
-    const assignment = await getAssignmentById(id);
-    if (!assignment || assignment.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.crewAssignments.deleteCascade, { id });
-    affectedProjectIds.add(assignment.projectId);
-    deleted++;
-  }
+  // ONE backend-local pass: the cascade loop runs inside a single Convex mutation.
+  const { deleted, skipped, projectIds } = await convex.mutation(
+    api.crewAssignments.deleteManyCascade,
+    { ids, orgId: organizationId },
+  );
 
   if (deleted > 0) {
     await logActivity({
@@ -414,7 +405,7 @@ export async function bulkDeleteAssignments(ids: string[]) {
       entityId: ids[0],
       entityName: `${deleted} assignment${deleted === 1 ? "" : "s"}`,
       summary: `Removed ${deleted} crew assignment${deleted === 1 ? "" : "s"}`,
-      projectId: [...affectedProjectIds][0],
+      projectId: projectIds[0],
     });
   }
 
@@ -431,26 +422,19 @@ export async function bulkUpdateAssignmentStatus(ids: string[], status: string) 
   if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const affectedProjectIds = new Set<string>();
-  const now = Date.now();
-  let updated = 0;
-  let skipped = 0;
-
-  for (const id of ids) {
-    const assignment = await getAssignmentById(id);
-    if (!assignment || assignment.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
-    const set: Record<string, unknown> = { status, updatedAt: now };
-    if (status === "CONFIRMED" && !assignment.confirmedAt) {
-      set.confirmedAt = now;
-      set.confirmedById = userId;
-    }
-    await convex.mutation(api.crewAssignments.patchAssignment, { id, set });
-    affectedProjectIds.add(assignment.projectId);
-    updated++;
-  }
+  // ONE backend-local pass; the first-transition CONFIRMED stamp is derived
+  // per row inside the mutation.
+  const { updated, skipped, projectIds } = await convex.mutation(
+    api.crewAssignments.patchManyStatus,
+    {
+      ids,
+      orgId: organizationId,
+      // The UI only ever sends valid assignment statuses.
+      status: status as "PENDING" | "OFFERED" | "ACCEPTED" | "DECLINED" | "CONFIRMED" | "CANCELLED" | "COMPLETED",
+      confirmedById: userId,
+      now: Date.now(),
+    },
+  );
 
   if (updated > 0) {
     await logActivity({
@@ -462,7 +446,7 @@ export async function bulkUpdateAssignmentStatus(ids: string[], status: string) 
       entityId: ids[0],
       entityName: `${updated} assignment${updated === 1 ? "" : "s"}`,
       summary: `Changed ${updated} crew assignment${updated === 1 ? "" : "s"} to ${status}`,
-      projectId: [...affectedProjectIds][0],
+      projectId: projectIds[0],
     });
   }
 

@@ -502,37 +502,14 @@ export async function bulkDeleteProjectServices(ids: string[]) {
   if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const affectedProjectIds = new Set<string>();
-  let deleted = 0;
-  let skipped = 0;
+  // ONE backend-local pass: the full per-service cascade (synthetic line item +
+  // its crew assignments + the service) runs inside a single Convex mutation.
+  const { deleted, skipped, projectIds } = await convex.mutation(
+    api.projectServices.removeManyCascade,
+    { ids, orgId: organizationId },
+  );
 
-  for (const id of ids) {
-    const service = await getProjectServiceByIdFromConvex(organizationId, id).catch(() => null);
-    if (!service) {
-      skipped++;
-      continue;
-    }
-
-    const serviceAssignments = (
-      await getAssignmentsByProject(service.projectId, organizationId)
-    ).filter((a) => a.serviceId === id);
-
-    if (service.lineItemId) {
-      await convex.mutation(api.projectServices.patchService, { id, set: {}, clear: ["lineItemId"] });
-      await convex
-        .mutation(api.projectLineItems.removeLineItemCascade, { id: service.lineItemId })
-        .catch(() => {});
-    }
-    await convex.mutation(api.projectServices.remove, { id });
-    for (const a of serviceAssignments) {
-      await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
-    }
-
-    affectedProjectIds.add(service.projectId);
-    deleted++;
-  }
-
-  await Promise.all([...affectedProjectIds].map((pid) => recalculateProjectTotals(pid)));
+  await Promise.all(projectIds.map((pid: string) => recalculateProjectTotals(pid)));
 
   if (deleted > 0) {
     await logActivity({
@@ -544,7 +521,7 @@ export async function bulkDeleteProjectServices(ids: string[]) {
       entityId: ids[0],
       entityName: `${deleted} service${deleted === 1 ? "" : "s"}`,
       summary: `Deleted ${deleted} service${deleted === 1 ? "" : "s"}`,
-      projectId: [...affectedProjectIds][0],
+      projectId: projectIds[0],
     });
   }
 
@@ -560,37 +537,30 @@ export async function bulkUpdateServiceStatus(
     "update",
   );
 
-  // projectService is Convex-only now (Phase C) — read the org's services, match the
-  // requested ids, and patch each.
-  const idSet = new Set(ids);
-  const orgServices = await getProjectServicesByOrg(organizationId);
-  const matching = orgServices.filter((s) => idSet.has(s.id));
-  const firstService = matching.find((s) => s.id === ids[0]) ?? matching[0] ?? null;
+  if (ids.length === 0) return;
 
   const convex = await getConvexClient();
-  const nowBulk = Date.now();
-  for (const s of matching) {
-    await convex.mutation(api.projectServices.patchService, {
-      id: s.id,
-      set: { status, updatedAt: nowBulk },
+  // ONE backend-local pass instead of one patch round-trip per service.
+  const { updated, projectIds } = await convex.mutation(
+    api.projectServices.patchManyStatus,
+    { ids, orgId: organizationId, status, now: Date.now() },
+  );
+
+  await Promise.all(projectIds.map((pid: string) => recalculateProjectTotals(pid)));
+
+  if (updated > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "bulk_status_changed",
+      entityType: "service",
+      entityId: ids[0],
+      entityName: `${updated} services`,
+      summary: `Changed ${updated} services to ${status}`,
+      projectId: projectIds[0],
     });
   }
-
-  if (firstService) {
-    await recalculateProjectTotals(firstService.projectId);
-  }
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "bulk_status_changed",
-    entityType: "service",
-    entityId: ids[0],
-    entityName: `${ids.length} services`,
-    summary: `Changed ${ids.length} services to ${status}`,
-    projectId: firstService?.projectId,
-  });
 }
 
 export async function updateServiceCrewStatus(

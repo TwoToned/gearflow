@@ -318,34 +318,23 @@ export async function bulkUpdateProjectTasks(
   // Validate the shared assignee once — it's the same across every task.
   await assertAssigneeInOrg(organizationId, patch.assigneeUserId, patch.assigneeCrewId);
 
+  // The shared patch is identical for every task; the per-row DONE completedAt
+  // stamp is derived inside the mutation against each task's own status.
+  const set: Record<string, unknown> = {};
+  if (patch.status !== undefined) set.status = patch.status;
+  if (patch.priority !== undefined) set.priority = patch.priority;
+  if (patch.dueDate !== undefined) set.dueDate = patch.dueDate ? new Date(patch.dueDate).getTime() : null;
+  if (patch.assigneeUserId !== undefined) set.assigneeUserId = patch.assigneeUserId || null;
+  if (patch.assigneeCrewId !== undefined) set.assigneeCrewId = patch.assigneeCrewId || null;
+
   const convex = await getConvexClient();
-  const affectedProjectIds = new Set<string>();
-  const now = Date.now();
-  let updated = 0;
-  let skipped = 0;
-
-  for (const id of ids) {
-    const existing = await convex.query(api.projectTasks.getById, { id });
-    if (!existing || existing.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
-
-    const set: Record<string, unknown> = { updatedAt: now };
-    if (patch.status !== undefined) set.status = patch.status;
-    if (patch.priority !== undefined) set.priority = patch.priority;
-    if (patch.dueDate !== undefined) set.dueDate = patch.dueDate ? new Date(patch.dueDate).getTime() : null;
-    if (patch.assigneeUserId !== undefined) set.assigneeUserId = patch.assigneeUserId || null;
-    if (patch.assigneeCrewId !== undefined) set.assigneeCrewId = patch.assigneeCrewId || null;
-    if (patch.status !== undefined && patch.status !== existing.status) {
-      set.completedAt = patch.status === "DONE" ? now : null;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await convex.mutation(api.projectTasks.update, { id, patch: set as any });
-    affectedProjectIds.add(existing.projectId);
-    updated++;
-  }
+  // ONE backend-local pass instead of one update round-trip per task.
+  const { updated, skipped, projectIds } = await convex.mutation(api.projectTasks.updateMany, {
+    ids,
+    orgId: organizationId,
+    patch: set,
+    now: Date.now(),
+  });
 
   if (updated > 0) {
     await logActivity({
@@ -357,7 +346,7 @@ export async function bulkUpdateProjectTasks(
       entityId: ids[0],
       entityName: `${updated} task${updated === 1 ? "" : "s"}`,
       summary: `Bulk updated ${updated} task${updated === 1 ? "" : "s"}`,
-      projectId: [...affectedProjectIds][0],
+      projectId: projectIds[0],
     });
   }
 
@@ -370,20 +359,11 @@ export async function bulkDeleteProjectTasks(ids: string[]) {
   if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const affectedProjectIds = new Set<string>();
-  let deleted = 0;
-  let skipped = 0;
-
-  for (const id of ids) {
-    const existing = await convex.query(api.projectTasks.getById, { id });
-    if (!existing || existing.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.projectTasks.remove, { id });
-    affectedProjectIds.add(existing.projectId);
-    deleted++;
-  }
+  // ONE backend-local pass instead of one delete round-trip per task.
+  const { deleted, skipped, projectIds } = await convex.mutation(api.projectTasks.removeMany, {
+    ids,
+    orgId: organizationId,
+  });
 
   if (deleted > 0) {
     await logActivity({
@@ -395,7 +375,7 @@ export async function bulkDeleteProjectTasks(ids: string[]) {
       entityId: ids[0],
       entityName: `${deleted} task${deleted === 1 ? "" : "s"}`,
       summary: `Deleted ${deleted} task${deleted === 1 ? "" : "s"}`,
-      projectId: [...affectedProjectIds][0],
+      projectId: projectIds[0],
     });
   }
 

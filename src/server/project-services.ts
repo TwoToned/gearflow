@@ -488,6 +488,69 @@ export async function updateServiceStatus(
   return serialize(updated);
 }
 
+/**
+ * Bulk-delete services in a single server round-trip. Mirrors deleteProjectService
+ * per item (unlink + cascade the synthetic line item, remove the service, cascade
+ * its crew assignments), then recalcs each affected project ONCE and writes ONE
+ * bulk audit. Missing/foreign services are skipped and reported.
+ */
+export async function bulkDeleteProjectServices(ids: string[]) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "project",
+    "update",
+  );
+  if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const affectedProjectIds = new Set<string>();
+  let deleted = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const service = await getProjectServiceByIdFromConvex(organizationId, id).catch(() => null);
+    if (!service) {
+      skipped++;
+      continue;
+    }
+
+    const serviceAssignments = (
+      await getAssignmentsByProject(service.projectId, organizationId)
+    ).filter((a) => a.serviceId === id);
+
+    if (service.lineItemId) {
+      await convex.mutation(api.projectServices.patchService, { id, set: {}, clear: ["lineItemId"] });
+      await convex
+        .mutation(api.projectLineItems.removeLineItemCascade, { id: service.lineItemId })
+        .catch(() => {});
+    }
+    await convex.mutation(api.projectServices.remove, { id });
+    for (const a of serviceAssignments) {
+      await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+    }
+
+    affectedProjectIds.add(service.projectId);
+    deleted++;
+  }
+
+  await Promise.all([...affectedProjectIds].map((pid) => recalculateProjectTotals(pid)));
+
+  if (deleted > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "bulk_deleted",
+      entityType: "service",
+      entityId: ids[0],
+      entityName: `${deleted} service${deleted === 1 ? "" : "s"}`,
+      summary: `Deleted ${deleted} service${deleted === 1 ? "" : "s"}`,
+      projectId: [...affectedProjectIds][0],
+    });
+  }
+
+  return serialize({ deleted, skipped });
+}
+
 export async function bulkUpdateServiceStatus(
   ids: string[],
   status: "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED",

@@ -295,6 +295,113 @@ export async function updateProjectTask(
   return serialize(enriched);
 }
 
+/**
+ * Bulk-update shared fields across selected tasks in one server round-trip
+ * (status / priority / due date / assignee) — the natural "move to column",
+ * "set priority", "assign" bulk actions. Mirrors updateProjectTask's patch
+ * building per item (incl. the DONE completedAt stamp on a status change), then
+ * writes ONE bulk audit. Missing/foreign ids are skipped.
+ */
+export async function bulkUpdateProjectTasks(
+  ids: string[],
+  patch: {
+    status?: ProjectTaskStatus;
+    priority?: ProjectTaskPriority;
+    dueDate?: string | null;
+    assigneeUserId?: string | null;
+    assigneeCrewId?: string | null;
+  },
+) {
+  const { organizationId, userId, userName } = await requirePermission("project", "update");
+  if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
+
+  // Validate the shared assignee once — it's the same across every task.
+  await assertAssigneeInOrg(organizationId, patch.assigneeUserId, patch.assigneeCrewId);
+
+  const convex = await getConvexClient();
+  const affectedProjectIds = new Set<string>();
+  const now = Date.now();
+  let updated = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const existing = await convex.query(api.projectTasks.getById, { id });
+    if (!existing || existing.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+
+    const set: Record<string, unknown> = { updatedAt: now };
+    if (patch.status !== undefined) set.status = patch.status;
+    if (patch.priority !== undefined) set.priority = patch.priority;
+    if (patch.dueDate !== undefined) set.dueDate = patch.dueDate ? new Date(patch.dueDate).getTime() : null;
+    if (patch.assigneeUserId !== undefined) set.assigneeUserId = patch.assigneeUserId || null;
+    if (patch.assigneeCrewId !== undefined) set.assigneeCrewId = patch.assigneeCrewId || null;
+    if (patch.status !== undefined && patch.status !== existing.status) {
+      set.completedAt = patch.status === "DONE" ? now : null;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await convex.mutation(api.projectTasks.update, { id, patch: set as any });
+    affectedProjectIds.add(existing.projectId);
+    updated++;
+  }
+
+  if (updated > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "updated",
+      entityType: "ProjectTask",
+      entityId: ids[0],
+      entityName: `${updated} task${updated === 1 ? "" : "s"}`,
+      summary: `Bulk updated ${updated} task${updated === 1 ? "" : "s"}`,
+      projectId: [...affectedProjectIds][0],
+    });
+  }
+
+  return serialize({ updated, skipped });
+}
+
+/** Bulk-delete selected tasks in one server round-trip, with ONE bulk audit. */
+export async function bulkDeleteProjectTasks(ids: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("project", "update");
+  if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const affectedProjectIds = new Set<string>();
+  let deleted = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const existing = await convex.query(api.projectTasks.getById, { id });
+    if (!existing || existing.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    await convex.mutation(api.projectTasks.remove, { id });
+    affectedProjectIds.add(existing.projectId);
+    deleted++;
+  }
+
+  if (deleted > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "deleted",
+      entityType: "ProjectTask",
+      entityId: ids[0],
+      entityName: `${deleted} task${deleted === 1 ? "" : "s"}`,
+      summary: `Deleted ${deleted} task${deleted === 1 ? "" : "s"}`,
+      projectId: [...affectedProjectIds][0],
+    });
+  }
+
+  return serialize({ deleted, skipped });
+}
+
 export async function deleteProjectTask(id: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
 

@@ -107,7 +107,12 @@ async function deprepItemInner(
   if (line.status === "CHECKED_OUT") throw new ConvexError("Item is already deployed — return it first");
 
   const prepped = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
-    .filter((u) => u.status !== "CHECKED_OUT")
+    // Only still-prepped units are deprep-removable. RETURNED units are the
+    // "what went out on this job" history (a returned line depreps via
+    // completeCheckAndDeprepLine, which never deletes) — excluding them here
+    // stops plain deprep from silently destroying that record. CANCELLED are
+    // tombstones, likewise never deleted.
+    .filter((u) => u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED")
     .sort((x, y) => y.ordinal - x.ordinal); // highest ordinal first (LIFO)
 
   const isPartialBulk = prepped.length === 1 && prepped[0].bulkAssetId && !prepped[0].assetId && a.quantity < (prepped[0].quantity ?? 0);

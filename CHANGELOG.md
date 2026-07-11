@@ -4,7 +4,7 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.23.4.1] - 2026-07-11
+## [0.23.5.1] - 2026-07-11
 
 ### Changed
 
@@ -12,6 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crew, and tasks) now run as a **single backend operation** instead of one call per
   selected row. Removing or editing 50 items is now one round-trip, not 50 — so large
   selections land in roughly constant time rather than getting slower the more you pick.
+
+## [0.23.5.0] - 2026-07-11
+
+### Added
+
+- **See which serialised assets are on a job.** The project Equipment tab now shows the specific
+  asset tag on each line — inline for single-quantity lines, and multi-quantity lines expand into
+  one row per physical unit with a fulfillment status badge (Assigned / Prepped / Deployed /
+  Returned). Kit-member serials show on their child rows too.
+- **Reassign a unit to another line.** When a scanned asset auto-picked onto the wrong same-model
+  line, a per-unit "Reassign" picker moves it to the right line (labelled by category/group) without
+  re-scanning. Guarded to same model, same project, with capacity checks.
+- **Per-unit movement history.** A history button on each unit shows that serial's recent
+  check-out / check-in events — where it went, who scanned it, and when.
+
+### Fixed
+
+- Returned units are no longer deleted by a plain de-prep, so a job keeps the record of exactly
+  which physical assets went out even after it's returned and closed.
 
 ## [0.23.4.0] - 2026-07-11
 

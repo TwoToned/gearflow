@@ -19,7 +19,7 @@ const d = <T extends Record<string, unknown>>(o: T) =>
   ({ _id: `id_${o.id ?? "x"}`, _creationTime: 0, ...o }) as never;
 
 const EMPTY: EquipmentTabBundleData = {
-  lineItems: [], categories: [], groups: [], categorySlots: [], subHires: [],
+  lineItems: [], units: [], categories: [], groups: [], categorySlots: [], subHires: [],
   subHireGroups: [], subHireItems: [], assets: [], bulkAssets: [], kits: [],
   models: [], suppliers: [], orgCategories: [],
 } as never;
@@ -52,6 +52,43 @@ describe("reconstructUncategorizedLineItems", () => {
     expect(out.map((i) => i.id)).toEqual(["li1"]);
     expect(out[0].model?.name).toBe("SM58");
     expect(out[0].asset?.assetTag).toBe("SM58-001");
+  });
+});
+
+describe("per-unit fulfillment (units flow into the tab)", () => {
+  it("attaches per-unit rows with resolved asset tags + status to a multi-qty line", () => {
+    const b = bundle({
+      lineItems: [li({ id: "li1", modelId: "m1", quantity: 2 })],
+      models: [d({ id: "m1", organizationId: ORG, name: "SM57", categoryId: "cat1" })],
+      assets: [
+        d({ id: "a1", organizationId: ORG, modelId: "m1", assetTag: "MIC-0042" }),
+        d({ id: "a2", organizationId: ORG, modelId: "m1", assetTag: "MIC-0055" }),
+      ],
+      units: [
+        // Deliberately out-of-order ordinals to prove ordinal sort.
+        d({ id: "u2", organizationId: ORG, lineItemId: "li1", ordinal: 2, assetId: "a2", status: "RETURNED", returnCondition: "GOOD" }),
+        d({ id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 1, assetId: "a1", status: "CHECKED_OUT" }),
+      ],
+    });
+    const out = reconstructUncategorizedLineItems(b);
+    expect(out.map((i) => i.id)).toEqual(["li1"]);
+    const units = out[0].units ?? [];
+    // ordinal-sorted, asset tags resolved, and the RETURNED unit is retained
+    // (the "what went out" history survives even after check-in).
+    expect(units.map((u) => u.asset?.assetTag)).toEqual(["MIC-0042", "MIC-0055"]);
+    expect(units.map((u) => u.status)).toEqual(["CHECKED_OUT", "RETURNED"]);
+  });
+
+  it("only attaches a line's own units, keyed by lineItemId", () => {
+    const b = bundle({
+      lineItems: [li({ id: "li1", modelId: "m1" }), li({ id: "li2", modelId: "m1" })],
+      models: [d({ id: "m1", organizationId: ORG, name: "SM57" })],
+      assets: [d({ id: "a1", organizationId: ORG, modelId: "m1", assetTag: "MIC-0042" })],
+      units: [d({ id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 1, assetId: "a1", status: "CHECKED_OUT" })],
+    });
+    const out = reconstructUncategorizedLineItems(b).sort((a, z) => a.id.localeCompare(z.id));
+    expect(out[0].units?.map((u) => u.asset?.assetTag)).toEqual(["MIC-0042"]);
+    expect(out[1].units ?? []).toEqual([]);
   });
 });
 

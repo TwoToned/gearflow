@@ -40,15 +40,18 @@ import type {
 } from "@/components/projects/equipment-rows";
 import {
   mapLineItemDoc,
+  mapUnitDoc,
   mapCategoryDoc,
   mapGroupDoc,
   attachLineItemTree,
   attachAssetBulkKitPlain,
+  assetTagSelect,
   resolveAttachedSupplier,
   type LineItemAttachMaps,
   type MappedLineItem,
+  type UnitWithAssetSelect,
 } from "@/lib/project-equipment-reconstruct";
-import { indexChildren, reconstructScope } from "@/lib/project-line-item-tree-read";
+import { indexChildren, indexUnits, reconstructScope } from "@/lib/project-line-item-tree-read";
 import {
   reconstructOverbookedStatus,
   type OverbookedInfo,
@@ -195,6 +198,7 @@ function mapSubHireGroup(d: RawGroup): SubHireGroupRow {
 interface EquipmentContext {
   mappedLineItems: MappedLineItem[];
   byParent: Map<string, MappedLineItem[]>;
+  unitsByLineItem: Map<string, UnitWithAssetSelect[]>;
   attachMaps: LineItemAttachMaps;
   assetMap: Map<string, ConvexAsset>;
   bulkAssetMap: Map<string, ConvexBulkAsset>;
@@ -203,28 +207,49 @@ interface EquipmentContext {
 
 function buildContext(bundle: EquipmentTabBundleData): EquipmentContext {
   const mappedLineItems = bundle.lineItems.map(mapLineItemDoc);
+  const assetMap = new Map(bundle.assets.map((a) => [a.id, a as unknown as ConvexAsset]));
+  const bulkAssetMap = new Map(bundle.bulkAssets.map((b) => [b.id, b as unknown as ConvexBulkAsset]));
+
+  // Resolve each fulfillment unit's asset/bulk tag select the same way
+  // reconstructProjectEquipmentTree does, then index by lineItemId. `expand()`
+  // attaches these to every line AND recurses into kit/accessory children, so a
+  // multi-qty serialised line expands into per-unit tags and kit-member serials
+  // surface too. Kit members store their serial on `line.assetId` (no unit row),
+  // handled at the render layer.
+  const units: UnitWithAssetSelect[] = bundle.units.map((u) => {
+    const m = mapUnitDoc(u);
+    return {
+      ...m,
+      asset: m.assetId ? assetTagSelect(assetMap.get(m.assetId)) : null,
+      bulkAsset: m.bulkAssetId ? assetTagSelect(bulkAssetMap.get(m.bulkAssetId)) : null,
+    };
+  });
+
   return {
     mappedLineItems,
     byParent: indexChildren(mappedLineItems),
+    unitsByLineItem: indexUnits(units),
     attachMaps: {
       models: new Map(bundle.models.map((m) => [m.id, m as unknown as ConvexModel])),
       suppliers: new Map(bundle.suppliers.map((s) => [s.id, s as unknown as ConvexSupplier])),
       categories: new Map(bundle.orgCategories.map((c) => [c.id, c as unknown as ConvexCategory])),
     },
-    assetMap: new Map(bundle.assets.map((a) => [a.id, a as unknown as ConvexAsset])),
-    bulkAssetMap: new Map(bundle.bulkAssets.map((b) => [b.id, b as unknown as ConvexBulkAsset])),
+    assetMap,
+    bulkAssetMap,
     kitMap: new Map(bundle.kits.map((k) => [k.id, k as unknown as ConvexKit])),
   };
 }
 
 /**
- * Reconstruct (childLineItems depth 1, NO units) + fully attach a scope of mapped
- * line items — matching the old Prisma include shape these reads used (mirror of
- * project-categories.ts attachScopeRows: server uses an empty unit map here too).
+ * Reconstruct (childLineItems depth 1, WITH per-unit fulfillment rows) + fully
+ * attach a scope of mapped line items. Units carry `{ id, assetTag }` asset selects
+ * so the equipment tab can show which specific serial is prepped/deployed/returned
+ * on each line (see project-equipment-reconstruct's reconstructProjectEquipmentTree,
+ * the getProject/pull-sheet equivalent). Previously passed an empty unit map.
  */
 function attachScope(scopeRows: MappedLineItem[], ctx: EquipmentContext): LineItemData[] {
   const reconstructed = reconstructScope(scopeRows, ctx.byParent, {
-    unitsByLineItem: new Map(),
+    unitsByLineItem: ctx.unitsByLineItem,
     depth: 1,
   });
   const withModelSupplier = attachLineItemTree(reconstructed, ctx.attachMaps);

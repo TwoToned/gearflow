@@ -72,19 +72,30 @@ distribute(pool) into node:
 A parent gear line with accessories is **both** a leaf and a container: it keeps its own
 share and gives its accessories theirs. Kit parents have no `modelId`, so they take none.
 
-### One weight chain, picked once per sibling set
+### Per-item weight, one unit throughout
+
+A saved kit split wins if it still covers the kit; otherwise each item is weighted by its **own**
+best signal, in rental dollars:
 
 ```
-1. kit allocation percent      -- only if the saved split still covers the kit
-2. line.lineTotal              -- ITEMIZED kits, manual price overrides
-3. model rate × qty × duration -- "nominal value" (weeklyRate/dailyRate)
-4. replacementCost × qty       -- proxy: dearer gear earns proportionally more
-5. 1                           -- equal split; nothing is ever invisible
+weightOf(item):
+  set price (lineTotal > 0)                -- ITEMIZED kits, manual overrides, priced group members
+  else hire rate × qty × duration          -- weeklyRate/dailyRate per the rental period
+  else replacementCost × rateFactor × qty  -- cost as a rate-equivalent, SAME unit as a rate
+  else 0                                    -- equal split when nothing has a signal
 ```
 
-Rules 3 and 4 recurse into containers, so a kit inside a group is weighted by the value of
-its contents. A node weighed against its **own** children uses its own value only — counting
-its subtree there would let a parent walk off with its accessories' share.
+An **explicit $0** line is a freebie: excluded from the split and from ROI. An unpriced "—" line is
+not — it still earns via its rate or cost.
+
+`rateFactor` is the fleet's median rate ÷ cost (across models with both), or ~1.5%/day of value as a
+fallback. It converts a cost-only item into a rate-equivalent so it doesn't dwarf a rated item, and
+**cancels out** in an all-cost set — so it only matters where a group mixes rated and cost-only gear.
+This is IFRS 15 / ASC 606 relative-standalone-price allocation with a principled proxy for the rate.
+
+The weight recurses into containers, so a kit inside a group is weighted by the value of its
+contents. A node weighed against its **own** children (accessory parent) counts only itself, by
+rate/cost — counting its subtree there would let it walk off with its accessories' share.
 
 ### Rounding
 

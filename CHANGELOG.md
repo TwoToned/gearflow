@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.6.0] - 2026-07-12
+
+### Changed
+
+- Equipment tab assets are now shown by a compact **tick-circle icon** on each line that has
+  assigned serials, instead of inline tags and expandable per-unit rows — keeps the table calm.
+  Hover the icon to see the serials (own-stock **and bulk**, with fulfillment status); click it to
+  reassign a unit to another same-model line or view its movement history.
+
+
 ## [0.23.5.2] - 2026-07-12
 
 ### Fixed

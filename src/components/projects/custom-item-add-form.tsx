@@ -24,6 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
+import { PlacementFields } from "./placement-fields";
 import type { CategoryData } from "./equipment-rows";
 
 type CustomItemPricingType = "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR";
@@ -79,9 +80,6 @@ export function CustomItemAddForm({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const selectedCategory = categories.find((c) => c.id === categoryId);
-  const groupOptions = selectedCategory?.groups ?? [];
-
   // ─── Live summary ──────────────────────────────────────────────
   const qtyNum = Math.max(1, parseInt(qty) || 1);
   const priceNum = price !== "" ? parseFloat(price) : 0;
@@ -105,46 +103,15 @@ export function CustomItemAddForm({
               maxLength={200}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Category">
-              <Select
-                value={categoryId || "__none__"}
-                onValueChange={(val) => {
-                  setCategoryId(val === "__none__" ? "" : val);
-                  setGroupId("");
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue>{selectedCategory?.name ?? "Uncategorized"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Uncategorized</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Group">
-              <Select
-                value={groupId || "__none__"}
-                onValueChange={(val) => setGroupId(val === "__none__" ? "" : val)}
-                disabled={!categoryId}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {groupOptions.find((g) => g.id === groupId)?.title ?? "No group"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No group</SelectItem>
-                  {groupOptions.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>{g.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
+          <PlacementFields
+            categories={categories}
+            categoryId={categoryId}
+            groupId={groupId}
+            onChange={({ categoryId, groupId }) => {
+              setCategoryId(categoryId);
+              setGroupId(groupId);
+            }}
+          />
         </section>
 
         {/* Pricing */}

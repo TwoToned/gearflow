@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { PlacementFields } from "./placement-fields";
+import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
@@ -39,6 +41,8 @@ export interface KitAddFormProps {
   categoryId?: string;
   /** Pre-set group for the line item. */
   groupId?: string;
+  /** Available categories (with groups) for the shared placement picker. */
+  categories?: CategoryData[];
   /** Human-readable label like "Audio > PA System" when adding inside a group. */
   targetLabel?: string;
   /** Invalidate queries after a successful add. */
@@ -53,6 +57,7 @@ export function KitAddForm({
   rentalEndDate,
   categoryId,
   groupId,
+  categories,
   targetLabel,
   onInvalidate,
   onClose,
@@ -63,6 +68,8 @@ export function KitAddForm({
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
 
   // Phase 7 — native INDEXED kit search (name OR assetTag, prep excluded server-side,
   // bounded + reactive) instead of loading the whole org list to JS-filter. Debounced
@@ -70,9 +77,9 @@ export function KitAddForm({
   const [kitQuery, setKitQuery] = useState("");
   const debouncedKitQuery = useDebouncedValue(kitQuery, 200);
   const kits = useKitSearch(orgId, debouncedKitQuery);
-  const categories = useCategories(orgId);
+  const orgCategories = useCategories(orgId);
   const kitOptions = useMemo(() => {
-    const categoryNameById = new Map((categories ?? []).map((c) => [c.id, c.name]));
+    const categoryNameById = new Map((orgCategories ?? []).map((c) => [c.id, c.name]));
     return (kits ?? [])
       .filter((kit) => kit.isActive === true)
       .map((kit) => ({
@@ -80,7 +87,7 @@ export function KitAddForm({
         label: `${kit.assetTag} - ${kit.name}`,
         description: kit.categoryId ? categoryNameById.get(kit.categoryId) : undefined,
       }));
-  }, [kits, categories]);
+  }, [kits, orgCategories]);
   // Resolve the selected kit's label directly (it may not be in the current search page).
   const selectedKit = useKit(selectedKitId || undefined);
   const selectedKitLabel = selectedKit ? `${selectedKit.assetTag} - ${selectedKit.name}` : undefined;
@@ -105,8 +112,8 @@ export function KitAddForm({
         kitPricingMode,
         kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
         undefined, // groupName
-        categoryId,
-        groupId,
+        (categoryId || selectedCategoryId) || undefined,
+        (groupId || selectedGroupId) || undefined,
       ),
     onSuccess: () => {
       onInvalidate();
@@ -186,6 +193,23 @@ export function KitAddForm({
             </Field>
           )}
         </section>
+
+        {/* Placement — same Category + Group picker as the other add screens.
+            Hidden when launched from a specific category/group context. */}
+        {!targetLabel && categories && categories.length > 0 && (
+          <section className="space-y-4 border-t border-line pt-5">
+            <SectionTitle title="Placement" hint="Where the kit lands on the project." />
+            <PlacementFields
+              categories={categories}
+              categoryId={selectedCategoryId}
+              groupId={selectedGroupId}
+              onChange={({ categoryId, groupId }) => {
+                setSelectedCategoryId(categoryId);
+                setSelectedGroupId(groupId);
+              }}
+            />
+          </section>
+        )}
       </div>
 
       <DialogFooter>

@@ -1,4 +1,4 @@
-# 59 — Assets on a Job (per-unit display + reassign)
+# 60 — Assets on a Job (per-unit display + reassign)
 
 The project **Equipment tab** shows which specific serialised assets are
 prepped / deployed / returned on a job, down to the individual unit, and lets

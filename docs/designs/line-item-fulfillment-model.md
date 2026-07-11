@@ -293,7 +293,7 @@ displayed the units**: `equipment-tab-reconstruct` passed an empty
 lines showed nothing, and kit-member serials were dropped. The pull-sheet /
 `getProject` reconstruct already loaded units — this brought the tab in line.
 
-Shipped (see [FEATUREDOCS/59](../../FEATUREDOCS/59-assets-on-a-job.md)):
+Shipped (see [FEATUREDOCS/60](../../FEATUREDOCS/60-assets-on-a-job.md)):
 
 - `equipmentTab.bundle` loads `projectLineItemUnits`; reconstruct feeds a real
   units map; the tab renders inline tags (single), expandable per-unit rows with

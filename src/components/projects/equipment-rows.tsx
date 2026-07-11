@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
@@ -844,6 +845,9 @@ export function LineItemRow({
   isUnconfirmed,
   isExpanded,
   isSelected,
+  selectable,
+  selectionActive,
+  onSelectChange,
   showCostColumn,
   orgId,
   projectId,
@@ -865,6 +869,12 @@ export function LineItemRow({
   isExpanded?: boolean;
   /** Multi-select: highlight this row */
   isSelected?: boolean;
+  /** Multi-select: render a selection checkbox (top-level line items only). */
+  selectable?: boolean;
+  /** Multi-select: a selection exists, so keep the checkbox visible. */
+  selectionActive?: boolean;
+  /** Multi-select: checkbox toggled (shiftKey enables range select). */
+  onSelectChange?: (checked: boolean, shiftKey: boolean) => void;
   /** 8H — render the Cost column cell. Standalone line items don't carry
    *  a supplier-cost concept, so the cell renders an em-dash. */
   showCostColumn?: boolean;
@@ -896,6 +906,10 @@ export function LineItemRow({
   const reassignTargets = reassignCtx
     ? (reassignCtx.targetsByModel.get(item.modelId ?? "") ?? []).filter((t) => t.id !== item.id)
     : [];
+
+  // Captures the shift key on checkbox click so the row-level handler can extend
+  // a range — Radix's onCheckedChange doesn't forward the originating event.
+  const shiftKeyRef = useRef(false);
 
   // Collaboration: reactive lock and review marker for this row
   const liveLock = useAuthedQuery(
@@ -986,6 +1000,32 @@ export function LineItemRow({
       </TableCell>
       <TableCell>
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
+          {selectable && (
+            <span
+              // Capture the shift key on mousedown — it fires before the click →
+              // onCheckedChange sequence, so the ref is fresh when the checkbox's
+              // change handler reads it (Radix doesn't forward the event). onClick
+              // stops the row-click select handler (the checkbox owns its toggle).
+              onMouseDown={(e) => {
+                shiftKeyRef.current = e.shiftKey;
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "shrink-0 transition-opacity",
+                isSelected || selectionActive
+                  ? "opacity-100"
+                  : "opacity-0 pointer-coarse:opacity-100 group-hover/row:opacity-100",
+              )}
+            >
+              <Checkbox
+                aria-label="Select item"
+                checked={!!isSelected}
+                onCheckedChange={(v: boolean | "indeterminate") =>
+                  onSelectChange?.(v === true, shiftKeyRef.current)
+                }
+              />
+            </span>
+          )}
           {canExpand && (
             <button type="button" onClick={onToggle} className={cn("shrink-0 rounded-sm text-muted transition-transform hover:text-ink", focusRing)} style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
               <ChevronRight className="h-3.5 w-3.5" />

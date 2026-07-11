@@ -379,6 +379,96 @@ export async function deleteAssignment(id: string) {
   return { success: true };
 }
 
+/**
+ * Bulk-remove crew assignments in one server round-trip. Loops the same
+ * Convex cascade delete (assignment + shifts + linked time entries) as
+ * deleteAssignment, then writes ONE bulk audit. Missing/foreign ids are skipped.
+ */
+export async function bulkDeleteAssignments(ids: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "delete");
+  if (ids.length === 0) return serialize({ deleted: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const affectedProjectIds = new Set<string>();
+  let deleted = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const assignment = await getAssignmentById(id);
+    if (!assignment || assignment.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    await convex.mutation(api.crewAssignments.deleteCascade, { id });
+    affectedProjectIds.add(assignment.projectId);
+    deleted++;
+  }
+
+  if (deleted > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "DELETE",
+      entityType: "crew_assignment",
+      entityId: ids[0],
+      entityName: `${deleted} assignment${deleted === 1 ? "" : "s"}`,
+      summary: `Removed ${deleted} crew assignment${deleted === 1 ? "" : "s"}`,
+      projectId: [...affectedProjectIds][0],
+    });
+  }
+
+  return serialize({ deleted, skipped });
+}
+
+/**
+ * Bulk status change across selected crew assignments in one server round-trip.
+ * Mirrors updateAssignmentStatus per item (incl. the first-transition CONFIRMED
+ * stamp), then writes ONE bulk audit. Missing/foreign ids are skipped.
+ */
+export async function bulkUpdateAssignmentStatus(ids: string[], status: string) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "update");
+  if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
+
+  const convex = await getConvexClient();
+  const affectedProjectIds = new Set<string>();
+  const now = Date.now();
+  let updated = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const assignment = await getAssignmentById(id);
+    if (!assignment || assignment.organizationId !== organizationId) {
+      skipped++;
+      continue;
+    }
+    const set: Record<string, unknown> = { status, updatedAt: now };
+    if (status === "CONFIRMED" && !assignment.confirmedAt) {
+      set.confirmedAt = now;
+      set.confirmedById = userId;
+    }
+    await convex.mutation(api.crewAssignments.patchAssignment, { id, set });
+    affectedProjectIds.add(assignment.projectId);
+    updated++;
+  }
+
+  if (updated > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "STATUS_CHANGE",
+      entityType: "crew_assignment",
+      entityId: ids[0],
+      entityName: `${updated} assignment${updated === 1 ? "" : "s"}`,
+      summary: `Changed ${updated} crew assignment${updated === 1 ? "" : "s"} to ${status}`,
+      projectId: [...affectedProjectIds][0],
+    });
+  }
+
+  return serialize({ updated, skipped });
+}
+
 export async function updateAssignmentStatus(id: string, status: string) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
 

@@ -58,6 +58,31 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.updatedAt).toBe(NOW + 1);
   });
 
+  test("counts a sub-hire line placed inside a priced project group (issue #8)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // Priced group: 100 × qty 1 = 100. Its flat price covers its OWN gear only.
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0 });
+      // Sub-hire line dropped INTO the priced group. Before the fix this vanished
+      // (groupRevenue's customExtras is zeroed for a priced group, and standalone
+      // requires groupId == null). It carries its own client charge (60).
+      await ctx.db.insert("projectLineItems", { id: "sl1", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: false, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si1", lineTotal: 60 });
+      // A kit-style child of a sub-hire group in the same group — excluded (would
+      // double-count against its parent's group charge).
+      await ctx.db.insert("projectLineItems", { id: "sl2", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: true, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si2", lineTotal: 40 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    // group 100 + standalone 0 + grouped sub-hire 60 (child 40 excluded) = 160
+    expect(p?.equipmentRevenue).toBe(160);
+  });
+
   test("uses org default tax when the project has no override", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

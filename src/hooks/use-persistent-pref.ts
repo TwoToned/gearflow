@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
 
 const PREFIX = "gearflow-pref-";
@@ -39,15 +39,16 @@ export function usePersistentPref<T>(
   const { data: session } = useSession();
   const scope = session?.user?.id ?? "anon";
 
-  const [value, setValue] = useState<T>(() => read(scope, key, defaultValue));
+  // Initialise to the default so the server and the first client render agree — a
+  // localStorage read in the initializer would diverge from SSR and throw a
+  // hydration mismatch. The effect below syncs the stored value in right after mount.
+  const [value, setValue] = useState<T>(defaultValue);
 
-  // Re-read when the scope changes (session resolves, or a different operator logs
-  // in on the same device). Skip the very first run — state was already seeded from
-  // the same scope — so we don't clobber an eager change made before this fires.
-  const lastScope = useRef(scope);
+  // Read the stored value on mount AND whenever the scope or the key changes: scope
+  // change = a different operator on a shared device; key change = the same component
+  // instance being reused for a different table (both must re-read, or one table's
+  // choice bleeds into another's).
   useEffect(() => {
-    if (lastScope.current === scope) return;
-    lastScope.current = scope;
     setValue(read(scope, key, defaultValue));
     // defaultValue is intentionally excluded: callers pass literals, and re-reading
     // on identity churn would fight a user's in-session change.

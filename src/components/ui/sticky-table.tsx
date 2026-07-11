@@ -50,6 +50,11 @@ export function StickyTable({
   const rawId = React.useId();
   const uid = "stkt" + rawId.replace(/[^a-zA-Z0-9]/g, "");
 
+  // frozenBg is interpolated into a <style> via dangerouslySetInnerHTML. Restrict it
+  // to safe CSS color/var characters so no caller (present or future) can break out of
+  // the style element with something like `red}</style><script>`.
+  const safeBg = /^[a-zA-Z0-9#(),.%\s_-]+$/.test(frozenBg) ? frozenBg : "var(--paper)";
+
   const frozenCount = frozenColWidths.length;
   // Cumulative left offsets: col i sits at the sum of the widths before it.
   const offsets: number[] = [];
@@ -63,7 +68,7 @@ export function StickyTable({
     const rows = `.${uid} tbody tr > `;
     const heads = `.${uid} thead tr > `;
     const parts: string[] = [
-      `.${uid}{position:relative;--stkt-bg:${frozenBg};}`,
+      `.${uid}{position:relative;--stkt-bg:${safeBg};}`,
       `.${uid} .stkt-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;}`,
       minTableWidth ? `.${uid} table{min-width:${minTableWidth}px;}` : "",
       `.${uid} td{vertical-align:top;}`,
@@ -86,16 +91,18 @@ export function StickyTable({
         `${rows}:nth-child(${frozenCount}),${heads}:nth-child(${frozenCount}){box-shadow:8px 0 12px -8px rgba(0,0,0,.55);}`,
       );
     }
-    // Print: undo everything so the physical sheet is unchanged.
+    // Print: undo everything so the physical sheet is unchanged. This also resets the
+    // cell min-width / white-space / vertical-align that consumers add for the on-screen
+    // scroll layout, so the printed table reflows exactly as it did before StickyTable.
     parts.push(
       `@media print{` +
         `.${uid} .stkt-scroll{overflow:visible!important;}` +
         `.${uid} table{min-width:0!important;}` +
-        `.${uid} tbody tr > *,.${uid} thead tr > *{position:static!important;left:auto!important;background:transparent!important;box-shadow:none!important;z-index:auto!important;}` +
+        `.${uid} tbody tr > *,.${uid} thead tr > *{position:static!important;left:auto!important;background:transparent!important;box-shadow:none!important;z-index:auto!important;min-width:0!important;white-space:normal!important;vertical-align:initial!important;}` +
         `}`,
     );
     return parts.filter(Boolean).join("");
-  }, [uid, frozenBg, minTableWidth, frozenCount, offsets]);
+  }, [uid, safeBg, minTableWidth, frozenCount, offsets]);
 
   return (
     <div className={cn(uid, className)} {...rest}>

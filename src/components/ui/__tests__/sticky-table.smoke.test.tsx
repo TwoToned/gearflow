@@ -60,6 +60,26 @@ describe("StickyTable", () => {
     expect(style).toContain("overflow:visible!important");
   });
 
+  it("resets cell min-width/white-space (not just table width) for print", () => {
+    const { container } = renderTable({ frozenColWidths: [40, 180] });
+    const style = container.querySelector("style")!.innerHTML;
+    const printBlock = style.slice(style.indexOf("@media print"));
+    expect(printBlock).toContain("min-width:0!important");
+    expect(printBlock).toContain("white-space:normal!important");
+    expect(printBlock).toContain("vertical-align:initial!important");
+  });
+
+  it("sanitizes frozenBg so it can't break out of the <style> element", () => {
+    const { container } = renderTable({
+      frozenBg: "red}</style><script>alert(1)</script>",
+    });
+    const style = container.querySelector("style")!.innerHTML;
+    expect(style).not.toContain("<script>");
+    expect(style).not.toContain("</style>");
+    // Falls back to the safe default.
+    expect(style).toContain("--stkt-bg:var(--paper)");
+  });
+
   it("shows a scroll affordance (edge fade + column-count hint), both print-hidden", () => {
     const { container } = renderTable();
     const fade = container.querySelector('[aria-hidden].print\\:hidden');

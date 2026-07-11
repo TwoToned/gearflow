@@ -62,6 +62,20 @@ describe("usePersistentPref", () => {
     expect(result.current[0]).toBe("table"); // re-read userA's stored value
   });
 
+  it("re-reads when the key changes on a reused hook instance (no cross-table bleed)", () => {
+    const { result, rerender } = renderHook(({ k }) => usePersistentPref(k, "def"), {
+      initialProps: { k: "tableA-density" },
+    });
+    act(() => result.current[1]("compact")); // stored under tableA
+
+    // Same hook instance, different key (component reused for another table).
+    rerender({ k: "tableB-density" });
+    expect(result.current[0]).toBe("def"); // NOT tableA's "compact"
+
+    rerender({ k: "tableA-density" });
+    expect(result.current[0]).toBe("compact"); // tableA's value intact
+  });
+
   it("survives unavailable / malformed storage without throwing", () => {
     localStorage.setItem("gearflow-pref-anon-density", "{not json");
     const { result } = renderHook(() => usePersistentPref("density", "comfortable"));

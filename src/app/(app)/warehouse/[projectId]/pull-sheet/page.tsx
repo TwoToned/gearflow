@@ -257,7 +257,7 @@ export default function PullSheetPage({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10 print:w-8" />
-                    <TableHead className="w-[180px] min-w-[180px]">Item</TableHead>
+                    <TableHead className="w-[180px] min-w-[180px] print:w-auto">Item</TableHead>
                     <TableHead className="text-center w-16 whitespace-nowrap">Qty</TableHead>
                     <TableHead className="min-w-[120px] whitespace-nowrap">Asset tag</TableHead>
                     <TableHead className="min-w-[130px]">Location</TableHead>

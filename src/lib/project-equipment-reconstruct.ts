@@ -367,13 +367,13 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
 }
 
 /** A unit with its `asset` / `bulkAsset` resolved as `{ id, assetTag }` selects. */
-type UnitWithAssetSelect = MappedUnit & {
+export type UnitWithAssetSelect = MappedUnit & {
   asset: { id: string; assetTag: string } | null;
   bulkAsset: { id: string; assetTag: string } | null;
 };
 
 /** Resolve a `{ id, assetTag }` select from a full Convex asset/bulk doc. */
-function assetTagSelect(
+export function assetTagSelect(
   doc: { id: string; assetTag?: string | null } | undefined,
 ): { id: string; assetTag: string } | null {
   if (!doc) return null;

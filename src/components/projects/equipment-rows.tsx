@@ -85,10 +85,14 @@ export interface LineItemData {
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
   /** Post-cutover per-unit assignments. Source of truth for which
-   *  physical assets a multi-quantity line is using. */
+   *  physical assets a multi-quantity line is using. `status` /
+   *  `returnCondition` drive the per-unit fulfillment badge (Deployed /
+   *  Returned) — RETURNED units are retained as the "what went out" history. */
   units?: Array<{
     id: string;
     ordinal: number;
+    status?: string | null;
+    returnCondition?: string | null;
     asset?: { id: string; assetTag: string } | null;
     bulkAsset?: { id: string; assetTag: string } | null;
   }>;
@@ -1234,6 +1238,18 @@ export function LineItemRow({
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">
               <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
+              {(() => {
+                // Kit members carry their serial on the child line's `asset`
+                // (no unit row); accessories carry it on `units`. Prefer unit
+                // tags, fall back to the line-level asset tag.
+                const childTags = (child.units ?? [])
+                  .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+                  .filter((t): t is string => !!t);
+                const tag = childTags[0] ?? child.asset?.assetTag ?? null;
+                if (!tag) return null;
+                const extra = childTags.length > 1 ? ` +${childTags.length - 1}` : "";
+                return <span className="t-mono text-caption text-muted">({tag}{extra})</span>;
+              })()}
               {child.childKind === "ACCESSORY" && (
                 <Badge status="neutral" className="text-[10px] px-1.5 py-0">
                   Accessory

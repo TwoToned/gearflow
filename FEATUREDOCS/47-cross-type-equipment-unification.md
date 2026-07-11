@@ -146,6 +146,12 @@ All under `src/components/projects/`:
   `SubHireOrderDialog` on the new order in manage view so the user can
   immediately add items. The legacy `onOpenSubHire` bounce prop was
   removed in v0.9.1.0.
+- **`AddGroupToolbarDialog`** — the equipment-tab "Add group" dialog. The
+  category `<select>` **defaults to Uncategorized** (since v0.23.x): a group
+  is one field (title) to create, mirroring how sub-hire groups already
+  default to uncategorised. Picking Uncategorized submits `categoryId: null`
+  (the project's Uncategorized zone). There is no empty "Select category…"
+  placeholder — Create is enabled as soon as a title is typed.
 - **`PriceEditDialog`** — single dialog for editing group pricing.
   `kind=project` shows a single price input; `kind=subHire` shows charge +
   cost + computed margin per unit.

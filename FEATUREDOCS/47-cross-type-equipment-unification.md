@@ -146,6 +146,12 @@ All under `src/components/projects/`:
   `SubHireOrderDialog` on the new order in manage view so the user can
   immediately add items. The legacy `onOpenSubHire` bounce prop was
   removed in v0.9.1.0.
+- **`AddGroupToolbarDialog`** — the equipment-tab "Add group" dialog. The
+  category `<select>` **defaults to Uncategorized** (since v0.23.x): a group
+  is one field (title) to create, mirroring how sub-hire groups already
+  default to uncategorised. Picking Uncategorized submits `categoryId: null`
+  (the project's Uncategorized zone). There is no empty "Select category…"
+  placeholder — Create is enabled as soon as a title is typed.
 - **`PriceEditDialog`** — single dialog for editing group pricing.
   `kind=project` shows a single price input; `kind=subHire` shows charge +
   cost + computed margin per unit.
@@ -190,6 +196,20 @@ palette colours. The sub-hire supplier picker has an inline "New supplier"
 quick-create (`QuickCreateSupplier`). This was a markup/component pass only —
 no add/pricing/promotion/availability/mutation logic, data shape, or
 persisted payload changed.
+
+**Standardised placement box (`placement-fields.tsx`).** The three item add
+forms used to show *different* placement boxes: own-stock had a Category picker
+only, kit had none, custom had both Category + Group. They now all render the
+same `PlacementFields` component — a Category + Group `Select` pair (explicit
+`SelectValue` children, `"__none__"` sentinel, changing category clears the
+group) driven by `CategoryData[]`. Own-stock feeds it the categories it already
+fetches via `useProjectCategories` (which include their groups); kit receives
+`categories` from `UnifiedAddDialog` and renders a new "Placement" section;
+custom swapped its inline markup for the shared component. All three server
+actions (`addLineItem`, `addKitLineItem`, `addCustomLineItem`) already accepted
+`categoryId` + `groupId`, so this is additive UI — no add/pricing/data-shape
+change. Placement pickers stay hidden when the form is launched from a specific
+category/group context (a `targetLabel` chip shows the destination instead).
 
 `add-service-dialog.tsx` (the standalone Add service/other dialog, separate
 from `UnifiedAddDialog`) got the same dialog-context treatment: its two raw

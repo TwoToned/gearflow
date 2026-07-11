@@ -4,6 +4,34 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.2.0] - 2026-07-11
+
+### Fixed
+
+- **Sub-hire items no longer jump out of their groups/categories.** Adding a new item to a sub-hire
+  order used to reset every already-placed item back to the order default. Now a manual placement is
+  remembered and survives the next add/edit.
+- **Sub-hire revenue placed inside a project group is counted again.** A sub-hire dropped into a
+  project group had its client charge silently dropped from the project financials (its cost was
+  still counted, so margin looked too low). Its charge is now counted individually, matching how the
+  same line bills when it's ungrouped.
+
+### Added
+
+- **Group-level discount on sub-hires.** The sub-hire group editor now has a Discount (%) field
+  (off the client charge, with a live margin preview) — matching the equipment add/edit screen.
+- **Consistent placement picker across the add screens.** The Own stock, Kit, and Custom "Add …"
+  dialogs now show the same Category + Group box (Own stock gained a Group picker; Kit gained a
+  Placement section).
+
+### Changed
+
+- **New project groups default to Uncategorized.** Creating a group no longer forces you to pick a
+  category first — just type a title.
+- **Faster sub-hire create/detail load.** Creating a sub-hire runs its supplier lookup and order-
+  number reservation concurrently, and the detail load only fetches the current project's
+  categories/groups instead of the whole org.
+
 ## [0.23.1.0] - 2026-07-11
 
 ### Changed

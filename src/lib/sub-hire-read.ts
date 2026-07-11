@@ -84,6 +84,7 @@ export interface SubHireGroupRow {
   quantity: number;
   cost: number | null;
   charge: number | null;
+  discount: number;
   showOnQuote: boolean;
   showOnDocs: boolean;
   targetCategoryId: string | null;
@@ -147,6 +148,7 @@ export function mapSubHireGroup(d: RawGroup): SubHireGroupRow {
     quantity: d.quantity ?? 1,
     cost: orNull(d.cost),
     charge: orNull(d.charge),
+    discount: d.discount ?? 0,
     showOnQuote: d.showOnQuote ?? true,
     showOnDocs: d.showOnDocs ?? false,
     targetCategoryId: orNull(d.targetCategoryId),

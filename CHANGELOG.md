@@ -4,6 +4,15 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.23.5.2] - 2026-07-12
+
+### Fixed
+
+- Equipment tab now shows the asset tags for **multi-quantity serialised lines** (e.g. 3× a mic
+  scanned to three specific serials). These lines keep their serials on per-unit records rather than
+  the line itself, and those asset records weren't being loaded — so the tags rendered blank while
+  single-quantity items and accessories showed fine.
+
 ## [0.23.5.1] - 2026-07-11
 
 ### Changed

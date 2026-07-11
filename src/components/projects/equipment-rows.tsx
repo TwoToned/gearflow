@@ -294,51 +294,18 @@ export function isHiddenFromList(item: LineItemData) {
   return isRealKitChild(item) || isMergeTombstone(item) || isSubHireGroupParent(item);
 }
 
-// ─── Row descriptor (cross-type unification) ─────────────────────────────────
-//
-// A line-item row is described by three independent axes, NOT one flat "kind"
-// enum — a sub-hire group child is simultaneously a `subhire` source AND a
-// `child` role, which a flat enum can't represent. `describeRow` derives the
-// axes that are computable from the item alone (`container` is contextual and
-// supplied by the caller in later phases). Each field below preserves the
-// EXACT boolean expression the row previously used inline, so rendering is
-// unchanged — this is a readability refactor, not a behaviour change.
-
-export type RowSource = "owned" | "subhire" | "custom";
-export type RowRole = "parent" | "child" | "standalone";
-
-export interface RowDescriptor {
-  /** owned stock / sub-hire / ad-hoc custom — drives the leading kind icon. */
-  source: RowSource;
-  /** parent (has expandable children) / child / standalone. */
-  role: RowRole;
-  /** kit parent: `kitId` set and not itself a kit child. */
-  isKit: boolean;
-  /** sub-hire line: `subHireId` set OR legacy `type === "SUBHIRE"`. */
-  isSubhire: boolean;
-  /** show the expand chevron (kit parent or sub-hire group parent with children). */
-  hasChildren: boolean;
-}
-
-export function describeRow(item: LineItemData): RowDescriptor {
-  const isSubhire = item.subHireId != null || item.type === "SUBHIRE";
-  const isKit = !!item.kitId && !item.isKitChild;
-  // An accessory parent is a plain top-level asset line (no kitId, no sub-hire)
-  // whose children are permanently-attached accessories — they expand the same
-  // way kit members do.
-  const isAccessoryParent =
-    !item.isKitChild &&
-    !item.kitId &&
-    (item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false);
-  // Preserve the exact original expression: any kitId, OR a non-child sub-hire,
-  // PLUS accessory parents.
-  const hasChildren =
-    (item.childLineItems?.length ?? 0) > 0 &&
-    (!!item.kitId || (item.subHireId != null && !item.isKitChild) || isAccessoryParent);
-  const source: RowSource = item.isCustomItem ? "custom" : isSubhire ? "subhire" : "owned";
-  const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
-  return { source, role, isKit, isSubhire, hasChildren };
-}
+// Row descriptors + the per-unit fulfillment badge map live in a pure module so
+// they stay unit-testable without loading this component's Convex/React imports.
+// Re-exported here so existing consumers keep importing from equipment-rows.
+export {
+  taggedUnitCount,
+  describeRow,
+  unitFulfillmentBadge,
+  type RowSource,
+  type RowRole,
+  type RowDescriptor,
+} from "./equipment-row-descriptors";
+import { describeRow, unitFulfillmentBadge } from "./equipment-row-descriptors";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -916,6 +883,11 @@ export function LineItemRow({
 } & MoveControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
+  const hasUnitRows = desc.hasExpandableUnits;
+  const canExpand = hasChildren || hasUnitRows;
+  const expandableUnits = hasUnitRows
+    ? (item.units ?? []).filter((u) => u.asset?.assetTag || u.bulkAsset?.assetTag)
+    : [];
 
   // Collaboration: reactive lock and review marker for this row
   const liveLock = useAuthedQuery(
@@ -1006,7 +978,7 @@ export function LineItemRow({
       </TableCell>
       <TableCell>
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
-          {hasChildren && (
+          {canExpand && (
             <button type="button" onClick={onToggle} className={cn("shrink-0 rounded-sm text-muted transition-transform hover:text-ink", focusRing)} style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
@@ -1017,11 +989,16 @@ export function LineItemRow({
           {hasChildren && (
             <span className="text-caption text-muted">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
           )}
+          {hasUnitRows && (
+            <span className="text-caption text-muted">{expandableUnits.length} units</span>
+          )}
           {(() => {
-            // Show asset tags from per-unit fulfillment if present
-            // (post-cutover, line.asset is null on multi-quantity
-            // serialised lines — the tags live on units). Single-asset
-            // legacy lines still render via item.asset.assetTag.
+            // Show asset tags from per-unit fulfillment inline (post-cutover,
+            // line.asset is null on multi-quantity serialised lines — the tags
+            // live on units). Single-asset legacy lines still render via
+            // item.asset.assetTag. When the units are expanded into their own
+            // rows below, drop the inline summary to avoid duplication.
+            if (hasUnitRows && isExpanded) return null;
             const unitTags = (item.units ?? [])
               .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
               .filter((t): t is string => !!t);
@@ -1275,6 +1252,35 @@ export function LineItemRow({
         <TableCell />
       </TableRow>
     ))}
+    {/* Expanded per-unit fulfillment rows: one physical serial per row with its
+        deploy/return status. Multi-qty serialised lines only (single units show
+        inline next to the name). RETURNED units are kept — this is the "what
+        went out on the job" history after check-in/close-out. */}
+    {isExpanded && hasUnitRows && expandableUnits.map((unit) => {
+      const tag = unit.asset?.assetTag ?? unit.bulkAsset?.assetTag ?? "—";
+      const badge = unitFulfillmentBadge(unit.status, unit.returnCondition);
+      return (
+        <TableRow key={unit.id} className="bg-paper-2/40">
+          <TableCell className="px-0" />
+          <TableCell>
+            <div className={`${childIndent}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-table-cell text-ink-2">Unit {unit.ordinal}</span>
+                <span className="t-mono text-caption text-muted">{tag}</span>
+                <Badge status={badge.status} className={cn("text-[10px] px-1.5 py-0", badge.className)}>
+                  {badge.label}
+                </Badge>
+              </div>
+            </div>
+          </TableCell>
+          <TableCell className="text-center t-data text-ink-2">1</TableCell>
+          <TableCell className="text-right hidden md:table-cell t-data" />
+          {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
+          <TableCell className="text-right hidden sm:table-cell t-data" />
+          <TableCell />
+        </TableRow>
+      );
+    })}
     </>
   );
 }

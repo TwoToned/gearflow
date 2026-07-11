@@ -1124,32 +1124,15 @@ export async function removeLineItemsBatch(ids: string[]) {
   if (ids.length === 0) return serialize({ removed: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const docs = await Promise.all(
-    ids.map((id) => convex.query(api.projectLineItems.getById, { id })),
+  // ONE backend-local pass: the org-scope + child-guard + cascade loop runs inside
+  // a single Convex mutation, not one server→Convex round-trip per item.
+  const { removed, skipped, projectIds } = await convex.mutation(
+    api.projectLineItems.removeManyCascade,
+    { ids, orgId: organizationId },
   );
 
-  const affectedProjectIds = new Set<string>();
-  let removed = 0;
-  let skipped = 0;
-
-  for (const doc of docs) {
-    if (!doc || doc.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
-    // Only top-level lines are removable directly; children cascade via their
-    // parent (or are simply not touched when selected on their own).
-    if (doc.isKitChild) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.projectLineItems.removeLineItemCascade, { id: doc.id });
-    affectedProjectIds.add(doc.projectId);
-    removed++;
-  }
-
   await Promise.all([
-    ...Array.from(affectedProjectIds).map((pid) => recalculateProjectTotals(pid)),
+    ...projectIds.map((pid: string) => recalculateProjectTotals(pid)),
     removed > 0
       ? logActivity({
           organizationId,
@@ -1160,7 +1143,7 @@ export async function removeLineItemsBatch(ids: string[]) {
           entityId: ids[0],
           entityName: `${removed} line item${removed === 1 ? "" : "s"}`,
           summary: `Removed ${removed} line item${removed === 1 ? "" : "s"} from project`,
-          projectId: [...affectedProjectIds][0],
+          projectId: projectIds[0],
         })
       : Promise.resolve(),
   ]);
@@ -1192,20 +1175,19 @@ export async function updateLineItemsBatch(ids: string[], patch: BulkLineItemPat
   if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
 
   const convex = await getConvexClient();
-  const docs = await Promise.all(
-    ids.map((id) => convex.query(api.projectLineItems.getById, { id })),
-  );
+  // ONE read for all selected rows — the per-item discount/lineTotal maths needs
+  // each row's own price/qty/duration, but that's a single round-trip, not N.
+  const docs = await convex.query(api.projectLineItems.listByIdsForOrg, {
+    ids,
+    orgId: organizationId,
+  });
 
   const now = Date.now();
-  const affectedProjectIds = new Set<string>();
-  let updated = 0;
-  let skipped = 0;
+  const items: { id: string; set: Record<string, unknown>; clear: string[] }[] = [];
+  // Rows dropped by the org-scoped read (missing / wrong org) count as skipped.
+  let skipped = ids.length - docs.length;
 
   for (const doc of docs) {
-    if (!doc || doc.organizationId !== organizationId) {
-      skipped++;
-      continue;
-    }
     if (doc.isKitChild) {
       skipped++;
       continue;
@@ -1246,13 +1228,19 @@ export async function updateLineItemsBatch(ids: string[], patch: BulkLineItemPat
       else set.lineTotal = lineTotal;
     }
 
-    await convex.mutation(api.projectLineItems.patchLineItem, { id: doc.id, set, clear });
-    affectedProjectIds.add(doc.projectId);
-    updated++;
+    items.push({ id: doc.id, set, clear });
   }
 
+  if (items.length === 0) return serialize({ updated: 0, skipped });
+
+  // ONE backend-local write pass for every row.
+  const { updated, projectIds } = await convex.mutation(api.projectLineItems.patchMany, {
+    orgId: organizationId,
+    items,
+  });
+
   await Promise.all([
-    ...Array.from(affectedProjectIds).map((pid) => recalculateProjectTotals(pid)),
+    ...projectIds.map((pid: string) => recalculateProjectTotals(pid)),
     updated > 0
       ? logActivity({
           organizationId,
@@ -1263,7 +1251,7 @@ export async function updateLineItemsBatch(ids: string[], patch: BulkLineItemPat
           entityId: ids[0],
           entityName: `${updated} line item${updated === 1 ? "" : "s"}`,
           summary: `Bulk edited ${updated} line item${updated === 1 ? "" : "s"}`,
-          projectId: [...affectedProjectIds][0],
+          projectId: projectIds[0],
         })
       : Promise.resolve(),
   ]);

@@ -306,9 +306,8 @@ export {
   type RowRole,
   type RowDescriptor,
 } from "./equipment-row-descriptors";
-import { describeRow, unitFulfillmentBadge } from "./equipment-row-descriptors";
-import { useReassign } from "./reassign-context";
-import { UnitHistoryPopover } from "./unit-history-popover";
+import { describeRow } from "./equipment-row-descriptors";
+import { LineAssetsIndicator } from "./line-assets-indicator";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -895,17 +894,8 @@ export function LineItemRow({
 } & MoveControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
-  const hasUnitRows = desc.hasExpandableUnits;
-  const canExpand = hasChildren || hasUnitRows;
-  const expandableUnits = hasUnitRows
-    ? (item.units ?? []).filter((u) => u.asset?.assetTag || u.bulkAsset?.assetTag)
-    : [];
-  // Reassign wiring (null when no provider, e.g. read-only surfaces). Candidate
-  // targets are other same-model lines on this project.
-  const reassignCtx = useReassign();
-  const reassignTargets = reassignCtx
-    ? (reassignCtx.targetsByModel.get(item.modelId ?? "") ?? []).filter((t) => t.id !== item.id)
-    : [];
+  // Per-unit serials are shown via the compact LineAssetsIndicator (icon +
+  // hover), not inline text or expandable rows — keeps the table calm.
 
   // Captures the shift key on checkbox click so the row-level handler can extend
   // a range — Radix's onCheckedChange doesn't forward the originating event.
@@ -1026,7 +1016,7 @@ export function LineItemRow({
               />
             </span>
           )}
-          {canExpand && (
+          {hasChildren && (
             <button type="button" onClick={onToggle} className={cn("shrink-0 rounded-sm text-muted transition-transform hover:text-ink", focusRing)} style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
@@ -1037,35 +1027,12 @@ export function LineItemRow({
           {hasChildren && (
             <span className="text-caption text-muted">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
           )}
-          {hasUnitRows && (
-            <span className="text-caption text-muted">{expandableUnits.length} units</span>
-          )}
-          {(() => {
-            // Show asset tags from per-unit fulfillment inline (post-cutover,
-            // line.asset is null on multi-quantity serialised lines — the tags
-            // live on units). Single-asset legacy lines still render via
-            // item.asset.assetTag. When the units are expanded into their own
-            // rows below, drop the inline summary to avoid duplication.
-            if (hasUnitRows && isExpanded) return null;
-            const unitTags = (item.units ?? [])
-              .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
-              .filter((t): t is string => !!t);
-            if (unitTags.length === 1) {
-              return <span className="t-mono text-caption text-muted">({unitTags[0]})</span>;
-            }
-            if (unitTags.length > 1) {
-              return (
-                <span className="t-mono text-caption text-muted">
-                  ({unitTags.slice(0, 2).join(", ")}
-                  {unitTags.length > 2 ? ` +${unitTags.length - 2}` : ""})
-                </span>
-              );
-            }
-            if (item.asset?.assetTag) {
-              return <span className="t-mono text-caption text-muted">({item.asset.assetTag})</span>;
-            }
-            return null;
-          })()}
+          <LineAssetsIndicator
+            units={item.units}
+            lineAssetTag={item.asset?.assetTag}
+            lineItemId={item.id}
+            modelId={item.modelId}
+          />
           {desc.isKit && (
             // Kit = info (blue) — Badge has no info status, so blue-soft override on neutral.
             <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">
@@ -1300,77 +1267,6 @@ export function LineItemRow({
         <TableCell />
       </TableRow>
     ))}
-    {/* Expanded per-unit fulfillment rows: one physical serial per row with its
-        deploy/return status. Multi-qty serialised lines only (single units show
-        inline next to the name). RETURNED units are kept — this is the "what
-        went out on the job" history after check-in/close-out. */}
-    {isExpanded && hasUnitRows && expandableUnits.map((unit) => {
-      const tag = unit.asset?.assetTag ?? unit.bulkAsset?.assetTag ?? "—";
-      const badge = unitFulfillmentBadge(unit.status, unit.returnCondition);
-      return (
-        <TableRow key={unit.id} className="bg-paper-2/40">
-          <TableCell className="px-0" />
-          <TableCell>
-            <div className={`${childIndent}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-table-cell text-ink-2">Unit {unit.ordinal}</span>
-                <span className="t-mono text-caption text-muted">{tag}</span>
-                <Badge status={badge.status} className={cn("text-[10px] px-1.5 py-0", badge.className)}>
-                  {badge.label}
-                </Badge>
-              </div>
-            </div>
-          </TableCell>
-          <TableCell className="text-center t-data text-ink-2">1</TableCell>
-          <TableCell className="text-right hidden md:table-cell t-data" />
-          {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
-          <TableCell className="text-right hidden sm:table-cell t-data" />
-          <TableCell className="text-right">
-            <div className="flex items-center justify-end gap-1">
-            {unit.asset?.id && unit.asset.assetTag && (
-              <UnitHistoryPopover assetId={unit.asset.id} assetTag={unit.asset.assetTag} />
-            )}
-            {(() => {
-              // Reassign only makes sense for a still-assigned serialised unit
-              // with somewhere else to go. Returned units are history.
-              const canReassign =
-                reassignCtx &&
-                unit.asset &&
-                unit.status !== "RETURNED" &&
-                unit.status !== "CANCELLED" &&
-                reassignTargets.length > 0;
-              if (!canReassign) return null;
-              const pending = reassignCtx!.pendingUnitId === unit.id;
-              return (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" disabled={pending} className="h-7 px-2 text-caption text-muted hover:text-ink">
-                      {pending ? "Moving…" : "Reassign"}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>Move {tag} to…</DropdownMenuLabel>
-                      {reassignTargets.map((t) => (
-                        <DropdownMenuItem
-                          key={t.id}
-                          disabled={t.full}
-                          onClick={() => reassignCtx!.reassign(unit.id, t.id)}
-                        >
-                          {t.label}
-                          {t.full ? " · full" : ""}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              );
-            })()}
-            </div>
-          </TableCell>
-        </TableRow>
-      );
-    })}
     </>
   );
 }

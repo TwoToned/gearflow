@@ -77,8 +77,19 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
   const uniq = (arr: Array<string | undefined | null>): string[] => [
     ...new Set(arr.filter((x): x is string => !!x)),
   ];
-  const refAssetIds = uniq(lineItems.map((li) => li.assetId));
-  const refBulkIds = uniq(lineItems.map((li) => li.bulkAssetId));
+  // Assets/bulks referenced by LINE-level FKs AND by per-unit fulfillment rows.
+  // A multi-quantity serialised line keeps its serials on `projectLineItemUnits`
+  // (its own `assetId` is null), so without the unit ids here those assets are
+  // never loaded and their tag resolves to null — the per-unit serials render
+  // blank on the equipment tab. Include both.
+  const refAssetIds = uniq([
+    ...lineItems.map((li) => li.assetId),
+    ...units.map((u) => u.assetId),
+  ]);
+  const refBulkIds = uniq([
+    ...lineItems.map((li) => li.bulkAssetId),
+    ...units.map((u) => u.bulkAssetId),
+  ]);
   const refKitIds = uniq(lineItems.map((li) => li.kitId));
   const refModelIds = uniq(lineItems.map((li) => li.modelId));
   const refSupplierIds = uniq([

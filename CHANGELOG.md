@@ -4,6 +4,50 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.0.0] - 2026-07-12
+
+### Changed
+
+- Group and kit revenue is now split **per item**, each weighted by its own best signal: its set
+  price, then its usual hire rate, then its replacement cost. So a group can mix a priced item, a
+  rate-only item and a cost-only item and split fairly — instead of one rate-less item forcing the
+  whole group onto cost, or one rated item leaving the others at $0. Where an item has only a
+  replacement cost, that cost is converted to a rate-equivalent (using your own fleet's average
+  rate-to-cost, or ~1.5%/day of value) so it sits sensibly beside a rated item rather than dwarfing
+  it. A fully-rated group still splits purely by rate; an all-cost group purely by cost.
+- An item priced at exactly **$0** is now treated as a freebie — it takes no share of a group or
+  kit's revenue and doesn't count toward ROI. An item with **no price set** ("—") is unchanged: it
+  still earns via its rate or replacement cost.
+
+  Existing projects update to the new split on next save, or all at once via
+  `pnpm convex:backfill:revenue-allocation`.
+
+### Changed
+
+- Equipment tab assets are now shown by a compact **tick-circle icon** on each line that has
+  assigned serials, instead of inline tags and expandable per-unit rows — keeps the table calm.
+  Hover the icon to see the serials (own-stock **and bulk**, with fulfillment status); click it to
+  reassign a unit to another same-model line or view its movement history.
+
+
+## [0.23.5.2] - 2026-07-12
+
+### Fixed
+
+- Equipment tab now shows the asset tags for **multi-quantity serialised lines** (e.g. 3× a mic
+  scanned to three specific serials). These lines keep their serials on per-unit records rather than
+  the line itself, and those asset records weren't being loaded — so the tags rendered blank while
+  single-quantity items and accessories showed fine.
+
+## [0.23.5.1] - 2026-07-11
+
+### Changed
+
+- Bulk actions on projects (delete / move / edit / status across equipment, services,
+  crew, and tasks) now run as a **single backend operation** instead of one call per
+  selected row. Removing or editing 50 items is now one round-trip, not 50 — so large
+  selections land in roughly constant time rather than getting slower the more you pick.
+
 ## [0.23.5.0] - 2026-07-11
 
 ### Added

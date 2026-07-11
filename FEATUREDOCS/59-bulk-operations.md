@@ -16,8 +16,8 @@ selection checkboxes (hover-reveal + a select-all), and a `BulkActionBar`.
 | **Crew** (`crew-panel.tsx`) | Set status · Remove | `bulkUpdateAssignmentStatus`, `bulkDeleteAssignments` (new, `crew` update/delete gated; leading checkbox column threaded through `PhaseGroup`) |
 | **Tasks** (`tasks-panel.tsx`) | Move to status · Priority · Delete | `bulkUpdateProjectTasks`, `bulkDeleteProjectTasks` (new) |
 
-All new batch actions follow the same shape: loop the existing single-item
-Convex mutations server-side, then one recalc per affected project (where totals
+All new batch actions follow the same shape: one bulk Convex mutation that loops
+inside a single transaction, then one recalc per affected project (where totals
 apply) + one bulk audit; missing/foreign ids are skipped and reported.
 
 ## What ships in Phase 1
@@ -51,17 +51,23 @@ checkboxes + a header select-all) and act on the whole selection at once:
 
 ## Server actions (batched)
 
-All three collapse the old N-client-round-trips loop into **one** server action.
-Each loops the **legacy** Convex mutations server-side (so no per-item recalc),
-then recalcs each affected project **once** and writes **one** bulk activity log
-— the pattern proven by `moveLineItemToGroup` and `bulkUpdateServiceStatus`. No
-Convex schema/mutation changes were needed.
+Each bulk action is **one server-action call → one bulk Convex mutation**. The
+per-item loop runs backend-local **inside a single Convex transaction** (see the
+`*Many*` mutations in `convex/projectLineItems.ts`, `projectServices.ts`,
+`crewAssignments.ts`, `projectTasks.ts`), not one server→Convex round-trip per
+item. Where per-row maths is needed (bulk edit discount, move source groups) the
+action first does **one** `listByIdsForOrg` read, computes the per-row patches,
+then issues the single `patchMany`. After the bulk mutation returns the affected
+`projectIds`, the action does **one** recalc per project + **one** bulk audit.
+Wall-clock is independent of the selection size. Rows are org-scoped **per row**
+inside every bulk mutation (`by_cuid` is a global index — CLAUDE.md); foreign /
+child rows are skipped and counted.
 
 | Action | File | Notes |
 |---|---|---|
-| `removeLineItemsBatch(ids)` | `src/server/line-items.ts` | Loops `projectLineItems.removeLineItemCascade`. Kit/accessory/sub-hire **children are skipped** (removed via their parent) and reported in `skipped`. |
-| `updateLineItemsBatch(ids, patch)` | `src/server/line-items.ts` | `patch` = `BulkLineItemPatch` (pricingType / discount / notes / isOptional). A `%` discount resolves against each item's own base; `lineTotal` is recomputed per item when the discount changes. |
-| `moveLineItemsToGroup({ lineItemIds, targetGroupId, targetCategoryId })` | `src/server/project-groups.ts` | Bulk variant of `moveLineItemToGroup`; refreshes `suggestedPrice` for every touched group (sources + destination). This fills the one gap the batching design doc flagged (#10). |
+| `removeLineItemsBatch(ids)` | `src/server/line-items.ts` | One `projectLineItems.removeManyCascade`. Kit/accessory/sub-hire **children are skipped** (removed via their parent) and reported in `skipped`. |
+| `updateLineItemsBatch(ids, patch)` | `src/server/line-items.ts` | `patch` = `BulkLineItemPatch` (pricingType / discount / notes / isOptional). One `listByIdsForOrg` read → per-row patches (`%` discount resolves against each item's own base, `lineTotal` recomputed when discount changes) → one `patchMany`. |
+| `moveLineItemsToGroup({ lineItemIds, targetGroupId, targetCategoryId })` | `src/server/project-groups.ts` | One `listByIdsForOrg` → one `patchMany`; refreshes `suggestedPrice` for every touched group (sources + destination, bounded by group count). Fills the gap the batching design doc flagged (#10). |
 
 All three require `requirePermission("project", "manage_line_items")` and
 `serialize()` their `{ removed|updated|moved, skipped }` result.

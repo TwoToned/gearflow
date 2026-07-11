@@ -588,6 +588,90 @@ export const removeLineItemCascade = mutation({
   },
 });
 
+// ─── Bulk (multi-select) operations ────────────────────────────────────────
+// Each of these collapses an N-item bulk action into a SINGLE mutation/query
+// round-trip: the loop runs backend-local inside one Convex transaction instead
+// of the server firing one server→Convex call per item. Rows are org-scoped per
+// item (by_cuid is a global index — see CLAUDE.md), foreign/child rows skipped.
+// The caller recalcs affected projects + writes one bulk audit afterwards.
+
+/** Fetch many line items by cuid in one round-trip, row-scoped to the org (skips
+ *  foreign rows — by_cuid is a global index). Used by the bulk edit/move server
+ *  actions to compute per-item patches without an N-read fan-out. */
+export const listByIdsForOrg = query({
+  args: { ids: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { ids, orgId }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const id of ids) {
+      const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (doc && doc.organizationId === orgId) out.push(doc);
+    }
+    return out;
+  },
+});
+
+/** Bulk cascade-delete N lines in one round-trip. Skips foreign-org and child
+ *  (isKitChild) rows. Returns affected projectIds so the caller recalcs once. */
+export const removeManyCascade = mutation({
+  args: { ids: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { ids, orgId }) => {
+    await requireService(ctx);
+    const projectIds = new Set<string>();
+    let removed = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!line || line.organizationId !== orgId) { skipped++; continue; }
+      if (line.isKitChild) { skipped++; continue; }
+      const children = await ctx.db
+        .query("projectLineItems")
+        .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
+        .collect();
+      for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
+      await deleteLineWithUnits(ctx, line._id, line.id);
+      projectIds.add(line.projectId);
+      removed++;
+    }
+    return { removed, skipped, projectIds: [...projectIds] };
+  },
+});
+
+/** Bulk patch/replace N lines in one round-trip. Each item carries its own
+ *  set/clear (the caller precomputes per-row discount + lineTotal for edit, or
+ *  groupId/categoryId for move). Skips foreign-org rows. Returns affected projectIds. */
+export const patchMany = mutation({
+  args: {
+    orgId: v.string(),
+    items: v.array(v.object({ id: v.string(), set: v.any(), clear: v.array(v.string()) })),
+  },
+  handler: async (ctx, { orgId, items }) => {
+    await requireService(ctx);
+    const projectIds = new Set<string>();
+    let updated = 0;
+    let skipped = 0;
+    for (const it of items) {
+      const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
+      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
+      const set = it.set as Record<string, unknown>;
+      if (it.clear.length === 0) {
+        await ctx.db.patch(doc._id, set);
+      } else {
+        const { _id, _creationTime, ...rest } = doc;
+        const merged: Record<string, unknown> = { ...rest, ...set };
+        for (const k of it.clear) {
+          if (LINE_NEVER_CLEAR.has(k)) continue;
+          delete merged[k];
+        }
+        await ctx.db.replace(doc._id, merged as typeof rest);
+      }
+      projectIds.add(doc.projectId);
+      updated++;
+    }
+    return { updated, skipped, projectIds: [...projectIds] };
+  },
+});
+
 /** Atomic reorder: assign sortOrder = index (+ optional groupName) per id. */
 export const reorderLineItems = mutation({
   args: {

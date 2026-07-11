@@ -156,32 +156,37 @@ groups. In practice they are the same operation — *distribute a pool across pa
 — differing only in where the weight comes from. Collapsing them into one chain means one
 implementation, one test suite, and one place for the rounding to be right.
 
-**Distribute a pool `P` across participants:**
+**Distribute a pool `P` across participants.** A saved kit split wins if it still describes the kit;
+otherwise every item is weighted by its **own best available signal**, decided per item:
 
 ```
-weightOf(line):
-  1. kit allocation percent      -- only when the parent is a kit with a valid saved allocation
-  2. line.lineTotal              -- if EVERY sibling is priced. ITEMIZED kits, manual overrides
-  3. model rate × quantity       -- ONLY if EVERY sibling has a rate (weeklyRate/dailyRate)
-  4. model.replacementCost × qty -- "purchase value" — the default whenever rates aren't complete
-  5. 1                           -- equal-split token; nothing is ever invisible
+weightOf(item):        -- PER ITEM, all in the same unit (rental dollars)
+  set price (lineTotal)              -- if > 0. ITEMIZED kits, manual overrides, priced group members
+  else usual hire rate × qty × dur   -- weeklyRate/dailyRate per the rental period
+  else replacementCost × rateFactor  -- cost turned into a rate-equivalent (see below), × qty × dur
+                                       so a cost-only item sits in the SAME unit as a rated one
+  else 0                             -- equal-split fallback when NOTHING has a signal
 ```
 
-Each rule is tried across **all** participants before falling through; the chain is chosen once per
-sibling set, never mixed within one. That is what makes the result stable and explainable ("this kit
-was split on replacement cost because not every model has a day rate").
+An **explicit `$0`** (a line priced at zero, shown as "$0.00", distinct from an unpriced "—") is a
+**freebie**: it takes no share of any split and never counts toward ROI. An unpriced "—" item is
+different — it still earns via its rate or cost.
 
-**Rules 2 and 3 are all-or-nothing on purpose.** A rate (or price) is used to weight the split only
-when *every* sibling has one. If even a single item lacks a rate, weighting on rates would hand that
-item **$0** while the rated items took the whole pool — so the set falls straight through to
-replacement cost (purchase value), keeping the split in one consistent signal and leaving nothing at
-zero. In practice, a fleet whose gear mostly has no hire rates set will split every group and kit by
-purchase value, which is both the intended fallback and the same figure ROI divides by.
+**Why per-item, and why the rate-equivalent.** An earlier version chose one rule for the whole set
+(all priced → price; else all-rated → rate; else all → cost). That zeroed a rate-less item the moment
+it sat next to a rated one, and it discarded good rate data whenever a single item lacked a rate.
+Weighting each item on its own fixes both — but price and rate are *rental dollars* while replacement
+cost is *capital dollars* (50–100× bigger), so mixing them raw would let a cost-only item dwarf a
+rated one. So replacement cost is first converted to a rate-equivalent by `rateFactor` — the fleet's
+own median rate ÷ cost across models that have both, or ~1.5%/day of value when there's too little
+data (rental rates conventionally run 1–2%/day of replacement value). The factor **cancels out** in
+an all-cost set, so it only matters where a group genuinely mixes rated and cost-only gear. This is
+the accounting-standard *relative standalone selling price* allocation (IFRS 15 / ASC 606) with a
+principled proxy when a standalone rate isn't recorded.
 
-Rule 2 is why groups behave exactly as the original doc intended without a bespoke code path: a
-group's members are top-level lines that already carry `lineTotal = rate × qty × duration`. When a
-group is priced at its `suggestedPrice`, every member's allocation lands on its own `lineTotal`.
-Discount the group and everyone takes a proportional haircut — the relative weighting stays fair.
+A group's members are top-level lines that already carry `lineTotal = rate × qty × duration`, so a
+group priced at its `suggestedPrice` allocates each member its own total. Discount the group and
+everyone takes a proportional haircut — the relative weighting stays fair.
 
 ### Rounding — largest remainder
 

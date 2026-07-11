@@ -71,4 +71,27 @@ describe("useSelection", () => {
     act(() => result.current.clearSelection());
     expect(result.current.selectionSize).toBe(0);
   });
+
+  it("selectAll() replaces the selection with exactly the given ids (select-all)", () => {
+    const { result } = renderHook(() => useSelection());
+    act(() => result.current.select("li-9")); // pre-existing, unrelated selection
+    act(() => result.current.selectAll(["li-1", "li-2", "li-3"]));
+    expect(result.current.selectionSize).toBe(3);
+    expect(result.current.isSelected("li-1")).toBe(true);
+    expect(result.current.isSelected("li-2")).toBe(true);
+    expect(result.current.isSelected("li-3")).toBe(true);
+    // The stale, non-listed id is dropped — it's a replace, not a merge.
+    expect(result.current.isSelected("li-9")).toBe(false);
+  });
+
+  it("selectAll() then selectTo() extends a range from the last id", () => {
+    const allIds = ["li-1", "li-2", "li-3", "li-4"];
+    const { result } = renderHook(() => useSelection());
+    act(() => result.current.selectAll(["li-1"]));
+    act(() => result.current.selectTo("li-3", allIds));
+    expect(result.current.isSelected("li-1")).toBe(true);
+    expect(result.current.isSelected("li-2")).toBe(true);
+    expect(result.current.isSelected("li-3")).toBe(true);
+    expect(result.current.isSelected("li-4")).toBe(false);
+  });
 });

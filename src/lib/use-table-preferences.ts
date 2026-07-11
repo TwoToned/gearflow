@@ -147,12 +147,16 @@ export function useTablePreferences(
     setSortByState(defaults.sortBy);
     setSortOrderState(defaults.sortOrder);
     setPageSizeState(defaults.pageSize ?? 25);
+    setViewState(defaults.view ?? "");
     setColumnVisibilityState({});
     setFiltersState({});
     setPage(1);
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-sortBy`);
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-sortOrder`);
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-pageSize`);
+    // Bug fix (eng review): reset must also clear the persisted view, or a
+    // "reset to default" leaves the user pinned to a saved view.
+    localStorage.removeItem(STORAGE_PREFIX + `${tableId}-view`);
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-colVis`);
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-filters`);
   }, [tableId, defaults]);

@@ -284,3 +284,29 @@ list views already excluded `CANCELLED`.
 - Bulk fulfillment uses a `quantity` on the unit row, not N rows.
 - Transactional cutover + dry-run, not a dual-write window (single-tenant).
 - Rollup is explicit count columns; display status derived from counts.
+
+## Update (2026-07-11) — surfacing units on the Equipment tab + reassign
+
+The fulfillment model was in place but the **project Equipment tab never
+displayed the units**: `equipment-tab-reconstruct` passed an empty
+`unitsByLineItem` map, so single-qty lines showed no tag, multi-qty serialised
+lines showed nothing, and kit-member serials were dropped. The pull-sheet /
+`getProject` reconstruct already loaded units — this brought the tab in line.
+
+Shipped (see [FEATUREDOCS/59](../../FEATUREDOCS/59-assets-on-a-job.md)):
+
+- `equipmentTab.bundle` loads `projectLineItemUnits`; reconstruct feeds a real
+  units map; the tab renders inline tags (single), expandable per-unit rows with
+  a Deployed/Returned status badge (multi-qty), and kit-member tags.
+- **Reassign**: `warehouseOps.reassignSerialisedUnit` + a per-unit picker let a
+  serial move to another same-model line — correcting the scan auto-pick
+  (first-open-line-by-sort-order) without re-scanning. Same-model / same-project /
+  capacity / not-a-kit-child / not-returned guards.
+- **History**: RETURNED units are retained through check-in + close-out and shown
+  inline, so a finished job still answers "what went out." `deprepItemInner` now
+  excludes RETURNED/CANCELLED from deletion; `assetScanLog` is the durable
+  backstop.
+
+Open follow-ups: generic/quantity deploys still record no serial (show "N
+deployed — no serials recorded" rather than a fake tag); an optional scan-log
+"movement history" view.

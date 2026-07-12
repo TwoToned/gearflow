@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.2.0] - 2026-07-12
+
+### Fixed
+
+- Mobile: tab bars (project and warehouse detail) and the job/warehouse lifecycle steppers now scroll sideways instead of running off-screen or colliding. The stepper keeps the current stage centered so you can always see where a job is, and both scroll regions are keyboard-accessible.
+
 ## [0.24.1.0] - 2026-07-12
 
 ### Added

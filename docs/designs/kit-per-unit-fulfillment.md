@@ -350,14 +350,25 @@ it true:
 
 ## Implementation status
 
-- **Phase 1 — COMPLETE (2026-07-12).** Seeding, prep tree, checkout/checkin,
-  reverse (undeploy/unreturn), force (forceReturnKit/Asset/bulk), and
-  accessories-on-members all wired unit-only alongside the untouched legacy belt.
-  17 integration tests in `convex/kitPerUnit.test.ts`; full convex suite green
-  (269). `bumpAssetCounters` left unchanged (already idempotent). Kit-edit sync
-  found unnecessary; parity guard moved to Phase 3 (see Phase 1 notes above).
-  Members are **not yet visible** on the equipment tab/PDF — that's Phase 3.
-- **Phase 2 — NEXT.** Backfill kits added before Phase 1.
+- **Phases 1+2 — SHIPPED (2026-07-12, PR #409, merged `facc667f`, deployed).**
+  Write path (seed/prep/checkout/checkin/reverse/force/accessories) + backfill.
+  Backfill RUN on prod: 120 unit rows created. `bumpAssetCounters` left unchanged
+  (already idempotent). Kit-edit sync found unnecessary.
+- **Phase 3 — COMPLETE (2026-07-12).** Two halves:
+  - **Surface:** kit-member rows on the equipment tab (mobile + table) now use the
+    same `LineAssetsIndicator` as every line — tag + fulfillment badge + history —
+    with reassign suppressed (`disableReassign`; per-kit-slot reassign is Phase 4).
+    PDF needed **zero change**: a qty-1 member with one unit renders identically
+    (all per-unit render + `calculateItemHeight` gates are `quantity > 1`); locked
+    by a `getAssetTag` regression + a height-invariance test.
+  - **Strip + guard:** removed the 10 `kitSerializedItems`-driven `setAssetsStatus`
+    belt calls (the definition-driven flip); asset status now flips solely from the
+    project's child-line snapshot (== the units). Added `assertKitCompositionParity`
+    to `checkoutKit` — errors `KIT_COMPOSITION_DRIFT` if the project snapshot
+    diverges from the live kit definition (deploy set != verified set). Child-line
+    flips kept (they mirror the units). 19 kit tests + 3 PDF/UI tests; suite green (276).
+  - **NOT done:** the `line.assetId` column drop for kit children (parent design's
+    deferred follow-up) and **Phase 4** kit-member reassign.
 
 ## Eng-review appendix (2026-07-12)
 

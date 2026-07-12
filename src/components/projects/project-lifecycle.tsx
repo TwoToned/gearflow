@@ -182,6 +182,8 @@ export function ProjectLifecycle({
           ref={olRef}
           className="flex min-w-0 flex-1 items-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="list"
+          tabIndex={0}
+          aria-label="Project lifecycle stages"
         >
           {STAGES.map((s, i) => {
             const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "upcoming";

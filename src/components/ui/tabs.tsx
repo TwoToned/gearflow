@@ -10,9 +10,31 @@ const Tabs = TabsPrimitive.Root;
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
+>(({ className, ...props }, ref) => {
+  // When the list scrolls (mobile) and the initially-active tab is a later one
+  // (e.g. a deep-linked / persisted tab), bring it into view on mount — Radix only
+  // reveals it once keyboard focus reaches it.
+  const localRef = React.useRef<React.ElementRef<typeof TabsPrimitive.List> | null>(null);
+  const setRef = React.useCallback(
+    (node: React.ElementRef<typeof TabsPrimitive.List> | null) => {
+      localRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+  React.useEffect(() => {
+    const list = localRef.current;
+    if (!list || list.scrollWidth <= list.clientWidth) return;
+    const active = list.querySelector<HTMLElement>('[data-state="active"]');
+    if (!active) return;
+    const lr = list.getBoundingClientRect();
+    const ar = active.getBoundingClientRect();
+    list.scrollBy({ left: ar.left - lr.left - list.clientWidth / 2 + ar.width / 2 });
+  }, []);
+  return (
   <TabsPrimitive.List
-    ref={ref}
+    ref={setRef}
     className={cn(
       "inline-flex items-center gap-1 rounded-full border-2 border-border bg-paper-2 p-1",
       // Scroll sideways instead of clipping when the tabs are wider than the
@@ -23,7 +45,8 @@ const TabsList = React.forwardRef<
     )}
     {...props}
   />
-));
+  );
+});
 TabsList.displayName = TabsPrimitive.List.displayName;
 
 const TabsTrigger = React.forwardRef<

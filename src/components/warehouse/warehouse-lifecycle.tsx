@@ -83,6 +83,8 @@ export function WarehouseLifecycle({
         ref={olRef}
         className="flex min-w-0 items-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="list"
+        tabIndex={0}
+        aria-label="Warehouse lifecycle stages"
       >
         {WAREHOUSE_STAGES.map((s, i) => {
           const n = counts[s.key];

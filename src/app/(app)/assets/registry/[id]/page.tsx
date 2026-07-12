@@ -74,6 +74,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { CustomFieldsDisplay } from "@/components/custom-fields/custom-fields-display";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 
 import { assetStatusLabels, lineItemStatusLabels, maintenanceTypeLabels, maintenanceStatusLabels, mediaTypeLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
@@ -268,6 +269,63 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
     };
   })();
   const WhereIcon = whereIsIt.icon;
+
+  // Mobile card layout for the maintenance-history sub-table (rendered below `md`).
+  const maintenanceColumns: ColumnDef<(typeof asset.maintenanceLinks)[number]>[] = [
+    {
+      id: "title",
+      header: "Title",
+      mobile: "title",
+      cell: (link) => <span className="font-medium text-ink">{link.maintenanceRecord.title}</span>,
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "subtitle",
+      cell: (link) => (
+        <Badge status="neutral">
+          {maintenanceTypeLabels[link.maintenanceRecord.type] || formatLabel(link.maintenanceRecord.type)}
+        </Badge>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (link) => (
+        <StatusIndicator
+          category="maintenance"
+          value={link.maintenanceRecord.status}
+          label={maintenanceStatusLabels[link.maintenanceRecord.status] || formatLabel(link.maintenanceRecord.status)}
+          variant="pill"
+        />
+      ),
+    },
+    {
+      id: "date",
+      header: "Date",
+      mobile: "meta",
+      cell: (link) => (
+        <span className="tabular-nums">
+          {formatDate(link.maintenanceRecord.completedDate || link.maintenanceRecord.scheduledDate)}
+        </span>
+      ),
+    },
+    {
+      id: "result",
+      header: "Result",
+      mobile: "meta",
+      mobileEmpty: (link) => !link.maintenanceRecord.result,
+      cell: (link) =>
+        link.maintenanceRecord.result ? (
+          <Badge status={link.maintenanceRecord.result === "PASS" ? "ok" : "overbooked"}>
+            {link.maintenanceRecord.result === "PASS" ? "Pass" : formatLabel(link.maintenanceRecord.result)}
+          </Badge>
+        ) : (
+          <span className="text-faint">{"—"}</span>
+        ),
+    },
+  ];
 
   return (
     <FadeIn>
@@ -492,7 +550,8 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-[var(--r)] border border-line overflow-x-auto">
+                  <>
+                  <div className="hidden rounded-[var(--r)] border border-line overflow-x-auto md:block">
                     <Table className="table-fixed">
                       <TableHeader>
                         <TableRow>
@@ -533,6 +592,13 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </TableBody>
                     </Table>
                   </div>
+                  <MobileCardList
+                    className="md:hidden"
+                    data={asset.maintenanceLinks}
+                    columns={maintenanceColumns}
+                    getRowId={(link) => link.maintenanceRecord.id}
+                  />
+                  </>
                 )}
               </TabsContent>
 

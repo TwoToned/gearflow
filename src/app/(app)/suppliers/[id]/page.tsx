@@ -38,6 +38,7 @@ import {
 import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -152,6 +153,154 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
   }
 
   const contactBits = [supplier.contactName, supplier.email, supplier.phone].filter(Boolean);
+
+  // Mobile card layouts for the sub-tables (rendered below `md`).
+  const orderColumns: ColumnDef<(typeof orders)[number]>[] = [
+    {
+      id: "orderNumber",
+      header: "Order #",
+      mobile: "title",
+      cell: (order) => <span className="t-mono font-medium text-ink">{order.orderNumber}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (order) => (
+        <StatusIndicator
+          category="supplierOrder"
+          value={order.status}
+          label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)}
+        />
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "meta",
+      cell: (order) => <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>,
+    },
+    {
+      id: "project",
+      header: "Project",
+      mobile: "meta",
+      cell: (order) =>
+        order.project ? (
+          <Link href={`/projects/${order.project.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
+            {order.project.projectNumber}
+          </Link>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      id: "items",
+      header: "Items",
+      mobile: "meta",
+      cell: (order) => <span className="t-data">{order._count?.items ?? 0}</span>,
+    },
+    {
+      id: "total",
+      header: "Total",
+      mobile: "meta",
+      cell: (order) => <span className="t-data">{order.total != null ? formatCurrency(Number(order.total)) : "—"}</span>,
+    },
+    {
+      id: "date",
+      header: "Date",
+      mobile: "meta",
+      cell: (order) => (order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "—"),
+    },
+  ];
+
+  const assetColumns: ColumnDef<(typeof assets)[number]>[] = [
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "title",
+      cell: (asset) => (
+        <Link href={`/assets/registry/${asset.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
+          {asset.assetTag}
+        </Link>
+      ),
+    },
+    {
+      id: "model",
+      header: "Model",
+      mobile: "subtitle",
+      cell: (asset) => asset.model?.name,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (asset) => (
+        <StatusIndicator
+          category="asset"
+          value={asset.status ?? ""}
+          label={assetStatusLabels[asset.status ?? ""] || formatLabel(asset.status ?? "")}
+          variant="pill"
+        />
+      ),
+    },
+    {
+      id: "manufacturer",
+      header: "Manufacturer",
+      mobile: "meta",
+      cell: (asset) => asset.model?.manufacturer || "—",
+    },
+    {
+      id: "po",
+      header: "PO #",
+      mobile: "meta",
+      cell: (asset) => <span className="t-mono">{asset.purchaseOrderNumber || "—"}</span>,
+    },
+  ];
+
+  const subhireColumns: ColumnDef<(typeof subhires)[number]>[] = [
+    {
+      id: "project",
+      header: "Project",
+      mobile: "title",
+      cell: (item) => (
+        <Link href={`/projects/${item.project?.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
+          {item.project?.projectNumber} - {item.project?.name}
+        </Link>
+      ),
+    },
+    {
+      id: "model",
+      header: "Model",
+      mobile: "subtitle",
+      cell: (item) => item.model?.name || item.description,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (item) =>
+        item.project?.status ? (
+          <StatusIndicator
+            category="project"
+            value={item.project.status}
+            label={projectStatusLabels[item.project.status] || formatLabel(item.project.status)}
+            variant="pill"
+          />
+        ) : null,
+    },
+    {
+      id: "qty",
+      header: "Qty",
+      mobile: "meta",
+      cell: (item) => <span className="t-data">{item.quantity}</span>,
+    },
+    {
+      id: "orderNumber",
+      header: "Order #",
+      mobile: "meta",
+      cell: (item) => <span className="t-mono">{item.subhireOrderNumber || "—"}</span>,
+    },
+  ];
 
   return (
     <>
@@ -293,7 +442,8 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   {orders.length === 0 ? (
                     <EmptyState title="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -339,6 +489,13 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         </TableBody>
                       </Table>
                     </div>
+                    <MobileCardList
+                      className="md:hidden"
+                      data={orders}
+                      columns={orderColumns}
+                      getRowId={(order) => order.id}
+                    />
+                    </>
                   )}
                 </TabsContent>
 
@@ -347,7 +504,8 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   {assets.length === 0 ? (
                     <EmptyState title="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -381,6 +539,13 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         </TableBody>
                       </Table>
                     </div>
+                    <MobileCardList
+                      className="md:hidden"
+                      data={assets}
+                      columns={assetColumns}
+                      getRowId={(asset) => asset.id}
+                    />
+                    </>
                   )}
                 </TabsContent>
 
@@ -389,7 +554,8 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   {subhires.length === 0 ? (
                     <EmptyState title="No subhire items" description="Subhire line items from this supplier will appear here." />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -423,6 +589,13 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         </TableBody>
                       </Table>
                     </div>
+                    <MobileCardList
+                      className="md:hidden"
+                      data={subhires}
+                      columns={subhireColumns}
+                      getRowId={(item) => item.id}
+                    />
+                    </>
                   )}
                 </TabsContent>
               </Tabs>

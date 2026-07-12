@@ -369,6 +369,58 @@ function DataTableCards<TData>({
   );
 }
 
+/**
+ * Standalone mobile card list for **bespoke** `<Table>` surfaces that aren't (and
+ * shouldn't become) a full `DataTable` — detail sub-tables, settings lists, embedded
+ * lists. Renders the exact same card layout as `DataTable`'s mobile view (same
+ * `ColumnDef` mobile roles: title / subtitle / badge / meta / actions) with none of the
+ * toolbar / filter / pagination / column-visibility machinery, which is wrong for an
+ * embedded sub-table.
+ *
+ * Usage — pair it with the existing desktop table via a CSS breakpoint swap (matches
+ * DataTable's hydration-safe approach; both mount, one is display:none):
+ * ```tsx
+ * <div className="hidden md:block"><Table>…the existing table…</Table></div>
+ * <MobileCardList className="md:hidden" data={rows} columns={cardColumns} getRowId={r => r.id} />
+ * ```
+ * `columns` is a light `ColumnDef[]` authored only for the cards (id / header / cell /
+ * `mobile` role). `cell` must be pure/presentational — with the CSS swap it renders on
+ * both breakpoints.
+ */
+export function MobileCardList<TData>({
+  data,
+  columns,
+  getRowId,
+  onRowClick,
+  className,
+  emptyMessage,
+}: {
+  data: TData[];
+  columns: ColumnDef<TData>[];
+  getRowId: (row: TData) => string;
+  onRowClick?: (row: TData) => void;
+  className?: string;
+  emptyMessage?: string;
+}) {
+  if (data.length === 0) {
+    return emptyMessage ? (
+      <p className={cn("px-1 py-6 text-center text-[13.5px] text-muted", className)}>{emptyMessage}</p>
+    ) : null;
+  }
+  return (
+    <div className={className}>
+      <DataTableCards
+        data={data}
+        columns={columns}
+        getRowId={getRowId}
+        onRowClick={onRowClick}
+        enableRowSelection={false}
+        onToggleRow={() => {}}
+      />
+    </div>
+  );
+}
+
 // ─── Filter Popover ──────────────────────────────────────────────────
 
 function FilterPopover({

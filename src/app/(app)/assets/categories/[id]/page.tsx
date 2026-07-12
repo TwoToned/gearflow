@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveModelPhotoUrl } from "@/lib/media-utils";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -94,6 +95,95 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const parentHref = category.parent
     ? `/assets/categories/${category.parent.id}`
     : "/assets/categories";
+
+  // Mobile card layout for the Models sub-table (rendered below `md`).
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const modelColumns: ColumnDef<any>[] = [
+    {
+      id: "thumb",
+      header: "",
+      mobile: "hidden",
+      cell: (model) => (
+        <MediaThumbnail
+          url={resolveModelPhotoUrl(model, true)}
+          alt={model.name}
+          size={32}
+        />
+      ),
+    },
+    {
+      id: "name",
+      header: "Model",
+      mobile: "title",
+      cell: (model) => (
+        <Link
+          href={`/assets/models/${model.id}`}
+          className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+        >
+          {model.name}
+        </Link>
+      ),
+    },
+    {
+      id: "manufacturer",
+      header: "Manufacturer",
+      mobile: "subtitle",
+      cell: (model) => <span className="text-muted">{model.manufacturer || "—"}</span>,
+    },
+    {
+      id: "modelNumber",
+      header: "Model number",
+      mobile: "meta",
+      cell: (model) => <span className="t-mono text-muted">{model.modelNumber || "—"}</span>,
+    },
+    {
+      id: "assets",
+      header: "Assets",
+      mobile: "meta",
+      cell: (model) => <Badge status="neutral">{model._count.assets}</Badge>,
+    },
+  ];
+
+  // Mobile card layout for the Kits sub-table (rendered below `md`).
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const kitColumns: ColumnDef<any>[] = [
+    {
+      id: "name",
+      header: "Kit",
+      mobile: "title",
+      cell: (kit) => (
+        <Link
+          href={`/kits/${kit.id}`}
+          className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+        >
+          {kit.name}
+        </Link>
+      ),
+    },
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "subtitle",
+      cell: (kit) => <span className="t-mono text-muted">{kit.assetTag || "—"}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (kit) =>
+        kit.status ? (
+          <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} variant="pill" />
+        ) : null,
+    },
+    {
+      id: "items",
+      header: "Items",
+      mobile: "meta",
+      cell: (kit) => (
+        <Badge status="neutral">{(kit._count?.serializedItems || 0) + (kit._count?.bulkItems || 0)}</Badge>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -211,7 +301,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
             {category.models && category.models.length > 0 ? (
               <>
                 <SectionHeader label="Models" className="mb-3" />
-                <div className="rounded-[var(--r)] border border-line overflow-x-auto">
+                <div className="hidden rounded-[var(--r)] border border-line overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -258,6 +348,14 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   </TableBody>
                 </Table>
                 </div>
+                {category.models.length > 0 && (
+                  <MobileCardList
+                    className="md:hidden"
+                    data={category.models}
+                    columns={modelColumns}
+                    getRowId={(m) => m.id}
+                  />
+                )}
               </>
             ) : (
               <EmptyState
@@ -276,7 +374,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
             {category.kits && category.kits.length > 0 ? (
               <>
                 <SectionHeader label="Kits" className="mb-3" />
-                <div className="rounded-[var(--r)] border border-line overflow-x-auto">
+                <div className="hidden rounded-[var(--r)] border border-line overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -317,6 +415,14 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   </TableBody>
                 </Table>
                 </div>
+                {category.kits.length > 0 && (
+                  <MobileCardList
+                    className="md:hidden"
+                    data={category.kits}
+                    columns={kitColumns}
+                    getRowId={(k) => k.id}
+                  />
+                )}
               </>
             ) : (
               <EmptyState

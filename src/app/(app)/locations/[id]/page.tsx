@@ -43,6 +43,7 @@ import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/compo
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -139,6 +140,107 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
     : hasMap
       ? `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`
       : null;
+
+  // ── "Stored here" — merge serialised / bulk / kit rows into one list so the
+  // mobile card layout mirrors the single desktop table. `kind` discriminates
+  // the per-type link target, badge, and status category.
+  type StoredRow =
+    | { kind: "asset"; id: string; assetTag: string; model?: { name?: string } | null; status: string }
+    | { kind: "bulk"; id: string; assetTag: string; model?: { name?: string } | null; status: string }
+    | { kind: "kit"; id: string; assetTag: string; name: string; status: string };
+
+  const storedRows: StoredRow[] = [
+    ...(location.assets ?? []).map((a: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => ({ kind: "asset" as const, ...a })),
+    ...(location.bulkAssets ?? []).map((b: { id: string; assetTag: string; model?: { name?: string } | null; status: string }) => ({ kind: "bulk" as const, ...b })),
+    ...(location.kits ?? []).map((k: { id: string; assetTag: string; name: string; status: string }) => ({ kind: "kit" as const, ...k })),
+  ];
+
+  const storedColumns: ColumnDef<StoredRow>[] = [
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "title",
+      cell: (row) => (
+        <Link
+          href={row.kind === "kit" ? `/kits/${row.id}` : `/assets/registry/${row.id}`}
+          className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}
+        >
+          {row.assetTag}
+        </Link>
+      ),
+    },
+    {
+      id: "name",
+      header: "Name / model",
+      mobile: "subtitle",
+      cell: (row) => (row.kind === "kit" ? row.name : row.model?.name || "—"),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (row) => (
+        <Badge status="neutral">
+          {row.kind === "asset" ? "Serialised" : row.kind === "bulk" ? "Bulk" : "Kit"}
+        </Badge>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (row) => {
+        if (row.kind === "asset") {
+          return <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />;
+        }
+        if (row.kind === "bulk") {
+          return <StatusIndicator category="bulkAsset" value={row.status} label={bulkAssetStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />;
+        }
+        return <StatusIndicator category="kit" value={row.status} label={kitStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />;
+      },
+    },
+  ];
+
+  // Mobile card layout for the projects sub-table (rendered below `md`).
+  type ProjectRow = { id: string; projectNumber: string; name: string; status: string; client?: { name?: string } | null; createdAt: string | Date };
+  const projectColumns: ColumnDef<ProjectRow>[] = [
+    {
+      id: "projectNumber",
+      header: "Project #",
+      mobile: "title",
+      cell: (p) => (
+        <Link href={`/projects/${p.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
+          {p.projectNumber}
+        </Link>
+      ),
+    },
+    {
+      id: "name",
+      header: "Name",
+      mobile: "subtitle",
+      cell: (p) => p.name,
+    },
+    {
+      id: "client",
+      header: "Client",
+      mobile: "meta",
+      cell: (p) => p.client?.name || "—",
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (p) => (
+        <StatusIndicator category="project" value={p.status} label={projectStatusLabels[p.status] || formatLabel(p.status)} variant="pill" />
+      ),
+    },
+    {
+      id: "created",
+      header: "Created",
+      mobile: "meta",
+      cell: (p) => new Date(p.createdAt).toLocaleDateString(),
+    },
+  ];
 
   return (
     <>
@@ -279,7 +381,8 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       description="Assets, bulk stock, and kits checked in to this location will appear here — including anything currently out on a job."
                     />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -341,6 +444,15 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         </TableBody>
                       </Table>
                     </div>
+                    {storedRows.length > 0 && (
+                      <MobileCardList
+                        className="md:hidden"
+                        data={storedRows}
+                        columns={storedColumns}
+                        getRowId={(r) => r.id}
+                      />
+                    )}
+                    </>
                   )}
                 </TabsContent>
 
@@ -348,7 +460,8 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   {(location.projects?.length || 0) === 0 ? (
                     <EmptyState title="No projects here" description="Projects using this as a venue or delivery address will appear here." />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -380,6 +493,15 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         </TableBody>
                       </Table>
                     </div>
+                    {(location.projects?.length || 0) > 0 && (
+                      <MobileCardList
+                        className="md:hidden"
+                        data={location.projects ?? []}
+                        columns={projectColumns}
+                        getRowId={(p) => p.id}
+                      />
+                    )}
+                    </>
                   )}
                 </TabsContent>
 

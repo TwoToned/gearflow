@@ -48,6 +48,7 @@ import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -116,6 +117,51 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
     if (t == null) return latest;
     return latest == null || t > latest ? t : latest;
   }, null);
+
+  // Mobile card layout for the projects sub-table (rendered below `md`).
+  const projectColumns: ColumnDef<(typeof client.projects)[number]>[] = [
+    {
+      id: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (p) => (
+        <Link href={`/projects/${p.id}`} className={cn("rounded-sm text-ink hover:underline", focusRing)}>
+          {p.name}
+        </Link>
+      ),
+    },
+    {
+      id: "number",
+      header: "Project #",
+      mobile: "subtitle",
+      cell: (p) => <span className="t-mono">{p.projectNumber}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (p) => (
+        <StatusIndicator
+          category="project"
+          value={p.status}
+          label={projectStatusLabels[p.status ?? ""] || formatLabel(p.status ?? "")}
+          variant="pill"
+        />
+      ),
+    },
+    {
+      id: "lineItems",
+      header: "Line items",
+      mobile: "meta",
+      cell: (p) => <span className="t-data">{p._count.lineItems}</span>,
+    },
+    {
+      id: "created",
+      header: "Created",
+      mobile: "meta",
+      cell: (p) => new Date((p.createdAt ?? p._creationTime) as number).toLocaleDateString(),
+    },
+  ];
 
   return (
     <>
@@ -258,7 +304,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         description="Projects for this client will appear here."
                       />
                     ) : (
-                      <div className="rounded-[var(--r)] border border-line">
+                      <div className="hidden rounded-[var(--r)] border border-line md:block">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -303,6 +349,14 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           </TableBody>
                         </Table>
                       </div>
+                    )}
+                    {client.projects.length > 0 && (
+                      <MobileCardList
+                        className="md:hidden"
+                        data={client.projects}
+                        columns={projectColumns}
+                        getRowId={(p) => p.id}
+                      />
                     )}
                   </div>
                 </TabsContent>

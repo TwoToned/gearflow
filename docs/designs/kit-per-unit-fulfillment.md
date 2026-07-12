@@ -270,13 +270,30 @@ seeded at creation).
   children (now stored on the unit). Coordinate with that design; likely its own
   follow-up PR.
 
-### Phase 4 (follow-up, scoped separately) — reassign for kit members
-Today `reassignSerialisedUnit` blocks kit children
-(`warehouseOps.ts:1046`). A kit member's identity is tied to its kit slot, so
-"reassign" means **swap which serial fills a same-model slot within the same
-kit**, not move it to a loose line. Decide the guard model (same-kit +
-same-model slot) before enabling. **Out of scope for Phases 1–3**; visibility +
-per-unit lifecycle + history land first.
+### Phase 4 — reassign for kit members — COMPLETE (2026-07-12)
+A kit member binds to its kit slot, so "reassign" = **swap which serial fills
+that slot on this job** (point the member's unit + snapshot child line at a
+different same-model AVAILABLE asset), NOT move to a loose line. The shared kit
+definition (`kitSerializedItems`) is never touched — only this project's snapshot.
+
+- **`reassignKitMemberSerial`** mutation (`warehouseOps.ts`) — **before deployment
+  only** (member not CHECKED_OUT); pre-deployment it's a pure pointer swap (no
+  asset-status change). Guards: serialised, kit child, not deployed, same model,
+  replacement AVAILABLE + not already in this kit. Server action with
+  `requirePermission` + `logActivity`.
+- **Parity guard relaxed to model-based** — this was the key coupling: an exact-
+  serial guard would false-positive on every swap, so `assertKitCompositionParity`
+  now compares **models + quantities**. A same-model swap passes; structural drift
+  (member added/removed, wrong model) still errors. Actual serials are still
+  verified by tag-scan at checkout (T&T).
+- **UI** — kit-member rows get a **"Swap"** control on `LineAssetsIndicator`
+  (new `kitMember` prop): pick a same-model available serial (sourced via
+  `assets.listByModelIds` for the kit-member models, exposed on the reassign
+  context as `serialsByModel`). Loose-gear "Move" stays suppressed for kit members;
+  accessories stay fully suppressed (`disableReassign`).
+
+Still deferred: the `line.assetId` column drop for kit children (parent design's
+follow-up).
 
 ## Performance — Convex-native, one call per kit operation (hard invariant)
 

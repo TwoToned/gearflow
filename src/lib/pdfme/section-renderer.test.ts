@@ -252,6 +252,27 @@ describe("estimateSectionHeight", () => {
       expect(estimateSectionHeight(section, d)).toBeCloseTo(13.7, 0);
     });
 
+    it("a qty-1 kit member reserves the same height with or without a unit (per-unit migration is height-neutral, no tail-drop)", () => {
+      // The kit per-unit migration gives every kit member a projectLineItemUnit.
+      // A serialised member is qty-1, and the per-unit height branch is gated on
+      // child.quantity > 1 — so a member's single unit must NOT change reserved
+      // height, or the plugin would render rows the calculator didn't reserve and
+      // silently drop tail items (the v0.8.1.1-class bug).
+      const settings: TableSectionSettings = {
+        showGroupHeaders: false, showKitChildren: true, showCheckboxes: false,
+        showConditionColumns: false, showPricing: true, showBadges: true, showNotes: true,
+        showPerUnitCheckboxes: true, showAssetTags: true, showCategories: false, showRowNumbers: false,
+      };
+      const kitParent = (childUnits?: DocumentLineItem["units"]) =>
+        makeLineItem({
+          id: "kit", kitId: "k1", isKitChild: false,
+          childLineItems: [makeLineItem({ id: "m1", isKitChild: true, quantity: 1, asset: { assetTag: "A-1" }, units: childUnits })],
+        });
+      const withoutUnit = estimateSectionHeight(makeSection("table", settings), makeData({ line_items: [kitParent(undefined)] }));
+      const withUnit = estimateSectionHeight(makeSection("table", settings), makeData({ line_items: [kitParent([{ id: "u1", asset: { assetTag: "A-1" }, bulkAsset: null, status: "CHECKED_OUT" }])] }));
+      expect(withUnit).toBeCloseTo(withoutUnit, 5);
+    });
+
     it("includes group-row childLineItems in height (kit-style group parents)", () => {
       // Regression: structureLineItems attaches non-kit group members as
       // childLineItems on the synthetic group row. The plugin renders those

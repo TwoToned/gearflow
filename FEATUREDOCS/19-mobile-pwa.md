@@ -116,6 +116,32 @@ Two things to know when annotating:
 Opt out with `mobileCards={false}` only for genuinely grid-shaped data where a
 horizontally scrolling table beats cards.
 
+### `MobileCardList` — cards for bespoke `<Table>` sub-tables
+Many surfaces are a bespoke ui `<Table>` (a detail-page sub-table, a settings list),
+not a full `DataTable` — they shouldn't inherit DataTable's toolbar / filter / search /
+pagination, but they still need cards below `md`. `MobileCardList` (exported from
+`components/ui/data-table.tsx`) is the DataTable card renderer extracted standalone: it
+takes the same `ColumnDef[]` mobile roles (`title`/`subtitle`/`badge`/`meta`/`actions`)
+and renders just the card list. Pair it with the existing desktop table via a CSS
+breakpoint swap (both mount, one is `display:none` — hydration-safe, same as DataTable):
+
+```tsx
+const cols: ColumnDef<Row>[] = [
+  { id: "name", header: "Name", mobile: "title", cell: (r) => <Link …>{r.name}</Link> },
+  { id: "status", header: "Status", mobile: "badge", cell: (r) => <StatusIndicator … /> },
+  { id: "created", header: "Created", mobile: "meta", cell: (r) => fmtDate(r.createdAt) },
+];
+<div className="hidden … md:block"><Table>…existing table…</Table></div>
+{rows.length > 0 && <MobileCardList className="md:hidden" data={rows} columns={cols} getRowId={(r) => r.id} />}
+```
+
+The `columns` `cell` renderers MUST be pure/presentational (they render on both
+breakpoints). Reuse the exact JSX the desktop `<TableCell>` renders. Converted so far:
+`clients/[id]`, `suppliers/[id]`, `locations/[id]`, `assets/registry/[id]`,
+`assets/categories/[id]` (more detail/settings tables to follow). Genuinely grid-shaped
+surfaces (calendars, the crew planner matrix, ROI/allocation matrices, the print
+pull-sheet, desktop-only admin) stay tables — do NOT `MobileCardList` those.
+
 ### Project equipment tab — table on desktop, cards below `md`
 The equipment tab (`components/projects/equipment-tab.tsx`) is a bespoke table, not a
 `DataTable`, so it can't inherit the free card layout. Instead each row component in

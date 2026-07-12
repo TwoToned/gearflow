@@ -35,7 +35,7 @@ const { models } = parse(ROOT);
 // the design doc's Phase 6.)
 const EXCLUDE = new Set([
   "users", "sessions", "accounts", "verifications", "organizations",
-  "members", "invitations", "customRoles", "ssoProviders", "pendingSSOApprovals",
+  "members", "invitations", "ssoProviders", "pendingSSOApprovals",
   "twoFactors", "backupCodes", "passkeys", "activityLogs",
   // Better Auth jwt() plugin key store (Phase 5 auth bridge) — auth-owned, never
   // written from Convex. Present in the Convex schema for completeness like the

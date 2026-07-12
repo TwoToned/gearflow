@@ -1,11 +1,8 @@
 /**
  * Role-based permission system for GearFlow.
  *
- * Two types of roles:
- * 1. Built-in roles (owner, admin, manager, member, warehouse, viewer)
- *    — static defaults, always available.
- * 2. Custom roles (stored per-org in the custom_role table)
- *    — role string is "custom:<id>", permissions stored as JSON.
+ * Built-in roles only (owner, admin, manager, member, warehouse, viewer) — static
+ * defaults, always available. (Custom roles were removed.)
  *
  * The pure RBAC logic (RESOURCES, rolePermissions, hasPermission, …) now lives in
  * `convex/lib/permissionsCore.ts` so it can be imported by BOTH this Next.js

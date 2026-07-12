@@ -7,6 +7,7 @@ import { AlertTriangle, Info } from "lucide-react";
 import { Stat } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Tooltip,
   TooltipContent,
@@ -54,6 +55,42 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
   });
 
   if (isLoading || !data) return <Skeleton className="h-72 w-full" />;
+
+  // Mobile card layout for the "where it earned" projects table (rendered below `md`).
+  const projectColumns: ColumnDef<ModelRoi["projects"][number]>[] = [
+    {
+      id: "project",
+      header: "Project",
+      mobile: "title",
+      cell: (p) => (
+        <Link href={`/projects/${p.projectId}`} className="text-link hover:underline">
+          {p.projectNumber} — {p.name}
+        </Link>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (p) => <span className="text-muted">{p.status}</span>,
+    },
+    {
+      id: "date",
+      header: "Rental start",
+      mobile: "meta",
+      cell: (p) => (
+        <span className="text-muted">{p.date ? formatDate(new Date(p.date)) : "—"}</span>
+      ),
+    },
+    {
+      id: "revenue",
+      header: "Attributed",
+      mobile: "meta",
+      cell: (p) => (
+        <span className="tabular-nums text-ink">{formatCurrency(p.revenue)}</span>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -163,7 +200,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
           />
         ) : (
           /* overflow-x-auto, not overflow-hidden: five columns clip rather than scroll on a phone. */
-          <div className="overflow-x-auto rounded-md border border-line">
+          <div className="hidden overflow-x-auto rounded-md border border-line md:block">
             <table className="w-full min-w-[560px]">
               <thead>
                 <tr className="border-b border-line bg-paper-2">
@@ -193,6 +230,14 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
               </tbody>
             </table>
           </div>
+        )}
+        {data.projects.length > 0 && (
+          <MobileCardList
+            className="md:hidden"
+            data={data.projects}
+            columns={projectColumns}
+            getRowId={(p) => p.projectId}
+          />
         )}
       </div>
     </div>

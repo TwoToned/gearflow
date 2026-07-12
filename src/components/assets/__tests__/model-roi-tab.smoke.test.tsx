@@ -62,6 +62,9 @@ describe("ModelRoiTab smoke", () => {
 
   it("shows the projects that produced the revenue", async () => {
     render(<ModelRoiTab modelId="rx" />);
-    await waitFor(() => expect(screen.getByText(/P-001/)).toBeTruthy());
+    // The projects list renders both a desktop table (hidden md:block) and a
+    // mobile MobileCardList (md:hidden); jsdom applies no CSS, so the row text
+    // appears in both DOM branches. Assert at least one is present.
+    await waitFor(() => expect(screen.getAllByText(/P-001/).length).toBeGreaterThan(0));
   });
 });

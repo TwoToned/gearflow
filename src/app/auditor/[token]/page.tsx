@@ -4,6 +4,7 @@ import { use, useState, useMemo, useEffect } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Shield, Search, ArrowUpDown, Sun, Moon, Lock } from "lucide-react";
 import { formatDate } from "@/lib/formatters";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 
 const STATUS_LABELS: Record<string, string> = {
   CURRENT: "Current",
@@ -142,6 +143,58 @@ export default function AuditorPortalPage({
 
   const statusColors = dark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
 
+  // Mobile card layout (rendered below `md`; cards can't column-sort, so they
+  // just render the already-sorted `filteredAssets` array in its current order).
+  // Every `cell` is pure/presentational and mirrors the desktop <td> content.
+  const cardColumns: ColumnDef<AuditorAsset>[] = [
+    {
+      id: "testTagId",
+      header: "Tag ID",
+      mobile: "title",
+      cell: (asset) => <span className="font-mono font-medium">{asset.testTagId}</span>,
+    },
+    {
+      id: "description",
+      header: "Description",
+      mobile: "subtitle",
+      cell: (asset) => <span>{asset.description}</span>,
+    },
+    {
+      id: "equipmentClass",
+      header: "Class",
+      mobile: "meta",
+      cell: (asset) => <span>{CLASS_LABELS[asset.equipmentClass] || asset.equipmentClass}</span>,
+    },
+    {
+      id: "location",
+      header: "Location",
+      mobile: "meta",
+      cell: (asset) => <span>{asset.location || "-"}</span>,
+    },
+    {
+      id: "lastTestDate",
+      header: "Last Test",
+      mobile: "meta",
+      cell: (asset) => <span>{formatDate(asset.lastTestDate)}</span>,
+    },
+    {
+      id: "nextDueDate",
+      header: "Next Due",
+      mobile: "meta",
+      cell: (asset) => <span>{formatDate(asset.nextDueDate)}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (asset) => (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[asset.status] || (dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600")}`}>
+          {STATUS_LABELS[asset.status] || asset.status}
+        </span>
+      ),
+    },
+  ];
+
   // Theme classes
   const bg = dark ? "bg-gray-950" : "bg-gray-50";
   const headerBg = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
@@ -262,7 +315,7 @@ export default function AuditorPortalPage({
 
         {/* Table */}
         <div className={`${tableBg} rounded-lg border shadow-sm overflow-hidden ${dark ? "border-gray-800" : "border-gray-200"} transition-colors duration-200`}>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className={`min-w-full divide-y ${tableBorder}`}>
               <thead className={tableHeaderBg}>
                 <tr>
@@ -314,6 +367,20 @@ export default function AuditorPortalPage({
               </tbody>
             </table>
           </div>
+          {/* Mobile card list (below `md`). Cards render the already-sorted
+              `filteredAssets` in order — no column-sort UI on mobile. */}
+          {filteredAssets.length === 0 ? (
+            <div className={`md:hidden px-4 py-8 text-center text-sm ${textSecondary}`}>
+              No items match your filters.
+            </div>
+          ) : (
+            <MobileCardList
+              className="md:hidden p-4"
+              data={filteredAssets}
+              columns={cardColumns}
+              getRowId={(asset) => asset.id}
+            />
+          )}
           <div className={`px-4 py-3 border-t text-xs ${tableFooterBg} ${textSecondary} transition-colors`}>
             Showing {filteredAssets.length} of {data.assets.length} items
           </div>

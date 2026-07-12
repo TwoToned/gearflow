@@ -27,6 +27,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -108,6 +109,72 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
     reorderMutation.mutate(ids);
   }
 
+  // Mobile card layout for the checklist editor (rendered below `md`). The
+  // reorder ▲▼ arrows are intentionally dropped on mobile — reordering is a
+  // desktop-only affordance (matching the equipment editor). The remove control
+  // is kept in `actions`.
+  const cols: ColumnDef<Record<string, unknown>>[] = [
+    {
+      id: "label",
+      header: "Check item",
+      mobile: "title",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        return (
+          <div>
+            <span className="font-medium text-ink">{ci.label as string}</span>
+            {ci.description ? (
+              <p className="mt-0.5 text-caption text-muted line-clamp-1">
+                {ci.description as string}
+              </p>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        const type = ci.type as CheckItemType;
+        const Icon = TYPE_ICONS[type];
+        return (
+          <Badge status={TYPE_STATUS[type]} className="gap-1">
+            <Icon className="h-3 w-3" />
+            {TYPE_LABELS[type]}
+          </Badge>
+        );
+      },
+    },
+  ];
+  if (canEdit) {
+    cols.push({
+      id: "actions",
+      header: "Actions",
+      mobile: "actions",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-t-out"
+            onClick={() =>
+              setRemoveTarget({
+                id: ci.id as string,
+                label: ci.label as string,
+              })
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        );
+      },
+    });
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -145,7 +212,8 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+        <>
+        <div className="hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -231,6 +299,13 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
             </TableBody>
           </Table>
         </div>
+        <MobileCardList
+          className="md:hidden"
+          data={items}
+          columns={cols}
+          getRowId={(r) => r.id as string}
+        />
+        </>
       )}
 
       <CheckItemPicker

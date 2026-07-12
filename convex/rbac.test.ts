@@ -14,9 +14,9 @@ import { api } from "./_generated/api";
  * Integration coverage for the native read-layer RBAC guard + mirror, exercising
  * the real ctx/db inside convex-test (docs/designs/convex-native-read-layer.md §8).
  * Complements the pure decideOrgPermission unit tests (#298) by validating the
- * ctx-level paths: identity resolution, the (org,user) member lookup, custom-role
- * org-scoping + JSON.parse, and service-only mutation gating — through the public
- * `browserBundle` query and the `members` mirror mutations.
+ * ctx-level paths: identity resolution, the (org,user) member lookup, and
+ * service-only mutation gating — through the public `browserBundle` query and
+ * the `members` mirror mutations.
  */
 
 const modules = import.meta.glob("./**/*.ts");
@@ -78,60 +78,6 @@ describe("requireOrgPermission (via projectEquipment.browserBundle)", () => {
       .withIdentity(SERVICE)
       .query(api.projectEquipment.browserBundle, { projectId: "p1", orgId: ORG });
     expect(res).toHaveProperty("lineItems");
-  });
-
-  test("custom role WITH project:read is allowed", async () => {
-    const t = convexTest(schema, modules);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("customRoles", {
-        id: "cr_reader",
-        organizationId: ORG,
-        name: "Reader",
-        permissions: JSON.stringify({ project: ["read"] }),
-      });
-      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "custom:cr_reader" });
-    });
-    const res = await t
-      .withIdentity(asUser(ORG))
-      .query(api.projectEquipment.browserBundle, { projectId: "p1", orgId: ORG });
-    expect(res).toHaveProperty("lineItems");
-  });
-
-  test("custom role WITHOUT project:read is denied", async () => {
-    const t = convexTest(schema, modules);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("customRoles", {
-        id: "cr_noproj",
-        organizationId: ORG,
-        name: "NoProject",
-        permissions: JSON.stringify({ asset: ["read"] }),
-      });
-      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "custom:cr_noproj" });
-    });
-    await expect(
-      t
-        .withIdentity(asUser(ORG))
-        .query(api.projectEquipment.browserBundle, { projectId: "p1", orgId: ORG }),
-    ).rejects.toThrow(/insufficient permissions/i);
-  });
-
-  test("custom role from a DIFFERENT org does not grant (org-scoped lookup)", async () => {
-    const t = convexTest(schema, modules);
-    await t.run(async (ctx) => {
-      // Same role id, but it belongs to another org — must NOT grant here.
-      await ctx.db.insert("customRoles", {
-        id: "cr_cross",
-        organizationId: "org_other",
-        name: "Reader",
-        permissions: JSON.stringify({ project: ["read"] }),
-      });
-      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "custom:cr_cross" });
-    });
-    await expect(
-      t
-        .withIdentity(asUser(ORG))
-        .query(api.projectEquipment.browserBundle, { projectId: "p1", orgId: ORG }),
-    ).rejects.toThrow(/insufficient permissions/i);
   });
 });
 

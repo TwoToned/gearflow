@@ -5,7 +5,6 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -17,10 +16,8 @@ import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { addMemberByEmail } from "@/server/settings";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { refreshOrgMembers } from "@/hooks/use-org-members";
 import { refreshPendingInvitations } from "@/hooks/use-pending-invitations";
-import type { PermissionMap } from "@/lib/permissions";
 
 const builtInRoles = [
   { value: "admin", label: "Admin" },
@@ -29,19 +26,11 @@ const builtInRoles = [
   { value: "viewer", label: "Viewer" },
 ];
 
-interface CustomRoleData {
-  id: string;
-  name: string;
-  permissions: PermissionMap;
-}
-
 export function InviteMember() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
-
-  const { data: customRoles } = useCustomRoles(orgId);
 
   const addMutation = useServerMutation({
     mutationFn: () => addMemberByEmail(email, role),
@@ -58,9 +47,6 @@ export function InviteMember() {
     },
     onError: (e) => toast.error(e.message),
   });
-
-  const customRolesList = (customRoles || []) as CustomRoleData[];
-  const hasCustomRoles = customRolesList.length > 0;
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -85,15 +71,8 @@ export function InviteMember() {
         <Select value={role} onValueChange={(v) => setRole(v ?? "member")}>
           <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue>
-              {(() => {
-                const builtIn = builtInRoles.find((r) => r.value === role);
-                if (builtIn) return builtIn.label;
-                if (role.startsWith("custom:")) {
-                  const cr = customRolesList.find((c) => `custom:${c.id}` === role);
-                  return cr?.name ?? "Unknown Role";
-                }
-                return role.charAt(0).toUpperCase() + role.slice(1);
-              })()}
+              {builtInRoles.find((r) => r.value === role)?.label ??
+                role.charAt(0).toUpperCase() + role.slice(1)}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -102,19 +81,6 @@ export function InviteMember() {
                 {r.label}
               </SelectItem>
             ))}
-            {hasCustomRoles && (
-              <>
-                <Separator className="my-1" />
-                <div className="px-2 py-1 text-xs text-fg-3 font-medium">
-                  Custom Roles
-                </div>
-                {customRolesList.map((cr) => (
-                  <SelectItem key={`custom:${cr.id}`} value={`custom:${cr.id}`}>
-                    {cr.name}
-                  </SelectItem>
-                ))}
-              </>
-            )}
           </SelectContent>
         </Select>
       </div>

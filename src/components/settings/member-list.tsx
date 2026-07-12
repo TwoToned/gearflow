@@ -22,13 +22,9 @@ import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { revokeInvitation } from "@/server/settings";
 import { changeMemberRole, removeOrgMember } from "@/server/org-members";
-import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { useOrgMembers, refreshOrgMembers } from "@/hooks/use-org-members";
 import { usePendingInvitations, refreshPendingInvitations } from "@/hooks/use-pending-invitations";
 import { refreshCurrentRole } from "@/hooks/use-current-role";
-import { ROLE_COLORS } from "./role-editor-dialog";
-import type { PermissionMap } from "@/lib/permissions";
-import type { ColorIntent } from "@/lib/status-colors";
 
 const builtInAssignableRoles = [
   { value: "admin", label: "Admin" },
@@ -37,43 +33,9 @@ const builtInAssignableRoles = [
   { value: "viewer", label: "Viewer" },
 ];
 
-interface CustomRoleData {
-  id: string;
-  name: string;
-  color: string | null;
-  permissions: PermissionMap;
-}
-
-const customRoleColorToIntent: Record<string, ColorIntent> = {
-  blue: "info",
-  cyan: "info",
-  purple: "info",
-  green: "success",
-  orange: "warning",
-  red: "error",
-  pink: "error",
-  teal: "primary",
-  amber: "warning",
-};
-
-function getCustomRoleIntent(color: string | null): ColorIntent {
-  return (color ? customRoleColorToIntent[color] : undefined) ?? "neutral";
-}
-
-function getRoleDisplay(role: string, customRolesMap: Map<string, CustomRoleData>) {
-  if (role.startsWith("custom:")) {
-    const id = role.slice("custom:".length);
-    const cr = customRolesMap.get(id);
-    return {
-      label: cr?.name ?? "Unknown Role",
-      isCustom: true,
-      intent: cr ? getCustomRoleIntent(cr.color) : "neutral" as ColorIntent,
-    };
-  }
+function getRoleDisplay(role: string) {
   return {
     label: role.charAt(0).toUpperCase() + role.slice(1),
-    isCustom: false,
-    intent: undefined as ColorIntent | undefined,
   };
 }
 
@@ -85,8 +47,6 @@ export function MemberList() {
   const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: members, isLoading } = useOrgMembers(orgId);
-
-  const { data: customRoles } = useCustomRoles(orgId);
 
   const { data: pendingInvitations } = usePendingInvitations(orgId);
 
@@ -122,22 +82,7 @@ export function MemberList() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Build custom roles lookup map
-  const customRolesMap = new Map<string, CustomRoleData>();
-  if (customRoles) {
-    for (const cr of customRoles as CustomRoleData[]) {
-      customRolesMap.set(cr.id, cr);
-    }
-  }
-
-  // Build assignable roles list (built-in + custom)
-  const allAssignableRoles = [
-    ...builtInAssignableRoles,
-    ...((customRoles || []) as CustomRoleData[]).map((cr) => ({
-      value: `custom:${cr.id}`,
-      label: cr.name,
-    })),
-  ];
+  const allAssignableRoles = builtInAssignableRoles;
 
   if (isLoading) {
     return (
@@ -169,8 +114,6 @@ export function MemberList() {
     );
   }
 
-  const hasCustomRoles = ((customRoles || []) as CustomRoleData[]).length > 0;
-
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const invites = (pendingInvitations || []) as any[];
 
@@ -179,7 +122,7 @@ export function MemberList() {
       {invites.length > 0 && (
         <>
           {invites.map((inv) => {
-            const display = inv.role ? getRoleDisplay(inv.role, customRolesMap) : { label: "Member", isCustom: false, intent: undefined };
+            const display = inv.role ? getRoleDisplay(inv.role) : { label: "Member" };
             return (
               <div
                 key={inv.id}
@@ -196,7 +139,8 @@ export function MemberList() {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusIndicator
-                    {...(display.isCustom ? { intent: display.intent } : { category: "memberRole", value: inv.role || "member" })}
+                    category="memberRole"
+                    value={inv.role || "member"}
                     label={display.label}
                     variant="pill"
                   />
@@ -222,7 +166,7 @@ export function MemberList() {
         </>
       )}
       {items.map((member) => {
-        const display = getRoleDisplay(member.role, customRolesMap);
+        const display = getRoleDisplay(member.role);
 
         return (
           <div
@@ -244,7 +188,8 @@ export function MemberList() {
               ) : (
                 <NotViewer fallback={
                   <StatusIndicator
-                    {...(display.isCustom ? { intent: display.intent } : { category: "memberRole", value: member.role })}
+                    category="memberRole"
+                    value={member.role}
                     label={display.label}
                     variant="pill"
                   />

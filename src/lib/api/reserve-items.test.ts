@@ -8,7 +8,6 @@ const memberFindFirst = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     member: { findFirst: (...a: unknown[]) => memberFindFirst(...a) },
-    customRole: { findUnique: vi.fn() },
   },
 }));
 vi.mock("@/lib/auth-server", () => ({ requireOrganization: vi.fn() }));

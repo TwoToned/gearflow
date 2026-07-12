@@ -2,8 +2,6 @@
 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useActiveOrganization } from "@/lib/auth-client";
-import { useCustomRoles } from "@/hooks/use-custom-roles";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 
 const PROVISIONING_MODES = [
@@ -39,17 +37,7 @@ interface Props {
 }
 
 export function SSOProvisioningSection({ provisioningMode, defaultRole, canUpdate, onUpdate }: Props) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const { data: customRoles } = useCustomRoles(orgId);
-
-  const allRoles = [
-    ...BUILT_IN_ROLES,
-    ...(customRoles || []).map((r: { id: string; name: string }) => ({
-      value: `custom:${r.id}`,
-      label: r.name,
-    })),
-  ];
+  const allRoles = BUILT_IN_ROLES;
 
   return (
     <div className="space-y-4">

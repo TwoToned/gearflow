@@ -4,7 +4,6 @@ export const ssoGroupMappingSchema = z.object({
   idpGroupName: z.string().min(1, "Group name is required"),
   idpGroupId: z.string().optional(),
   gearflowRole: z.string().min(1, "Role is required"),
-  customRoleId: z.string().optional(),
 });
 
 export const ssoSettingsSchema = z.object({

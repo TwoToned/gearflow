@@ -9,7 +9,6 @@ import { Trash2, Plus, Radar } from "lucide-react";
 import { updateGroupMappings, updateSSOSettings } from "@/server/sso";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { refreshSSOSettings } from "@/hooks/use-sso-settings";
 import { toast } from "sonner";
 import type { OrgSSOSettings, SSOGroupMapping } from "@/lib/sso-types";
@@ -62,16 +61,7 @@ export function SSOGroupMappingSection({
   const [localMappings, setLocalMappings] = useState<SSOGroupMapping[]>(mappings);
   const [dirty, setDirty] = useState(false);
 
-  const { data: customRoles } = useCustomRoles(orgId);
-
-  const allRoles = [
-    ...BUILT_IN_ROLES,
-    ...(customRoles || []).map((r: { id: string; name: string }) => ({
-      value: `custom:${r.id}`,
-      label: r.name,
-      customRoleId: r.id,
-    })),
-  ];
+  const allRoles = BUILT_IN_ROLES;
 
   const saveMappings = useServerMutation({
     mutationFn: (m: SSOGroupMapping[]) => updateGroupMappings(m),
@@ -105,14 +95,6 @@ export function SSOGroupMappingSection({
   const updateMapping = (index: number, updates: Partial<SSOGroupMapping>) => {
     const updated = [...localMappings];
     updated[index] = { ...updated[index], ...updates };
-
-    // If selecting a custom role, set the customRoleId
-    if (updates.gearflowRole?.startsWith("custom:")) {
-      const roleInfo = allRoles.find((r) => r.value === updates.gearflowRole);
-      updated[index].customRoleId = (roleInfo as { customRoleId?: string })?.customRoleId;
-    } else if (updates.gearflowRole) {
-      updated[index].customRoleId = undefined;
-    }
 
     // Clear unmapped flag when a role is assigned
     if (updates.gearflowRole && updates.gearflowRole !== "__unmapped__") {
@@ -234,7 +216,7 @@ export function SSOGroupMappingSection({
                   />
                 </div>
                 <Select
-                  value={mapping.customRoleId ? `custom:${mapping.customRoleId}` : (mapping.gearflowRole || "__unmapped__")}
+                  value={mapping.gearflowRole || "__unmapped__"}
                   onValueChange={(v) => {
                     if (v && v !== "__unmapped__") {
                       updateMapping(i, { gearflowRole: v, unmapped: false });
@@ -298,12 +280,6 @@ export function SSOGroupMappingSection({
             <Radar className="h-3.5 w-3.5 text-amber-500 shrink-0" />
             Groups with a <span className="text-amber-600 font-medium">radar icon</span> were auto-discovered from IdP logins.
             Assign a role and save to activate them.
-          </p>
-        )}
-        {customRoles && customRoles.length > 0 && (
-          <p className="text-xs text-fg-3">
-            Custom roles with an SSO Group Claim configured in Team Settings will be matched automatically,
-            in addition to the mappings above.
           </p>
         )}
       </div>

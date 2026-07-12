@@ -256,18 +256,7 @@ export async function updateGroupMappings(mappings: SSOGroupMapping[]) {
   });
   if (!org) throw new Error("Organization not found");
 
-  // Validate custom role IDs exist in this org
-  for (const mapping of mappings) {
-    if (mapping.customRoleId) {
-      const customRole = await prisma.customRole.findFirst({
-        where: { id: mapping.customRoleId, organizationId },
-      });
-      if (!customRole) {
-        throw new Error(`Custom role not found: ${mapping.customRoleId}`);
-      }
-    }
-  }
-
+  // Group mappings target built-in roles only (custom roles were removed).
   const settings = parseOrgSettings(org.metadata);
   const sso = getSSOFromSettings(settings);
   sso.groupMappings = mappings;
@@ -337,7 +326,12 @@ export async function approveSSOUser(approvalId: string, role?: string) {
     throw new Error("Pending approval not found");
   }
 
-  const assignRole = role || claimed.suggestedRole || "member";
+  // Only assignable built-in roles (custom roles were removed). Reject owner + any
+  // unknown/garbage role — approval must neither escalate to owner nor lock the new
+  // member out with a role that grants nothing.
+  const SSO_APPROVAL_ROLES = ["admin", "manager", "member", "warehouse", "viewer"];
+  const requestedRole = role || claimed.suggestedRole || "member";
+  const assignRole = SSO_APPROVAL_ROLES.includes(requestedRole) ? requestedRole : "member";
 
   // Idempotent member creation: `member` has no (org,user) unique constraint, so guard
   // against a duplicate across a compensation/retry (or an ambiguous create that

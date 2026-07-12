@@ -225,49 +225,6 @@ describe("hasPermission", () => {
       expect(hasPermission("unknown_role", "asset", "read")).toBe(false);
     });
   });
-
-  describe("custom roles", () => {
-    it("returns false when no customPermissions provided", () => {
-      expect(hasPermission("custom:abc123", "asset", "read")).toBe(false);
-    });
-
-    it("returns false when customPermissions is null", () => {
-      expect(hasPermission("custom:abc123", "asset", "read", null)).toBe(false);
-    });
-
-    it("returns true when action is in custom permissions", () => {
-      const customPerms: PermissionMap = {
-        asset: ["read", "create"],
-        project: ["read"],
-      };
-      expect(hasPermission("custom:abc123", "asset", "read", customPerms)).toBe(true);
-      expect(hasPermission("custom:abc123", "asset", "create", customPerms)).toBe(true);
-    });
-
-    it("returns false when action is NOT in custom permissions", () => {
-      const customPerms: PermissionMap = {
-        asset: ["read"],
-      };
-      expect(hasPermission("custom:abc123", "asset", "delete", customPerms)).toBe(false);
-    });
-
-    it("returns false when resource is not in custom permissions", () => {
-      const customPerms: PermissionMap = {
-        asset: ["read"],
-      };
-      expect(hasPermission("custom:abc123", "project", "read", customPerms)).toBe(false);
-    });
-
-    it("handles empty custom permissions", () => {
-      const customPerms: PermissionMap = {};
-      expect(hasPermission("custom:abc123", "asset", "read", customPerms)).toBe(false);
-    });
-
-    it("handles custom permissions with empty action array", () => {
-      const customPerms: PermissionMap = { asset: [] };
-      expect(hasPermission("custom:abc123", "asset", "read", customPerms)).toBe(false);
-    });
-  });
 });
 
 // ─── isReadOnly ─────────────────────────────────────────────────────────────

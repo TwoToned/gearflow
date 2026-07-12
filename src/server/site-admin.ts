@@ -715,21 +715,9 @@ export async function adminTransferOwnership(orgId: string, newOwnerId: string) 
 
 // ─── Org Member Management (Site Admin) ───────────────────────────────────
 
-export async function adminGetOrgCustomRoles(orgId: string) {
-  await requireSiteAdmin();
-
-  const roles = await prisma.customRole.findMany({
-    where: { organizationId: orgId },
-    orderBy: { name: "asc" },
-  });
-
-  return serialize(
-    roles.map((r) => ({
-      ...r,
-      permissions: JSON.parse(r.permissions),
-    })),
-  );
-}
+// Assignable built-in roles (custom roles were removed). Sole rejection of
+// arbitrary/elevated role strings in the admin member actions — owner excluded.
+const ADMIN_ASSIGNABLE_ROLES = ["admin", "manager", "member", "warehouse", "viewer"];
 
 export async function adminAddMemberToOrg(orgId: string, email: string, role: string) {
   const session = await requireSiteAdmin();
@@ -744,13 +732,8 @@ export async function adminAddMemberToOrg(orgId: string, email: string, role: st
   });
   if (existing) throw new Error("User is already a member of this organization.");
 
-  // Validate custom role belongs to this org
-  if (role.startsWith("custom:")) {
-    const customRoleId = role.slice("custom:".length);
-    const customRole = await prisma.customRole.findFirst({
-      where: { id: customRoleId, organizationId: orgId },
-    });
-    if (!customRole) throw new Error("Custom role not found in this organization.");
+  if (!ADMIN_ASSIGNABLE_ROLES.includes(role)) {
+    throw new Error("Invalid role");
   }
 
   await prisma.member.create({
@@ -818,13 +801,8 @@ export async function adminChangeMemberRole(orgId: string, memberId: string, new
   if (!member) throw new Error("Member not found.");
   if (member.role === "owner") throw new Error("Cannot change the owner's role. Transfer ownership instead.");
 
-  // Validate custom role belongs to this org
-  if (newRole.startsWith("custom:")) {
-    const customRoleId = newRole.slice("custom:".length);
-    const customRole = await prisma.customRole.findFirst({
-      where: { id: customRoleId, organizationId: orgId },
-    });
-    if (!customRole) throw new Error("Custom role not found in this organization.");
+  if (!ADMIN_ASSIGNABLE_ROLES.includes(newRole)) {
+    throw new Error("Invalid role");
   }
 
   // Restrictive (a role change may reduce permissions): mirror the NEW role to

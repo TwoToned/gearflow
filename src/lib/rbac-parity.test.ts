@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   decideOrgPermission,
   hasPermission,
-  type PermissionMap,
 } from "../../convex/lib/permissionsCore";
 // Re-export sanity: the server path imports the SAME core via @/lib/permissions.
 import { hasPermission as hasPermissionReExport } from "@/lib/permissions";
@@ -26,7 +25,7 @@ describe("decideOrgPermission — auth/org gating", () => {
   it("denies an anonymous caller", () => {
     expect(
       decideOrgPermission(
-        { auth: null, requestedOrgId: ORG, member: null, customPermissions: null },
+        { auth: null, requestedOrgId: ORG, member: null },
         "project",
         "read",
       ),
@@ -36,7 +35,7 @@ describe("decideOrgPermission — auth/org gating", () => {
   it("allows the trusted service identity unconditionally", () => {
     expect(
       decideOrgPermission(
-        { auth: { kind: "service" }, requestedOrgId: ORG, member: null, customPermissions: null },
+        { auth: { kind: "service" }, requestedOrgId: ORG, member: null },
         "asset",
         "delete",
       ),
@@ -46,7 +45,7 @@ describe("decideOrgPermission — auth/org gating", () => {
   it("denies on org mismatch (token org ≠ requested org)", () => {
     expect(
       decideOrgPermission(
-        { auth: user("org_other"), requestedOrgId: ORG, member: { role: "owner" }, customPermissions: null },
+        { auth: user("org_other"), requestedOrgId: ORG, member: { role: "owner" } },
         "project",
         "read",
       ),
@@ -56,7 +55,7 @@ describe("decideOrgPermission — auth/org gating", () => {
   it("denies when the token carries no org", () => {
     expect(
       decideOrgPermission(
-        { auth: user(null), requestedOrgId: ORG, member: { role: "owner" }, customPermissions: null },
+        { auth: user(null), requestedOrgId: ORG, member: { role: "owner" } },
         "project",
         "read",
       ),
@@ -66,7 +65,7 @@ describe("decideOrgPermission — auth/org gating", () => {
   it("denies a non-member even with a matching org", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: null, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: null },
         "project",
         "read",
       ),
@@ -78,7 +77,7 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("owner is allowed anything (safety net)", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "owner" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "owner" } },
         "orgSettings",
         "update",
       ),
@@ -88,7 +87,7 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("viewer HAS project:read (the review-corrected case)", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "viewer" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "viewer" } },
         "project",
         "read",
       ),
@@ -98,7 +97,7 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("viewer is DENIED asset:create (genuinely-denied pair)", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "viewer" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "viewer" } },
         "asset",
         "create",
       ),
@@ -108,7 +107,7 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("member is denied orgSettings:update", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "member" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "member" } },
         "orgSettings",
         "update",
       ),
@@ -118,7 +117,7 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("manager is allowed warehouse:close", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "manager" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "manager" } },
         "warehouse",
         "close",
       ),
@@ -128,49 +127,8 @@ describe("decideOrgPermission — role permissions (parity with server actions)"
   it("unknown built-in role is denied", () => {
     expect(
       decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "nonsense" }, customPermissions: null },
+        { auth: user(), requestedOrgId: ORG, member: { role: "nonsense" } },
         "project",
-        "read",
-      ),
-    ).toBe("deny:insufficient");
-  });
-});
-
-describe("decideOrgPermission — custom roles", () => {
-  const customPerms: PermissionMap = { asset: ["read"], project: ["read", "update"] };
-
-  it("grants exactly the custom role's permissions", () => {
-    expect(
-      decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "custom:r1" }, customPermissions: customPerms },
-        "asset",
-        "read",
-      ),
-    ).toBe("allow");
-    expect(
-      decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "custom:r1" }, customPermissions: customPerms },
-        "project",
-        "update",
-      ),
-    ).toBe("allow");
-  });
-
-  it("denies actions the custom role lacks", () => {
-    expect(
-      decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "custom:r1" }, customPermissions: customPerms },
-        "asset",
-        "delete",
-      ),
-    ).toBe("deny:insufficient");
-  });
-
-  it("denies a custom role with no resolved permissions (missing/cross-org role)", () => {
-    expect(
-      decideOrgPermission(
-        { auth: user(), requestedOrgId: ORG, member: { role: "custom:gone" }, customPermissions: null },
-        "asset",
         "read",
       ),
     ).toBe("deny:insufficient");

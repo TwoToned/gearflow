@@ -55,6 +55,7 @@ const READ_RESOURCE_BY_MODULE: Record<string, string> = {
   "location-media": "location",
   "model-media": "model",
   "notification-preferences": "orgSettings",
+  roi: "reports",
   notifications: "orgSettings",
   "project-costs": "project",
   "project-media": "project",

@@ -93,13 +93,12 @@ export async function changeMemberRole(memberId: string, newRole: string) {
     throw new Error("You cannot change your own role.");
   }
 
-  // Validate custom role belongs to this org
-  if (newRole.startsWith("custom:")) {
-    const customRoleId = newRole.slice("custom:".length);
-    const customRole = await prisma.customRole.findFirst({
-      where: { id: customRoleId, organizationId },
-    });
-    if (!customRole) throw new Error("Custom role not found in this organization.");
+  // Only assignable built-in roles (custom roles were removed). This allow-list is
+  // the sole rejection of arbitrary/elevated role strings here — do NOT drop it
+  // (owner is intentionally excluded; ownership transfer is a separate flow).
+  const VALID_ASSIGNABLE_ROLES = ["admin", "manager", "member", "warehouse", "viewer"];
+  if (!VALID_ASSIGNABLE_ROLES.includes(newRole)) {
+    throw new Error("Invalid role");
   }
 
   // Admins can't promote to admin or change other admins
@@ -147,14 +146,7 @@ export async function changeMemberRole(memberId: string, newRole: string) {
     select: { name: true },
   });
   if (org && target.user.email) {
-    // Resolve display name for custom roles
-    let displayRole = newRole;
-    if (newRole.startsWith("custom:")) {
-      const crId = newRole.slice("custom:".length);
-      const cr = await prisma.customRole.findUnique({ where: { id: crId }, select: { name: true } });
-      displayRole = cr?.name ?? "Custom Role";
-    }
-    const emailContent = roleChangedEmail({ orgName: org.name, newRole: displayRole });
+    const emailContent = roleChangedEmail({ orgName: org.name, newRole });
     sendEmail({ to: target.user.email, ...emailContent }).catch(console.error);
   }
 

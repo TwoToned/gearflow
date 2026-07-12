@@ -88,32 +88,9 @@ export async function requireRole(requiredRoles: string[]) {
   return member;
 }
 
-/**
- * Resolve a member's permission map.
- * Built-in roles use the static map; custom roles load from DB.
- */
-async function resolvePermissions(
-  role: string,
-): Promise<PermissionMap | null> {
-  // Built-in role
-  if (!role.startsWith("custom:")) {
-    return rolePermissions[role] ?? null;
-  }
-
-  // Custom role: load from DB
-  const customRoleId = role.slice("custom:".length);
-  const customRole = await prisma.customRole.findUnique({
-    where: { id: customRoleId },
-    select: { permissions: true },
-  });
-
-  if (!customRole) return null;
-
-  try {
-    return JSON.parse(customRole.permissions) as PermissionMap;
-  } catch {
-    return null;
-  }
+/** Resolve a built-in role's permission map (custom roles were removed). */
+function resolvePermissions(role: string): PermissionMap | null {
+  return rolePermissions[role] ?? null;
 }
 
 /**
@@ -141,16 +118,7 @@ export async function resolvePermissionForActor(
     throw new Error("You are not a member of this organization.");
   }
 
-  let customPermissions: PermissionMap | null = null;
-
-  if (member.role.startsWith("custom:")) {
-    customPermissions = await resolvePermissions(member.role);
-    if (!customPermissions) {
-      throw new Error("Your role no longer exists. Contact your administrator.");
-    }
-  }
-
-  if (!hasPermission(member.role, resource, action, customPermissions)) {
+  if (!hasPermission(member.role, resource, action)) {
     throw new Error("You don't have permission to perform this action.");
   }
 
@@ -208,21 +176,10 @@ export async function getResolvedPermissions(): Promise<{
 
   if (!member) return null;
 
-  const permissions = await resolvePermissions(member.role);
+  const permissions = resolvePermissions(member.role);
   if (!permissions) return null;
 
-  // Get display name for custom roles
-  let roleName = member.role;
-  if (member.role.startsWith("custom:")) {
-    const customRoleId = member.role.slice("custom:".length);
-    const customRole = await prisma.customRole.findUnique({
-      where: { id: customRoleId },
-      select: { name: true },
-    });
-    roleName = customRole?.name ?? "Custom Role";
-  }
-
-  return { role: member.role, roleName, permissions };
+  return { role: member.role, roleName: member.role, permissions };
 }
 
 /**

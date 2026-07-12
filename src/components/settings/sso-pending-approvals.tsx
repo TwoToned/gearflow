@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Check, X, Clock } from "lucide-react";
 import { getPendingApprovals, approveSSOUser, rejectSSOUser } from "@/server/sso";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -30,15 +29,7 @@ export function SSOPendingApprovals() {
     queryFn: () => getPendingApprovals(),
   });
 
-  const { data: customRoles } = useCustomRoles(orgId);
-
-  const allRoles = [
-    ...BUILT_IN_ROLES,
-    ...(customRoles || []).map((r: { id: string; name: string }) => ({
-      value: `custom:${r.id}`,
-      label: r.name,
-    })),
-  ];
+  const allRoles = BUILT_IN_ROLES;
 
   const approveMut = useServerMutation({
     mutationFn: ({ id, role }: { id: string; role?: string }) => approveSSOUser(id, role),

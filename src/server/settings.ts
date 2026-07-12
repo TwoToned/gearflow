@@ -286,20 +286,9 @@ const VALID_BUILT_IN_ROLES = ["admin", "manager", "member", "warehouse", "viewer
 export async function addMemberByEmail(email: string, role: string) {
   const { organizationId, userId, userName } = await getOrgContext();
 
-  // Validate: either a built-in role or a custom role belonging to this org
-  const isBuiltIn = (VALID_BUILT_IN_ROLES as readonly string[]).includes(role);
-  const isCustom = role.startsWith("custom:");
-
-  if (!isBuiltIn && !isCustom) {
+  // Only built-in roles (custom roles were removed).
+  if (!(VALID_BUILT_IN_ROLES as readonly string[]).includes(role)) {
     throw new Error("Invalid role");
-  }
-
-  if (isCustom) {
-    const customRoleId = role.slice("custom:".length);
-    const customRole = await prisma.customRole.findFirst({
-      where: { id: customRoleId, organizationId },
-    });
-    if (!customRole) throw new Error("Custom role not found in this organization.");
   }
 
   const normalizedEmail = email.toLowerCase().trim();

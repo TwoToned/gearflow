@@ -26,7 +26,8 @@ export interface StickyTableProps extends React.HTMLAttributes<HTMLDivElement> {
   /**
    * Pixel widths of the frozen left columns, in order. One entry per frozen column.
    * Defaults to a single frozen column (`[]` freezes none). Widths are needed so the
-   * 2nd+ frozen column knows its left offset.
+   * 2nd+ frozen column knows its left offset. Full-width `colSpan` header/separator rows
+   * are left alone (`:not([colspan])`), so they scroll rather than being wrongly pinned.
    */
   frozenColWidths?: number[];
   /** Minimum width of the inner table on screen — forces horizontal scroll below it. */
@@ -57,65 +58,76 @@ export function StickyTable({
 
   const frozenCount = frozenColWidths.length;
   // Cumulative left offsets: col i sits at the sum of the widths before it.
-  const offsets: number[] = [];
+  const leftOffsets: number[] = [];
   let acc = 0;
   for (const w of frozenColWidths) {
-    offsets.push(acc);
+    leftOffsets.push(acc);
     acc += w;
   }
 
   const css = React.useMemo(() => {
-    const rows = `.${uid} tbody tr > `;
-    const heads = `.${uid} thead tr > `;
-    const parts: string[] = [
+    const s = `.${uid} `;
+    const stick = "position:sticky;background:var(--stkt-bg);z-index:1;";
+    // Base rules apply at every width; they're benign on desktop.
+    const base: string[] = [
       `.${uid}{position:relative;--stkt-bg:${safeBg};}`,
-      `.${uid} .stkt-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;}`,
-      minTableWidth ? `.${uid} table{min-width:${minTableWidth}px;}` : "",
-      `.${uid} td{vertical-align:top;}`,
+      `${s}.stkt-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;}`,
+      `${s}td{vertical-align:top;}`,
     ];
+    // The frozen/scroll treatment is MOBILE ONLY. On desktop the table already fits, so
+    // freezing columns there would (a) be pointless and (b) paint opaque frozen cells that
+    // seam against row hover/selection/collab tints. Scoping to <768px keeps desktop a
+    // plain table with no seam. Matches the app's `md` mobile cutover.
+    const rows = `${s}tbody tr > `;
+    const heads = `${s}thead tr > `;
+    const mobile: string[] = [
+      minTableWidth ? `${s}table{min-width:${minTableWidth}px;}` : "",
+      // Header cells sit above scrolling body cells; frozen header cells above frozen body.
+      `${s}thead tr > *{z-index:2;}`,
+    ];
+    // Freeze the first N cells of every row by nth-child. `:not([colspan])` leaves
+    // full-width colSpan header/separator rows alone — a bare nth-child would pin their
+    // single spanning cell as if it were the identity column.
     for (let i = 0; i < frozenCount; i++) {
-      const n = i + 1;
-      const left = offsets[i];
-      parts.push(
-        `${rows}:nth-child(${n}),${heads}:nth-child(${n}){position:sticky;left:${left}px;background:var(--stkt-bg);z-index:1;}`,
+      mobile.push(
+        `${rows}:nth-child(${i + 1}):not([colspan]),${heads}:nth-child(${i + 1}):not([colspan]){${stick}left:${leftOffsets[i]}px;}`,
       );
     }
-    // Header cells (including frozen ones) sit above body cells.
-    parts.push(`${heads}*{z-index:2;}`);
     for (let i = 0; i < frozenCount; i++) {
-      parts.push(`${heads}:nth-child(${i + 1}){z-index:3;}`);
+      mobile.push(`${heads}:nth-child(${i + 1}):not([colspan]){z-index:3;}`);
     }
-    // Seam shadow on the last frozen column.
     if (frozenCount > 0) {
-      parts.push(
-        `${rows}:nth-child(${frozenCount}),${heads}:nth-child(${frozenCount}){box-shadow:8px 0 12px -8px rgba(0,0,0,.55);}`,
+      mobile.push(
+        `${rows}:nth-child(${frozenCount}):not([colspan]),${heads}:nth-child(${frozenCount}):not([colspan]){box-shadow:8px 0 12px -8px rgba(0,0,0,.55);}`,
       );
     }
-    // Print: undo everything so the physical sheet is unchanged. This also resets the
-    // cell min-width / white-space / vertical-align that consumers add for the on-screen
-    // scroll layout, so the printed table reflows exactly as it did before StickyTable.
-    parts.push(
+
+    // Print: undo everything so a print-oriented sheet reflows exactly as before.
+    const print =
       `@media print{` +
-        `.${uid} .stkt-scroll{overflow:visible!important;}` +
-        `.${uid} table{min-width:0!important;}` +
-        `.${uid} tbody tr > *,.${uid} thead tr > *{position:static!important;left:auto!important;background:transparent!important;box-shadow:none!important;z-index:auto!important;min-width:0!important;white-space:normal!important;vertical-align:initial!important;}` +
-        `}`,
+      `${s}.stkt-scroll{overflow:visible!important;}` +
+      `${s}table{min-width:0!important;}` +
+      `${s}tbody tr > *,${s}thead tr > *{position:static!important;left:auto!important;background:transparent!important;box-shadow:none!important;z-index:auto!important;min-width:0!important;white-space:normal!important;vertical-align:initial!important;}` +
+      `}`;
+    return (
+      base.filter(Boolean).join("") +
+      `@media (max-width:767px){${mobile.filter(Boolean).join("")}}` +
+      print
     );
-    return parts.filter(Boolean).join("");
-  }, [uid, safeBg, minTableWidth, frozenCount, offsets]);
+  }, [uid, safeBg, minTableWidth, frozenCount, leftOffsets]);
 
   return (
     <div className={cn(uid, className)} {...rest}>
       {/* Scoped, print-aware styles for the frozen columns. */}
       <style dangerouslySetInnerHTML={{ __html: css }} />
       <div className="stkt-scroll">{children}</div>
-      {/* Right edge fade — a scroll affordance; hidden in print. */}
+      {/* Right edge fade — a mobile scroll affordance; hidden on desktop and in print. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-paper to-transparent print:hidden"
+        className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-paper to-transparent md:hidden print:hidden"
       />
       {colCountHint != null && (
-        <span className="absolute right-2 top-2 rounded-[8px] border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] text-faint print:hidden">
+        <span className="absolute right-2 top-2 rounded-[8px] border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] text-faint md:hidden print:hidden">
           ↔ {colCountHint} cols
         </span>
       )}

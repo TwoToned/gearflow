@@ -149,7 +149,12 @@ inline, since the `scan-card.tsx` primitives all require an interactive control)
 `crew/[id]` (assignments, availability, time-entries sub-tables). The project
 **crew panel** (`crew-panel.tsx`) uses the equipment-style self-branch card
 instead (its `AssignmentRow`/`PhaseGroup` render a card below `md`) because it
-has bulk-select + an inline status control MobileCardList can't host. Genuinely grid-shaped
+has bulk-select + an inline status control MobileCardList can't host. The
+**sub-hire order dialog** (`sub-hire-order-dialog.tsx`) likewise self-branches its
+`SubHireItemRow` item tables to cards below `md` (the dialog itself is already a
+scrollable `max-h-[85vh]` sheet). With this the bespoke-table→cards sweep is
+**complete** — every operator-facing list table renders as cards on a phone.
+Genuinely grid-shaped
 surfaces (calendars, the crew planner matrix, ROI/allocation matrices, the print
 pull-sheet, desktop-only admin) stay tables — do NOT `MobileCardList` those.
 

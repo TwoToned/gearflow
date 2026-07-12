@@ -40,6 +40,37 @@ checks. It has **zero effect on the write path today** and gains none here. Unit
 creation (visibility / tracking / reassign) and scan granularity (checkMode) are
 **orthogonal**, and we keep them that way.
 
+### Settled sub-decisions (eng review + codex outside voice, 2026-07-12)
+
+These refine the phases below; the review-outcomes appendix records the reasoning.
+
+1. **Units are created at child-line creation** (`createKitLineItemCore`,
+   `projectLineItems.ts:472`), not opportunistically at checkout. A kit added to a
+   project seeds its member units in `CONFIRMED` state immediately, mirroring how
+   loose lines relate to units. Prep/checkout/checkin then **patch existing
+   units**. This gives the per-unit **prep** lifecycle for free and shrinks the
+   backfill to pre-change kits only. Cost: Phase 1 also rewrites the kit prep path
+   and the kit-edit-after-add path (below).
+2. **Display = one row per member, retagged from its unit.** Kit members stay
+   one-row-per-child; Phase 3 changes only the **tag source** (`child.units[0]`
+   instead of `line.asset`) and adds the status badge. **No per-unit expansion
+   rows** — each member has exactly one unit, so expansion is redundant and would
+   reintroduce the `calculateItemHeight` tail-drop bug. This supersedes the earlier
+   "render kit-child per-unit rows" prescription.
+3. **Both paths flip asset status in Phase 1, made idempotent by transition.**
+   The new unit path flips asset status like `checkOutSerializedItem`; the legacy
+   `kitSerializedItems` flip still runs as a belt. `bumpAssetCounters` is gated on
+   an **actual status change**, so a second fixed-status write is a counter no-op.
+   Per codex: the double-count was never the real hazard — the real transitional
+   risk is the **two sources holding different asset sets** (see #4).
+4. **Verification stays on the live `kitSerializedItems` definition + a parity
+   guard.** Fulfillment reads the child-line snapshot/units; verification keeps
+   reading the live kit definition, but a parity check **errors** if a project's
+   child-line asset set diverges from the current kit definition (happens when an
+   `AVAILABLE` kit is edited after being added to a project). Surfaces divergence
+   as an operator-fixable error rather than silently validating one set and
+   deploying another.
+
 Why all-kits and not PER_ITEM-only:
 - The goal — members visible + trackable per job — applies to *every* kit;
   `KIT_LEVEL` members are exactly as invisible today as `PER_ITEM` ones
@@ -130,69 +161,97 @@ silent bug.
 
 ## Phased rollout (multi-PR — do NOT one-shot)
 
-### Phase 1 — Write path: create + flip kit-member units
-Rewrite `checkoutKit` / `checkinKit` (and reverse mutations `undeployKit`,
-`unreturnKit`, `forceReturnKit`) to mint and flip units, converging kit members
-onto the loose-gear helpers.
+### Phase 1 — Create units at kit-add; flip them through the warehouse
+Seed units when kit child lines are created, and make every kit warehouse
+mutation patch those units — converging kit members onto the loose-gear helpers.
 
-- **Checkout** — for each **serialised** direct child line (`c.assetId`, not a
-  nested kit): `ensureSerialisedUnit(line, assetId)` → patch unit
-  `CHECKED_OUT`+`checkedOut*` → flip asset (as `checkOutSerializedItem` does) →
-  `scanLog`. For each **bulk** child line: `ensureBulkUnit(line, bulkAssetId, qty)`
-  + the existing bulk-availability adjustment. Recurse into nested kits.
+- **Seed at creation** — in `createKitLineItemCore` (`projectLineItems.ts:472`),
+  after inserting each serialised child line call `ensureSerialisedUnit(line,
+  assetId)`; after each bulk child line call `ensureBulkUnit(line, bulkAssetId,
+  qty)`. Units start `CONFIRMED`. Recurse for nested-kit grandchildren.
+- **Kit-edit-after-add** — the path that adds/removes a member on a project's kit
+  (adds/removes a child line) must create/cancel the matching unit in lockstep,
+  or the snapshot and its units drift. Trace every child-line mutator, not just
+  creation.
+- **Prep / deprep (in scope — codex #3)** — `prepKitChildren` → `setKitTreePrep`
+  and `deprepKit` (`checkRecordOps.ts:204`) today patch **lines only**. Rewrite
+  them to patch `unit.prepStatus` (`PACKED` / `PENDING`) so the per-unit prep
+  lifecycle actually exists. `deprep` must preserve CHECKED_OUT/RETURNED units
+  (same guard as `deprepItemInner`).
+- **Checkout** — for each serialised member: patch its (already-existing) unit
+  `CHECKED_OUT`+`checkedOut*`, flip asset as `checkOutSerializedItem` does,
+  `scanLog`; for each bulk member: patch the bulk unit + existing availability
+  adjustment. **Also run `expandAccessoriesForAsset`** for each member so
+  accessories-on-kit-members get their units (codex #6). Recurse nested kits.
 - **Check-in** — flip each CHECKED_OUT member unit `RETURNED`+`returned*`+
-  `returnCondition`; restore asset via `assetStatusFromReturnCondition`. Cascade
-  accessory child units (existing `checkinAccessoryChildren`).
-- **Line status** — replace the direct child-line status patches with
-  `syncLineItemRollup(childLineId)` so kit-child line status derives from its
-  units, matching loose gear. Kit **parent** line + `kits` doc status stay
+  `returnCondition`; restore asset via `assetStatusFromReturnCondition`; cascade
+  accessory child units. **Legacy fallback (codex #1):** if a member has no unit
+  (a kit added before this change, pre-backfill), fall back to the legacy line/
+  asset flip and do not throw. This tolerance is removed in Phase 3 once backfill
+  guarantees units exist.
+- **Reverse + force mutations** — `undeployKit`, `unreturnKit`, `forceReturnKit`,
+  **and `forceReturnAsset` / `bulkForceReturnAssets`** (`warehouseOps.ts:318`,
+  codex #10) must flip units too, or they go split-brain. `unreturnKit` must
+  **clear** `returnedAt`/`returnedById`/`returnCondition`/`returnStatus`/
+  `returnNotes` when flipping back to CHECKED_OUT, not just the status (codex #11).
+- **Line status** — replace direct child-line status patches with
+  `syncLineItemRollup(childLineId)`. Kit **parent** line + `kits` doc status stay
   patched directly (kit-level, not unit-derived).
-- **Keep** `kitSerializedItems`-driven asset flip **as a transitional belt** this
-  phase (idempotent with the unit flip) — Phase 3 removes it once units are the
-  source of truth. Do **not** remove it before backfill (Phase 2) lands, or
-  in-flight kits lose their asset flip.
-- **`ConvexError` only**; mirror writes via `createIfMissing` semantics
-  (`ensure*` helpers already are). Guarded `updateMany`-style single-row
-  assertions per the parent design's concurrency rule.
-- **Prep/deprep:** confirm whether kit-child lines flow through `prepItem`/
-  `deprepItemInner` today (loose gear preps per line; kits historically travel as
-  a case). If they do, `prepUnit` already handles them once units exist; if not,
-  units are created at checkout only — document which, no behaviour regression.
-- **Tests:** integration — checkout a kit → N member units CHECKED_OUT, asset
-  statuses flipped, rollup correct; check-in → units RETURNED, assets restored;
-  nested kit; kit with bulk member; accessory on a kit member; reverse
-  mutations. Equipment-tab reconstruct shows member units.
+- **Asset-status belt + idempotency** — keep the `kitSerializedItems`-driven flip
+  this phase; gate `bumpAssetCounters` on an **actual status transition** so the
+  belt and the unit flip together never double-count. **Parity guard (codex #9):**
+  error if a project's child-line asset set diverges from the live
+  `kitSerializedItems` definition at verification time.
+- **`ConvexError` only**; `ensure*` helpers are already `createIfMissing`-safe.
+  Guarded single-row assertions per the parent design's concurrency rule.
+- **Tests:** see the coverage diagram in the eng-review appendix — checkout /
+  check-in / prep / reverse / force / nested / bulk / accessory / pre-change
+  fallback (regression) / parity guard / kit-edit sync.
 
-### Phase 2 — Backfill already-deployed kits
-`scripts/backfill-kit-member-units.ts` (dry-run default; run from the
-`migrate.yml` GitHub Actions workflow — prod SSH freezes on long scripts; refresh
-the Convex service token per mutation per
-[[convex-backfill-token-refresh]]).
+### Phase 2 — Backfill kits added before Phase 1
+Only kits whose child lines predate Phase 1 lack units (going-forward kits are
+seeded at creation).
 
-- For every kit-child line (serialised: has `assetId`; bulk: has `bulkAssetId`)
-  **with no existing unit**, create one via the same `ensure*` helpers, stamping
-  status/lifecycle from the **current line** state (CHECKED_OUT lines →
-  CHECKED_OUT unit with `checkedOut*`; RETURNED lines → RETURNED unit with
-  `returned*`/`returnCondition`; else CONFIRMED). Idempotent — safe to re-run.
+- **Mechanism (codex #7):** a **registered, paginated Convex mutation** (e.g.
+  `convex/backfillKitUnits.ts`) invoked from a workflow/CLI, **not** a `tsx`
+  script calling `ensure*` helpers — those are internal server helpers, not
+  script-callable. Follow the existing backfill-mutation pattern; refresh the
+  Convex service token per batch per [[convex-backfill-token-refresh]].
+- For every kit-child line with no existing unit, create one via the same helpers,
+  stamping **full lifecycle** from the current line — not bare CONFIRMED (codex
+  #8): CHECKED_OUT lines → CHECKED_OUT unit with `checkedOut*`; RETURNED lines →
+  RETURNED unit with `returned*`/`returnCondition`; **prepped lines → carry
+  `prepStatus: PACKED`**; bulk lines → carry `quantity` **and partial
+  `returnedQuantity`**. Idempotent — safe to re-run.
 - Recurse nested kits; skip accessory children (already unit-backed).
-- Nothing new reads these until Phase 1 is deployed *and* the equipment-tab
-  exclusion is lifted, so backfill is non-destructive and reversible.
-- **End the migration with `ANALYZE "projectLineItemUnit";`** (bulk-insert stats
-  hygiene — CLAUDE.md). Parity-check: every pre-backfill CHECKED_OUT/RETURNED kit
-  member reachable via `unit → line → project` with matching `assetId`.
+- Non-destructive: nothing new reads these until Phase 3 lifts the display path,
+  so backfill is reversible.
+- **No `ANALYZE`.** `projectLineItemUnits` is a **Convex** table; `ANALYZE` is
+  PostgreSQL and has no meaning here (the CLAUDE.md ANALYZE rule is Prisma/Postgres
+  only). Convex needs no post-bulk stats step.
+- **Parity check:** every pre-backfill CHECKED_OUT/RETURNED kit member reachable
+  via `unit → line → project` with matching `assetId`.
 
 ### Phase 3 — Surface + strip the old path
-- **Equipment tab:** lift the `isKitChild` exclusion in
-  `equipment-row-descriptors.ts:63` so kit members expand per-unit with a status
-  badge; verify `equipment-tab-reconstruct` attaches member units.
-- **PDF:** render kit-child per-unit rows in `gearflow-table.ts`; **add matching
-  height reservation** in `section-renderer.ts` `calculateItemHeight`; update
-  `buildDeliveryDocketGroups` to source tags/quantities from units. **One
-  cross-pipeline integration test** per the PDF rule.
+- **Equipment tab (retag, do NOT expand):** source each kit-child row's tag from
+  `child.units[0]` instead of `line.asset`, and add the status badge. **Leave**
+  the `isKitChild` exclusion in `equipment-row-descriptors.ts:63` as-is — a
+  one-unit member has nothing to expand, so lifting it does nothing useful and
+  only risks a redundant row (codex #4). **Hide the Reassign control for
+  kit-child units** — `reassignSerialisedUnit` throws on kit children, so an
+  exposed dropdown would offer an always-erroring action (kit-member reassign is
+  Phase 4).
+- **PDF (minimal):** `gearflow-table.ts` already reads `child.units` for tags and
+  only expands when `quantity > 1` (`:805`); serialised kit members are qty-1, so
+  **no new row and no `calculateItemHeight` change** are needed — just confirm the
+  tag now resolves from the unit. Do **not** add per-unit rows for kit children.
+  Still ship **one cross-pipeline integration test** (docket regression: kit row
+  count unchanged, tag sourced from unit) per the PDF rule.
 - **Strip** the `kitSerializedItems → kitSerializedAssetIds → setAssetsStatus`
-  fulfillment flip from checkout/check-in (units are now the source of truth).
-  `kitSerializedItems` remains the kit **definition** table — only its use *as a
-  runtime fulfillment source* is retired.
+  fulfillment flip and the Phase-1 legacy check-in fallback (units now guaranteed
+  by backfill). `kitSerializedItems` remains the kit **definition** table (and the
+  verification source per the parity-guard decision) — only its use *as a runtime
+  fulfillment/asset-flip source* is retired.
 - Unblocks the parent design's deferred **`line.assetId` column drop** for kit
   children (now stored on the unit). Coordinate with that design; likely its own
   follow-up PR.
@@ -207,20 +266,25 @@ per-unit lifecycle + history land first.
 
 ## Risks
 
-1. **Silent PDF tail-drop** — kit-child units rendered without matching
-   `calculateItemHeight` reservation. Mitigation: the PDF integration test;
-   ship render + height in the same PR.
-2. **Double asset flip** — Phase 1 keeps both the unit flip and the legacy
-   `kitSerializedItems` flip. They're idempotent per asset (`setAssetsStatus`
-   patches to a fixed status), but verify no counter double-count in
-   `bumpAssetCounters`. Remove the legacy flip in Phase 3.
-3. **Backfill drift** — stale planner stats after bulk insert → pool stalls.
-   Mitigation: `ANALYZE` terminates the migration.
-4. **Half-migrated window** — equipment tab / PDF start reading member units
-   before backfill completes → some kits show units, others don't. Mitigation:
-   Phase 3 surfacing ships **after** Phase 2 backfill is deployed + verified;
-   `getAssetTag`'s `line.asset` fallback keeps un-backfilled members showing a
-   tag meanwhile.
+1. **Split-brain asset sets (codex #12, the real one)** — the legacy belt flips
+   assets from `kitSerializedItems` while the unit path flips from child-line
+   snapshots. If those sets differ (kit edited after add), unrelated assets flip.
+   Mitigation: the parity guard errors on divergence; the kit-edit-after-add sync
+   keeps them aligned going forward.
+2. **Pre-change kit check-in with no units (codex #1)** — a kit deployed before
+   Phase 1, checked in after, has no units to flip. Mitigation: the Phase-1 legacy
+   check-in fallback (no throw); backfill then guarantees units; fallback removed
+   in Phase 3. Regression test required.
+3. **Counter double-count** — belt + unit flip both touch asset status.
+   Mitigation: `bumpAssetCounters` gated on an actual status transition, so the
+   second fixed-status write is a no-op. (Lower severity than #1 per codex.)
+4. **Large / nested kit mutation size** — seeding units at kit-add and patching
+   them at checkout happen in single Convex mutations; a 50-member or deeply
+   nested kit could approach Convex mutation limits. Mitigation: bounded-size
+   check; paginate if kits can be huge (reuse the backfill pattern).
+5. **Prep-path miss** — if `setKitTreePrep`/`deprepKit` aren't rewritten, the
+   per-unit prep lifecycle silently doesn't exist. Mitigation: they are explicitly
+   in Phase 1 scope; prep integration test.
 
 ## Docs to update as phases land
 - **FEATUREDOCS/60** (assets on a job) — the "Physical kit member" row moves
@@ -230,5 +294,61 @@ per-unit lifecycle + history land first.
 - **line-item-fulfillment-model.md** — mark the line-89/line-163 contradiction
   resolved (link here); update the Phase 4 column-drop status.
 - **ARCHITECTURE.md** table if a new FEATUREDOCS file is added.
+
+---
+
+## Eng-review appendix (2026-07-12)
+
+`/plan-eng-review` + codex outside voice. Cross-model agreement on display model
+(codex #4/#5 ↔ Issue 2) and phase ordering (codex #1). Decisions above.
+
+### What already exists (reused, not rebuilt)
+- **Per-unit fulfillment machinery** — `ensureSerialisedUnit` / `ensureBulkUnit` /
+  `ensureAccessoryUnit`, `syncLineItemRollup`, `returnLineUnits`,
+  `checkOutSerializedItem` (`convex/lib/fulfillment.ts`, `warehouseOps.ts`). Kits
+  converge onto these; no parallel path.
+- **Accessory child-kind unit pattern** (`parentUnitAssetId`) — the precedent for
+  minting units for a non-loose child kind.
+- **`projectLineItemUnits` schema** — already has every field/index needed; no
+  schema change.
+- **Kit prep path** (`prepKitChildren`/`setKitTreePrep`/`deprepKit`) — exists but
+  patches lines only; Phase 1 extends it to units rather than adding a new path.
+
+### NOT in scope (deferred, with rationale)
+- **Kit-member reassign** — Phase 4. Identity is tied to the kit slot; needs a
+  same-kit-slot guard model. Visibility + lifecycle + history land first.
+- **`line.assetId` column drop for kit children** — parent design's follow-up;
+  unblocked by Phase 3 but shipped separately.
+- **Collapsing kitSerializedItems into the snapshot / making project kits a live
+  reference** — verification stays on the live definition + parity guard; a full
+  snapshot-vs-live redesign is out of scope.
+- **checkMode changes** — stays a scan-granularity-only control, untouched.
+- **Paginating kit checkout for huge kits** — only if the bounded-size check shows
+  real kits hit Convex limits.
+
+### Failure modes (new codepaths)
+| Codepath | Realistic failure | Test? | Error handling? | Silent? |
+|---|---|---|---|---|
+| checkinKit, pre-change kit | no unit to flip → throw / stuck asset | **required (regression)** | legacy fallback | would be silent → **must test** |
+| forceReturnAsset / bulk | patches line, not unit → split-brain | required | flip units | silent → **critical gap until fixed** |
+| checkout, edited kit | belt vs snapshot flip different assets | required | parity guard errors | guard makes it loud |
+| seed at kit-add, huge kit | Convex mutation limit → 500 | perf test | bounded check | user sees warehouse 500 |
+| prep path not rewritten | per-unit prepStatus never set | required | n/a | silent feature-absence |
+
+Critical gaps flagged: **pre-change checkin fallback** and **forceReturn
+split-brain** — both are regression-class, auto-added to the plan.
+
+### Parallelization
+Largely **sequential** — Phase 1 → 2 → 3 are hard-ordered (backfill must follow
+the write path and precede the display cutover). Within Phase 1 there is one
+parallel split:
+- **Lane A:** `convex/warehouseOps.ts` write/reverse/force mutations + parity guard.
+- **Lane B:** `createKitLineItemCore` seeding + `setKitTreePrep`/`deprepKit` prep
+  rewrite (`projectLineItems.ts`, `checkRecordOps.ts`).
+
+Lanes A and B touch disjoint files and can be built in parallel worktrees, but both
+must land before Phase 2. Phase 3 (equipment-tab + PDF) is a separate lane gated on
+Phase 2. Backfill mutation (`convex/backfillKitUnits.ts`) can be written anytime but
+run only after Phase 1 deploys.
 </content>
 </invoke>

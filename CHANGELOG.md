@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.5.0] - 2026-07-12
+
+### Changed
+
+- Mobile: the project equipment cards now have a clearer visual hierarchy. Groups, sub-hire groups and kits render as distinct "container" cards (heavier edge, a small type icon, bolder title and a qty·total summary), while plain line items are a size step down and grouped items tuck in under their container. Kit contents stay recessed. Makes a big equipment list far easier to scan on a phone.
+
 ## [0.24.4.0] - 2026-07-12
 
 ### Changed

@@ -1657,6 +1657,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         lineItemId={moveItemToGroup?.lineItemId ?? null}
         initialGroupId={moveItemToGroup?.initialGroupId}
         categories={typedCategories}
+        uncategorizedGroups={orphanProjectGroups.map((g) => ({ id: g.id, title: g.title }))}
         isPending={moveLineItemMut.isPending}
         onClose={() => setMoveItemToGroup(null)}
         onSubmit={(lineItemId, target) =>
@@ -1699,6 +1700,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       <MoveItemToGroupDialog
         lineItemId={bulkMoveGroupOpen ? "__bulk__" : null}
         categories={typedCategories}
+        uncategorizedGroups={orphanProjectGroups.map((g) => ({ id: g.id, title: g.title }))}
         isPending={bulkMoveMut.isPending}
         onClose={() => setBulkMoveGroupOpen(false)}
         onSubmit={(_id, target) =>

@@ -73,13 +73,13 @@ import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StickyTable } from "@/components/ui/sticky-table";
 import { formatCurrency } from "@/lib/formatters";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import { cn, focusRing } from "@/lib/utils";
@@ -886,17 +886,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         </Button>
       </BulkActionBar>
 
-      {/* Main table */}
+      {/* Main table. On mobile the item name stays pinned on the left while the
+          price/total columns scroll sideways (same treatment as the warehouse
+          pull-sheet), instead of hiding columns at breakpoints and cramming the name
+          into a narrow column. Desktop is unchanged — StickyTable only freezes/scrolls
+          below the `md` breakpoint, so the full table renders plainly on desktop. */}
       {(hasCategories || hasUncategorized) && (
-        <div className="rounded-[var(--r)] border border-line overflow-x-auto">
-          <Table className="table-fixed">
+        <div className="rounded-[var(--r)] border border-line">
+          <StickyTable
+            frozenColWidths={[40, 200]}
+            minTableWidth={showCostColumn ? 760 : 660}
+            colCountHint={showCostColumn ? 7 : 6}
+            frozenBg="var(--paper)"
+          >
+          <table className="w-full caption-bottom text-[13.5px] table-fixed">
             <colgroup>
               <col className="w-10" />
               <col />
               <col className="w-16" />
-              <col className="w-28 hidden md:table-column" />
-              {showCostColumn && <col className="w-24 hidden md:table-column" />}
-              <col className="w-28 hidden sm:table-column" />
+              <col className="w-28" />
+              {showCostColumn && <col className="w-24" />}
+              <col className="w-28" />
               <col className="w-32" />
             </colgroup>
             <TableHeader>
@@ -917,11 +927,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                 </div>
               </TableHead>
               <TableHead className="text-center">Qty</TableHead>
-              <TableHead className="text-right hidden md:table-cell">Unit price</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Unit price</TableHead>
               {showCostColumn && (
-                <TableHead className="text-right hidden md:table-cell">Cost</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Cost</TableHead>
               )}
-              <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Total</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -939,6 +949,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       {/* Category label row */}
                       <CategoryRow
                         cat={cat}
+                        columnCount={colCount}
                         onMoveUp={() => moveCategory(catIndex, -1)}
                         onMoveDown={() => moveCategory(catIndex, 1)}
                         canMoveUp={catIndex > 0}
@@ -1376,7 +1387,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   );
                 })}
               </TableBody>
-          </Table>
+          </table>
+          </StickyTable>
         </div>
       )}
 

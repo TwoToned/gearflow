@@ -475,15 +475,15 @@ export function GroupRow({
         </div>
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell t-data">
+      <TableCell className="text-right whitespace-nowrap t-data">
         {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right hidden md:table-cell t-data text-faint">
+        <TableCell className="text-right whitespace-nowrap t-data text-faint">
           —
         </TableCell>
       )}
-      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
+      <TableCell className="text-right font-medium whitespace-nowrap t-data">
         {priceVal != null ? formatCurrency(priceVal * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
@@ -676,15 +676,15 @@ export function SubHireGroupRow({
         </div>
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell t-data">
+      <TableCell className="text-right whitespace-nowrap t-data">
         {charge != null ? formatCurrency(charge) : <span className="text-faint">—</span>}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right hidden md:table-cell t-data">
+        <TableCell className="text-right whitespace-nowrap t-data">
           {cost != null ? formatCurrency(cost) : <span className="text-faint">—</span>}
         </TableCell>
       )}
-      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
+      <TableCell className="text-right font-medium whitespace-nowrap t-data">
         {charge != null ? formatCurrency(charge * group.quantity) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
@@ -734,6 +734,7 @@ export function SubHireGroupRow({
 
 export function CategoryRow({
   cat,
+  columnCount,
   lockedBy,
   onRename,
   onDelete,
@@ -746,6 +747,9 @@ export function CategoryRow({
   canMoveDown,
 }: {
   cat: CategoryData;
+  /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
+   *  stays consistent with the separator/empty rows when the cost column is shown. */
+  columnCount: number;
   /** Passive "X is editing" badge — fed from the parent's single
    *  entity-level lock subscription, looked up by category target key. */
   lockedBy?: { name: string; color: string } | null;
@@ -765,7 +769,7 @@ export function CategoryRow({
 
   return (
     <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
-      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+      <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <MoveButtons
             onMoveUp={onMoveUp}
@@ -971,14 +975,16 @@ export function LineItemRow({
       style={style}
       className={cn(
         "group/row",
-        isSelected && "bg-select",
+        // Selection shows as a left-edge bar on the frozen first cell (below) rather
+        // than a full-row tint: on mobile the frozen column is opaque, so a row-wide
+        // tint would seam against it (DESIGN.md prefers left-edge indicators anyway).
         hasActiveLock && "collab-editing",
         justChanged && "collab-changed",
       )}
       onClick={onClick}
       {...shortcuts}
     >
-      <TableCell className="px-0">
+      <TableCell className={cn("px-0", isSelected && "shadow-[inset_3px_0_0_0_var(--red)]")}>
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <MoveButtons
             onMoveUp={onMoveUp}
@@ -1115,7 +1121,7 @@ export function LineItemRow({
         )}
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell t-data">
+      <TableCell className="text-right whitespace-nowrap t-data">
         <div className="flex items-center justify-end gap-1">
           {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
           {item.priceOverridden && (
@@ -1127,11 +1133,11 @@ export function LineItemRow({
         )}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right hidden md:table-cell t-data text-faint">
+        <TableCell className="text-right whitespace-nowrap t-data text-faint">
           —
         </TableCell>
       )}
-      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
+      <TableCell className="text-right font-medium whitespace-nowrap t-data">
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
       </TableCell>
       <TableCell>
@@ -1222,9 +1228,11 @@ export function LineItemRow({
         </div>
       </TableCell>
     </TableRow>
-    {/* Expanded child items (kit children / sub-hire group children) */}
+    {/* Expanded child items (kit children / sub-hire group children).
+        Child rows: subtle tint on desktop only. On mobile the frozen column is opaque so
+        a row-wide tint seams against it; the name's indent conveys nesting there. */}
     {isExpanded && hasChildren && item.childLineItems!.map((child) => (
-      <TableRow key={child.id} className="bg-paper-2/40">
+      <TableRow key={child.id} className="md:bg-paper-2/40">
         <TableCell className="px-0" />
         <TableCell>
           <div className={`${childIndent}`}>
@@ -1254,11 +1262,11 @@ export function LineItemRow({
           </div>
         </TableCell>
         <TableCell className="text-center t-data text-ink-2">{child.quantity}</TableCell>
-        <TableCell className="text-right hidden md:table-cell t-data text-ink-2">
+        <TableCell className="text-right whitespace-nowrap t-data text-ink-2">
           {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
         </TableCell>
-        {showCostColumn && <TableCell className="text-right hidden md:table-cell t-data" />}
-        <TableCell className="text-right hidden sm:table-cell t-data text-ink-2">
+        {showCostColumn && <TableCell className="text-right whitespace-nowrap t-data" />}
+        <TableCell className="text-right whitespace-nowrap t-data text-ink-2">
           {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
         </TableCell>
         {/* Child rows can't be price-edited or reordered independently, so the

@@ -60,6 +60,19 @@ describe("StickyTable", () => {
     expect(style).toContain("overflow:visible!important");
   });
 
+  it("scopes the frozen/scroll treatment to mobile so desktop stays a plain table", () => {
+    const { container } = renderTable({ frozenColWidths: [40, 180] });
+    const style = container.querySelector("style")!.innerHTML;
+    // The sticky/min-width rules live inside a max-width media query; base rules don't.
+    const mobile = style.slice(
+      style.indexOf("@media (max-width:767px)"),
+      style.indexOf("@media print"),
+    );
+    expect(style).toContain("@media (max-width:767px)");
+    expect(mobile).toContain("position:sticky");
+    expect(mobile).toContain("min-width:560px");
+  });
+
   it("resets cell min-width/white-space (not just table width) for print", () => {
     const { container } = renderTable({ frozenColWidths: [40, 180] });
     const style = container.querySelector("style")!.innerHTML;
@@ -78,6 +91,31 @@ describe("StickyTable", () => {
     expect(style).not.toContain("</style>");
     // Falls back to the safe default.
     expect(style).toContain("--stkt-bg:var(--paper)");
+  });
+
+  it("skips full-width colSpan header rows when freezing columns positionally", () => {
+    const { container } = render(
+      <StickyTable frozenColWidths={[40, 200]} minTableWidth={720}>
+        <table>
+          <tbody>
+            <tr>
+              {/* colSpan category header — must NOT be pinned as the identity column */}
+              <td colSpan={4}>Wireless microphones</td>
+            </tr>
+            <tr>
+              <td>reorder</td>
+              <td>Shure SLXD 6 Channel Kit</td>
+              <td>1</td>
+              <td>actions</td>
+            </tr>
+          </tbody>
+        </table>
+      </StickyTable>,
+    );
+    const style = container.querySelector("style")!.innerHTML;
+    // The freeze selectors exclude colSpan cells, so a full-width header row scrolls.
+    expect(style).toContain(":nth-child(1):not([colspan])");
+    expect(style).toContain(":nth-child(2):not([colspan])");
   });
 
   it("shows a scroll affordance (edge fade + column-count hint), both print-hidden", () => {

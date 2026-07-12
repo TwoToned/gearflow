@@ -949,6 +949,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       {/* Category label row */}
                       <CategoryRow
                         cat={cat}
+                        columnCount={colCount}
                         onMoveUp={() => moveCategory(catIndex, -1)}
                         onMoveDown={() => moveCategory(catIndex, 1)}
                         canMoveUp={catIndex > 0}

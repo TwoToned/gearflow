@@ -734,6 +734,7 @@ export function SubHireGroupRow({
 
 export function CategoryRow({
   cat,
+  columnCount,
   lockedBy,
   onRename,
   onDelete,
@@ -746,6 +747,9 @@ export function CategoryRow({
   canMoveDown,
 }: {
   cat: CategoryData;
+  /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
+   *  stays consistent with the separator/empty rows when the cost column is shown. */
+  columnCount: number;
   /** Passive "X is editing" badge — fed from the parent's single
    *  entity-level lock subscription, looked up by category target key. */
   lockedBy?: { name: string; color: string } | null;
@@ -765,7 +769,7 @@ export function CategoryRow({
 
   return (
     <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
-      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+      <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <MoveButtons
             onMoveUp={onMoveUp}

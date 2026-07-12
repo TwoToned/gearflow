@@ -105,6 +105,7 @@ import {
 } from "@/components/ui/select";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -475,6 +476,362 @@ export default function CrewMemberDetailPage({
         ? { value: Number(member.defaultHourlyRate), unit: "/hr" }
         : null;
 
+  // ── Mobile card column layouts for the sub-tables (rendered below `md`) ────
+  const assignmentColumns: ColumnDef<any>[] = [
+    {
+      id: "project",
+      header: "Project",
+      mobile: "title",
+      cell: (a) => (
+        <Link
+          href={`/projects/${a.project.id}`}
+          className={`font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+        >
+          <div className="flex items-center gap-2">
+            <Briefcase className="h-3.5 w-3.5 text-muted" />
+            <div>
+              <div>{a.project.name}</div>
+              <div className="text-caption text-muted font-mono">
+                {a.project.projectNumber}
+              </div>
+            </div>
+          </div>
+        </Link>
+      ),
+    },
+    {
+      id: "role",
+      header: "Role",
+      mobile: "badge",
+      cell: (a) =>
+        a.crewRole ? (
+          <Badge
+            status="neutral"
+            style={
+              a.crewRole.color
+                ? {
+                    color: a.crewRole.color,
+                    backgroundColor: `${a.crewRole.color}26`,
+                  }
+                : undefined
+            }
+          >
+            {a.crewRole.name}
+          </Badge>
+        ) : (
+          <span className="text-muted">{"—"}</span>
+        ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (a) => (
+        <StatusIndicator
+          category="assignment"
+          value={a.status}
+          variant="pill"
+          label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+        />
+      ),
+    },
+    {
+      id: "phase",
+      header: "Phase",
+      mobile: "meta",
+      cell: (a) => (a.phase ? phaseLabels[a.phase] || a.phase : "—"),
+    },
+    {
+      id: "dates",
+      header: "Dates",
+      mobile: "meta",
+      cell: (a) => (
+        <span className="tabular-nums">
+          {formatDate(a.startDate)}
+          {a.endDate && a.endDate !== a.startDate
+            ? ` – ${formatDate(a.endDate)}`
+            : ""}
+        </span>
+      ),
+    },
+    {
+      id: "projectStatus",
+      header: "Project status",
+      mobile: "meta",
+      cell: (a) => (
+        <StatusIndicator
+          category="project"
+          value={a.project.status}
+          label={projectStatusLabels[a.project.status] || a.project.status}
+          variant="pill"
+        />
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (a) => {
+        const statusTransitions: Record<string, string[]> = {
+          PENDING: ["OFFERED", "CONFIRMED", "CANCELLED"],
+          OFFERED: ["CONFIRMED", "CANCELLED"],
+          ACCEPTED: ["CONFIRMED", "CANCELLED"],
+          DECLINED: ["PENDING"],
+          CONFIRMED: ["COMPLETED", "CANCELLED"],
+          CANCELLED: ["PENDING"],
+          COMPLETED: [],
+        };
+        const availableStatuses = statusTransitions[a.status] || [];
+        return (
+          <CanDo resource="crew" action="update">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Assignment actions">
+                  <MoreHorizontal className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  {a.status === "PENDING" && member.email && (
+                    <DropdownMenuItem
+                      onClick={() => sendOfferMutation.mutate(a.id)}
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      Send offer
+                    </DropdownMenuItem>
+                  )}
+                  {availableStatuses.map((s) => (
+                    <DropdownMenuItem
+                      key={s}
+                      onClick={() =>
+                        updateAssignmentStatusMutation.mutate({
+                          assignmentId: a.id,
+                          status: s,
+                        })
+                      }
+                    >
+                      {s === "CONFIRMED" && <CheckCircle className="mr-2 h-4 w-4" />}
+                      {s === "CANCELLED" && <AlertTriangle className="mr-2 h-4 w-4" />}
+                      {!["CONFIRMED", "CANCELLED"].includes(s) && <Briefcase className="mr-2 h-4 w-4" />}
+                      {assignmentStatusLabels[s] || formatLabel(s)}
+                    </DropdownMenuItem>
+                  ))}
+                  <CanDo resource="crew" action="delete">
+                    <ConfirmActionMenuItem
+                      icon={<Trash2 className="mr-2 h-4 w-4" />}
+                      onConfirm={() => deleteAssignmentMutation.mutate(a.id)}
+                    >
+                      Remove assignment
+                    </ConfirmActionMenuItem>
+                  </CanDo>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </CanDo>
+        );
+      },
+    },
+  ];
+
+  const availabilityColumns: ColumnDef<any>[] = [
+    {
+      id: "dates",
+      header: "Dates",
+      mobile: "title",
+      cell: (av) => (
+        <span className="tabular-nums">
+          {formatDate(av.startDate)}
+          {av.endDate !== av.startDate
+            ? ` – ${formatDate(av.endDate)}`
+            : ""}
+        </span>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (av) => (
+        <Badge status="neutral" className={availabilityPill(av.type)}>
+          <CalendarOff className="mr-1 h-3 w-3" />
+          {availabilityTypeLabels[av.type] || formatLabel(av.type)}
+        </Badge>
+      ),
+    },
+    {
+      id: "time",
+      header: "Time",
+      mobile: "meta",
+      cell: (av) =>
+        av.isAllDay
+          ? "All day"
+          : `${av.startTime || ""} – ${av.endTime || ""}`,
+    },
+    {
+      id: "reason",
+      header: "Reason",
+      mobile: "meta",
+      cell: (av) => av.reason || "—",
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (av) => (
+        <CanDo resource="crew" action="update">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="touch-target size-9 text-t-out hover:bg-out-soft"
+            aria-label="Remove availability block"
+            onClick={() => setRemoveAvailId(av.id)}
+          >
+            <Trash2 className="size-5" />
+          </Button>
+        </CanDo>
+      ),
+    },
+  ];
+
+  const timeEntryColumns: ColumnDef<any>[] = [
+    {
+      id: "date",
+      header: "Date",
+      mobile: "title",
+      cell: (entry) => (
+        <span className="tabular-nums">{formatDate(entry.date)}</span>
+      ),
+    },
+    {
+      id: "project",
+      header: "Project",
+      mobile: "subtitle",
+      cell: (entry) =>
+        entry.assignment ? (
+          <>
+            {entry.assignment.project?.projectNumber} —{" "}
+            {entry.assignment.project?.name}
+          </>
+        ) : (
+          <span className="text-muted italic">
+            {entry.description || "General"}
+          </span>
+        ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (entry) => (
+        <StatusIndicator
+          category="timeEntry"
+          value={entry.status}
+          label={timeEntryStatusLabels[entry.status] || formatLabel(entry.status)}
+          variant="pill"
+        />
+      ),
+    },
+    {
+      id: "role",
+      header: "Role",
+      mobile: "meta",
+      cell: (entry) => entry.assignment?.crewRole?.name || "—",
+    },
+    {
+      id: "start",
+      header: "Start",
+      mobile: "meta",
+      cell: (entry) => (
+        <span className="font-mono tabular-nums">{entry.startTime}</span>
+      ),
+    },
+    {
+      id: "end",
+      header: "End",
+      mobile: "meta",
+      cell: (entry) => (
+        <span className="font-mono tabular-nums">{entry.endTime}</span>
+      ),
+    },
+    {
+      id: "break",
+      header: "Break",
+      mobile: "meta",
+      cell: (entry) =>
+        entry.breakMinutes > 0 ? `${entry.breakMinutes}m` : "—",
+    },
+    {
+      id: "hours",
+      header: "Hours",
+      mobile: "meta",
+      cell: (entry) => (
+        <span className="font-mono tabular-nums">
+          {entry.totalHours != null
+            ? `${Number(entry.totalHours).toFixed(1)}h`
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (entry) =>
+        entry.status !== "EXPORTED" ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="touch-target size-9" aria-label="Time entry actions">
+                <MoreHorizontal className="size-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setEditingTimeEntry(entry.id);
+                    setAddTimeOpen(true);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                {["DRAFT", "DISPUTED"].includes(entry.status) && (
+                  <DropdownMenuItem
+                    onClick={() => submitTimeMutation.mutate([entry.id])}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Submit
+                  </DropdownMenuItem>
+                )}
+                {["SUBMITTED", "DISPUTED"].includes(entry.status) && (
+                  <DropdownMenuItem
+                    onClick={() => approveTimeMutation.mutate([entry.id])}
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Approve
+                  </DropdownMenuItem>
+                )}
+                {["SUBMITTED", "APPROVED"].includes(entry.status) && (
+                  <DropdownMenuItem
+                    onClick={() => disputeTimeMutation.mutate(entry.id)}
+                  >
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                    Dispute
+                  </DropdownMenuItem>
+                )}
+                <ConfirmActionMenuItem
+                  icon={<Trash2 className="mr-2 h-4 w-4" />}
+                  onConfirm={() => deleteTimeMutation.mutate(entry.id)}
+                >
+                  Delete
+                </ConfirmActionMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null,
+    },
+  ];
+
   return (
     <>
       <PageMeta title={fullName} />
@@ -729,7 +1086,8 @@ export default function CrewMemberDetailPage({
                           description="Assign this crew member to a project from the planner or a project's crew tab."
                         />
                       ) : (
-                        <div className="rounded-[var(--r)] border border-line">
+                        <>
+                        <div className="hidden rounded-[var(--r)] border border-line md:block">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -892,6 +1250,13 @@ export default function CrewMemberDetailPage({
                             </TableBody>
                           </Table>
                         </div>
+                        <MobileCardList
+                          className="md:hidden"
+                          data={assignments}
+                          columns={assignmentColumns}
+                          getRowId={(a) => a.id}
+                        />
+                        </>
                       )}
                   </div>
                 </TabsContent>
@@ -918,7 +1283,8 @@ export default function CrewMemberDetailPage({
                           description="Add blocks to indicate when this crew member is unavailable, tentative, or preferred."
                         />
                       ) : (
-                        <div className="rounded-[var(--r)] border border-line">
+                        <>
+                        <div className="hidden rounded-[var(--r)] border border-line md:block">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -989,6 +1355,13 @@ export default function CrewMemberDetailPage({
                             </TableBody>
                           </Table>
                         </div>
+                        <MobileCardList
+                          className="md:hidden"
+                          data={availabilityRecords}
+                          columns={availabilityColumns}
+                          getRowId={(av) => av.id}
+                        />
+                        </>
                       )}
                   </div>
                 </TabsContent>
@@ -1083,6 +1456,8 @@ export default function CrewMemberDetailPage({
                           description="Log time against a project assignment or a general shift."
                         />
                       ) : (
+                        <>
+                        <div className="hidden md:block">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -1214,6 +1589,14 @@ export default function CrewMemberDetailPage({
                             ))}
                           </TableBody>
                         </Table>
+                        </div>
+                        <MobileCardList
+                          className="md:hidden"
+                          data={timeEntries}
+                          columns={timeEntryColumns}
+                          getRowId={(entry) => entry.id}
+                        />
+                        </>
                       )}
                   </div>
                 </TabsContent>

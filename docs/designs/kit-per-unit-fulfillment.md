@@ -348,6 +348,17 @@ it true:
 
 ---
 
+## Implementation status
+
+- **Phase 1 — COMPLETE (2026-07-12).** Seeding, prep tree, checkout/checkin,
+  reverse (undeploy/unreturn), force (forceReturnKit/Asset/bulk), and
+  accessories-on-members all wired unit-only alongside the untouched legacy belt.
+  17 integration tests in `convex/kitPerUnit.test.ts`; full convex suite green
+  (269). `bumpAssetCounters` left unchanged (already idempotent). Kit-edit sync
+  found unnecessary; parity guard moved to Phase 3 (see Phase 1 notes above).
+  Members are **not yet visible** on the equipment tab/PDF — that's Phase 3.
+- **Phase 2 — NEXT.** Backfill kits added before Phase 1.
+
 ## Eng-review appendix (2026-07-12)
 
 `/plan-eng-review` + codex outside voice. Cross-model agreement on display model

@@ -1,0 +1,56 @@
+name: Convex daily backup
+
+# Daily prod Convex snapshot (data + file storage) -> off-provider cold copy.
+# The proves-recoverable pair with docs/convex-backup-restore-runbook.md
+# (restore drill PASSED 2026-07-12). This closes the "make the export recurring"
+# half of the Phase-0 backup gate.
+#
+# STORAGE NOTE: while prod is dark / pre-launch (tiny, non-customer data) the
+# snapshot is retained as a 90-day GitHub artifact — an off-Convex cold copy with
+# zero new infra. BEFORE real launch, move the upload to a dedicated ENCRYPTED
+# bucket: prod customer data must not live in CI artifacts. See the runbook.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: convex-backup
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (for Convex CLI)
+        run: pnpm install --frozen-lockfile
+
+      - name: Export prod Convex snapshot (data + file storage)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          pnpm exec convex export --path "convex-snapshot-$TS.zip" --include-file-storage
+          ls -lh convex-snapshot-*.zip
+          # fail loudly if the snapshot is suspiciously tiny (empty export)
+          SIZE=$(stat -c%s convex-snapshot-*.zip)
+          if [ "$SIZE" -lt 1024 ]; then echo "::error::snapshot too small ($SIZE bytes)"; exit 1; fi
+
+      - name: Upload snapshot (cold copy, 90-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: convex-snapshot
+          path: convex-snapshot-*.zip
+          retention-days: 90
+          if-no-files-found: error

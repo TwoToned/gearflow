@@ -3362,6 +3362,14 @@ already-inverted tables + three small inversions.
   - **maintenanceRecord** — 5 stale reads + the user-delete FK-scrub (see the
     residual stale-read audit above).
 - **Write-inversions:**
+  - **groupTemplateItem** (2026-07-13) — the group-template CHILD items were the last
+    Postgres domain in `group-templates.ts` (create/save/update/delete/read on
+    `prisma.groupTemplateItem`). Inverted to the existing `api.groupTemplateItems.*`
+    CRUD: 6 prod rows backfilled (`createIfMissing`, table was empty), reads →
+    `list`+filter / `listTemplateItems`, writes → `createTemplateItems`/
+    `deleteTemplateItems`. `quantity` coerced on read (Convex optional vs Prisma NOT
+    NULL). Cross-doc cascade is now per-item (accepted non-atomicity). `group_template`
+    + `group_template_item` both frozen → Phase-4 DROP candidates. (PR #433.)
   - **checkItem** — was Prisma-first + an inline mirror → Convex-only
     (create/`patchCheckItem`/remove); mirror helpers deleted. Already dual-written,
     no backfill.

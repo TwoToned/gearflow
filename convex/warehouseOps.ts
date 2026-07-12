@@ -349,20 +349,35 @@ async function kitSerializedAssetIds(ctx: Ctx, kitId: string): Promise<string[]>
  * error and make the operator re-add the kit to resync, rather than silently
  * deploying an unverified set. Serialised members only (bulk uses availability,
  * not per-asset status).
+ *
+ * Compared by MODEL + quantity, not exact serial: a per-job serial substitution
+ * (kit-member reassign, Phase 4) legitimately points a member at a different
+ * same-model asset, so exact-serial parity would false-positive. The guard's real
+ * job is STRUCTURAL drift — a member added/removed, or a model changed. Actual
+ * serials are still verified by tag-scan at checkout (T&T + the check flow).
  */
+async function kitModelCounts(ctx: Ctx, assetIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (const id of assetIds) {
+    const a = await assetByCuid(ctx, id);
+    const model = a?.modelId ?? `__no-model:${id}`;
+    counts.set(model, (counts.get(model) ?? 0) + 1);
+  }
+  return counts;
+}
+
 async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: string, organizationId: string) {
   const children = await childLines(ctx, kitLineId, organizationId);
-  const snapshot = new Set(children.filter((c) => !c.kitId && c.assetId).map((c) => c.assetId!));
-  const definition = new Set(await kitSerializedAssetIds(ctx, kitId));
-  const missing = [...definition].filter((id) => !snapshot.has(id));
-  const extra = [...snapshot].filter((id) => !definition.has(id));
-  if (missing.length > 0 || extra.length > 0) {
+  const snapshot = await kitModelCounts(ctx, children.filter((c) => !c.kitId && c.assetId).map((c) => c.assetId!));
+  const definition = await kitModelCounts(ctx, await kitSerializedAssetIds(ctx, kitId));
+  const models = new Set([...snapshot.keys(), ...definition.keys()]);
+  const driftModels = [...models].filter((m) => (snapshot.get(m) ?? 0) !== (definition.get(m) ?? 0));
+  if (driftModels.length > 0) {
     throw new ConvexError({
       kind: "KIT_COMPOSITION_DRIFT",
       kitId,
-      message: "This kit's contents changed since it was added to the project. Remove and re-add the kit to resync, then deploy.",
-      missing,
-      extra,
+      message: "This kit's contents (models/quantities) changed since it was added to the project. Remove and re-add the kit to resync, then deploy.",
+      driftModels,
     });
   }
 }
@@ -1236,5 +1251,61 @@ export const reassignSerialisedUnit = mutation({
       fromLineItemId: sourceLineId,
       toLineItemId: targetLineItemId,
     };
+  },
+});
+
+/**
+ * Kit-member serial reassign (Phase 4). A kit member is bound to its kit slot, so
+ * "reassign" here means SWAP which physical serial fills that slot on this job —
+ * point the member's unit (and its snapshot child line) at a different same-model
+ * AVAILABLE asset — NOT move it to another line (that's reassignSerialisedUnit for
+ * loose gear). The kit DEFINITION (kitSerializedItems) is shared across projects
+ * and is never touched; only this project's snapshot changes. The parity guard is
+ * model-based, so a same-model swap doesn't trip it.
+ *
+ * Before deployment only: once the member is CHECKED_OUT the asset is physically
+ * out, so a swap would be a physical return+redeploy (out of scope — un-deploy the
+ * kit first). Pre-deployment neither asset's status changes (both stay AVAILABLE
+ * until checkout), so this is a pure pointer swap.
+ */
+export const reassignKitMemberSerial = mutation({
+  args: { organizationId: v.string(), unitId: v.string(), newAssetId: v.string() },
+  handler: async (ctx, { organizationId, unitId, newAssetId }) => {
+    await requireService(ctx);
+    const unit = await unitByCuid(ctx, unitId);
+    if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
+    if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) members can be reassigned");
+    if (unit.status === "CHECKED_OUT") throw new ConvexError("This member is deployed — un-deploy the kit before swapping its serial");
+    if (unit.status === "RETURNED" || unit.status === "CANCELLED") throw new ConvexError("Returned units are history and can't be reassigned");
+    if (unit.assetId === newAssetId) return { moved: false as const };
+
+    const line = await lineByCuid(ctx, unit.lineItemId);
+    if (!line) throw new ConvexError("Line not found");
+    if (!line.isKitChild) throw new ConvexError("Loose gear reassigns by line — use reassignSerialisedUnit");
+
+    const [current, next] = await Promise.all([assetByCuid(ctx, unit.assetId), assetByCuid(ctx, newAssetId)]);
+    if (!current) throw new ConvexError("Current asset not found");
+    if (!next || next.organizationId !== organizationId) throw new ConvexError("Replacement asset not found in this organization");
+    if (!next.modelId || next.modelId !== current.modelId) throw new ConvexError("Replacement must be the same model");
+    if (next.status !== "AVAILABLE") throw new ConvexError(`${next.assetTag} is not available`);
+    if (next.isActive === false) throw new ConvexError(`${next.assetTag} is retired`);
+
+    // The replacement must not already fill another live member of THIS kit.
+    if (line.parentLineItemId) {
+      for (const sib of await childLines(ctx, line.parentLineItemId, organizationId)) {
+        const sibUnits = await lineUnits(ctx, sib.id);
+        if (sibUnits.some((u) => u.assetId === newAssetId && u.status !== "CANCELLED" && u.status !== "RETURNED")) {
+          throw new ConvexError(`${next.assetTag} is already assigned to this kit`);
+        }
+      }
+    }
+
+    const now = Date.now();
+    // Swap the serial on both the unit and its snapshot child line. Pre-deployment
+    // neither asset's status changes (both AVAILABLE until checkout).
+    await ctx.db.patch(unit._id, { assetId: newAssetId, updatedAt: now });
+    await ctx.db.patch(line._id, { assetId: newAssetId, updatedAt: now });
+    await syncLineItemRollup(ctx, line.id);
+    return { moved: true as const, fromAssetTag: current.assetTag, toAssetTag: next.assetTag, lineItemId: line.id };
   },
 });

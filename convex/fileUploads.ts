@@ -40,8 +40,12 @@ export const getByThumbnailUrl = query({
   args: { thumbnailUrl: v.string() },
   handler: async (ctx, { thumbnailUrl }) => {
     await requireService(ctx);
-    const docs = await ctx.db.query("fileUploads").collect();
-    return docs.find((d) => d.thumbnailUrl === thumbnailUrl) ?? null;
+    // Point-lookup via by_thumbnailUrl instead of scanning the whole (cross-org)
+    // fileUploads table. .first() matches the old .find() (first/only match).
+    return await ctx.db
+      .query("fileUploads")
+      .withIndex("by_thumbnailUrl", (q) => q.eq("thumbnailUrl", thumbnailUrl))
+      .first();
   },
 });
 

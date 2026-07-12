@@ -17,6 +17,7 @@ import type * as assetScanLogs from "../assetScanLogs.js";
 import type * as assetWrites from "../assetWrites.js";
 import type * as assets from "../assets.js";
 import type * as availabilityCheck from "../availabilityCheck.js";
+import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as brandTemplates from "../brandTemplates.js";
 import type * as bulkAssets from "../bulkAssets.js";
 import type * as categories from "../categories.js";
@@ -147,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   assetWrites: typeof assetWrites;
   assets: typeof assets;
   availabilityCheck: typeof availabilityCheck;
+  backfillKitUnits: typeof backfillKitUnits;
   brandTemplates: typeof brandTemplates;
   bulkAssets: typeof bulkAssets;
   categories: typeof categories;

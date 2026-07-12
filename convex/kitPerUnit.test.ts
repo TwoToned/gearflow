@@ -264,6 +264,66 @@ describe("kit per-unit — composition parity guard (Phase 3)", () => {
   });
 });
 
+describe("kit per-unit — member serial reassign (Phase 4)", () => {
+  async function seedKitWithSpare(t: T) {
+    await seedKit(t); // member a1 (model m1) on kit k1 / project p1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+  }
+  const memberUnit = async (t: T) => (await memberUnits(t))[0];
+  const reassign = (t: T, unitId: string, newAssetId: string) =>
+    t.withIdentity(SERVICE).mutation(api.warehouseOps.reassignKitMemberSerial, { organizationId: ORG, unitId, newAssetId });
+  const childAssetId = (t: T, lineItemId: string) =>
+    t.run(async (ctx) => (await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).unique())?.assetId);
+
+  test("swaps the member's serial on the unit AND its child line (pre-deployment)", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithSpare(t);
+    const u0 = await memberUnit(t);
+    const res = await reassign(t, u0.id as string, "a2");
+    expect(res.moved).toBe(true);
+    const u = await memberUnit(t);
+    expect(u.assetId).toBe("a2");
+    expect(await childAssetId(t, u.lineItemId as string)).toBe("a2");
+  });
+
+  test("after a same-model swap, checkout passes the (model-based) parity guard and deploys the new serial", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithSpare(t);
+    await reassign(t, (await memberUnit(t)).id as string, "a2");
+    await expect(co(t)).resolves.toBeTruthy();
+    const a2 = await t.run(async (ctx) => (await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a2")).unique())?.status);
+    expect(a2).toBe("CHECKED_OUT");
+  });
+
+  test("rejects reassign once the member is deployed", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithSpare(t);
+    await co(t);
+    await expect(reassign(t, (await memberUnit(t)).id as string, "a2")).rejects.toThrow(/deployed/i);
+  });
+
+  test("rejects a different-model replacement", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Other", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "aX", organizationId: ORG, modelId: "m2", assetTag: "X-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(reassign(t, (await memberUnit(t)).id as string, "aX")).rejects.toThrow(/same model/i);
+  });
+
+  test("rejects an unavailable replacement", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(reassign(t, (await memberUnit(t)).id as string, "a2")).rejects.toThrow(/not available/i);
+  });
+});
+
 describe("kit per-unit — pre-change kit (no units)", () => {
   test("checkinKit does not throw and creates no units for a unit-less kit", async () => {
     const t = convexTest(schema, modules);

@@ -117,8 +117,8 @@ import {
   type MixedGroupSlot,
   type OverbookedInfo,
 } from "./equipment-rows";
-import { ReassignProvider, type ReassignTarget } from "./reassign-context";
-import { reassignLineItemUnit } from "@/server/warehouse";
+import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
+import { reassignLineItemUnit, reassignKitMemberSerial } from "@/server/warehouse";
 import { useSelection } from "./use-selection";
 import { targetKey } from "@/lib/collaboration-targets";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -376,13 +376,65 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     [projectId],
   );
 
+  // Kit-member reassign (Phase 4): a member swaps its SERIAL (a same-model
+  // AVAILABLE asset), not its line. Gather the models present as kit members, load
+  // available inventory for just those models, and expose a serials-by-model map +
+  // swap handler alongside the loose-gear line targets.
+  const kitMemberModelIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    const scan = (line: LineItemData) => {
+      for (const c of line.childLineItems ?? []) {
+        if (c.isKitChild && c.childKind !== "ACCESSORY" && c.modelId) ids.add(c.modelId);
+      }
+    };
+    for (const cat of categories as CategoryData[]) {
+      for (const li of cat.lineItems ?? []) scan(li);
+      for (const g of cat.groups ?? []) for (const li of g.lineItems ?? []) scan(li);
+    }
+    for (const li of uncategorizedItems as LineItemData[]) scan(li);
+    for (const g of uncategorizedProjectGroups as GroupData[]) for (const li of g.lineItems ?? []) scan(li);
+    return [...ids];
+  }, [categories, uncategorizedItems, uncategorizedProjectGroups]);
+
+  const availableKitAssets = useAuthedQuery(
+    api.assets.listByModelIds,
+    orgId && kitMemberModelIds.length > 0 ? { orgId, modelIds: kitMemberModelIds } : "skip",
+  );
+
+  const reassignSerialsByModel = React.useMemo(() => {
+    const map = new Map<string, ReassignSerial[]>();
+    for (const a of availableKitAssets ?? []) {
+      if (a.status !== "AVAILABLE" || a.isActive === false || !a.modelId || !a.assetTag) continue;
+      const arr = map.get(a.modelId) ?? [];
+      arr.push({ assetId: a.id, assetTag: a.assetTag });
+      map.set(a.modelId, arr);
+    }
+    for (const arr of map.values()) arr.sort((x, y) => x.assetTag.localeCompare(y.assetTag));
+    return map;
+  }, [availableKitAssets]);
+
+  const handleReassignKitMember = useCallback(
+    (unitId: string, newAssetId: string) => {
+      setReassignPendingUnitId(unitId);
+      reassignKitMemberSerial(projectId, unitId, newAssetId)
+        .then((res) => {
+          if (res.moved) toast.success(`Swapped kit serial to ${res.toAssetTag ?? "the new asset"}`);
+        })
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Couldn't swap that serial"))
+        .finally(() => setReassignPendingUnitId(null));
+    },
+    [projectId],
+  );
+
   const reassignValue = React.useMemo(
     () => ({
       targetsByModel: reassignTargetsByModel,
       reassign: handleReassignUnit,
       pendingUnitId: reassignPendingUnitId,
+      serialsByModel: reassignSerialsByModel,
+      reassignKitMember: handleReassignKitMember,
     }),
-    [reassignTargetsByModel, handleReassignUnit, reassignPendingUnitId],
+    [reassignTargetsByModel, handleReassignUnit, reassignPendingUnitId, reassignSerialsByModel, handleReassignKitMember],
   );
   const overbookedMap = native.overbookedMap;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

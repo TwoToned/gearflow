@@ -56,16 +56,19 @@ export function LineAssetsIndicator({
   lineItemId,
   modelId,
   disableReassign = false,
+  kitMember = false,
 }: {
   units?: IndicatorUnit[];
   /** Fallback for single-asset legacy lines that carry the tag on the line itself. */
   lineAssetTag?: string | null;
   lineItemId: string;
   modelId?: string | null;
-  /** Suppress the Move control. Kit members bind to their kit slot — the reassign
-   *  mutation rejects kit children — so they view tag/status/history but can't
-   *  reassign until per-kit-slot reassign lands (Phase 4). */
+  /** Suppress the loose "Move to another line" control (read-only consumers). */
   disableReassign?: boolean;
+  /** This line is a kit member: it binds to its kit slot, so instead of moving to
+   *  another line it offers "Swap serial" — pick a same-model AVAILABLE asset
+   *  (Phase 4). Only before deployment. */
+  kitMember?: boolean;
 }) {
   const reassignCtx = useReassign();
 
@@ -92,6 +95,9 @@ export function LineAssetsIndicator({
   const targets = reassignCtx
     ? (reassignCtx.targetsByModel.get(modelId ?? "") ?? []).filter((t) => t.id !== lineItemId)
     : [];
+  // Kit members swap their serial (same-model available inventory), not their line.
+  const swapSerials =
+    kitMember && reassignCtx?.serialsByModel ? (reassignCtx.serialsByModel.get(modelId ?? "") ?? []) : [];
 
   return (
     <Popover>
@@ -137,14 +143,25 @@ export function LineAssetsIndicator({
         <div className="space-y-0.5 p-1.5">
           {entries.map((e, i) => {
             const badge = unitFulfillmentBadge(e.status, e.returnCondition);
+            const deployedOrGone = e.status === "CHECKED_OUT" || e.status === "RETURNED" || e.status === "CANCELLED";
             const canReassign =
               !disableReassign &&
+              !kitMember &&
               !!reassignCtx &&
               e.serialised &&
               !!e.unitId &&
               e.status !== "RETURNED" &&
               e.status !== "CANCELLED" &&
               targets.length > 0;
+            // Kit member, not yet deployed: offer same-model available serials to swap in.
+            const swapOptions = swapSerials.filter((s) => s.assetId !== e.assetId);
+            const canSwap =
+              kitMember &&
+              !!reassignCtx?.reassignKitMember &&
+              e.serialised &&
+              !!e.unitId &&
+              !deployedOrGone &&
+              swapOptions.length > 0;
             return (
               <div key={i} className="flex items-center justify-between gap-2 rounded-sm px-1.5 py-1">
                 <div className="flex min-w-0 items-center gap-1.5">
@@ -180,6 +197,33 @@ export function LineAssetsIndicator({
                             >
                               {t.label}
                               {t.full ? " · full" : ""}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {canSwap && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={reassignCtx!.pendingUnitId === e.unitId}
+                          className="h-7 px-2 text-caption text-muted hover:text-ink"
+                        >
+                          {reassignCtx!.pendingUnitId === e.unitId ? "Swapping…" : "Swap"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>Swap {e.tag} for…</DropdownMenuLabel>
+                          {swapOptions.map((s) => (
+                            <DropdownMenuItem
+                              key={s.assetId}
+                              onClick={() => reassignCtx!.reassignKitMember!(e.unitId, s.assetId)}
+                            >
+                              {s.assetTag}
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuGroup>

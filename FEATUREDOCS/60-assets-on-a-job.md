@@ -23,8 +23,10 @@ on the container — see also [48](./48-child-assets-accessories.md):
 > Physical kit members were migrated onto per-unit `projectLineItemUnit` rows (the
 > kit per-unit fulfillment migration — `docs/designs/kit-per-unit-fulfillment.md`).
 > They still keep `line.assetId` for now, but fulfillment (deploy/return status,
-> history) is driven by the unit. Per-kit-slot reassign is not yet available (the
-> reassign mutation rejects kit children), so their Move control is suppressed.
+> history) is driven by the unit. A kit member binds to its slot, so instead of the
+> loose "Move to another line" it offers **"Swap"** — pick a same-model available
+> serial (before deployment). See `reassignKitMemberSerial` + the model-based kit
+> composition parity guard.
 
 A **group** (`projectGroups`) is a priced bundle only — it adds nothing to serial
 storage; its members behave exactly like loose lines. Only a **kit** (`kits`, has

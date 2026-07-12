@@ -418,6 +418,40 @@ export async function reassignLineItemUnit(
   return serialize(res);
 }
 
+/**
+ * Swap which physical serial fills a kit member's slot on this job (Phase 4).
+ * Distinct from reassignLineItemUnit: kit members bind to their slot, so we swap
+ * the member's asset rather than move it to another line. The live subscription
+ * reflects the swap; no revalidate.
+ */
+export async function reassignKitMemberSerial(
+  projectId: string,
+  unitId: string,
+  newAssetId: string,
+) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.reassignKitMemberSerial, {
+    organizationId,
+    unitId,
+    newAssetId,
+  });
+  if (res.moved) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: res.toAssetTag ?? newAssetId,
+      entityName: res.toAssetTag ? `Asset ${res.toAssetTag}` : `Asset ${newAssetId}`,
+      summary: `Swapped kit member ${res.fromAssetTag ?? "serial"} → ${res.toAssetTag ?? newAssetId}`,
+      projectId,
+    });
+  }
+  return serialize(res);
+}
+
 export async function checkInItems(
   projectId: string,
   items: Array<{

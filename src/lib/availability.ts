@@ -2,6 +2,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import {
   computeStockBreakdown,
+  resolveModelAssetType,
   reconstructOverbookedStatus,
   type OverbookedInfo,
   type OverbookLineItem,
@@ -10,7 +11,7 @@ import {
 // Re-exported for back-compat: the pure stock-breakdown + overbooked types moved
 // into the client-safe overbooking-core (so the native read layer can run the
 // same math client-side); server callers keep importing them from here.
-export { computeStockBreakdown };
+export { computeStockBreakdown, resolveModelAssetType };
 export type { OverbookedInfo };
 
 /**

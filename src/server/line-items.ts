@@ -20,7 +20,7 @@ import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice } from "./project-groups";
 import { UserFacingError } from "@/lib/errors";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
-import { computeStockBreakdown } from "@/lib/availability";
+import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { getModelById, getModelWithCategoryMap } from "@/lib/models-read";
@@ -194,7 +194,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // only check this project's existing bookings since other quotes are drafts.
       if (model) {
         const modelForBreakdown = {
-          assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+          assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0),
           assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
           bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
         };
@@ -589,7 +589,7 @@ export async function updateLineItem(
 
     if (model) {
       const modelForBreakdown = {
-        assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+        assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0),
         assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
         bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
       };
@@ -1332,7 +1332,7 @@ export async function checkAvailability(
   }
 
   const modelForBreakdown = {
-    assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+    assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0),
     assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
     bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
   };

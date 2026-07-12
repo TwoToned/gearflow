@@ -5,6 +5,22 @@
 2. **Bulk** (`BulkAsset`): Quantity-tracked, `totalQuantity`/`availableQuantity`
 3. **Kit** (`Kit`): Container of serialized + bulk assets (see [kits.md](./09-kits.md))
 
+### ⚠️ Stock-type resolution — `model.assetType` may be absent on the Convex mirror
+`Model.assetType` is `v.optional` in the Convex schema, so older / backfilled model
+docs read back `undefined`. Every stock/availability computation used to coerce it
+with `assetType ?? "SERIALIZED"` — which sent a genuine BULK model down the
+serialized branch of `computeStockBreakdown` (`totalStock = assets.length = 0`, since
+a bulk model has no serialized assets), so **every bulk line showed "0 available"**
+and was spuriously overbooked. Use **`resolveModelAssetType(assetType, hasBulkAssets)`**
+(`src/lib/overbooking-core.ts`) instead of the `?? "SERIALIZED"` default at every
+stock site: it returns a present value unchanged and falls back to `BULK` only when
+the model has active bulk assets. Applied at all five computation sites —
+`overbooking-core.ts` (`reconstructOverbookedStatus`), `line-items.ts` (`addLineItem`
+/ `updateLineItem` / `checkAvailability`), and `server/availability.ts` (calendar
+stock). Regression: `overbooking-core.test.ts`. Follow-up (durable, needs a prod
+backfill): always-write `assetType` on the model mirror so no consumer has to guess —
+`models-read.ts` mapping a lone doc still can't resolve without the bulk-asset signal.
+
 ## Auto-Incrementing Tags
 Stored in `Organization.metadata` JSON:
 ```json

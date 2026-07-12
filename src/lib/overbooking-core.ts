@@ -33,6 +33,24 @@ import { mapLineItemDoc } from "@/lib/project-equipment-reconstruct";
  * includes assets that are in maintenance / lost / retired and will overstate
  * what can actually be booked.
  */
+/**
+ * Resolve a model's stock type when the Convex `assetType` mirror field may be
+ * absent. `assetType` is `v.optional` in the Convex schema, so older / backfilled
+ * model docs read back `undefined`. Blindly defaulting to `"SERIALIZED"` made a
+ * genuine BULK model take the serialized branch of `computeStockBreakdown` —
+ * `totalStock = assets.length = 0` (a bulk model has no serialized assets) — so
+ * every bulk line showed "0 available". Fall back to `"BULK"` when the model has
+ * any active bulk asset. A present value is returned unchanged, so this is a
+ * strictly-safe replacement for `assetType ?? "SERIALIZED"` at every stock site.
+ */
+export function resolveModelAssetType(
+  assetType: string | null | undefined,
+  hasBulkAssets: boolean,
+): "SERIALIZED" | "BULK" {
+  if (assetType === "BULK" || assetType === "SERIALIZED") return assetType;
+  return hasBulkAssets ? "BULK" : "SERIALIZED";
+}
+
 export function computeStockBreakdown(model: {
   assetType: "SERIALIZED" | "BULK";
   assets: { status: string }[];
@@ -244,7 +262,7 @@ export function reconstructOverbookedStatus(
     const m = convexModelMap.get(modelId);
     if (!m) continue;
     const modelForBreakdown = {
-      assetType: (m.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+      assetType: resolveModelAssetType(m.assetType, (bulkMap.get(modelId)?.length ?? 0) > 0),
       assets: (assetMap.get(modelId) ?? []).map((a) => ({ status: a.status ?? "AVAILABLE" })),
       bulkAssets: (bulkMap.get(modelId) ?? []).map((ba) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
     };

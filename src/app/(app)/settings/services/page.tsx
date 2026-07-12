@@ -54,6 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -109,6 +110,124 @@ export default function ServiceTemplatesPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Mobile card layout for the templates table (rendered below `md`). Cells
+  // reuse the exact desktop JSX and must stay pure (they render twice per row).
+  const cols: ColumnDef<Record<string, unknown>>[] = [
+    {
+      id: "type",
+      header: "Type",
+      mobile: "subtitle",
+      cell: (t) => {
+        const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
+        return (
+          <div className="flex items-center gap-2">
+            <Icon className="h-4 w-4 text-fg-3" />
+            {SERVICE_TYPE_LABELS[t.type as ServiceType]}
+          </div>
+        );
+      },
+    },
+    {
+      id: "title",
+      header: "Title",
+      mobile: "title",
+      cell: (t) => <span className="font-medium">{t.title as string}</span>,
+    },
+    {
+      id: "price",
+      header: "Default Price",
+      mobile: "meta",
+      cell: (t) => (
+        <>
+          {t.defaultUnitPrice != null
+            ? `${formatCurrency(t.defaultUnitPrice as number)} ${
+                t.defaultPricingType
+                  ? PRICING_TYPE_LABELS[t.defaultPricingType as string] || ""
+                  : ""
+              }`
+            : "—"}
+        </>
+      ),
+    },
+    {
+      id: "showOnDocs",
+      header: "On Docs",
+      mobile: "badge",
+      cell: (t) =>
+        t.showOnDocuments ? (
+          <Badge status="neutral" className="bg-green-500/10 text-green-500 border-green-500/20">
+            Yes
+          </Badge>
+        ) : (
+          <span className="text-fg-3">No</span>
+        ),
+    },
+    {
+      id: "autoAdd",
+      header: "Auto-Add",
+      mobile: "badge",
+      cell: (t) =>
+        t.isAutoAdded ? (
+          <Badge status="neutral" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+            Auto
+          </Badge>
+        ) : (
+          <span className="text-fg-3">Manual</span>
+        ),
+    },
+    {
+      id: "active",
+      header: "Active",
+      mobile: "badge",
+      cell: (t) =>
+        t.isActive ? (
+          <Badge status="neutral" className="bg-green-500/10 text-green-500 border-green-500/20">
+            Active
+          </Badge>
+        ) : (
+          <Badge status="neutral" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
+            Inactive
+          </Badge>
+        ),
+    },
+    ...(canEdit
+      ? [
+          {
+            id: "actions",
+            header: "",
+            mobile: "actions",
+            cell: (t) => (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditing(t);
+                    setDialogOpen(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  onClick={() =>
+                    setDeleteTarget({
+                      id: t.id as string,
+                      title: t.title as string,
+                    })
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ),
+          } as ColumnDef<Record<string, unknown>>,
+        ]
+      : []),
+  ];
+
   return (
     <FadeIn>
     <div className="space-y-6">
@@ -145,6 +264,8 @@ export default function ServiceTemplatesPage() {
             <p>No service templates yet</p>
           </div>
         ) : (
+          <>
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -241,6 +362,14 @@ export default function ServiceTemplatesPage() {
               })}
             </TableBody>
           </Table>
+          </div>
+          <MobileCardList
+            className="md:hidden"
+            data={templates as unknown as Record<string, unknown>[]}
+            columns={cols}
+            getRowId={(t) => t.id as string}
+          />
+          </>
         )}
       </div>
 

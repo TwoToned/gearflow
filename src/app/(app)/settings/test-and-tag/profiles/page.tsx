@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -187,6 +188,102 @@ export default function TestProfilesPage() {
     );
   }
 
+  // Mobile card layout for the profiles table (rendered below `md`). Cells reuse
+  // the exact desktop <TableCell> content and must stay pure (both breakpoints mount).
+  const cols: ColumnDef<Profile>[] = [
+    {
+      id: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (profile) => <div className="font-medium text-fg-1">{profile.name}</div>,
+    },
+    {
+      id: "class",
+      header: "Class",
+      mobile: "meta",
+      cell: (profile) => (
+        <span className="text-fg-2">
+          {EQUIPMENT_CLASS_LABELS[profile.equipmentClass] || profile.equipmentClass}
+        </span>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "meta",
+      cell: (profile) => (
+        <span className="text-fg-2">
+          {APPLIANCE_TYPE_LABELS[profile.applianceType] || profile.applianceType}
+        </span>
+      ),
+    },
+    {
+      id: "tests",
+      header: "Tests",
+      mobile: "meta",
+      cell: (profile) => {
+        const enabledTests = (profile.electricalTests || []).filter((t: ElectricalTest) => t.enabled);
+        return <span className="text-sm text-fg-3">{enabledTests.length} electrical</span>;
+      },
+    },
+    {
+      id: "subtests",
+      header: "Sub-Tests",
+      mobile: "meta",
+      cell: (profile) =>
+        profile.requiresSubTests ? (
+          <span className="text-sm text-fg-2">
+            {profile.defaultSubTestCount} {profile.subTestLabel.toLowerCase()}s
+          </span>
+        ) : (
+          <span className="text-sm text-fg-3">—</span>
+        ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (profile) =>
+        profile.isActive ? (
+          <Badge status="neutral" className="text-teal-600 border-teal-200 bg-teal-50">Active</Badge>
+        ) : (
+          <Badge status="neutral" className="text-fg-3">Inactive</Badge>
+        ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      mobile: "actions",
+      cell: (profile) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+              <span className="sr-only">Actions</span>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditingProfile(profile); }}>
+                <Pencil className="mr-2 h-4 w-4" />Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(profile.id); }}>
+                <Copy className="mr-2 h-4 w-4" />Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(profile.id); }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />Delete
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
   return (
     <FadeIn>
       <div className="space-y-6">
@@ -211,7 +308,7 @@ export default function TestProfilesPage() {
           </div>
         </div>
 
-        <div className="border rounded-lg overflow-hidden">
+        <div className="hidden md:block border rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -291,6 +388,17 @@ export default function TestProfilesPage() {
             </TableBody>
           </Table>
         </div>
+        {/* Mobile: the empty/loading states are early-returned above, so this
+            branch only renders when there are profiles to show. */}
+        {profileList.length > 0 && (
+          <MobileCardList
+            className="md:hidden"
+            data={profileList}
+            columns={cols}
+            getRowId={(p) => p.id}
+            onRowClick={(profile) => setEditingProfile(profile)}
+          />
+        )}
       </div>
 
       {/* Edit / Create Dialog */}

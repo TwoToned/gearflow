@@ -1,6 +1,8 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -8,6 +10,38 @@ import { generateWebhookSecret } from "@/lib/webhooks/sign";
 import { validateWebhookUrl } from "@/lib/webhooks/url";
 import { WEBHOOK_EVENTS, WEBHOOK_EVENT_DESCRIPTIONS, isWebhookEvent } from "@/lib/webhooks/events";
 import { UserFacingError } from "@/lib/errors";
+
+// Webhook is a Convex domain now (the Postgres `webhook`/`webhook_delivery` tables are
+// frozen). Convex stores dates as epoch-ms; these mappers restore the old Prisma
+// `select` shapes (Date fields, secret never leaked).
+const d = (n: number | null | undefined) => (n != null ? new Date(n) : null);
+type ConvexWebhook = {
+  id: string; description: string; url: string; events?: string; isActive?: boolean;
+  disabledAt?: number; consecutiveFailures?: number; lastDeliveryAt?: number; createdAt?: number;
+};
+function toWebhookRow(w: ConvexWebhook) {
+  return {
+    id: w.id, description: w.description, url: w.url,
+    events: w.events ?? "[]",
+    isActive: w.isActive ?? true,
+    disabledAt: d(w.disabledAt),
+    consecutiveFailures: w.consecutiveFailures ?? 0,
+    lastDeliveryAt: d(w.lastDeliveryAt),
+    createdAt: w.createdAt != null ? new Date(w.createdAt) : new Date(0),
+  };
+}
+type ConvexDelivery = {
+  id: string; event: string; status?: string; attempts?: number; responseStatus?: number;
+  lastError?: string; nextAttemptAt?: number; deliveredAt?: number; createdAt?: number;
+};
+function toDeliveryRow(x: ConvexDelivery) {
+  return {
+    id: x.id, event: x.event, status: x.status ?? "PENDING", attempts: x.attempts ?? 0,
+    responseStatus: x.responseStatus ?? null, lastError: x.lastError ?? null,
+    nextAttemptAt: d(x.nextAttemptAt), deliveredAt: d(x.deliveredAt),
+    createdAt: x.createdAt != null ? new Date(x.createdAt) : new Date(0),
+  };
+}
 
 /**
  * Webhook endpoint management. Creating, rotating and deleting an endpoint are
@@ -17,18 +51,6 @@ import { UserFacingError } from "@/lib/errors";
  *
  * See docs/designs/webhooks.md.
  */
-
-const READ_SHAPE = {
-  id: true,
-  description: true,
-  url: true,
-  events: true,
-  isActive: true,
-  disabledAt: true,
-  consecutiveFailures: true,
-  lastDeliveryAt: true,
-  createdAt: true,
-} as const;
 
 /** The events an endpoint can subscribe to, with descriptions. Read-only. */
 export async function getWebhookEvents() {
@@ -44,33 +66,20 @@ export async function getWebhookEvents() {
 /** List this org's endpoints. Never returns a secret. */
 export async function getWebhooks() {
   const { organizationId } = await getOrgContext();
-  const webhooks = await prisma.webhook.findMany({
-    where: { organizationId },
-    select: READ_SHAPE,
-    orderBy: { createdAt: "desc" },
-  });
+  const rows = await (await getConvexClient()).query(api.webhooks.list, { orgId: organizationId });
+  const webhooks = rows.map(toWebhookRow); // strips secret
   return serialize({ webhooks });
 }
 
 /** Recent delivery attempts for one endpoint — the self-serve debugging surface. */
 export async function getWebhookDeliveries(webhookId: string, limit?: number) {
   const { organizationId } = await getOrgContext();
-  const deliveries = await prisma.webhookDelivery.findMany({
-    where: { webhookId, organizationId },
-    orderBy: { createdAt: "desc" },
-    take: Math.min(limit ?? 50, 200),
-    select: {
-      id: true,
-      event: true,
-      status: true,
-      attempts: true,
-      responseStatus: true,
-      lastError: true,
-      nextAttemptAt: true,
-      deliveredAt: true,
-      createdAt: true,
-    },
+  const rows = await (await getConvexClient()).query(api.webhooks.deliveries, {
+    orgId: organizationId,
+    webhookId,
+    limit,
   });
+  const deliveries = rows.map(toDeliveryRow);
   return serialize({ deliveries });
 }
 
@@ -126,16 +135,24 @@ export async function createWebhook(input: {
   const events = assertEvents(input.events);
   const secret = generateWebhookSecret();
 
-  const created = await prisma.webhook.create({
-    data: {
-      organizationId,
-      description,
-      url: input.url,
-      events: JSON.stringify(events),
-      secret,
-      createdById: userId,
-    },
-    select: READ_SHAPE,
+  const id = createId();
+  const now = Date.now();
+  await (await getConvexClient()).mutation(api.webhooks.create, {
+    id,
+    organizationId,
+    description,
+    url: input.url,
+    events: JSON.stringify(events),
+    secret,
+    isActive: true,
+    consecutiveFailures: 0,
+    createdById: userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const created = toWebhookRow({
+    id, description, url: input.url, events: JSON.stringify(events),
+    isActive: true, consecutiveFailures: 0, createdAt: now,
   });
 
   await logActivity({
@@ -160,25 +177,34 @@ export async function updateWebhook(
 ) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
-  const existing = await prisma.webhook.findFirst({ where: { id, organizationId } });
-  if (!existing) throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
+  // Build the patch; the Convex `update` mutation org-guards + returns the fresh doc.
+  const patch: {
+    description?: string;
+    events?: string;
+    isActive?: boolean;
+    disabledAt?: number | null;
+    consecutiveFailures?: number;
+  } = {};
+  if (input.description) patch.description = input.description.trim();
+  if (input.events) patch.events = JSON.stringify(assertEvents(input.events));
+  if (input.isActive !== undefined) {
+    // Re-enabling clears the auto-disable state so a fixed endpoint resumes cleanly.
+    patch.isActive = input.isActive;
+    patch.disabledAt = input.isActive ? null : Date.now();
+    if (input.isActive) patch.consecutiveFailures = 0;
+  }
 
-  const updated = await prisma.webhook.update({
-    where: { id },
-    data: {
-      ...(input.description ? { description: input.description.trim() } : {}),
-      ...(input.events ? { events: JSON.stringify(assertEvents(input.events)) } : {}),
-      // Re-enabling clears the auto-disable state, so a fixed endpoint resumes cleanly.
-      ...(input.isActive !== undefined
-        ? {
-            isActive: input.isActive,
-            disabledAt: input.isActive ? null : new Date(),
-            consecutiveFailures: input.isActive ? 0 : existing.consecutiveFailures,
-          }
-        : {}),
-    },
-    select: READ_SHAPE,
-  });
+  let updatedDoc;
+  try {
+    updatedDoc = await (await getConvexClient()).mutation(api.webhooks.update, {
+      id,
+      orgId: organizationId,
+      patch,
+    });
+  } catch {
+    throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
+  }
+  const updated = toWebhookRow(updatedDoc as ConvexWebhook);
 
   await logActivity({
     organizationId,
@@ -201,20 +227,22 @@ export async function updateWebhook(
 export async function rotateWebhookSecret(id: string, graceMinutes?: number) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
-  const existing = await prisma.webhook.findFirst({ where: { id, organizationId } });
-  if (!existing) throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
-
   const secret = generateWebhookSecret();
   const grace = Math.min(Math.max(graceMinutes ?? 60, 0), 24 * 60);
 
-  await prisma.webhook.update({
-    where: { id },
-    data: {
+  // The mutation org-guards, sets previousSecret from the current secret internally,
+  // and returns the endpoint's description for the audit line.
+  let rotated: { id: string; description: string };
+  try {
+    rotated = await (await getConvexClient()).mutation(api.webhooks.rotateSecret, {
+      id,
+      orgId: organizationId,
       secret,
-      previousSecret: existing.secret,
-      previousSecretExpiresAt: new Date(Date.now() + grace * 60_000),
-    },
-  });
+      previousSecretExpiresAt: Date.now() + grace * 60_000,
+    });
+  } catch {
+    throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
+  }
 
   await logActivity({
     organizationId,
@@ -223,8 +251,8 @@ export async function rotateWebhookSecret(id: string, graceMinutes?: number) {
     action: "update",
     entityType: "webhook",
     entityId: id,
-    entityName: existing.description,
-    summary: `Rotated the signing secret for "${existing.description}"`,
+    entityName: rotated.description,
+    summary: `Rotated the signing secret for "${rotated.description}"`,
     metadata: { graceMinutes: grace },
   });
 
@@ -235,10 +263,16 @@ export async function rotateWebhookSecret(id: string, graceMinutes?: number) {
 export async function deleteWebhook(id: string) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
-  const existing = await prisma.webhook.findFirst({ where: { id, organizationId } });
-  if (!existing) throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
-
-  await prisma.webhook.delete({ where: { id } });
+  // Convex remove org-guards, cascades the delivery log, and returns the description.
+  let removed: { id: string; description: string };
+  try {
+    removed = await (await getConvexClient()).mutation(api.webhooks.remove, {
+      id,
+      orgId: organizationId,
+    });
+  } catch {
+    throw new UserFacingError({ code: "NOT_FOUND", title: "Not found", message: "Webhook endpoint not found." });
+  }
 
   await logActivity({
     organizationId,
@@ -247,8 +281,8 @@ export async function deleteWebhook(id: string) {
     action: "delete",
     entityType: "webhook",
     entityId: id,
-    entityName: existing.description,
-    summary: `Deleted webhook endpoint "${existing.description}"`,
+    entityName: removed.description,
+    summary: `Deleted webhook endpoint "${removed.description}"`,
   });
 
   return serialize({ success: true });

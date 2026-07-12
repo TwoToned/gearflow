@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "../../../convex/_generated/api";
 import {
   ChevronRight,
@@ -308,6 +309,7 @@ export {
 } from "./equipment-row-descriptors";
 import { describeRow } from "./equipment-row-descriptors";
 import { LineAssetsIndicator } from "./line-assets-indicator";
+import { MetricLine, GroupCard, CategoryCardHeading, CardAddButton } from "./equipment-cards";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -445,6 +447,112 @@ export function GroupRow({
 } & MoveControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
+  const isMobile = useIsMobile();
+
+  // ── Mobile: group header card (children render as sibling cards below). ──
+  const groupMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Group</DropdownMenuLabel>
+          {onEditPrice && (
+            <DropdownMenuItem onClick={onEditPrice}>
+              <Pencil className="mr-2 h-3.5 w-3.5" />
+              Edit price
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-3.5 w-3.5" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onAddEquipment}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Add equipment
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onAddKit}>
+            <Package className="mr-2 h-3.5 w-3.5" />
+            Add kit
+          </DropdownMenuItem>
+          {onSaveAsTemplate && (
+            <DropdownMenuItem onClick={onSaveAsTemplate}>
+              <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
+              Save as template
+            </DropdownMenuItem>
+          )}
+          {onMove && (
+            <DropdownMenuItem onClick={onMove}>
+              <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+              Move to category
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onClick={onDelete}
+            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  if (isMobile) {
+    return (
+      <GroupCard
+        title={group.title}
+        subtext={
+          lockedBy ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lockedBy.color }} />
+              Editing: {lockedBy.name}
+            </span>
+          ) : undefined
+        }
+        qty={group.quantity}
+        total={priceVal != null ? priceVal * group.quantity : null}
+        isExpanded={isExpanded}
+        onToggle={onToggle}
+        actions={
+          <div className="flex shrink-0 items-center gap-0.5">
+            {orgId && projectId && (
+              <CommentThreadPanel
+                orgId={orgId}
+                entityType="project"
+                entityId={projectId}
+                targetType="group"
+                targetId={group.id}
+                triggerLabel=""
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
+                  className={cn("relative size-8", commentBadge?.blocking && "text-red")}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {commentBadge?.blocking ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                      {commentBadge.blocking}
+                    </span>
+                  ) : commentBadge?.open ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-paper-2 px-0.5 text-[8px] font-medium text-ink-2 ring-1 ring-line">
+                      {commentBadge.open}
+                    </span>
+                  ) : null}
+                </Button>
+              </CommentThreadPanel>
+            )}
+            {groupMenu}
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <TableRow className="group/row" {...shortcuts}>
@@ -632,6 +740,59 @@ export function SubHireGroupRow({
   const margin = charge != null && cost != null ? charge - cost : null;
   const supplierName = group.subHire.supplier?.name ?? "Supplier";
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove }, "equipment");
+  const isMobile = useIsMobile();
+
+  // ── Mobile: sub-hire group header card (children render as sibling cards). ──
+  if (isMobile) {
+    return (
+      <GroupCard
+        title={group.title}
+        isSubHire
+        subtext={
+          <>
+            via {supplierName}
+            {margin != null && <> · {formatCurrency(margin * group.quantity)} margin</>}
+          </>
+        }
+        qty={group.quantity}
+        total={charge != null ? charge * group.quantity : null}
+        isExpanded={isExpanded}
+        onToggle={onToggle}
+        actions={
+          <div className="flex shrink-0 items-center gap-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Sub-hire</DropdownMenuLabel>
+                  {onEditPrice && (
+                    <DropdownMenuItem onClick={onEditPrice}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                      Edit price
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit in sub-hire order
+                  </DropdownMenuItem>
+                  {onMove && (
+                    <DropdownMenuItem onClick={onMove}>
+                      <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                      Move to category
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <TableRow className="group/row" {...shortcuts}>
@@ -766,6 +927,76 @@ export function CategoryRow({
   onAddCustom?: () => void;
 } & MoveControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
+  const isMobile = useIsMobile();
+
+  const categoryMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Category</DropdownMenuLabel>
+          {hasAddActions && (
+            <>
+              {onAddEquipment && (
+                <DropdownMenuItem onClick={onAddEquipment}>
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Add equipment
+                </DropdownMenuItem>
+              )}
+              {onAddKit && (
+                <DropdownMenuItem onClick={onAddKit}>
+                  <Package className="mr-2 h-3.5 w-3.5" />
+                  Add kit
+                </DropdownMenuItem>
+              )}
+              {onAddCustom && (
+                <DropdownMenuItem onClick={onAddCustom}>
+                  <Sparkles className="mr-2 h-3.5 w-3.5" />
+                  Add custom item
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil className="mr-2 h-3.5 w-3.5" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onDelete}
+            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  // ── Mobile: category heading (add affordance + overflow kebab). ──
+  if (isMobile) {
+    return (
+      <CategoryCardHeading
+        name={cat.name}
+        action={
+          <div className="flex shrink-0 items-center gap-1">
+            {lockedBy ? (
+              <Badge status="neutral" className="gap-1 text-[10px]">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lockedBy.color }} />
+                {lockedBy.name}
+              </Badge>
+            ) : null}
+            {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
+            {categoryMenu}
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
@@ -968,6 +1199,260 @@ export function LineItemRow({
   // need the explicit kebab path. Matches the precedent set by
   // category-only being the default destination state.
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMoveToCategory, d: onRemove }, "equipment");
+  const isMobile = useIsMobile();
+
+  const name = item.model?.name ?? item.description ?? "—";
+
+  // Same badge set the desktop row shows — computed from the same live vars so
+  // the card keeps full collaboration / overbook / prep parity.
+  const badges = (
+    <>
+      {desc.isKit && (
+        <Badge status="neutral" className="bg-blue-soft text-blue">Kit</Badge>
+      )}
+      {desc.isKit && item.pricingMode === "ITEMIZED" && (
+        <Badge status="neutral">Itemized</Badge>
+      )}
+      {item.isOptional && <Badge status="warn">Optional</Badge>}
+      {desc.isSubhire && (
+        <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
+      )}
+      {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+      {isUnconfirmed && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-warn-soft">
+                <AlertTriangle className="h-3 w-3 text-warn" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-caption">Sub-hire order not yet confirmed — costs and items may change</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {item.status === "CANCELLED" && <Badge status="overbooked">Cancelled</Badge>}
+      {item.prepStatus === "PREPPED" && <Badge status="ok">Prepped</Badge>}
+      <OverbookedBadge info={overbookedInfo} />
+      {hasActiveLock && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+          style={{
+            background: liveLock.ownerColor + "22",
+            borderColor: liveLock.ownerColor + "66",
+            color: liveLock.ownerColor,
+          }}
+          title={`${liveLock.ownerName} is editing`}
+        >
+          ✏ {liveLock.ownerName.split(" ")[0]}
+        </span>
+      )}
+      {liveMarker && liveMarker.status !== "resolved" && (
+        <ReviewMarkerBadge status={liveMarker.status as MarkerStatus} reason={liveMarker.reason} />
+      )}
+    </>
+  );
+
+  const lineItemMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8" aria-label="Item actions">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Item</DropdownMenuLabel>
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-3.5 w-3.5" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onMoveToCategory}>
+            <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+            Move to category
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onMoveToGroup}>
+            <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+            Move to group
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
+            <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
+            Needs review
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleMarker("follow_up")}>
+            <Handshake className="mr-2 h-3.5 w-3.5" />
+            Follow up
+          </DropdownMenuItem>
+          {liveMarker && liveMarker.status !== "resolved" && (
+            <DropdownMenuItem onClick={() => handleMarker("resolved")}>
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              Resolve marker
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onClick={onRemove}
+            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  // ── Mobile: line-item card. Tapping the body toggles selection (like the
+  // warehouse ScanItemCard); edit / move / delete live behind the kebab. ──
+  if (isMobile) {
+    const bodyInner = (
+      <>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-ink break-words">{name}</span>
+          {hasChildren && (
+            <span className="text-caption text-muted">
+              {item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <LineAssetsIndicator
+            units={item.units}
+            lineAssetTag={item.asset?.assetTag}
+            lineItemId={item.id}
+            modelId={item.modelId}
+          />
+          {badges}
+        </div>
+        {desc.isSubhire && item.supplier && (
+          <p className="text-caption text-muted">via {item.supplier.name}</p>
+        )}
+        {item.notes && (
+          <p className="mt-0.5 truncate text-caption text-muted" title={item.notes}>{item.notes}</p>
+        )}
+        <MetricLine item={item} showCostColumn={showCostColumn} />
+      </>
+    );
+    return (
+      <>
+        <div
+          style={style}
+          className={cn(
+            "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card px-3 py-2.5 ring-1 ring-line transition-colors",
+            isSelected && "ring-2 ring-red",
+            hasActiveLock && "collab-editing",
+            justChanged && "collab-changed",
+          )}
+        >
+          {selectable && (
+            <span
+              onMouseDown={(e) => {
+                shiftKeyRef.current = e.shiftKey;
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex min-h-11 min-w-8 shrink-0 items-center justify-center"
+            >
+              <Checkbox
+                aria-label="Select item"
+                checked={!!isSelected}
+                onCheckedChange={(v: boolean | "indeterminate") =>
+                  onSelectChange?.(v === true, shiftKeyRef.current)
+                }
+              />
+            </span>
+          )}
+          {selectable ? (
+            <button
+              type="button"
+              aria-pressed={!!isSelected}
+              onMouseDown={(e) => {
+                shiftKeyRef.current = e.shiftKey;
+              }}
+              onClick={() => onSelectChange?.(!isSelected, shiftKeyRef.current)}
+              className={cn("min-w-0 flex-1 text-left", focusRing)}
+            >
+              {bodyInner}
+            </button>
+          ) : (
+            <div className="min-w-0 flex-1">{bodyInner}</div>
+          )}
+          <div className="flex shrink-0 items-center gap-0.5">
+            {hasChildren && (
+              <button
+                type="button"
+                aria-label={isExpanded ? "Collapse" : "Expand"}
+                aria-expanded={isExpanded}
+                onClick={onToggle}
+                className={cn("inline-flex min-h-11 min-w-8 items-center justify-center text-muted hover:text-ink", focusRing)}
+              >
+                <ChevronRight className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
+              </button>
+            )}
+            {orgId && projectId && (
+              <CommentThreadPanel
+                orgId={orgId}
+                entityType="project"
+                entityId={projectId}
+                targetType="lineItem"
+                targetId={item.id}
+                triggerLabel=""
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title={
+                    blockingComments > 0
+                      ? `${blockingComments} blocking comment${blockingComments === 1 ? "" : "s"}`
+                      : openComments > 0
+                        ? `${openComments} open comment${openComments === 1 ? "" : "s"}`
+                        : "Comments"
+                  }
+                  className={cn("relative size-8", blockingComments > 0 && "text-red")}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {blockingComments > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                      {blockingComments}
+                    </span>
+                  ) : openComments > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-primary-foreground">
+                      {openComments}
+                    </span>
+                  ) : null}
+                </Button>
+              </CommentThreadPanel>
+            )}
+            {lineItemMenu}
+          </div>
+        </div>
+        {/* Expanded child items (kit members / accessories) as nested cards. */}
+        {isExpanded && hasChildren && (
+          <div className="space-y-1.5">
+            {item.childLineItems!.map((child) => {
+              const childTags = (child.units ?? [])
+                .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+                .filter((t): t is string => !!t);
+              const tag = childTags[0] ?? child.asset?.assetTag ?? null;
+              const extra = childTags.length > 1 ? ` +${childTags.length - 1}` : "";
+              return (
+                <div key={child.id} className="rounded-[var(--r)] bg-paper-2/40 py-2 pl-6 pr-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
+                    {tag && <span className="t-mono text-caption text-muted">({tag}{extra})</span>}
+                    {child.childKind === "ACCESSORY" && (
+                      <Badge status="neutral" className="px-1.5 py-0 text-[10px]">Accessory</Badge>
+                    )}
+                  </div>
+                  {child.notes && (
+                    <p className="mt-0.5 truncate text-caption text-muted">{child.notes}</p>
+                  )}
+                  <MetricLine item={child} showCostColumn={showCostColumn} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -975,16 +1460,14 @@ export function LineItemRow({
       style={style}
       className={cn(
         "group/row",
-        // Selection shows as a left-edge bar on the frozen first cell (below) rather
-        // than a full-row tint: on mobile the frozen column is opaque, so a row-wide
-        // tint would seam against it (DESIGN.md prefers left-edge indicators anyway).
+        isSelected && "bg-select",
         hasActiveLock && "collab-editing",
         justChanged && "collab-changed",
       )}
       onClick={onClick}
       {...shortcuts}
     >
-      <TableCell className={cn("px-0", isSelected && "shadow-[inset_3px_0_0_0_var(--red)]")}>
+      <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <MoveButtons
             onMoveUp={onMoveUp}
@@ -1229,10 +1712,9 @@ export function LineItemRow({
       </TableCell>
     </TableRow>
     {/* Expanded child items (kit children / sub-hire group children).
-        Child rows: subtle tint on desktop only. On mobile the frozen column is opaque so
-        a row-wide tint seams against it; the name's indent conveys nesting there. */}
+        Child rows carry a subtle tint; the name's indent conveys nesting. */}
     {isExpanded && hasChildren && item.childLineItems!.map((child) => (
-      <TableRow key={child.id} className="md:bg-paper-2/40">
+      <TableRow key={child.id} className="bg-paper-2/40">
         <TableCell className="px-0" />
         <TableCell>
           <div className={`${childIndent}`}>

@@ -79,7 +79,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StickyTable } from "@/components/ui/sticky-table";
 import { formatCurrency } from "@/lib/formatters";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import { cn, focusRing } from "@/lib/utils";
@@ -122,6 +121,8 @@ import { ReassignProvider, type ReassignTarget } from "./reassign-context";
 import { reassignLineItemUnit } from "@/server/warehouse";
 import { useSelection } from "./use-selection";
 import { targetKey } from "@/lib/collaboration-targets";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { CategoryCardHeading } from "./equipment-cards";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -139,6 +140,7 @@ interface EquipmentTabProps {
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const isMobile = useIsMobile();
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -886,56 +888,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         </Button>
       </BulkActionBar>
 
-      {/* Main table. On mobile the item name stays pinned on the left while the
-          price/total columns scroll sideways (same treatment as the warehouse
-          pull-sheet), instead of hiding columns at breakpoints and cramming the name
-          into a narrow column. Desktop is unchanged — StickyTable only freezes/scrolls
-          below the `md` breakpoint, so the full table renders plainly on desktop. */}
-      {(hasCategories || hasUncategorized) && (
-        <div className="rounded-[var(--r)] border border-line">
-          <StickyTable
-            frozenColWidths={[40, 200]}
-            minTableWidth={showCostColumn ? 760 : 660}
-            colCountHint={showCostColumn ? 7 : 6}
-            frozenBg="var(--paper)"
-          >
-          <table className="w-full caption-bottom text-[13.5px] table-fixed">
-            <colgroup>
-              <col className="w-10" />
-              <col />
-              <col className="w-16" />
-              <col className="w-28" />
-              {showCostColumn && <col className="w-24" />}
-              <col className="w-28" />
-              <col className="w-32" />
-            </colgroup>
-            <TableHeader>
-            <TableRow>
-              <TableHead className="px-1" />
-              <TableHead>
-                <div className="flex items-center gap-2">
-                  {allLiSortableIds.length > 0 && (
-                    <Checkbox
-                      aria-label="Select all items"
-                      checked={
-                        allLiSelected ? true : someLiSelected ? "indeterminate" : false
-                      }
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  )}
-                  <span>Item</span>
-                </div>
-              </TableHead>
-              <TableHead className="text-center">Qty</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Unit price</TableHead>
-              {showCostColumn && (
-                <TableHead className="text-right whitespace-nowrap">Cost</TableHead>
-              )}
-              <TableHead className="text-right whitespace-nowrap">Total</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-              <TableBody>
+      {/* Equipment list. Desktop renders the full data table; below md the rows
+          self-branch into stacked cards (§15) — same data, same handlers, no
+          StickyTable and no horizontal scroll. The row map is built once and
+          rendered in whichever shell matches the breakpoint, so the live per-row
+          subscriptions aren't duplicated across two DOM trees. */}
+      {(hasCategories || hasUncategorized) && (() => {
+        const equipmentRows = (
+          <>
                 {typedCategories.map((cat, catIndex) => {
                   const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   const mixedSlots: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
@@ -1019,11 +979,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                               />
                               {isExpanded && childItems.length === 0 && (
-                                <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                                    No items in this sub-hire group yet.
-                                  </TableCell>
-                                </TableRow>
+                                isMobile ? (
+                                  <p className="px-3 py-2 text-caption text-muted">No items in this sub-hire group yet.</p>
+                                ) : (
+                                  <TableRow className="hover:bg-transparent">
+                                    <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
+                                      No items in this sub-hire group yet.
+                                    </TableCell>
+                                  </TableRow>
+                                )
                               )}
                               {isExpanded && childItems.map((item) => (
                                 <LineItemRow
@@ -1107,11 +1071,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                                  No items in this group yet. Add equipment to get started.
-                                </TableCell>
-                              </TableRow>
+                              isMobile ? (
+                                <p className="px-3 py-2 text-caption text-muted">No items in this group yet. Add equipment to get started.</p>
+                              ) : (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
+                                    No items in this group yet. Add equipment to get started.
+                                  </TableCell>
+                                </TableRow>
+                              )
                             )}
                             {isExpanded && groupItems.map((item, itemIndex) => (
                               <LineItemRow
@@ -1189,14 +1157,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
                 {/* Uncategorized items */}
                 {hasCategories && hasUncategorized && (
-                  <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
-                    <TableCell colSpan={colCount} className="py-2 px-1">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-6" />
-                        <h3 className="t-overline text-muted">Uncategorised</h3>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  isMobile ? (
+                    <CategoryCardHeading name="Uncategorised" />
+                  ) : (
+                    <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
+                      <TableCell colSpan={colCount} className="py-2 px-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6" />
+                          <h3 className="t-overline text-muted">Uncategorised</h3>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
                 )}
                 {(() => {
                   const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
@@ -1283,11 +1255,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
                       />
                       {isExpanded && groupItems.length === 0 && (
-                        <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                            No items in this group yet. Add equipment to get started.
-                          </TableCell>
-                        </TableRow>
+                        isMobile ? (
+                          <p className="px-3 py-2 text-caption text-muted">No items in this group yet. Add equipment to get started.</p>
+                        ) : (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
+                              No items in this group yet. Add equipment to get started.
+                            </TableCell>
+                          </TableRow>
+                        )
                       )}
                       {isExpanded && groupItems.map((item: LineItemData, itemIndex) => (
                         <LineItemRow
@@ -1352,11 +1328,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                       />
                       {isExpanded && childItems.length === 0 && (
-                        <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                            No items in this sub-hire group yet.
-                          </TableCell>
-                        </TableRow>
+                        isMobile ? (
+                          <p className="px-3 py-2 text-caption text-muted">No items in this sub-hire group yet.</p>
+                        ) : (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
+                              No items in this sub-hire group yet.
+                            </TableCell>
+                          </TableRow>
+                        )
                       )}
                       {isExpanded && childItems.map((item) => (
                         <LineItemRow
@@ -1386,11 +1366,54 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     </React.Fragment>
                   );
                 })}
-              </TableBody>
-          </table>
-          </StickyTable>
-        </div>
-      )}
+          </>
+        );
+        if (isMobile) {
+          return <div className="space-y-1.5">{equipmentRows}</div>;
+        }
+        return (
+          <div className="overflow-x-auto rounded-[var(--r)] border border-line">
+            <table className="w-full caption-bottom text-[13.5px] table-fixed">
+              <colgroup>
+                <col className="w-10" />
+                <col />
+                <col className="w-16" />
+                <col className="w-28" />
+                {showCostColumn && <col className="w-24" />}
+                <col className="w-28" />
+                <col className="w-32" />
+              </colgroup>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-1" />
+                  <TableHead>
+                    <div className="flex items-center gap-2">
+                      {allLiSortableIds.length > 0 && (
+                        <Checkbox
+                          aria-label="Select all items"
+                          checked={
+                            allLiSelected ? true : someLiSelected ? "indeterminate" : false
+                          }
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      )}
+                      <span>Item</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-center">Qty</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Unit price</TableHead>
+                  {showCostColumn && (
+                    <TableHead className="text-right whitespace-nowrap">Cost</TableHead>
+                  )}
+                  <TableHead className="text-right whitespace-nowrap">Total</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>{equipmentRows}</TableBody>
+            </table>
+          </div>
+        );
+      })()}
 
       {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
       {projectSubHires.length > 0 && (

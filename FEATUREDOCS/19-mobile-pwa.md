@@ -116,12 +116,27 @@ Two things to know when annotating:
 Opt out with `mobileCards={false}` only for genuinely grid-shaped data where a
 horizontally scrolling table beats cards.
 
-### Known exceptions
-- `components/projects/equipment-rows.tsx` — the project equipment table (kits,
-  child assets, accessories, sub-hires, drag-and-drop). Its row actions sit in a
-  `w-32` cell where 44px buttons would overflow. §15's answer is a card layout
-  with an overflow menu, which is a redesign rather than a sizing fix. Allowlisted
-  in the compliance test.
+### Project equipment tab — table on desktop, cards below `md`
+The equipment tab (`components/projects/equipment-tab.tsx`) is a bespoke table, not a
+`DataTable`, so it can't inherit the free card layout. Instead each row component in
+`components/projects/equipment-rows.tsx` (`LineItemRow`, `GroupRow`, `SubHireGroupRow`,
+`CategoryRow`) **self-branches on `useIsMobile()`**: desktop returns its `<TableRow>`,
+mobile returns a card variant that reuses the row's already-computed vars and live
+Convex subscriptions (collaboration lock chip, `ReviewMarkerBadge`, comment-thread
+count/panel, per-unit `LineAssetsIndicator`). The card presentation primitives live in
+`components/projects/equipment-cards.tsx` (`MetricLine`, `GroupCard`,
+`CategoryCardHeading`, `CardAddButton`), styled to match the warehouse `scan-card.tsx`
+family (`bg-card` ring for top-level, `bg-paper-2` tints for headers/children).
+
+`equipment-tab.tsx` builds the category→group→item row map **once** and renders it in
+whichever shell matches the breakpoint (desktop `<table>` in a bordered scroll
+container; mobile `<div className="space-y-1.5">`), so the per-row subscriptions aren't
+duplicated. Any inline `colSpan` separator/empty-state `<TableRow>`s branch to a plain
+`<div>`/`CategoryCardHeading` under `isMobile` (a bare `<tr>` in a `<div>` is invalid
+HTML). Tapping a line-item card toggles **selection** (like `ScanItemCard`); edit / move
+/ delete live behind a trailing kebab. The reorder ▲▼ are dropped on mobile. There is no
+`StickyTable` / frozen-column treatment here anymore. Smoke-tested in
+`__tests__/equipment-mobile-cards.smoke.test.tsx`. Allowlisted in the compliance test.
 - `app/(app)/test-and-tag/page.tsx` — the *dashboard* summary tables (Overdue /
   Due soon) stay tables, but drop to 2–3 columns below `md` via
   `hidden md:table-cell`. Verified legible at 375px. The main Test & Tag registry

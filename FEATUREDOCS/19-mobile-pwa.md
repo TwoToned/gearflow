@@ -126,7 +126,21 @@ Convex subscriptions (collaboration lock chip, `ReviewMarkerBadge`, comment-thre
 count/panel, per-unit `LineAssetsIndicator`). The card presentation primitives live in
 `components/projects/equipment-cards.tsx` (`MetricLine`, `GroupCard`,
 `CategoryCardHeading`, `CardAddButton`), styled to match the warehouse `scan-card.tsx`
-family (`bg-card` ring for top-level, `bg-paper-2` tints for headers/children).
+family.
+
+**Three-tier card style (so the nesting reads at a glance):**
+- **Container cards** — project groups, sub-hire groups, and kits / accessory-parents
+  (any line with children). `bg-card` + **`ring-1 ring-line-2`** (heavier edge), a
+  leading glyph (`Container` / `Handshake` / `Package`), a **`font-medium`** title, and a
+  qty·total summary. These are the prominent "shelf" cards.
+- **Line-item cards** (leaf) — plain items. `bg-card` + `ring-1 ring-line`, **tighter
+  padding (`py-2`)** and a **smaller `text-table-cell` title** so they sit a step below
+  the containers. Grouped / sub-hire members (desktop `indent="ml-12"`) get a small
+  **`ml-3` left inset** so they nest under the container above.
+- **Child rows** — kit members / accessories inside a container. `bg-paper-2/40`, no
+  ring, `pl-6` — the most recessed tier.
+
+Selection still shows as `ring-2 ring-red` on any tier.
 
 `equipment-tab.tsx` builds the category→group→item row map **once** and renders it in
 whichever shell matches the breakpoint (desktop `<table>` in a bordered scroll

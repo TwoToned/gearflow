@@ -80,7 +80,7 @@ export function GroupCard({
 }) {
   return (
     <>
-      <div className="flex min-h-11 items-center gap-2 rounded-[var(--r)] bg-paper-2/60 px-3 py-2.5">
+      <div className="flex min-h-11 items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2.5 ring-1 ring-line-2">
         <button
           type="button"
           aria-expanded={isExpanded}

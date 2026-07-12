@@ -1,4 +1,4 @@
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import {
@@ -343,8 +343,11 @@ export async function buildProjectEquipmentTree(
   // assets/bulks/kits + the org's models/suppliers/categories, all inside a single
   // Convex query (backend-local reads). Was ~10 separate server→Convex queries in 3
   // sequential waves — the round-trip count was the latency, not the payload.
-  const convex = await getConvexClient();
-  const bundleData = await convex.query(api.projectEquipment.bundle, { projectId, orgId: organizationId });
+  // withConvexReadRetry: this bundle feeds the high-traffic project-detail page;
+  // a transient blip must not take the whole page down (matches every other read domain).
+  const bundleData = await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.projectEquipment.bundle, { projectId, orgId: organizationId }),
+  );
 
   // The reconstruction is PURE and now lives in the client-safe
   // project-equipment-reconstruct.ts (so the native read-layer cutover can run it

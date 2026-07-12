@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   reconstructOverbookedStatus,
+  resolveModelAssetType,
   type OverbookingBundleData,
   type OverbookLineItem,
 } from "./overbooking-core";
@@ -221,5 +222,39 @@ describe("reconstructOverbookedStatus", () => {
     const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.get("kc")).toMatchObject({ overBy: 1 });
     expect(map.get("kp")).toMatchObject({ overBy: 1, inherited: true, hasOverbookedChildren: true });
+  });
+
+  it("counts bulk stock for a BULK model whose assetType mirror field is absent", () => {
+    // Regression: older/backfilled Convex model docs read back assetType === undefined.
+    // Defaulting to SERIALIZED made totalStock = assets.length = 0 → every bulk line
+    // showed "0 available" and was spuriously overbooked. With the bulk-asset signal,
+    // the model resolves to BULK and its 10-unit stock is counted.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 6, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      // assetType intentionally omitted (undefined) — the mirror gap this fixes.
+      models: [{ id: "m1", organizationId: ORG } as unknown as ReturnType<typeof model>],
+      bulkAssets: [bulk({ id: "b1", modelId: "m1", totalQuantity: 10 })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 6 })],
+    });
+    // 6 booked against 10 bulk units → within stock, NOT overbooked.
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.has("li1")).toBe(false);
+  });
+});
+
+describe("resolveModelAssetType", () => {
+  it("returns a present value unchanged", () => {
+    expect(resolveModelAssetType("SERIALIZED", true)).toBe("SERIALIZED");
+    expect(resolveModelAssetType("BULK", false)).toBe("BULK");
+  });
+  it("falls back to BULK when assetType is absent but bulk assets exist", () => {
+    expect(resolveModelAssetType(undefined, true)).toBe("BULK");
+    expect(resolveModelAssetType(null, true)).toBe("BULK");
+  });
+  it("falls back to SERIALIZED when assetType is absent and there are no bulk assets", () => {
+    expect(resolveModelAssetType(undefined, false)).toBe("SERIALIZED");
   });
 });

@@ -1389,7 +1389,21 @@ only (toast / close dialog / `router.refresh()`). Hardened (codex): in-flight
 **counter** so `isPending` survives overlapping calls (`remove.mutate(id)` per
 row), latest-call-wins `data`/`error`, callback errors logged not merged with the
 mutation error, options ref updated in an effect (react-compiler), unmount-guarded.
-11 unit tests.
+13 unit tests.
+
+**⚠️ Stale-navigation guard: `onSuccess`/`onSettled` are gated on still-mounted.**
+~24 call sites navigate in `onSuccess` (`router.push(...)` after a create/delete).
+If the user leaves the page while the mutation is in flight, an *ungated* `onSuccess`
+fires `router.push` on the now-unmounted view and **snaps them back** to the
+entity/list page. So the hook skips `onSuccess`/`onSettled` when `mountedRef` is
+false — a successful mutation on a torn-down view has nothing to do (toasts/nav/reset
+are all view-local; the Convex subscription already pushed the data). `onError` stays
+**ungated** (a failure toast is worth showing even after unmount, and `onError` never
+navigates). Note this is a deliberate divergence from React Query, which runs
+mutation callbacks regardless of mount state. The same class of bug in raw
+`.then()`/`setTimeout` redirects (onboarding / register / invite pages) is guarded
+with a local `cancelled` flag / `clearTimeout` on unmount. Reads (`useServerQuery`,
+`command-search`) were already unmount-guarded.
 
 **The unit of conversion is a DATUM, not a file (the critical safety rule).** A
 writer can drop a datum's invalidation only once **every reader of that datum** is
@@ -2857,6 +2871,26 @@ hidden — this only smooths the "random" single-shot failures. This does NOT
 re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshness
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
+
+**2a. The projects domain itself was the gap (spurious "Server Components render"
+error on mutations).** The *keystone* read modules — `projects-read.ts`
+(`getProjectsByOrg` / `getProjectById` / `getProjectIdsForManager` / `getCallSheetData`),
+`project-managers-read.ts` (`getProjectManagerRows`), and the project-detail bundle
+in `project-line-item-read.ts` (`buildProjectEquipmentTree`) — were the only read
+helpers *not* wrapped in `withConvexReadRetry`, even though every project **write**
+action (`createProject`/`updateProject`/`updateProjectStatus`/…) ends with a
+`getProjectByIdMapped` **read-back**. A token-refresh-boundary blip on that read-back
+rejected an action whose write had *already committed* — so the row existed (~80% of
+the time) yet the client showed the masked "An error occurred in the Server
+Components render" (an unhandled server-action rejection, not a real render error).
+Fix: wrap those reads in `withConvexReadRetry` (same rule — reads only), plus
+failure-isolate the genuinely post-commit side-effects: `updateProject`'s
+`recalculateProjectTotals` is now wrapped in try/catch (totals are derived and
+self-heal), and the pre-write diff reads in `setProjectManagers` /
+`removeProjectManager` retry so the wizard's post-create manager sync can't fail the
+whole create on a blip. Note `logActivity` was *already* failure-isolated
+(`src/lib/activity-log.ts` swallows both the Postgres write and the Convex mirror) —
+it was never the culprit.
 
 ## Phase A — read-rewiring (domain-only decommission)
 

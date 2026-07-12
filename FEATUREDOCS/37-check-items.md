@@ -113,18 +113,47 @@ The warehouse page builds a **check queue** when prepping or returning multiple 
 
 When a check queue completes (single item or multi-item), `finishCheckQueue` returns focus to the correct scan input via `requestAnimationFrame` (PREP → main scan input, RETURN → return-tab scan input, RETURN-with-fromDeprep → deploy-tab scan input). This lets barcode scanners flow scan-to-scan without a mouse click between checks. The `requestAnimationFrame` delay lets the Sheet focus trap release before the refocus runs, avoiding a race.
 
-### Deprep Check Gate (inbound symmetry)
+### ⚠️ Which transition fires a check — one policy, `transitionNeedsCheck`
+
+The "does this transition need a check?" decision was copy-pasted across ~7 handlers
+in `warehouse/[projectId]/page.tsx` (each re-deriving `modelCheckItems > 0` and
+branching on context), which let coverage drift per transition. It now lives in ONE
+place: [`src/lib/warehouse-check-policy.ts`](../src/lib/warehouse-check-policy.ts) —
+`transitionNeedsCheck(context, { hasCheckItems, fromDeprep })`, plus
+`lineHasModelChecks(li)` / `kitHasChecks(kit)` (the deduped inline gates). Every
+trigger site routes through it (`startKitCheckFlow` has the central kit guard).
+Cross-transition test: `warehouse-check-policy.test.ts`.
+
+**Policy (product decision 2026-07): checks fire at PREP and DE-PREP only.**
 
 Outbound flow: `pick/prep → CHECK → deploy (staging) → on truck`.
 Inbound flow: `truck → return → deploy (staging) → CHECK → pick/prep (inventory)`.
 
-The Deploy tab is the staging ground on both sides of the truck. The check always happens at the inventory↔staging boundary. On the inbound side, that means a second RETURN-context check runs at **deprep time** in addition to the existing return-scan check (additive, dual-check). Implementation:
+- **PREP** (Pick → Prep): the outbound gate — a check runs when the model/kit has
+  check items. (Deploy / checkout fires NO check; prep is the gate.)
+- **DE-PREP** (shelf-in, `fromDeprep: true`, `context: "RETURN"`): the inbound gate —
+  a check runs at the inventory↔staging boundary as gear is stowed.
+- **Return-scan** (truck-in, `context: "RETURN"`, no `fromDeprep`): **no check.**
+  Previously an additive "dual-check" also ran here; per the product decision the
+  return check now runs *only* at de-prep, so the single-item scan, the batch
+  "Return Selected", and kit return-scans all return directly (`checkInMutation` /
+  `kitCheckInMutation` / `kitBatchInMutation`) without opening the form.
 
-- `handleDeprep` in `src/app/(app)/warehouse/[projectId]/page.tsx` intercepts deprep clicks for returned items (`status === "RETURNED"`, `prepStatus === "PACKED"`) whose model has check items, and builds a check queue with `fromDeprep: true, context: "RETURN"`.
-- On submit, the queue dispatches to `completeCheckAndDeprep` (not `completeCheckAndStore`) which writes RETURN-context `CheckRecord` rows and resets `prepStatus=PENDING` in one transaction — without changing `status` (already RETURNED).
-- Items that were never deployed (outbound deprep) or whose model has no check items bypass the form and call `deprepItem` directly.
-- Flagged/damaged items (`prepStatus !== "PACKED"`) also bypass the form and deprep directly — the return-scan check already captured the fault, and a second pass would be duplicate noise.
-- Kit deprep respects `KitCheckMode` via `startKitCheckFlow(..., fromDeprep=true)`. `KIT_LEVEL` kits get one kit-level check; `PER_ITEM` kits get a queue entry per child. When the queue finishes, `finishCheckQueue` calls `deprepKit` instead of `kitCheckInMutation`.
+Implementation of the de-prep gate:
+- `handleDeprep` intercepts deprep clicks for returned items (`status === "RETURNED"`,
+  `prepStatus === "PACKED"`) whose model has check items, and builds a check queue
+  with `fromDeprep: true, context: "RETURN"`.
+- On submit, the queue dispatches to `completeCheckAndDeprep` (not
+  `completeCheckAndStore`) which writes RETURN-context `CheckRecord` rows and resets
+  `prepStatus=PENDING` in one transaction — without changing `status` (already RETURNED).
+- Items never deployed (outbound deprep) or whose model has no check items bypass the
+  form and call `deprepItem` directly.
+- Flagged/damaged items (`prepStatus !== "PACKED"`) also bypass the form and deprep
+  directly — they route to a fault workflow rather than the standard shelf-in check.
+- Kit deprep respects `KitCheckMode` via `startKitCheckFlow(..., fromDeprep=true)`.
+  `KIT_LEVEL` kits get one kit-level check; `PER_ITEM` kits get a queue entry per
+  child. When the queue finishes, `finishCheckQueue` calls `deprepKit` instead of
+  `kitCheckInMutation`.
 
 ### Bulk Items in Check Queue
 - Each selected bulk unit generates a separate `CheckQueueItem` entry

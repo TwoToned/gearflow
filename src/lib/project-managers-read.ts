@@ -1,4 +1,4 @@
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -54,7 +54,8 @@ export async function getProjectManagerRows(
   organizationId: string,
   projectId: string,
 ): Promise<ProjectManagerRow[]> {
-  const client = await getConvexClient();
-  const docs = await client.query(api.projectManagers.list, { orgId: organizationId });
+  const docs = await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.projectManagers.list, { orgId: organizationId }),
+  );
   return filterAndSortManagers(docs, projectId, organizationId);
 }

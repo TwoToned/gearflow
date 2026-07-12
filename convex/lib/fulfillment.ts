@@ -242,10 +242,14 @@ export async function returnLineUnits(
   // 2. Bulk line return
   const targetBulkId = args.bulkAssetId || lineItem.bulkAssetId || null;
   if (targetBulkId) {
-    const returnQty = args.quantity ?? 1;
     const bulkUnits = units
       .filter((u) => u.bulkAssetId === targetBulkId && u.status === "CHECKED_OUT")
       .sort((a, b) => a.ordinal - b.ordinal);
+    // Default to the FULL remaining checked-out quantity, not 1. The old `?? 1`
+    // meant one click returned a single unit, forcing "click return 16 times" for a
+    // 16-unit bulk line. When the caller passes an explicit quantity, honour it.
+    const totalRemaining = bulkUnits.reduce((sum, u) => sum + ((u.quantity ?? 0) - (u.returnedQuantity ?? 0)), 0);
+    const returnQty = args.quantity ?? totalRemaining;
     let remaining = returnQty;
     for (const unit of bulkUnits) {
       if (remaining <= 0) break;
@@ -646,16 +650,36 @@ export async function prepUnit(
       }
     }
   } else if (args.bulkAssetId) {
-    const { id } = await ensureBulkUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, bulkAssetId: args.bulkAssetId, quantity: args.quantity ?? 1 });
-    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (u) {
-      await ctx.db.patch(u._id, {
+    // A bulk line keeps ONE unit per (line, bulkAsset) carrying the packed quantity.
+    // The old code OVERWROTE that unit's quantity to args.quantity on every call, so
+    // when the client expanded a bulk prep into N `{quantity: 1}` entries the unit
+    // collapsed to 1 (last write wins) — the "16 on the job but shows qty 1" bug.
+    // ACCUMULATE instead (capped at the line's ordered quantity): correct whether
+    // the caller sends one aggregate entry or N per-unit entries, and correct for
+    // incremental prep (prep 3, then 5 more → 8).
+    const addQty = args.quantity ?? 1;
+    const line = await lineDocByCuid(ctx, args.lineItemId);
+    const ordered = line?.quantity ?? addQty;
+    const existing = (await lineUnits(ctx, args.lineItemId)).find((un) => un.bulkAssetId === args.bulkAssetId);
+    if (existing) {
+      await ctx.db.patch(existing._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
-        ...(args.quantity !== undefined ? { quantity: args.quantity } : {}),
+        quantity: Math.min(ordered, (existing.quantity ?? 0) + addQty),
         ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
         updatedAt: now,
       });
+    } else {
+      const { id } = await ensureBulkUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, bulkAssetId: args.bulkAssetId, quantity: Math.min(ordered, addQty) });
+      const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (u) {
+        await ctx.db.patch(u._id, {
+          status: "CONFIRMED",
+          prepStatus: "PACKED",
+          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          updatedAt: now,
+        });
+      }
     }
   } else {
     const line = await lineDocByCuid(ctx, args.lineItemId);

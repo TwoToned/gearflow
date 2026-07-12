@@ -472,12 +472,16 @@ export const checkoutKit = mutation({
     }
     await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
 
-    const deploy = { status: "CHECKED_OUT" as const, checkedOutQuantity: 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now };
-    await ctx.db.patch(kitLine._id, deploy);
-    for (const c of children) await ctx.db.patch(c._id, deploy);
+    // checkedOutQuantity must be the LINE's own quantity, not a hardcoded 1 — a bulk
+    // kit member with quantity 16 was rolling up as "1 on the job", which then let the
+    // return path decrement only 1 at a time. Each line deploys its full quantity.
+    const deployBase = { status: "CHECKED_OUT" as const, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now };
+    const deployLine = (line: { quantity?: number }) => ({ ...deployBase, checkedOutQuantity: line.quantity ?? 1 });
+    await ctx.db.patch(kitLine._id, deployLine(kitLine));
+    for (const c of children) await ctx.db.patch(c._id, deployLine(c));
 
     for (const nestedChild of nestedKitChildren) {
-      for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, deploy);
+      for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, deployLine(gc));
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
       if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
       await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "CHECKED_OUT", loc, false, a.now);
@@ -1023,7 +1027,7 @@ export const syncContainerStatus = mutation({
     const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
     if (!allDeployedFlag && !allReturnedFlag) return { updated: false };
     if (allDeployedFlag) {
-      await ctx.db.patch(containerLI._id, { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
+      await ctx.db.patch(containerLI._id, { status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
     } else {
       await ctx.db.patch(containerLI._id, { status: "RETURNED", returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD", updatedAt: a.now });
     }

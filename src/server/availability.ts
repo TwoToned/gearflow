@@ -6,6 +6,7 @@ import { getClientMap } from "@/lib/clients-read";
 import { getModelById } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { resolveModelAssetType } from "@/lib/overbooking-core";
 import {
   getOrgLineItems,
   getOrgLineItemUnits,
@@ -94,7 +95,7 @@ export async function getModelBookings(
   let totalStock = 0;
   let effectiveStock = 0;
   if (model) {
-    if ((model.assetType ?? "SERIALIZED") === "SERIALIZED") {
+    if (resolveModelAssetType(model.assetType, activeBulkAssets.length > 0) === "SERIALIZED") {
       totalStock = activeAssets.length;
       const unavailable = activeAssets.filter(
         (a: ConvexAsset) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"

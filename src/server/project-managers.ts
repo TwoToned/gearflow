@@ -3,7 +3,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -96,10 +96,11 @@ export async function setProjectManagers(projectId: string, userIds: string[]) {
 
   const desired = [...new Set(userIds)];
   const convex = await getConvexClient();
-  const current = await convex.query(api.projectManagers.listByProject, {
-    projectId,
-    orgId: organizationId,
-  });
+  // Pre-write diff read — retry a transient blip so the wizard's post-create
+  // manager sync doesn't spuriously fail after the project already committed.
+  const current = await withConvexReadRetry(() =>
+    convex.query(api.projectManagers.listByProject, { projectId, orgId: organizationId }),
+  );
   const currentUserIds = new Set(current.map((r) => r.userId));
   const desiredSet = new Set(desired);
 
@@ -179,10 +180,9 @@ export async function removeProjectManager(projectId: string, userId: string) {
   );
 
   const convex = await getConvexClient();
-  const pmRows = await convex.query(api.projectManagers.listByProject, {
-    projectId,
-    orgId: organizationId,
-  });
+  const pmRows = await withConvexReadRetry(() =>
+    convex.query(api.projectManagers.listByProject, { projectId, orgId: organizationId }),
+  );
   const manager = pmRows.find((r) => r.userId === userId && r.organizationId === organizationId);
 
   if (!manager) {

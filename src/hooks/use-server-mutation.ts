@@ -112,6 +112,10 @@ export function useServerMutation<TData = unknown, TVariables = void>(
       const settle = async (data: TData | undefined, error: Error | null) => {
         inFlightRef.current -= 1;
         if (mountedRef.current && inFlightRef.current === 0) setIsPending(false);
+        // onSettled is success-path cleanup (close dialog, reset, navigate). If the
+        // view already unmounted, its work is moot — and skipping it avoids a
+        // post-unmount navigation. See onSuccess note below.
+        if (!mountedRef.current) return;
         await runCallback(
           opts.onSettled
             ? () => opts.onSettled!(data, error, variables)
@@ -125,14 +129,24 @@ export function useServerMutation<TData = unknown, TVariables = void>(
           setData(result);
           setError(null);
         }
-        await runCallback(
-          opts.onSuccess ? () => opts.onSuccess!(result, variables) : undefined
-        );
+        // Gate onSuccess on still-mounted. ~24 call sites navigate in onSuccess
+        // (`router.push(...)`); if the user left the page while the mutation was in
+        // flight, an ungated onSuccess fires router.push on the now-unmounted view
+        // and SNAPS them back to the entity/list page. A successful mutation on a
+        // torn-down view has nothing to do (its toasts/nav/reset are all view-local;
+        // the Convex subscription already pushed the data), so skipping is safe.
+        if (mountedRef.current) {
+          await runCallback(
+            opts.onSuccess ? () => opts.onSuccess!(result, variables) : undefined
+          );
+        }
         await settle(result, null);
         return result;
       } catch (e) {
         const err = toError(e);
         if (mountedRef.current && callId === callSeqRef.current) setError(err);
+        // onError stays ungated: a failure toast is still worth showing even if the
+        // triggering view unmounted, and onError never navigates.
         await runCallback(
           opts.onError ? () => opts.onError!(err, variables) : undefined
         );

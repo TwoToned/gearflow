@@ -34,8 +34,9 @@ import type { CategoryData } from "./equipment-rows";
 
 export interface MoveItemToGroupTarget {
   /** The owning category of the picked group — kept in sync with
-   *  `groupId` so the line item's `categoryId` follows its group. */
-  categoryId: string;
+   *  `groupId` so the line item's `categoryId` follows its group.
+   *  `null` when the target is an uncategorized-zone group (no category). */
+  categoryId: string | null;
   groupId: string;
 }
 
@@ -45,6 +46,11 @@ interface MoveItemToGroupDialogProps {
    *  the first available group. */
   initialGroupId?: string;
   categories: CategoryData[];
+  /** Groups living in the "Uncategorized" zone (categoryId === null). These are
+   *  NOT under any `categories[]` entry, so without them the picker silently
+   *  omits every uncategorized-zone group as a move target — and if a project's
+   *  ONLY groups are uncategorized, the picker falsely claimed "no groups exist". */
+  uncategorizedGroups?: { id: string; title: string }[];
   isPending: boolean;
   onClose: () => void;
   onSubmit: (lineItemId: string, target: MoveItemToGroupTarget) => void;
@@ -69,24 +75,33 @@ function MoveItemToGroupDialogBody({
   lineItemId,
   initialGroupId,
   categories,
+  uncategorizedGroups,
   isPending,
   onClose,
   onSubmit,
 }: MoveItemToGroupDialogProps) {
   // Flatten all groups with their owning category id so the picker
   // can label each option `<cat> > <group>` AND submit the right
-  // categoryId without a second lookup.
+  // categoryId without a second lookup. Uncategorized-zone groups
+  // (categoryId === null) are appended so they're selectable targets too.
   const flatGroups = useMemo(
-    () =>
-      categories.flatMap((cat) =>
+    () => [
+      ...categories.flatMap((cat) =>
         cat.groups.map((g) => ({
-          categoryId: cat.id,
+          categoryId: cat.id as string | null,
           categoryName: cat.name,
           groupId: g.id,
           groupTitle: g.title,
         })),
       ),
-    [categories],
+      ...(uncategorizedGroups ?? []).map((g) => ({
+        categoryId: null,
+        categoryName: "Uncategorized",
+        groupId: g.id,
+        groupTitle: g.title,
+      })),
+    ],
+    [categories, uncategorizedGroups],
   );
 
   const firstGroupId = flatGroups[0]?.groupId ?? "";
@@ -135,6 +150,15 @@ function MoveItemToGroupDialogBody({
                   ))}
                 </optgroup>
               ) : null,
+            )}
+            {uncategorizedGroups && uncategorizedGroups.length > 0 && (
+              <optgroup label="Uncategorized">
+                {uncategorizedGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    Uncategorized &gt; {g.title}
+                  </option>
+                ))}
+              </optgroup>
             )}
           </select>
         </div>

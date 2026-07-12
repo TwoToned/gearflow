@@ -119,6 +119,18 @@ marginPercent = margin / total × 100
   Uncategorized as a destination. `createProjectGroup` scopes its
   `sortOrder` aggregate by `projectId` so each project's Uncategorized
   zone has its own sequence.
+- **Moving a line item into an uncategorized-zone group:** the
+  `MoveItemToGroupDialog` builds its target list from BOTH `categories[]`
+  (categorized groups) AND a separate `uncategorizedGroups` prop
+  (`native.uncategorizedProjectGroups`). Earlier it was only fed
+  `categories[]`, so uncategorized-zone groups were never offered as move
+  targets — and a project whose ONLY groups were uncategorized showed the
+  false "no groups exist" empty state (read as "can't move into an empty /
+  newly-created group"; the real discriminator was *uncategorized*, not
+  *empty*). The submit path forwards `categoryId: null` for those targets,
+  which `moveLineItemToGroup` / `moveLineItemsToGroup` already accept. Server
+  side needs no change. Smoke test:
+  `__tests__/move-item-to-group-dialog.smoke.test.tsx`.
 - `suggestedPrice` auto-calculated from tracked assets' rates inside the group
 - User can override `price` or accept the suggestion with one click
 - Assets inside a group are for **tracking only** — never shown on quotes

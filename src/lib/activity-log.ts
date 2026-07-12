@@ -72,6 +72,61 @@ export async function logActivity(input: LogActivityInput): Promise<void> {
   }
 }
 
+/**
+ * Batched sibling of {@link logActivity}: write N audit rows in ONE Postgres insert
+ * + ONE Convex mirror mutation instead of N sequential round-trips. Use from bulk
+ * warehouse actions (check-out / return / prep / deprep of a batch) that previously
+ * looped `await logActivity(...)` per item — the dominant tax on those paths. Each
+ * input still produces exactly one audit row (per-item granularity preserved); only
+ * the transport is batched. Best-effort, like logActivity — audit never breaks a write.
+ */
+export async function logActivityMany(inputs: LogActivityInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  const createdAt = new Date();
+  const rows = inputs.map((input) => ({ id: createId(), createdAt, ...input }));
+
+  // ONE Postgres insert for all N rows (was N sequential creates).
+  try {
+    await prisma.activityLog.createMany({
+      data: rows.map((r) => ({
+        ...r,
+        details: r.details as unknown as Prisma.InputJsonValue,
+        metadata: r.metadata as unknown as Prisma.InputJsonValue,
+      })),
+    });
+  } catch (error) {
+    console.error("Failed to log activity batch:", error);
+  }
+
+  // ONE Convex mirror mutation for all N (was N sequential `record` calls).
+  if (nativeActivityWrites()) {
+    try {
+      const convex = await getConvexClient();
+      await convex.mutation(api.activityLogWrites.recordMany, {
+        rows: rows.map((r) => ({
+          id: r.id,
+          organizationId: r.organizationId,
+          action: r.action,
+          entityType: r.entityType,
+          entityId: r.entityId,
+          entityName: r.entityName,
+          userId: r.userId,
+          userName: r.userName,
+          summary: r.summary,
+          details: r.details,
+          metadata: r.metadata,
+          projectId: r.projectId,
+          assetId: r.assetId,
+          kitId: r.kitId,
+          createdAt: r.createdAt.getTime(),
+        })),
+      });
+    } catch (error) {
+      console.error("Failed to mirror activity batch to Convex:", error);
+    }
+  }
+}
+
 export function buildChanges(
   before: Record<string, unknown>,
   after: Record<string, unknown>,

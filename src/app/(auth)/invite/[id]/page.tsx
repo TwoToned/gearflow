@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient, organization } from "@/lib/auth-client";
@@ -21,11 +21,19 @@ export default function InviteAcceptPage({
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  // Track the post-accept redirect timer so it's cleared on unmount — otherwise a
+  // user who navigates away in the 1.5s window still gets pushed to /dashboard.
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     authClient.getSession().then((session) => {
-      setIsAuthenticated(!!session.data?.user);
+      if (!cancelled) setIsAuthenticated(!!session.data?.user);
     });
+    return () => {
+      cancelled = true;
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    };
   }, []);
 
   const handleAccept = async () => {
@@ -45,7 +53,7 @@ export default function InviteAcceptPage({
       if (orgData) {
         await organization.setActive({ organizationId: orgData.id });
       }
-      setTimeout(() => router.push("/dashboard"), 1500);
+      redirectTimerRef.current = setTimeout(() => router.push("/dashboard"), 1500);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

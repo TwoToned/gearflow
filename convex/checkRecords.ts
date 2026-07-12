@@ -93,32 +93,56 @@ export const create = mutation({
   },
 });
 
+const checkRecordFields = {
+  id: v.string(),
+  organizationId: v.string(),
+  context: enums.CheckContext,
+  lineItemId: v.optional(v.string()),
+  lineItemUnitId: v.optional(v.string()),
+  assetId: v.optional(v.string()),
+  bulkAssetId: v.optional(v.string()),
+  kitId: v.optional(v.string()),
+  checkItemId: v.string(),
+  checkItemLabelSnapshot: v.string(),
+  checkItemTypeSnapshot: enums.CheckItemType,
+  result: enums.CheckResult,
+  value: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  photos: v.optional(v.array(v.string())),
+  performedById: v.string(),
+  performedAt: v.optional(v.number()),
+};
+
 export const createIfMissing = mutation({
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    context: enums.CheckContext,
-    lineItemId: v.optional(v.string()),
-    lineItemUnitId: v.optional(v.string()),
-    assetId: v.optional(v.string()),
-    bulkAssetId: v.optional(v.string()),
-    kitId: v.optional(v.string()),
-    checkItemId: v.string(),
-    checkItemLabelSnapshot: v.string(),
-    checkItemTypeSnapshot: enums.CheckItemType,
-    result: enums.CheckResult,
-    value: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    photos: v.optional(v.array(v.string())),
-    performedById: v.string(),
-    performedAt: v.optional(v.number()),
-  },
+  args: checkRecordFields,
   handler: async (ctx, args) => {
     await requireService(ctx);
     const existing = await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("checkRecords", args);
     return { _id, created: true };
+  },
+});
+
+/**
+ * Batched sibling of `createIfMissing`: insert N check records in ONE Convex
+ * round-trip instead of N. A single check submission produces (N line items × M
+ * check items) records; `writeCheckRecordsToConvex` used to fire one mutation per
+ * record. Still idempotent per cuid (CLAUDE.md rule — never `create`, always
+ * check-then-insert on by_cuid), one doc per record.
+ */
+export const createManyIfMissing = mutation({
+  args: { records: v.array(v.object(checkRecordFields)) },
+  handler: async (ctx, { records }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const args of records) {
+      const existing = await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+      if (existing) continue;
+      await ctx.db.insert("checkRecords", args);
+      created += 1;
+    }
+    return { created };
   },
 });
 

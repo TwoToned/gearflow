@@ -33,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveModelPhotoUrl } from "@/lib/media-utils";
@@ -160,6 +161,153 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const deployedCount = model.assets.filter((a) => a.status === "CHECKED_OUT").length;
   const maintenanceCount = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
+
+  // Mobile card layouts for the sub-tables (rendered below `md`).
+  const serializedColumns: ColumnDef<(typeof model.assets)[number]>[] = [
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "title",
+      cell: (asset) => (
+        <Link href={`/assets/registry/${asset.id}`} className={cn("t-mono text-table-cell font-medium text-ink hover:underline rounded-sm", focusRing)}>
+          {asset.assetTag}
+        </Link>
+      ),
+    },
+    {
+      id: "name",
+      header: "Name",
+      mobile: "subtitle",
+      cell: (asset) => <span className="text-ink">{asset.customName || "—"}</span>,
+    },
+    {
+      id: "serial",
+      header: "Serial #",
+      mobile: "meta",
+      cell: (asset) => <span className="t-mono text-table-cell text-muted">{asset.serialNumber || "—"}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (asset) => (
+        <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} variant="pill" />
+      ),
+    },
+    {
+      id: "location",
+      header: "Location",
+      mobile: "meta",
+      cell: (asset) => <span className="text-muted">{asset.location?.name || "—"}</span>,
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (asset) => (
+        <CanDo resource="warehouse" action="check_in">
+          {asset.status === "CHECKED_OUT" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="touch-target h-7 w-7 text-warn"
+              title="Force return"
+              onClick={() =>
+                setForceReturnAssetId({
+                  id: asset.id,
+                  tag: asset.assetTag,
+                })
+              }
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </CanDo>
+      ),
+    },
+  ];
+
+  const bulkColumns: ColumnDef<(typeof model.bulkAssets)[number]>[] = [
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "title",
+      cell: (ba) => (
+        <span className="t-mono text-table-cell font-medium text-ink">
+          {ba.assetTag}
+        </span>
+      ),
+    },
+    {
+      id: "available",
+      header: "Available",
+      mobile: "meta",
+      cell: (ba) => <span className="font-medium text-ink t-data">{ba.availableQuantity}</span>,
+    },
+    {
+      id: "total",
+      header: "Total",
+      mobile: "meta",
+      cell: (ba) => <span className="text-muted t-data">{ba.totalQuantity}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (ba) => (
+        <StatusIndicator category="asset" value={ba.status} label={bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)} variant="pill" />
+      ),
+    },
+    {
+      id: "location",
+      header: "Location",
+      mobile: "meta",
+      cell: (ba) => <span className="text-muted">{ba.location?.name || "—"}</span>,
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (ba) => (
+        <CanDo resource="asset" action="update">
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="touch-target h-7 w-7"
+              title="Edit"
+              asChild
+            >
+              <Link href={`/assets/registry/${ba.id}/edit?type=bulk`}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            {ba.isActive ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="touch-target h-7 w-7 text-t-out"
+                title="Archive"
+                onClick={() => setArchiveBulkId(ba.id)}
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="touch-target h-7 w-7 text-t-out"
+                title="Delete"
+                onClick={() => setDeleteBulkId(ba.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </CanDo>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -348,7 +496,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       }
                     />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line overflow-x-auto">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line overflow-x-auto md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -399,6 +548,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         </TableBody>
                       </Table>
                     </div>
+                    <MobileCardList
+                      className="md:hidden"
+                      data={model.assets}
+                      columns={serializedColumns}
+                      getRowId={(asset) => asset.id}
+                    />
+                    </>
                   )
                 ) : (
                   model.bulkAssets.length === 0 ? (
@@ -415,7 +571,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       }
                     />
                   ) : (
-                    <div className="rounded-[var(--r)] border border-line overflow-x-auto">
+                    <>
+                    <div className="hidden rounded-[var(--r)] border border-line overflow-x-auto md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -484,6 +641,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         </TableBody>
                       </Table>
                     </div>
+                    <MobileCardList
+                      className="md:hidden"
+                      data={model.bulkAssets}
+                      columns={bulkColumns}
+                      getRowId={(ba) => ba.id}
+                    />
+                    </>
                   )
                 )}
               </TabsContent>

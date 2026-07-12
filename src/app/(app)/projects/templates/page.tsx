@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -86,6 +87,102 @@ export default function TemplatesPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Mobile card layout for the templates table (rendered below `md`).
+  const cols: ColumnDef<any>[] = [
+    {
+      id: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (t) => (
+        <Link href={`/projects/${t.id}`} className={cn("font-medium text-ink-2 hover:text-link hover:underline rounded-sm", focusRing)}>
+          {t.name}
+        </Link>
+      ),
+    },
+    {
+      id: "code",
+      header: "Code",
+      mobile: "subtitle",
+      cell: (t) => (
+        <Link
+          href={`/projects/${t.id}`}
+          className={cn("t-mono text-muted hover:text-link hover:underline rounded-sm", focusRing)}
+        >
+          {t.projectNumber}
+        </Link>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (t) => (
+        <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted">
+          {typeLabels[t.type] || t.type}
+        </span>
+      ),
+    },
+    {
+      id: "client",
+      header: "Client",
+      mobile: "meta",
+      cell: (t) => t.client?.name || "—",
+    },
+    {
+      id: "items",
+      header: "Items",
+      mobile: "meta",
+      cell: (t) => <span className="tabular-nums">{t._count?.lineItems ?? 0}</span>,
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      mobile: "actions",
+      cell: (t) => (
+        <div className="flex justify-end gap-1">
+          <CanDo resource="project" action="create">
+            <Button
+              variant="line"
+              size="sm"
+              onClick={() => {
+                setCreateFrom(t);
+                setProjectNumber("");
+                setProjectName(`${t.name}`);
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Use
+            </Button>
+          </CanDo>
+          <CanDo resource="project" action="update">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="touch-target size-8"
+              title="Edit template"
+              asChild
+            >
+              <Link href={`/projects/${t.id}/edit`}>
+                <BookTemplate className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CanDo>
+          <CanDo resource="project" action="delete">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="touch-target size-8 text-t-out"
+              title="Delete template"
+              onClick={() => setDeleteTarget({ id: t.id, name: t.name })}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </CanDo>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <RequirePermission resource="project" action="read">
       <FadeIn>
@@ -114,7 +211,7 @@ export default function TemplatesPage() {
           </div>
         )}
 
-        <div className="rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+        <div className="hidden md:block rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -217,6 +314,17 @@ export default function TemplatesPage() {
                 )}
               </TableBody>
             </Table>
+        </div>
+        {/* Mobile: loading / empty / cards. The desktop table's colSpan skeleton
+            and empty row are md:block-hidden, so mirror those states here. */}
+        <div className="md:hidden">
+          {isLoading ? (
+            <TableSkeleton rows={4} cols={1} />
+          ) : !templates || templates.length === 0 ? (
+            <p className="py-10 text-center text-ui-text font-medium text-ink-2">No templates yet</p>
+          ) : (
+            <MobileCardList data={templates} columns={cols} getRowId={(t: any) => t.id} />
+          )}
         </div>
       </div>
       </FadeIn>

@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.9.0] - 2026-07-12
+
+### Changed
+
+- Mobile: more list tables now render as cards on phones — asset model detail (serialized + bulk units, with their row actions), kit detail (items, bulk, assignments, scan history), and the project templates list. Loading and empty states show correctly on mobile too.
+
 ## [0.24.8.0] - 2026-07-12
 
 ### Changed

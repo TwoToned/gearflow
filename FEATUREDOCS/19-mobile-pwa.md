@@ -145,8 +145,8 @@ breakpoints). Reuse the exact JSX the desktop `<TableCell>` renders. Converted s
 desktop-only, dropped on mobile), `test-and-tag/[id]` (test history — row
 expansion is desktop-only), `sub-hire-expanded-items` (flattened grouped items),
 and warehouse `close-out-tab` (read-only exceptions as scan-card-style cards —
-inline, since the `scan-card.tsx` primitives all require an interactive control).
-Genuinely grid-shaped
+inline, since the `scan-card.tsx` primitives all require an interactive control),
+`crew/[id]` (assignments, availability, time-entries sub-tables). Genuinely grid-shaped
 surfaces (calendars, the crew planner matrix, ROI/allocation matrices, the print
 pull-sheet, desktop-only admin) stay tables — do NOT `MobileCardList` those.
 

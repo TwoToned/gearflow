@@ -15,7 +15,7 @@ import {
 } from "@/lib/check-record-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
-import { getCheckItemById } from "@/lib/check-items-read";
+import { getCheckItemById, getCheckItemsForOrg } from "@/lib/check-items-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import {
@@ -69,7 +69,9 @@ type CheckRecordDoc = {
 };
 
 async function saveCheckRecords(
-  tx: Prisma.TransactionClient,
+  // Retained for call-site compatibility only. CheckItem is Convex-only now, so this
+  // helper no longer touches Postgres — every caller passes the plain `prisma` client.
+  _tx: Prisma.TransactionClient,
   organizationId: string,
   userId: string,
   assetId: string,
@@ -81,13 +83,19 @@ async function saveCheckRecords(
   // Optional sink: Convex-ready docs are pushed here for post-tx write
   sink?: CheckRecordDoc[]
 ) {
-  // Fetch check item details for snapshots (check_item stays Prisma)
-  const checkItemIds = checks.map((c) => c.checkItemId);
-  const checkItems = await tx.checkItem.findMany({
-    where: { id: { in: checkItemIds }, organizationId },
-    select: { id: true, label: true, type: true },
-  });
-  const checkItemMap = new Map(checkItems.map((ci) => [ci.id, ci]));
+  // Fetch check item details for snapshots. CheckItem is Convex-only (write-inverted —
+  // see check-items.ts createCheckItem, which writes api.checkItems.create and NO Prisma
+  // row). The old `tx.checkItem.findMany` read a FROZEN Postgres table and threw
+  // "Check item not found" for any check item created after the inversion, breaking the
+  // whole check-in/out/return save. Read from Convex (getCheckItemsForOrg) — the same
+  // reactive source every other check-item read uses.
+  const wantedIds = new Set(checks.map((c) => c.checkItemId));
+  const orgCheckItems = await getCheckItemsForOrg(organizationId);
+  const checkItemMap = new Map(
+    orgCheckItems
+      .filter((ci) => wantedIds.has(ci.id))
+      .map((ci) => [ci.id, { id: ci.id, label: ci.label, type: ci.type }]),
+  );
 
   const records: CheckRecordDoc[] = [];
   const now = Date.now();
@@ -1113,7 +1121,7 @@ export async function saveAdHocCheck(data: SubmitChecksFormValues) {
     throw new Error("This function is for ad-hoc checks only");
   }
 
-  // saveCheckRecords only reads checkItem (kept Prisma table) + builds the
+  // saveCheckRecords only reads checkItem (from Convex) + builds the
   // Convex-ready docs — no Prisma writes, so no transaction is needed.
   const records = await saveCheckRecords(
     prisma,

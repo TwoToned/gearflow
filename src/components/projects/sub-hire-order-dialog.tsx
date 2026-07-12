@@ -75,6 +75,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import type { SubHireStatus, SubHirePaymentStatus } from "@/generated/prisma/client";
 
@@ -554,6 +555,7 @@ function SubHireManageView({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingGroup, setEditingGroup] = useState<Record<string, any> | null>(null);
+  const isMobile = useIsMobile();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
@@ -1151,31 +1153,36 @@ function SubHireManageView({
                               Add Item
                             </Button>
                           </div>
-                        ) : (
-                          <Table>
-                            <TableBody>
-                              {groupItems.map((item) => (
-                                <SubHireItemRow
-                                  key={item.id as string}
-                                  item={item}
-                                  groups={groups}
-                                  isOrderTotal={isOrderTotal}
-                                  onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
-                                  onRemove={() => {
-                                    setConfirmAction({
-                                      title: "Remove item",
-                                      description: `Remove "${item.description}" from this sub-hire?`,
-                                      confirmLabel: "Remove",
-                                      variant: "destructive",
-                                      onConfirm: () => removeItemMutation.mutate(item.id as string),
-                                    });
-                                  }}
-                                  onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
-                                />
-                              ))}
-                            </TableBody>
-                          </Table>
-                        )}
+                        ) : (() => {
+                          // Build rows once, render as a card stack on mobile or
+                          // a borderless table on desktop.
+                          const itemRows = groupItems.map((item) => (
+                            <SubHireItemRow
+                              key={item.id as string}
+                              item={item}
+                              groups={groups}
+                              isOrderTotal={isOrderTotal}
+                              onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
+                              onRemove={() => {
+                                setConfirmAction({
+                                  title: "Remove item",
+                                  description: `Remove "${item.description}" from this sub-hire?`,
+                                  confirmLabel: "Remove",
+                                  variant: "destructive",
+                                  onConfirm: () => removeItemMutation.mutate(item.id as string),
+                                });
+                              }}
+                              onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                            />
+                          ));
+                          return isMobile ? (
+                            <div className="space-y-1.5 p-2">{itemRows}</div>
+                          ) : (
+                            <Table>
+                              <TableBody>{itemRows}</TableBody>
+                            </Table>
+                          );
+                        })()}
                         {/* Group placement */}
                         <div className="px-3 py-2 border-t border-border/50">
                           <div className="flex items-center gap-2">
@@ -1212,55 +1219,79 @@ function SubHireManageView({
                       <span className="text-xs text-fg-4 font-medium">Ungrouped</span>
                     </div>
                   )}
-                  <Table>
-                    <TableBody>
-                      {ungroupedItems.map((item) => (
+                  {(() => {
+                    // Build interleaved item + placement-picker rows once. On
+                    // mobile the placement picker renders as a plain <div> below
+                    // the item card (a <TableRow> is invalid inside a <div>).
+                    const itemRows = ungroupedItems.map((item) => {
+                      const placementPicker = (
+                        <PlacementPicker
+                          projectId={projectId}
+                          value={{
+                            groupId: item.targetGroup?.id || item.targetGroupId,
+                            categoryId: item.targetCategory?.id || item.targetCategoryId,
+                          }}
+                          onChange={(p) => placementMutation.mutate({
+                            entityType: "item",
+                            entityId: item.id as string,
+                            targetGroupId: p.targetGroupId,
+                            targetCategoryId: p.targetCategoryId,
+                          })}
+                          size="xs"
+                        />
+                      );
+                      const itemRow = (
+                        <SubHireItemRow
+                          item={item}
+                          groups={groups}
+                          isOrderTotal={isOrderTotal}
+                          onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
+                          onRemove={() => {
+                            setConfirmAction({
+                              title: "Remove item",
+                              description: `Remove "${item.description}" from this sub-hire?`,
+                              confirmLabel: "Remove",
+                              variant: "destructive",
+                              onConfirm: () => removeItemMutation.mutate(item.id as string),
+                            });
+                          }}
+                          onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                        />
+                      );
+                      return (
                         <Fragment key={item.id as string}>
-                          <SubHireItemRow
-                            item={item}
-                            groups={groups}
-                            isOrderTotal={isOrderTotal}
-                            onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
-                            onRemove={() => {
-                              setConfirmAction({
-                                title: "Remove item",
-                                description: `Remove "${item.description}" from this sub-hire?`,
-                                confirmLabel: "Remove",
-                                variant: "destructive",
-                                onConfirm: () => removeItemMutation.mutate(item.id as string),
-                              });
-                            }}
-                            onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
-                          />
+                          {itemRow}
                           {/* Per-item placement picker */}
-                          <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={isOrderTotal ? 4 : 6} className="py-1 px-3">
+                          {isMobile ? (
+                            <div className="px-3 pb-1">
                               <div className="flex items-center gap-2">
                                 <MapPin className="h-3 w-3 text-fg-4 shrink-0" />
                                 <span className="text-[10px] text-fg-4 shrink-0">Placement:</span>
-                                <div className="flex-1 max-w-[200px]">
-                                  <PlacementPicker
-                                    projectId={projectId}
-                                    value={{
-                                      groupId: item.targetGroup?.id || item.targetGroupId,
-                                      categoryId: item.targetCategory?.id || item.targetCategoryId,
-                                    }}
-                                    onChange={(p) => placementMutation.mutate({
-                                      entityType: "item",
-                                      entityId: item.id as string,
-                                      targetGroupId: p.targetGroupId,
-                                      targetCategoryId: p.targetCategoryId,
-                                    })}
-                                    size="xs"
-                                  />
-                                </div>
+                                <div className="flex-1 max-w-[200px]">{placementPicker}</div>
                               </div>
-                            </TableCell>
-                          </TableRow>
+                            </div>
+                          ) : (
+                            <TableRow className="hover:bg-transparent">
+                              <TableCell colSpan={isOrderTotal ? 4 : 6} className="py-1 px-3">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3 text-fg-4 shrink-0" />
+                                  <span className="text-[10px] text-fg-4 shrink-0">Placement:</span>
+                                  <div className="flex-1 max-w-[200px]">{placementPicker}</div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
                         </Fragment>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      );
+                    });
+                    return isMobile ? (
+                      <div className="space-y-1.5 p-2">{itemRows}</div>
+                    ) : (
+                      <Table>
+                        <TableBody>{itemRows}</TableBody>
+                      </Table>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1622,9 +1653,92 @@ function SubHireItemRow({
   onRemove: () => void;
   onMoveToGroup: (groupId: string | null) => void;
 }) {
+  const isMobile = useIsMobile();
   const cost = Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
   const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
   const itemMargin = charge - cost;
+
+  // Edit / move-to-group / remove control — shared verbatim between the desktop
+  // row cell and the mobile card's trailing cluster.
+  const actionsMenu = (
+    <CanDo resource="subHire" action="update">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon">
+            <MoreVertical className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Item</DropdownMenuLabel>
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+            {/* Move to group options */}
+            {groups.length > 0 && (
+              <>
+                {item.groupId ? (
+                  <DropdownMenuItem onClick={() => onMoveToGroup(null)}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Ungroup
+                  </DropdownMenuItem>
+                ) : null}
+                {groups
+                  .filter((g) => g.id !== item.groupId)
+                  .map((g) => (
+                    <DropdownMenuItem key={g.id} onClick={() => onMoveToGroup(g.id)}>
+                      <FolderPlus className="mr-2 h-4 w-4" />
+                      Move to {g.title}
+                    </DropdownMenuItem>
+                  ))}
+              </>
+            )}
+            <DropdownMenuItem className="text-destructive" onClick={onRemove}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Remove
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </CanDo>
+  );
+
+  // ── Mobile: item card. Title = description, compact meta line matches the
+  // columns the desktop row shows (qty · unit charge, + unit cost + margin when
+  // itemized), trailing edit/move/remove menu. ──
+  if (isMobile) {
+    return (
+      <div className="flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <div className="font-medium text-ink text-table-cell">{item.description}</div>
+            {!item.showOnQuote && (
+              <span className="text-[10px] text-fg-4 bg-surface-2 px-1.5 py-0.5 rounded">Hidden</span>
+            )}
+          </div>
+          {item.model && (
+            <div className="text-xs text-fg-4">{String((item.model as Record<string, unknown>)?.name ?? "")}</div>
+          )}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-3 tabular-nums">
+            <span>Qty {item.quantity}</span>
+            <span>{formatCurrency(Number(item.unitCharge))}/ea</span>
+            {!isOrderTotal && (
+              <>
+                <span className="text-fg-4">cost {formatCurrency(Number(item.unitCost))}</span>
+                <span className={itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}>
+                  {itemMargin > 0 ? "+" : ""}{formatCurrency(itemMargin)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {actionsMenu}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TableRow className="group">
@@ -1660,47 +1774,7 @@ function SubHireItemRow({
         </>
       )}
       <TableCell className="py-2 w-[40px]">
-        <CanDo resource="subHire" action="update">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreVertical className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Item</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </DropdownMenuItem>
-                {/* Move to group options */}
-                {groups.length > 0 && (
-                  <>
-                    {item.groupId ? (
-                      <DropdownMenuItem onClick={() => onMoveToGroup(null)}>
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Ungroup
-                      </DropdownMenuItem>
-                    ) : null}
-                    {groups
-                      .filter((g) => g.id !== item.groupId)
-                      .map((g) => (
-                        <DropdownMenuItem key={g.id} onClick={() => onMoveToGroup(g.id)}>
-                          <FolderPlus className="mr-2 h-4 w-4" />
-                          Move to {g.title}
-                        </DropdownMenuItem>
-                      ))}
-                  </>
-                )}
-                <DropdownMenuItem className="text-destructive" onClick={onRemove}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Remove
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
+        {actionsMenu}
       </TableCell>
     </TableRow>
   );

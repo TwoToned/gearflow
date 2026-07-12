@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.15.0] - 2026-07-12
+
+### Changed
+
+- Mobile: the sub-hire order dialog’s item lists now render as cards on phones (edit / move / remove per item, plus per-item placement). This completes the sweep — every operator-facing list table in the app now becomes cards on a phone instead of a cut-off, horizontally-scrolling table.
+
 ## [0.24.14.0] - 2026-07-12
 
 ### Changed

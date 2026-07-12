@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
@@ -140,6 +141,68 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   }
 
   const latestRecord = item.testRecords[0] ?? null;
+
+  // Mobile card layout for the test-history table (rendered below `md`). Each
+  // `cell` is pure/presentational and mirrors the desktop <TableCell> content.
+  // Flat card per test record — desktop row expansion (readings/visual/meta) is
+  // intentionally not reproduced on mobile for v1.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const testHistoryColumns: ColumnDef<any>[] = [
+    {
+      id: "testDate",
+      header: "Test date",
+      mobile: "title",
+      cell: (record) => <span className="t-data">{formatDate(record.testDate)}</span>,
+    },
+    {
+      id: "tester",
+      header: "Tester",
+      mobile: "subtitle",
+      cell: (record) => <span>{record.testedBy?.name || record.testerName}</span>,
+    },
+    {
+      id: "result",
+      header: "Result",
+      mobile: "badge",
+      cell: (record) => resultBadge(record.result),
+    },
+    {
+      id: "visual",
+      header: "Visual",
+      mobile: "meta",
+      cell: (record) => resultBadge(record.visualInspectionResult),
+    },
+    {
+      id: "earthContinuity",
+      header: "Earth cont.",
+      mobile: "meta",
+      cell: (record) => resultBadge(record.earthContinuityResult),
+    },
+    {
+      id: "insulation",
+      header: "Insulation",
+      mobile: "meta",
+      cell: (record) => resultBadge(record.insulationResult),
+    },
+    {
+      id: "leakage",
+      header: "Leakage",
+      mobile: "meta",
+      cell: (record) => resultBadge(record.leakageCurrentResult),
+    },
+    {
+      id: "notes",
+      header: "Notes",
+      mobile: "meta",
+      mobileEmpty: (record) =>
+        !record.failureNotes && !record.functionalTestNotes && !record.visualNotes,
+      cell: (record) => (
+        <span className="text-caption text-muted">
+          {record.failureNotes || record.functionalTestNotes || record.visualNotes || "—"}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <FadeIn>
@@ -282,7 +345,8 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     description="Record the first test to start tracking compliance."
                   />
                 ) : (
-                  <div className="rounded-[var(--r)] ring-1 ring-line overflow-x-auto">
+                  <>
+                  <div className="hidden md:block rounded-[var(--r)] ring-1 ring-line overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -475,6 +539,13 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </TableBody>
                     </Table>
                   </div>
+                  <MobileCardList
+                    className="md:hidden"
+                    data={item.testRecords}
+                    columns={testHistoryColumns}
+                    getRowId={(record) => record.id}
+                  />
+                  </>
                 )}
               </div>
             </div>

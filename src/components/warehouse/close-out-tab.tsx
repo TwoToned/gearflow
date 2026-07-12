@@ -180,7 +180,8 @@ export function CloseOutTab({
       {exceptions.length > 0 && (
         <div>
           <h3 className="text-heading font-bold text-ink mb-2">Exceptions</h3>
-          <div className="rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
+          {/* Desktop: data table (§15 — phones use the stacked card list below) */}
+          <div className="hidden md:block rounded-[var(--r-lg)] bg-card ring-1 ring-line shadow-[var(--sh-card)] overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -223,6 +224,45 @@ export function CloseOutTab({
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Mobile: card list (§15) — same exception rows, matching the
+              scan-card family look. Read-only: the close-out control is the
+              single global button below, not a per-row action. */}
+          <div className="md:hidden space-y-1.5">
+            {exceptions.map((exc) => (
+              <div
+                key={exc.lineItemId}
+                className="flex w-full min-h-11 items-center gap-3 rounded-[var(--r)] bg-card px-3 py-2.5 ring-1 ring-line"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-medium text-ui-text text-ink">{exc.modelName}</span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                    <span className="t-mono text-caption text-muted">{exc.assetTag || "—"}</span>
+                  </div>
+                </div>
+                <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <Badge status="neutral">
+                    {STATUS_LABELS[exc.status] || exc.status}
+                  </Badge>
+                  {exc.returnCondition && (
+                    <Badge
+                      status={
+                        exc.returnCondition === "DAMAGED"
+                          ? "warn"
+                          : exc.returnCondition === "MISSING"
+                            ? "overbooked"
+                            : "neutral"
+                      }
+                    >
+                      {CONDITION_LABELS[exc.returnCondition] || exc.returnCondition}
+                    </Badge>
+                  )}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

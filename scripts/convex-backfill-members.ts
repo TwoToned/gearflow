@@ -1,6 +1,7 @@
 /**
- * One-time backfill: mirror Prisma `member` + `customRole` rows into their Convex
- * mirror tables (the native read layer's RBAC source for `requireOrgPermission`).
+ * Backfill/reconcile: mirror Prisma `member` rows into the Convex `members` mirror
+ * (the native read layer's RBAC source for `requireOrgPermission`). Custom roles were
+ * removed (built-in roles only), so only members are mirrored now.
  *
  * Idempotent — upserts by cuid `id`, so re-running is safe and converges any drift.
  * Run AFTER the Phase 1 schema + mirror functions are deployed:
@@ -31,26 +32,7 @@ async function main() {
   }
   console.log(`Mirrored ${m} members.`);
 
-  const roles = await prisma.customRole.findMany({ orderBy: { createdAt: "asc" } });
-  console.log(`Found ${roles.length} custom roles in Prisma.`);
-  let r = 0;
-  for (const row of roles) {
-    await convex.mutation(api.customRoles.upsert, {
-      id: row.id,
-      organizationId: row.organizationId,
-      name: row.name,
-      description: row.description ?? undefined,
-      color: row.color ?? undefined,
-      permissions: row.permissions,
-      ssoGroupClaim: row.ssoGroupClaim ?? undefined,
-      createdAt: row.createdAt ? row.createdAt.getTime() : undefined,
-      updatedAt: row.updatedAt ? row.updatedAt.getTime() : undefined,
-    });
-    r++;
-  }
-  console.log(`Mirrored ${r} custom roles.`);
-
-  console.log(`\nBackfill complete: ${m} members, ${r} custom roles.`);
+  console.log(`\nBackfill complete: ${m} members.`);
   await prisma.$disconnect();
 }
 

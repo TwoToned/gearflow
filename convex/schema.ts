@@ -147,22 +147,6 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
-  // CustomRole
-  customRoles: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    color: v.optional(v.string()),
-    permissions: v.string(),
-    ssoGroupClaim: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_organizationId_name", ["organizationId", "name"]),
-
   // SsoProvider
   ssoProviders: defineTable({
     id: v.string(),

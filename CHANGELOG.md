@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.3.0] - 2026-07-12
+
+### Changed
+
+- Mobile: the project equipment line-item table now keeps the item name pinned on the left while the quantity, unit price, cost and total columns scroll sideways with smart wrapping — instead of hiding those columns and cramming the name into a narrow column. Selected rows show a red left-edge bar (so the frozen column reads cleanly); desktop is unchanged. The warehouse pull sheet’s frozen-column treatment is likewise scoped to mobile, leaving desktop as a plain table.
+
 ## [0.24.2.0] - 2026-07-12
 
 ### Fixed

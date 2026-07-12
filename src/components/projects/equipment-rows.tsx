@@ -1315,7 +1315,7 @@ export function LineItemRow({
       <>
         <div className="flex flex-wrap items-center gap-1.5">
           {isContainer && <Package className="h-3.5 w-3.5 shrink-0 text-muted" />}
-          <span className={cn("break-words text-ink", isContainer ? "font-medium" : "text-table-cell")}>{name}</span>
+          <span className={cn("break-words text-ink text-table-cell", isContainer && "font-medium")}>{name}</span>
           {hasChildren && (
             <span className="text-caption text-muted">
               {item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}
@@ -1344,7 +1344,7 @@ export function LineItemRow({
           style={style}
           className={cn(
             "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
-            isContainer ? "px-3 py-2.5 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
+            isContainer ? "px-3 py-2 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
             isSelected && "ring-2 ring-red",
             hasActiveLock && "collab-editing",
             justChanged && "collab-changed",

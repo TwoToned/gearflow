@@ -179,8 +179,8 @@ Priority tiers by operator impact × current brokenness.
   `crew-panel.tsx`, `services-panel.tsx`, `sub-hire-order-dialog.tsx`).
   ✅ **SHIPPED (v0.24.4.0 cards + v0.24.5.0 card hierarchy):** below `md` the tab now
   renders the three-tier card system — **container cards** (groups / sub-hires / kits,
-  `ring-line-2` + glyph + subtotal), a size-step-down **line-item card** (leaf), and
-  recessed **child rows**. See the shipped-style table in
+  `ring-line-2` + glyph + subtotal), same-size **line-item cards** (leaf), and
+  recessed **child rows** (containers differ by cue, not size). See the shipped-style table in
   `mobile-data-table-framework.md` §3E and FEATUREDOCS/19. Tap = select, edit/move/delete
   behind the kebab. (Still open vs the original target below: qty stepper inline,
   `StickyActionBar` running total, `RowActionsSheet` swipe, removing the compliance

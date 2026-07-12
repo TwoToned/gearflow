@@ -193,13 +193,21 @@ export type OverbookingBundleData = FunctionReturnType<typeof api.overbooking.bu
  * needs (mirrors the server's modelIds derivation).
  */
 export function relevantOverbookModelIds(lineItems: OverbookLineItem[]): string[] {
+  // Sorted so the returned array is DETERMINISTIC for a given set of models.
+  // The overbooking.bundle subscription is keyed on this array; two hooks on the
+  // project-detail page (useNativeProjectDetail + useNativeEquipmentTab) derive it
+  // from different bundles, and Convex's query cache only dedupes byte-identical
+  // args — insertion-order differences would spawn a SECOND subscription that
+  // re-reads the whole org-wide booking set (doubling Database I/O). Sorting makes
+  // both args identical so the cache serves ONE subscription. Order does not affect
+  // the query result (it re-dedupes modelIds and computes order-independently).
   return [
     ...new Set(
       lineItems
         .filter((li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null)
         .map((li) => li.modelId!),
     ),
-  ];
+  ].sort();
 }
 
 /**

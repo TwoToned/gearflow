@@ -1,7 +1,6 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
@@ -23,29 +22,71 @@ import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 
-// Group templates are SPLIT-STORE (Phase B write inversion):
+// Group templates are FULLY CONVEX (Phase-1 decommission — both parent + children
+// inverted; the Postgres `group_template` and `group_template_item` tables are now
+// frozen and slated for DROP):
 //
-//  - The PARENT `groupTemplate` is CONVEX-ONLY. create/update/delete write the
-//    Convex `groupTemplates` doc as the sole source of truth (createId() + the
-//    `api.groupTemplates.create/update/remove` mutations). No Prisma
-//    `group_template` row is written; no mirror. The org-guard for update/delete
-//    reads the target via `getGroupTemplateParentById` and verifies
-//    `organizationId` (replaces the old Prisma findUniqueOrThrow /
-//    where:{id,organizationId}). No Prisma fallback for the parent read.
+//  - The PARENT `groupTemplate` writes the Convex `groupTemplates` doc as the sole
+//    source of truth (createId() + `api.groupTemplates.create/update/remove`). The
+//    org-guard for update/delete reads the target via `getGroupTemplateParentById`
+//    and verifies `organizationId`.
 //
-//  - The CHILD `groupTemplateItem` rows STAY a Prisma table (not a Convex
-//    domain). They carry model/kit joins and are composed by getGroupTemplates
-//    (hybrid read: Convex parents + Prisma items). Their inbound Cascade FK to
-//    group_template was DROPPED (migration 20260617131400) so a Convex-only
-//    parent doesn't reject the child write — `templateId` is now a plain string
-//    holding the Convex cuid.
+//  - The CHILD `groupTemplateItem` rows are now the Convex `groupTemplateItems`
+//    table (`api.groupTemplateItems.*`), backfilled from Postgres. `templateId` is a
+//    plain string holding the Convex parent cuid (the inbound Cascade FK to
+//    group_template was dropped in migration 20260617131400). model/kit joins are
+//    still resolved from the Convex model/kit maps at read time.
 //
-//  - CASCADE re-implemented CROSS-STORE: the dropped Cascade auto-deleted a
-//    template's child items on parent delete. deleteGroupTemplate now removes the
-//    Convex parent AND deletes the Prisma child items explicitly (ordered so a
-//    failure can't orphan — children first, then parent).
+//  - CASCADE is re-implemented CROSS-DOC: Convex has no FK cascade, so
+//    updateGroupTemplate (replace) and deleteGroupTemplate remove the child docs
+//    explicitly. Ordered children-first on delete so a mid-failure can't orphan.
+//    NOTE: the item replace/delete is per-item (not a single atomic tx like the old
+//    Prisma `$transaction`); on this surface (tiny templates) that's an acceptable
+//    loss of atomicity — a partial failure leaves a self-consistent subset.
 //
 // See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
+
+// ── Convex groupTemplateItems helpers (replace the old prisma.groupTemplateItem
+//    reads/writes). `list` is org-scoped; we filter by templateId in JS. ──────────
+type TemplateItemInput = {
+  modelId?: string | null;
+  kitId?: string | null;
+  quantity: number;
+  sortOrder?: number | null;
+};
+
+async function listTemplateItems(orgId: string, templateId: string) {
+  const all = await (await getConvexClient()).query(api.groupTemplateItems.list, { orgId });
+  return all
+    .filter((it) => it.templateId === templateId)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+}
+
+async function createTemplateItems(orgId: string, templateId: string, items: TemplateItemInput[]) {
+  const client = await getConvexClient();
+  for (let idx = 0; idx < items.length; idx++) {
+    const it = items[idx];
+    await client.mutation(api.groupTemplateItems.create, {
+      id: createId(),
+      organizationId: orgId,
+      templateId,
+      modelId: it.modelId ?? undefined,
+      kitId: it.kitId ?? undefined,
+      quantity: it.quantity,
+      sortOrder: it.sortOrder ?? idx,
+    });
+  }
+}
+
+async function deleteTemplateItems(orgId: string, templateId: string) {
+  const client = await getConvexClient();
+  const existing = (await client.query(api.groupTemplateItems.list, { orgId })).filter(
+    (it) => it.templateId === templateId,
+  );
+  for (const e of existing) {
+    await client.mutation(api.groupTemplateItems.remove, { id: e.id });
+  }
+}
 
 export async function getGroupTemplates() {
   const { organizationId } = await requirePermission("project", "read");
@@ -58,18 +99,18 @@ export async function getGroupTemplates() {
   const parents = await getGroupTemplateParents(organizationId);
   if (parents.length === 0) return serialize([]);
 
-  // One Prisma round-trip for ALL templates' items (groupTemplateItem is a Prisma
-  // child table), then attach model + kit from Convex. model/kit are Convex-only —
-  // the old Prisma `include: { model, kit }` threw on `model` (no such relation) and
-  // returned null on `kit` (no Prisma kit rows). Resolve both from the Convex maps.
-  const [rawItems, modelMap, kitMap] = await Promise.all([
-    prisma.groupTemplateItem.findMany({
-      where: { organizationId, templateId: { in: parents.map((p) => p.id) } },
-      orderBy: { sortOrder: "asc" },
-    }),
+  // One Convex round-trip for ALL org group-template items, filtered to these
+  // parents + sorted, then attach model + kit from the Convex maps (model/kit are
+  // Convex-only). Replaces the old prisma.groupTemplateItem.findMany.
+  const parentIds = new Set(parents.map((p) => p.id));
+  const [allItems, modelMap, kitMap] = await Promise.all([
+    (await getConvexClient()).query(api.groupTemplateItems.list, { orgId: organizationId }),
     getModelMap(organizationId),
     getKitMap(organizationId),
   ]);
+  const rawItems = allItems
+    .filter((it) => parentIds.has(it.templateId))
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const items = rawItems.map((it) => {
     const m = it.modelId ? modelMap.get(it.modelId) : undefined;
     const k = it.kitId ? kitMap.get(it.kitId) : undefined;
@@ -115,17 +156,8 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
     updatedAt: now,
   });
 
-  // CHILD items → Prisma (stay a Prisma table).
-  await prisma.groupTemplateItem.createMany({
-    data: parsed.items.map((item, idx) => ({
-      organizationId,
-      templateId,
-      modelId: item.modelId ?? null,
-      kitId: item.kitId ?? null,
-      quantity: item.quantity,
-      sortOrder: item.sortOrder ?? idx,
-    })),
-  });
+  // CHILD items → Convex groupTemplateItems.
+  await createTemplateItems(organizationId, templateId, parsed.items);
 
   const template = {
     id: templateId,
@@ -200,16 +232,13 @@ export async function saveGroupAsTemplate(
     updatedAt: now,
   });
 
-  await prisma.groupTemplateItem.createMany({
-    data: templatable.map((li, idx) => ({
-      organizationId,
-      templateId,
-      modelId: li.modelId ?? null,
-      kitId: li.kitId ?? null,
-      quantity: li.quantity,
-      sortOrder: idx,
-    })),
-  });
+  // sortOrder is reindexed 0..n by createTemplateItems (templatable is already in
+  // group order); pass without sortOrder so it assigns the index.
+  await createTemplateItems(
+    organizationId,
+    templateId,
+    templatable.map((li) => ({ modelId: li.modelId, kitId: li.kitId, quantity: li.quantity })),
+  );
 
   const template = {
     id: templateId,
@@ -251,10 +280,7 @@ export async function applyGroupTemplate(
   if (!template || template.organizationId !== organizationId) {
     throw new Error("Group template not found");
   }
-  const templateItems = await prisma.groupTemplateItem.findMany({
-    where: { templateId: parsed.templateId, organizationId },
-    orderBy: { sortOrder: "asc" },
-  });
+  const templateItems = await listTemplateItems(organizationId, parsed.templateId);
   // model + kit are Convex-only — resolve both from the Convex maps (the old
   // `include: { kit: true }` returned null and silently dropped kit items).
   const [modelMap, kitMap] = await Promise.all([
@@ -263,6 +289,9 @@ export async function applyGroupTemplate(
   ]);
   const itemsWithModels = templateItems.map((i) => ({
     ...i,
+    // quantity is optional on the Convex doc (was NOT NULL in Prisma, default 1) —
+    // coerce to a definite number for the line-item expansion below.
+    quantity: i.quantity ?? 1,
     model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
     kit: i.kitId ? kitMap.get(i.kitId) ?? null : null,
   }));
@@ -446,21 +475,10 @@ export async function updateGroupTemplate(
   // CHILD items → Prisma. If items are provided, replace all of them.
   if (data.items !== undefined) {
     const parsed = groupTemplateSchema.shape.items.parse(data.items);
-    await prisma.$transaction(async (tx) => {
-      await tx.groupTemplateItem.deleteMany({
-        where: { templateId, organizationId },
-      });
-      await tx.groupTemplateItem.createMany({
-        data: parsed.map((item, idx) => ({
-          organizationId,
-          templateId,
-          modelId: item.modelId ?? null,
-          kitId: item.kitId ?? null,
-          quantity: item.quantity,
-          sortOrder: item.sortOrder ?? idx,
-        })),
-      });
-    });
+    // Replace all items (cross-doc, not atomic — see header note): remove existing
+    // Convex items for this template, then create the new set.
+    await deleteTemplateItems(organizationId, templateId);
+    await createTemplateItems(organizationId, templateId, parsed);
   }
 
   const template = {
@@ -501,14 +519,10 @@ export async function deleteGroupTemplate(templateId: string) {
     throw new Error("Group template not found");
   }
 
-  // CROSS-STORE cascade re-implementation: the dropped Cascade FK auto-deleted
-  // a template's child items on parent delete. Delete the Prisma children FIRST,
-  // then the Convex parent — so a mid-failure leaves (at worst) an empty parent,
-  // never orphaned children pointing at a missing template. Both ops are
-  // idempotent (deleteMany on no rows + a remove that 404s harmlessly on retry).
-  await prisma.groupTemplateItem.deleteMany({
-    where: { templateId, organizationId },
-  });
+  // CROSS-DOC cascade re-implementation: Convex has no FK cascade. Delete the child
+  // items FIRST, then the Convex parent — so a mid-failure leaves (at worst) an empty
+  // parent, never orphaned children pointing at a missing template.
+  await deleteTemplateItems(organizationId, templateId);
   await (await getConvexClient()).mutation(api.groupTemplates.remove, { id: templateId });
 
   await logActivity({

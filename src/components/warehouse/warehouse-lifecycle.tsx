@@ -63,9 +63,27 @@ export function WarehouseLifecycle({
   const allDeprepped = total > 0 && counts.deprepped === total;
   const activeMeta = WAREHOUSE_STAGES[activeIdx];
 
+  // On mobile the stepper scrolls sideways rather than compressing; keep the active
+  // stage centered so the operator always sees where the gear currently sits.
+  const olRef = React.useRef<HTMLOListElement>(null);
+  const nodeRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
+  React.useEffect(() => {
+    const ol = olRef.current;
+    const node = nodeRefs.current[activeIdx];
+    if (!ol || !node || ol.scrollWidth <= ol.clientWidth) return;
+    const olRect = ol.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const delta = nodeRect.left - olRect.left - ol.clientWidth / 2 + nodeRect.width / 2;
+    ol.scrollBy({ left: delta, behavior: "smooth" });
+  }, [activeIdx]);
+
   return (
     <div className={cn("flex flex-col gap-2", className)} aria-label="Warehouse lifecycle">
-      <ol className="flex min-w-0 items-start" role="list">
+      <ol
+        ref={olRef}
+        className="flex min-w-0 items-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="list"
+      >
         {WAREHOUSE_STAGES.map((s, i) => {
           const n = counts[s.key];
           const populated = n > 0;
@@ -76,13 +94,16 @@ export function WarehouseLifecycle({
           const done = allDeprepped && s.key === "deprepped";
 
           return (
-            <li key={s.key} className="flex flex-1 flex-col items-center gap-2">
+            <li key={s.key} className="flex min-w-[76px] flex-1 flex-col items-center gap-2">
               <div className="flex w-full items-center">
                 <span
                   className={cn("h-[2px] flex-1 rounded-full", isFirst ? "opacity-0" : connectorClass(i - 1, activeIdx))}
                   aria-hidden
                 />
                 <span
+                  ref={(el) => {
+                    nodeRefs.current[i] = el;
+                  }}
                   className={cn(
                     "flex size-10 shrink-0 items-center justify-center rounded-full text-ui-text font-bold tabular-nums transition-colors",
                     populated
@@ -102,7 +123,7 @@ export function WarehouseLifecycle({
               </div>
               <span
                 className={cn(
-                  "text-center text-caption",
+                  "whitespace-nowrap text-center text-caption",
                   isActive ? "font-semibold text-ink" : populated ? "text-ink-2" : "text-faint",
                 )}
               >

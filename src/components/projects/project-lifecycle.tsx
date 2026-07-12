@@ -101,6 +101,19 @@ export function ProjectLifecycle({
     }
   }, [status]);
 
+  // On mobile the stepper scrolls sideways instead of compressing all 7 stages into
+  // the viewport, so keep the current stage centered (and re-center when it advances).
+  const olRef = React.useRef<HTMLOListElement>(null);
+  React.useEffect(() => {
+    const ol = olRef.current;
+    const node = nodeRefs.current[currentIdx];
+    if (!ol || !node || ol.scrollWidth <= ol.clientWidth) return;
+    const olRect = ol.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const delta = nodeRect.left - olRect.left - ol.clientWidth / 2 + nodeRect.width / 2;
+    ol.scrollBy({ left: delta, behavior: "smooth" });
+  }, [currentIdx]);
+
   const controls = (showAdvance || showMenu) && (
     <div className="flex shrink-0 items-center gap-2">
       {showAdvance && (
@@ -165,13 +178,17 @@ export function ProjectLifecycle({
           This job is off the pipeline. Reactivate it from the status menu to resume.
         </p>
       ) : (
-        <ol className="flex min-w-0 flex-1 items-start" role="list">
+        <ol
+          ref={olRef}
+          className="flex min-w-0 flex-1 items-start overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="list"
+        >
           {STAGES.map((s, i) => {
             const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "upcoming";
             const isFirst = i === 0;
             const isLast = i === STAGES.length - 1;
             return (
-              <li key={s.key} className="flex flex-1 flex-col items-center gap-2">
+              <li key={s.key} className="flex min-w-[76px] flex-1 flex-col items-center gap-2">
                 {/* node + connectors */}
                 <div className="flex w-full items-center">
                   <span className={cn("h-[2px] flex-1 rounded-full", isFirst ? "opacity-0" : connectorClass(i - 1, currentIdx))} aria-hidden />
@@ -194,7 +211,7 @@ export function ProjectLifecycle({
                 {/* label */}
                 <span
                   className={cn(
-                    "text-center text-caption",
+                    "whitespace-nowrap text-center text-caption",
                     state === "current" ? "font-semibold text-ink" : state === "done" ? "text-muted" : "text-faint",
                   )}
                 >

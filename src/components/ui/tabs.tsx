@@ -15,6 +15,10 @@ const TabsList = React.forwardRef<
     ref={ref}
     className={cn(
       "inline-flex items-center gap-1 rounded-full border-2 border-border bg-paper-2 p-1",
+      // Scroll sideways instead of clipping when the tabs are wider than the
+      // viewport (mobile). min-w-0 lets it shrink below content inside a flex row;
+      // the scrollbar is hidden so the pill still reads as a clean control.
+      "min-w-0 max-w-full overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
       className,
     )}
     {...props}
@@ -29,7 +33,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "rounded-[8px] px-3 py-1.5 text-[14px] font-medium text-muted transition-[background-color,color,box-shadow]",
+      "shrink-0 whitespace-nowrap rounded-[8px] px-3 py-1.5 text-[14px] font-medium text-muted transition-[background-color,color,box-shadow]",
       "data-[state=active]:bg-elev data-[state=active]:text-ink data-[state=active]:shadow-[var(--lit)]",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
       "disabled:cursor-not-allowed disabled:select-none disabled:opacity-45",

@@ -1,14 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ActorContext } from "./actor-context";
 
-const apiKeyFindUnique = vi.fn();
-const apiKeyUpdate = vi.fn();
+// ApiKey lookup is Convex now; org kill-switch + acting-user name stay on Postgres.
+const getByTokenHash = vi.fn();
+const touchLastUsed = vi.fn();
+vi.mock("@/lib/convex-client", () => ({
+  getConvexClient: vi.fn(async () => ({
+    query: (_ref: unknown, args: unknown) => getByTokenHash(args),
+    mutation: (_ref: unknown, args: unknown) => {
+      touchLastUsed(args);
+      return Promise.resolve();
+    },
+  })),
+}));
+const orgFindUnique = vi.fn();
+const userFindUnique = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    apiKey: {
-      findUnique: (...a: unknown[]) => apiKeyFindUnique(...a),
-      update: (...a: unknown[]) => apiKeyUpdate(...a),
-    },
+    organization: { findUnique: (...a: unknown[]) => orgFindUnique(...a) },
+    user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
   },
 }));
 
@@ -24,24 +34,24 @@ import {
   assertScopesWithinActor,
 } from "@/lib/api-key";
 
+// A Convex-shaped apiKey doc (epoch-ms dates; org/user resolved separately).
 function keyRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "key_1",
     organizationId: "org_1",
     actingUserId: "user_1",
     isActive: true,
-    revokedAt: null,
-    expiresAt: null,
+    revokedAt: undefined,
+    expiresAt: undefined,
     scopes: '["assets:read","project:manage_line_items"]',
-    actingUser: { name: "Ada" },
-    organization: { apiKillSwitchAt: null },
     ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  apiKeyUpdate.mockResolvedValue({});
+  orgFindUnique.mockResolvedValue({ apiKillSwitchAt: null });
+  userFindUnique.mockResolvedValue({ name: "Ada" });
 });
 
 describe("hashApiKey / generateApiKey", () => {
@@ -116,7 +126,7 @@ describe("requireApiScope — the key-scope half of the intersection", () => {
 
 describe("getApiKeyActorContext — validation + resolution", () => {
   it("resolves a valid key to an apiKey ActorContext with its scopes", async () => {
-    apiKeyFindUnique.mockResolvedValue(keyRow());
+    getByTokenHash.mockResolvedValue(keyRow());
 
     const actor = await getApiKeyActorContext("gf_live_whatever");
 
@@ -129,34 +139,47 @@ describe("getApiKeyActorContext — validation + resolution", () => {
       scopes: ["assets:read", "project:manage_line_items"],
     });
     // Looked up by hash, not raw token.
-    expect(apiKeyFindUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tokenHash: hashApiKey("gf_live_whatever") } }),
-    );
+    expect(getByTokenHash).toHaveBeenCalledWith({ tokenHash: hashApiKey("gf_live_whatever") });
   });
 
   it("rejects an unknown key (INVALID_KEY)", async () => {
-    apiKeyFindUnique.mockResolvedValue(null);
+    getByTokenHash.mockResolvedValue(null);
     await expect(getApiKeyActorContext("nope")).rejects.toMatchObject({ code: "INVALID_KEY" });
   });
 
   it("rejects an inactive or revoked key (KEY_INACTIVE)", async () => {
-    apiKeyFindUnique.mockResolvedValue(keyRow({ revokedAt: new Date() }));
+    getByTokenHash.mockResolvedValue(keyRow({ revokedAt: Date.now() }));
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "KEY_INACTIVE" });
 
-    apiKeyFindUnique.mockResolvedValue(keyRow({ isActive: false }));
+    getByTokenHash.mockResolvedValue(keyRow({ isActive: false }));
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "KEY_INACTIVE" });
   });
 
-  it("rejects an expired key (KEY_EXPIRED)", async () => {
-    apiKeyFindUnique.mockResolvedValue(keyRow({ expiresAt: new Date(Date.now() - 1000) }));
+  it("rejects an expired key — including a non-finite stored expiry (KEY_EXPIRED)", async () => {
+    getByTokenHash.mockResolvedValue(keyRow({ expiresAt: Date.now() - 1000 }));
+    await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "KEY_EXPIRED" });
+
+    // Fail closed: a garbage (NaN) stored expiry must reject, not read as "no expiry".
+    getByTokenHash.mockResolvedValue(keyRow({ expiresAt: NaN }));
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "KEY_EXPIRED" });
   });
 
   it("rejects every key when the org kill switch is set (ORG_KILL_SWITCH)", async () => {
-    apiKeyFindUnique.mockResolvedValue(
-      keyRow({ organization: { apiKillSwitchAt: new Date() } }),
-    );
+    getByTokenHash.mockResolvedValue(keyRow());
+    orgFindUnique.mockResolvedValue({ apiKillSwitchAt: new Date() });
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "ORG_KILL_SWITCH" });
+  });
+
+  it("fails closed when the key's org no longer exists (INVALID_KEY)", async () => {
+    getByTokenHash.mockResolvedValue(keyRow());
+    orgFindUnique.mockResolvedValue(null);
+    await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "INVALID_KEY" });
+  });
+
+  it("fails closed when the acting user no longer exists (KEY_INACTIVE)", async () => {
+    getByTokenHash.mockResolvedValue(keyRow());
+    userFindUnique.mockResolvedValue(null);
+    await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "KEY_INACTIVE" });
   });
 });
 

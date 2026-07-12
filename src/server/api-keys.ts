@@ -1,11 +1,38 @@
 "use server";
 
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { generateApiKey, assertScopesWithinActor } from "@/lib/api-key";
 import { getAmbientActor } from "@/lib/request-actor";
+
+// ApiKey is a Convex domain now (the Postgres `api_key` table is frozen). The
+// Better-Auth `member` (acting-user membership) + `organization` (kill switch) reads
+// below stay on Postgres by design. Convex stores date fields as epoch-ms; map them
+// back to Date so the serialized shape matches the old Prisma `select`.
+type ConvexApiKey = {
+  id: string; name: string; prefix: string; scopes?: string; isActive?: boolean;
+  actingUserId: string; expiresAt?: number; lastUsedAt?: number;
+  lastRotatedAt?: number; revokedAt?: number; createdAt?: number;
+};
+function toKeyRow(k: ConvexApiKey) {
+  const d = (n: number | undefined | null) => (n != null ? new Date(n) : null);
+  return {
+    id: k.id, name: k.name, prefix: k.prefix,
+    scopes: k.scopes ?? "[]",
+    isActive: k.isActive ?? true,
+    actingUserId: k.actingUserId,
+    expiresAt: d(k.expiresAt),
+    lastUsedAt: d(k.lastUsedAt),
+    lastRotatedAt: d(k.lastRotatedAt),
+    revokedAt: d(k.revokedAt),
+    createdAt: k.createdAt != null ? new Date(k.createdAt) : new Date(0),
+  };
+}
 
 /**
  * Management for agent-accessible API keys (docs/designs/api-mcp-agent-access.md).
@@ -14,28 +41,13 @@ import { getAmbientActor } from "@/lib/request-actor";
  * creation — only its SHA-256 hash is ever stored.
  */
 
-const READ_SHAPE = {
-  id: true,
-  name: true,
-  prefix: true,
-  scopes: true,
-  isActive: true,
-  actingUserId: true,
-  expiresAt: true,
-  lastUsedAt: true,
-  lastRotatedAt: true,
-  revokedAt: true,
-  createdAt: true,
-} as const;
-
 /** List this org's API keys (never returns a secret — only the display prefix). */
 export async function listApiKeys() {
   const { organizationId } = await getOrgContext();
-  const keys = await prisma.apiKey.findMany({
-    where: { organizationId },
-    select: READ_SHAPE,
-    orderBy: { createdAt: "desc" },
+  const rawKeys = await (await getConvexClient()).query(api.apiKeys.list, {
+    orgId: organizationId,
   });
+  const keys = rawKeys.map(toKeyRow); // strips tokenHash — never leaves the backend
   const killSwitch = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: { apiKillSwitchAt: true },
@@ -80,18 +92,28 @@ export async function createApiKey(input: {
 
   const { raw, prefix, tokenHash } = generateApiKey();
 
-  const created = await prisma.apiKey.create({
-    data: {
-      organizationId,
-      name,
-      prefix,
-      tokenHash,
-      scopes: JSON.stringify(scopes),
-      actingUserId,
-      createdById: userId,
-      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-    },
-    select: READ_SHAPE,
+  const id = createId();
+  const now = Date.now();
+  const expiresAtMs = input.expiresAt ? new Date(input.expiresAt).getTime() : undefined;
+  if (expiresAtMs !== undefined && !Number.isFinite(expiresAtMs)) {
+    throw new Error("Invalid expiry date.");
+  }
+  await (await getConvexClient()).mutation(api.apiKeys.create, {
+    id,
+    organizationId,
+    name,
+    prefix,
+    tokenHash,
+    scopes: JSON.stringify(scopes),
+    isActive: true,
+    actingUserId,
+    createdById: userId,
+    expiresAt: expiresAtMs,
+    createdAt: now,
+  });
+  const created = toKeyRow({
+    id, name, prefix, scopes: JSON.stringify(scopes), isActive: true,
+    actingUserId, expiresAt: expiresAtMs, createdAt: now,
   });
 
   await logActivity({
@@ -117,16 +139,17 @@ export async function revokeApiKey(id: string) {
     "update",
   );
 
-  const key = await prisma.apiKey.findFirst({
-    where: { id, organizationId },
-    select: { id: true, name: true },
-  });
-  if (!key) throw new Error("API key not found.");
-
-  await prisma.apiKey.update({
-    where: { id },
-    data: { isActive: false, revokedAt: new Date() },
-  });
+  let key: { id: string; name: string };
+  try {
+    key = await (await getConvexClient()).mutation(api.apiKeys.revoke, {
+      id,
+      orgId: organizationId,
+    });
+  } catch {
+    // Convex throws ConvexError("apiKey not found") when the key is missing or
+    // belongs to another org — same 404 semantics as the old org-scoped findFirst.
+    throw new Error("API key not found.");
+  }
 
   await logActivity({
     organizationId,

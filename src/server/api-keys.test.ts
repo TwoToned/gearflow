@@ -8,10 +8,16 @@ vi.mock("@/lib/org-context", () => ({
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 vi.mock("@/lib/api-key", () => ({
   generateApiKey: () => ({ raw: "gf_live_SECRET", prefix: "gf_live_ab", tokenHash: "hash_of_secret" }),
+  assertScopesWithinActor: vi.fn(),
 }));
+vi.mock("@/lib/request-actor", () => ({ getAmbientActor: () => undefined }));
+
+// ApiKey is a Convex domain now — mock the Convex client. member/organization stay
+// on Postgres (Better-Auth), so the prisma mock keeps those.
+const convexMock = vi.hoisted(() => ({ query: vi.fn(), mutation: vi.fn() }));
+vi.mock("@/lib/convex-client", () => ({ getConvexClient: vi.fn(async () => convexMock) }));
 
 const prismaMock = vi.hoisted(() => ({
-  apiKey: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   member: { findFirst: vi.fn() },
   organization: { findUnique: vi.fn(), update: vi.fn() },
 }));
@@ -23,19 +29,23 @@ import { logActivity } from "@/lib/activity-log";
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.member.findFirst.mockResolvedValue({ id: "mem_1" });
-  prismaMock.apiKey.create.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "gf_live_ab" });
+  convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent" });
+  convexMock.query.mockResolvedValue([]);
 });
 
 describe("createApiKey", () => {
-  it("stores only the hash, returns the raw secret once, and audits", async () => {
+  it("stores only the hash via Convex, returns the raw secret once, and audits", async () => {
     const res = await createApiKey({ name: "Agent", scopes: ["project:manage_line_items"] });
 
     expect(res.token).toBe("gf_live_SECRET");
-    const createArg = prismaMock.apiKey.create.mock.calls[0][0];
-    expect(createArg.data.tokenHash).toBe("hash_of_secret");
-    expect(createArg.data.token).toBeUndefined(); // raw secret is never persisted
-    expect(createArg.data.scopes).toBe('["project:manage_line_items"]');
-    expect(createArg.data.actingUserId).toBe("user_1"); // defaults to creator
+    // The single create mutation's payload
+    const createArg = convexMock.mutation.mock.calls[0][1] as Record<string, unknown>;
+    expect(createArg.tokenHash).toBe("hash_of_secret");
+    expect(createArg.token).toBeUndefined(); // raw secret is never persisted
+    expect(createArg.scopes).toBe('["project:manage_line_items"]');
+    expect(createArg.actingUserId).toBe("user_1"); // defaults to creator
+    // never round-trips the secret back to the client
+    expect(res.key).not.toHaveProperty("tokenHash");
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: "apiKey", action: "create" }),
     );
@@ -46,7 +56,7 @@ describe("createApiKey", () => {
     await expect(
       createApiKey({ name: "X", scopes: [], actingUserId: "outsider" }),
     ).rejects.toThrow(/member of this organization/i);
-    expect(prismaMock.apiKey.create).not.toHaveBeenCalled();
+    expect(convexMock.mutation).not.toHaveBeenCalled();
   });
 
   it("requires a name", async () => {
@@ -55,17 +65,18 @@ describe("createApiKey", () => {
 });
 
 describe("revokeApiKey", () => {
-  it("deactivates + stamps revokedAt and audits", async () => {
-    prismaMock.apiKey.findFirst.mockResolvedValue({ id: "key_1", name: "Agent" });
+  it("revokes via the org-guarded Convex mutation and audits", async () => {
+    convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent" });
     await revokeApiKey("key_1");
-    const updateArg = prismaMock.apiKey.update.mock.calls[0][0];
-    expect(updateArg.data.isActive).toBe(false);
-    expect(updateArg.data.revokedAt).toBeInstanceOf(Date);
+    expect(convexMock.mutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "key_1", orgId: "org_1" }),
+    );
     expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "delete" }));
   });
 
-  it("throws when the key is not in this org", async () => {
-    prismaMock.apiKey.findFirst.mockResolvedValue(null);
+  it("throws when the Convex mutation rejects (key not in this org)", async () => {
+    convexMock.mutation.mockRejectedValue(new Error("apiKey not found"));
     await expect(revokeApiKey("nope")).rejects.toThrow(/not found/i);
   });
 });
@@ -82,7 +93,9 @@ describe("setOrgApiKillSwitch", () => {
 
 describe("listApiKeys", () => {
   it("returns keys + kill-switch state without any secret", async () => {
-    prismaMock.apiKey.findMany.mockResolvedValue([{ id: "key_1", prefix: "gf_live_ab", name: "Agent" }]);
+    convexMock.query.mockResolvedValue([
+      { id: "key_1", prefix: "gf_live_ab", name: "Agent", tokenHash: "hash", actingUserId: "user_1", createdAt: 1000 },
+    ]);
     prismaMock.organization.findUnique.mockResolvedValue({ apiKillSwitchAt: null });
 
     const res = await listApiKeys();

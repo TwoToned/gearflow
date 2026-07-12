@@ -1,0 +1,12 @@
+-- Drop the api_idempotency -> api_key FK constraint.
+--
+-- ApiKey inverted to Convex (Phase-1 decommission): new keys are created in Convex
+-- ONLY, so there is no matching frozen Postgres api_key row for their id. The
+-- api_idempotency ledger (still on Postgres) references apiKeyId; with the FK in
+-- place, every idempotency insert for a NEW key would violate the constraint and
+-- fail — and the reserve path swallows that failure, letting a retry re-apply a
+-- stock-moving write. Dropping the constraint makes apiKeyId a plain external id
+-- (matching how every other decommissioned cross-store FK was handled). The
+-- api_idempotency table itself stays on Postgres for now; its full inversion to
+-- Convex is a follow-up.
+ALTER TABLE "api_idempotency" DROP CONSTRAINT IF EXISTS "api_idempotency_apiKeyId_fkey";

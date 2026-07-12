@@ -3,7 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
-import { expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
+import { ensureBulkUnit, ensureSerialisedUnit, expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 
@@ -502,25 +502,35 @@ export async function createKitLineItemCore(
       const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", si.assetId)).unique();
       const model = asset?.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", asset.modelId!)).unique() : null;
       const childPrice = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) : undefined;
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        id: createId(), organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
+        id: childId, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
         modelId: asset?.modelId, assetId: si.assetId, description: model?.name ?? asset?.modelId ?? "",
         quantity: 1, unitPrice: childPrice, pricingType: "PER_DAY", duration: 1, lineTotal: childPrice,
         sortOrder: sort++, isKitChild: true, parentLineItemId: a.id, status: "CONFIRMED", createdAt: a.now, updatedAt: a.now,
       });
+      // Kit per-unit fulfillment (Phase 1): seed the member's unit row at kit-add,
+      // in CONFIRMED state, so serials are visible/trackable per job exactly like
+      // loose gear. Prep/checkout/checkin patch this row. See
+      // docs/designs/kit-per-unit-fulfillment.md.
+      await ensureSerialisedUnit(ctx, { organizationId: a.organizationId, lineItemId: childId, assetId: si.assetId });
     }
     const bulk = await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect();
     for (const bi of bulk) {
       const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", bi.bulkAssetId)).unique();
       const model = ba?.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", ba.modelId!)).unique() : null;
       const childTotal = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) * bi.quantity : undefined;
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        id: createId(), organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
+        id: childId, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
         modelId: ba?.modelId, bulkAssetId: bi.bulkAssetId, description: `${bi.quantity}x ${model?.name ?? ba?.modelId ?? ""}`,
         quantity: bi.quantity, unitPrice: childTotal != null ? childTotal / bi.quantity : undefined, pricingType: "PER_DAY",
         duration: 1, lineTotal: childTotal, sortOrder: sort++, isKitChild: true, parentLineItemId: a.id,
         status: "CONFIRMED", createdAt: a.now, updatedAt: a.now,
       });
+      // Kit per-unit fulfillment (Phase 1): seed the bulk member's unit (one row
+      // carrying quantity, like a loose bulk line).
+      await ensureBulkUnit(ctx, { organizationId: a.organizationId, lineItemId: childId, bulkAssetId: bi.bulkAssetId, quantity: bi.quantity });
     }
     return { id: a.id };
 }

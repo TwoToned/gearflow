@@ -358,6 +358,98 @@ async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, loc
   }
 }
 
+// ── Kit per-unit fulfillment (Phase 1) ───────────────────────────────────────
+// Additively maintain kit MEMBER UNIT rows alongside the legacy kit line/asset
+// path. This phase the legacy path still OWNS line status, asset status +
+// counters, and bulk availability (setAssetsStatus above); these helpers touch
+// ONLY the projectLineItemUnit rows, so members become visible/trackable per job
+// exactly like loose gear. A member line with no unit (a pre-change kit not yet
+// backfilled) is a silent no-op — Phase 2 backfill fills those, and prep
+// self-heals any prepped after the migration. Phase 3 moves asset-flipping into
+// the unit path and deletes the legacy belt. See
+// docs/designs/kit-per-unit-fulfillment.md.
+
+/** Apply `makePatch(unit)` to every unit on `lineItemId` whose current status is
+ *  in `fromStatuses` (or all units when null). `updatedAt` is stamped for you. */
+async function patchLineUnitRows(
+  ctx: Ctx,
+  lineItemId: string,
+  fromStatuses: string[] | null,
+  makePatch: (u: Awaited<ReturnType<typeof lineUnits>>[number]) => Record<string, unknown>,
+  now: number,
+): Promise<number> {
+  let n = 0;
+  for (const u of await lineUnits(ctx, lineItemId)) {
+    if (fromStatuses && !fromStatuses.includes(u.status ?? "")) continue;
+    await ctx.db.patch(u._id, { ...makePatch(u), updatedAt: now });
+    n++;
+  }
+  return n;
+}
+
+/** Walk a kit's member lines — direct children + nested-kit grandchildren — and
+ *  patch their unit rows. A nested-kit PARENT child line carries no units of its
+ *  own (its grandchildren do), so it is skipped as a unit target. */
+async function patchKitMemberUnits(
+  ctx: Ctx,
+  kitParentLineId: string,
+  organizationId: string,
+  fromStatuses: string[] | null,
+  makePatch: (u: Awaited<ReturnType<typeof lineUnits>>[number]) => Record<string, unknown>,
+  now: number,
+): Promise<void> {
+  for (const c of await childLines(ctx, kitParentLineId, organizationId)) {
+    if (c.kitId) {
+      for (const gc of await childLines(ctx, c.id, organizationId)) {
+        if (!gc.kitId) await patchLineUnitRows(ctx, gc.id, fromStatuses, makePatch, now);
+      }
+    } else {
+      await patchLineUnitRows(ctx, c.id, fromStatuses, makePatch, now);
+    }
+  }
+}
+
+/** A kit's serialised member lines — direct serialised children plus the
+ *  serialised members of any nested kit. These are valid accessory parents
+ *  (childKind unset), so their asset-level accessories expand under them. */
+async function serialisedKitMemberLines(ctx: Ctx, kitParentLineId: string, organizationId: string) {
+  const out: Array<{ id: string; assetId: string }> = [];
+  for (const c of await childLines(ctx, kitParentLineId, organizationId)) {
+    if (c.kitId) {
+      for (const gc of await childLines(ctx, c.id, organizationId)) if (!gc.kitId && gc.assetId) out.push({ id: gc.id, assetId: gc.assetId });
+    } else if (c.assetId) {
+      out.push({ id: c.id, assetId: c.assetId });
+    }
+  }
+  return out;
+}
+
+/** Deploy each kit member's asset-level accessories with the kit. Reuses the
+ *  loose-gear helpers, which own the accessory unit AND asset flip (the kit belt
+ *  covers member assets, not accessory assets). Idempotent: expand is find-or-create
+ *  so this works whether or not the kit was prepped first. */
+async function cascadeKitAccessoriesOut(ctx: Ctx, kitParentLineId: string, organizationId: string, p: { projectId: string; userId: string; loc: string | null; now: number }) {
+  for (const m of await serialisedKitMemberLines(ctx, kitParentLineId, organizationId)) {
+    await expandAccessoriesForAsset(ctx, { organizationId, lineItemId: m.id, assetId: m.assetId });
+    await checkoutAccessoryChildren(ctx, { organizationId, projectId: p.projectId, parentLineItemId: m.id, parentUnitAssetId: m.assetId, userId: p.userId, projectLocationId: p.loc, now: p.now });
+  }
+}
+
+/** Return each kit member's accessories with the kit. */
+async function cascadeKitAccessoriesIn(ctx: Ctx, kitParentLineId: string, organizationId: string, p: { projectId: string; userId: string; defaultLocationId: string | null; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) {
+  for (const m of await serialisedKitMemberLines(ctx, kitParentLineId, organizationId)) {
+    await checkinAccessoryChildren(ctx, { organizationId, projectId: p.projectId, parentLineItemId: m.id, returnCondition: p.returnCondition, userId: p.userId, defaultLocationId: p.defaultLocationId, returnedAssetId: m.assetId });
+  }
+}
+
+/** Reverse each kit member's accessories with the kit (un-deploy / un-return), so a
+ *  move-back never leaves an accessory stranded a stage ahead of its parent. */
+async function cascadeKitAccessoriesReverse(ctx: Ctx, kitParentLineId: string, organizationId: string, p: { fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number }) {
+  for (const m of await serialisedKitMemberLines(ctx, kitParentLineId, organizationId)) {
+    await reverseAccessoryChildren(ctx, { organizationId, parentLineItemId: m.id, ...p });
+  }
+}
+
 export const checkoutKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
@@ -404,6 +496,12 @@ export const checkoutKit = mutation({
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
     if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
+
+    // Kit per-unit: flip member units CONFIRMED → CHECKED_OUT (unit rows only;
+    // the belt above owns asset status this phase), then deploy each member's
+    // asset-level accessories with the kit.
+    await patchKitMemberUnits(ctx, kitLine.id, a.organizationId, ["CONFIRMED"], () => ({ status: "CHECKED_OUT", checkedOutAt: a.now, checkedOutById: a.userId }), a.now);
+    await cascadeKitAccessoriesOut(ctx, kitLine.id, a.organizationId, { projectId: a.projectId, userId: a.userId, loc, now: a.now });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Kit deployed with all contents" });
     return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
@@ -452,6 +550,13 @@ export const checkinKit = mutation({
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
     if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
+
+    // Kit per-unit: flip member units CHECKED_OUT → RETURNED (unit rows only),
+    // then return each member's accessories with the kit. Bulk members return
+    // their full quantity. RETURNED units are retained as job history (deprep/close
+    // never delete them).
+    await patchKitMemberUnits(ctx, kitLine.id, a.organizationId, ["CHECKED_OUT"], (u) => ({ status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: a.now, returnedById: a.userId, returnCondition: a.returnCondition }), a.now);
+    await cascadeKitAccessoriesIn(ctx, kitLine.id, a.organizationId, { projectId: a.projectId, userId: a.userId, defaultLocationId, returnCondition: a.returnCondition });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Kit returned — condition: ${a.returnCondition}` });
     return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
@@ -671,6 +776,11 @@ export const undeployKit = mutation({
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
     if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
+    // Kit per-unit: member units CHECKED_OUT → CONFIRMED (re-packed), and reverse
+    // the members' accessories with them.
+    await patchKitMemberUnits(ctx, kitLine.id, a.organizationId, ["CHECKED_OUT"], () => ({ status: "CONFIRMED", prepStatus: "PACKED" }), a.now);
+    await cascadeKitAccessoriesReverse(ctx, kitLine.id, a.organizationId, { fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Prepped (un-deploy)" });
     return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
   },
@@ -713,6 +823,11 @@ export const unreturnKit = mutation({
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
     if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
+    // Kit per-unit: member units RETURNED → CHECKED_OUT. Clear the return stamps
+    // so a re-deployed unit doesn't carry contradictory returned* history.
+    await patchKitMemberUnits(ctx, kitLine.id, a.organizationId, ["RETURNED"], () => ({ status: "CHECKED_OUT", returnedQuantity: 0, checkedOutAt: a.now, checkedOutById: a.userId, returnedAt: undefined, returnedById: undefined, returnCondition: undefined, returnStatus: undefined, returnNotes: undefined }), a.now);
+    await cascadeKitAccessoriesReverse(ctx, kitLine.id, a.organizationId, { fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Deployed (un-return)" });
     return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
   },
@@ -721,6 +836,19 @@ export const unreturnKit = mutation({
 // ── Force-return + container/quick-add (Group E3/E4) ──────────────────────────
 
 const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const, updatedAt: now });
+
+/** Kit per-unit: force-return the CHECKED_OUT unit(s) bound to one asset, wherever
+ *  they live (loose line or kit member). Mirrors FORCE_RET onto the unit row so
+ *  force-return doesn't leave a member unit stuck CHECKED_OUT (split-brain). */
+async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number) {
+  const units = await ctx.db
+    .query("projectLineItemUnits")
+    .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", assetId).eq("status", "CHECKED_OUT"))
+    .collect();
+  for (const u of units) {
+    await ctx.db.patch(u._id, { status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: now, returnedById: userId, returnCondition: "GOOD", updatedAt: now });
+  }
+}
 
 export const forceReturnAsset = mutation({
   args: { organizationId: v.string(), assetId: v.string(), userId: v.string(), now: v.number() },
@@ -733,6 +861,7 @@ export const forceReturnAsset = mutation({
     for (const li of await linesByAsset(ctx, a.assetId, a.organizationId)) {
       if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
     }
+    await forceReturnAssetUnits(ctx, a.organizationId, a.assetId, a.userId, a.now);
     await setAssetsStatus(ctx, [a.assetId], "AVAILABLE", loc, true, a.now);
     return { success: true };
   },
@@ -750,6 +879,7 @@ export const bulkForceReturnAssets = mutation({
       for (const li of await linesByAsset(ctx, assetId, a.organizationId)) {
         if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
       }
+      await forceReturnAssetUnits(ctx, a.organizationId, assetId, a.userId, a.now);
       await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, a.now);
       count++;
     }
@@ -799,7 +929,13 @@ export const forceReturnKit = mutation({
 
     const parents = (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect())
       .filter((l) => l.organizationId === a.organizationId && !l.isKitChild);
-    for (const p of parents) await restoreKitParentLine(ctx, p, a.organizationId, loc, a.now, kitsToRestore);
+    for (const p of parents) {
+      await restoreKitParentLine(ctx, p, a.organizationId, loc, a.now, kitsToRestore);
+      // Kit per-unit: flip this kit's CHECKED_OUT member units → RETURNED (and its
+      // accessories) so a force-return doesn't leave members stuck deployed.
+      await patchKitMemberUnits(ctx, p.id, a.organizationId, ["CHECKED_OUT"], (u) => ({ status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD" }), a.now);
+      await cascadeKitAccessoriesIn(ctx, p.id, a.organizationId, { projectId: p.projectId, userId: a.userId, defaultLocationId: loc, returnCondition: "GOOD" });
+    }
 
     if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: a.now });
     else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: a.now }); }

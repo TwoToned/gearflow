@@ -25,7 +25,7 @@ import { bumpAssetCounters } from "./counters";
 
 type Ctx = MutationCtx;
 
-async function lineUnits(ctx: Ctx, lineItemId: string) {
+export async function lineUnits(ctx: Ctx, lineItemId: string) {
   return await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))

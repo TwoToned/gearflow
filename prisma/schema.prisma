@@ -2861,8 +2861,6 @@ model ApiKey {
   revokedAt     DateTime? // Set on single-key revocation (isActive also flipped false)
   createdAt     DateTime  @default(now())
 
-  idempotencyRecords ApiIdempotency[]
-
   @@index([organizationId])
   @@index([actingUserId])
   @@map("api_key")
@@ -2875,8 +2873,9 @@ model ApiKey {
 model ApiIdempotency {
   id             String   @id @default(cuid())
   organizationId String
+  // apiKeyId is a plain external id now — ApiKey is a Convex domain, so the FK to
+  // api_key was dropped (migration 20260713120000). No Prisma relation.
   apiKeyId       String
-  apiKey         ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   key            String // client-provided idempotency key
   verb           String // capability verb, e.g. "reserve_items"
   result         String // JSON-serialized result returned on replay

@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "./prisma";
+import { getConvexClient } from "./convex-client";
+import { api } from "../../convex/_generated/api";
 import type { ActorContext } from "./actor-context";
 
 /**
@@ -162,13 +164,9 @@ export async function getApiKeyActorContext(
 ): Promise<ActorContext> {
   const tokenHash = hashApiKey(rawToken);
 
-  const key = await prisma.apiKey.findUnique({
-    where: { tokenHash },
-    include: {
-      actingUser: { select: { name: true } },
-      organization: { select: { apiKillSwitchAt: true } },
-    },
-  });
+  // ApiKey lookup is Convex-native now (by_tokenHash — the token IS the credential).
+  const convex = await getConvexClient();
+  const key = await convex.query(api.apiKeys.getByTokenHash, { tokenHash });
 
   if (!key) {
     throw new ApiKeyAuthError("INVALID_KEY", "Invalid API key.");
@@ -176,27 +174,55 @@ export async function getApiKeyActorContext(
   if (!key.isActive || key.revokedAt) {
     throw new ApiKeyAuthError("KEY_INACTIVE", "This API key has been revoked.");
   }
-  if (key.expiresAt && key.expiresAt.getTime() <= Date.now()) {
-    throw new ApiKeyAuthError("KEY_EXPIRED", "This API key has expired.");
+  // A present `expiresAt` must be finite and in the future. A non-finite stored value
+  // (NaN/Infinity) is treated as expired — fail closed, never "no expiry". Absent
+  // (`undefined`) means no expiry.
+  if (key.expiresAt != null) {
+    if (!Number.isFinite(key.expiresAt) || key.expiresAt <= Date.now()) {
+      throw new ApiKeyAuthError("KEY_EXPIRED", "This API key has expired.");
+    }
   }
-  if (key.organization.apiKillSwitchAt) {
+
+  // Org kill-switch + acting-user name stay on Postgres (Better-Auth `organization`
+  // / `user`, which remain). apiKillSwitchAt gates ALL keys for the org instantly.
+  const [org, actingUser] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: key.organizationId },
+      select: { apiKillSwitchAt: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: key.actingUserId },
+      select: { name: true },
+    }),
+  ]);
+  // FAIL CLOSED: the old Postgres FK cascade auto-deleted a key when its org or acting
+  // user was deleted. Convex has no cascade, so a key can outlive them — reject rather
+  // than authenticate a phantom actor against a missing org/user.
+  if (!org) {
+    throw new ApiKeyAuthError("INVALID_KEY", "Invalid API key.");
+  }
+  if (org.apiKillSwitchAt) {
     throw new ApiKeyAuthError(
       "ORG_KILL_SWITCH",
       "API access is disabled for this organization.",
     );
   }
+  if (!actingUser) {
+    throw new ApiKeyAuthError(
+      "KEY_INACTIVE",
+      "This API key's acting user no longer exists.",
+    );
+  }
 
   // Best-effort last-used stamp for observability. Never block or fail auth on it.
-  prisma.apiKey
-    .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
-    .catch(() => {});
+  convex.mutation(api.apiKeys.touchLastUsed, { id: key.id }).catch(() => {});
 
   return {
     organizationId: key.organizationId,
     userId: key.actingUserId,
-    userName: key.actingUser.name || "API key",
+    userName: actingUser.name || "API key",
     actorType: "apiKey",
     apiKeyId: key.id,
-    scopes: parseScopes(key.scopes),
+    scopes: parseScopes(key.scopes ?? "[]"),
   };
 }

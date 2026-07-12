@@ -206,6 +206,30 @@ export default defineSchema({
     .index("by_organizationId_userId", ["organizationId", "userId"])
     .index("by_organizationId_status", ["organizationId", "status"]),
 
+  // ApiKey — agent-accessible API/MCP access keys (docs/designs/api-mcp-agent-access.md).
+  // `by_tokenHash` is the auth verify path (the token IS the credential, so a global
+  // lookup by hash is correct — like by_cuid; the found key carries its own orgId).
+  apiKeys: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    prefix: v.string(),
+    tokenHash: v.string(),
+    scopes: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+    actingUserId: v.string(),
+    createdById: v.string(),
+    expiresAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+    lastRotatedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_actingUserId", ["actingUserId"]),
+
   // Category
   categories: defineTable({
     id: v.string(),

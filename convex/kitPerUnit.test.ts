@@ -6,6 +6,7 @@
 // (belt still owns asset status this phase).
 import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
+import { ConvexError } from "convex/values";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -237,6 +238,29 @@ describe("kit per-unit — accessories on a member", () => {
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.forceReturnKit, { organizationId: ORG, kitId: "k1", userId: USER, now: NOW });
     expect((await accessoryUnits(t))[0].status).toBe("RETURNED");
     expect(await accAssetStatus(t)).toBe("AVAILABLE");
+  });
+});
+
+describe("kit per-unit — composition parity guard (Phase 3)", () => {
+  test("checkout throws KIT_COMPOSITION_DRIFT when the kit definition diverges from the project snapshot", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t); // snapshot child line a1 == definition ks1(a1)
+    // Drift the live definition: add a serialised item not on the project's snapshot.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("kitSerializedItems", { id: "ks2", organizationId: ORG, kitId: "k1", assetId: "a2", addedById: USER });
+    });
+    const err = await co(t).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(ConvexError);
+    expect((err as ConvexError<{ kind: string }>).data.kind).toBe("KIT_COMPOSITION_DRIFT");
+    // Nothing deployed — the guard runs before any write.
+    expect(await assetStatus(t)).toBe("AVAILABLE");
+  });
+
+  test("checkout succeeds when snapshot and definition match (no false positive)", async () => {
+    const t = convexTest(schema, modules);
+    await seedKit(t);
+    await expect(co(t)).resolves.toBeTruthy();
   });
 });
 

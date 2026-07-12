@@ -336,6 +336,36 @@ async function childLines(ctx: Ctx, parentId: string, organizationId: string) {
 async function kitSerializedAssetIds(ctx: Ctx, kitId: string): Promise<string[]> {
   return (await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect()).map((k) => k.assetId);
 }
+
+/**
+ * Kit per-unit fulfillment (Phase 3) — composition parity guard.
+ *
+ * A project's kit is a SNAPSHOT (child lines + their units) frozen when the kit
+ * was added; `kitSerializedItems` is the LIVE definition, which can drift
+ * independently (warehouse edits, CSV import). Since Phase 3 the asset flip is
+ * driven by the snapshot (child-line assets), while verification (T&T preflight,
+ * the per-item check flow) still reads the live definition. If the two diverge,
+ * verification validates one asset set and deployment touches another — so we
+ * error and make the operator re-add the kit to resync, rather than silently
+ * deploying an unverified set. Serialised members only (bulk uses availability,
+ * not per-asset status).
+ */
+async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: string, organizationId: string) {
+  const children = await childLines(ctx, kitLineId, organizationId);
+  const snapshot = new Set(children.filter((c) => !c.kitId && c.assetId).map((c) => c.assetId!));
+  const definition = new Set(await kitSerializedAssetIds(ctx, kitId));
+  const missing = [...definition].filter((id) => !snapshot.has(id));
+  const extra = [...snapshot].filter((id) => !definition.has(id));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new ConvexError({
+      kind: "KIT_COMPOSITION_DRIFT",
+      kitId,
+      message: "This kit's contents changed since it was added to the project. Remove and re-add the kit to resync, then deploy.",
+      missing,
+      extra,
+    });
+  }
+}
 async function collectKitBulkAdjustments(ctx: Ctx, kitId: string, organizationId: string, sign: -1 | 1): Promise<BulkAdjustment[]> {
   const bulks = await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
   return bulks.filter((b) => b.organizationId === organizationId).map((b) => ({ bulkAssetId: b.bulkAssetId, delta: sign * b.quantity }));
@@ -463,6 +493,13 @@ export const checkoutKit = mutation({
     const nestedKitChildren = children.filter((c) => c.kitId);
     const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
 
+    // Parity: the project's kit snapshot (what we deploy) must match the live kit
+    // definition (what T&T verifies) — for this kit and each nested kit.
+    await assertKitCompositionParity(ctx, kitLine.id, a.kitId, a.organizationId);
+    for (const nestedChild of nestedKitChildren) {
+      await assertKitCompositionParity(ctx, nestedChild.id, nestedChild.kitId!, a.organizationId);
+    }
+
     // T&T preflight over this kit + nested kits' permanent composition.
     const ttAssets: string[] = [...(await kitSerializedAssetIds(ctx, a.kitId))];
     const ttBulk: string[] = (await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect()).map((b) => b.bulkAssetId);
@@ -480,7 +517,6 @@ export const checkoutKit = mutation({
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, deploy);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
       if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
-      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "CHECKED_OUT", loc, false, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", loc, false, a.now);
@@ -491,7 +527,6 @@ export const checkoutKit = mutation({
 
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "CHECKED_OUT", loc, false, a.now);
 
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
@@ -534,7 +569,6 @@ export const checkinKit = mutation({
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "CHECKED_OUT")) await ctx.db.patch(gc._id, ret);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
       if (nk) await ctx.db.patch(nk._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
-      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), assetStatus, defaultLocationId, true, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), assetStatus, defaultLocationId, true, a.now);
@@ -545,7 +579,6 @@ export const checkinKit = mutation({
 
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), assetStatus, defaultLocationId, true, a.now);
 
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
     for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
@@ -760,7 +793,6 @@ export const undeployKit = mutation({
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, prepped);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
       if (nk) await ctx.db.patch(nk._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
-      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "AVAILABLE", defLoc, true, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", defLoc, true, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -769,7 +801,6 @@ export const undeployKit = mutation({
     }
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "AVAILABLE", defLoc, true, a.now);
 
     // Restore bulk availability the checkout consumed (+1, opposite of checkout's -1).
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
@@ -807,7 +838,6 @@ export const unreturnKit = mutation({
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "RETURNED")) await ctx.db.patch(gc._id, deployed);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
       if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
-      await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nestedChild.kitId!), "CHECKED_OUT", projLoc, false, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", projLoc, false, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -816,7 +846,6 @@ export const unreturnKit = mutation({
     }
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "CHECKED_OUT", projLoc, false, a.now);
 
     // Re-consume bulk availability the return restored (-1, opposite of checkin's +1).
     const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
@@ -910,7 +939,6 @@ async function restoreKitParentLine(
       if (loc != null) await ctx.db.patch(k._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
       else { const { _id, _creationTime, locationId: _l, ...rest } = k; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
     }
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, nk), "AVAILABLE", loc, true, now);
   }
   for (const c of children) if (c.status === "CHECKED_OUT") await ctx.db.patch(c._id, FORCE_RET(now));
   await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", loc, true, now);
@@ -939,7 +967,6 @@ export const forceReturnKit = mutation({
 
     if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: a.now });
     else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: a.now }); }
-    await setAssetsStatus(ctx, await kitSerializedAssetIds(ctx, a.kitId), "AVAILABLE", loc, true, a.now);
 
     const adjustments: BulkAdjustment[] = [];
     for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, a.organizationId, 1)));

@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { prepUnit, syncLineItemRollup } from "./lib/fulfillment";
+import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup } from "./lib/fulfillment";
 
 /**
  * Check-records prep/return — Convex port of the line-item/unit writes in
@@ -201,16 +201,39 @@ export const completeCheckAndDeprepLine = mutation({
   },
 });
 
+/**
+ * Kit per-unit fulfillment (Phase 1): additively carry a kit member line's PREP
+ * state onto its unit row(s), so the member shows Prepped/Assigned per job like
+ * loose gear. Unit-only — line status stays owned by the caller's patch this
+ * phase. Self-heals a missing unit (pre-change kit prepped after the migration)
+ * via the same ensure* find-or-create used at kit-add. Never touches CHECKED_OUT
+ * or RETURNED units (a returned member's history must survive a deprep).
+ * See docs/designs/kit-per-unit-fulfillment.md.
+ */
+async function setKitMemberUnitPrep(ctx: Ctx, child: { id: string; organizationId: string; assetId?: string; bulkAssetId?: string; quantity?: number }, now: number, mode: "PREP" | "DEPREP") {
+  if (mode === "PREP") {
+    if (child.assetId) await ensureSerialisedUnit(ctx, { organizationId: child.organizationId, lineItemId: child.id, assetId: child.assetId });
+    else if (child.bulkAssetId) await ensureBulkUnit(ctx, { organizationId: child.organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity ?? 1 });
+  }
+  for (const u of await lineUnits(ctx, child.id)) {
+    if (u.status === "CHECKED_OUT" || u.status === "RETURNED") continue;
+    if (mode === "PREP") await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+    else await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: now });
+  }
+}
+
 async function setKitTreePrep(ctx: Ctx, parentLineItemId: string, organizationId: string, now: number, mode: "PREP" | "DEPREP") {
   const children = await childLines(ctx, parentLineItemId, organizationId);
   for (const child of children) {
     if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
     if (mode === "PREP") await ctx.db.patch(child._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
     else await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
+    if (!child.kitId) await setKitMemberUnitPrep(ctx, child, now, mode);
     for (const gc of await childLines(ctx, child.id, organizationId)) {
       if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
       if (mode === "PREP") await ctx.db.patch(gc._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
       else await ctx.db.patch(gc._id, { prepStatus: "PENDING", updatedAt: now });
+      if (!gc.kitId) await setKitMemberUnitPrep(ctx, gc, now, mode);
     }
   }
   const parent = await lineByCuid(ctx, parentLineItemId);

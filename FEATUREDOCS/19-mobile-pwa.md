@@ -139,8 +139,10 @@ The `columns` `cell` renderers MUST be pure/presentational (they render on both
 breakpoints). Reuse the exact JSX the desktop `<TableCell>` renders. Converted so far:
 `clients/[id]`, `suppliers/[id]`, `locations/[id]`, `assets/registry/[id]`,
 `assets/categories/[id]`, `assets/models/[id]`, `kits/[id]`, `projects/templates`,
-`settings/check-items`, `settings/services`, `settings/test-and-tag/profiles`
-(more to follow). Genuinely grid-shaped
+`settings/check-items`, `settings/services`, `settings/test-and-tag/profiles`,
+`model-roi-tab` (projects list), `auditor/[token]` (public report),
+`model-checks-tab` + `kit-checks-tab` (checklist editors — reorder ▲▼ is
+desktop-only, dropped on mobile). Genuinely grid-shaped
 surfaces (calendars, the crew planner matrix, ROI/allocation matrices, the print
 pull-sheet, desktop-only admin) stay tables — do NOT `MobileCardList` those.
 

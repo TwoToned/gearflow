@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import { cn, focusRing, disabledState } from "@/lib/utils";
 
 type CheckItemType = "PASS_FAIL" | "NOTES" | "MEASUREMENT" | "DROPDOWN";
@@ -153,6 +154,72 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
     );
   }
 
+  // Mobile card layout for the checklist (rendered below `md`). The desktop
+  // reorder ▲▼ affordance is intentionally dropped on mobile — only the remove
+  // control is carried into the card's `actions` slot.
+  const mobileColumns: ColumnDef<Record<string, unknown>>[] = [
+    {
+      id: "label",
+      header: "Check item",
+      mobile: "title",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        return ci.label as string;
+      },
+    },
+    {
+      id: "description",
+      header: "Description",
+      mobile: "subtitle",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        return ci.description ? (ci.description as string) : null;
+      },
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        const type = ci.type as CheckItemType;
+        const Icon = TYPE_ICONS[type];
+        return (
+          <Badge status={TYPE_STATUS[type]} className="gap-1">
+            <Icon className="h-3 w-3" />
+            {TYPE_LABELS[type]}
+          </Badge>
+        );
+      },
+    },
+  ];
+  if (canEdit) {
+    mobileColumns.push({
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (mci) => {
+        const ci = mci.checkItem as Record<string, unknown>;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-t-out"
+            aria-label={`Remove ${ci.label as string}`}
+            onClick={() =>
+              setRemoveTarget({
+                id: ci.id as string,
+                label: ci.label as string,
+              })
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        );
+      },
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -180,7 +247,8 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
           </p>
         </div>
       ) : (
-        <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+        <>
+        <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -267,6 +335,13 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
             </TableBody>
           </Table>
         </div>
+        <MobileCardList
+          className="md:hidden"
+          data={items}
+          columns={mobileColumns}
+          getRowId={(r) => r.id as string}
+        />
+        </>
       )}
 
       <KitCheckItemPicker

@@ -4,7 +4,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
-import { logActivity } from "@/lib/activity-log";
+import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { assertNoBlockingComments, getProjectBlockingSummary } from "@/lib/blocking-comments-read";
 import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
@@ -124,11 +124,13 @@ async function saveCheckRecords(
 
 /** Write Phase-B check records to Convex after the Prisma tx commits. */
 async function writeCheckRecordsToConvex(records: CheckRecordDoc[]) {
+  if (records.length === 0) return;
   const convex = await getConvexClient();
-  for (const r of records) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await convex.mutation(api.checkRecords.createIfMissing, r as any);
-  }
+  // ONE batched mutation instead of one round-trip per record. A single check
+  // submission produces (N line items × M check items) records — the per-record
+  // loop was the "checks feel sequential" tax. Still idempotent per cuid inside.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await convex.mutation(api.checkRecords.createManyIfMissing, { records: records as any });
 }
 
 /** After saving FAIL records, check if predictive maintenance should trigger */
@@ -461,21 +463,25 @@ export async function prepItemsBatch(
     rows.filter((r): r is NonNullable<typeof r> => r != null).map((r) => ({ ...r, modelId: r.modelId ?? null })),
   );
   const lineById = new Map(grafted.map((g) => [g.id, g]));
-  for (const item of items) {
-    const line = lineById.get(item.lineItemId);
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "UPDATE",
-      entityType: "asset",
-      entityId: item.lineItemId,
-      entityName: line?.model?.name || "Line item",
-      summary: "Prepped item (no checks required)",
-      projectId,
-      assetId: item.assetId || line?.assetId || undefined,
-    });
-  }
+  // One audit row per prepped item (matches prepItemDirect), written in ONE batch
+  // instead of N sequential inserts.
+  await logActivityMany(
+    items.map((item) => {
+      const line = lineById.get(item.lineItemId);
+      return {
+        organizationId,
+        userId,
+        userName,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: item.lineItemId,
+        entityName: line?.model?.name || "Line item",
+        summary: "Prepped item (no checks required)",
+        projectId,
+        assetId: item.assetId || line?.assetId || undefined,
+      };
+    }),
+  );
 
   return serialize(grafted);
 }
@@ -728,23 +734,25 @@ export async function deprepItemsBatch(
     }),
   );
 
-  for (const op of ops) {
-    const line = lineById.get(op.lineItemId);
-    if (op.isKit) {
-      const kitName = line?.kitId ? kitNameById.get(line.kitId) : undefined;
-      await logActivity({
-        organizationId,
-        userId,
-        userName,
-        action: "UPDATE",
-        entityType: "asset",
-        entityId: op.lineItemId,
-        entityName: kitName || "Kit",
-        summary: "Removed kit from prep",
-        projectId,
-      });
-    } else {
-      await logActivity({
+  // One audit row per deprepped item/kit, written in ONE batch instead of N.
+  await logActivityMany(
+    ops.map((op) => {
+      const line = lineById.get(op.lineItemId);
+      if (op.isKit) {
+        const kitName = line?.kitId ? kitNameById.get(line.kitId) : undefined;
+        return {
+          organizationId,
+          userId,
+          userName,
+          action: "UPDATE",
+          entityType: "asset",
+          entityId: op.lineItemId,
+          entityName: kitName || "Kit",
+          summary: "Removed kit from prep",
+          projectId,
+        };
+      }
+      return {
         organizationId,
         userId,
         userName,
@@ -755,9 +763,9 @@ export async function deprepItemsBatch(
         summary: "Removed item from prep",
         projectId,
         assetId: line?.assetId || undefined,
-      });
-    }
-  }
+      };
+    }),
+  );
 
   return serialize({ ids: distinctIds });
 }

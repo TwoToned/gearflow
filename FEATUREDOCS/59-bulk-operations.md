@@ -98,6 +98,35 @@ props).
 - `bulk-edit-line-items-dialog.smoke.test.tsx` — jsdom render + enable-toggle
   gating (per the CLAUDE.md rule that new overlay UI gets a render smoke test).
 
+## Warehouse batch ops — audit + check-record round-trip collapse
+
+Bulk warehouse actions (check-out / return / prep / deprep / kit batch) had already
+collapsed their *state* mutations into single atomic Convex calls, but two sequential
+per-item loops remained on the hot paths and made them feel one-item-at-a-time:
+
+1. **Per-item `logActivity`** — every batch action looped `await logActivity(...)`
+   (one Postgres insert + one Convex mirror mutation *per item*) after the batched
+   state write. Now `logActivityMany(inputs)` (`src/lib/activity-log.ts`) writes all
+   N audit rows in ONE `prisma.createMany` + ONE `api.activityLogWrites.recordMany`
+   mutation. One audit row per item is preserved (per-item granularity intact) — only
+   the transport is batched. Applied in `warehouse.ts` (`checkOutItems`,
+   `checkInItems`, `undeployItems`, `unreturnItems`, `checkOutKitsBatch`,
+   `checkInKitsBatch`) and `check-records.ts` (`prepItemsBatch`, `deprepItemsBatch`).
+2. **Per-record check-write** — `writeCheckRecordsToConvex` fired one
+   `checkRecords.createIfMissing` per record; a check submission is (N line items × M
+   check items) records. Now one `api.checkRecords.createManyIfMissing` batched
+   mutation (still idempotent per cuid, one doc per record).
+3. **Kit batch loops** — `checkOutKitsBatch` / `checkInKitsBatch` ran one serial
+   Convex round-trip per kit. Now `Promise.allSettled` fires them concurrently; each
+   kit keeps its own atomic mutation/transaction so **per-kit error isolation is
+   preserved** (a failing kit doesn't abort the rest), and the audit is written via
+   `logActivityMany`. Caveat: concurrent kit ops on the SAME project touch shared line
+   rollups → Convex may OCC-retry (auto-retried, stays correct; minor contention on
+   very large same-project batches).
+
+New Convex mutations: `activityLogWrites.recordMany`, `checkRecords.createManyIfMissing`
+— both loop `insert`/`createIfMissing` internally in one transaction.
+
 ## Follow-ups
 
 - **Integration tests** for the batch server actions (mirroring

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, type MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 
 /**
@@ -16,32 +16,62 @@ import { requireService } from "./lib/auth";
  * Date.now()) so the Convex row matches the Postgres row exactly. Service-token only —
  * `logActivity` calls it via the server's `getConvexClient()`.
  */
+const activityLogFields = {
+  id: v.string(),
+  organizationId: v.string(),
+  action: v.string(),
+  entityType: v.string(),
+  entityId: v.string(),
+  entityName: v.string(),
+  userId: v.optional(v.string()),
+  userName: v.string(),
+  summary: v.string(),
+  details: v.optional(v.any()),
+  metadata: v.optional(v.any()),
+  projectId: v.optional(v.string()),
+  assetId: v.optional(v.string()),
+  kitId: v.optional(v.string()),
+  createdAt: v.number(),
+};
+
+async function insertIfMissing(
+  ctx: MutationCtx,
+  entry: { id: string } & Record<string, unknown>,
+): Promise<boolean> {
+  const existing = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_cuid", (q) => q.eq("id", entry.id))
+    .first();
+  if (existing) return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await ctx.db.insert("activityLogs", entry as any);
+  return true;
+}
+
 export const record = mutation({
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    action: v.string(),
-    entityType: v.string(),
-    entityId: v.string(),
-    entityName: v.string(),
-    userId: v.optional(v.string()),
-    userName: v.string(),
-    summary: v.string(),
-    details: v.optional(v.any()),
-    metadata: v.optional(v.any()),
-    projectId: v.optional(v.string()),
-    assetId: v.optional(v.string()),
-    kitId: v.optional(v.string()),
-    createdAt: v.number(),
-  },
+  args: activityLogFields,
   handler: async (ctx, entry) => {
     await requireService(ctx);
-    const existing = await ctx.db
-      .query("activityLogs")
-      .withIndex("by_cuid", (q) => q.eq("id", entry.id))
-      .first();
-    if (existing) return { created: false as const };
-    await ctx.db.insert("activityLogs", { ...entry });
-    return { created: true as const };
+    const created = await insertIfMissing(ctx, entry);
+    return { created };
+  },
+});
+
+/**
+ * Batched sibling of `record`: mirror N audit rows in ONE Convex round-trip instead
+ * of N. Used by `logActivityMany` (src/lib/activity-log.ts) so a bulk warehouse
+ * action (check-out / return / prep / deprep of a batch) writes its per-item audit
+ * entries without a network round-trip per item. Still idempotent per cuid — one
+ * doc per row, so audit granularity is identical to N separate `record` calls.
+ */
+export const recordMany = mutation({
+  args: { rows: v.array(v.object(activityLogFields)) },
+  handler: async (ctx, { rows }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const entry of rows) {
+      if (await insertIfMissing(ctx, entry)) created += 1;
+    }
+    return { created };
   },
 });

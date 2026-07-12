@@ -8,7 +8,7 @@ import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
-import { logActivity } from "@/lib/activity-log";
+import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
@@ -352,8 +352,8 @@ export async function checkOutItems(
     now: Date.now(),
   });
 
-  for (const item of items) {
-    await logActivity({
+  await logActivityMany(
+    items.map((item) => ({
       organizationId,
       userId,
       userName,
@@ -364,8 +364,8 @@ export async function checkOutItems(
       summary: `Checked out item on project`,
       projectId,
       assetId: item.assetId,
-    });
-  }
+    })),
+  );
 
   // Re-read the updated lines and graft the Convex model doc for the return.
   const rows = await Promise.all(
@@ -442,8 +442,8 @@ export async function checkInItems(
     now: Date.now(),
   });
 
-  for (const item of items) {
-    await logActivity({
+  await logActivityMany(
+    items.map((item) => ({
       organizationId,
       userId,
       userName,
@@ -453,8 +453,8 @@ export async function checkInItems(
       entityName: `Line item ${item.lineItemId}`,
       summary: `Checked in item on project (condition: ${item.returnCondition})`,
       projectId,
-    });
-  }
+    })),
+  );
 
   // Re-read the updated lines and graft the Convex model doc for the return.
   const rows = await Promise.all(
@@ -479,13 +479,13 @@ export async function undeployItems(
     items: items.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
     now: Date.now(),
   });
-  for (const item of items) {
-    await logActivity({
+  await logActivityMany(
+    items.map((item) => ({
       organizationId, userId, userName, action: "UPDATE", entityType: "asset",
       entityId: item.assetId || item.lineItemId, entityName: `Line item ${item.lineItemId}`,
       summary: "Moved item back to Prepped (un-deploy)", projectId, assetId: item.assetId,
-    });
-  }
+    })),
+  );
   const rows = await Promise.all(
     res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
   );
@@ -506,13 +506,13 @@ export async function unreturnItems(
     items: items.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
     now: Date.now(),
   });
-  for (const item of items) {
-    await logActivity({
+  await logActivityMany(
+    items.map((item) => ({
       organizationId, userId, userName, action: "UPDATE", entityType: "asset",
       entityId: item.assetId || item.lineItemId, entityName: `Line item ${item.lineItemId}`,
       summary: "Moved item back to Deployed (un-return)", projectId, assetId: item.assetId,
-    });
-  }
+    })),
+  );
   const rows = await Promise.all(
     res.updatedLineIds.map((id: string) => convex.query(api.projectLineItems.getById, { id })),
   );
@@ -655,20 +655,26 @@ export async function checkOutKitsBatch(projectId: string, kitIds: string[]) {
 
   const convex = await getConvexClient();
   const now = Date.now();
+  // Fire every kit's atomic checkout concurrently (was one serial round-trip per
+  // kit). Each kit stays in its own Convex mutation/transaction, so per-kit error
+  // isolation is preserved; allSettled collects successes + failures without one
+  // failing kit aborting the rest. (Concurrent checkouts on the SAME project touch
+  // shared line rollups → Convex may OCC-retry; it auto-retries, so it stays correct.)
+  const results = await Promise.allSettled(
+    unique.map((kitId) => convex.mutation(api.warehouseOps.checkoutKit, { organizationId, projectId, userId, kitId, now })),
+  );
   const succeeded: string[] = [];
   const errors: { kitId: string; message: string }[] = [];
-  for (const kitId of unique) {
-    try {
-      await convex.mutation(api.warehouseOps.checkoutKit, { organizationId, projectId, userId, kitId, now });
-      succeeded.push(kitId);
-      await logActivity({
-        organizationId, userId, userName, action: "CHECK_OUT", entityType: "kit",
-        entityId: kitId, entityName: `Kit ${kitId}`, summary: "Checked out kit with all contents", projectId, kitId,
-      });
-    } catch (e) {
-      errors.push({ kitId, message: e instanceof Error ? e.message : String(e) });
-    }
-  }
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") succeeded.push(unique[i]);
+    else errors.push({ kitId: unique[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+  });
+  await logActivityMany(
+    succeeded.map((kitId) => ({
+      organizationId, userId, userName, action: "CHECK_OUT", entityType: "kit",
+      entityId: kitId, entityName: `Kit ${kitId}`, summary: "Checked out kit with all contents", projectId, kitId,
+    })),
+  );
   return serialize({ succeeded, errors });
 }
 
@@ -692,20 +698,27 @@ export async function checkInKitsBatch(
 
   const convex = await getConvexClient();
   const now = Date.now();
+  // Concurrent per-kit check-in (see checkOutKitsBatch for the isolation rationale).
+  const results = await Promise.allSettled(
+    uniqueKits.map((k) =>
+      convex.mutation(api.warehouseOps.checkinKit, { organizationId, projectId, userId, kitId: k.kitId, returnCondition: k.returnCondition, now })
+        .then(() => k),
+    ),
+  );
   const succeeded: string[] = [];
   const errors: { kitId: string; message: string }[] = [];
-  for (const { kitId, returnCondition } of uniqueKits) {
-    try {
-      await convex.mutation(api.warehouseOps.checkinKit, { organizationId, projectId, userId, kitId, returnCondition, now });
-      succeeded.push(kitId);
-      await logActivity({
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") succeeded.push(uniqueKits[i].kitId);
+    else errors.push({ kitId: uniqueKits[i].kitId, message: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+  });
+  await logActivityMany(
+    uniqueKits
+      .filter((k) => succeeded.includes(k.kitId))
+      .map((k) => ({
         organizationId, userId, userName, action: "CHECK_IN", entityType: "kit",
-        entityId: kitId, entityName: `Kit ${kitId}`, summary: `Checked in kit (condition: ${returnCondition})`, projectId, kitId,
-      });
-    } catch (e) {
-      errors.push({ kitId, message: e instanceof Error ? e.message : String(e) });
-    }
-  }
+        entityId: k.kitId, entityName: `Kit ${k.kitId}`, summary: `Checked in kit (condition: ${k.returnCondition})`, projectId, kitId: k.kitId,
+      })),
+  );
   return serialize({ succeeded, errors });
 }
 

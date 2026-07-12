@@ -315,6 +315,20 @@ Reference: `mobile-first-redesign.md` § Approved Mockups → equipment-nested m
 the mockup shows the simplified 2-device idea; the contract above is the authoritative,
 code-accurate version it must be built to).
 
+**Shipped card style (v0.24.5.0 — the built expression of the tree above).** The equipment
+tab renders three visually-ranked card tiers so depth reads without heavy indentation:
+
+| Tier | What | Surface | Distinguishers |
+|---|---|---|---|
+| **Container** | ProjectGroup, SubHireGroup, kit-parent, accessory-parent | `bg-card` + `ring-1 ring-line-2` (heavier edge) | leading glyph (`Container`/`Handshake`/`Package`), `font-medium` title, qty·total summary, chevron |
+| **Line item** (leaf) | plain line | `bg-card` + `ring-1 ring-line`, `py-2` | smaller `text-table-cell` title, no glyph; grouped members get an `ml-3` left inset to nest under their container |
+| **Child** | kit member / accessory | `bg-paper-2/40`, no ring, `pl-6` | most recessed; tag + `Accessory` badge |
+
+Rule of thumb: **containers are the prominent "shelves," line items are a size step down,
+children recede.** Selection is `ring-2 ring-red` on any tier. Keep every tap target ≥44px
+even when the leaf padding shrinks (`min-h-11`). Implemented by the row components
+self-branching on `useIsMobile()` (see FEATUREDOCS/19), primitives in `equipment-cards.tsx`.
+
 ## 4. How it maps to our stack
 
 | Framework piece | Component (new or existing) | Notes |

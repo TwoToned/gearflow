@@ -1305,10 +1305,17 @@ export function LineItemRow({
   // ── Mobile: line-item card. Tapping the body toggles selection (like the
   // warehouse ScanItemCard); edit / move / delete live behind the kebab. ──
   if (isMobile) {
+    // Tier: kits / accessory-parents render as "container" cards (leading glyph,
+    // heavier ring, bolder title); plain leaf line items are smaller and lighter
+    // so the hierarchy reads at a glance. Grouped / sub-hire members (indent ml-12)
+    // get a small left inset so they sit visually under their container card.
+    const isContainer = hasChildren;
+    const nestInset = indent === "ml-12" ? "ml-3" : "";
     const bodyInner = (
       <>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-medium text-ink break-words">{name}</span>
+          {isContainer && <Package className="h-3.5 w-3.5 shrink-0 text-muted" />}
+          <span className={cn("break-words text-ink", isContainer ? "font-medium" : "text-table-cell")}>{name}</span>
           {hasChildren && (
             <span className="text-caption text-muted">
               {item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}
@@ -1332,11 +1339,12 @@ export function LineItemRow({
       </>
     );
     return (
-      <>
+      <div className={cn("space-y-1.5", nestInset)}>
         <div
           style={style}
           className={cn(
-            "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card px-3 py-2.5 ring-1 ring-line transition-colors",
+            "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
+            isContainer ? "px-3 py-2.5 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
             isSelected && "ring-2 ring-red",
             hasActiveLock && "collab-editing",
             justChanged && "collab-changed",
@@ -1450,7 +1458,7 @@ export function LineItemRow({
             })}
           </div>
         )}
-      </>
+      </div>
     );
   }
 

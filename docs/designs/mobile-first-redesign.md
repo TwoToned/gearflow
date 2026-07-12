@@ -177,7 +177,15 @@ Priority tiers by operator impact × current brokenness.
 
 - **Project equipment editor** (`equipment-tab.tsx`, `equipment-rows.tsx`,
   `crew-panel.tsx`, `services-panel.tsx`, `sub-hire-order-dialog.tsx`).
-  *Today:* raw dense table, columns off-screen, wrapped names. *Target:*
+  ✅ **SHIPPED (v0.24.4.0 cards + v0.24.5.0 card hierarchy):** below `md` the tab now
+  renders the three-tier card system — **container cards** (groups / sub-hires / kits,
+  `ring-line-2` + glyph + subtotal), a size-step-down **line-item card** (leaf), and
+  recessed **child rows**. See the shipped-style table in
+  `mobile-data-table-framework.md` §3E and FEATUREDOCS/19. Tap = select, edit/move/delete
+  behind the kebab. (Still open vs the original target below: qty stepper inline,
+  `StickyActionBar` running total, `RowActionsSheet` swipe, removing the compliance
+  allowlist entry.)
+  *Original target:* raw dense table, columns off-screen, wrapped names →
   - Mobile: **`PopinRow` per line** (name + qty stepper inline; unit/total folded into
     the pop-in — this is the resolved decision, NOT `RichDataCard`), grouped into
     collapsible category → container sections; kit/accessory children per the §3E

@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
 import { focusRing } from "@/lib/utils";
+import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
 
 import {
   lookupAssetForScan,
@@ -591,13 +592,16 @@ function WarehouseProjectPage({
     const kit = kitLi.kit;
     if (!kit) return false;
 
+    // Central policy gate: a plain return-scan (truck-in) never fires a check — the
+    // return check runs only at de-prep (fromDeprep). PREP and de-prep proceed.
+    if (!transitionNeedsCheck(context, { hasCheckItems: true, fromDeprep })) return false;
+
     const checkMode = kit.checkMode || "KIT_LEVEL";
     const children = (kitLi.childLineItems || []) as LineItem[];
 
     if (checkMode === "KIT_LEVEL") {
       // Kit-level: check the kit once using its own check items
-      const hasKitChecks = kit._count?.kitCheckItems && kit._count.kitCheckItems > 0;
-      if (!hasKitChecks) return false;
+      if (!kitHasChecks(kit)) return false;
 
       const queue: CheckQueueItem[] = [{
         context,
@@ -622,8 +626,7 @@ function WarehouseProjectPage({
         if (context === "RETURN" && !fromDeprep && child.status !== "CHECKED_OUT") continue;
         if (context === "RETURN" && fromDeprep && child.status === "CANCELLED") continue;
 
-        const hasModelChecks = child.model?._count?.modelCheckItems && child.model._count.modelCheckItems > 0;
-        if (!hasModelChecks || !child.modelId) continue;
+        if (!lineHasModelChecks(child) || !child.modelId) continue;
 
         // For serialized items, one queue entry per child
         // For bulk items, expand per quantity
@@ -725,7 +728,7 @@ function WarehouseProjectPage({
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const li = result as any;
-      const hasChecks = li?.model?._count?.modelCheckItems > 0;
+      const hasChecks = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) });
 
       if (hasChecks && li.modelId) {
         // Route through check queue — pull first, then open check form
@@ -975,7 +978,7 @@ function WarehouseProjectPage({
 
         // Check if model has check items — if so, open check form for prep
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
+        const hasChecks = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(matchedLi) });
 
         if (hasChecks && matchedLi?.modelId) {
           // Pull item first, then open check form (prep flow)
@@ -1204,11 +1207,16 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
-        // Check if model has check items — if so, open check form
+        // A return-scan (truck-in) never opens a check form — the return check runs
+        // only at de-prep (shelf-in). transitionNeedsCheck("RETURN", …) returns false
+        // here, so this collapses to the direct check-in below.
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
+        const needsReturnCheck = transitionNeedsCheck("RETURN", {
+          hasCheckItems: lineHasModelChecks(matchedLi),
+          fromDeprep: false,
+        });
 
-        if (hasChecks && matchedLi?.modelId) {
+        if (needsReturnCheck && matchedLi?.modelId) {
           // Unpack item first, then open check form
           unpackItem(projectId, result.lineItemId).catch(() => {});
           setCheckFormData({
@@ -1843,7 +1851,7 @@ function WarehouseProjectPage({
       const bulkNoCheckItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        const hasChecks = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) });
         if (hasChecks && li?.modelId) {
           for (let i = 0; i < bi.quantity; i++) {
             bulkCheckQueue.push({
@@ -1886,7 +1894,7 @@ function WarehouseProjectPage({
       const readyNoCheckItems: typeof readyItems = [];
       for (const item of readyItems) {
         const li = lineItems.find((l) => l.id === item.lineItemId);
-        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        const hasChecks = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) });
         if (hasChecks && li?.modelId) {
           readyCheckQueue.push({
             context: "PREP" as const,
@@ -2011,8 +2019,7 @@ function WarehouseProjectPage({
       const needsCheck =
         li?.status === "RETURNED" &&
         li.prepStatus === "PACKED" &&
-        !!li.model?._count?.modelCheckItems &&
-        li.model._count.modelCheckItems > 0 &&
+        transitionNeedsCheck("RETURN", { hasCheckItems: lineHasModelChecks(li), fromDeprep: true }) &&
         !!li.modelId;
       if (needsCheck && li) {
         for (let i = 0; i < count; i++) {
@@ -2044,8 +2051,7 @@ function WarehouseProjectPage({
         const needsCheck =
           li?.status === "RETURNED" &&
           li.prepStatus === "PACKED" &&
-          !!li.model?._count?.modelCheckItems &&
-          li.model._count.modelCheckItems > 0 &&
+          transitionNeedsCheck("RETURN", { hasCheckItems: lineHasModelChecks(li), fromDeprep: true }) &&
           !!li.modelId;
         if (needsCheck && li) {
           checkQueueBuild.push({
@@ -2114,7 +2120,7 @@ function WarehouseProjectPage({
     const bulkNoChecks: typeof assetPickerBulkItems = [];
     for (const bi of assetPickerBulkItems) {
       const li = lineItems.find((l) => l.id === bi.lineItemId);
-      if (li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li.modelId) {
+      if (li && transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && li.modelId) {
         for (let i = 0; i < bi.quantity; i++) {
           bulkCheckQueue.push({
             context: "PREP" as const,
@@ -2265,7 +2271,10 @@ function WarehouseProjectPage({
       const withoutCheckItems: typeof items = [];
 
       for (const { item, li } of returnLineItems) {
-        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li?.modelId;
+        // Batch "Return Selected" is a return-scan (truck-in) → no check (de-prep only).
+        const hasChecks =
+          transitionNeedsCheck("RETURN", { hasCheckItems: lineHasModelChecks(li), fromDeprep: false }) &&
+          li?.modelId;
         if (hasChecks) {
           const isBulk = !!li.bulkAssetId || (!li.assetId && li.quantity > 1);
           const count = isBulk ? item.quantity : 1;

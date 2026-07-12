@@ -1,4 +1,5 @@
-import { prisma } from "../prisma";
+import { getConvexClient } from "../convex-client";
+import { api } from "../../../convex/_generated/api";
 import { buildEnvelope, type WebhookEvent } from "./events";
 import { signWebhookPayload } from "./sign";
 import { hostResolvesToPrivate } from "./resolve-guard";
@@ -46,24 +47,25 @@ async function attemptOne(
     event: string;
     payload: string;
     attempts: number;
-    createdAt: Date;
+    createdAt: number; // epoch ms (Convex)
     webhook: {
       id: string;
       url: string;
       secret: string;
       previousSecret: string | null;
-      previousSecretExpiresAt: Date | null;
+      previousSecretExpiresAt: number | null; // epoch ms (Convex)
     };
   },
   doFetch: FetchLike,
   now: Date,
 ): Promise<DeliveryOutcome> {
+  const convex = await getConvexClient();
   const envelope = buildEnvelope({
     deliveryId: delivery.id,
     event: delivery.event as WebhookEvent,
     organizationId: delivery.organizationId,
     data: JSON.parse(delivery.payload) as Record<string, unknown>,
-    createdAt: delivery.createdAt,
+    createdAt: new Date(delivery.createdAt),
   });
 
   // Sign exactly the bytes we send. Re-serializing on the consumer's side would
@@ -78,7 +80,7 @@ async function attemptOne(
   const previousStillValid =
     delivery.webhook.previousSecret &&
     delivery.webhook.previousSecretExpiresAt &&
-    delivery.webhook.previousSecretExpiresAt > now;
+    delivery.webhook.previousSecretExpiresAt > now.getTime();
   if (previousStillValid) secrets.push(delivery.webhook.previousSecret!);
 
   const signature = signWebhookPayload(rawBody, secrets, timestamp);
@@ -129,46 +131,34 @@ async function attemptOne(
   const gone = responseStatus === 410;
 
   if (ok) {
-    await prisma.$transaction([
-      prisma.webhookDelivery.update({
-        where: { id: delivery.id },
-        data: { status: "SUCCEEDED", responseStatus, deliveredAt: now, lastError: null },
-      }),
-      prisma.webhook.update({
-        where: { id: delivery.webhook.id },
-        data: { consecutiveFailures: 0, lastDeliveryAt: now },
-      }),
-    ]);
+    await convex.mutation(api.webhooks.markSucceeded, {
+      deliveryId: delivery.id,
+      webhookId: delivery.webhook.id,
+      responseStatus: responseStatus!,
+      deliveredAt: now.getTime(),
+      expectedAttempts: attempts,
+    });
     return { deliveryId: delivery.id, status: "SUCCEEDED", responseStatus };
   }
 
   const exhausted = attempts >= MAX_ATTEMPTS || gone;
   const failureMessage = error ?? `HTTP ${responseStatus}`;
 
-  const webhook = await prisma.webhook.update({
-    where: { id: delivery.webhook.id },
-    data: { consecutiveFailures: { increment: 1 }, lastDeliveryAt: now },
-    select: { consecutiveFailures: true },
+  // One atomic mutation: record the delivery outcome + backoff, bump the endpoint's
+  // consecutiveFailures, and auto-disable on 410 or once it crosses the threshold.
+  await convex.mutation(api.webhooks.markFailed, {
+    deliveryId: delivery.id,
+    webhookId: delivery.webhook.id,
+    deliveryStatus: exhausted ? "FAILED" : "PENDING",
+    ...(responseStatus !== undefined ? { responseStatus } : {}),
+    lastError: failureMessage,
+    // Overwrites the claim lease with the real backoff.
+    nextAttemptAt: exhausted ? now.getTime() : now.getTime() + backoffMs(attempts),
+    now: now.getTime(),
+    gone,
+    autoDisableAfter: AUTO_DISABLE_AFTER,
+    expectedAttempts: attempts,
   });
-
-  await prisma.webhookDelivery.update({
-    where: { id: delivery.id },
-    data: {
-      status: exhausted ? "FAILED" : "PENDING",
-      responseStatus,
-      lastError: failureMessage,
-      // Overwrites the claim lease with the real backoff.
-      nextAttemptAt: exhausted ? now : new Date(now.getTime() + backoffMs(attempts)),
-    },
-  });
-
-  // A dead endpoint must stop generating load forever. The operator re-enables it.
-  if (gone || webhook.consecutiveFailures >= AUTO_DISABLE_AFTER) {
-    await prisma.webhook.update({
-      where: { id: delivery.webhook.id },
-      data: { isActive: false, disabledAt: now },
-    });
-  }
 
   return {
     deliveryId: delivery.id,
@@ -188,56 +178,59 @@ export async function deliverPendingWebhooks(opts: {
   fetchImpl?: FetchLike;
   now?: Date;
 } = {}): Promise<{ processed: number; succeeded: number; failed: number; outcomes: DeliveryOutcome[] }> {
-  const now = opts.now ?? new Date();
+  // Batch time bounds the due-query (a single consistent snapshot of "what's due").
+  // Per-delivery work uses a FRESH timestamp (unless a time is injected for tests), so
+  // a later delivery in a slow sequential batch gets current signatures + backoff, not
+  // the stale batch-start time.
+  const batchNow = opts.now ?? new Date();
   const doFetch = opts.fetchImpl ?? ((url, init) => fetch(url, init));
+  const convex = await getConvexClient();
 
-  const due = await prisma.webhookDelivery.findMany({
-    where: { status: "PENDING", nextAttemptAt: { lte: now } },
-    orderBy: { nextAttemptAt: "asc" },
-    take: opts.limit ?? 50,
-    include: {
-      webhook: {
-        select: {
-          id: true,
-          url: true,
-          secret: true,
-          previousSecret: true,
-          previousSecretExpiresAt: true,
-          isActive: true,
-        },
-      },
-    },
+  const due = await convex.query(api.webhooks.dueDeliveries, {
+    now: batchNow.getTime(),
+    limit: opts.limit ?? 50,
   });
 
   const outcomes: DeliveryOutcome[] = [];
   for (const delivery of due) {
+    const now = opts.now ?? new Date();
+
+    // Orphan: the endpoint was deleted after this row was enqueued. Fail it out of the
+    // queue so it can't sit forever "due" and starve the batch. Fenced by attempts.
+    if (!delivery.webhook) {
+      await convex.mutation(api.webhooks.markEndpointDisabled, {
+        deliveryId: delivery.id,
+        lastError: "Endpoint no longer exists.",
+        expectedAttempts: delivery.attempts,
+      });
+      outcomes.push({ deliveryId: delivery.id, status: "FAILED", error: "endpoint deleted" });
+      continue;
+    }
+
     // The endpoint was disabled after this row was enqueued. Don't deliver it.
     if (!delivery.webhook.isActive) {
-      await prisma.webhookDelivery.update({
-        where: { id: delivery.id },
-        data: { status: "FAILED", lastError: "Endpoint disabled before delivery." },
+      await convex.mutation(api.webhooks.markEndpointDisabled, {
+        deliveryId: delivery.id,
+        lastError: "Endpoint disabled before delivery.",
+        expectedAttempts: delivery.attempts,
       });
       outcomes.push({ deliveryId: delivery.id, status: "FAILED", error: "endpoint disabled" });
       continue;
     }
 
-    // CLAIM the row before sending. The cron worker and every emit fire-and-forget
-    // kick select the same PENDING rows; without an atomic claim they would both POST
-    // it and both write attempts=1 (last-writer-wins), so a failing endpoint would
-    // retry past MAX_ATTEMPTS and consumers would see duplicate bursts.
-    //
-    // Pushing `nextAttemptAt` out by the lease is what makes the claim exclusive: a
-    // concurrent worker's `nextAttemptAt <= now` filter no longer matches the row.
-    const lease = new Date(now.getTime() + LEASE_MS);
-    const claim = await prisma.webhookDelivery.updateMany({
-      where: { id: delivery.id, status: "PENDING", nextAttemptAt: { lte: now } },
-      data: { attempts: { increment: 1 }, nextAttemptAt: lease },
+    // CLAIM the row before sending — an atomic, transactional Convex mutation (replaces
+    // the Postgres updateMany optimistic lock). The cron worker and every emit
+    // fire-and-forget kick select the same PENDING rows; the claim bumps attempts and
+    // pushes nextAttemptAt out by the lease, so a concurrent worker's due-filter misses
+    // it. claim.claimed=false → someone else owns this attempt.
+    const claim = await convex.mutation(api.webhooks.claimDelivery, {
+      id: delivery.id,
+      now: now.getTime(),
+      leaseMs: LEASE_MS,
     });
-    if (claim.count === 0) continue; // someone else owns this attempt
+    if (!claim.claimed) continue;
 
-    outcomes.push(
-      await attemptOne({ ...delivery, attempts: delivery.attempts + 1 }, doFetch, now),
-    );
+    outcomes.push(await attemptOne({ ...delivery, attempts: claim.attempts }, doFetch, now));
   }
 
   return {

@@ -230,6 +230,51 @@ export default defineSchema({
     .index("by_tokenHash", ["tokenHash"])
     .index("by_actingUserId", ["actingUserId"]),
 
+  // Webhook — outbound event endpoints (docs/designs/webhooks.md). The delivery
+  // WORKER (HTTP send, HMAC signing, cron) stays in Next.js server code; only the
+  // data lives here.
+  webhooks: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    description: v.string(),
+    url: v.string(),
+    events: v.optional(v.string()), // JSON array of event names, default "[]"
+    secret: v.string(),
+    previousSecret: v.optional(v.string()),
+    previousSecretExpiresAt: v.optional(v.number()),
+    isActive: v.optional(v.boolean()),
+    disabledAt: v.optional(v.number()),
+    consecutiveFailures: v.optional(v.number()),
+    lastDeliveryAt: v.optional(v.number()),
+    createdById: v.string(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"]),
+
+  // WebhookDelivery — the delivery queue + operator-facing delivery log.
+  // `by_status_nextAttemptAt` is the worker's claim query (PENDING + backoff elapsed);
+  // it is a GLOBAL scan (the cron worker processes all orgs).
+  webhookDeliveries: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    webhookId: v.string(),
+    event: v.string(),
+    payload: v.string(),
+    status: v.optional(v.string()), // "PENDING" | "SUCCEEDED" | "FAILED"
+    attempts: v.optional(v.number()),
+    nextAttemptAt: v.optional(v.number()),
+    responseStatus: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    deliveredAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_webhookId", ["webhookId"])
+    .index("by_status_nextAttemptAt", ["status", "nextAttemptAt"]),
+
   // Category
   categories: defineTable({
     id: v.string(),

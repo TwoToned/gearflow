@@ -1,19 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { verifyWebhookSignature } from "./sign";
 
-const findMany = vi.hoisted(() => vi.fn());
-const deliveryUpdate = vi.hoisted(() => vi.fn());
-const deliveryUpdateMany = vi.hoisted(() => vi.fn());
-const webhookUpdate = vi.hoisted(() => vi.fn());
-const transaction = vi.hoisted(() => vi.fn());
+// Webhook data is Convex now. Route the mocked client's mutations by a distinguishing
+// arg key (the vi.mock factory can't reference the imported `api`).
+const dueDeliveries = vi.hoisted(() => vi.fn());
+const claimDelivery = vi.hoisted(() => vi.fn());
+const markSucceeded = vi.hoisted(() => vi.fn());
+const markFailed = vi.hoisted(() => vi.fn());
+const markEndpointDisabled = vi.hoisted(() => vi.fn());
 
 vi.mock("./resolve-guard", () => ({ hostResolvesToPrivate: vi.fn().mockResolvedValue(false) }));
-vi.mock("../prisma", () => ({
-  prisma: {
-    webhookDelivery: { findMany, update: deliveryUpdate, updateMany: deliveryUpdateMany },
-    webhook: { update: webhookUpdate },
-    $transaction: transaction,
-  },
+vi.mock("../convex-client", () => ({
+  getConvexClient: vi.fn(async () => ({
+    query: (_ref: unknown, args: Record<string, unknown>) => dueDeliveries(args),
+    mutation: (_ref: unknown, args: Record<string, unknown>) => {
+      if ("leaseMs" in args) return claimDelivery(args);
+      if ("deliveredAt" in args) return markSucceeded(args);
+      if ("autoDisableAfter" in args) return markFailed(args);
+      if ("lastError" in args && !("webhookId" in args)) return markEndpointDisabled(args);
+      return Promise.resolve();
+    },
+  })),
 }));
 
 const { deliverPendingWebhooks, MAX_ATTEMPTS, AUTO_DISABLE_AFTER } = await import("./deliver");
@@ -27,7 +34,8 @@ const row = (over: Record<string, unknown> = {}) => ({
   event: "project.status_changed",
   payload: JSON.stringify({ projectId: "p1", from: "QUOTE", to: "CONFIRMED" }),
   attempts: 0,
-  createdAt: NOW,
+  nextAttemptAt: NOW.getTime(),
+  createdAt: NOW.getTime(),
   webhook: { id: "wh_1", url: "https://hooks.example.com/x", secret: SECRET, previousSecret: null, previousSecretExpiresAt: null, isActive: true },
   ...over,
 });
@@ -36,15 +44,16 @@ const okResponse = (status = 200) => ({ status }) as Response;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deliveryUpdate.mockResolvedValue({});
-  deliveryUpdateMany.mockResolvedValue({ count: 1 });
-  webhookUpdate.mockResolvedValue({ consecutiveFailures: 1 });
-  transaction.mockResolvedValue([]);
+  // Default: claim succeeds, bumping attempts to (row.attempts + 1).
+  claimDelivery.mockImplementation((args: { id: string }) => Promise.resolve({ claimed: true, attempts: 1 }));
+  markSucceeded.mockResolvedValue(undefined);
+  markFailed.mockResolvedValue(undefined);
+  markEndpointDisabled.mockResolvedValue(undefined);
 });
 
 describe("deliverPendingWebhooks — success", () => {
   it("POSTs a signed, verifiable envelope and marks the delivery succeeded", async () => {
-    findMany.mockResolvedValue([row()]);
+    dueDeliveries.mockResolvedValue([row()]);
     const fetchImpl = vi.fn().mockResolvedValue(okResponse());
 
     const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
@@ -57,7 +66,6 @@ describe("deliverPendingWebhooks — success", () => {
     expect(headers["X-GearFlow-Event"]).toBe("project.status_changed");
     expect(headers["X-GearFlow-Delivery-Id"]).toBe("whd_1");
 
-    // The consumer can verify exactly the bytes we sent.
     expect(
       verifyWebhookSignature({
         rawBody: init.body as string,
@@ -67,7 +75,6 @@ describe("deliverPendingWebhooks — success", () => {
       }),
     ).toEqual({ valid: true });
 
-    // The envelope carries the delivery id, so a retry is dedupable.
     const envelope = JSON.parse(init.body as string);
     expect(envelope).toMatchObject({
       id: "whd_1",
@@ -77,29 +84,31 @@ describe("deliverPendingWebhooks — success", () => {
       data: { projectId: "p1", from: "QUOTE", to: "CONFIRMED" },
     });
 
-    // Success resets the failure streak.
-    expect(transaction).toHaveBeenCalled();
+    // Success path records via markSucceeded (resets the failure streak inside the mutation).
+    expect(markSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: "whd_1", webhookId: "wh_1", responseStatus: 200 }),
+    );
   });
 
   it("treats any 2xx as success", async () => {
-    findMany.mockResolvedValue([row()]);
+    dueDeliveries.mockResolvedValue([row()]);
     const res = await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(204)), now: NOW });
     expect(res.succeeded).toBe(1);
   });
 });
 
 describe("deliverPendingWebhooks — retries", () => {
-  it("claims the row atomically (increment attempts) BEFORE sending", async () => {
-    findMany.mockResolvedValue([row({ attempts: 0 })]);
+  it("claims the row atomically BEFORE sending", async () => {
+    dueDeliveries.mockResolvedValue([row({ attempts: 0 })]);
     await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse()), now: NOW });
-    const claim = deliveryUpdateMany.mock.calls[0][0];
-    expect(claim.where).toMatchObject({ id: "whd_1", status: "PENDING" });
-    expect(claim.data.attempts).toEqual({ increment: 1 });
+    expect(claimDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "whd_1", now: NOW.getTime() }),
+    );
   });
 
   it("does NOT send when the claim is lost to a concurrent worker", async () => {
-    findMany.mockResolvedValue([row({ attempts: 0 })]);
-    deliveryUpdateMany.mockResolvedValue({ count: 0 }); // someone else claimed it
+    dueDeliveries.mockResolvedValue([row({ attempts: 0 })]);
+    claimDelivery.mockResolvedValue({ claimed: false, attempts: 0 });
     const fetchImpl = vi.fn();
     const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -107,106 +116,104 @@ describe("deliverPendingWebhooks — retries", () => {
   });
 
   it("schedules exponential backoff and stays PENDING while attempts remain", async () => {
-    findMany.mockResolvedValue([row({ attempts: 2 })]); // claim -> attempts 3
+    dueDeliveries.mockResolvedValue([row({ attempts: 2 })]);
+    claimDelivery.mockResolvedValue({ claimed: true, attempts: 3 }); // claim -> attempts 3
     await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
 
-    const data = deliveryUpdate.mock.calls[0][0].data;
-    expect(data.status).toBe("PENDING");
-    expect(data.lastError).toBe("HTTP 500");
-    // The claim already bumped attempts to 3; the failure write must not bump it again.
-    expect(data.attempts).toBeUndefined();
-    // attempt 3 -> 2^2 = 4 minutes
-    expect(new Date(data.nextAttemptAt).getTime() - NOW.getTime()).toBe(4 * 60_000);
+    const args = markFailed.mock.calls[0][0];
+    expect(args.deliveryStatus).toBe("PENDING");
+    expect(args.lastError).toBe("HTTP 500");
+    // attempt 3 -> 2^2 = 4 minutes (epoch ms)
+    expect(args.nextAttemptAt - NOW.getTime()).toBe(4 * 60_000);
   });
 
   it("does not follow redirects — a 3xx is a failed delivery, never an internal hop", async () => {
-    findMany.mockResolvedValue([row()]);
+    dueDeliveries.mockResolvedValue([row()]);
     const fetchImpl = vi.fn().mockResolvedValue(okResponse(302));
     await deliverPendingWebhooks({ fetchImpl, now: NOW });
     expect(fetchImpl.mock.calls[0][1].redirect).toBe("manual");
-    // 302 is not 2xx, so it is recorded as a failure.
-    expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("PENDING");
-    expect(deliveryUpdate.mock.calls[0][0].data.lastError).toBe("HTTP 302");
+    expect(markFailed.mock.calls[0][0].deliveryStatus).toBe("PENDING");
+    expect(markFailed.mock.calls[0][0].lastError).toBe("HTTP 302");
   });
 
   it("gives up after MAX_ATTEMPTS", async () => {
-    findMany.mockResolvedValue([row({ attempts: MAX_ATTEMPTS - 1 })]); // claim -> MAX_ATTEMPTS
+    dueDeliveries.mockResolvedValue([row({ attempts: MAX_ATTEMPTS - 1 })]);
+    claimDelivery.mockResolvedValue({ claimed: true, attempts: MAX_ATTEMPTS });
     const res = await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
 
-    expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("FAILED");
+    expect(markFailed.mock.calls[0][0].deliveryStatus).toBe("FAILED");
     expect(res.failed).toBe(1);
   });
 
   it("records a network error rather than throwing", async () => {
-    findMany.mockResolvedValue([row()]);
+    dueDeliveries.mockResolvedValue([row()]);
     const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
 
     expect(res.processed).toBe(1);
-    expect(deliveryUpdate.mock.calls[0][0].data.lastError).toContain("ECONNREFUSED");
-    expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("PENDING");
+    expect(markFailed.mock.calls[0][0].lastError).toContain("ECONNREFUSED");
+    expect(markFailed.mock.calls[0][0].deliveryStatus).toBe("PENDING");
   });
 });
 
 describe("deliverPendingWebhooks — endpoint health", () => {
-  it("honours 410 Gone: fails immediately and disables the endpoint", async () => {
-    findMany.mockResolvedValue([row()]);
+  it("honours 410 Gone: fails immediately and signals disable (gone=true)", async () => {
+    dueDeliveries.mockResolvedValue([row()]);
     await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(410)), now: NOW });
 
-    // No further retries for a consumer that said "stop".
-    expect(deliveryUpdate.mock.calls[0][0].data.status).toBe("FAILED");
-    const disable = webhookUpdate.mock.calls.find((c) => c[0].data.isActive === false);
-    expect(disable).toBeTruthy();
-    expect(disable![0].data.disabledAt).toEqual(NOW);
+    // 410 → exhausted FAILED + gone=true, which the markFailed mutation acts on to disable.
+    expect(markFailed.mock.calls[0][0].deliveryStatus).toBe("FAILED");
+    expect(markFailed.mock.calls[0][0].gone).toBe(true);
   });
 
-  it("auto-disables a dead endpoint after AUTO_DISABLE_AFTER consecutive failures", async () => {
-    findMany.mockResolvedValue([row()]);
-    webhookUpdate.mockResolvedValueOnce({ consecutiveFailures: AUTO_DISABLE_AFTER });
-
+  it("passes the auto-disable threshold to markFailed on every failure", async () => {
+    dueDeliveries.mockResolvedValue([row()]);
     await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
-
-    expect(webhookUpdate.mock.calls.some((c) => c[0].data.isActive === false)).toBe(true);
+    // The disable decision (consecutiveFailures >= threshold) is made atomically inside
+    // the Convex markFailed mutation; the worker's job is to pass the threshold + gone.
+    expect(markFailed.mock.calls[0][0].autoDisableAfter).toBe(AUTO_DISABLE_AFTER);
+    expect(markFailed.mock.calls[0][0].gone).toBe(false);
   });
 
-  it("does NOT disable while below the threshold", async () => {
-    findMany.mockResolvedValue([row()]);
-    webhookUpdate.mockResolvedValueOnce({ consecutiveFailures: AUTO_DISABLE_AFTER - 1 });
+  it("fails out an orphaned delivery whose endpoint was deleted (no starvation)", async () => {
+    dueDeliveries.mockResolvedValue([row({ webhook: null })]);
+    const fetchImpl = vi.fn();
 
-    await deliverPendingWebhooks({ fetchImpl: vi.fn().mockResolvedValue(okResponse(500)), now: NOW });
+    const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
 
-    expect(webhookUpdate.mock.calls.some((c) => c[0].data.isActive === false)).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(claimDelivery).not.toHaveBeenCalled();
+    expect(res.failed).toBe(1);
+    expect(markEndpointDisabled.mock.calls[0][0].lastError).toContain("no longer exists");
   });
 
   it("skips a delivery whose endpoint was disabled after it was enqueued", async () => {
-    findMany.mockResolvedValue([row({ webhook: { id: "wh_1", url: "https://x", secret: SECRET, isActive: false } })]);
+    dueDeliveries.mockResolvedValue([row({ webhook: { id: "wh_1", url: "https://x", secret: SECRET, previousSecret: null, previousSecretExpiresAt: null, isActive: false } })]);
     const fetchImpl = vi.fn();
 
     const res = await deliverPendingWebhooks({ fetchImpl, now: NOW });
 
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(res.failed).toBe(1);
-    expect(deliveryUpdate.mock.calls[0][0].data.lastError).toContain("disabled");
+    expect(markEndpointDisabled.mock.calls[0][0].lastError).toContain("disabled");
+    expect(claimDelivery).not.toHaveBeenCalled();
   });
 });
 
 describe("deliverPendingWebhooks — claiming", () => {
-  it("only claims pending rows whose backoff has elapsed", async () => {
-    findMany.mockResolvedValue([]);
+  it("queries due deliveries at `now`", async () => {
+    dueDeliveries.mockResolvedValue([]);
     await deliverPendingWebhooks({ now: NOW, fetchImpl: vi.fn() });
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { status: "PENDING", nextAttemptAt: { lte: NOW } },
-      }),
+    expect(dueDeliveries).toHaveBeenCalledWith(
+      expect.objectContaining({ now: NOW.getTime() }),
     );
   });
 });
 
 describe("deliverPendingWebhooks — secret rotation", () => {
   it("signs with both secrets during the grace window, so an un-rotated consumer verifies", async () => {
-    const { verifyWebhookSignature } = await import("./sign");
-    const future = new Date(NOW.getTime() + 30 * 60_000);
-    findMany.mockResolvedValue([
+    const future = NOW.getTime() + 30 * 60_000;
+    dueDeliveries.mockResolvedValue([
       row({ webhook: { id: "wh_1", url: "https://x/h", secret: "whsec_new", previousSecret: "whsec_old", previousSecretExpiresAt: future, isActive: true } }),
     ]);
     const fetchImpl = vi.fn().mockResolvedValue(okResponse());
@@ -221,8 +228,8 @@ describe("deliverPendingWebhooks — secret rotation", () => {
   });
 
   it("drops the previous secret once its grace window has expired", async () => {
-    const past = new Date(NOW.getTime() - 60_000);
-    findMany.mockResolvedValue([
+    const past = NOW.getTime() - 60_000;
+    dueDeliveries.mockResolvedValue([
       row({ webhook: { id: "wh_1", url: "https://x/h", secret: "whsec_new", previousSecret: "whsec_old", previousSecretExpiresAt: past, isActive: true } }),
     ]);
     const fetchImpl = vi.fn().mockResolvedValue(okResponse());

@@ -1,4 +1,6 @@
-import { prisma } from "../prisma";
+import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "../convex-client";
+import { api } from "../../../convex/_generated/api";
 import { parseEvents, type WebhookEvent } from "./events";
 
 /**
@@ -21,23 +23,27 @@ export async function emitWebhookEvent(
   data: Record<string, unknown>,
 ): Promise<{ enqueued: number }> {
   try {
-    const subscriptions = await prisma.webhook.findMany({
-      where: { organizationId, isActive: true },
-      select: { id: true, events: true },
-    });
+    const convex = await getConvexClient();
+    const subscriptions = await convex.query(api.webhooks.activeSubscriptions, { orgId: organizationId });
 
     const matching = subscriptions.filter((w) => parseEvents(w.events).includes(event));
     if (matching.length === 0) return { enqueued: 0 };
 
     // The payload stored here is NOT the final body — the envelope needs the delivery
-    // id, which only exists once the row does. `deliverPendingWebhooks` builds the
-    // envelope from this `data` plus the row's id and createdAt.
-    await prisma.webhookDelivery.createMany({
-      data: matching.map((w) => ({
+    // id, which we mint here (createId) so it's stable. `deliverPendingWebhooks` builds
+    // the envelope from this `data` plus the row's id and createdAt. nextAttemptAt=now
+    // so the row is immediately due.
+    const now = Date.now();
+    const payload = JSON.stringify(data);
+    await convex.mutation(api.webhooks.enqueueDeliveries, {
+      deliveries: matching.map((w) => ({
+        id: createId(),
         organizationId,
         webhookId: w.id,
         event,
-        payload: JSON.stringify(data),
+        payload,
+        createdAt: now,
+        nextAttemptAt: now,
       })),
     });
 

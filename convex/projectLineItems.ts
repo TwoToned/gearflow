@@ -719,9 +719,17 @@ export const swapLineItemAsset = mutation({
     const startMs = project?.rentalStartDate ?? null;
     const endMs = project?.rentalEndDate ?? null;
     if (startMs != null && endMs != null) {
-      const projects = await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+      // Range-scan only projects that could overlap [startMs, endMs] — an
+      // overlapping project must have rentalStartDate <= endMs — instead of
+      // collecting the whole org projects table on every asset reassign. The JS
+      // e >= startMs check completes the overlap test; null-start projects are
+      // outside the range = correctly skipped (the old loop skipped them too).
       const overlapping = new Set<string>();
-      for (const p of projects) {
+      for await (const p of ctx.db
+        .query("projects")
+        .withIndex("by_organizationId_rentalStartDate", (q) =>
+          q.eq("organizationId", a.organizationId).lte("rentalStartDate", endMs),
+        )) {
         if (p.isTemplate) continue;
         if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
         const s = p.rentalStartDate ?? null;

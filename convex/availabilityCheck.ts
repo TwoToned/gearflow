@@ -18,18 +18,28 @@ export const checkBundle = query({
   handler: async (ctx, { modelId, orgId }) => {
     await requireService(ctx);
 
-    const [modelDoc, assetsRaw, bulksRaw, lineRaw, projects, accessories] = await Promise.all([
+    const [modelDoc, assetsRaw, bulksRaw, lineRaw, accessories] = await Promise.all([
       ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).unique(),
       ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
       ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
       ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
       ctx.db
         .query("modelBulkAccessories")
         .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
         .filter((q) => q.eq(q.field("organizationId"), orgId))
         .collect(),
     ]);
+
+    // projectLineItems.listByModelId org-filters; match it.
+    const lines = lineRaw.filter((r) => r.organizationId === orgId);
+    // REFERENCED-ONLY projects: the consumer (line-items.ts) builds a projectById
+    // map and looks each line's project up by id, so it only needs the projects
+    // these line items reference — not the whole org projects table this previously
+    // .collect()'d on every availability check. by_cuid is global → org-recheck.
+    const projectIds = [...new Set(lines.map((li) => li.projectId))];
+    const projectDocs = await Promise.all(
+      projectIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
+    );
 
     return {
       // getModelById did not org-filter; we do (org-correct + closes a cross-org
@@ -38,9 +48,8 @@ export const checkBundle = query({
       // getActiveAssetsByModel / getActiveBulkAssetsByModel: isActive !== false.
       activeAssets: assetsRaw.filter((a) => a.isActive !== false),
       activeBulkAssets: bulksRaw.filter((b) => b.isActive !== false),
-      // projectLineItems.listByModelId org-filters; match it.
-      lines: lineRaw.filter((r) => r.organizationId === orgId),
-      projects,
+      lines,
+      projects: projectDocs.filter((p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId),
       bulkAccessoryCount: accessories.length,
     };
   },

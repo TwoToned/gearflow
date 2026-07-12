@@ -178,6 +178,68 @@ describe("kit per-unit — prep tree", () => {
   });
 });
 
+describe("kit per-unit — accessories on a member", () => {
+  // acc1 is a permanent accessory of member asset a1 (a child asset).
+  async function seedKitWithAccessory(t: T) {
+    await seedKit(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "acc1", organizationId: ORG, modelId: "m1", assetTag: "ACC-1", parentAssetId: "a1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+  }
+  function accessoryUnits(t: T) {
+    return t.run(async (ctx) => {
+      const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kl1")).collect();
+      const member = kids.find((k) => k.assetId === "a1")!;
+      const accLines = (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", member.id)).collect()).filter((c) => c.childKind === "ACCESSORY");
+      const out = [] as Array<Record<string, unknown>>;
+      for (const c of accLines) {
+        for (const u of await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", c.id)).collect()) out.push(u);
+      }
+      return out;
+    });
+  }
+  const accAssetStatus = (t: T) => t.run(async (ctx) => (await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "acc1")).unique())?.status);
+
+  test("checkout deploys the member's accessory unit + asset", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithAccessory(t);
+    await co(t);
+    const us = await accessoryUnits(t);
+    expect(us.length).toBeGreaterThan(0);
+    expect(us[0].status).toBe("CHECKED_OUT");
+    expect(us[0].parentUnitAssetId).toBe("a1");
+    expect(await accAssetStatus(t)).toBe("CHECKED_OUT");
+  });
+
+  test("checkin returns the member's accessory unit + asset", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithAccessory(t);
+    await co(t);
+    await ci(t, "GOOD");
+    const us = await accessoryUnits(t);
+    expect(us[0].status).toBe("RETURNED");
+    expect(await accAssetStatus(t)).toBe("AVAILABLE");
+  });
+
+  test("undeployKit reverses the accessory back to prepped (not stranded deployed)", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithAccessory(t);
+    await co(t);
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.undeployKit, { organizationId: ORG, projectId: "p1", userId: USER, kitId: "k1", now: NOW });
+    expect((await accessoryUnits(t))[0].status).toBe("CONFIRMED");
+    expect(await accAssetStatus(t)).toBe("AVAILABLE");
+  });
+
+  test("forceReturnKit returns the member's accessory (no stuck asset)", async () => {
+    const t = convexTest(schema, modules);
+    await seedKitWithAccessory(t);
+    await co(t);
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.forceReturnKit, { organizationId: ORG, kitId: "k1", userId: USER, now: NOW });
+    expect((await accessoryUnits(t))[0].status).toBe("RETURNED");
+    expect(await accAssetStatus(t)).toBe("AVAILABLE");
+  });
+});
+
 describe("kit per-unit — pre-change kit (no units)", () => {
   test("checkinKit does not throw and creates no units for a unit-less kit", async () => {
     const t = convexTest(schema, modules);

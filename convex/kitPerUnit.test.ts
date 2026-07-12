@@ -14,7 +14,10 @@ const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
 const SERVICE = { subject: "gearflow-service", svc: true };
-type T = ReturnType<typeof convexTest>;
+// Infer the schema-typed tester from a real call (so ctx.db inside t.run knows
+// our indexes); manually applying the generic trips convexTest's constraint.
+const makeT = () => convexTest(schema, modules);
+type T = ReturnType<typeof makeT>;
 
 /** Seed a kit (serialised member A-1, optional bulk member B-1 qty 3) and build
  *  its project line items + member units via the real createKitLineItem path. */

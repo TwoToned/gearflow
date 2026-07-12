@@ -14,7 +14,6 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
-  lineUnits,
 } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 

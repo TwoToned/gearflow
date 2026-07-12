@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.14.0] - 2026-07-12
+
+### Changed
+
+- Mobile: the project crew panel now renders as cards on phones — select crew, change an assignment status, and use the row actions inline, all without a cramped horizontal-scroll table.
+
 ## [0.24.13.0] - 2026-07-12
 
 ### Changed

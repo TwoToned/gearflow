@@ -1442,7 +1442,7 @@ export function LineItemRow({
                       — same indicator (tag + fulfillment status + history) as every
                       other line. Reassign is suppressed: the mutation rejects kit
                       children (per-kit-slot reassign is Phase 4). */}
-                  <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign />
+                  <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign={child.childKind === "ACCESSORY"} kitMember={child.childKind !== "ACCESSORY"} />
                   {child.childKind === "ACCESSORY" && (
                     <Badge status="neutral" className="px-1.5 py-0 text-[10px]">Accessory</Badge>
                   )}
@@ -1729,7 +1729,7 @@ export function LineItemRow({
                   row — same indicator (tag + fulfillment status + history) as every
                   other line. Reassign is suppressed: the mutation rejects kit
                   children (per-kit-slot reassign is Phase 4). */}
-              <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign />
+              <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign={child.childKind === "ACCESSORY"} kitMember={child.childKind !== "ACCESSORY"} />
               {child.childKind === "ACCESSORY" && (
                 <Badge status="neutral" className="text-[10px] px-1.5 py-0">
                   Accessory

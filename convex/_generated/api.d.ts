@@ -90,6 +90,7 @@ import type * as notificationDismissals from "../notificationDismissals.js";
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as overbooking from "../overbooking.js";
 import type * as parity from "../parity.js";
+import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as projectCategories from "../projectCategories.js";
 import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
@@ -224,6 +225,7 @@ declare const fullApi: ApiFromModules<{
   notificationEmailLogs: typeof notificationEmailLogs;
   overbooking: typeof overbooking;
   parity: typeof parity;
+  pendingSSOApprovals: typeof pendingSSOApprovals;
   projectCategories: typeof projectCategories;
   projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;

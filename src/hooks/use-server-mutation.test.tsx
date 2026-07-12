@@ -216,4 +216,44 @@ describe("useServerMutation", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1); // latest callback used
   });
+
+  it("does NOT run onSuccess/onSettled after the view unmounts (no snap-back nav)", async () => {
+    // Simulates: user fires a create, then navigates away before it resolves.
+    // onSuccess (which ~24 call sites use to router.push) must not run on the
+    // torn-down view and yank the user back.
+    let resolveFn!: (v: string) => void;
+    const pending = new Promise<string>((res) => { resolveFn = res; });
+    const onSuccess = vi.fn();
+    const onSettled = vi.fn();
+
+    const { result, unmount } = renderHook(() =>
+      useServerMutation<string, void>({ mutationFn: () => pending, onSuccess, onSettled })
+    );
+
+    let call!: Promise<string>;
+    act(() => { call = result.current.mutateAsync(); });
+    unmount(); // leave the page while the mutation is in flight
+    await act(async () => { resolveFn("done"); await call; });
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it("still runs onError after unmount (failure toasts survive, they never navigate)", async () => {
+    let rejectFn!: (e: Error) => void;
+    const pending = new Promise<string>((_res, rej) => { rejectFn = rej; });
+    const onError = vi.fn();
+
+    const { result, unmount } = renderHook(() =>
+      useServerMutation<string, void>({ mutationFn: () => pending, onError })
+    );
+
+    let call!: Promise<string>;
+    act(() => { call = result.current.mutateAsync().catch(() => "caught"); });
+    unmount();
+    await act(async () => { rejectFn(new Error("boom")); await call; });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
+  });
 });

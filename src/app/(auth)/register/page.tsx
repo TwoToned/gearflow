@@ -32,18 +32,22 @@ function RegisterContent() {
       .catch(() => setPolicy("OPEN"));
   }, []);
 
-  // Prefill email from invitation
+  // Prefill email from invitation. Guard on cancelled so a late resolve doesn't
+  // setState on an unmounted view.
   useEffect(() => {
-    if (inviteId) {
-      import("@/server/invitations").then(({ getInvitationEmail }) => {
-        getInvitationEmail(inviteId).then((invEmail) => {
-          if (invEmail) {
-            setEmail(invEmail);
-            setInviteEmailLocked(true);
-          }
-        });
+    if (!inviteId) return;
+    let cancelled = false;
+    import("@/server/invitations").then(({ getInvitationEmail }) => {
+      getInvitationEmail(inviteId).then((invEmail) => {
+        if (!cancelled && invEmail) {
+          setEmail(invEmail);
+          setInviteEmailLocked(true);
+        }
       });
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [inviteId]);
 
   const handleSubmit = async (e: React.FormEvent) => {

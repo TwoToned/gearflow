@@ -24,11 +24,17 @@ export default function OnboardingPage() {
   const [slug, setSlug] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Redirect away if an org already exists
+  // Redirect away if an org already exists. Guard on a cancelled flag: if the user
+  // navigates away before this async check resolves, the late resolve must not fire
+  // router.replace and snap them back to /dashboard.
   useEffect(() => {
+    let cancelled = false;
     getTheOrgId().then((org) => {
-      if (org) router.replace("/dashboard");
+      if (!cancelled && org) router.replace("/dashboard");
     });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const handleNameChange = (value: string) => {

@@ -55,6 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -148,6 +149,95 @@ export default function CheckItemsPage() {
     return a.localeCompare(b);
   });
 
+  // Mobile card layout for the check-item library (rendered below `md`). Cells
+  // reuse the exact desktop TableCell JSX; the list is the same flat, sorted
+  // `filtered` order the desktop table renders.
+  const cols: ColumnDef<Record<string, unknown>>[] = [
+    {
+      id: "label",
+      header: "Label",
+      mobile: "title",
+      cell: (item) => (
+        <div>
+          <span className="font-medium">{item.label as string}</span>
+          {item.description ? (
+            <p className="mt-0.5 text-xs text-fg-3 line-clamp-1">
+              {item.description as string}
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      mobile: "badge",
+      cell: (item) => {
+        const type = item.type as CheckItemType;
+        const Icon = TYPE_ICONS[type];
+        return (
+          <Badge status="neutral" className={TYPE_COLORS[type]}>
+            <Icon className="mr-1 h-3 w-3" />
+            {TYPE_LABELS[type]}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: "category",
+      header: "Category",
+      mobile: "meta",
+      cell: (item) => (item.category as string) || "—",
+    },
+    {
+      id: "usage",
+      header: "Usage",
+      mobile: "meta",
+      cell: (item) => {
+        const count = item._count as { modelCheckItems: number } | undefined;
+        return `${count?.modelCheckItems ?? 0} model${(count?.modelCheckItems ?? 0) !== 1 ? "s" : ""}`;
+      },
+    },
+  ];
+  if (canEdit || canDelete) {
+    cols.push({
+      id: "actions",
+      header: "Actions",
+      mobile: "actions",
+      cell: (item) => (
+        <div className="flex items-center gap-1">
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditing(item);
+                setDialogOpen(true);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={() =>
+                setDeleteTarget({
+                  id: item.id as string,
+                  label: item.label as string,
+                })
+              }
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      ),
+    });
+  }
+
   return (
     <FadeIn>
       <div className="space-y-6">
@@ -200,6 +290,8 @@ export default function CheckItemsPage() {
               </p>
             </div>
           ) : (
+            <>
+            <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -279,6 +371,14 @@ export default function CheckItemsPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
+            <MobileCardList
+              className="md:hidden"
+              data={filtered}
+              columns={cols}
+              getRowId={(r) => r.id as string}
+            />
+            </>
           )}
         </div>
 

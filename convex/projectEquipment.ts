@@ -38,25 +38,44 @@ async function readBundle(ctx: QueryCtx, projectId: string, orgId: string) {
   const refAssetIds = uniq([...lineItems.map((li) => li.assetId), ...units.map((u) => u.assetId)]);
   const refBulkIds = uniq([...lineItems.map((li) => li.bulkAssetId), ...units.map((u) => u.bulkAssetId)]);
   const refKitIds = uniq(lineItems.map((li) => li.kitId));
+  const refModelIds = uniq(lineItems.map((li) => li.modelId));
+  const refSupplierIds = uniq(lineItems.map((li) => li.supplierId));
 
-  const [assetDocs, bulkDocs, kitDocs, models, suppliers, categories] = await Promise.all([
+  // Referenced-only point reads (by id), NEVER whole-org catalog collects — the tree
+  // reconstruction keys models/suppliers/categories by id (project-equipment-reconstruct
+  // builds Maps by id; a category is resolved ONLY via model.categoryId), so loading
+  // exactly what the project references is parity-by-construction. This mirrors
+  // equipmentTab.ts and stops browserBundle re-reading the whole org models/suppliers/
+  // categories tables on ANY of those changing (it's a reactive subscription).
+  const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
     Promise.all(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     Promise.all(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     Promise.all(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    Promise.all(refModelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    Promise.all(refSupplierIds.map((id) => ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
   ]);
+
+  const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]): T[] =>
+    arr.filter((d): d is T => d !== null && d.organizationId === orgId);
+
+  const models = inOrg(modelDocs);
+  const suppliers = inOrg(supplierDocs);
+  // Categories referenced by the (in-org) models' categoryId — the ONLY lookup the
+  // reconstruction performs (projectCategories carry their own name; no FK to categories).
+  const refCategoryIds = uniq(models.map((m) => m.categoryId));
+  const categoryDocs = await Promise.all(
+    refCategoryIds.map((id) => ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+  );
+  const categories = inOrg(categoryDocs);
 
   return {
     lineItems,
     projectCategories,
     groups,
     units,
-    // Org-filter the by-id reads to match the old getAssetsByIds/etc. helpers.
-    assets: assetDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
-    bulkAssets: bulkDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
-    kits: kitDocs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId),
+    assets: inOrg(assetDocs),
+    bulkAssets: inOrg(bulkDocs),
+    kits: inOrg(kitDocs),
     models,
     suppliers,
     categories,

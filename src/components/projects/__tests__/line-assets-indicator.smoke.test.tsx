@@ -32,6 +32,20 @@ describe("LineAssetsIndicator (smoke)", () => {
     expect(screen.getByRole("button", { name: /2 assets assigned/i })).toBeTruthy();
   });
 
+  it("renders for a kit member with reassign suppressed (disableReassign) without crashing", () => {
+    // Kit members now use the same indicator as every line, but the reassign
+    // mutation rejects kit children — so the Move control is suppressed here.
+    render(
+      <LineAssetsIndicator
+        lineItemId="kc1"
+        modelId="m1"
+        disableReassign
+        units={[{ id: "u1", status: "CHECKED_OUT", asset: { id: "a1", assetTag: "KIT-MEM-1" } }]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /1 asset assigned/i })).toBeTruthy();
+  });
+
   it("renders nothing when the line has no tagged units (keeps the table calm)", () => {
     const { container } = render(
       <LineAssetsIndicator lineItemId="li1" units={[{ id: "u1", status: "CONFIRMED" }]} />,

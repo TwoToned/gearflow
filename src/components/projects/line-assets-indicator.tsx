@@ -55,12 +55,17 @@ export function LineAssetsIndicator({
   lineAssetTag,
   lineItemId,
   modelId,
+  disableReassign = false,
 }: {
   units?: IndicatorUnit[];
   /** Fallback for single-asset legacy lines that carry the tag on the line itself. */
   lineAssetTag?: string | null;
   lineItemId: string;
   modelId?: string | null;
+  /** Suppress the Move control. Kit members bind to their kit slot — the reassign
+   *  mutation rejects kit children — so they view tag/status/history but can't
+   *  reassign until per-kit-slot reassign lands (Phase 4). */
+  disableReassign?: boolean;
 }) {
   const reassignCtx = useReassign();
 
@@ -133,6 +138,7 @@ export function LineAssetsIndicator({
           {entries.map((e, i) => {
             const badge = unitFulfillmentBadge(e.status, e.returnCondition);
             const canReassign =
+              !disableReassign &&
               !!reassignCtx &&
               e.serialised &&
               !!e.unitId &&

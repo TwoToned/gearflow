@@ -320,14 +320,17 @@ tab renders three visually-ranked card tiers so depth reads without heavy indent
 
 | Tier | What | Surface | Distinguishers |
 |---|---|---|---|
-| **Container** | ProjectGroup, SubHireGroup, kit-parent, accessory-parent | `bg-card` + `ring-1 ring-line-2` (heavier edge) | leading glyph (`Container`/`Handshake`/`Package`), `font-medium` title, qty·total summary, chevron |
-| **Line item** (leaf) | plain line | `bg-card` + `ring-1 ring-line`, `py-2` | smaller `text-table-cell` title, no glyph; grouped members get an `ml-3` left inset to nest under their container |
+| **Container** | ProjectGroup, SubHireGroup, kit-parent, accessory-parent | `bg-card` + `ring-1 ring-line-2` (heavier edge) | leading glyph (`Container`/`Handshake`/`Package`), `font-medium` **weight** title, qty·total summary, chevron |
+| **Line item** (leaf) | plain line | `bg-card` + `ring-1 ring-line` | no glyph; grouped members get an `ml-3` left inset to nest under their container |
 | **Child** | kit member / accessory | `bg-paper-2/40`, no ring, `pl-6` | most recessed; tag + `Accessory` badge |
 
-Rule of thumb: **containers are the prominent "shelves," line items are a size step down,
-children recede.** Selection is `ring-2 ring-red` on any tier. Keep every tap target ≥44px
-even when the leaf padding shrinks (`min-h-11`). Implemented by the row components
-self-branching on `useIsMobile()` (see FEATUREDOCS/19), primitives in `equipment-cards.tsx`.
+**Uniform card size (resolved 2026-07-12):** containers and line items share the SAME
+compact size (`py-2`, `text-table-cell` title). Containers are set apart by the glyph,
+heavier ring, `font-medium` weight and qty·total summary — **not by a bigger title**. (The
+first cut made containers larger; the user asked for one size so a long list reads evenly.)
+Children remain the recessed tier. Selection is `ring-2 ring-red` on any tier; keep every
+tap target ≥44px (`min-h-11`). Implemented by the row components self-branching on
+`useIsMobile()` (see FEATUREDOCS/19), primitives in `equipment-cards.tsx`.
 
 ## 4. How it maps to our stack
 

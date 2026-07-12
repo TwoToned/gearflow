@@ -864,6 +864,10 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
+    // Composite: max(sortOrder) for a project via .order("desc").first() (1 doc)
+    // instead of collecting ALL of a project's lines to reduce the max (O(N) per
+    // add, O(N^2) across a bulk add). Used by nextLineSort.
+    .index("by_projectId_sortOrder", ["projectId", "sortOrder"])
     // Composite: range-scan a project's lines by status (e.g. CHECKED_OUT) instead
     // of collecting ALL of a project's lines and JS-filtering. Used by
     // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
@@ -1104,7 +1108,10 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_uploadedById", ["uploadedById"]),
+    .index("by_uploadedById", ["uploadedById"])
+    // Point-lookup a fileUpload by its thumbnailUrl instead of scanning the whole
+    // (cross-org) table. Used by getByThumbnailUrl.
+    .index("by_thumbnailUrl", ["thumbnailUrl"]),
 
   // ModelMedia
   modelMedia: defineTable({

@@ -22,20 +22,34 @@ export const bundle = query({
       throw new ConvexError("overbooking.bundle: too many modelIds (" + unique.length + " > 1000)");
     }
 
-    const [lineItemGroups, assetGroups, bulkGroups, projects, models] = await Promise.all([
+    const [lineItemGroups, assetGroups, bulkGroups] = await Promise.all([
       Promise.all(unique.map((mid) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
       Promise.all(unique.map((mid) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
       Promise.all(unique.map((mid) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+
+    const lineItems = lineItemGroups.flat().filter((r) => r.organizationId === orgId);
+    const assets = assetGroups.flat().filter((r) => r.organizationId === orgId);
+    const bulkAssets = bulkGroups.flat().filter((r) => r.organizationId === orgId);
+
+    // REFERENCED-ONLY reads (NOT whole-table). The consumer (reconstructOverbookedStatus)
+    // looks projects/models up BY ID — so it only needs the projects these line items
+    // belong to (for the date-window join) and the passed models (for the stock
+    // breakdown). Previously this .collect()'d EVERY project + EVERY model in the org
+    // and, being a reactive subscription, re-read both whole tables on ANY project/model
+    // write org-wide — the dominant Database-I/O cost. by_cuid is global, so re-check org.
+    const projectIds = [...new Set(lineItems.map((li) => li.projectId))];
+    const [projectDocs, modelDocs] = await Promise.all([
+      Promise.all(projectIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique())),
+      Promise.all(unique.map((mid) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", mid)).unique())),
     ]);
 
     return {
-      lineItems: lineItemGroups.flat().filter((r) => r.organizationId === orgId),
-      assets: assetGroups.flat().filter((r) => r.organizationId === orgId),
-      bulkAssets: bulkGroups.flat().filter((r) => r.organizationId === orgId),
-      projects,
-      models,
+      lineItems,
+      assets,
+      bulkAssets,
+      projects: projectDocs.filter((p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId),
+      models: modelDocs.filter((m): m is NonNullable<typeof m> => !!m && m.organizationId === orgId),
     };
   },
 });

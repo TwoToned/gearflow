@@ -78,7 +78,11 @@ export function useNativeEquipmentTab(
   const project = useProject(enabled ? projectId : undefined);
 
   // Overbooked: referenced models from the FLAT non-cancelled line items (mirrors
-  // getProjectOverbookedStatus's modelIds). Skip the subscription when none.
+  // getProjectOverbookedStatus's modelIds AND relevantOverbookModelIds). Skip the
+  // subscription when none. `.sort()` matches relevantOverbookModelIds so the
+  // overbooking.bundle args are byte-identical to useNativeProjectDetail's on the
+  // same page → Convex's query cache serves ONE subscription instead of two
+  // (halves this query's Database I/O). See relevantOverbookModelIds.
   const modelIds = useMemo(() => {
     if (!bundle) return undefined;
     return [
@@ -87,7 +91,7 @@ export function useNativeEquipmentTab(
           .filter((li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null)
           .map((li) => li.modelId!),
       ),
-    ];
+    ].sort();
   }, [bundle]);
   const overbooking = useAuthedQuery(
     api.overbooking.bundle,

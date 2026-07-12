@@ -264,6 +264,43 @@ kit**, not move it to a loose line. Decide the guard model (same-kit +
 same-model slot) before enabling. **Out of scope for Phases 1–3**; visibility +
 per-unit lifecycle + history land first.
 
+## Performance — Convex-native, one call per kit operation (hard invariant)
+
+This whole path runs on the **Convex-native** surface and adds **zero new
+round-trips**:
+
+- **Reads** are reactive-native — the equipment tab reads one live
+  `api.equipmentTab.bundle` subscription (`use-native-equipment-tab.ts`); kit-member
+  units ride that same bundle. No Prisma, no polling.
+- **Writes** are Convex mutations, and `projectLineItemUnits` has **no Prisma
+  mirror** (only `member-mirror.ts` / `user-mirror.ts` exist), so unit writes are
+  Convex-only — no dual-write cost.
+
+**Single-call invariant (the thing to protect):** every kit operation does **all N
+members in ONE Convex mutation**, never one round-trip per member. This is already
+true today (`checkoutKit`/`checkinKit` loop all members internally in a single
+transaction; `checkOutKitsBatch` is one client round-trip). The migration must keep
+it true:
+
+- **All** per-member unit work — `ensureSerialisedUnit`/`ensureBulkUnit` at seed,
+  status patches at checkout/checkin/prep, `expandAccessoriesForAsset`,
+  `syncLineItemRollup`, asset flips — runs **inside** `createKitLineItemCore` /
+  `checkoutKit` / `checkinKit` / `setKitTreePrep` / `deprepKit`, looping members in
+  the mutation body. **Never** loop `convex.mutation(...)` per member from the
+  server action. The server action's only job stays: one `requirePermission`, one
+  mutation call, one `logActivity`.
+- The nested-kit recursion also stays in-mutation (grandchildren flip in the same
+  transaction as the parent).
+- **Ceiling to respect:** a single mutation has Convex read/write/time limits. A
+  huge or deeply nested kit (dozens of members × accessories) does all that work in
+  one transaction — bounded-size check required; if real kits can exceed it,
+  paginate the *backfill*-style pattern rather than splitting the live checkout into
+  per-member calls (which would reintroduce the round-trip cost we're avoiding).
+- **Multi-kit batches** (`checkOutKitsBatch`/`checkInKitsBatch`) intentionally stay
+  one-mutation-per-kit for per-kit error isolation — that's per *kit*, not per
+  *member*, and is not a regression. (Collapsing multi-kit into a single mutation is
+  a separate batching effort, out of scope — see [[bulk-op-batching]].)
+
 ## Risks
 
 1. **Split-brain asset sets (codex #12, the real one)** — the legacy belt flips

@@ -48,6 +48,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
 import { KitChecksTab } from "@/components/kits/kit-checks-tab";
 import { KitAllocationPanel } from "@/components/kits/kit-allocation-panel";
 import { DeleteKitDialog } from "@/components/kits/delete-kit-dialog";
@@ -236,6 +237,180 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     (li) => !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(li.status),
   );
 
+  // ── Mobile card layouts for the sub-tables (rendered below `md`) ──
+  const serializedItemColumns: ColumnDef<(typeof kit.serializedItems)[number]>[] = [
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      mobile: "title",
+      cell: (item) => (
+        <Link
+          href={`/assets/registry/${item.assetId}`}
+          className={cn("t-mono text-table-cell text-ink hover:underline rounded-sm", focusRing)}
+        >
+          {item.asset.assetTag}
+        </Link>
+      ),
+    },
+    {
+      id: "model",
+      header: "Model",
+      mobile: "subtitle",
+      cell: (item) => <span className="text-ink">{item.asset.model?.name || "—"}</span>,
+    },
+    {
+      id: "position",
+      header: "Position",
+      mobile: "meta",
+      cell: (item) => <span className="text-muted">{item.position || "—"}</span>,
+    },
+    {
+      id: "condition",
+      header: "Condition",
+      mobile: "badge",
+      cell: (item) => (
+        <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (item) => (
+        <CanDo resource="kit" action="update">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="touch-target size-9 text-t-out hover:text-t-out"
+            aria-label="Remove asset from kit"
+            onClick={() => setRemoveAssetId(item.assetId)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </CanDo>
+      ),
+    },
+  ];
+
+  const bulkItemColumns: ColumnDef<(typeof kit.bulkItems)[number]>[] = [
+    {
+      id: "model",
+      header: "Model",
+      mobile: "title",
+      cell: (item) => <span className="text-ink">{item.bulkAsset.model?.name || "—"}</span>,
+    },
+    {
+      id: "quantity",
+      header: "Quantity",
+      mobile: "meta",
+      cell: (item) => (
+        <span className="text-right font-medium t-mono t-data text-ink">{item.quantity}</span>
+      ),
+    },
+    {
+      id: "position",
+      header: "Position",
+      mobile: "meta",
+      cell: (item) => <span className="text-muted">{item.position || "—"}</span>,
+    },
+    {
+      id: "actions",
+      header: "",
+      mobile: "actions",
+      cell: (item) => (
+        <CanDo resource="kit" action="update">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="touch-target size-9 text-t-out hover:text-t-out"
+            aria-label="Remove bulk item from kit"
+            onClick={() => setRemoveBulkItemId(item.id)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </CanDo>
+      ),
+    },
+  ];
+
+  const lineItemColumns: ColumnDef<(typeof kit.lineItems)[number]>[] = [
+    {
+      id: "project",
+      header: "Project",
+      mobile: "title",
+      cell: (li) => (
+        <>
+          <Link href={`/projects/${li.projectId}`} className={cn("text-ink hover:underline rounded-sm", focusRing)}>
+            {li.project.name}
+          </Link>
+          <p className="t-mono text-caption text-muted">{li.project.projectNumber}</p>
+        </>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      mobile: "badge",
+      cell: (li) => (
+        <StatusIndicator category="lineItem" value={li.status} label={lineItemStatusLabels[li.status] || formatLabel(li.status)} variant="pill" />
+      ),
+    },
+    {
+      id: "deployed",
+      header: "Deployed",
+      mobile: "meta",
+      cell: (li) => <span className="text-table-cell text-ink">{formatDate(li.checkedOutAt)}</span>,
+    },
+    {
+      id: "returned",
+      header: "Returned",
+      mobile: "meta",
+      cell: (li) => <span className="text-table-cell text-ink">{formatDate(li.returnedAt)}</span>,
+    },
+  ];
+
+  const scanLogColumns: ColumnDef<(typeof kit.scanLogs)[number]>[] = [
+    {
+      id: "date",
+      header: "Date",
+      mobile: "title",
+      cell: (log) => <span className="text-table-cell text-ink">{formatDate(log.scannedAt)}</span>,
+    },
+    {
+      id: "scannedBy",
+      header: "Scanned by",
+      mobile: "subtitle",
+      cell: (log) => (
+        <span className="text-table-cell text-ink">
+          {log.scannedBy?.name ? (
+            <span className="inline-flex items-center gap-2">
+              <PersonAvatar name={log.scannedBy.name} className="size-6" />
+              {log.scannedBy.name}
+            </span>
+          ) : (
+            "—"
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "project",
+      header: "Project",
+      mobile: "meta",
+      cell: (log) => (
+        <span className="text-table-cell text-ink">
+          {log.project ? (
+            <Link href={`/projects/${log.projectId}`} className={cn("text-ink hover:underline rounded-sm", focusRing)}>
+              {log.project.name}
+            </Link>
+          ) : (
+            "—"
+          )}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <RequirePermission resource="kit" action="read">
     <PageMeta title={kit ? `${kit.assetTag}${kit.name ? ` \u2014 ${kit.name}` : ""}` : undefined} />
@@ -340,7 +515,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {kit.serializedItems.length === 0 ? (
                 <EmptyState title="No serialized items" description="Add individual tracked assets to this kit." />
               ) : (
-                <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+                <>
+                <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -387,6 +563,15 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </TableBody>
                   </Table>
                 </div>
+                {kit.serializedItems.length > 0 && (
+                  <MobileCardList
+                    className="md:hidden"
+                    data={kit.serializedItems}
+                    columns={serializedItemColumns}
+                    getRowId={(item) => item.id}
+                  />
+                )}
+                </>
               )}
             </div>
 
@@ -404,7 +589,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {kit.bulkItems.length === 0 ? (
                 <EmptyState title="No bulk items" description="Add consumable or quantity-tracked items to this kit." />
               ) : (
-                <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+                <>
+                <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -442,6 +628,15 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </TableBody>
                   </Table>
                 </div>
+                {kit.bulkItems.length > 0 && (
+                  <MobileCardList
+                    className="md:hidden"
+                    data={kit.bulkItems}
+                    columns={bulkItemColumns}
+                    getRowId={(item) => item.id}
+                  />
+                )}
+                </>
               )}
             </div>
           </div>
@@ -458,7 +653,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {kit.lineItems.length > 0 && (
                 <div>
                   <h3 className="t-heading text-ink mb-3">Project assignments</h3>
-                  <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+                  <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -487,13 +682,21 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </TableBody>
                     </Table>
                   </div>
+                  {kit.lineItems.length > 0 && (
+                    <MobileCardList
+                      className="md:hidden"
+                      data={kit.lineItems}
+                      columns={lineItemColumns}
+                      getRowId={(li) => li.id}
+                    />
+                  )}
                 </div>
               )}
 
               {kit.scanLogs.length > 0 && (
                 <div>
                   <h3 className="t-heading text-ink mb-3">Recent scans</h3>
-                  <div className="rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
+                  <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -530,6 +733,14 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </TableBody>
                     </Table>
                   </div>
+                  {kit.scanLogs.length > 0 && (
+                    <MobileCardList
+                      className="md:hidden"
+                      data={kit.scanLogs}
+                      columns={scanLogColumns}
+                      getRowId={(log) => log.id}
+                    />
+                  )}
                 </div>
               )}
             </div>

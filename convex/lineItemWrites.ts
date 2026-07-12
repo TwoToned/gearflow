@@ -154,11 +154,14 @@ export const patchNative = mutation({
 
 /** Next sort order for a project's lines (replica of nextLineSort). */
 async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
-  const lines = await ctx.db
+  // desc-first on by_projectId_sortOrder (1 doc) instead of collecting all the
+  // project's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
+  const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-    .collect();
-  return lines.filter((l) => l.organizationId === organizationId).reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+    .withIndex("by_projectId_sortOrder", (q) => q.eq("projectId", projectId))
+    .order("desc")
+    .first();
+  return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
 }
 
 /**

@@ -746,9 +746,16 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     });
   }
 
-  // Recalculate totals if tax rate changed
+  // Recalculate totals if tax rate changed. Best-effort: the project patch already
+  // committed, so a transient recalc failure must not reject an otherwise-successful
+  // update (that surfaced as the spurious "Server Components render" error). Totals
+  // are derived and self-heal on the next line-item write / recalc.
   if (parsed.taxRate !== undefined) {
-    await recalculateProjectTotals(id);
+    try {
+      await recalculateProjectTotals(id);
+    } catch (e) {
+      console.error("post-update recalc failed (non-fatal):", e);
+    }
   }
 
   const updated = await getProjectByIdMapped(id, organizationId);

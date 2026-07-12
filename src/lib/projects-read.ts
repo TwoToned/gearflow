@@ -1,4 +1,4 @@
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { ProjectStatus, ProjectType, RentalPeriod } from "@/generated/prisma/client";
@@ -8,11 +8,18 @@ export type ConvexProjectService = Doc<"projectServices">;
 export type ConvexCrewAssignment = Doc<"crewAssignments">;
 
 export async function getProjectsByOrg(orgId: string): Promise<ConvexProject[]> {
-  return await (await getConvexClient()).query(api.projects.list, { orgId });
+  // Wrapped in withConvexReadRetry (like every other read domain): a transient
+  // Convex blip — cold start, JWKS hiccup, service-token refresh boundary — must
+  // not take down the projects list or reject an already-committed write via its
+  // post-commit read-back. Reads are idempotent, so one retry absorbs the blip.
+  return withConvexReadRetry(async () => (await getConvexClient()).query(api.projects.list, { orgId }));
 }
 
 export async function getProjectById(id: string): Promise<ConvexProject | null> {
-  return await (await getConvexClient()).query(api.projects.getById, { id });
+  // See getProjectsByOrg — this is the read-back used by every project write
+  // action (via getProjectByIdMapped); an unretried blip here is what surfaced as
+  // the spurious "Server Components render" error after a successful create/update.
+  return withConvexReadRetry(async () => (await getConvexClient()).query(api.projects.getById, { id }));
 }
 
 // ─── Prisma-row-shaped mapping (for consumers that read the project scalars) ─────
@@ -136,8 +143,9 @@ export async function getProjectByIdMapped(id: string, orgId: string): Promise<P
 
 /** Returns the set of projectIds where userId appears as a project manager. */
 export async function getProjectIdsForManager(orgId: string, userId: string): Promise<Set<string>> {
-  const client = await getConvexClient();
-  const entries = await client.query(api.projectManagers.list, { orgId });
+  const entries = await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.projectManagers.list, { orgId }),
+  );
   return new Set(entries.filter((e) => e.userId === userId).map((e) => e.projectId));
 }
 
@@ -210,12 +218,14 @@ export async function getCallSheetData(
   orgId: string,
   projectId: string,
 ): Promise<{ milestones: CallSheetMilestoneDates; serviceDates: CallSheetServiceDate[] } | null> {
-  const client = await getConvexClient();
-  const [project, services, assignments] = await Promise.all([
-    client.query(api.projects.getById, { id: projectId }),
-    client.query(api.projectServices.listByProject, { projectId, orgId }),
-    client.query(api.crewAssignments.listByProject, { projectId, orgId }),
-  ]);
+  const [project, services, assignments] = await withConvexReadRetry(async () => {
+    const client = await getConvexClient();
+    return Promise.all([
+      client.query(api.projects.getById, { id: projectId }),
+      client.query(api.projectServices.listByProject, { projectId, orgId }),
+      client.query(api.crewAssignments.listByProject, { projectId, orgId }),
+    ]);
+  });
   if (!project || project.organizationId !== orgId) return null;
   return {
     milestones: mapCallSheetMilestoneDates(project),

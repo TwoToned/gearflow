@@ -2858,6 +2858,26 @@ re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshne
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
 
+**2a. The projects domain itself was the gap (spurious "Server Components render"
+error on mutations).** The *keystone* read modules — `projects-read.ts`
+(`getProjectsByOrg` / `getProjectById` / `getProjectIdsForManager` / `getCallSheetData`),
+`project-managers-read.ts` (`getProjectManagerRows`), and the project-detail bundle
+in `project-line-item-read.ts` (`buildProjectEquipmentTree`) — were the only read
+helpers *not* wrapped in `withConvexReadRetry`, even though every project **write**
+action (`createProject`/`updateProject`/`updateProjectStatus`/…) ends with a
+`getProjectByIdMapped` **read-back**. A token-refresh-boundary blip on that read-back
+rejected an action whose write had *already committed* — so the row existed (~80% of
+the time) yet the client showed the masked "An error occurred in the Server
+Components render" (an unhandled server-action rejection, not a real render error).
+Fix: wrap those reads in `withConvexReadRetry` (same rule — reads only), plus
+failure-isolate the genuinely post-commit side-effects: `updateProject`'s
+`recalculateProjectTotals` is now wrapped in try/catch (totals are derived and
+self-heal), and the pre-write diff reads in `setProjectManagers` /
+`removeProjectManager` retry so the wizard's post-create manager sync can't fail the
+whole create on a blip. Note `logActivity` was *already* failure-isolated
+(`src/lib/activity-log.ts` swallows both the Postgres write and the Convex mirror) —
+it was never the culprit.
+
 ## Phase A — read-rewiring (domain-only decommission)
 
 Moving every remaining Prisma **domain read** to Convex, one surface per PR. Full

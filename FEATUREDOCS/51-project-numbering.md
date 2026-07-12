@@ -61,6 +61,24 @@ the counter again (capped at 50 attempts).
 - Project create form: when auto-numbering is on, the Project Code field is optional with an
   `Auto: <next>` placeholder and a "Leave blank to auto-generate" hint.
 
+## Duplicate-code validation (inline field error)
+The `@@unique([organizationId, projectNumber])` invariant is enforced by
+`createWithUniqueNumber` on insert; `createProject` turns the `{ created: false }`
+result into a `DUPLICATE_PROJECT_CODE` `UserFacingError` with `field: "projectNumber"`.
+**But a thrown server-action error is masked in production** to the generic
+"An error occurred in the Server Components render" string — its `message`/`field`
+never reach the client — so relying on the throw gave no usable inline error. Two-part fix:
+- `checkProjectNumberAvailable(projectNumber, excludeProjectId?)` — a RETURN-value
+  action (`{ available }`) the create/edit wizard calls before submit. Return values
+  serialize across the boundary intact, so the wizard raises a client-side
+  `field`-tagged error and `form.setError("projectNumber", …)` (jumping to step 0). The
+  create/update throws remain the authoritative integrity backstop and feed the API
+  error envelope (`toApiError` in `src/lib/api/dispatch.ts` handles `UserFacingError`).
+- `updateProject` gained the same duplicate guard (it previously patched
+  `projectNumber` blindly — editing a code to one a sibling already used silently
+  produced two projects sharing a number). Checked only when the number actually
+  changes, excluding the project's own row.
+
 ## Tests
 - `project-number.test.ts` — 12 pure-engine tests (render, scopeKey, validation, tz).
 - `project-numbering.int.test.ts` — 7 integration tests (sequential allocation, padding/literal,

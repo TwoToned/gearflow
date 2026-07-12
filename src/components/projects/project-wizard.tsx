@@ -17,7 +17,7 @@ import {
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
-import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
+import { createProject, updateProject, peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
 import { setProjectManagers } from "@/server/project-managers";
 import { useClientSearch, useClient } from "@/hooks/use-clients";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -202,6 +202,23 @@ export function ProjectWizard({
 
   const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
+      // Inline duplicate-code guard: a thrown DUPLICATE_PROJECT_CODE error is
+      // masked to the generic "Server Components render" string in production, so
+      // check availability up-front (a return value survives the boundary) and
+      // raise a client-side error tagged with the field for an inline message.
+      if (!isTemplate && data.projectNumber?.trim()) {
+        const { available } = await checkProjectNumberAvailable(
+          data.projectNumber.trim(),
+          project?.id,
+        );
+        if (!available) {
+          throw Object.assign(
+            new Error(`Project code "${data.projectNumber.trim()}" is already in use.`),
+            { field: "projectNumber" as const },
+          );
+        }
+      }
+
       const result = project
         ? await updateProject(project.id, data)
         : await createProject({ ...data, isTemplate });
@@ -229,7 +246,18 @@ export function ProjectWizard({
       );
       router.push(`/projects/${result.id}`);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      // A field-tagged error (e.g. duplicate project code) surfaces inline on the
+      // right input; projectNumber lives on step 0, so make it visible first.
+      const field = (e as { field?: string }).field;
+      if (field) {
+        setStep(0);
+        form.setError(field as "projectNumber", { type: "server", message: e.message });
+        form.setFocus(field as "projectNumber");
+        return;
+      }
+      toast.error(e.message);
+    },
   });
 
   const next = async () => {

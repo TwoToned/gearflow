@@ -28,7 +28,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
 import { getKitSerializedItemsByOrg } from "@/lib/kits-read";
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
@@ -663,6 +663,31 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   return serialize(result);
 }
 
+/**
+ * Return-value availability check for a project code (the
+ * `@@unique([organizationId, projectNumber])` guard). The create/edit wizard calls
+ * this before submit to show an INLINE error on the projectNumber field.
+ *
+ * Why a RETURN value and not the thrown `DUPLICATE_PROJECT_CODE` UserFacingError:
+ * Next masks a thrown server-action error in production to the generic
+ * "An error occurred in the Server Components render" string — its `message`/`field`
+ * never reach the client. A returned value serializes intact. The create/update
+ * throws remain the authoritative integrity backstop (and the API-envelope path).
+ */
+export async function checkProjectNumberAvailable(
+  projectNumber: string,
+  excludeProjectId?: string,
+): Promise<{ available: boolean }> {
+  const { organizationId } = await getOrgContext();
+  const trimmed = projectNumber.trim();
+  if (!trimmed) return { available: true };
+  const convex = await getConvexClient();
+  const clash = await withConvexReadRetry(() =>
+    convex.query(api.projects.getByOrgAndNumber, { organizationId, projectNumber: trimmed }),
+  );
+  return { available: !clash || clash.id === excludeProjectId };
+}
+
 export async function updateProject(id: string, data: ProjectFormValues) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   const parsed = projectSchema.parse(data);
@@ -681,6 +706,31 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     await assertNoBlockingComments(organizationId, id, {
       actionLabel: `move this project to ${String(parsed.status).toLowerCase().replaceAll("_", " ")}`,
     });
+  }
+
+  // Duplicate-code integrity guard. createProject enforces the
+  // @@unique([organizationId, projectNumber]) invariant at insert, but the edit
+  // path patched projectNumber blindly — editing a code to one a sibling already
+  // uses silently produced two projects sharing a number. Only check when the
+  // number actually changes. (The wizard also checks availability up-front via
+  // checkProjectNumberAvailable for an inline field error; this catches the edit
+  // race and any non-wizard caller, and feeds the API error envelope.)
+  if (parsed.projectNumber && before && parsed.projectNumber !== before.projectNumber) {
+    const dupCheck = await getConvexClient();
+    const clash = await withConvexReadRetry(() =>
+      dupCheck.query(api.projects.getByOrgAndNumber, {
+        organizationId,
+        projectNumber: parsed.projectNumber!,
+      }),
+    );
+    if (clash && clash.id !== id) {
+      throw new UserFacingError({
+        code: "DUPLICATE_PROJECT_CODE",
+        title: "Project code already in use",
+        message: `A ${before.isTemplate ? "template" : "project"} with code "${parsed.projectNumber}" already exists.`,
+        field: "projectNumber",
+      });
+    }
   }
 
   // project is Convex-only — patch via api.projects.patchProject. Value→set,

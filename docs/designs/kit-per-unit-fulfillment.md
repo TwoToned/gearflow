@@ -169,10 +169,12 @@ mutation patch those units — converging kit members onto the loose-gear helper
   after inserting each serialised child line call `ensureSerialisedUnit(line,
   assetId)`; after each bulk child line call `ensureBulkUnit(line, bulkAssetId,
   qty)`. Units start `CONFIRMED`. Recurse for nested-kit grandchildren.
-- **Kit-edit-after-add** — the path that adds/removes a member on a project's kit
-  (adds/removes a child line) must create/cancel the matching unit in lockstep,
-  or the snapshot and its units drift. Trace every child-line mutator, not just
-  creation.
+- **Kit-edit-after-add — verified unnecessary (impl audit 2026-07-12).** Kit
+  child lines are created ONLY by `createKitLineItemCore` (now seeds units) and
+  deleted ONLY by `removeNative` (cascades unit deletes). No mutation swaps a
+  member's `assetId` or adds a member to an existing project kit
+  (`kitAllocations.ts` is per-model revenue % only), so the snapshot + its units
+  can't drift post-add. No sync code required.
 - **Prep / deprep (in scope — codex #3)** — `prepKitChildren` → `setKitTreePrep`
   and `deprepKit` (`checkRecordOps.ts:204`) today patch **lines only**. Rewrite
   them to patch `unit.prepStatus` (`PACKED` / `PENDING`) so the per-unit prep
@@ -197,11 +199,18 @@ mutation patch those units — converging kit members onto the loose-gear helper
 - **Line status** — replace direct child-line status patches with
   `syncLineItemRollup(childLineId)`. Kit **parent** line + `kits` doc status stay
   patched directly (kit-level, not unit-derived).
-- **Asset-status belt + idempotency** — keep the `kitSerializedItems`-driven flip
-  this phase; gate `bumpAssetCounters` on an **actual status transition** so the
-  belt and the unit flip together never double-count. **Parity guard (codex #9):**
-  error if a project's child-line asset set diverges from the live
-  `kitSerializedItems` definition at verification time.
+- **Asset-status belt** — untouched this phase (belt-owns-assets decision): the
+  legacy `kitSerializedItems`/child-`assetId` flip keeps owning asset status +
+  counters. The unit path never touches assets in Phase 1, so there is no double
+  flip. (`bumpAssetCounters` is already delta-based + re-reads the asset before
+  each bump, so it stays idempotent regardless — verified, no code change.)
+- **Parity guard → deferred to Phase 3 (impl audit 2026-07-12).** A hard divergence
+  throw in `checkoutKit` would block legitimately-diverged kits (kit contents can
+  change via warehouse/CSV import without touching a project's frozen child-line
+  snapshot — `kitAllocations.ts:18`; the int-test even builds asset-free kits). It
+  guards the `kitSerializedItems` belt, which Phase 3 strips — so the guard lands
+  there, alongside the verification cutover, where a throw is correct rather than a
+  new failure mode on untouched legacy code.
 - **`ConvexError` only**; `ensure*` helpers are already `createIfMissing`-safe.
   Guarded single-row assertions per the parent design's concurrency rule.
 - **Tests:** see the coverage diagram in the eng-review appendix — checkout /
@@ -252,6 +261,11 @@ seeded at creation).
   by backfill). `kitSerializedItems` remains the kit **definition** table (and the
   verification source per the parity-guard decision) — only its use *as a runtime
   fulfillment/asset-flip source* is retired.
+- **Parity guard (codex #9, moved here from Phase 1):** now that the belt is gone
+  and units are the fulfillment source, error at checkout verification if a
+  project's child-line asset set diverges from the live `kitSerializedItems`
+  definition — validate-set == deploy-set by construction. Safe here because the
+  ambiguous dual-flip it used to guard no longer exists.
 - Unblocks the parent design's deferred **`line.assetId` column drop** for kit
   children (now stored on the unit). Coordinate with that design; likely its own
   follow-up PR.

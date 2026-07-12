@@ -59,6 +59,8 @@ import {
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { CategoryCardHeading } from "./equipment-cards";
 import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
@@ -128,6 +130,7 @@ function formatDate(date: string | null | undefined): string {
 export function CrewPanel({ projectId }: CrewPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const isMobile = useIsMobile();
 
   // Cross-tab live sync: re-fetch crew + labour cost when another tab changes
   // a crew booking on this project.
@@ -385,34 +388,12 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
           </div>
         </div>
       ) : (
-        <div className="rounded-[var(--r)] border border-line overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <CanDo resource="crew" action="delete">
-                    <Checkbox
-                      aria-label="Select all crew"
-                      checked={allSelected}
-                      onCheckedChange={(v: boolean | "indeterminate") =>
-                        v === true
-                          ? selection.selectAll(allAssignmentIds)
-                          : selection.clearSelection()
-                      }
-                    />
-                  </CanDo>
-                </TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Phase</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead className="text-right">Est. cost</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        // Build the three row sections ONCE, then render them into either the
+        // desktop <Table> or a mobile card stack (rows self-branch to <tr> vs
+        // card <div> via useIsMobile — see AssignmentRow / PhaseGroup).
+        (() => {
+          const rows = (
+            <>
               {/* Project managers first */}
               {assignments
                 .filter((a: Assignment) => a.isProjectManager)
@@ -468,9 +449,46 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                     onSendOffer={() => offerMutation.mutate(a.id as string)}
                   />
                 ))}
-            </TableBody>
-          </Table>
-        </div>
+            </>
+          );
+
+          if (isMobile) {
+            return <div className="space-y-1.5">{rows}</div>;
+          }
+
+          return (
+            <div className="rounded-[var(--r)] border border-line overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <CanDo resource="crew" action="delete">
+                        <Checkbox
+                          aria-label="Select all crew"
+                          checked={allSelected}
+                          onCheckedChange={(v: boolean | "indeterminate") =>
+                            v === true
+                              ? selection.selectAll(allAssignmentIds)
+                              : selection.clearSelection()
+                          }
+                        />
+                      </CanDo>
+                    </TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Phase</TableHead>
+                    <TableHead>Dates</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead className="text-right">Est. cost</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>{rows}</TableBody>
+              </Table>
+            </div>
+          );
+        })()
       )}
 
       {/* Add dialog */}
@@ -553,16 +571,21 @@ function PhaseGroup({
   onStatusChange: (id: string, status: string) => void;
   onSendOffer?: (id: string) => void;
 }) {
+  const isMobile = useIsMobile();
   if (assignments.length === 0) return null;
   return (
     <>
-      <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
-        <TableCell colSpan={9} className="py-1.5">
-          <span className="t-overline text-muted">
-            {phaseLabels[phase] || phase}
-          </span>
-        </TableCell>
-      </TableRow>
+      {isMobile ? (
+        <CategoryCardHeading name={phaseLabels[phase] || phase} />
+      ) : (
+        <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
+          <TableCell colSpan={9} className="py-1.5">
+            <span className="t-overline text-muted">
+              {phaseLabels[phase] || phase}
+            </span>
+          </TableCell>
+        </TableRow>
+      )}
       {assignments.map((a) => (
         <AssignmentRow
           key={a.id as string}
@@ -605,6 +628,8 @@ function AssignmentRow({
   onStatusChange: (status: string) => void;
   onSendOffer?: () => void;
 }) {
+  const isMobile = useIsMobile();
+
   const member = a.crewMember as {
     id: string;
     firstName: string;
@@ -612,6 +637,183 @@ function AssignmentRow({
     image?: string;
   };
   const role = a.crewRole as { name: string; color?: string } | null;
+
+  // Role pill — reused verbatim between the desktop cell and the mobile card.
+  const roleBadge = role ? (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-badge font-medium"
+      style={
+        role.color
+          ? {
+              borderColor: role.color,
+              color: role.color,
+              backgroundColor: `${role.color}15`,
+            }
+          : undefined
+      }
+    >
+      {role.name}
+    </span>
+  ) : null;
+
+  // Inline status control (dropdown pill) — shared by both layouts.
+  const statusControl = (
+    <CanDo
+      resource="crew"
+      action="update"
+      fallback={
+        <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
+      }
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn("inline-flex items-center gap-1 rounded-full px-1 py-0.5", focusRing)}
+          >
+            <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
+            <ChevronDown className="h-3 w-3 text-muted" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {allStatuses.map((s) => (
+            <DropdownMenuItem
+              key={s}
+              disabled={s === (a.status as string)}
+              onClick={() => onStatusChange(s)}
+            >
+              {assignmentStatusLabels[s]}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </CanDo>
+  );
+
+  // ⋯ actions menu (edit / send-offer / .ics / remove) — shared by both layouts.
+  const actionsMenu = (
+    <CanDo resource="crew" action="update">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="touch-target size-8">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-3.5 w-3.5" />
+            Edit assignment
+          </DropdownMenuItem>
+          {onSendOffer && a.status === "PENDING" && (
+            <DropdownMenuItem onClick={onSendOffer}>
+              <Send className="mr-2 h-3.5 w-3.5" />
+              Send offer
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onClick={() =>
+              window.open(
+                `/api/crew/calendar/assignment/${a.id as string}`,
+                "_blank"
+              )
+            }
+          >
+            <CalendarPlus className="mr-2 h-3.5 w-3.5" />
+            Download .ics
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-t-out"
+            onClick={onDelete}
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Remove
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </CanDo>
+  );
+
+  // ── Mobile: assignment card. Tapping the body toggles selection; the status
+  // pill + ⋯ actions cluster stay live to the right (like the equipment card). ──
+  if (isMobile) {
+    return (
+      <div
+        className={cn(
+          "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line transition-colors",
+          selected && "ring-2 ring-red",
+        )}
+      >
+        {onSelectChange && (
+          <CanDo resource="crew" action="delete">
+            <span
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex min-h-11 min-w-8 shrink-0 items-center justify-center"
+            >
+              <Checkbox
+                aria-label="Select crew assignment"
+                checked={!!selected}
+                onCheckedChange={() => onSelectChange()}
+              />
+            </span>
+          </CanDo>
+        )}
+        <button
+          type="button"
+          aria-pressed={!!selected}
+          onClick={() => onSelectChange?.()}
+          className={cn("min-w-0 flex-1 text-left", focusRing)}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            {a.isProjectManager && (
+              <Star className="h-3.5 w-3.5 shrink-0 text-amber fill-amber" />
+            )}
+            <span className="break-words font-medium text-ink text-table-cell">
+              {member.firstName} {member.lastName}
+            </span>
+            {roleBadge}
+            {a.phase && (
+              <span className="text-caption text-muted">
+                {phaseLabels[a.phase as string] || (a.phase as string)}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-muted">
+            <span className="flex items-center gap-1 tabular-nums text-ink-2">
+              <Calendar className="h-3 w-3 text-muted" />
+              {formatDate(a.startDate as string | null)}
+              {a.endDate && a.endDate !== a.startDate
+                ? ` – ${formatDate(a.endDate as string | null)}`
+                : ""}
+            </span>
+            {a.startTime && (
+              <span className="flex items-center gap-1 tabular-nums">
+                <Clock className="h-3 w-3" />
+                {a.startTime as string}
+                {a.endTime ? ` – ${a.endTime as string}` : ""}
+              </span>
+            )}
+            <span className="tabular-nums">
+              {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
+                <>
+                  <span className="text-ink-2">{formatCurrency(a.rateOverride as number)}</span>{" "}
+                  {crewRateTypeLabels[(a.rateType as string) || "DAILY"] || ""}
+                </>
+              ) : (
+                "Default rate"
+              )}
+            </span>
+            <span className="tabular-nums font-medium text-ink">
+              Est. {formatCurrency(a.estimatedCost as number | null)}
+            </span>
+          </div>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {statusControl}
+          {actionsMenu}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TableRow className={cn("group/row", selected && "bg-select")}>
@@ -647,24 +849,7 @@ function AssignmentRow({
         </div>
       </TableCell>
       <TableCell>
-        {role ? (
-          <span
-            className="inline-flex items-center rounded-full border px-2 py-0.5 text-badge font-medium"
-            style={
-              role.color
-                ? {
-                    borderColor: role.color,
-                    color: role.color,
-                    backgroundColor: `${role.color}15`,
-                  }
-                : undefined
-            }
-          >
-            {role.name}
-          </span>
-        ) : (
-          <span className="text-muted">—</span>
-        )}
+        {roleBadge ?? <span className="text-muted">—</span>}
       </TableCell>
       <TableCell className="text-table-cell text-ink-2">
         {a.phase
@@ -702,79 +887,8 @@ function AssignmentRow({
       <TableCell className="text-right text-table-cell font-medium tabular-nums text-ink">
         {formatCurrency(a.estimatedCost as number | null)}
       </TableCell>
-      <TableCell>
-        <CanDo
-          resource="crew"
-          action="update"
-          fallback={
-            <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
-          }
-        >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={cn("inline-flex items-center gap-1 rounded-full px-1 py-0.5", focusRing)}
-              >
-                <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
-                <ChevronDown className="h-3 w-3 text-muted" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {allStatuses.map((s) => (
-                <DropdownMenuItem
-                  key={s}
-                  disabled={s === (a.status as string)}
-                  onClick={() => onStatusChange(s)}
-                >
-                  {assignmentStatusLabels[s]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
-      </TableCell>
-      <TableCell>
-        <CanDo resource="crew" action="update">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="touch-target size-8">
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="mr-2 h-3.5 w-3.5" />
-                Edit assignment
-              </DropdownMenuItem>
-              {onSendOffer && a.status === "PENDING" && (
-                <DropdownMenuItem onClick={onSendOffer}>
-                  <Send className="mr-2 h-3.5 w-3.5" />
-                  Send offer
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onClick={() =>
-                  window.open(
-                    `/api/crew/calendar/assignment/${a.id as string}`,
-                    "_blank"
-                  )
-                }
-              >
-                <CalendarPlus className="mr-2 h-3.5 w-3.5" />
-                Download .ics
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-t-out"
-                onClick={onDelete}
-              >
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                Remove
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
-      </TableCell>
+      <TableCell>{statusControl}</TableCell>
+      <TableCell>{actionsMenu}</TableCell>
     </TableRow>
   );
 }

@@ -4,6 +4,12 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.8.0] - 2026-07-12
+
+### Changed
+
+- Mobile: detail-page sub-tables now render as cards on phones instead of a cramped, cut-off table. First wave: client, supplier, location, and asset (maintenance history) detail pages, plus asset-category detail (models + kits). Adds a shared `MobileCardList` so the rest of the app's list tables can follow the same pattern.
+
 ## [0.24.7.0] - 2026-07-12
 
 ### Fixed

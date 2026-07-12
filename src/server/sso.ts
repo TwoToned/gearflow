@@ -1,6 +1,8 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
@@ -295,13 +297,18 @@ export async function updateGroupMappings(mappings: SSOGroupMapping[]) {
 export async function getPendingApprovals() {
   const { organizationId } = await getOrgContext();
 
-  const approvals = await prisma.pendingSSOApproval.findMany({
-    where: { organizationId, status: "PENDING" },
-    include: {
-      user: { select: { id: true, name: true, email: true, image: true } },
-    },
-    orderBy: { createdAt: "desc" },
+  // PendingSSOApproval is a Convex domain now. The consumer uses the approval's own
+  // denormalized fields (name/email/suggestedRole/idpGroups/createdAt) — the old
+  // `include: { user }` join was unused, so it's dropped. Coerce optional Convex
+  // fields back to the old non-null shape (idpGroups default [], createdAt → Date).
+  const rows = await (await getConvexClient()).query(api.pendingSSOApprovals.list, {
+    orgId: organizationId,
   });
+  const approvals = rows.map((a) => ({
+    ...a,
+    idpGroups: a.idpGroups ?? [],
+    createdAt: a.createdAt != null ? new Date(a.createdAt) : new Date(0),
+  }));
 
   return serialize(approvals);
 }
@@ -309,31 +316,48 @@ export async function getPendingApprovals() {
 export async function approveSSOUser(approvalId: string, role?: string) {
   const { organizationId, userId, userName } = await requirePermission("orgMembers", "create");
 
-  const approval = await prisma.pendingSSOApproval.findFirst({
-    where: { id: approvalId, organizationId, status: "PENDING" },
-    include: { user: true },
-  });
-  if (!approval) throw new Error("Pending approval not found");
+  const convex = await getConvexClient();
 
-  const assignRole = role || approval.suggestedRole || "member";
+  // CLAIM the approval (PENDING→APPROVED) atomically FIRST. `review` is the single
+  // mutual-exclusion gate: a concurrent reject or a double-approve loses here (throws),
+  // so the member is created at most once and NEVER after a rejection. (Member has no
+  // (org,user) unique constraint, so this — not the DB — is what prevents a double
+  // grant.) On a member.create failure we roll the approval back to PENDING so it never
+  // ends up "approved but with no membership".
+  let claimed: { userId: string; email: string; suggestedRole: string | null };
+  try {
+    claimed = await convex.mutation(api.pendingSSOApprovals.review, {
+      id: approvalId,
+      orgId: organizationId,
+      status: "APPROVED",
+      reviewedById: userId,
+      reviewedAt: Date.now(),
+    });
+  } catch {
+    throw new Error("Pending approval not found");
+  }
 
-  await prisma.$transaction([
-    prisma.member.create({
-      data: {
-        organizationId,
-        userId: approval.userId,
-        role: assignRole,
-      },
-    }),
-    prisma.pendingSSOApproval.update({
-      where: { id: approvalId },
-      data: {
-        status: "APPROVED",
-        reviewedById: userId,
-        reviewedAt: new Date(),
-      },
-    }),
-  ]);
+  const assignRole = role || claimed.suggestedRole || "member";
+
+  // Idempotent member creation: `member` has no (org,user) unique constraint, so guard
+  // against a duplicate across a compensation/retry (or an ambiguous create that
+  // actually committed). Combined with the atomic review gate, this is at-most-once.
+  try {
+    const existingMember = await prisma.member.findFirst({
+      where: { organizationId, userId: claimed.userId },
+      select: { id: true },
+    });
+    if (!existingMember) {
+      await prisma.member.create({
+        data: { organizationId, userId: claimed.userId, role: assignRole },
+      });
+    }
+  } catch (e) {
+    await convex
+      .mutation(api.pendingSSOApprovals.revertToPending, { id: approvalId, orgId: organizationId })
+      .catch(() => {});
+    throw e;
+  }
 
   await logActivity({
     organizationId,
@@ -341,13 +365,13 @@ export async function approveSSOUser(approvalId: string, role?: string) {
     userName,
     action: "CREATE",
     entityType: "member",
-    entityId: approval.userId,
-    entityName: approval.email,
-    summary: `Approved SSO user ${approval.email} with role ${assignRole}`,
+    entityId: claimed.userId,
+    entityName: claimed.email,
+    summary: `Approved SSO user ${claimed.email} with role ${assignRole}`,
   });
 
   // Additive (membership granted): mirror best-effort after the Prisma commit.
-  await upsertMemberMirrorByOrgUser(organizationId, approval.userId);
+  await upsertMemberMirrorByOrgUser(organizationId, claimed.userId);
 
   // Send email notification
   const pName = await getPlatformName();
@@ -356,7 +380,7 @@ export async function approveSSOUser(approvalId: string, role?: string) {
     select: { name: true },
   });
   sendEmail({
-    to: approval.email,
+    to: claimed.email,
     subject: `Your access to ${org?.name || "the organization"} has been approved`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
@@ -378,21 +402,22 @@ export async function approveSSOUser(approvalId: string, role?: string) {
 export async function rejectSSOUser(approvalId: string, note?: string) {
   const { organizationId, userId, userName } = await requirePermission("orgMembers", "create");
 
-  const approval = await prisma.pendingSSOApproval.findFirst({
-    where: { id: approvalId, organizationId, status: "PENDING" },
-    include: { user: true },
-  });
-  if (!approval) throw new Error("Pending approval not found");
-
-  await prisma.pendingSSOApproval.update({
-    where: { id: approvalId },
-    data: {
+  // `review` atomically transitions PENDING→REJECTED (the mutual-exclusion gate) and
+  // returns the approval's identity fields — a concurrent approve that already claimed
+  // it loses here (throws). No separate read needed.
+  let approval: { userId: string; email: string; suggestedRole: string | null };
+  try {
+    approval = await (await getConvexClient()).mutation(api.pendingSSOApprovals.review, {
+      id: approvalId,
+      orgId: organizationId,
       status: "REJECTED",
       reviewedById: userId,
-      reviewedAt: new Date(),
+      reviewedAt: Date.now(),
       reviewNote: note,
-    },
-  });
+    });
+  } catch {
+    throw new Error("Pending approval not found");
+  }
 
   await logActivity({
     organizationId,

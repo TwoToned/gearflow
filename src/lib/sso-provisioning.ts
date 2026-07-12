@@ -1,4 +1,7 @@
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "./prisma";
+import { getConvexClient } from "./convex-client";
+import { api } from "../../convex/_generated/api";
 import { upsertMemberMirrorByOrgUser } from "./member-mirror";
 import type { OrgSSOSettings, SSOGroupMapping } from "./sso-types";
 import type { Organization } from "@/generated/prisma/client";
@@ -233,30 +236,23 @@ export async function handleSSOProvisioning(data: {
   }
 
   if (mode === "REQUIRE_APPROVAL") {
-    // Check if there's already a pending approval
-    const existing = await prisma.pendingSSOApproval.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: provider.organizationId,
-          userId: user.id,
-        },
+    // Enqueue a PENDING approval (Convex). Idempotent on (org, userId) inside the
+    // mutation — reproduces the old `@@unique` + "create only if none exists", with
+    // no TOCTOU race (Convex mutations are transactional).
+    await (await getConvexClient()).mutation(
+      api.pendingSSOApprovals.createForProvisioning,
+      {
+        id: createId(),
+        organizationId: provider.organizationId,
+        userId: user.id,
+        email: user.email,
+        name: user.name ?? undefined,
+        idpGroups,
+        suggestedRole: role ?? undefined,
+        providerId: provider.providerId,
+        createdAt: Date.now(),
       },
-    });
-
-    if (!existing) {
-      await prisma.pendingSSOApproval.create({
-        data: {
-          organizationId: provider.organizationId,
-          userId: user.id,
-          email: user.email,
-          name: user.name,
-          idpGroups,
-          suggestedRole: role,
-          providerId: provider.providerId,
-          status: "PENDING",
-        },
-      });
-    }
+    );
 
     // Don't throw — user account exists, they just can't access the org yet.
     // The login flow will detect "no membership" and redirect to /pending-approval.

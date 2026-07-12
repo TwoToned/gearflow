@@ -214,8 +214,8 @@ function buildContext(bundle: EquipmentTabBundleData): EquipmentContext {
   // reconstructProjectEquipmentTree does, then index by lineItemId. `expand()`
   // attaches these to every line AND recurses into kit/accessory children, so a
   // multi-qty serialised line expands into per-unit tags and kit-member serials
-  // surface too. Kit members store their serial on `line.assetId` (no unit row),
-  // handled at the render layer.
+  // surface too. Kit members now carry their serial on their own per-unit row
+  // (like loose gear) — the render layer shows tag + fulfillment status from it.
   const units: UnitWithAssetSelect[] = bundle.units.map((u) => {
     const m = mapUnitDoc(u);
     return {

@@ -1434,28 +1434,25 @@ export function LineItemRow({
         {/* Expanded child items (kit members / accessories) as nested cards. */}
         {isExpanded && hasChildren && (
           <div className="space-y-1.5">
-            {item.childLineItems!.map((child) => {
-              const childTags = (child.units ?? [])
-                .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
-                .filter((t): t is string => !!t);
-              const tag = childTags[0] ?? child.asset?.assetTag ?? null;
-              const extra = childTags.length > 1 ? ` +${childTags.length - 1}` : "";
-              return (
-                <div key={child.id} className="rounded-[var(--r)] bg-paper-2/40 py-2 pl-6 pr-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
-                    {tag && <span className="t-mono text-caption text-muted">({tag}{extra})</span>}
-                    {child.childKind === "ACCESSORY" && (
-                      <Badge status="neutral" className="px-1.5 py-0 text-[10px]">Accessory</Badge>
-                    )}
-                  </div>
-                  {child.notes && (
-                    <p className="mt-0.5 truncate text-caption text-muted">{child.notes}</p>
+            {item.childLineItems!.map((child) => (
+              <div key={child.id} className="rounded-[var(--r)] bg-paper-2/40 py-2 pl-6 pr-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
+                  {/* Kit members / accessories carry their serial on a per-unit row now
+                      — same indicator (tag + fulfillment status + history) as every
+                      other line. Reassign is suppressed: the mutation rejects kit
+                      children (per-kit-slot reassign is Phase 4). */}
+                  <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign />
+                  {child.childKind === "ACCESSORY" && (
+                    <Badge status="neutral" className="px-1.5 py-0 text-[10px]">Accessory</Badge>
                   )}
-                  <MetricLine item={child} showCostColumn={showCostColumn} />
                 </div>
-              );
-            })}
+                {child.notes && (
+                  <p className="mt-0.5 truncate text-caption text-muted">{child.notes}</p>
+                )}
+                <MetricLine item={child} showCostColumn={showCostColumn} />
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1728,18 +1725,11 @@ export function LineItemRow({
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">
               <span className="text-table-cell text-ink-2">{child.model?.name ?? child.description ?? "—"}</span>
-              {(() => {
-                // Kit members carry their serial on the child line's `asset`
-                // (no unit row); accessories carry it on `units`. Prefer unit
-                // tags, fall back to the line-level asset tag.
-                const childTags = (child.units ?? [])
-                  .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
-                  .filter((t): t is string => !!t);
-                const tag = childTags[0] ?? child.asset?.assetTag ?? null;
-                if (!tag) return null;
-                const extra = childTags.length > 1 ? ` +${childTags.length - 1}` : "";
-                return <span className="t-mono text-caption text-muted">({tag}{extra})</span>;
-              })()}
+              {/* Kit members / accessories now carry their serial on a per-unit
+                  row — same indicator (tag + fulfillment status + history) as every
+                  other line. Reassign is suppressed: the mutation rejects kit
+                  children (per-kit-slot reassign is Phase 4). */}
+              <LineAssetsIndicator units={child.units} lineAssetTag={child.asset?.assetTag} lineItemId={child.id} modelId={child.modelId} disableReassign />
               {child.childKind === "ACCESSORY" && (
                 <Badge status="neutral" className="text-[10px] px-1.5 py-0">
                   Accessory

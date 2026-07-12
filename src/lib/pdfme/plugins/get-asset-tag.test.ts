@@ -90,6 +90,19 @@ describe("getAssetTag", () => {
     expect(getAssetTag(li, false)).toBe("CHILD-ASSET");
   });
 
+  it("kit child WITH a unit → the unit's tag, identical to the legacy line.asset (migration is render-neutral)", () => {
+    // Post kit per-unit migration a member carries its serial on a unit row. The
+    // unit's assetId equals the line's, so the resolved tag is the SAME single
+    // string as before — the docket renders identically to pre-migration.
+    const li = lineItem({
+      isKitChild: true,
+      quantity: 1,
+      asset: { assetTag: "CHILD-ASSET" },
+      units: [{ id: "u1", asset: { assetTag: "CHILD-ASSET" }, bulkAsset: null, status: "CHECKED_OUT" }],
+    });
+    expect(getAssetTag(li, false)).toBe("CHILD-ASSET");
+  });
+
   it("falls back to bulkAsset when no units and no asset", () => {
     const li = lineItem({
       bulkAsset: { assetTag: "BULK-CABLE" },

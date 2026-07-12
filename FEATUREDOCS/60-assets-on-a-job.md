@@ -17,8 +17,14 @@ on the container — see also [48](./48-child-assets-accessories.md):
 |---|---|---|
 | Loose / group member, qty 1 | `projectLineItem.assetId` (single) | inline tag next to the name |
 | Loose / group member, qty ≥2 | one `projectLineItemUnit.assetId` per unit | expandable per-unit rows |
-| **Physical kit member** | the kit-child line's `assetId` (mirrors `kitSerializedItems`) | tag on the child row; verified *with* the kit, not scanned per line |
+| **Physical kit member** | one `projectLineItemUnit` per member (seeded at kit-add, like loose gear) | tag + fulfillment badge + history via the same indicator as every line; verified *with* the kit, not scanned per line |
 | Accessory child | `projectLineItemUnit` (`parentUnitAssetId` link) | tag on the child row |
+
+> Physical kit members were migrated onto per-unit `projectLineItemUnit` rows (the
+> kit per-unit fulfillment migration — `docs/designs/kit-per-unit-fulfillment.md`).
+> They still keep `line.assetId` for now, but fulfillment (deploy/return status,
+> history) is driven by the unit. Per-kit-slot reassign is not yet available (the
+> reassign mutation rejects kit children), so their Move control is suppressed.
 
 A **group** (`projectGroups`) is a priced bundle only — it adds nothing to serial
 storage; its members behave exactly like loose lines. Only a **kit** (`kits`, has

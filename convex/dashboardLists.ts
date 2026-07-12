@@ -64,21 +64,23 @@ export const upcoming = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
     await requireOrgRead(ctx, orgId);
-    const projects = (await ctx.db
+    // Range-scan only FUTURE projects (rentalStartDate >= now) via the composite
+    // index, ordered by rentalStartDate asc — stop once we have 8 matches. Replaces
+    // a reactive whole-org-projects .collect() that re-read all history on any
+    // project write. Null rentalStartDate rows are outside the range = correctly
+    // excluded (the old filter required rentalStartDate != null && >= now).
+    const candidates: ProjectDoc[] = [];
+    for await (const doc of ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .collect()) as unknown as ProjectDoc[];
-
-    const candidates = projects
-      .filter(
-        (p) =>
-          p.isTemplate !== true &&
-          UPCOMING_STATUSES.has(p.status ?? "") &&
-          p.rentalStartDate != null &&
-          (p.rentalStartDate as number) >= now,
-      )
-      .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number))
-      .slice(0, 8);
+      .withIndex("by_organizationId_rentalStartDate", (q) =>
+        q.eq("organizationId", orgId).gte("rentalStartDate", now),
+      )) {
+      const p = doc as unknown as ProjectDoc;
+      if (p.isTemplate !== true && UPCOMING_STATUSES.has(p.status ?? "")) {
+        candidates.push(p);
+        if (candidates.length >= 8) break;
+      }
+    }
 
     const counts = await countEquipmentLineItems(ctx, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
@@ -96,19 +98,34 @@ export const home = query({
     if (!auth || auth.kind !== "user") throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    const [projects, pmEntries, userDoc] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("projectManagers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    // Only THIS user's projects, not the whole org tables: directly-managed
+    // (projects.by_projectManagerId) ∪ PM-assigned (projectManagers.by_userId).
+    // Previously .collect()'d the whole org projects + whole org projectManagers
+    // tables reactively (re-read on any project/PM write). by_projectManagerId /
+    // by_userId are global → org-re-checked below.
+    const [managedProjects, pmEntries, userDoc] = await Promise.all([
+      ctx.db.query("projects").withIndex("by_projectManagerId", (q) => q.eq("projectManagerId", userId)).collect(),
+      ctx.db.query("projectManagers").withIndex("by_userId", (q) => q.eq("userId", userId)).collect(),
       ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).unique(),
     ]);
-    const pmProjectIds = new Set(pmEntries.filter((e) => e.userId === userId).map((e) => e.projectId));
 
-    const candidates = (projects as unknown as ProjectDoc[])
+    const managedById = new Map(managedProjects.map((p) => [p.id, p]));
+    const extraIds = [...new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId))]
+      .filter((pid) => !managedById.has(pid));
+    const extra = await Promise.all(
+      extraIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
+    );
+    const userProjects = [
+      ...managedProjects,
+      ...extra.filter((p): p is NonNullable<typeof p> => p != null),
+    ] as unknown as ProjectDoc[];
+
+    const candidates = userProjects
       .filter(
         (p) =>
+          (p as { organizationId?: string }).organizationId === orgId &&
           p.isTemplate !== true &&
-          !HOME_INACTIVE_STATUSES.has(p.status ?? "") &&
-          (p.projectManagerId === userId || pmProjectIds.has(p.id)),
+          !HOME_INACTIVE_STATUSES.has(p.status ?? ""),
       )
       .sort((a, b) => {
         if (a.rentalStartDate != null && b.rentalStartDate != null) return a.rentalStartDate - b.rentalStartDate;
@@ -146,11 +163,12 @@ export const blocking = query({
       .collect();
     if (threads.length === 0) return [];
 
+    // Only THIS user's PM assignments (by_userId), not the whole org PM table.
     const pmEntries = await ctx.db
       .query("projectManagers")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
-    const pmProjectIds = new Set(pmEntries.filter((e) => e.userId === userId).map((e) => e.projectId));
+    const pmProjectIds = new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId));
 
     const projectIds = [...new Set(threads.map((t) => t.projectId ?? t.entityId).filter((x): x is string => !!x))];
     const projectDocs = await Promise.all(

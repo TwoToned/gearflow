@@ -5,10 +5,10 @@ import { join } from "node:path";
 /**
  * Mirror-coverage gate (docs/designs/convex-native-read-layer.md §3.3.4, §8).
  *
- * Membership/custom-role writes are scattered across many files. If a NEW write
+ * Membership writes are scattered across many files. If a NEW write
  * site is added without routing through the mirror helper, the Convex RBAC mirror
  * silently drifts from Prisma — a stale-permission read leak once enforcement is
- * live. This test fails CI if any file writes `member`/`customRole` in Prisma but
+ * live. This test fails CI if any file writes `member` in Prisma but
  * doesn't import `member-mirror`, so the bypass can't land unnoticed.
  */
 
@@ -17,7 +17,7 @@ const SRC_DIR = join(process.cwd(), "src");
 // Prisma writes to the auth-affecting tables. `findUnique/findFirst/count/findMany`
 // are reads and intentionally excluded.
 const WRITE_RE =
-  /\b(?:prisma|tx)\.(?:member|customRole)\.(?:create|update|delete|createMany|updateMany|deleteMany|upsert)\b/;
+  /\b(?:prisma|tx)\.member\.(?:create|update|delete|createMany|updateMany|deleteMany|upsert)\b/;
 
 // Files that legitimately contain a write pattern but are NOT mirror call sites.
 // Keep this list tiny and justified — every entry is a deliberate exception.
@@ -44,14 +44,14 @@ function walk(dir: string): string[] {
   return out;
 }
 
-describe("member/customRole mirror coverage", () => {
+describe("member mirror coverage", () => {
   const files = walk(SRC_DIR);
 
   it("found source files to scan", () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it("every member/customRole write site imports the mirror helper", () => {
+  it("every member write site imports the mirror helper", () => {
     const offenders: string[] = [];
     for (const file of files) {
       const rel = file.slice(SRC_DIR.length + 1);
@@ -63,7 +63,7 @@ describe("member/customRole mirror coverage", () => {
     }
     expect(
       offenders,
-      `These files write member/customRole rows but do not import @/lib/member-mirror — ` +
+      `These files write member rows but do not import @/lib/member-mirror — ` +
         `route the write through the mirror (or add to ALLOWLIST with justification):\n` +
         offenders.join("\n"),
     ).toEqual([]);
@@ -73,7 +73,6 @@ describe("member/customRole mirror coverage", () => {
     // §3.3.4: revoke/demote/permission-removal must mirror with { strict: true }.
     const mustBeStrict = [
       "server/org-members.ts",
-      "server/custom-roles.ts",
       "server/settings.ts",
       "server/user-profile.ts",
     ];

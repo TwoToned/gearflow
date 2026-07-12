@@ -23,7 +23,6 @@ describe("ssoGroupMappingSchema", () => {
     const result = ssoGroupMappingSchema.safeParse({
       ...valid,
       idpGroupId: "grp-123",
-      customRoleId: "role-456",
     });
     expect(result.success).toBe(true);
   });
@@ -47,11 +46,6 @@ describe("ssoGroupMappingSchema", () => {
   it("allows omitting idpGroupId", () => {
     const parsed = ssoGroupMappingSchema.parse(valid);
     expect(parsed.idpGroupId).toBeUndefined();
-  });
-
-  it("allows omitting customRoleId", () => {
-    const parsed = ssoGroupMappingSchema.parse(valid);
-    expect(parsed.customRoleId).toBeUndefined();
   });
 });
 

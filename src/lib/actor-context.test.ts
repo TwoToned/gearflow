@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ActorContext } from "./actor-context";
 
-// Mock prisma so the unit test needs no DB. Only member/customRole are touched
+// Mock prisma so the unit test needs no DB. Only member is touched
 // by the permission resolver.
 const memberFindFirst = vi.fn();
-const customRoleFindUnique = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     member: { findFirst: (...a: unknown[]) => memberFindFirst(...a) },
-    customRole: { findUnique: (...a: unknown[]) => customRoleFindUnique(...a) },
   },
 }));
 

@@ -11,7 +11,6 @@ vi.mock("./prisma", () => ({
   prisma: {
     user: { findUnique: findUniqueUser },
     member: { findFirst: findFirstMember },
-    customRole: { findUnique: vi.fn() },
   },
 }));
 

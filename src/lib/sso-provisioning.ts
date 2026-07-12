@@ -13,34 +13,28 @@ import type { Organization } from "@/generated/prisma/client";
 const ROLE_HIERARCHY = ["owner", "admin", "manager", "member", "warehouse", "viewer"];
 
 /**
- * Resolve a GearFlow role from IdP group memberships.
- * Checks both:
- * 1. Custom roles with ssoGroupClaim field matching an IdP group
- * 2. Explicit group mappings from SSO settings
+ * Roles an SSO login may assign. Owner is EXCLUDED (ownership transfer is a separate,
+ * deliberate flow — SSO must never mint an owner). Any misconfigured/unknown role
+ * (e.g. a stale "custom:…", "owner", or a typo) clamps to `member` so a login can
+ * neither escalate to owner nor lock the user out with a role that grants nothing.
  */
-async function resolveRoleFromGroups(
+const SSO_ASSIGNABLE_ROLES = ["admin", "manager", "member", "warehouse", "viewer"];
+function clampAssignableRole(role: string): string {
+  return SSO_ASSIGNABLE_ROLES.includes(role) ? role : "member";
+}
+
+/**
+ * Resolve a built-in GearFlow role from IdP group memberships via the org's explicit
+ * group→role mappings (custom roles were removed). Never returns owner or an unknown
+ * role — the result is always an assignable built-in role.
+ */
+function resolveRoleFromGroups(
   idpGroups: string[],
   mappings: SSOGroupMapping[],
   defaultRole: string,
   groupValueType: "name" | "id" = "name",
-  organizationId?: string,
-): Promise<{ role: string; customRoleId?: string }> {
-  // First, check custom roles with ssoGroupClaim matching IdP groups
-  if (organizationId && idpGroups.length > 0) {
-    const customRoles = await prisma.customRole.findMany({
-      where: {
-        organizationId,
-        ssoGroupClaim: { in: idpGroups },
-      },
-      select: { id: true },
-    });
-
-    if (customRoles.length > 0) {
-      return { role: `custom:${customRoles[0].id}`, customRoleId: customRoles[0].id };
-    }
-  }
-
-  // Then check explicit group mappings
+): { role: string } {
+  // Match explicit IdP-group → built-in-role mappings (custom roles were removed).
   const matchedMappings: SSOGroupMapping[] = [];
 
   for (const mapping of mappings) {
@@ -53,21 +47,21 @@ async function resolveRoleFromGroups(
   }
 
   if (matchedMappings.length === 0) {
-    return { role: defaultRole };
+    // Clamp the configured default too — it must never mint an owner or a role that
+    // grants nothing (misconfigured settings would otherwise escalate or lock out).
+    return { role: clampAssignableRole(defaultRole) };
   }
 
-  // If any matched mapping has a custom role, use the first one
-  const customMatch = matchedMappings.find((m) => m.customRoleId);
-  if (customMatch) {
-    return { role: `custom:${customMatch.customRoleId}`, customRoleId: customMatch.customRoleId };
-  }
-
-  // For built-in roles, use the highest-privilege match
-  let bestRole = defaultRole;
-  let bestIndex = ROLE_HIERARCHY.indexOf(defaultRole);
+  // Highest-privilege matched role — but consider ONLY assignable roles as candidates,
+  // filtering owner/invalid BEFORE ranking. (Clamping only after ranking would let an
+  // "owner" mapping win the hierarchy and then collapse to "member", discarding a valid
+  // "admin" match that should have won.) Start from the clamped default.
+  let bestRole = clampAssignableRole(defaultRole);
+  let bestIndex = ROLE_HIERARCHY.indexOf(bestRole);
   if (bestIndex === -1) bestIndex = ROLE_HIERARCHY.length;
 
   for (const mapping of matchedMappings) {
+    if (!SSO_ASSIGNABLE_ROLES.includes(mapping.gearflowRole)) continue; // never owner/invalid
     const idx = ROLE_HIERARCHY.indexOf(mapping.gearflowRole);
     if (idx !== -1 && idx < bestIndex) {
       bestIndex = idx;
@@ -189,12 +183,11 @@ export async function handleSSOProvisioning(data: {
   // Auto-discover new groups from IdP (non-blocking, won't break login)
   await discoverNewGroups(org, ssoSettings, idpGroups, ssoSettings.groupValueType || "name");
 
-  const { role } = await resolveRoleFromGroups(
+  const { role } = resolveRoleFromGroups(
     idpGroups,
     ssoSettings.groupMappings || [],
     ssoSettings.defaultRole || "member",
     ssoSettings.groupValueType,
-    provider.organizationId,
   );
 
   // Check if already a member
@@ -209,9 +202,11 @@ export async function handleSSOProvisioning(data: {
       throw new Error("Your account is not authorized for this organization. Contact your administrator.");
     }
     // Optionally sync role on login
-    if (ssoSettings.roleSyncBehavior === "SYNC_ON_LOGIN" && existingMember.role !== role) {
-      await prisma.member.update({
-        where: { id: existingMember.id },
+    if (ssoSettings.roleSyncBehavior === "SYNC_ON_LOGIN" && existingMember.role !== "owner" && existingMember.role !== role) {
+      // Atomic owner-guard: never demote an owner even if ownership transferred to
+      // this member between the read above and this write (TOCTOU).
+      await prisma.member.updateMany({
+        where: { id: existingMember.id, role: { not: "owner" } },
         data: { role },
       });
       // SSO role sync — best-effort mirror (provisioning re-runs on every login,
@@ -223,9 +218,11 @@ export async function handleSSOProvisioning(data: {
 
   if (existingMember) {
     // User is already a member — just sync role if configured
-    if (ssoSettings.roleSyncBehavior === "SYNC_ON_LOGIN" && existingMember.role !== role) {
-      await prisma.member.update({
-        where: { id: existingMember.id },
+    if (ssoSettings.roleSyncBehavior === "SYNC_ON_LOGIN" && existingMember.role !== "owner" && existingMember.role !== role) {
+      // Atomic owner-guard: never demote an owner even if ownership transferred to
+      // this member between the read above and this write (TOCTOU).
+      await prisma.member.updateMany({
+        where: { id: existingMember.id, role: { not: "owner" } },
         data: { role },
       });
       // SSO role sync — best-effort mirror (provisioning re-runs on every login,

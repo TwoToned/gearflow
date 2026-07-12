@@ -4,7 +4,6 @@ import type { QueryCtx, MutationCtx } from "../_generated/server";
 import {
   decideOrgPermission,
   type Resource,
-  type PermissionMap,
   type OrgPermissionDecision,
 } from "./permissionsCore";
 
@@ -142,16 +141,6 @@ export async function requireOrgReadDoc(
 // enforce the SAME RBAC through this one guard. It only uses ctx.auth + ctx.db.query,
 // both present on either ctx.
 
-/** Parse a stored custom-role permissions JSON string; null on absent/invalid. */
-function parseCustomPermissions(raw: string | undefined): PermissionMap | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as PermissionMap;
-  } catch {
-    return null; // malformed → no permissions (deny), never throw
-  }
-}
-
 function orgPermissionMessage(decision: OrgPermissionDecision): string {
   switch (decision) {
     case "deny:unauthenticated":
@@ -180,7 +169,6 @@ export async function requireOrgPermission(
   if (auth?.kind === "service") return; // trusted backend already authorized
 
   let member: { role: string } | null = null;
-  let customPermissions: PermissionMap | null = null;
 
   if (auth?.kind === "user" && auth.orgId === orgId) {
     const row = await ctx.db
@@ -190,25 +178,10 @@ export async function requireOrgPermission(
       )
       .first();
     member = row ? { role: row.role } : null;
-
-    if (member && member.role.startsWith("custom:")) {
-      const customRoleId = member.role.slice("custom:".length);
-      const custom = await ctx.db
-        .query("customRoles")
-        .withIndex("by_cuid", (q) => q.eq("id", customRoleId))
-        .first();
-      // Org-scope the role: a custom role belonging to another org must NOT grant
-      // here (mirrors src/server/custom-roles.ts org scoping). Missing/cross-org
-      // → null perms → hasPermission denies.
-      customPermissions =
-        custom && custom.organizationId === orgId
-          ? parseCustomPermissions(custom.permissions)
-          : null;
-    }
   }
 
   const decision = decideOrgPermission(
-    { auth, requestedOrgId: orgId, member, customPermissions },
+    { auth, requestedOrgId: orgId, member },
     resource,
     action,
   );

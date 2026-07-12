@@ -3,7 +3,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
 /**
- * Mirror of the Better-Auth `member` + Prisma `customRole` rows (source of truth
+ * Mirror of the Better-Auth `member` rows (source of truth
  * stays in Prisma) into their Convex mirror tables, so the native read layer's
  * `requireOrgPermission` guard can resolve a user's role + custom-role permissions
  * inside Convex (docs/designs/convex-native-read-layer.md §3.3).
@@ -121,82 +121,6 @@ export async function removeMemberMirror(
     async () => {
       const convex = await getConvexClient();
       await convex.mutation(api.members.removeByOrgAndUser, args);
-    },
-    opts,
-  );
-}
-
-// ─── Custom roles ───────────────────────────────────────────────────────────
-
-/** Upsert an explicit custom-role row into the Convex mirror. `permissions` is the
- * JSON STRING exactly as Prisma stores it (the guard parses it at read time). */
-export async function upsertCustomRoleMirror(
-  row: {
-    id: string;
-    organizationId: string;
-    name: string;
-    description?: string | null;
-    color?: string | null;
-    permissions: string;
-    ssoGroupClaim?: string | null;
-    createdAt?: Date | number | null;
-    updatedAt?: Date | number | null;
-  },
-  opts?: MirrorOpts,
-): Promise<void> {
-  await runMirror(
-    `upsert customRole ${row.id}`,
-    async () => {
-      const convex = await getConvexClient();
-      await convex.mutation(api.customRoles.upsert, {
-        id: row.id,
-        organizationId: row.organizationId,
-        name: row.name,
-        description: row.description ?? undefined,
-        color: row.color ?? undefined,
-        permissions: row.permissions,
-        ssoGroupClaim: row.ssoGroupClaim ?? undefined,
-        createdAt: toMillis(row.createdAt),
-        updatedAt: toMillis(row.updatedAt),
-      });
-    },
-    opts,
-  );
-}
-
-/** Read a custom role by id from Prisma and mirror it. */
-export async function upsertCustomRoleMirrorById(
-  id: string,
-  opts?: MirrorOpts,
-): Promise<void> {
-  const r = await prisma.customRole.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      organizationId: true,
-      name: true,
-      description: true,
-      color: true,
-      permissions: true,
-      ssoGroupClaim: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-  if (!r) return;
-  await upsertCustomRoleMirror(r, opts);
-}
-
-/** Remove a mirrored custom role by id (role deletion). */
-export async function removeCustomRoleMirror(
-  id: string,
-  opts?: MirrorOpts,
-): Promise<void> {
-  await runMirror(
-    `remove customRole ${id}`,
-    async () => {
-      const convex = await getConvexClient();
-      await convex.mutation(api.customRoles.remove, { id });
     },
     opts,
   );

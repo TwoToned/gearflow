@@ -23,7 +23,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  SelectSeparator,
 } from "@/components/ui/select";
 import {
   ArrowLeft,
@@ -34,11 +33,9 @@ import {
   BoxIcon,
   UserPlus,
   Trash2,
-  Shield,
 } from "lucide-react";
 import {
   adminGetOrganizationDetails,
-  adminGetOrgCustomRoles,
   adminAddMemberToOrg,
   adminRemoveMemberFromOrg,
   adminChangeMemberRole,
@@ -61,28 +58,8 @@ const ASSIGNABLE_BUILT_IN_ROLES = BUILT_IN_ROLES.filter(
   (r) => r.value !== "owner",
 );
 
-function getRoleLabel(
-  role: string,
-  customRoles: Array<{ id: string; name: string; color?: string | null }>,
-) {
-  if (role.startsWith("custom:")) {
-    const id = role.slice("custom:".length);
-    const cr = customRoles.find((r) => r.id === id);
-    return cr?.name ?? "Custom Role";
-  }
+function getRoleLabel(role: string) {
   return BUILT_IN_ROLES.find((r) => r.value === role)?.label ?? role;
-}
-
-function getRoleBadgeColor(
-  role: string,
-  customRoles: Array<{ id: string; color?: string | null }>,
-) {
-  if (role.startsWith("custom:")) {
-    const id = role.slice("custom:".length);
-    const cr = customRoles.find((r) => r.id === id);
-    return cr?.color ?? undefined;
-  }
-  return undefined;
 }
 
 export default function AdminOrgDetailPage({
@@ -114,11 +91,6 @@ export default function AdminOrgDetailPage({
   const { data: org, isLoading, refetch: refetchOrg } = useServerQuery({
     queryKey: ["admin-org-detail", orgId],
     queryFn: () => adminGetOrganizationDetails(orgId),
-  });
-
-  const { data: customRoles = [] } = useServerQuery({
-    queryKey: ["admin-org-custom-roles", orgId],
-    queryFn: () => adminGetOrgCustomRoles(orgId),
   });
 
   const addMutation = useServerMutation({
@@ -317,10 +289,6 @@ export default function AdminOrgDetailPage({
                   ) : (
                     members.map((m: any) => {
                       const isOwner = m.role === "owner";
-                      const badgeColor = getRoleBadgeColor(
-                        m.role,
-                        customRoles,
-                      );
 
                       return (
                         <tr
@@ -373,15 +341,8 @@ export default function AdminOrgDetailPage({
                               >
                                 <SelectTrigger className="h-8 w-[160px]">
                                   <SelectValue>
-                                    <Badge
-                                      status="neutral"
-                                      style={
-                                        badgeColor
-                                          ? { backgroundColor: badgeColor, color: "#fff" }
-                                          : undefined
-                                      }
-                                    >
-                                      {getRoleLabel(m.role, customRoles)}
+                                    <Badge status="neutral">
+                                      {getRoleLabel(m.role)}
                                     </Badge>
                                   </SelectValue>
                                 </SelectTrigger>
@@ -391,29 +352,6 @@ export default function AdminOrgDetailPage({
                                       {r.label}
                                     </SelectItem>
                                   ))}
-                                  {customRoles.length > 0 && (
-                                    <>
-                                      <SelectSeparator />
-                                      {customRoles.map((cr: any) => (
-                                        <SelectItem
-                                          key={cr.id}
-                                          value={`custom:${cr.id}`}
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            {cr.color && (
-                                              <span
-                                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                                style={{
-                                                  backgroundColor: cr.color,
-                                                }}
-                                              />
-                                            )}
-                                            {cr.name}
-                                          </div>
-                                        </SelectItem>
-                                      ))}
-                                    </>
-                                  )}
                                 </SelectContent>
                               </Select>
                             )}
@@ -467,30 +405,6 @@ export default function AdminOrgDetailPage({
           </div>
         </div>
 
-        {/* Custom Roles Info */}
-        {customRoles.length > 0 && (
-          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-            <h3 className="t-heading flex items-center gap-2 mb-4">
-              <Shield className="h-4 w-4" />
-              Custom Roles ({customRoles.length})
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {customRoles.map((cr: any) => (
-                <Badge
-                  key={cr.id}
-                  status="neutral"
-                  style={
-                    cr.color
-                      ? { backgroundColor: cr.color, color: "#fff" }
-                      : undefined
-                  }
-                >
-                  {cr.name}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Add Member Dialog */}
@@ -525,7 +439,7 @@ export default function AdminOrgDetailPage({
               <label className="text-sm font-medium">Role</label>
               <Select value={addRole} onValueChange={(v) => { if (v) setAddRole(v); }}>
                 <SelectTrigger>
-                  <SelectValue>{ASSIGNABLE_BUILT_IN_ROLES.find((r) => r.value === addRole)?.label ?? (addRole.startsWith("custom:") ? customRoles.find((cr: any) => cr.id === addRole.slice(7))?.name : null) ?? addRole}</SelectValue>
+                  <SelectValue>{ASSIGNABLE_BUILT_IN_ROLES.find((r) => r.value === addRole)?.label ?? addRole}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {ASSIGNABLE_BUILT_IN_ROLES.map((r) => (
@@ -533,24 +447,6 @@ export default function AdminOrgDetailPage({
                       {r.label}
                     </SelectItem>
                   ))}
-                  {customRoles.length > 0 && (
-                    <>
-                      <SelectSeparator />
-                      {customRoles.map((cr: any) => (
-                        <SelectItem key={cr.id} value={`custom:${cr.id}`}>
-                          <div className="flex items-center gap-2">
-                            {cr.color && (
-                              <span
-                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: cr.color }}
-                              />
-                            )}
-                            {cr.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </>
-                  )}
                 </SelectContent>
               </Select>
             </div>

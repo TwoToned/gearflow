@@ -180,27 +180,21 @@ export const rolePermissions: Record<string, PermissionMap> = {
 };
 
 /**
- * Check if a role has a specific permission.
- * For custom roles (prefixed "custom:"), pass the resolved permissions map.
+ * Check if a built-in role has a specific permission. Custom roles were removed
+ * (only built-in roles remain); an unknown role string (incl. any legacy "custom:…")
+ * resolves to no permissions — fail closed.
  */
 export function hasPermission(
   role: string,
   resource: Resource,
   action: string,
-  customPermissions?: PermissionMap | null,
 ): boolean {
   // Owner always has all permissions (safety net)
   if (role === "owner") {
     return true;
   }
 
-  // Custom role: use provided permissions
-  if (role.startsWith("custom:")) {
-    if (!customPermissions) return false;
-    return customPermissions[resource]?.includes(action) ?? false;
-  }
-
-  // Built-in role: use static map
+  // Built-in role: use static map. Unknown role → no permissions.
   const perms = rolePermissions[role];
   if (!perms) return false;
   return perms[resource]?.includes(action) ?? false;
@@ -264,8 +258,6 @@ export interface OrgPermissionInput {
   requestedOrgId: string;
   /** The caller's member row for (requestedOrgId, userId), or null if none. */
   member: { role: string } | null;
-  /** Parsed custom-role permission map when `member.role` is "custom:…", else null. */
-  customPermissions: PermissionMap | null;
 }
 
 /**
@@ -279,12 +271,12 @@ export function decideOrgPermission(
   resource: Resource,
   action: string,
 ): OrgPermissionDecision {
-  const { auth, requestedOrgId, member, customPermissions } = input;
+  const { auth, requestedOrgId, member } = input;
   if (!auth) return "deny:unauthenticated";
   if (auth.kind === "service") return "allow"; // trusted server already authorized
   if (!auth.orgId || auth.orgId !== requestedOrgId) return "deny:org-mismatch";
   if (!member) return "deny:not-member";
-  return hasPermission(member.role, resource, action, customPermissions)
+  return hasPermission(member.role, resource, action)
     ? "allow"
     : "deny:insufficient";
 }

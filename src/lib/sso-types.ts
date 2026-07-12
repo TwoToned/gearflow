@@ -2,7 +2,6 @@ export interface SSOGroupMapping {
   idpGroupName: string;
   idpGroupId?: string;
   gearflowRole: string;
-  customRoleId?: string;
   /** Set automatically when discovered from IdP during login — not yet mapped to a role */
   unmapped?: boolean;
 }

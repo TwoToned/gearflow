@@ -1870,9 +1870,10 @@ function WarehouseProjectPage({
       }
 
       // Accumulate every no-check prep (bulk units + ready serialised) into one
-      // batch call fired below. Bulk items expand to one qty-1 entry per unit —
-      // exactly the sequence the old per-unit prepItemDirect loop produced (each
-      // still splits off its own line item server-side).
+      // batch call fired below. Send ONE entry per bulk line carrying the full
+      // selected quantity — the bulk unit tracks total packed quantity (prepUnit
+      // accumulates, capped at the ordered quantity). The old per-unit qty-1 expansion
+      // is what collapsed the bulk unit to quantity 1 ("16 on the job, shows 1").
       const directPrepItems: Array<{
         lineItemId: string;
         assetId?: string;
@@ -1880,13 +1881,11 @@ function WarehouseProjectPage({
         prepContainer?: string | null;
       }> = [];
       for (const bi of bulkNoCheckItems) {
-        for (let i = 0; i < bi.quantity; i++) {
-          directPrepItems.push({
-            lineItemId: bi.lineItemId,
-            quantity: 1,
-            prepContainer: selectedContainer || null,
-          });
-        }
+        directPrepItems.push({
+          lineItemId: bi.lineItemId,
+          quantity: bi.quantity,
+          prepContainer: selectedContainer || null,
+        });
       }
 
       // Build check queue for ready items with checks

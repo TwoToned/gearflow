@@ -111,6 +111,28 @@ tags" and all jump over). Now these lines track prep **per unit**, exactly like 
 - Bulk items display as expandable groups with individual unit rows (Unit 1, Unit 2, etc.) — each unit gets its own check dialog
 - `deprepItem()` reverses prep: clears `prepStatus` to PENDING (split items stay as independent line items)
 
+#### ⚠️ Tagged-bulk quantity — the ONE unit carries the packed count (don't overwrite it)
+A **tagged** bulk line (`bulkAssetId` set) keeps exactly ONE `projectLineItemUnit`
+per `(line, bulkAsset)` whose `quantity` is the total packed/checked-out count; the
+line's `checkedOutQuantity`/`packedQuantity`/`returnedQuantity` rollups are *derived*
+from it by `syncLineItemRollup` → `computeRollupCounters`. Bug history (issue #8):
+`prepUnit`'s bulk branch OVERWROTE that unit's `quantity` to `args.quantity` on every
+call, and the client expanded a bulk prep into N `{quantity: 1}` entries — so a
+16-unit prep collapsed the unit to `quantity: 1` ("16 on the job, shows qty 1").
+That cascaded: deploy → `checkedOutQuantity: 1`, and the return path decremented 1 at
+a time (return had to be clicked 16×). Fixes:
+- `prepUnit` bulk branch **accumulates** (`existing.quantity + addQty`), capped at the
+  line's ordered `quantity` — correct whether the caller sends one aggregate entry or
+  N per-unit entries, and for incremental prep. The warehouse page now sends ONE
+  aggregate entry per bulk line.
+- `warehouseOps.checkoutKit` deploys each line at its **own** `quantity`, not a
+  hardcoded `1` (a bulk kit member of qty 16 was rolling up as 1).
+- `returnLineUnits`' bulk branch defaults `quantity` to the **full remaining**
+  checked-out quantity (was `?? 1`), so one return action brings back all 16; an
+  explicit `quantity` is still honoured for partial returns.
+- Regression: `convex/bulk-fulfillment-quantity.test.ts` drives prep → return through
+  the real `prepUnit`/`returnLineUnits` with a `convex-test` harness.
+
 ### Deploy Tab
 - Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
 - **Move to Pick (deprep) button** — a secondary `variant="line"` button next to Deploy that

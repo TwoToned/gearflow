@@ -20,7 +20,8 @@ import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { getClient, archiveClient, updateClientNotes } from "@/server/clients";
+import { getClient } from "@/server/clients";
+import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -77,8 +78,9 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
     queryFn: () => getClient(id),
   });
 
+  const clientWrites = useClientWrites();
   const archiveMutation = useServerMutation({
-    mutationFn: () => archiveClient(id),
+    mutationFn: () => clientWrites.archive(id),
     onSuccess: () => {
       toast.success("Client archived");
       router.push("/clients");
@@ -365,7 +367,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <NotesEditor
                     initialNotes={client.notes || ""}
                     onChanged={refetch}
-                    onSave={(notes) => updateClientNotes(id, notes)}
+                    onSave={(notes) => clientWrites.updateNotes(id, notes)}
                     placeholder="Add notes about this client..."
                   />
                 </TabsContent>

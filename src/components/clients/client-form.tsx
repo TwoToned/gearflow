@@ -9,7 +9,7 @@ import { Building2, Mail, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
-import { createClient, updateClient } from "@/server/clients";
+import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { clientTypeLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -69,9 +69,10 @@ export function ClientForm({ initialData }: ClientFormProps) {
 
   const v = form.watch();
 
+  const clientWrites = useClientWrites();
   const mutation = useServerMutation({
     mutationFn: (data: ClientFormValues) =>
-      isEditing ? updateClient(initialData.id, data) : createClient(data),
+      isEditing ? clientWrites.update(initialData.id, data) : clientWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Client updated" : "Client created");
       router.push(`/clients/${result.id}`);

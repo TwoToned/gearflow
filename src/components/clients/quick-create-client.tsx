@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { createClient } from "@/server/clients";
+import { useClientWrites } from "@/hooks/use-native-client-writes";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +28,9 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
 
+  const clientWrites = useClientWrites();
   const mutation = useServerMutation({
-    mutationFn: () => createClient({ name, type, contactName: contactName || undefined, contactEmail: contactEmail || undefined }),
+    mutationFn: () => clientWrites.create({ name, type, contactName: contactName || undefined, contactEmail: contactEmail || undefined }),
     onSuccess: (result) => {
       toast.success("Client created");
       onCreated?.(result.id);

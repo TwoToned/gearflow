@@ -14,35 +14,14 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { toClientFields } from "@/lib/client-fields";
 import type { FilterValue } from "@/lib/table-utils";
 
-// Clients live in Convex (source of truth) as of the Phase 3 cutover. This file
-// keeps all permission/validation/audit logic and calls Convex for client data;
-// cross-domain joins (project counts, media) are composed from Prisma, which
-// still owns those domains. See FEATUREDOCS/54.
-
-/** Build the Convex create/patch payload from validated form values (null -> absent). */
-function toClientFields(parsed: ClientFormValues) {
-  return {
-    name: parsed.name,
-    type: parsed.type,
-    contactName: parsed.contactName || undefined,
-    contactEmail: parsed.contactEmail || undefined,
-    contactPhone: parsed.contactPhone || undefined,
-    billingAddress: parsed.billingAddress || undefined,
-    billingLatitude: parsed.billingLatitude == null ? undefined : Number(parsed.billingLatitude),
-    billingLongitude: parsed.billingLongitude == null ? undefined : Number(parsed.billingLongitude),
-    shippingAddress: parsed.shippingAddress || undefined,
-    shippingLatitude: parsed.shippingLatitude == null ? undefined : Number(parsed.shippingLatitude),
-    shippingLongitude: parsed.shippingLongitude == null ? undefined : Number(parsed.shippingLongitude),
-    taxId: parsed.taxId || undefined,
-    paymentTerms: parsed.paymentTerms || undefined,
-    defaultDiscount: parsed.defaultDiscount == null ? undefined : Number(parsed.defaultDiscount),
-    notes: parsed.notes || undefined,
-    tags: parsed.tags,
-    isActive: parsed.isActive,
-  };
-}
+// Clients live in Convex (source of truth). Browser WRITES go browser-direct
+// (convex/clientWrites.ts + src/hooks/use-native-client-writes.ts); these server-action
+// writes stay as the agent/MCP API's implementation (create_client + dynamic-dispatch)
+// until a CONVEX_WRITES bridge re-points them at the native mutations. Reads compose
+// cross-domain joins (project counts, media) in Node. See FEATUREDOCS/54.
 
 function compareBy(sortBy: string, sortOrder: "asc" | "desc") {
   const dir = sortOrder === "desc" ? -1 : 1;

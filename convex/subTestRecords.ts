@@ -54,26 +54,79 @@ export const listByRecordIds = query({
   },
 });
 
+const subTestFields = {
+  id: v.string(),
+  testTagRecordId: v.string(),
+  label: v.string(),
+  sortOrder: v.optional(v.number()),
+  result: v.optional(enums.TestResult),
+  earthContinuityResult: v.optional(enums.TestResult),
+  earthContinuityReading: v.optional(v.number()),
+  insulationResult: v.optional(enums.TestResult),
+  insulationReading: v.optional(v.number()),
+  leakageCurrentResult: v.optional(enums.TestResult),
+  leakageCurrentReading: v.optional(v.number()),
+  polarityResult: v.optional(enums.TestResult),
+  notes: v.optional(v.string()),
+  createdAt: v.optional(v.number()),
+};
+
 export const create = mutation({
-  args: {
-    id: v.string(),
-    testTagRecordId: v.string(),
-    label: v.string(),
-    sortOrder: v.optional(v.number()),
-    result: v.optional(enums.TestResult),
-    earthContinuityResult: v.optional(enums.TestResult),
-    earthContinuityReading: v.optional(v.number()),
-    insulationResult: v.optional(enums.TestResult),
-    insulationReading: v.optional(v.number()),
-    leakageCurrentResult: v.optional(enums.TestResult),
-    leakageCurrentReading: v.optional(v.number()),
-    polarityResult: v.optional(enums.TestResult),
-    notes: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-  },
+  args: subTestFields,
   handler: async (ctx, args) => {
     await requireService(ctx);
     return await ctx.db.insert("subTestRecords", args);
+  },
+});
+
+/**
+ * Insert many sub-test records in ONE round trip (bulk single-call invariant —
+ * a T&T record's sub-tests are all created from one form submit; the server was
+ * looping `createIfMissing` per sub-test). Idempotent per `id` (safe on retry).
+ *
+ * subTestRecords have no org column — they are parent-scoped — so defense-in-depth:
+ * every distinct `testTagRecordId` is verified to belong to `organizationId` before
+ * ANY insert (one parent lookup per distinct record, cached). A record that doesn't
+ * match the caller's org aborts the whole batch (transactional: one record's
+ * sub-tests are a single logical set).
+ */
+export const createManyIfMissing = mutation({
+  args: {
+    organizationId: v.string(),
+    records: v.array(v.object(subTestFields)),
+  },
+  handler: async (ctx, { organizationId, records }) => {
+    await requireService(ctx);
+
+    // Per-parent org re-check (by_cuid is a GLOBAL index) — cache by parent id.
+    const verifiedParents = new Map<string, boolean>();
+    for (const rec of records) {
+      if (!verifiedParents.has(rec.testTagRecordId)) {
+        const parent = await ctx.db
+          .query("testTagRecords")
+          .withIndex("by_cuid", (q) => q.eq("id", rec.testTagRecordId))
+          .unique(); // fail-closed on the (impossible) duplicate-cuid case, matching getById/createIfMissing
+        const ok = !!parent && parent.organizationId === organizationId;
+        verifiedParents.set(rec.testTagRecordId, ok);
+        if (!ok) {
+          throw new ConvexError(
+            "Forbidden: test record not found in organization: " + rec.testTagRecordId,
+          );
+        }
+      }
+    }
+
+    let created = 0;
+    for (const args of records) {
+      const existing = await ctx.db
+        .query("subTestRecords")
+        .withIndex("by_cuid", (q) => q.eq("id", args.id))
+        .unique();
+      if (existing) continue;
+      await ctx.db.insert("subTestRecords", args);
+      created += 1;
+    }
+    return { created };
   },
 });
 

@@ -146,6 +146,29 @@ describe("kit per-unit — reverse + force", () => {
     expect(u.returnedQuantity).toBe(0);
   });
 
+  // Bulk single-call (Phase 3): the batch variants do the same per-kit work + report
+  // partial-success. Core behavior is covered above; here we assert the dispatch.
+  test("undeployKitsBatch: undeploys the kit + reports a not-on-project kit as an error", async () => {
+    const t = makeT();
+    await seedKit(t);
+    await co(t);
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.undeployKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1", "ghost"], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([{ kitId: "ghost", message: "Kit not found on this project" }]);
+    expect(serialUnit(await memberUnits(t)).status).toBe("CONFIRMED");
+  });
+
+  test("unreturnKitsBatch: un-returns the kit in one call", async () => {
+    const t = makeT();
+    await seedKit(t);
+    await co(t);
+    await ci(t, "GOOD");
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.unreturnKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([]);
+    expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
+  });
+
   test("forceReturnKit flips member unit → RETURNED", async () => {
     const t = makeT();
     await seedKit(t);

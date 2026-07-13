@@ -14,7 +14,7 @@ import { api } from "../../convex/_generated/api";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
-import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
+import { getKitById, getKitByAssetTag, getKitsByIds } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
 
@@ -1158,6 +1158,51 @@ export async function forceReturnKit(kitId: string) {
   });
 
   return serialize({ success: true });
+}
+
+/**
+ * Bulk single-call force-return (Phase 3 bulk invariant): force-return N kits in ONE
+ * Convex array mutation + ONE server round-trip — replaces the client firing one
+ * `forceReturnKit` per selected kit. Partial-success: already-available / missing kits
+ * are skipped, the rest still return. Selection is validated + named via ONE org-scoped
+ * Convex read (`getKitsByIds`).
+ */
+export async function forceReturnKits(kitIds: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+
+  if (kitIds.length === 0) throw new Error("No kits selected");
+
+  // Names for the audit log only (org-scoped read; missing / cross-org ids just have
+  // no name). Per-item validation + partial-success are the MUTATION's job — pass the
+  // whole selection so already-available / missing / cross-org kits surface in
+  // `res.errors` instead of being silently pre-filtered (an all-invalid selection
+  // then returns { count: 0, errors } rather than throwing).
+  const kits = await getKitsByIds(organizationId, kitIds);
+  const nameById = new Map(kits.map((k) => [k.id, `${k.assetTag} - ${k.name}`]));
+
+  // ONE atomic array mutation (partial-success) — no client fan-out.
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.forceReturnKitsBatch, {
+    organizationId,
+    kitIds,
+    userId,
+    now: Date.now(),
+  });
+
+  if (res.succeeded.length > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "FORCE_RETURN",
+      entityType: "kit",
+      entityId: res.succeeded[0],
+      entityName: res.succeeded.map((id) => nameById.get(id) ?? id).join(", "),
+      summary: `Bulk force returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} and contents to available`,
+    });
+  }
+
+  return serialize({ count: res.succeeded.length, succeeded: res.succeeded, errors: res.errors });
 }
 
 export async function bulkForceReturnAssets(assetIds: string[]) {

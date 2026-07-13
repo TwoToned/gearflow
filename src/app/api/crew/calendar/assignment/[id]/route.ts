@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/org-context";
-import { prisma } from "@/lib/prisma";
 import {
   generateVCalendar,
   buildDateTime,
   type ICalEvent,
 } from "@/lib/ical";
-import type { OrgSettings } from "@/server/settings";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { getAssignmentById, getShiftsByAssignmentIds } from "@/lib/crew-scheduling-read";
@@ -26,19 +25,8 @@ export async function GET(
     const { organizationId } = await getOrgContext();
     const { id } = await params;
 
-    const org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { metadata: true },
-    });
-    let tzid = "Australia/Sydney";
-    if (org?.metadata) {
-      try {
-        const settings = JSON.parse(org.metadata) as OrgSettings;
-        tzid = settings.timezone || "Australia/Sydney";
-      } catch {
-        // ignore
-      }
-    }
+    const orgSettings = await readOrgSettingsBlob(organizationId);
+    const tzid = orgSettings.timezone || "Australia/Sydney";
 
     const assignment = await getAssignmentById(id);
     // Org-scope (replaces the Prisma `where: { id, organizationId }`).

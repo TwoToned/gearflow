@@ -18,42 +18,34 @@ import {
   buildDateTime,
   type ICalEvent,
 } from "@/lib/ical";
-import type { OrgSettings } from "@/server/settings";
+import { readOrgSettingsBlob, orgIdForIcalToken } from "@/lib/org-settings-read";
 
 const VALID_FEEDS = ["projects", "services", "maintenance", "crew"] as const;
 type FeedType = (typeof VALID_FEEDS)[number];
 
 /**
- * Look up organization by iCal token stored in metadata JSON.
- * Returns null if not found or feed is disabled. Includes the org's
- * configured IANA timezone (default Australia/Sydney) so the iCal feed
- * is anchored correctly.
+ * Look up organization by iCal token. `icalToken` is a denormalised, indexed
+ * lookup key on the Convex `orgSettings` table, SET ONLY while the feed is
+ * enabled — so a hit means "valid + live" (no full-table scan). Org name stays
+ * on the Better Auth org row (Postgres). Returns null if not found/disabled.
+ * Includes the org's configured IANA timezone (default Australia/Sydney).
  */
 async function findOrgByToken(token: string) {
-  // icalToken is stored in Organization.metadata JSON — query all orgs with metadata containing the token
-  const orgs = await prisma.organization.findMany({
-    where: {
-      metadata: { contains: token },
-    },
-    select: { id: true, name: true, metadata: true },
-  });
+  const orgId = await orgIdForIcalToken(token);
+  if (!orgId) return null;
 
-  for (const org of orgs) {
-    if (!org.metadata) continue;
-    try {
-      const settings = JSON.parse(org.metadata) as OrgSettings;
-      if (settings.icalToken === token && settings.icalEnabled) {
-        return {
-          id: org.id,
-          name: org.name,
-          tzid: settings.timezone || "Australia/Sydney",
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true },
+  });
+  if (!org) return null;
+
+  const settings = await readOrgSettingsBlob(orgId);
+  return {
+    id: org.id,
+    name: org.name,
+    tzid: settings.timezone || "Australia/Sydney",
+  };
 }
 
 // ─── Feed Builders ──────────────────────────────────────────────────────────

@@ -1471,6 +1471,29 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_credentialID", ["credentialID"]),
 
+  // OrgSettings — per-org BUSINESS settings, migrated OFF the Better Auth
+  // `organizations` row (Phase 1 source-of-truth inversion). The `settings`
+  // field is the JSON blob that used to live in `organization.metadata`
+  // (OrgSettings TS shape: branding, testTag, sso, asset-tag + project-number
+  // config, ical, currency/tax labels, …). Three fields are denormalised out of
+  // the blob for indexed / standalone reads:
+  //   - defaultTaxRate  — read standalone by line-item tax resolution
+  //   - apiKillSwitchAt — the API kill-switch timestamp (ms)
+  //   - icalToken       — SET ONLY WHILE the feed is ENABLED, so a by_icalToken
+  //                       hit means "valid + live" without parsing the blob.
+  // One row per org (by_organizationId). See FEATUREDOCS/54.
+  orgSettings: defineTable({
+    organizationId: v.string(),
+    settings: v.optional(v.string()), // JSON string of the OrgSettings blob
+    defaultTaxRate: v.optional(v.number()),
+    apiKillSwitchAt: v.optional(v.number()),
+    icalToken: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_organizationId", ["organizationId"])
+    .index("by_icalToken", ["icalToken"]),
+
   // SiteSettings
   siteSettings: defineTable({
     id: v.string(),

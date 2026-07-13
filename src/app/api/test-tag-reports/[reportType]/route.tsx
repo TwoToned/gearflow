@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrganization } from "@/lib/auth-server";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getFileAsDataUri } from "@/lib/storage";
 import { generateTestTagReport } from "@/lib/pdfme/generate-pdf";
 import type { TestTagReportType } from "@/lib/pdfme/types";
@@ -60,11 +61,11 @@ function parseFilters(url: URL): ReportFilters {
 }
 
 async function getOrgData(organizationId: string) {
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-  let orgSettings: Record<string, unknown> = {};
-  if (org?.metadata) {
-    try { orgSettings = JSON.parse(org.metadata); } catch { /* ignore */ }
-  }
+  // Identity (name) from the Better Auth org row; business settings from Convex.
+  const [org, orgSettings] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+    readOrgSettingsBlob(organizationId),
+  ]);
   const branding = orgSettings.branding as {
     primaryColor?: string; accentColor?: string; documentColor?: string;
     logoUrl?: string; iconUrl?: string; documentLogoMode?: "logo" | "icon" | "none";

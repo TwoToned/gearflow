@@ -9,6 +9,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { generateApiKey, assertScopesWithinActor } from "@/lib/api-key";
 import { getAmbientActor } from "@/lib/request-actor";
+import { readOrgSettings, setApiKillSwitchConvex } from "@/lib/org-settings-read";
 
 // ApiKey is a Convex domain now (the Postgres `api_key` table is frozen). The
 // Better-Auth `member` (acting-user membership) + `organization` (kill switch) reads
@@ -48,11 +49,8 @@ export async function listApiKeys() {
     orgId: organizationId,
   });
   const keys = rawKeys.map(toKeyRow); // strips tokenHash — never leaves the backend
-  const killSwitch = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { apiKillSwitchAt: true },
-  });
-  return serialize({ keys, apiKillSwitchAt: killSwitch?.apiKillSwitchAt ?? null });
+  const { apiKillSwitchAt } = await readOrgSettings(organizationId);
+  return serialize({ keys, apiKillSwitchAt });
 }
 
 /**
@@ -175,10 +173,7 @@ export async function setOrgApiKillSwitch(enabled: boolean) {
     "update",
   );
 
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { apiKillSwitchAt: enabled ? new Date() : null },
-  });
+  const apiKillSwitchAt = await setApiKillSwitchConvex(organizationId, enabled);
 
   await logActivity({
     organizationId,
@@ -193,5 +188,5 @@ export async function setOrgApiKillSwitch(enabled: boolean) {
       : "Disabled org-wide API kill switch (keys re-enabled)",
   });
 
-  return serialize({ apiKillSwitchAt: enabled ? new Date() : null });
+  return serialize({ apiKillSwitchAt });
 }

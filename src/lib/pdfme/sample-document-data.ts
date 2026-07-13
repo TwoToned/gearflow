@@ -4,6 +4,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getFileAsDataUri } from "@/lib/storage";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import type { DocumentData, DocumentLineItem, PdfBranding } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -15,15 +16,15 @@ const DEFAULT_DOC_COLOR = "#0d4f4f";
 export async function buildSampleDocumentData(
   organizationId: string
 ): Promise<DocumentData> {
-  const org = await prisma.organization.findUniqueOrThrow({
-    where: { id: organizationId },
-  });
+  // Identity (name) from Better Auth; branding/settings from Convex.
+  const [org, meta] = await Promise.all([
+    prisma.organization.findUniqueOrThrow({
+      where: { id: organizationId },
+      select: { name: true },
+    }),
+    readOrgSettingsBlob(organizationId) as Promise<Record<string, unknown>>,
+  ]);
 
-  // Parse org metadata for branding
-  let meta: Record<string, unknown> = {};
-  if (org.metadata) {
-    try { meta = JSON.parse(org.metadata) as Record<string, unknown>; } catch { /* skip */ }
-  }
   const branding = (meta.branding as PdfBranding) || {};
   const docColor = branding.documentColor || DEFAULT_DOC_COLOR;
 

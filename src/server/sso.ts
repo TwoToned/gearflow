@@ -11,18 +11,10 @@ import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
 import { env } from "@/env";
+import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 import type { OrgSettings } from "./settings";
 
 // ─── Read helpers ────────────────────────────────────────────────────────────
-
-function parseOrgSettings(metadata: string | null): OrgSettings {
-  if (!metadata) return {};
-  try {
-    return JSON.parse(metadata);
-  } catch {
-    return {};
-  }
-}
 
 function getSSOFromSettings(settings: OrgSettings): OrgSSOSettings {
   return { ...DEFAULT_SSO_SETTINGS, ...settings.sso };
@@ -33,13 +25,15 @@ function getSSOFromSettings(settings: OrgSettings): OrgSSOSettings {
 export async function getSSOSettings() {
   const { organizationId } = await getOrgContext();
 
+  // Identity (slug/name/logo) stays on the Better Auth org row; SSO config is
+  // in the Convex org-settings blob.
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
-    select: { metadata: true, slug: true, name: true, logo: true },
+    select: { slug: true, name: true, logo: true },
   });
   if (!org) throw new Error("Organization not found");
 
-  const settings = parseOrgSettings(org.metadata);
+  const settings = await readOrgSettingsBlob(organizationId);
   const sso = getSSOFromSettings(settings);
 
   return serialize({ sso, orgSlug: org.slug, orgName: org.name, orgLogo: org.logo });
@@ -48,12 +42,7 @@ export async function getSSOSettings() {
 export async function updateSSOSettings(data: Partial<OrgSSOSettings>) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  const settings = parseOrgSettings(org.metadata);
+  const settings = await readOrgSettingsBlob(organizationId);
   const currentSSO = getSSOFromSettings(settings);
 
   // Enforce: can't enable enforceSSO without successful test
@@ -63,11 +52,7 @@ export async function updateSSOSettings(data: Partial<OrgSSOSettings>) {
 
   const updatedSSO = { ...currentSSO, ...data };
   settings.sso = updatedSSO;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   await logActivity({
     organizationId,
@@ -223,12 +208,7 @@ export async function updateSSOProviderMeta(
 ) {
   const { organizationId } = await requirePermission("orgSettings", "update");
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  const settings = parseOrgSettings(org.metadata);
+  const settings = await readOrgSettingsBlob(organizationId);
   const sso = getSSOFromSettings(settings);
 
   if (!sso.providerMeta) sso.providerMeta = {};
@@ -237,11 +217,7 @@ export async function updateSSOProviderMeta(
     icon: meta.icon || "key",
   };
   settings.sso = sso;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   return { success: true };
 }
@@ -251,21 +227,12 @@ export async function updateSSOProviderMeta(
 export async function updateGroupMappings(mappings: SSOGroupMapping[]) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
   // Group mappings target built-in roles only (custom roles were removed).
-  const settings = parseOrgSettings(org.metadata);
+  const settings = await readOrgSettingsBlob(organizationId);
   const sso = getSSOFromSettings(settings);
   sso.groupMappings = mappings;
   settings.sso = sso;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   await logActivity({
     organizationId,
@@ -455,12 +422,12 @@ export async function rejectSSOUser(approvalId: string, note?: string) {
 export async function getOrgLoginInfo(orgSlug: string) {
   const org = await prisma.organization.findUnique({
     where: { slug: orgSlug },
-    select: { id: true, name: true, slug: true, logo: true, metadata: true },
+    select: { id: true, name: true, slug: true, logo: true },
   });
 
   if (!org) return null;
 
-  const settings = parseOrgSettings(org.metadata);
+  const settings = await readOrgSettingsBlob(org.id);
   const sso = settings.sso;
 
   // Get SSO providers for this org

@@ -41,6 +41,26 @@ export const getByOrgAndUser = query({
  * `replace` makes the row EXACTLY the mirror args (a demotion's new role fully
  * overwrites the old). The caller always passes the complete current Prisma row.
  */
+/**
+ * Every mirrored member row. SERVICE-only. Used by the auth-mirror RECONCILE job
+ * (scripts/auth-mirror-reconcile.ts) to detect orphans — mirror rows whose
+ * Better-Auth member was deleted (a stale row = a stale authZ grant, since
+ * `requireOrgPermission` resolves role from here). Small table; full collect.
+ */
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireService(ctx);
+    const rows = await ctx.db.query("members").collect();
+    return rows.map((r) => ({
+      id: r.id,
+      organizationId: r.organizationId,
+      userId: r.userId,
+      role: r.role,
+    }));
+  },
+});
+
 export const upsert = mutation({
   args: {
     id: v.string(),

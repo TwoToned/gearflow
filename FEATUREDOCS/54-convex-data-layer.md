@@ -3658,6 +3658,28 @@ snapshot backup, which captures bytes but not org-scoped structure).
 - **`convex/orgExport.test.ts`** — parses the live schema and asserts
   classified ∪ = 101 (fails on an unclassified new table).
 
+## Phase 0 (tier-0) — auth-mirror reconcile + drift monitoring
+
+The Convex `users`/`members` mirror is the **authorization source of truth**
+(`requireOrgPermission` resolves a caller's role from the Convex `members` mirror
+row, not the JWT). The live sync is best-effort fire-and-forget; this is the
+versioned backstop (was previously an unversioned box script that had never run).
+
+- **`scripts/auth-mirror-reconcile.ts`** — fully reconciles Postgres → Convex (unlike
+  the `createIfMissing` backfills, which can't fix drift): **missing** → create;
+  **role/org/user drift** → overwrite (authZ-critical — a drifted role silently
+  mis-authorizes); **orphan** (a Convex mirror row whose Better-Auth member/user is
+  gone → a stale grant that outlives removal) → **delete, fail-closed**. Prints a
+  structured drift summary, re-checks post-reconcile parity, emails an alert
+  (`RECONCILE_ALERT_EMAIL`) when drift is found, and **exits non-zero on drift/parity
+  break** so cron surfaces it. Uses `api.members.listAll` / `api.users.listAll`
+  (service-gated, added for orphan detection).
+- **`ops/auth-mirror-reconcile.sh`** — versioned cron wrapper. Runs the reconcile
+  **inside the app container** (the only place with both prod Postgres AND prod Convex
+  — GitHub Actions can't reach prod Postgres). Install as a host cron (daily); output
+  to a logfile, exit code preserved.
+- **Proven on prod:** users 3/3, members 3/3, parity OK, 0 drift, exit 0.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

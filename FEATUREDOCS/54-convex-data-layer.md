@@ -3680,6 +3680,25 @@ versioned backstop (was previously an unversioned box script that had never run)
   to a logfile, exit code preserved.
 - **Proven on prod:** users 3/3, members 3/3, parity OK, 0 drift, exit 0.
 
+## Phase 0 (gate §4.2) — mutation-surface kill-switch + observability
+
+Blast-radius containment + observability for the browser-direct mutation surface,
+before Phase 3 goes live. Full runbook: [`docs/convex-observability-runbook.md`](../docs/convex-observability-runbook.md).
+
+- **Kill-switch** — `systemFlags` singleton + `assertWritesEnabled(ctx, domain?)`
+  (`convex/lib/writeGuard.ts`). **Every browser-direct (public) mutation calls it
+  first**; when the flag is flipped (`systemFlags.setWrites`, or
+  `scripts/toggle-write-killswitch.ts`) every guarded write rejects instantly, no
+  redeploy. Global or per-domain. Wired into the 2 live browser-direct mutations
+  (`assetWrites.updateNotesNative`, `dashboardCounters.reconcileIfStale`); the
+  convention extends to each new one. Service (server-routed) writes are unaffected.
+  Validated live on prod (flip on/off; singleton, service-gated); guard logic unit-tested.
+- **Observability** — the Convex dashboard is the function-metrics source (call
+  volume / error rate / latency per function); the remaining step is a dashboard log
+  stream → Sentry/Slack failure alert (needs dashboard access, not code). Domain
+  anomaly alerts already emit: auth-mirror drift (reconcile cron), WooCommerce `FAILED`
+  order logs, webhook-delivery stalls.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

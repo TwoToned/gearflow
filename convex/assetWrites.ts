@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -43,6 +44,7 @@ export const updateNotesNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, notes, actor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
     await requireOrgPermission(ctx, orgId, "asset", "update");
 
     const asset = await ctx.db

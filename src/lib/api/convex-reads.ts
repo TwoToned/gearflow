@@ -111,6 +111,11 @@ export const CONVEX_READS: Record<string, ConvexReadMeta> = Object.fromEntries(
       [p("query", "string")],
       "Global search across every entity type (models, kits, assets, projects, clients, suppliers, locations, categories, maintenance, crew, ...). Min 2 chars; returns { results: [] } when nothing matches."),
 
+    // ── Scan lookup (was the scan-lookup.scanLookup server action) ────────────
+    read("scan-lookup.scanLookup", api.scanLookup.resolve, "asset", "read",
+      [p("value", "string")],
+      "Look up a scanned barcode/tag value and return the URL + label to navigate to (asset / kit / bulk asset / test&tag item)."),
+
     // ── Org-wide tag autocomplete (was the tags.getOrgTags server action) ─────
     read("tags.getOrgTags", api.tags.getOrgTags, "asset", "read", [],
       "The distinct set of tags used across every taggable entity in the org (models, assets, kits, projects, clients, ...)."),

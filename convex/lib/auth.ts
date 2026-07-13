@@ -189,3 +189,53 @@ export async function requireOrgPermission(
     throw new ConvexError(orgPermissionMessage(decision));
   }
 }
+
+// ─── Actor identity (Phase 3 — browser-direct security baseline) ────────────
+//
+// The `actor` mutation arg (userId + userName for the audit trail) is
+// CLIENT-SUPPLIED, and every `*Writes.ts` mutation is PUBLIC and reachable by a
+// user token (requireOrgPermission permits a member with the role). So a caller
+// can attribute a write to ANY userId in the activity log — a real spoofing hole
+// that becomes load-bearing the moment writes go browser-direct. `resolveActor`
+// is the fix: it pins attribution to the VERIFIED token identity.
+//
+//   • SERVICE token — the trusted Next.js backend already authenticated the real
+//     end-user and passes their id/name; a service call has no user identity of
+//     its own, so `supplied` is trusted verbatim.
+//   • USER token — `userId` is OVERWRITTEN with the token subject (unspoofable);
+//     `userName` is resolved from the `users` mirror, falling back to the supplied
+//     label (display-only — once userId is pinned, the label can't forge attribution).
+//   • No identity — reject.
+//
+// Every mutation that takes an `actor` arg MUST resolve it through this before
+// using it for the audit trail. Accepts QueryCtx or MutationCtx (uses ctx.auth +
+// ctx.db.query only).
+
+export interface Actor {
+  userId: string;
+  userName: string;
+}
+
+export async function resolveActor(
+  ctx: QueryCtx | MutationCtx,
+  supplied: Actor,
+): Promise<Actor> {
+  const auth = await getAuthContext(ctx);
+  if (!auth) throw new ConvexError("Unauthorized: authentication required.");
+  if (auth.kind === "service") return supplied;
+
+  // User token: the verified subject is the ONLY trustworthy attribution. Resolve
+  // the display name from the users mirror; if the mirror row is missing (rare —
+  // members+users are mirrored together, and a member row already passed RBAC),
+  // fall back to the verified userId, NEVER the client-supplied label (which the
+  // caller could set to impersonate someone in the "by …" audit attribution). The
+  // activity UI joins the users row for the pretty name anyway.
+  const userRow = await ctx.db
+    .query("users")
+    .withIndex("by_cuid", (q) => q.eq("id", auth.userId))
+    .first();
+  return {
+    userId: auth.userId,
+    userName: userRow?.name ?? auth.userId,
+  };
+}

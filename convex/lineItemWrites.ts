@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
@@ -47,8 +47,9 @@ export const removeNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, orgDefaultTaxRate, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!line) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
@@ -114,8 +115,9 @@ export const patchNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
@@ -194,8 +196,9 @@ export const addCustomNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, orgDefaultTaxRate, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const sortOrder = await nextLineSort(ctx, projectId, organizationId);
     await ctx.db.insert("projectLineItems", {
@@ -271,8 +274,9 @@ export const addNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, orgDefaultTaxRate, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).
@@ -344,8 +348,9 @@ export const addKitNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, orgDefaultTaxRate, actor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,

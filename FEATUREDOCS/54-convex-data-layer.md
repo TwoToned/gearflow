@@ -3767,6 +3767,71 @@ shared infra before any domain goes browser-direct.
     counted mutations must mount the component via `register(t, "shardedCounter")` from
     `@convex-dev/sharded-counter/test`.
 
+## Phase 3 (WS2) — browser-direct, session 3 (2026-07-13)
+
+Continued the browser-direct workstream. All PRs codex-reviewed + independently
+re-audited (adversarial agent, clean).
+
+- **Bulk single-call — remaining service-loop gaps closed.**
+  - `subTestRecords.createManyIfMissing` (PR #471) — a T&T record's sub-tests now
+    insert in ONE array mutation (was a per-sub-test `createIfMissing` loop). Parent-
+    scoped table (no org column) → per-parent org re-check: every distinct
+    `testTagRecordId` is verified against the caller's `organizationId` (via
+    `testTagRecords` by_cuid `.unique()`, fail-closed) BEFORE any insert; a mismatch
+    aborts the whole batch. Idempotent per id, `requireService`-gated.
+    `convex/subTestRecordsCreateMany.test.ts`.
+  - `maintenanceRecordAssets.createManyIfMissing` (PR #472) — linking N assets to a
+    maintenance record is ONE array mutation (was `createMaintenanceAssetLinks` looping
+    `create` per asset). Same parent-scoped per-record org re-check; `organizationId`
+    threaded through the helper to all 4 call sites. `convex/maintenanceRecordAssetsCreateMany.test.ts`.
+  - **Deferred with rationale (NOT a gap):** CSV asset/model imports and the remaining
+    server-side create loops (group-templates, sub-hire groups, project-duplicate
+    managers, project-services clone, supplier-rate remove) are **cold, server-only
+    paths** (csv.ts et al. stay in the Node-only KEEP set, never browser-direct). The
+    enforced gate's real purpose — no client fan-out (each is already ONE client
+    round-trip) and no browser-direct hot-row OCC — is satisfied. Forcing CSV into a
+    single array mutation would *regress* the per-row partial-success that import
+    depends on. Left as an Appendix-B efficiency item, not a browser-direct blocker.
+
+- **Security baseline — `returns` validators on the browser-direct surface (PR #473).**
+  All 26 public mutations across `assetWrites`/`kitWrites`/`projectWrites`/`crewWrites`/
+  `lineItemWrites` now declare a strict `returns:` validator, so Convex rejects any
+  undeclared field on the way OUT (defence-in-depth alongside the strict `v.*` arg
+  validators). Return shapes are simple (`{id}`/`{ok}`/`{projectId}`/`{created,id}`/
+  `{id,sortOrder}`) and each is runtime-confirmed by the existing `*Writes.test.ts`
+  suites (72 tests; every mutation exercised ≥1×). A returns validator throws at
+  RUNTIME on mismatch, so this scope was deliberately bounded to the browser-direct
+  boundary (service-gated CRUD behind `requireService` is not the boundary).
+  - *Also hardened:* `rateLimiter.test.ts` burst-exhaustion assertion is now refill-
+    tolerant (the token bucket refills on the wall clock; the per-call `returns`
+    overhead tipped the old "exactly the 101st rejects" timing on the CI runner).
+
+- **`internal*` reduction — NOT APPLICABLE (documented).** The `*Native` mutations and
+  the thin-CRUD helpers are called from `src/server` via the Convex **HTTP client with
+  a service token**, which can only invoke **public** functions; `internalMutation`/
+  `internalQuery` are not HTTP-callable. The `requireService` guard IS the access
+  control for those. Genuinely within-Convex-only functions (e.g. `wooCommerceInternal`)
+  are already `internal*`. So there is no safe `internal*` reduction to make here without
+  rewiring the server→Convex transport — deliberately not done.
+
+- **Browser-direct optimistic writes — project notes (PR #474).** Added
+  `use-native-project-writes.ts` `useOptimisticProjectNotes` (the project mirror of the
+  kit-notes hook): `useMutation(api.projectWrites.updateNotesNative).withOptimisticUpdate`
+  patches `projectDetail.bundle` (notes live on `detail.project.<field>`) for all three
+  notes fields, flag-gated behind `NEXT_PUBLIC_NATIVE_PROJECT_NOTES_OPTIMISTIC`
+  (build-inlined; default OFF → falls back to the `updateProjectNotes` server action).
+  Joins asset-notes / kit-notes / line-item as the live browser-direct optimistic hops.
+  Optimistic-by-consequence (notes are safe; a wrong save just re-renders).
+
+**Not done this session (gated, next-session work):** the full server-action DATA-layer
+deletion. Inventory confirmed it is **not safe to mass-delete yet** — the write actions
+still hold validation / RBAC / side-effects (T&T auto-registration, tag-counter
+reservation, recalc) server-side, and ~92 `useServerQuery` count/preview reads are not
+yet re-homed onto Convex queries. That residual orchestration must move into the
+`*Writes.ts` mutations (per domain) and the count/preview reads onto native queries
+before deletion is safe; `src/lib/*-read.ts` stays exempt. This is the remaining bulk of
+WS2 and is largely Phase-4-adjacent mechanical work.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

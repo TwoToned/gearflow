@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getOrgTags } from "@/server/tags";
+import { useConvex } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Org-wide tag autocomplete suggestions (React Query removal, Phase 6).
@@ -17,6 +18,7 @@ import { getOrgTags } from "@/server/tags";
  * has loaded.
  */
 export function useOrgTags(orgId: string | undefined): string[] {
+  const convex = useConvex();
   const [tags, setTags] = useState<string[]>([]);
 
   useEffect(() => {
@@ -25,7 +27,9 @@ export function useOrgTags(orgId: string | undefined): string[] {
     setTags([]);
     if (!orgId) return;
     let cancelled = false;
-    getOrgTags()
+    // One-shot browser-direct read (autocomplete, no liveness requirement).
+    convex
+      .query(api.tags.getOrgTags, { orgId })
       .then((next) => {
         if (!cancelled) setTags(next);
       })
@@ -35,7 +39,7 @@ export function useOrgTags(orgId: string | undefined): string[] {
     return () => {
       cancelled = true;
     };
-  }, [orgId]);
+  }, [orgId, convex]);
 
   return tags;
 }

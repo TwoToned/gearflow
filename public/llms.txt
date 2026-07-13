@@ -28,7 +28,7 @@ The surface is arranged in two tiers, because 537 tools would overwhelm any agen
 `get_project`, `create_project`, `search_assets`, `get_asset`, `list_models`,
 `list_kits`, `get_kit`, `check_availability`, `global_search`, `scan_lookup`,
 `list_clients`, `create_client`, `list_crew`, `list_locations`, `list_suppliers`,
-`get_pull_sheet`, `get_project_tasks`, `get_activity_log`, `get_dashboard`,
+`get_pull_sheet`, `get_project_tasks`, `get_activity_log`,
 `reserve_items`, `whoami`, and the tier-2 tools below. Use these first — they are
 easier to call correctly.
 

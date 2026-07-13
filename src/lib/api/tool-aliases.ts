@@ -39,7 +39,6 @@ export const TOOL_ALIASES: Record<string, string> = {
   get_available_assets_for_model: "warehouse.getAvailableAssetsForModel",
   get_project_tasks: "project-tasks.getProjectTasks",
   get_activity_log: "activity-log.getActivityLogs",
-  get_dashboard: "dashboard.getMyHomeData",
 };
 
 /** operation name → MCP tool name (inverse of {@link TOOL_ALIASES}). */

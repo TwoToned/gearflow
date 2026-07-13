@@ -17,16 +17,14 @@
  *
  * Lives outside `"use server"` so integration tests drive it directly.
  *
- * **Convex read-rewiring (Phase A, Bucket-1).** The PURE conflict-detection
- * reads (`findProjectConflictsCore`, `findSwapCandidatesCore`) read line items +
- * units from the Convex mirror via `reservation-conflicts-read.ts` and replicate
- * the Prisma `where` filters in JS. `swapLineItemAssetCore` STAYS on Prisma — its
- * pre-write line-item lookup and the in-`$transaction` TOCTOU guard reads gate a
- * `tx.projectLineItem.update`, so they must read the store they write inside the
- * same transaction (read-then-write).
+ * **Convex-native.** The conflict-detection reads (`findProjectConflictsCore`,
+ * `findSwapCandidatesCore`) read line items + units from Convex via
+ * `reservation-conflicts-read.ts`, replicating the old Prisma `where` filters in JS.
+ * `swapLineItemAssetCore` is Convex-only too: the authoritative double-booking guard
+ * + write live atomically inside the `swapLineItemAsset` Convex mutation (OCC re-check
+ * + write, race-safe) — replacing the old in-`$transaction` TOCTOU guard.
  */
 
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getModelMap } from "@/lib/models-read";
@@ -211,12 +209,9 @@ export async function findSwapCandidatesCore(
  * Returns the updated line item id. Throws a plain Error on validation
  * failure; the server-action wrapper translates to UserFacingError.
  *
- * **Stays on Prisma (read-then-write).** The pre-write line-item lookup and the
- * in-`$transaction` TOCTOU guard reads gate `tx.projectLineItem.update`; they
- * MUST read the same store they write, inside the same transaction. Converting
- * them to a Convex read would re-open the double-booking race this method exists
- * to close (the asset/window context still comes from Convex — only the
- * write-gating booking reads stay Prisma).
+ * **Convex-only.** Pre-checks read Convex for early validation; the authoritative
+ * double-booking guard + write live atomically inside the `swapLineItemAsset` Convex
+ * mutation (OCC re-check + write, race-safe) — closing the TOCTOU without a Prisma tx.
  */
 export async function swapLineItemAssetCore(
   lineItemId: string,

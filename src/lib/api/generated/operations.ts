@@ -387,8 +387,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "reservation-conflicts.getProjectConflicts": { name: "reservation-conflicts.getProjectConflicts", module: "reservation-conflicts", fn: "getProjectConflicts", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
   "reservation-conflicts.getSwapCandidates": { name: "reservation-conflicts.getSwapCandidates", module: "reservation-conflicts", fn: "getSwapCandidates", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "lineItemId", type: "string", optional: false }], dangerous: false, summary: "" },
   "reservation-conflicts.swapLineItemAsset": { name: "reservation-conflicts.swapLineItemAsset", module: "reservation-conflicts", fn: "swapLineItemAsset", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "lineItemId", type: "string", optional: false }, { name: "newAssetId", type: "string", optional: false }], dangerous: false, summary: "" },
-  "roi.getFleetRoi": { name: "roi.getFleetRoi", module: "roi", fn: "getFleetRoi", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "opts", type: "{ scope?: RoiScope; from?: number; to?: number; }", optional: true }], dangerous: false, summary: "ROI reporting. Reads what the allocation pass wrote; never recomputes." },
-  "roi.getModelRoi": { name: "roi.getModelRoi", module: "roi", fn: "getModelRoi", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "modelId", type: "string", optional: false }, { name: "opts", type: "{ scope?: RoiScope; from?: number; to?: number }", optional: true }], dangerous: false, summary: "" },
   "saved-views.createSavedView": { name: "saved-views.createSavedView", module: "saved-views", fn: "createSavedView", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "data", type: "{ tableId: string; name: string; config: SavedViewConfig; isDefault?: boolean; }", optional: false }], dangerous: false, summary: "" },
   "saved-views.deleteSavedView": { name: "saved-views.deleteSavedView", module: "saved-views", fn: "deleteSavedView", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "saved-views.getSavedViews": { name: "saved-views.getSavedViews", module: "saved-views", fn: "getSavedViews", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "tableId", type: "string", optional: false }], dangerous: false, summary: "Saved table views are personal: each is owned by the user who created it and" },
@@ -623,7 +621,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "project-tasks": () => import("@/server/project-tasks"),
   "projects": () => import("@/server/projects"),
   "reservation-conflicts": () => import("@/server/reservation-conflicts"),
-  "roi": () => import("@/server/roi"),
   "saved-views": () => import("@/server/saved-views"),
   "scan-lookup": () => import("@/server/scan-lookup"),
   "search": () => import("@/server/search"),
@@ -4288,4 +4285,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 530;
+export const OPERATION_COUNT = 528;

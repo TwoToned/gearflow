@@ -28,9 +28,8 @@ const roi = {
   stillToRecover: 0,
 };
 
-vi.mock("@/server/roi", () => ({
-  getModelRoi: vi.fn(async () => roi),
-  getFleetRoi: vi.fn(),
+vi.mock("@/hooks/use-roi", () => ({
+  useModelRoi: vi.fn(() => ({ data: roi, isLoading: false })),
 }));
 
 import { ModelRoiTab } from "@/components/assets/model-roi-tab";

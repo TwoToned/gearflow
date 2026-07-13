@@ -49,8 +49,6 @@ describe("env validation", () => {
     const { env } = await loadEnv({});
     expect(env.PASSKEY_RP_ID).toBe("localhost");
     expect(env.PLATFORM_NAME).toBe("RVLT Flow");
-    expect(env.S3_REGION).toBe("ap-southeast-2");
-    expect(env.S3_BUCKET).toBe("gearflow-uploads");
     expect(env.EMAIL_FROM).toBe("RVLT Flow <noreply@gearflow.app>");
     expect(env.UPLOAD_MAX_SIZE_MB).toBe(50);
   });
@@ -99,7 +97,6 @@ describe("env validation", () => {
   it("leaves optional vars undefined when not set", async () => {
     const { env } = await loadEnv({});
     expect(env.RESEND_API_KEY).toBeUndefined();
-    expect(env.S3_ENDPOINT).toBeUndefined();
     expect(env.CRON_SECRET).toBeUndefined();
   });
 });

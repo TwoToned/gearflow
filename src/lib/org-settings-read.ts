@@ -97,6 +97,16 @@ export async function reserveTestTagIdsConvex(organizationId: string, count: num
   return ids;
 }
 
+/** Atomically reserve the next sub-hire order number (SH-NNNN). */
+export async function reserveSubHireOrderNumberConvex(organizationId: string): Promise<string> {
+  const convex = await getConvexClient();
+  const { orderNumber } = await convex.mutation(api.orgSettings.reserveSubHireOrderNumber, {
+    organizationId,
+    now: Date.now(),
+  });
+  return orderNumber;
+}
+
 /** Toggle the API kill-switch; returns the new timestamp (or null). */
 export async function setApiKillSwitchConvex(organizationId: string, enabled: boolean): Promise<Date | null> {
   const convex = await getConvexClient();

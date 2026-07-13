@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { reserveSubHireOrderNumberConvex } from "@/lib/org-settings-read";
 import { addMediaConvex, removeMediaConvex } from "@/lib/media-write";
 import { getConvexClient } from "@/lib/convex-client";
 import { getSubHireMediaFromConvex, withResolvedFile } from "@/lib/media-read";
@@ -58,40 +59,9 @@ const VALID_TRANSITIONS: Record<SubHireStatus, SubHireStatus[]> = {
 
 // ─── Order Number ────────────────────────────────────────────────────────────
 
-interface OrgSettings {
-  [key: string]: unknown;
-  subHireOrderCounter?: number;
-}
-
-async function reserveSubHireOrderNumber(
-  tx: Prisma.TransactionClient,
-  organizationId: string,
-): Promise<string> {
-  const org = await tx.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  let settings: OrgSettings = {};
-  if (org.metadata) {
-    try {
-      settings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
-
-  const currentCounter = settings.subHireOrderCounter || 0;
-  const orderNumber = `SH-${String(currentCounter + 1).padStart(4, "0")}`;
-  settings.subHireOrderCounter = currentCounter + 1;
-
-  await tx.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
-
-  return orderNumber;
-}
+// Sub-hire order-number reservation is a Convex atomic counter now
+// (orgSettings.reserveSubHireOrderNumber) — off the Better Auth org row.
+// See reserveSubHireOrderNumberConvex in org-settings-read.ts.
 
 // ─── Core CRUD ───────────────────────────────────────────────────────────────
 
@@ -303,12 +273,10 @@ export async function createSubHire(input: unknown) {
   const now = Date.now();
   const convex = await getConvexClient();
 
-  // Order-number reservation stays Prisma — it read-modify-writes the org metadata
-  // JSON counter, and `organization` stays Prisma forever. The supplier fetch is
-  // independent of it (and of the create), so run both concurrently instead of
-  // three serial Convex/Postgres round-trips on the create path.
+  // Order-number reservation is a Convex atomic counter; the supplier fetch is
+  // independent, so run both concurrently on the create path.
   const [orderNumber, supplier] = await Promise.all([
-    prisma.$transaction((tx) => reserveSubHireOrderNumber(tx, organizationId)),
+    reserveSubHireOrderNumberConvex(organizationId),
     getSupplierById(data.supplierId),
   ]);
 
@@ -1672,10 +1640,7 @@ export async function duplicateSubHire(sourceId: string) {
     getSubHireItems(sourceId),
   ]);
 
-  // Order-number reservation stays Prisma (org metadata counter).
-  const orderNumber = await prisma.$transaction((tx) =>
-    reserveSubHireOrderNumber(tx, organizationId),
-  );
+  const orderNumber = await reserveSubHireOrderNumberConvex(organizationId);
 
   const convex = await getConvexClient();
   const newId = createId();

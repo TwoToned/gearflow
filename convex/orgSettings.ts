@@ -123,6 +123,31 @@ export const reserveAssetTags = mutation({
   },
 });
 
+// Atomic sub-hire order-number reservation (SH-NNNN), same RMW pattern. Replaces
+// the old `prisma.organization.metadata.subHireOrderCounter` counter so the org row
+// stays auth-only. `floor` seeds the counter to at least this value on the first
+// Convex reservation — used at cutover to carry forward the Postgres counter so
+// numbers never regress into an already-issued range.
+export const reserveSubHireOrderNumber = mutation({
+  args: { organizationId: v.string(), now: v.number(), floor: v.optional(v.number()) },
+  handler: async (ctx, { organizationId, now, floor }) => {
+    await requireService(ctx);
+    const existing = await loadByOrg(ctx, organizationId);
+    const blob = existing?.settings ? safeParse(existing.settings) : {};
+    const stored = (blob.subHireOrderCounter as number) || 0;
+    const current = Math.max(stored, floor ?? 0);
+    const next = current + 1;
+    blob.subHireOrderCounter = next;
+    const settings = JSON.stringify(blob);
+    if (existing) {
+      await ctx.db.patch(existing._id, { settings, updatedAt: now });
+    } else {
+      await ctx.db.insert("orgSettings", { organizationId, settings, createdAt: now, updatedAt: now });
+    }
+    return { orderNumber: `SH-${String(next).padStart(4, "0")}` };
+  },
+});
+
 // Atomic test-tag-id reservation — same pattern, nested `testTag.counter`.
 export const reserveTestTagIds = mutation({
   args: { organizationId: v.string(), count: v.number(), now: v.number() },

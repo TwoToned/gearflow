@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { releaseKitMembers } from "./kits";
 import * as enums from "./lib/validators";
@@ -81,6 +82,8 @@ export const createNative = mutation({
   },
   handler: async (ctx, args) => {
     const { actor: suppliedActor, auditId, ...fields } = args;
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "kit", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -128,6 +131,8 @@ export const updateNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, patch, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -150,7 +155,7 @@ export const updateNative = mutation({
       }
     }
 
-    await ctx.db.patch(doc._id, patch);
+    await ctx.db.patch(doc._id, sanitizeClientSet(patch)); // strip organizationId/id — no cross-tenant reassign
 
     const finalTag = patch.assetTag ?? doc.assetTag;
     await writeActivityLog(ctx, {
@@ -220,6 +225,8 @@ export const updateNotesNative = mutation({
 export const archiveNative = mutation({
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "kit", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -239,6 +246,8 @@ export const archiveNative = mutation({
 export const deleteNative = mutation({
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "kit", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();

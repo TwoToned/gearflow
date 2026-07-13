@@ -1,6 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -56,6 +59,8 @@ export const createNative = mutation({
   },
   handler: async (ctx, args) => {
     const { actor: suppliedActor, auditId, ...fields } = args;
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "crew", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -100,6 +105,8 @@ export const updateNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, set, clear, entityName, details, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "crew", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -109,12 +116,13 @@ export const updateNative = mutation({
 
     // Apply set (+ clear-to-null) — the patchMember pattern.
     const NEVER_CLEAR = new Set(["id", "organizationId"]);
+    const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
     if (clear.length === 0) {
-      await ctx.db.patch(doc._id, set as Record<string, unknown>);
-      await bumpCrewMemberCounters(ctx, orgId, doc, { ...doc, ...(set as Record<string, unknown>) });
+      await ctx.db.patch(doc._id, setObj);
+      await bumpCrewMemberCounters(ctx, orgId, doc, { ...doc, ...setObj });
     } else {
       const { _id, _creationTime, ...rest } = doc;
-      const merged: Record<string, unknown> = { ...rest, ...(set as Record<string, unknown>) };
+      const merged: Record<string, unknown> = { ...rest, ...setObj };
       for (const k of clear) {
         if (NEVER_CLEAR.has(k)) continue;
         delete merged[k];
@@ -157,6 +165,8 @@ export const deleteNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, name, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "crew", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).first();

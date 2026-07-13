@@ -3,8 +3,19 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 const modules = import.meta.glob("./**/*.ts");
+// Mount both components: the rate limiter (enforceBrowserWriteLimit on line-item
+// mutations) and the sharded counter (mounted for safety — other convex modules in
+// the same test glob need it).
+function makeT() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
+  return t;
+}
 const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
@@ -19,7 +30,7 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 
 describe("lineItemWrites.removeNative", () => {
   test("member removes a leaf line + its units + DELETE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
@@ -39,7 +50,7 @@ describe("lineItemWrites.removeNative", () => {
   });
 
   test("cascade-removes children (+ their units)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Kit", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
       await ctx.db.insert("projectLineItems", { id: "child1", organizationId: ORG, projectId: "p1", parentLineItemId: "li1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: true, childKind: "KIT" });
@@ -55,7 +66,7 @@ describe("lineItemWrites.removeNative", () => {
   });
 
   test("blocks removing a kit child directly (KIT_CHILD)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: true, childKind: "KIT" });
     });
@@ -63,7 +74,7 @@ describe("lineItemWrites.removeNative", () => {
   });
 
   test("blocks removing an accessory child directly (ACCESSORY_CHILD)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: true, childKind: "ACCESSORY" });
     });
@@ -71,7 +82,7 @@ describe("lineItemWrites.removeNative", () => {
   });
 
   test("a viewer is denied (project:manage_line_items)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
@@ -83,7 +94,7 @@ describe("lineItemWrites.removeNative", () => {
 describe("lineItemWrites.patchNative", () => {
   const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
@@ -99,7 +110,7 @@ describe("lineItemWrites.patchNative", () => {
     });
   });
   test("clear removes a field", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", notes: "x", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
     });
@@ -110,7 +121,7 @@ describe("lineItemWrites.patchNative", () => {
     });
   });
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
@@ -120,7 +131,7 @@ describe("lineItemWrites.patchNative", () => {
 describe("lineItemWrites.addCustomNative", () => {
   const cargs = { id: "cust1", organizationId: ORG, projectId: "p1", fields: { description: "Rigging labour", quantity: 1, unitPrice: 200 }, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds a custom line (sortOrder computed) + CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "existing", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 4 });
@@ -136,7 +147,7 @@ describe("lineItemWrites.addCustomNative", () => {
     });
   });
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs)).rejects.toThrow(/insufficient permissions/i);
   });
@@ -145,7 +156,7 @@ describe("lineItemWrites.addCustomNative", () => {
 describe("lineItemWrites.addNative", () => {
   const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds an inventory line (sortOrder in-mutation) + CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "e", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 2 });
@@ -162,7 +173,7 @@ describe("lineItemWrites.addNative", () => {
     });
   });
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs)).rejects.toThrow(/insufficient permissions/i);
   });
@@ -171,7 +182,7 @@ describe("lineItemWrites.addNative", () => {
 describe("lineItemWrites.addKitNative", () => {
   const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds a kit (parent + member child lines) + CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -193,7 +204,7 @@ describe("lineItemWrites.addKitNative", () => {
     });
   });
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/insufficient permissions/i);
@@ -202,7 +213,7 @@ describe("lineItemWrites.addKitNative", () => {
 
 describe("lineItemWrites.reorderNative", () => {
   test("member reorders lines (sortOrder/groupName) + org-scoped", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 0 });
@@ -221,7 +232,7 @@ describe("lineItemWrites.reorderNative", () => {
     });
   });
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items: [], now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });
@@ -229,7 +240,7 @@ describe("lineItemWrites.reorderNative", () => {
 
 describe("lineItemWrites.recalcNative", () => {
   test("member recomputes + persists project totals (one round-trip)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, createdAt: NOW, updatedAt: NOW });
@@ -244,7 +255,7 @@ describe("lineItemWrites.recalcNative", () => {
   });
 
   test("viewer denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, orgDefaultTaxRate: null, now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });

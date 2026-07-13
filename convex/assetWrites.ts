@@ -97,6 +97,8 @@ export const archiveNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, orgId, "asset", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -157,6 +159,8 @@ export const deleteNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, orgId, "asset", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -304,6 +308,8 @@ export const createNative = mutation({
   },
   handler: async (ctx, args) => {
     const { actor: suppliedActor, auditId, ...fields } = args;
+    await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, fields.organizationId, "asset", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -359,6 +365,8 @@ export const updateNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, orgId, "asset", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 

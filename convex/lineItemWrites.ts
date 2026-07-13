@@ -3,6 +3,9 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
@@ -48,6 +51,8 @@ export const removeNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -116,6 +121,8 @@ export const patchNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -123,11 +130,12 @@ export const patchNative = mutation({
     if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
+    const setObj = sanitizeClientSet(set, ["projectId"]); // strip organizationId/id/projectId
     if (clear.length === 0) {
-      await ctx.db.patch(doc._id, set as Record<string, unknown>);
+      await ctx.db.patch(doc._id, setObj);
     } else {
       const { _id, _creationTime, ...rest } = doc;
-      const merged: Record<string, unknown> = { ...rest, ...(set as Record<string, unknown>) };
+      const merged: Record<string, unknown> = { ...rest, ...setObj };
       for (const k of clear) {
         if (LINE_NEVER_CLEAR.has(k)) continue;
         delete merged[k];
@@ -197,6 +205,8 @@ export const addCustomNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, organizationId, projectId, fields, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -275,6 +285,8 @@ export const addNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -349,6 +361,8 @@ export const addKitNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -388,6 +402,8 @@ export const reorderNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { orgId, items, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();
@@ -421,6 +437,8 @@ export const recalcNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { projectId, orgId, orgDefaultTaxRate, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     await recalcProjectTotals(ctx, projectId, orgId, orgDefaultTaxRate, now);
     return { ok: true as const };

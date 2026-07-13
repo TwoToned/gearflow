@@ -10,7 +10,7 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
-import { createKitLineItemCore } from "./projectLineItems";
+import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -212,6 +212,7 @@ export const addCustomNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
+    await assertProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org (see helper)
 
     const sortOrder = await nextLineSort(ctx, projectId, organizationId);
     await ctx.db.insert("projectLineItems", {
@@ -293,6 +294,12 @@ export const addNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    // The client supplies `projectId`; requireOrgPermission only proves the caller's
+    // org. Verify the target project IS that org's — else a member could insert a line
+    // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
+    // (collects lines by projectId, no org filter) would sweep into that org's totals.
+    await assertProjectInOrg(ctx, projectId, organizationId);
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).

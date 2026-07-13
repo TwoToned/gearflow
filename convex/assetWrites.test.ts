@@ -4,13 +4,15 @@ import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 const modules = import.meta.glob("./**/*.ts");
-// enforceBrowserWriteLimit (updateNotesNative) calls the rate-limiter component for
-// user tokens; mount it so those paths resolve in tests. Service-token calls no-op.
+// Mount both components: the rate limiter (updateNotesNative) and the sharded counter
+// (create/archive/delete go through bumpAssetCounters → the sharded counter, gate #3).
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 const ORG = "org_1";

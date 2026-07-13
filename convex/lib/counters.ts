@@ -1,4 +1,5 @@
 import type { MutationCtx } from "../_generated/server";
+import { addToCounter } from "./shardedCounter";
 
 /**
  * Write-path maintenance for the six denormalised dashboard counters
@@ -16,12 +17,13 @@ import type { MutationCtx } from "../_generated/server";
  * longer the PRIMARY freshness mechanism (the client now throttles reconcile to a
  * long window — see src/hooks/use-native-dashboard.ts).
  *
- * The counter row is created + seeded ONLY by reconcile / backfill (an accurate
- * full recompute). A delta against a MISSING row is skipped: a delta can't
- * reconstruct the pre-existing population, so we let the next reconcile create it
- * correctly. In prod the backfill (`pnpm convex:backfill:dashboard-counters`) runs
- * before NEXT_PUBLIC_NATIVE_DASHBOARD is flipped, so the row exists; a brand-new
- * org's row is created on its first dashboard view (reconcileIfStale).
+ * Deltas are applied to the SHARDED counter (convex/lib/shardedCounter.ts, gate #3),
+ * not a single hot row — so concurrent counted writes from browser-direct high-write
+ * domains don't contend. A delta always lands (no "row missing" skip); the sharded
+ * counter accumulates from 0. For an EXISTING org the one-time backfill (`reconcile`)
+ * SETS each counter to the absolute source recompute right after deploy, so any delta
+ * that raced ahead of the backfill is corrected; a brand-new org accumulates from 0
+ * correctly and is snapshot on its first dashboard view (reconcileIfStale).
  */
 
 const ACTIVE_PROJECT_STATUSES = new Set(["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
@@ -38,35 +40,19 @@ type CounterField =
 type Delta = Partial<Record<CounterField, number>>;
 
 /**
- * Apply a signed delta to an org's counter row, clamped at 0 (a double-decrement
- * can't go negative). No-op when every field is 0, and when the row doesn't exist
- * yet (see the file header). Does NOT touch `updatedAt` — that field tracks the
- * last reconcile, which is what `reconcileIfStale` gates its drift-backstop on.
+ * Apply a signed delta to an org's counters via the SHARDED counter (gate #3) — no
+ * hot-row read/patch, so concurrent counted writes don't contend on a single row.
+ * Each field's increment lands on one shard. Clamping-at-0 moves to the READ side
+ * (`readCounter`) and the `reconcile` absolute-set; a transient negative can't stick.
+ * Does NOT touch the `dashboardCounters` row `updatedAt` — that tracks the last
+ * reconcile, which is what `reconcileIfStale` gates its drift-backstop on.
  */
 async function applyDelta(ctx: MutationCtx, orgId: string, delta: Delta): Promise<void> {
-  let changed = false;
-  for (const key in delta) {
-    if (delta[key as CounterField]) {
-      changed = true;
-      break;
-    }
-  }
-  if (!changed) return;
-
-  const row = await ctx.db
-    .query("dashboardCounters")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-    .first();
-  if (!row) return; // not yet backfilled — reconcile will create it accurately
-
-  const patch: Record<string, number> = {};
   for (const key in delta) {
     const d = delta[key as CounterField];
     if (!d) continue;
-    const cur = (row as unknown as Record<string, number>)[key] ?? 0;
-    patch[key] = Math.max(0, cur + d);
+    await addToCounter(ctx, orgId, key, d);
   }
-  await ctx.db.patch(row._id, patch);
 }
 
 // ── Per-entity counter contribution (MUST match computeCounters predicates) ──

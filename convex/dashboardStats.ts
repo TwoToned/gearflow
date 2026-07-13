@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgRead } from "./lib/auth";
+import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -24,10 +25,17 @@ export const bundle = query({
   handler: async (ctx, { orgId, now }) => {
     await requireOrgRead(ctx, orgId);
 
-    const counter = await ctx.db
+    // `countersReady` = the SHARDED counters have been seeded (row.shardsSeededAt),
+    // NOT mere row existence — a legacy pre-migration row exists but its shards are
+    // unseeded, so its sums would be wrong-zeros. When not ready, return zeros +
+    // countersReady:false; the client (useNativeDashboardStats) treats that as a
+    // loading state (StatTile skeletons) rather than showing the zeros.
+    const counterRow = await ctx.db
       .query("dashboardCounters")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .first();
+    const ready = counterRow?.shardsSeededAt != null;
+    const counter = ready ? await readCounterValues(ctx, orgId) : ZERO_COUNTERS;
 
     // ── Date-derived: maintenanceDue (open + scheduledDate arrived) ──
     const maintenance = await ctx.db
@@ -70,16 +78,16 @@ export const bundle = query({
     }
 
     return {
-      totalAssets: (counter?.activeAssets ?? 0) + (counter?.bulkQuantity ?? 0),
-      checkedOutAssets: counter?.checkedOutAssets ?? 0,
-      activeProjects: counter?.activeProjects ?? 0,
-      activeCrew: counter?.activeCrew ?? 0,
-      pendingCrewOffers: counter?.pendingCrewOffers ?? 0,
+      totalAssets: counter.activeAssets + counter.bulkQuantity,
+      checkedOutAssets: counter.checkedOutAssets,
+      activeProjects: counter.activeProjects,
+      activeCrew: counter.activeCrew,
+      pendingCrewOffers: counter.pendingCrewOffers,
       maintenanceDue,
       overdueReturns,
-      // True until the first reconcile/backfill has populated the counter row, so
-      // the client can fall back to the server-action stats if needed.
-      countersReady: counter != null,
+      // False until the sharded counters are seeded, so the client shows a loading
+      // state instead of wrong-zeros mid-migration (see useNativeDashboardStats).
+      countersReady: ready,
     };
   },
 });

@@ -2323,6 +2323,8 @@ export default defineSchema({
   // moment a date passes).
   dashboardCounters: defineTable({
     organizationId: v.string(),
+    // Reconcile SNAPSHOT of the six counters (the LIVE truth is the sharded counter,
+    // convex/lib/shardedCounter.ts — this row is the freshness/ready marker).
     activeAssets: v.number(),
     checkedOutAssets: v.number(),
     bulkQuantity: v.number(),
@@ -2330,6 +2332,11 @@ export default defineSchema({
     activeCrew: v.number(),
     pendingCrewOffers: v.number(),
     updatedAt: v.number(),
+    // Set by reconcile once the SHARDED counters are seeded from a source recompute
+    // (gate #3). "Ready" gates on this, NOT row existence: a legacy pre-migration row
+    // exists but has unseeded shards, so it must read as not-ready (client falls back
+    // a loading state) until reconcileIfStale re-seeds on first view.
+    shardsSeededAt: v.optional(v.number()),
   }).index("by_organizationId", ["organizationId"]),
 
 });

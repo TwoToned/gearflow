@@ -3743,6 +3743,30 @@ shared infra before any domain goes browser-direct.
   exemption, per-user keying). **Convex-test callers must mount the component** via
   `register(t, "rateLimiter")` from `@convex-dev/rate-limiter/test`.
 
+- **Sharded dashboard counters (gate #3)** — `@convex-dev/sharded-counter`. Removes
+  hot-row OCC contention before high-write domains (warehouse/line-item/asset) go
+  browser-direct. The six per-org dashboard tallies were maintained by read-then-patching
+  a **single** `dashboardCounters` row on every counted asset/bulk/project/crew write —
+  a contention point under concurrent browser-direct writes. Now:
+  - `convex/lib/shardedCounter.ts` — a `ShardedCounter` (4 shards, key `${orgId}:${field}`)
+    with `addToCounter` (per-write delta, no hot row), `readCounter` (sum shards, clamp ≥0),
+    `setCounter` (reset+add to an absolute value).
+  - `convex/lib/counters.ts` `applyDelta` → sharded `add` (no row read/patch; clamp on read).
+  - `convex/dashboardCounters.ts`: `reconcile` SETS each sharded counter to the source
+    recompute and stamps the row's `shardsSeededAt`; `readCounterValues` sums shards;
+    `getByOrg`/`dashboardStats.bundle` read sharded values; `bump` is a pure sharded add.
+  - **Readiness gates on `shardsSeededAt`, NOT row existence** — a legacy pre-migration
+    row has unseeded shards, so it reads as not-ready and the client
+    (`useNativeDashboardStats`) shows a **loading** state (not wrong-zeros).
+    `reconcileIfStale` also reconciles when `!shardsSeededAt`, so the migration **self-heals
+    on first dashboard view**; the client hook bounded-retries a failed backstop reconcile.
+  - The `dashboardCounters` ROW is retained as the reconcile snapshot + `updatedAt` freshness
+    + `shardsSeededAt` ready marker; the **live truth is the sharded sum**.
+  - **Prod backfilled + parity-verified** (`scripts/verify-sharded-counters.ts`, run
+    in-container): sharded read == source recompute (112/4/159/3/6/1). Convex-test callers of
+    counted mutations must mount the component via `register(t, "shardedCounter")` from
+    `@convex-dev/sharded-counter/test`.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

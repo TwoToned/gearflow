@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 /**
  * Write-parity gate (design doc Phase 5): for each domain, the NATIVE mutation must
@@ -13,6 +14,12 @@ import { api } from "./_generated/api";
  */
 
 const modules = import.meta.glob("./**/*.ts");
+// Counted writes go through the sharded counter component (gate #3); mount it.
+function makeT() {
+  const tc = convexTest(schema, modules);
+  registerShardedCounter(tc, "shardedCounter");
+  return tc;
+}
 const ORG = "org_1";
 const NOW = 1_700_000_000_000;
 const SERVICE = { subject: "gearflow-service", svc: true };
@@ -41,7 +48,7 @@ describe("write-parity: assets", () => {
   };
 
   test("createNative == assets.create (same resulting doc)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     // Distinct tags (native has a dup-guard the service mutation lacks); exclude the tag.
     await t.withIdentity(SERVICE).mutation(api.assets.create, { id: "svc", ...baseFields, assetTag: "TAG-S" });
     await t.withIdentity(SERVICE).mutation(api.assetWrites.createNative, { id: "nat", ...baseFields, assetTag: "TAG-N", actor: ACTOR, auditId: "log1" });
@@ -53,7 +60,7 @@ describe("write-parity: assets", () => {
   });
 
   test("updateNative(set/clear) == patchAsset (same resulting doc)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "svc", ...baseFields, notes: "old", assetTag: "A" });
       await ctx.db.insert("assets", { id: "nat", ...baseFields, notes: "old", assetTag: "B" });
@@ -70,7 +77,7 @@ describe("write-parity: assets", () => {
   });
 
   test("deleteNative == assets.remove (both gone)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "svc", ...baseFields, assetTag: "A" });
       await ctx.db.insert("assets", { id: "nat", ...baseFields, assetTag: "B" });
@@ -86,7 +93,7 @@ describe("write-parity: line-items", () => {
   const fields = { type: "EQUIPMENT" as const, modelId: "m1", description: "Light", quantity: 2, unitPrice: 15 };
 
   test("addNative == createLineItem (same resulting parent line)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW });
     const svc = normalize(await readByCuid(t, "projectLineItems", "svc"));
@@ -98,7 +105,7 @@ describe("write-parity: line-items", () => {
   });
 
   test("removeNative == removeLineItemCascade (both gone)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "svc", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
       await ctx.db.insert("projectLineItems", { id: "nat", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
@@ -114,7 +121,7 @@ describe("write-parity: projects", () => {
   const fields = { name: "Gig", status: "CONFIRMED" as const, isTemplate: false, createdAt: NOW, updatedAt: NOW };
 
   test("createNative == createWithUniqueNumber (same resulting doc)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.withIdentity(SERVICE).mutation(api.projects.createWithUniqueNumber, { id: "svc", organizationId: ORG, projectNumber: "P-1", ...fields });
     await t.withIdentity(SERVICE).mutation(api.projectWrites.createNative, { id: "nat", organizationId: ORG, projectNumber: "P-2", ...fields, actor: ACTOR, auditId: "log1" });
     const svc = normalize(await readByCuid(t, "projects", "svc"));

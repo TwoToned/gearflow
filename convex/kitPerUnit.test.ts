@@ -5,6 +5,7 @@
 // every warehouse kit operation, while the legacy line/asset path keeps working
 // (belt still owns asset status this phase).
 import { convexTest } from "convex-test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import { ConvexError } from "convex/values";
 import schema from "./schema";
@@ -17,7 +18,11 @@ const NOW = 1_700_000_000_000;
 const SERVICE = { subject: "gearflow-service", svc: true };
 // Infer the schema-typed tester from a real call (so ctx.db inside t.run knows
 // our indexes); manually applying the generic trips convexTest's constraint.
-const makeT = () => convexTest(schema, modules);
+const makeT = () => {
+  const tc = convexTest(schema, modules);
+  registerShardedCounter(tc, "shardedCounter");
+  return tc;
+};
 type T = ReturnType<typeof makeT>;
 
 /** Seed a kit (serialised member A-1, optional bulk member B-1 qty 3) and build
@@ -57,7 +62,7 @@ const ci = (t: T, cond: "GOOD" | "DAMAGED" | "MISSING" = "GOOD") => t.withIdenti
 
 describe("kit per-unit — seeding", () => {
   test("createKitLineItem seeds one CONFIRMED unit per serialised member", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     const units = await memberUnits(t);
     expect(units).toHaveLength(1);
@@ -66,7 +71,7 @@ describe("kit per-unit — seeding", () => {
   });
 
   test("bulk member seeds one unit carrying its quantity", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, { bulk: true });
     const units = await memberUnits(t);
     expect(units).toHaveLength(2);
@@ -77,7 +82,7 @@ describe("kit per-unit — seeding", () => {
 
 describe("kit per-unit — checkout / checkin", () => {
   test("checkout flips member unit → CHECKED_OUT and the belt still flips the asset", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
@@ -86,7 +91,7 @@ describe("kit per-unit — checkout / checkin", () => {
   });
 
   test("checkin flips CHECKED_OUT member unit → RETURNED with return stamps", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await ci(t, "GOOD");
@@ -98,7 +103,7 @@ describe("kit per-unit — checkout / checkin", () => {
   });
 
   test("bulk member returns its full quantity", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, { bulk: true });
     await co(t);
     expect(bulkUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
@@ -109,7 +114,7 @@ describe("kit per-unit — checkout / checkin", () => {
   });
 
   test("DAMAGED checkin records the condition on the unit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await ci(t, "DAMAGED");
@@ -119,7 +124,7 @@ describe("kit per-unit — checkout / checkin", () => {
 
 describe("kit per-unit — reverse + force", () => {
   test("undeployKit: CHECKED_OUT unit → CONFIRMED (re-packed)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.undeployKit, { organizationId: ORG, projectId: "p1", userId: USER, kitId: "k1", now: NOW });
@@ -129,7 +134,7 @@ describe("kit per-unit — reverse + force", () => {
   });
 
   test("unreturnKit: RETURNED unit → CHECKED_OUT and clears return stamps", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await ci(t, "GOOD");
@@ -142,7 +147,7 @@ describe("kit per-unit — reverse + force", () => {
   });
 
   test("forceReturnKit flips member unit → RETURNED", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.forceReturnKit, { organizationId: ORG, kitId: "k1", userId: USER, now: NOW });
@@ -150,7 +155,7 @@ describe("kit per-unit — reverse + force", () => {
   });
 
   test("forceReturnAsset flips the kit member's unit → RETURNED (no split-brain)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.forceReturnAsset, { organizationId: ORG, assetId: "a1", userId: USER, now: NOW });
@@ -160,7 +165,7 @@ describe("kit per-unit — reverse + force", () => {
 
 describe("kit per-unit — prep tree", () => {
   test("prepKitChildren packs member units; deprepKit resets them to PENDING", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepKitChildren, { organizationId: ORG, projectId: "p1", parentLineItemId: "kl1", now: NOW });
     expect(serialUnit(await memberUnits(t)).prepStatus).toBe("PACKED");
@@ -169,7 +174,7 @@ describe("kit per-unit — prep tree", () => {
   });
 
   test("deprep does not delete a RETURNED member unit (history survives)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await co(t);
     await ci(t, "GOOD");
@@ -202,7 +207,7 @@ describe("kit per-unit — accessories on a member", () => {
   const accAssetStatus = (t: T) => t.run(async (ctx) => (await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "acc1")).unique())?.status);
 
   test("checkout deploys the member's accessory unit + asset", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithAccessory(t);
     await co(t);
     const us = await accessoryUnits(t);
@@ -213,7 +218,7 @@ describe("kit per-unit — accessories on a member", () => {
   });
 
   test("checkin returns the member's accessory unit + asset", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithAccessory(t);
     await co(t);
     await ci(t, "GOOD");
@@ -223,7 +228,7 @@ describe("kit per-unit — accessories on a member", () => {
   });
 
   test("undeployKit reverses the accessory back to prepped (not stranded deployed)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithAccessory(t);
     await co(t);
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.undeployKit, { organizationId: ORG, projectId: "p1", userId: USER, kitId: "k1", now: NOW });
@@ -232,7 +237,7 @@ describe("kit per-unit — accessories on a member", () => {
   });
 
   test("forceReturnKit returns the member's accessory (no stuck asset)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithAccessory(t);
     await co(t);
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.forceReturnKit, { organizationId: ORG, kitId: "k1", userId: USER, now: NOW });
@@ -243,7 +248,7 @@ describe("kit per-unit — accessories on a member", () => {
 
 describe("kit per-unit — composition parity guard (Phase 3)", () => {
   test("checkout throws KIT_COMPOSITION_DRIFT when the kit definition diverges from the project snapshot", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t); // snapshot child line a1 == definition ks1(a1)
     // Drift the live definition: add a serialised item not on the project's snapshot.
     await t.run(async (ctx) => {
@@ -258,7 +263,7 @@ describe("kit per-unit — composition parity guard (Phase 3)", () => {
   });
 
   test("checkout succeeds when snapshot and definition match (no false positive)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await expect(co(t)).resolves.toBeTruthy();
   });
@@ -278,7 +283,7 @@ describe("kit per-unit — member serial reassign (Phase 4)", () => {
     t.run(async (ctx) => (await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).unique())?.assetId);
 
   test("swaps the member's serial on the unit AND its child line (pre-deployment)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithSpare(t);
     const u0 = await memberUnit(t);
     const res = await reassign(t, u0.id as string, "a2");
@@ -289,7 +294,7 @@ describe("kit per-unit — member serial reassign (Phase 4)", () => {
   });
 
   test("after a same-model swap, checkout passes the (model-based) parity guard and deploys the new serial", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithSpare(t);
     await reassign(t, (await memberUnit(t)).id as string, "a2");
     await expect(co(t)).resolves.toBeTruthy();
@@ -298,14 +303,14 @@ describe("kit per-unit — member serial reassign (Phase 4)", () => {
   });
 
   test("rejects reassign once the member is deployed", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKitWithSpare(t);
     await co(t);
     await expect(reassign(t, (await memberUnit(t)).id as string, "a2")).rejects.toThrow(/deployed/i);
   });
 
   test("rejects a different-model replacement", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Other", createdAt: NOW, updatedAt: NOW });
@@ -315,7 +320,7 @@ describe("kit per-unit — member serial reassign (Phase 4)", () => {
   });
 
   test("rejects an unavailable replacement", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -326,7 +331,7 @@ describe("kit per-unit — member serial reassign (Phase 4)", () => {
 
 describe("kit per-unit — pre-change kit (no units)", () => {
   test("checkinKit does not throw and creates no units for a unit-less kit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     // A kit deployed before the migration: parent + child line, CHECKED_OUT, NO units.
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });

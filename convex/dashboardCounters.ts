@@ -4,6 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireService, requireOrgRead } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { setCounter, addToCounter, readCounter } from "./lib/shardedCounter";
 
 /**
  * Denormalised dashboard stat counters (Phase 3). One `dashboardCounters` row per
@@ -73,18 +74,44 @@ export async function computeCounters(ctx: QueryCtx, orgId: string): Promise<Cou
   };
 }
 
+export const ZERO_COUNTERS: CounterValues = {
+  activeAssets: 0, checkedOutAssets: 0, bulkQuantity: 0,
+  activeProjects: 0, activeCrew: 0, pendingCrewOffers: 0,
+};
+
 async function reconcileOrg(ctx: MutationCtx, orgId: string, now: number): Promise<CounterValues> {
   const values = await computeCounters(ctx, orgId);
+  // SET each sharded counter to the absolute source recompute (the live truth).
+  for (const field of COUNTER_FIELDS) {
+    await setCounter(ctx, orgId, field, values[field]);
+  }
+  // The row is the reconcile snapshot + `updatedAt` freshness marker + `shardsSeededAt`
+  // ready marker (set here, once shards are seeded). The LIVE counts are the sharded
+  // sums above — the row's snapshot is only for parity/debug.
   const existing = await ctx.db
     .query("dashboardCounters")
     .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
     .first();
   if (existing) {
-    await ctx.db.patch(existing._id, { ...values, updatedAt: now });
+    await ctx.db.patch(existing._id, { ...values, updatedAt: now, shardsSeededAt: now });
   } else {
-    await ctx.db.insert("dashboardCounters", { organizationId: orgId, ...values, updatedAt: now });
+    await ctx.db.insert("dashboardCounters", { organizationId: orgId, ...values, updatedAt: now, shardsSeededAt: now });
   }
   return values;
+}
+
+/**
+ * Read the six LIVE counter values for an org from the sharded counters (each summed
+ * across its shards, clamped ≥0). This is the source of truth between reconciles.
+ */
+export async function readCounterValues(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+): Promise<CounterValues> {
+  const entries = await Promise.all(
+    COUNTER_FIELDS.map(async (f) => [f, await readCounter(ctx, orgId, f)] as const),
+  );
+  return Object.fromEntries(entries) as unknown as CounterValues;
 }
 
 /** Recompute + persist all six counters for an org (backfill + drift correction). */
@@ -117,8 +144,12 @@ export const reconcileIfStale = mutation({
       .query("dashboardCounters")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .first();
-    if (existing && existing.updatedAt > now - maxAgeMs) {
-      return { reconciled: false }; // still fresh — cheap no-op
+    // Reconcile when missing, stale, OR the sharded counters were never seeded (a
+    // legacy pre-migration row: fresh `updatedAt` but no `shardsSeededAt`). The last
+    // case makes the migration self-heal on first dashboard view — no manual backfill
+    // required — and until it runs the org reads as not-ready (client shows a loading state).
+    if (existing && existing.shardsSeededAt && existing.updatedAt > now - maxAgeMs) {
+      return { reconciled: false }; // still fresh + seeded — cheap no-op
     }
     await reconcileOrg(ctx, orgId, now);
     return { reconciled: true };
@@ -126,49 +157,42 @@ export const reconcileIfStale = mutation({
 });
 
 /**
- * Incremental adjust of a single counter field by `delta` (the write-path hook).
- * Idempotency is NOT guaranteed (it's additive) — `reconcile` is the drift
- * backstop. Clamps at 0 so a double-decrement can't go negative. Creates the row
- * (zeroed) on first bump so a fresh org still tracks.
+ * Legacy single-field delta entry point (service-only), retained for the reconcile
+ * parity test + any future service hook. A PURE sharded increment — clamping moves to
+ * the read (`readCounter`) and `reconcile` sets the absolute value. bump does NOT touch
+ * the row's `updatedAt` / `shardsSeededAt` markers: marking ready here would expose
+ * partial counts, and advancing freshness would indefinitely postpone reconcile's
+ * drift-correction (reconcile is the ONLY writer that seeds shards + sets shardsSeededAt).
+ * `now` is accepted for the stable public contract but unused.
  */
 export const bump = mutation({
   args: { orgId: v.string(), field: v.string(), delta: v.number(), now: v.number() },
-  handler: async (ctx, { orgId, field, delta, now }) => {
+  handler: async (ctx, { orgId, field, delta }) => {
     await requireService(ctx);
     if (!(COUNTER_FIELDS as readonly string[]).includes(field)) {
       return; // unknown field — ignore (forward-compat)
     }
-    const existing = await ctx.db
-      .query("dashboardCounters")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .first();
-    if (existing) {
-      const current = (existing as unknown as Record<string, number>)[field] ?? 0;
-      await ctx.db.patch(existing._id, { [field]: Math.max(0, current + delta), updatedAt: now });
-    } else {
-      // Seed a zeroed row, then apply the delta to the one field.
-      const zero: CounterValues = {
-        activeAssets: 0, checkedOutAssets: 0, bulkQuantity: 0,
-        activeProjects: 0, activeCrew: 0, pendingCrewOffers: 0,
-      };
-      await ctx.db.insert("dashboardCounters", {
-        organizationId: orgId,
-        ...zero,
-        [field]: Math.max(0, delta),
-        updatedAt: now,
-      });
-    }
+    await addToCounter(ctx, orgId, field, delta);
   },
 });
 
-/** Read the counter row for an org (browser-safe; org-scoped). */
+/**
+ * Read an org's counters (browser-safe; org-scoped). Returns the LIVE sharded sums
+ * plus the row's `updatedAt`; returns null when the org has never been reconciled
+ * (no row / unseeded shards = not ready → the client shows a loading state).
+ */
 export const getByOrg = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    const row = await ctx.db
       .query("dashboardCounters")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .first();
+    // Not ready until the shards are seeded (a legacy row exists but has unseeded
+    // shards → its sharded sums would be wrong-zeros). Client treats null as loading.
+    if (!row?.shardsSeededAt) return null;
+    const values = await readCounterValues(ctx, orgId);
+    return { organizationId: orgId, ...values, updatedAt: row.updatedAt };
   },
 });

@@ -1,10 +1,17 @@
 // @vitest-environment node
 import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
 const modules = import.meta.glob("./**/*.ts");
+// Counted crew writes go through the sharded counter component (gate #3); mount it.
+function makeT() {
+  const tc = convexTest(schema, modules);
+  registerShardedCounter(tc, "shardedCounter");
+  return tc;
+}
 const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
@@ -27,7 +34,7 @@ describe("crewWrites.createNative", () => {
   const createArgs = { id: "c1", organizationId: ORG, firstName: "Ada", lastName: "Lovelace", status: "ACTIVE" as const, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId: "log1" };
 
   test("a manager creates a crew member + CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "manager");
     const res = await t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, createArgs);
     expect(res.id).toBe("c1");
@@ -41,7 +48,7 @@ describe("crewWrites.createNative", () => {
   });
 
   test("idempotent by cuid (retried create doesn't duplicate)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedCrew(t); // c1 already exists
     await t.withIdentity(SERVICE).mutation(api.crewWrites.createNative, { ...createArgs, auditId: "log2" });
     await t.run(async (ctx) => {
@@ -52,7 +59,7 @@ describe("crewWrites.createNative", () => {
   });
 
   test("a member (crew:read only) is denied create", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, createArgs),
@@ -64,7 +71,7 @@ describe("crewWrites.updateNative", () => {
   const updArgs = { id: "c1", orgId: ORG, set: { firstName: "Robert", updatedAt: NOW }, clear: [] as string[], entityName: "Robert Ryan", actor: ACTOR, auditId: "log1", now: NOW };
 
   test("applies set + UPDATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedCrew(t);
     await t.withIdentity(SERVICE).mutation(api.crewWrites.updateNative, updArgs);
     await t.run(async (ctx) => {
@@ -76,7 +83,7 @@ describe("crewWrites.updateNative", () => {
   });
 
   test("clear removes a field", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedCrew(t);
     await t.withIdentity(SERVICE).mutation(api.crewWrites.updateNative, { ...updArgs, set: { updatedAt: NOW }, clear: ["notes"] });
     await t.run(async (ctx) => {
@@ -86,7 +93,7 @@ describe("crewWrites.updateNative", () => {
   });
 
   test("a member is denied update", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedCrew(t);
     await member(t, "member");
     await expect(
@@ -98,7 +105,7 @@ describe("crewWrites.updateNative", () => {
 describe("crewWrites.deleteNative", () => {
   const dargs = { id: "c1", orgId: ORG, name: "Bob Ryan", actor: ACTOR, auditId: "log1", now: NOW };
   test("owner deletes a crew member + DELETE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "owner"); await seedCrew(t);
     await t.withIdentity(asUser(ORG)).mutation(api.crewWrites.deleteNative, dargs);
     await t.run(async (ctx) => {
@@ -108,7 +115,7 @@ describe("crewWrites.deleteNative", () => {
     });
   });
   test("a member (no crew:delete) is denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await member(t, "member"); await seedCrew(t);
     await expect(t.withIdentity(asUser(ORG)).mutation(api.crewWrites.deleteNative, dargs)).rejects.toThrow(/insufficient permissions/i);
   });

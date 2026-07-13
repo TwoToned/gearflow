@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useConvexAuth, useMutation } from "convex/react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
@@ -50,21 +50,39 @@ export function useNativeDashboardStats(
   // the date-derived metrics each minute) — queries can't read the clock themselves.
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
 
-  const data = useAuthedQuery(
+  const raw = useAuthedQuery(
     api.dashboardStats.bundle,
     enabled ? { orgId: orgId!, now: nowBucket } : "skip",
   ) as NativeDashboardStats | undefined;
+  // `countersReady === false` means the sharded counters aren't seeded yet (a brand-new
+  // org, or the one-time gate-#3 migration window on a legacy row) — the counts would be
+  // wrong-zeros. Treat that as still-loading (StatTiles show skeletons) rather than
+  // surfacing zeros; the reconcileIfStale effect below seeds them and the reactive query
+  // re-runs with real values. A reconciled empty org has countersReady=true (legit zeros).
+  const data = raw?.countersReady === false ? undefined : raw;
 
   const { isAuthenticated } = useConvexAuth();
   const reconcileIfStale = useMutation(api.dashboardCounters.reconcileIfStale);
-  const firedFor = useRef<string | null>(null);
+  // Retry counter (a dep of the effect) so a FAILED backstop reconcile can be
+  // re-attempted — otherwise a transient failure on an UNSEEDED org would leave the
+  // dashboard stuck on skeletons (countersReady never flips). A seeded org resolves
+  // on the first success and never re-fires.
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (!enabled || !isAuthenticated || !orgId || firedFor.current === orgId) return;
-    firedFor.current = orgId;
+    if (!enabled || !isAuthenticated || !orgId) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     // Best-effort drift backstop: reconcile only if the row is stale by the long
-    // backstop window (per-write deltas keep it fresh in between). ≤ once/hour/org.
-    void reconcileIfStale({ orgId, now: Date.now(), maxAgeMs: RECONCILE_BACKSTOP_MS }).catch(() => {});
-  }, [enabled, isAuthenticated, orgId, reconcileIfStale]);
+    // backstop window (per-write deltas keep it fresh in between), OR the shards are
+    // unseeded (self-heals the gate-#3 migration on first view). ≤ once/hour/org.
+    void reconcileIfStale({ orgId, now: Date.now(), maxAgeMs: RECONCILE_BACKSTOP_MS }).catch(() => {
+      if (retry < 3) timer = setTimeout(() => setRetry((n) => n + 1), 4000);
+    });
+    // Clear the pending retry on unmount / dep change (no setState after unmount).
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+    // `retry` is intentionally a dep: bumping it re-runs the backstop after a failure.
+  }, [enabled, isAuthenticated, orgId, reconcileIfStale, retry]);
 
   return { data, isLoading: enabled && data === undefined };
 }

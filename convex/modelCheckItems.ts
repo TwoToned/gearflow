@@ -123,6 +123,40 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Create N model↔check-item assignments in ONE array mutation (bulk single-call
+ * invariant, Phase 3) — replaces the server firing one `createIfMissing` per
+ * (model × checkItem) pair when bulk-assigning checks to models (N×M round-trips).
+ * `organizationId` is stamped from the ARG onto every row (a caller can't smuggle a
+ * per-row org), and each row is inserted only if its id is new (idempotent on retry;
+ * the caller pre-dedups by model+checkItem). Returns how many were created.
+ */
+export const createManyIfMissing = mutation({
+  args: {
+    organizationId: v.string(),
+    rows: v.array(
+      v.object({
+        id: v.string(),
+        modelId: v.string(),
+        checkItemId: v.string(),
+        sortOrder: v.optional(v.number()),
+        createdAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, { organizationId, rows }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const r of rows) {
+      const existing = await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", r.id)).unique();
+      if (existing) continue;
+      await ctx.db.insert("modelCheckItems", { ...r, organizationId });
+      created++;
+    }
+    return { created };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

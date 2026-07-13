@@ -366,23 +366,22 @@ export async function bulkAddCheckItemsToModels(
     for (const r of rows) existingSet.add(`${r.modelId}:${r.checkItemId}`);
   }
 
-  let createdCount = 0;
+  // Build the (deduped) rows to create in memory, then insert them all in ONE array
+  // mutation (was one createIfMissing round-trip per model×checkItem pair).
+  const createdAt = Date.now();
+  const rows: { id: string; modelId: string; checkItemId: string; sortOrder: number; createdAt: number }[] = [];
   for (const modelId of modelIds) {
     let offset = sortMap.get(modelId) ?? 0;
     for (const checkItemId of checkItemIds) {
       if (existingSet.has(`${modelId}:${checkItemId}`)) continue;
-      await convex.mutation(api.modelCheckItems.createIfMissing, {
-        id: createId(),
-        organizationId,
-        modelId,
-        checkItemId,
-        sortOrder: offset++,
-        createdAt: Date.now(),
-      });
-      createdCount++;
+      rows.push({ id: createId(), modelId, checkItemId, sortOrder: offset++, createdAt });
     }
   }
-  const result = { count: createdCount };
+  const { created } =
+    rows.length > 0
+      ? await convex.mutation(api.modelCheckItems.createManyIfMissing, { organizationId, rows })
+      : { created: 0 };
+  const result = { count: created };
 
   // Model lives in Convex — fetch names for audit log via map.
   const convexModelMap = await getModelMap(organizationId);

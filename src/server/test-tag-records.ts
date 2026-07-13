@@ -226,10 +226,11 @@ export async function createTestTagRecord(data: {
     updatedAt: now,
   });
 
-  // Write sub-test records to Convex.
+  // Write sub-test records to Convex in ONE array mutation (bulk single-call).
   if (data.subTests && data.subTests.length > 0) {
-    for (const st of data.subTests) {
-      await convex.mutation(api.subTestRecords.createIfMissing, {
+    await convex.mutation(api.subTestRecords.createManyIfMissing, {
+      organizationId,
+      records: data.subTests.map((st) => ({
         id: createId(),
         testTagRecordId: recordId,
         label: st.label,
@@ -244,8 +245,8 @@ export async function createTestTagRecord(data: {
         polarityResult: st.polarityResult || "NOT_APPLICABLE",
         ...(st.notes && { notes: st.notes }),
         createdAt: now,
-      });
-    }
+      })),
+    });
   }
 
   // Update parent TestTagAsset scalars in Convex.

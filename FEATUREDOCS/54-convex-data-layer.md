@@ -3592,6 +3592,38 @@ truth**.
   prod container immediately after deploy** — before any asset/test-tag creation — so
   the atomic counters resume from the stored value rather than re-initialising at 0.
 
+## Phase 2 (WS3) — WooCommerce webhook → Convex httpAction
+
+The public WooCommerce webhook ingress + order processing moved off the Next.js
+route into Convex, so the browser↔Convex-direct architecture doesn't route webhooks
+through Next.js. (Config, order logs, idempotency, and the per-integration HMAC
+secret were already Convex-only.)
+
+- **Ingress** — `convex/http.ts` `httpRouter()` exposes `POST /webhooks/woo` (an
+  `httpAction`) at `…convex.site/webhooks/woo`. It reproduces the Next route
+  step-for-step: 1MB guard, ping bypass, org resolution (`?org=` or the single org),
+  integration-enabled check, **HMAC-SHA256 verify in Web Crypto** (reproduces
+  `verifyWebhookSignature` byte-for-byte — UTF-8 body, base64, length-mismatch → 401),
+  `order.created` topic filter, COMPLETED-log idempotency, then
+  `scheduler.runAfter(0, …)` + immediate 200.
+- **Processing** — `convex/wooCommerceActions.ts` `processOrder` (`internalAction`) is
+  a faithful port of `processWooCommerceOrder`: client match, date extraction, product
+  matching, project + line-item creation, tax recalc, order-log transitions, activity
+  log. Re-asserts `integration.organizationId === orgId` after the async hop.
+- **Auth** — an externally-triggered httpAction / scheduled action has **no SERVICE
+  identity**, so it can't call the service-gated `api.*` CRUD. All DB access goes
+  through **`convex/wooCommerceInternal.ts`** — `internalQuery`/`internalMutation`
+  wrappers that are unreachable from clients by construction (never on the public
+  `api`), each a verbatim copy of its `api.*` twin with the auth guard removed. Recalc
+  reuses the shared pure `recalcProjectTotals` so totals stay byte-identical.
+- **Dual-accept + cutover** — the old Next route is **left intact**; the shared Convex
+  order-log dedup makes running both safe. Ingress guards validated live on prod
+  (ping→200, missing/bad signature→401). **Cutover (follow-up, not in this change):**
+  re-register the WooCommerce webhook URL to the `…convex.site/webhooks/woo` endpoint,
+  soak, then retire the Next route. `dateExtraction` is stored as epoch-ms (Convex
+  rejects `Date` values — a latent bug in the Next original that only fired when
+  date-meta keys were configured).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

@@ -188,3 +188,23 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Atomic drag-reorder: assign sortOrder = index for each assignment id in `orderedIds`,
+ * in ONE mutation round-trip (was a `Promise.all` firing one read + one `update` per
+ * item). The caller resolves (model, checkItem) → row id once via listByModel, then
+ * passes the row ids in display order. Per-item org re-check: by_cuid is a GLOBAL index,
+ * so the `doc.organizationId === orgId` skip prevents reordering another org's rows.
+ */
+export const reorderMany = mutation({
+  // Explicit {id, sortOrder} pairs (not array-index) so the caller can resolve/filter
+  // ids without compressing the sort positions of the survivors.
+  args: { orgId: v.string(), items: v.array(v.object({ id: v.string(), sortOrder: v.number() })) },
+  handler: async (ctx, { orgId, items }) => {
+    await requireService(ctx);
+    for (const it of items) {
+      const doc = await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
+      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: it.sortOrder }); // per-item org re-check
+    }
+  },
+});

@@ -325,14 +325,16 @@ export async function reorderModelCheckItems(
   const parsed = reorderModelCheckItemsSchema.parse(data);
 
   const convex = await getConvexClient();
-  // Each (model, checkItem) row is independent — resolve + patch them all
-  // concurrently (was a sequential read+update per item).
-  await Promise.all(
-    parsed.orderedCheckItemIds.map(async (checkItemId, index) => {
-      const row = await convex.query(api.modelCheckItems.getByModelAndCheckItem, { orgId: organizationId, modelId: parsed.modelId, checkItemId });
-      if (row) await convex.mutation(api.modelCheckItems.update, { id: row.id, patch: { sortOrder: index } });
-    }),
-  );
+  // Resolve (model, checkItem) → row id ONCE via listByModel, then patch sortOrder for
+  // all rows in a single array mutation (was one read + one update round-trip per item).
+  const rows = await convex.query(api.modelCheckItems.listByModel, { orgId: organizationId, modelId: parsed.modelId });
+  const rowIdByCheckItem = new Map(rows.map((r) => [r.checkItemId, r.id]));
+  // Keep each row's ORIGINAL position (index in orderedCheckItemIds) as its sortOrder,
+  // so a dropped/unresolved id doesn't compress the survivors' positions.
+  const items = parsed.orderedCheckItemIds
+    .map((checkItemId, sortOrder) => ({ id: rowIdByCheckItem.get(checkItemId), sortOrder }))
+    .filter((r): r is { id: string; sortOrder: number } => r.id != null);
+  await convex.mutation(api.modelCheckItems.reorderMany, { orgId: organizationId, items });
 
   return { success: true };
 }
@@ -503,13 +505,15 @@ export async function reorderKitCheckItems(
   const { organizationId } = await requirePermission("checkItem", "update");
 
   const convex = await getConvexClient();
-  // Each (kit, checkItem) row is independent — resolve + patch concurrently.
-  await Promise.all(
-    orderedCheckItemIds.map(async (checkItemId, index) => {
-      const row = await convex.query(api.kitCheckItems.getByKitAndCheckItem, { orgId: organizationId, kitId, checkItemId });
-      if (row) await convex.mutation(api.kitCheckItems.update, { id: row.id, patch: { sortOrder: index } });
-    }),
-  );
+  // Resolve (kit, checkItem) → row id ONCE via listByKitId, then patch sortOrder for all
+  // rows in a single array mutation (was one read + one update round-trip per item).
+  const rows = await convex.query(api.kitCheckItems.listByKitId, { orgId: organizationId, kitId });
+  const rowIdByCheckItem = new Map(rows.map((r) => [r.checkItemId, r.id]));
+  // Keep each row's ORIGINAL position as its sortOrder (no compression on drop).
+  const items = orderedCheckItemIds
+    .map((checkItemId, sortOrder) => ({ id: rowIdByCheckItem.get(checkItemId), sortOrder }))
+    .filter((r): r is { id: string; sortOrder: number } => r.id != null);
+  await convex.mutation(api.kitCheckItems.reorderMany, { orgId: organizationId, items });
 
   return { success: true };
 }

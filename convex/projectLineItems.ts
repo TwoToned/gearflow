@@ -230,6 +230,92 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Create N project line items in ONE array mutation (bulk single-call invariant,
+ * Phase 3) — replaces the WooCommerce order-ingest server loop firing one `create`
+ * per matched product (N round-trips). `organizationId` is stamped from the ARG
+ * onto every row (a caller can't smuggle a per-row org), and each row is inserted
+ * only if its id is new (idempotent on retry). Mirrors
+ * modelCheckItems.createManyIfMissing. Returns how many were created.
+ */
+export const createMany = mutation({
+  args: {
+    organizationId: v.string(),
+    rows: v.array(
+      v.object({
+        id: v.string(),
+        projectId: v.string(),
+        type: v.optional(enums.LineItemType),
+        modelId: v.optional(v.string()),
+        assetId: v.optional(v.string()),
+        bulkAssetId: v.optional(v.string()),
+        kitId: v.optional(v.string()),
+        isKitChild: v.optional(v.boolean()),
+        childKind: v.optional(enums.LineItemChildKind),
+        parentLineItemId: v.optional(v.string()),
+        pricingMode: v.optional(enums.KitPricingMode),
+        description: v.optional(v.string()),
+        quantity: v.optional(v.number()),
+        unitPrice: v.optional(v.number()),
+        pricingType: v.optional(enums.PricingType),
+        duration: v.optional(v.number()),
+        discount: v.optional(v.number()),
+        lineTotal: v.optional(v.number()),
+        priceBreakdown: v.optional(v.string()),
+        priceOverridden: v.optional(v.boolean()),
+        overrideReason: v.optional(v.string()),
+        sortOrder: v.optional(v.number()),
+        groupName: v.optional(v.string()),
+        categoryId: v.optional(v.string()),
+        groupId: v.optional(v.string()),
+        notes: v.optional(v.string()),
+        isOptional: v.optional(v.boolean()),
+        status: v.optional(enums.LineItemStatus),
+        checkedOutQuantity: v.optional(v.number()),
+        returnedQuantity: v.optional(v.number()),
+        assignedQuantity: v.optional(v.number()),
+        packedQuantity: v.optional(v.number()),
+        damagedQuantity: v.optional(v.number()),
+        lostQuantity: v.optional(v.number()),
+        checkedOutAt: v.optional(v.number()),
+        checkedOutById: v.optional(v.string()),
+        returnedAt: v.optional(v.number()),
+        returnedById: v.optional(v.string()),
+        returnCondition: v.optional(enums.ReturnCondition),
+        returnNotes: v.optional(v.string()),
+        prepStatus: v.optional(enums.PrepStatus),
+        prepContainer: v.optional(v.string()),
+        isContainerLineItem: v.optional(v.boolean()),
+        isCustomItem: v.optional(v.boolean()),
+        returnStatus: v.optional(enums.ReturnStatus),
+        showSubhireOnDocs: v.optional(v.boolean()),
+        supplierId: v.optional(v.string()),
+        subhireOrderNumber: v.optional(v.string()),
+        supplierOrderId: v.optional(v.string()),
+        subHireId: v.optional(v.string()),
+        subHireItemId: v.optional(v.string()),
+        subHireGroupId: v.optional(v.string()),
+        createdAt: v.optional(v.number()),
+        updatedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, { organizationId, rows }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const r of rows) {
+      const existing = await ctx.db
+        .query("projectLineItems")
+        .withIndex("by_cuid", (q) => q.eq("id", r.id))
+        .unique();
+      if (existing) continue;
+      await ctx.db.insert("projectLineItems", { ...r, organizationId });
+      created++;
+    }
+    return { created };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

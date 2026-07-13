@@ -372,31 +372,35 @@ export async function processWooCommerceOrder(
     if (!project) throw new Error("WooCommerce project create failed");
 
     // 7. Add line items for matched and unmatched products.
-    // projectLineItem is Convex-only — write each line via api.projectLineItems.create
-    // (full-field generated mutation) with an explicit cuid + sortOrder.
+    // projectLineItem is Convex-only. Build every row in memory and write them all in
+    // ONE array mutation (api.projectLineItems.createMany) instead of one round-trip
+    // per matched product (bulk single-call invariant, Phase 3). organizationId is
+    // stamped from the mutation arg, not per-row.
     const duration = dates.rentalStart && dates.rentalEnd
       ? Math.max(1, Math.ceil((dates.rentalEnd.getTime() - dates.rentalStart.getTime()) / (1000 * 60 * 60 * 24)))
       : 1;
     const nowMs = Date.now();
-    let sortOrder = 0;
-    for (const match of matchResults) {
-      await convex.mutation(api.projectLineItems.create, {
-        id: createId(),
+    const lineItemRows = matchResults.map((match, sortOrder) => ({
+      id: createId(),
+      projectId: project.id,
+      type: (match.modelId ? "EQUIPMENT" : "MISC") as never,
+      modelId: match.modelId || undefined,
+      description: match.modelId
+        ? undefined
+        : `[WooCommerce] ${match.wooProductName}${match.wooSku ? ` (SKU: ${match.wooSku})` : ""}`,
+      quantity: match.wooQuantity,
+      unitPrice: match.wooPrice,
+      pricingType: "PER_DAY" as never,
+      duration,
+      lineTotal: match.wooPrice * match.wooQuantity,
+      sortOrder,
+      createdAt: nowMs,
+      updatedAt: nowMs,
+    }));
+    if (lineItemRows.length > 0) {
+      await convex.mutation(api.projectLineItems.createMany, {
         organizationId: orgId,
-        projectId: project.id,
-        type: match.modelId ? "EQUIPMENT" : "MISC",
-        modelId: match.modelId || undefined,
-        description: match.modelId
-          ? undefined
-          : `[WooCommerce] ${match.wooProductName}${match.wooSku ? ` (SKU: ${match.wooSku})` : ""}`,
-        quantity: match.wooQuantity,
-        unitPrice: match.wooPrice,
-        pricingType: "PER_DAY",
-        duration,
-        lineTotal: match.wooPrice * match.wooQuantity,
-        sortOrder: sortOrder++,
-        createdAt: nowMs,
-        updatedAt: nowMs,
+        rows: lineItemRows,
       });
     }
 

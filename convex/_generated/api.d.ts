@@ -89,6 +89,7 @@ import type * as modelMedia from "../modelMedia.js";
 import type * as models from "../models.js";
 import type * as notificationDismissals from "../notificationDismissals.js";
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
+import type * as orgExport from "../orgExport.js";
 import type * as orgSettings from "../orgSettings.js";
 import type * as overbooking from "../overbooking.js";
 import type * as parity from "../parity.js";
@@ -229,6 +230,7 @@ declare const fullApi: ApiFromModules<{
   models: typeof models;
   notificationDismissals: typeof notificationDismissals;
   notificationEmailLogs: typeof notificationEmailLogs;
+  orgExport: typeof orgExport;
   orgSettings: typeof orgSettings;
   overbooking: typeof overbooking;
   parity: typeof parity;

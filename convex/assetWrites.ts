@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters } from "./lib/counters";
@@ -43,9 +43,10 @@ export const updateNotesNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, notes, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, notes, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
     await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const asset = await ctx.db
       .query("assets")
@@ -93,8 +94,9 @@ export const archiveNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const asset = await ctx.db
       .query("assets")
@@ -152,8 +154,9 @@ export const deleteNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "asset", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const asset = await ctx.db
       .query("assets")
@@ -298,8 +301,9 @@ export const createNative = mutation({
     auditId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { actor, auditId, ...fields } = args;
+    const { actor: suppliedActor, auditId, ...fields } = args;
     await requireOrgPermission(ctx, fields.organizationId, "asset", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const dup = await ctx.db
       .query("assets")
@@ -352,8 +356,9 @@ export const updateNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, set, clear, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Asset not found: " + id);

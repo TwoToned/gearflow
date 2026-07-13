@@ -3699,6 +3699,30 @@ before Phase 3 goes live. Full runbook: [`docs/convex-observability-runbook.md`]
   anomaly alerts already emit: auth-mirror drift (reconcile cron), WooCommerce `FAILED`
   order logs, webhook-delivery stalls.
 
+## Phase 3 (WS2) — browser-direct security baseline
+
+Phase 3 wires the browser straight to Convex mutations, so **the mutation is now the
+security boundary** (no server action in front). The baseline hardening lands as
+shared infra before any domain goes browser-direct.
+
+- **`resolveActor(ctx, supplied)`** (`convex/lib/auth.ts`) — the actor-spoofing fix.
+  Every `*Writes.ts` mutation takes a client-supplied `actor` (`{userId, userName}`)
+  used for the audit trail, and those mutations are **public** (a user token with the
+  role passes `requireOrgPermission`), so a caller could attribute a write to **any**
+  userId. `resolveActor` pins attribution to the **verified token identity**:
+  - **service token** → trusts `supplied` verbatim (the trusted backend already
+    authenticated the end-user and passes their id/name);
+  - **user token** → `userId` is overwritten with the token subject (unspoofable);
+    `userName` is resolved from the `users` mirror, falling back to the verified
+    userId — **never** the client-supplied label;
+  - **anonymous** → rejected.
+
+  Wired into all 24 handlers across `assetWrites`/`kitWrites`/`crewWrites`/
+  `projectWrites`/`lineItemWrites` (each destructures `actor: suppliedActor` then
+  `const actor = await resolveActor(ctx, suppliedActor)`). Unit-tested in
+  `convex/resolveActor.test.ts`. **Every new mutation that takes an `actor` arg MUST
+  resolve it through this.**
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

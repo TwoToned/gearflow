@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import { releaseKitMembers } from "./kits";
 import * as enums from "./lib/validators";
@@ -78,8 +78,9 @@ export const createNative = mutation({
     auditId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { actor, auditId, ...fields } = args;
+    const { actor: suppliedActor, auditId, ...fields } = args;
     await requireOrgPermission(ctx, fields.organizationId, "kit", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const dup = await ctx.db
       .query("kits")
@@ -124,8 +125,9 @@ export const updateNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, patch, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, patch, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Kit not found: " + id);
@@ -176,8 +178,9 @@ export const updateNotesNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, notes, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, notes, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Kit not found: " + id);
@@ -212,8 +215,9 @@ export const updateNotesNative = mutation({
  */
 export const archiveNative = mutation({
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "kit", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
     if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be archived" });
@@ -230,8 +234,9 @@ export const archiveNative = mutation({
 
 export const deleteNative = mutation({
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "kit", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
     if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });

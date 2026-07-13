@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -33,8 +33,9 @@ export const updateStatusNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -76,8 +77,9 @@ export const updateNotesNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, field, notes, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, field, notes, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -112,8 +114,9 @@ export const archiveNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -159,8 +162,9 @@ export const updateNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, set, clear, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -218,8 +222,9 @@ export const createNative = mutation({
     auditId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { actor, auditId, ...fields } = args;
+    const { actor: suppliedActor, auditId, ...fields } = args;
     await requireOrgPermission(ctx, fields.organizationId, "project", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
 
     const clash = await ctx.db
       .query("projects")
@@ -267,8 +272,9 @@ export const deleteNative = mutation({
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, freedAssets, freedKits, actor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, freedAssets, freedKits, actor: suppliedActor, auditId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");

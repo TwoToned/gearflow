@@ -964,6 +964,43 @@ async function restoreKitParentLine(
   if (parent.status === "CHECKED_OUT") await ctx.db.patch(parent._id, FORCE_RET(now));
 }
 
+/**
+ * Core force-return for ONE already-validated (existing, in-org, non-AVAILABLE) kit:
+ * restore every parent line + children/grandchildren, nested kits + their assets,
+ * member units + accessories, bulk quantities, and the root kit. `loc` (the default
+ * location) is PASSED so a batch resolves it once. Returns the set of kit ids it
+ * restored (incl. nested kits). Guards live in the callers so the singular can throw
+ * while the batch collects per-item errors.
+ */
+async function forceReturnKitCore(
+  ctx: Ctx,
+  organizationId: string,
+  kit: NonNullable<Awaited<ReturnType<typeof kitByCuid>>>,
+  userId: string,
+  now: number,
+  loc: string | null,
+): Promise<string[]> {
+  const kitsToRestore = new Set<string>([kit.id]);
+
+  const parents = (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kit.id)).collect())
+    .filter((l) => l.organizationId === organizationId && !l.isKitChild);
+  for (const p of parents) {
+    await restoreKitParentLine(ctx, p, organizationId, loc, now, kitsToRestore);
+    // Kit per-unit: flip this kit's CHECKED_OUT member units → RETURNED (and its
+    // accessories) so a force-return doesn't leave members stuck deployed.
+    await patchKitMemberUnits(ctx, p.id, organizationId, ["CHECKED_OUT"], (u) => ({ status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: now, returnedById: userId, returnCondition: "GOOD" }), now);
+    await cascadeKitAccessoriesIn(ctx, p.id, organizationId, { projectId: p.projectId, userId, defaultLocationId: loc, returnCondition: "GOOD" });
+  }
+
+  if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
+  else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+
+  const adjustments: BulkAdjustment[] = [];
+  for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, organizationId, 1)));
+  if (adjustments.length > 0) await adjustBulkAvailability(ctx, organizationId, coalesceAdjustments(adjustments));
+  return [...kitsToRestore];
+}
+
 export const forceReturnKit = mutation({
   args: { organizationId: v.string(), kitId: v.string(), userId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
@@ -972,25 +1009,36 @@ export const forceReturnKit = mutation({
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     if (kit.status === "AVAILABLE") throw new ConvexError("Kit is already available");
     const loc = await defaultLocationId(ctx, a.organizationId);
-    const kitsToRestore = new Set<string>([a.kitId]);
+    const affectedKitIds = await forceReturnKitCore(ctx, a.organizationId, kit, a.userId, a.now, loc);
+    return { success: true, affectedKitIds };
+  },
+});
 
-    const parents = (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect())
-      .filter((l) => l.organizationId === a.organizationId && !l.isKitChild);
-    for (const p of parents) {
-      await restoreKitParentLine(ctx, p, a.organizationId, loc, a.now, kitsToRestore);
-      // Kit per-unit: flip this kit's CHECKED_OUT member units → RETURNED (and its
-      // accessories) so a force-return doesn't leave members stuck deployed.
-      await patchKitMemberUnits(ctx, p.id, a.organizationId, ["CHECKED_OUT"], (u) => ({ status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD" }), a.now);
-      await cascadeKitAccessoriesIn(ctx, p.id, a.organizationId, { projectId: p.projectId, userId: a.userId, defaultLocationId: loc, returnCondition: "GOOD" });
+/**
+ * Batch force-return (bulk single-call invariant, Phase 3): force-return N kits in
+ * ONE Convex array mutation instead of the client firing one server round-trip per
+ * kit. Partial-success ({succeeded, errors}) — a missing / cross-org / already-AVAILABLE
+ * kit is skipped with an error and can't abort the batch. Per-item `organizationId`
+ * re-check (`by_cuid` is a GLOBAL index → a cross-tenant id must be rejected). `loc`
+ * is resolved once for the whole batch.
+ */
+export const forceReturnKitsBatch = mutation({
+  args: { organizationId: v.string(), kitIds: v.array(v.string()), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const loc = await defaultLocationId(ctx, a.organizationId);
+    const succeeded: string[] = [];
+    const errors: { kitId: string; error: string }[] = [];
+    const affected = new Set<string>();
+    for (const kitId of a.kitIds) {
+      const kit = await kitByCuid(ctx, kitId);
+      if (!kit || kit.organizationId !== a.organizationId) { errors.push({ kitId, error: "Kit not found" }); continue; }
+      if (kit.status === "AVAILABLE") { errors.push({ kitId, error: "Kit is already available" }); continue; }
+      const aff = await forceReturnKitCore(ctx, a.organizationId, kit, a.userId, a.now, loc);
+      succeeded.push(kitId);
+      for (const k of aff) affected.add(k);
     }
-
-    if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: a.now });
-    else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: a.now }); }
-
-    const adjustments: BulkAdjustment[] = [];
-    for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, a.organizationId, 1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
-    return { success: true, affectedKitIds: [...kitsToRestore] };
+    return { succeeded, errors, affectedKitIds: [...affected] };
   },
 });
 

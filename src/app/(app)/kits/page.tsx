@@ -12,7 +12,7 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useKits } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
-import { forceReturnKit } from "@/server/warehouse";
+import { forceReturnKits } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -172,17 +172,10 @@ export default function KitsPage() {
 
   const forceReturnMutation = useServerMutation({
     mutationFn: async () => {
-      const ids = Array.from(selectedIds);
-      let count = 0;
-      for (const id of ids) {
-        try {
-          await forceReturnKit(id);
-          count++;
-        } catch {
-          // skip kits that are already available
-        }
-      }
-      return count;
+      // Bulk single-call: ONE array mutation (partial-success) instead of a
+      // per-kit server round-trip. Returns the count actually force-returned.
+      const res = await forceReturnKits(Array.from(selectedIds));
+      return res.count;
     },
     onSuccess: (count) => {
       toast.success(`Force returned ${count} kits to available`);

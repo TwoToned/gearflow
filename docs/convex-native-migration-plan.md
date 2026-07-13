@@ -213,7 +213,7 @@ Assets bulk-edit + force-return; **all line-item bulk** (delete/edit/move + all 
 ### Fix: client fan-out, N round-trips (Class B)
 | Surface | File | Fix |
 |---|---|---|
-| `/kits` bulk force-return | `kits/page.tsx:177` `for(id) forceReturnKit` | author `forceReturnKitsBatch` array mutation |
+| ~~`/kits` bulk force-return~~ **DONE** | `kits/page.tsx` | `forceReturnKitsBatch` array mutation (partial-success + per-item org re-check) + `forceReturnKits` server action; page calls it once |
 | Warehouse prep **kits** | `warehouse/[projectId]/page.tsx:1804` | `prepKitsBatch` |
 | Warehouse undeploy **kits** | `page.tsx:864` | `undeployKitsBatch` |
 | Warehouse unreturn **kits** | `page.tsx:853` | `unreturnKitsBatch` |

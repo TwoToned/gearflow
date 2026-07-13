@@ -20,6 +20,9 @@ importers:
       '@convex-dev/rate-limiter':
         specifier: ^0.3.2
         version: 0.3.2(convex@1.40.0(react@19.2.7))(react@19.2.7)
+      '@convex-dev/sharded-counter':
+        specifier: ^0.2.1
+        version: 0.2.1(convex@1.40.0(react@19.2.7))
       '@ducanh2912/next-pwa':
         specifier: ^10.2.9
         version: 10.2.9(next@16.2.7(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(webpack@5.105.4(lightningcss@1.32.0))
@@ -953,6 +956,11 @@ packages:
     peerDependenciesMeta:
       react:
         optional: true
+
+  '@convex-dev/sharded-counter@0.2.1':
+    resolution: {integrity: sha512-JbHBuULFftOBAWa1XPgqFglKlSXntuQ6XIQm6KUcVoh+l2+3s5nbngGDIXmzAeLdD1pkKz53ldGfeA+hdgQHeQ==}
+    peerDependencies:
+      convex: ^1.24.8
 
   '@csstools/color-helpers@6.0.2':
     resolution: {integrity: sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q==}
@@ -8153,6 +8161,10 @@ snapshots:
       convex: 1.40.0(react@19.2.7)
     optionalDependencies:
       react: 19.2.7
+
+  '@convex-dev/sharded-counter@0.2.1(convex@1.40.0(react@19.2.7))':
+    dependencies:
+      convex: 1.40.0(react@19.2.7)
 
   '@csstools/color-helpers@6.0.2': {}
 

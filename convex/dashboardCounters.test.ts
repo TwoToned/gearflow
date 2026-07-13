@@ -4,14 +4,16 @@ import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 // import.meta.glob typed via convex/import-meta-glob.d.ts (see convex/rbac.test.ts).
 const modules = import.meta.glob("./**/*.ts");
-// enforceBrowserWriteLimit (reconcileIfStale) calls the rate-limiter component for
-// user tokens; mount it so those paths resolve in tests. Service-token calls no-op.
+// Mount both Convex components: the rate limiter (reconcileIfStale) and the sharded
+// counter (every counted write + reconcile/bump goes through it — gate #3).
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 const ORG = "org_1";
@@ -193,12 +195,13 @@ describe("dashboardCounters", () => {
     }).toEqual(recomputed);
   });
 
-  test("a per-write delta against a not-yet-backfilled org is skipped (reconcile seeds it)", async () => {
+  test("a per-write delta before backfill leaves getByOrg null until reconcile seeds the row", async () => {
     const t = makeT();
     await seed(t);
     const svc = t.withIdentity(SERVICE);
-    // No reconcile yet → row absent. A counted write must NOT create a partial row
-    // (a delta can't reconstruct the pre-existing population).
+    // No reconcile yet → no counter row. A counted write bumps the sharded counter,
+    // but getByOrg gates on the row (which reconcile creates) so it stays null until
+    // then; reconcile's absolute SET overwrites any pre-backfill sharded delta.
     await svc.mutation(api.assets.create, { id: "a9", organizationId: ORG, modelId: "m1", assetTag: "a9", status: "AVAILABLE", isActive: true });
     const before = await t.withIdentity(asUser(ORG)).query(api.dashboardCounters.getByOrg, { orgId: ORG });
     expect(before).toBeNull();

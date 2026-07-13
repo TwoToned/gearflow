@@ -75,6 +75,7 @@ import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_recalc from "../lib/recalc.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
+import type * as lib_shardedCounter from "../lib/shardedCounter.js";
 import type * as lib_testtag from "../lib/testtag.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lib_writeGuard from "../lib/writeGuard.js";
@@ -219,6 +220,7 @@ declare const fullApi: ApiFromModules<{
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/recalc": typeof lib_recalc;
   "lib/searchScore": typeof lib_searchScore;
+  "lib/shardedCounter": typeof lib_shardedCounter;
   "lib/testtag": typeof lib_testtag;
   "lib/validators": typeof lib_validators;
   "lib/writeGuard": typeof lib_writeGuard;
@@ -318,4 +320,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  shardedCounter: import("@convex-dev/sharded-counter/_generated/component.js").ComponentApi<"shardedCounter">;
 };

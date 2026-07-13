@@ -224,7 +224,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "custom-fields.getCustomFieldDefinitions": { name: "custom-fields.getCustomFieldDefinitions", module: "custom-fields", fn: "getCustomFieldDefinitions", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [{ name: "entityType", type: "CustomFieldEntity", optional: true, schemaRef: "CustomFieldEntity" }], dangerous: false, summary: "Custom field definitions are CONVEX-ONLY (Phase B write inversion): every" },
   "custom-fields.reorderCustomFieldDefinitions": { name: "custom-fields.reorderCustomFieldDefinitions", module: "custom-fields", fn: "reorderCustomFieldDefinitions", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "orderedIds", type: "string[]", optional: false }], dangerous: false, summary: "Persist a new sort order in one shot (drag-reorder on the settings page). */" },
   "custom-fields.updateCustomFieldDefinition": { name: "custom-fields.updateCustomFieldDefinition", module: "custom-fields", fn: "updateCustomFieldDefinition", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "input", type: "CustomFieldDefinitionUpdateInput", optional: false, schemaRef: "CustomFieldDefinitionUpdateInput" }], dangerous: false, summary: "" },
-  "dashboard.getMyHomeData": { name: "dashboard.getMyHomeData", module: "dashboard", fn: "getMyHomeData", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [], dangerous: false, summary: "User-centric home data: the projects the current user manages (as the single" },
   "document-templates.getDocumentTemplate": { name: "document-templates.getDocumentTemplate", module: "document-templates", fn: "getDocumentTemplate", kind: "read", resource: "document", action: "read", scope: "document:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Get a single template with full schema data for the designer." },
   "document-templates.getDocumentTemplates": { name: "document-templates.getDocumentTemplates", module: "document-templates", fn: "getDocumentTemplates", kind: "read", resource: "document", action: "read", scope: "document:read", params: [], dangerous: false, summary: "List all document templates for the current org, plus virtual system defaults." },
   "document-templates.getPublishedTemplatesForDropdown": { name: "document-templates.getPublishedTemplatesForDropdown", module: "document-templates", fn: "getPublishedTemplatesForDropdown", kind: "read", resource: "document", action: "read", scope: "document:read", params: [], dangerous: false, summary: "Get published templates grouped by doc type for the document generation dropdown." },
@@ -597,7 +596,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "crew-dashboard": () => import("@/server/crew-dashboard"),
   "crew-time": () => import("@/server/crew-time"),
   "custom-fields": () => import("@/server/custom-fields"),
-  "dashboard": () => import("@/server/dashboard"),
   "document-templates": () => import("@/server/document-templates"),
   "group-templates": () => import("@/server/group-templates"),
   "kit-allocations": () => import("@/server/kit-allocations"),
@@ -4287,4 +4285,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 529;
+export const OPERATION_COUNT = 528;

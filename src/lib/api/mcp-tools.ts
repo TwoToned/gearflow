@@ -337,13 +337,6 @@ export const CURATED_TOOLS: CuratedTool[] = [
       },
     },
   },
-  {
-    name: "get_dashboard",
-    operation: "dashboard.getMyHomeData",
-    description:
-      "The signed-in user's home dashboard: upcoming jobs, tasks, and alerts. Read-only. Required scope: reports:read.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  },
 ];
 
 /**

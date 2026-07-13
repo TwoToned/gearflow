@@ -21,8 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { getModelRoi } from "@/server/roi";
+import { useModelRoi, type ModelRoiData } from "@/hooks/use-roi";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import {
   formatPayback,
@@ -40,7 +39,7 @@ import { PaybackBar } from "@/components/roi/payback-bar";
  * reports earnings. See docs/revenue-allocation-design.md.
  */
 
-type ModelRoi = Awaited<ReturnType<typeof getModelRoi>>;
+type ModelRoi = ModelRoiData;
 
 export function ModelRoiTab({ modelId }: { modelId: string }) {
   const [scope, setScope] = useState<RoiScope>("earned");
@@ -48,11 +47,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
 
   const window = useMemo(() => (allTime ? undefined : defaultRoiWindow()), [allTime]);
 
-  const { data, isLoading } = useServerQuery({
-    queryKey: ["model-roi", modelId, scope, allTime],
-    queryFn: () =>
-      getModelRoi(modelId, { scope, from: window?.from, to: window?.to }) as Promise<ModelRoi>,
-  });
+  const { data, isLoading } = useModelRoi(modelId, { scope, from: window?.from, to: window?.to });
 
   if (isLoading || !data) return <Skeleton className="h-72 w-full" />;
 

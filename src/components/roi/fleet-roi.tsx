@@ -15,8 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { getFleetRoi } from "@/server/roi";
+import { useFleetRoi, type FleetRoiData } from "@/hooks/use-roi";
 import { formatCurrency } from "@/lib/formatters";
 import { defaultRoiWindow, ROI_SCOPE_LABELS, type RoiScope } from "@/lib/roi";
 import { PaybackBar } from "@/components/roi/payback-bar";
@@ -30,7 +29,7 @@ import { cn } from "@/lib/utils";
  * capital never shows up in a revenue-driven query, because it produced no rows.
  */
 
-type FleetRoi = Awaited<ReturnType<typeof getFleetRoi>>;
+type FleetRoi = FleetRoiData;
 type Row = FleetRoi["rows"][number];
 type SortKey = "revenue" | "payback" | "revenuePerUnit" | "fleetCost";
 
@@ -60,11 +59,7 @@ export function FleetRoi() {
 
   const window = useMemo(() => (allTime ? undefined : defaultRoiWindow()), [allTime]);
 
-  const { data, isLoading } = useServerQuery({
-    queryKey: ["fleet-roi", scope, allTime],
-    queryFn: () =>
-      getFleetRoi({ scope, from: window?.from, to: window?.to }) as Promise<FleetRoi>,
-  });
+  const { data, isLoading } = useFleetRoi({ scope, from: window?.from, to: window?.to });
 
   const rows = useMemo(() => {
     if (!data) return [];

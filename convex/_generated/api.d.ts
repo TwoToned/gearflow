@@ -27,6 +27,7 @@ import type * as checkItems from "../checkItems.js";
 import type * as checkRecordOps from "../checkRecordOps.js";
 import type * as checkRecords from "../checkRecords.js";
 import type * as clientMedia from "../clientMedia.js";
+import type * as clientWrites from "../clientWrites.js";
 import type * as clients from "../clients.js";
 import type * as collaboration from "../collaboration.js";
 import type * as crewAssignments from "../crewAssignments.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   checkRecordOps: typeof checkRecordOps;
   checkRecords: typeof checkRecords;
   clientMedia: typeof clientMedia;
+  clientWrites: typeof clientWrites;
   clients: typeof clients;
   collaboration: typeof collaboration;
   crewAssignments: typeof crewAssignments;

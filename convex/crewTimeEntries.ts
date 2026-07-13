@@ -167,6 +167,27 @@ export const remove = mutation({
 });
 
 /**
+ * Delete N time entries in ONE array mutation (bulk single-call invariant) — replaces
+ * the server firing one `remove` per entry in a crew-member delete cascade. Per-item
+ * `organizationId` re-check (by_cuid is a GLOBAL index); a missing / cross-org id is
+ * skipped (idempotent — a row an assignment-cascade already deleted is just absent).
+ */
+export const removeMany = mutation({
+  args: { organizationId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { organizationId, ids }) => {
+    await requireService(ctx);
+    let deleted = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== organizationId) continue;
+      await ctx.db.delete(doc._id);
+      deleted++;
+    }
+    return { deleted };
+  },
+});
+
+/**
  * Bulk status transition (bulk single-call invariant, Phase 3): apply ONE shared `set`
  * to N time entries in a single array mutation — replaces the server firing one
  * `patchTimeEntry` round-trip per entry (submit / approve N timesheets). Guards each

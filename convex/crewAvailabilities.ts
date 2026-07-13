@@ -139,3 +139,26 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Delete N availability rows in ONE array mutation (bulk single-call invariant) —
+ * replaces the server firing one `remove` per row in a crew-member delete cascade.
+ * `organizationId` is OPTIONAL on this table, so we skip only a row whose org is
+ * PRESENT and MISMATCHED (a genuine cross-tenant id); null-org rows are deleted (they
+ * match the old delete-by-id behavior and belong to the member being removed).
+ */
+export const removeMany = mutation({
+  args: { organizationId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { organizationId, ids }) => {
+    await requireService(ctx);
+    let deleted = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("crewAvailabilities").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc) continue;
+      if (doc.organizationId != null && doc.organizationId !== organizationId) continue;
+      await ctx.db.delete(doc._id);
+      deleted++;
+    }
+    return { deleted };
+  },
+});

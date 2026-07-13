@@ -409,13 +409,22 @@ export async function deleteCrewMember(id: string) {
   } else {
     await convex.mutation(api.crewMembers.remove, { id });
   }
-  // Within each set the rows are distinct, so parallelize each. Keep the three
-  // sets SEQUENTIAL: an assignment's deleteCascade can remove its linked time
-  // entries, so the assignments must finish before the time-entry removals run
-  // (preserves the original ordering; avoids removing an already-gone row).
-  await Promise.all(memberAssignments.map((a) => convex.mutation(api.crewAssignments.deleteCascade, { id: a.id })));
-  await Promise.all(orgTimeEntries.map((t) => convex.mutation(api.crewTimeEntries.remove, { id: t.id })));
-  await Promise.all(memberAvailability.map((av) => convex.mutation(api.crewAvailabilities.remove, { id: av.id })));
+  // Each set is now ONE array mutation (was one round-trip per row). Keep the three
+  // SEQUENTIAL: an assignment's cascade also removes its linked time entries, so the
+  // assignment deletes must finish before the standalone-time-entry deletes run
+  // (removeMany is idempotent — an already-gone row is skipped, not an error).
+  await convex.mutation(api.crewAssignments.deleteManyCascade, {
+    orgId: organizationId,
+    ids: memberAssignments.map((a) => a.id),
+  });
+  await convex.mutation(api.crewTimeEntries.removeMany, {
+    organizationId,
+    ids: orgTimeEntries.map((t) => t.id),
+  });
+  await convex.mutation(api.crewAvailabilities.removeMany, {
+    organizationId,
+    ids: memberAvailability.map((av) => av.id),
+  });
 
   if (!nativeCrewWrites()) {
     await logActivity({

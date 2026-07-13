@@ -86,6 +86,7 @@ jobs:
             NEXT_PUBLIC_NATIVE_WAREHOUSE=${{ vars.NEXT_PUBLIC_NATIVE_WAREHOUSE }}
             NEXT_PUBLIC_NATIVE_KIT=${{ vars.NEXT_PUBLIC_NATIVE_KIT }}
             NEXT_PUBLIC_NATIVE_ASSET_NOTES_OPTIMISTIC=${{ vars.NEXT_PUBLIC_NATIVE_ASSET_NOTES_OPTIMISTIC }}
+            NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC=${{ vars.NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC }}
 
       # Tell Coolify to pull the new image and redeploy. This is Coolify's
       # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):

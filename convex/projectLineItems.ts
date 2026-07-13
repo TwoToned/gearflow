@@ -863,11 +863,18 @@ export const mergeGroup = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
+    // Scope the whole merge to the caller's org: by_cuid is a GLOBAL index, so verify
+    // the canonical belongs to a.organizationId, and skip any sibling that doesn't —
+    // BEFORE touching its units/check-records (they're fetched by the sibling id).
+    const canon = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.canonicalId)).unique();
+    if (!canon || canon.organizationId !== a.organizationId) throw new ConvexError("Forbidden: organization mismatch.");
     const canonicalUnits = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.canonicalId)).collect();
     const usedOrdinals = new Set(canonicalUnits.map((u) => u.ordinal));
     let quantityAdded = 0;
 
     for (const move of a.moves) {
+      const sib = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", move.siblingId)).unique();
+      if (!sib || sib.organizationId !== a.organizationId) continue; // per-item org re-check
       let unit: typeof canonicalUnits[number] | null = null;
       if (move.assetId) {
         unit = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", move.siblingId).eq("assetId", move.assetId!)).unique();
@@ -894,17 +901,15 @@ export const mergeGroup = mutation({
         movedUnitId: movedUnitId ?? undefined, checkRecordsRepointed: crs.length, serviceRepointed: false,
         notes: `${a.runId} | key=${a.key}`, mergedAt: a.now,
       });
-      // Deactivate the sibling (keep row, drop booking footprint).
-      const sib = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", move.siblingId)).unique();
-      if (sib) {
-        const { _id, _creationTime, assetId: _a, bulkAssetId: _b, ...rest } = sib;
-        await ctx.db.replace(_id, { ...rest, quantity: 0, status: "CANCELLED", notes: `[merged into ${a.canonicalId} (${a.runId})]`, updatedAt: a.now });
-      }
+      // Deactivate the sibling (keep row, drop booking footprint). `sib` is fetched +
+      // org-verified at the top of the loop.
+      const { _id, _creationTime, assetId: _a, bulkAssetId: _b, ...rest } = sib;
+      await ctx.db.replace(_id, { ...rest, quantity: 0, status: "CANCELLED", notes: `[merged into ${a.canonicalId} (${a.runId})]`, updatedAt: a.now });
       quantityAdded += move.quantity;
     }
 
-    const canon = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.canonicalId)).unique();
-    if (canon) await ctx.db.patch(canon._id, { quantity: (canon.quantity ?? 0) + quantityAdded, updatedAt: a.now });
+    // `canon` fetched + org-verified at the top.
+    await ctx.db.patch(canon._id, { quantity: (canon.quantity ?? 0) + quantityAdded, updatedAt: a.now });
     await syncLineItemRollup(ctx, a.canonicalId);
     return { canonicalId: a.canonicalId };
   },

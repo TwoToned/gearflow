@@ -1,6 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireOrgPermission, requireService } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
 
 /**
@@ -22,6 +24,8 @@ export const recomputeForProject = mutation({
     now: v.number(),
   },
   handler: async (ctx, { projectId, orgId, now }) => {
+    await assertWritesEnabled(ctx, "project"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
 
     const project = await ctx.db

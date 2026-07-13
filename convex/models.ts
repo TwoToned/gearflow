@@ -169,6 +169,42 @@ export const update = mutation({
   },
 });
 
+/**
+ * Bulk rate update (bulk single-call invariant, Phase 3): apply N pre-computed rate
+ * patches in ONE array mutation instead of the server firing one `update` round-trip
+ * per model. Each entry's `newRate` is computed by the caller (which reads current
+ * rates); this only persists them. Per-item `organizationId` re-check — `by_cuid` is a
+ * GLOBAL index, so a model from another org is skipped, never patched. Setting
+ * `dailyRate` auto-syncs `defaultRentalPrice` (mirrors the singular server path).
+ * Returns how many were actually applied.
+ */
+export const bulkUpdateRates = mutation({
+  args: {
+    organizationId: v.string(),
+    updates: v.array(
+      v.object({
+        id: v.string(),
+        rateType: v.union(v.literal("dailyRate"), v.literal("weeklyRate"), v.literal("monthlyRate")),
+        newRate: v.number(),
+      }),
+    ),
+    now: v.number(),
+  },
+  handler: async (ctx, { organizationId, updates, now }) => {
+    await requireService(ctx);
+    let count = 0;
+    for (const u of updates) {
+      const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", u.id)).unique();
+      if (!doc || doc.organizationId !== organizationId) continue; // per-item org re-check
+      const patch: Record<string, number> = { [u.rateType]: u.newRate, updatedAt: now };
+      if (u.rateType === "dailyRate") patch.defaultRentalPrice = u.newRate;
+      await ctx.db.patch(doc._id, patch);
+      count++;
+    }
+    return { count };
+  },
+});
+
 export const remove = mutation({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {

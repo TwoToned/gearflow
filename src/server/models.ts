@@ -480,32 +480,31 @@ export async function bulkUpdateRates(
 
   const convex = await getConvexClient();
   const now = Date.now();
-  // Independent per-model patches — compute in memory, then fire all the updates
-  // concurrently (was one sequential Convex round-trip per selected model).
-  await Promise.all(
-    models.map((model) => {
-      const current = Number((model as Record<string, unknown>)[rateType] ?? 0);
-      let newRate: number;
-      switch (operation) {
-        case "set":
-          newRate = value;
-          break;
-        case "multiply":
-          newRate = current * value;
-          break;
-        case "increase_percent":
-          newRate = current * (1 + value / 100);
-          break;
-      }
-      newRate = Math.round(newRate * 100) / 100;
-      const patch: Record<string, number> = { [rateType]: newRate, updatedAt: now };
-      // Auto-sync defaultRentalPrice when dailyRate changes
-      if (rateType === "dailyRate") {
-        patch.defaultRentalPrice = newRate;
-      }
-      return convex.mutation(api.models.update, { id: model.id, patch });
-    }),
-  );
+  // Compute each model's new rate in memory (needs the current value), then persist
+  // them all in ONE Convex array mutation (was one round-trip per selected model).
+  const updates = models.map((model) => {
+    const current = Number((model as Record<string, unknown>)[rateType] ?? 0);
+    let newRate: number;
+    switch (operation) {
+      case "set":
+        newRate = value;
+        break;
+      case "multiply":
+        newRate = current * value;
+        break;
+      case "increase_percent":
+        newRate = current * (1 + value / 100);
+        break;
+    }
+    newRate = Math.round(newRate * 100) / 100;
+    return { id: model.id, rateType, newRate };
+  });
+
+  const { count } = await convex.mutation(api.models.bulkUpdateRates, {
+    organizationId,
+    updates,
+    now,
+  });
 
   await logActivity({
     organizationId,
@@ -514,9 +513,9 @@ export async function bulkUpdateRates(
     action: "UPDATE",
     entityType: "model",
     entityId: modelIds[0],
-    entityName: `${models.length} models`,
-    summary: `Bulk updated ${rateType} on ${models.length} model(s): ${operation} ${value}`,
+    entityName: `${count} models`,
+    summary: `Bulk updated ${rateType} on ${count} model(s): ${operation} ${value}`,
   });
 
-  return serialize({ count: models.length });
+  return serialize({ count });
 }

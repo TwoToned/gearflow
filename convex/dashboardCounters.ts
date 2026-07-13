@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireService, requireOrgRead } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
 
 /**
  * Denormalised dashboard stat counters (Phase 3). One `dashboardCounters` row per
@@ -108,6 +109,7 @@ export const reconcile = mutation({
 export const reconcileIfStale = mutation({
   args: { orgId: v.string(), now: v.number(), maxAgeMs: v.number() },
   handler: async (ctx, { orgId, now, maxAgeMs }) => {
+    await assertWritesEnabled(ctx, "dashboard"); // browser-direct kill-switch
     await requireOrgRead(ctx, orgId);
     const existing = await ctx.db
       .query("dashboardCounters")

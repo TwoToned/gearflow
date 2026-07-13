@@ -1471,6 +1471,18 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_credentialID", ["credentialID"]),
 
+  // SystemFlags — a platform-global SINGLETON emergency brake for the
+  // browser-direct mutation surface (Phase 3). `writesDisabled` (or a domain in
+  // `disabledDomains`) makes `assertWritesEnabled` (convex/lib/writeGuard.ts) throw,
+  // so a runaway/abusive client can be cut off instantly without a redeploy. Read
+  // inline by the guard; flipped by the SERVICE-gated `systemFlags.setWrites`.
+  systemFlags: defineTable({
+    writesDisabled: v.optional(v.boolean()),
+    disabledReason: v.optional(v.string()),
+    disabledDomains: v.optional(v.array(v.string())),
+    updatedAt: v.optional(v.number()),
+  }),
+
   // OrgSettings — per-org BUSINESS settings, migrated OFF the Better Auth
   // `organizations` row (Phase 1 source-of-truth inversion). The `settings`
   // field is the JSON blob that used to live in `organization.metadata`

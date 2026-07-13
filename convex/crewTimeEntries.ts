@@ -166,6 +166,41 @@ export const remove = mutation({
   },
 });
 
+/**
+ * Bulk status transition (bulk single-call invariant, Phase 3): apply ONE shared `set`
+ * to N time entries in a single array mutation — replaces the server firing one
+ * `patchTimeEntry` round-trip per entry (submit / approve N timesheets). Guards each
+ * entry per-item: `organizationId` re-check (by_cuid is a GLOBAL index) + a
+ * `fromStatuses` eligibility gate re-checked HERE (TOCTOU-safe — the status may have
+ * changed since the caller read it). Skips ineligible entries; returns the ids updated.
+ */
+export const patchManyStatus = mutation({
+  args: {
+    organizationId: v.string(),
+    ids: v.array(v.string()),
+    fromStatuses: v.array(enums.TimeEntryStatus),
+    set: v.object({
+      status: enums.TimeEntryStatus,
+      approvedById: v.optional(v.string()),
+      approvedAt: v.optional(v.number()),
+      updatedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, { organizationId, ids, fromStatuses, set }) => {
+    await requireService(ctx);
+    const allowed = new Set<string>(fromStatuses);
+    const updated: string[] = [];
+    for (const id of ids) {
+      const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== organizationId) continue; // per-item org re-check
+      if (doc.status == null || !allowed.has(doc.status)) continue; // eligibility (status may have changed)
+      await ctx.db.patch(doc._id, set);
+      updated.push(id);
+    }
+    return { count: updated.length, updated };
+  },
+});
+
 // ─── CUSTOM (crew-scheduling write-inversion, Phase C — re-add on a `pnpm convex:crud` regen) ───
 
 /** Patch a time entry with explicit field clears — the edit-resets-to-DRAFT path

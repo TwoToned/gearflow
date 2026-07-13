@@ -25,6 +25,20 @@ export const getById = query({
 });
 
 /** Batch point-read users by id (one by_cuid lookup each). Deduped + capped. */
+/**
+ * Every mirrored user row (id/email/name). SERVICE-only. Used by the auth-mirror
+ * RECONCILE job to detect orphan mirror rows (user deleted in Better Auth but still
+ * mirrored) + field drift. Small table; full collect.
+ */
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireService(ctx);
+    const rows = await ctx.db.query("users").collect();
+    return rows.map((r) => ({ id: r.id, email: r.email ?? null, name: r.name ?? null }));
+  },
+});
+
 export const listByIds = query({
   args: { ids: v.array(v.string()) },
   handler: async (ctx, { ids }) => {

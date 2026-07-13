@@ -495,34 +495,57 @@ async function cascadeKitAccessoriesReverse(ctx: Ctx, kitParentLineId: string, o
   }
 }
 
-export const checkoutKit = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const loc = project?.locationId ?? null;
+/** Extract a human-readable message from a thrown Convex error for a per-kit
+ *  {succeeded, errors} report (the batch catches pre-write validation throws and
+ *  records them per item instead of aborting the whole call). */
+function kitBatchErrorMessage(e: unknown): string {
+  if (e instanceof ConvexError) {
+    const d = e.data as unknown;
+    if (typeof d === "string") return d;
+    if (d && typeof d === "object") {
+      const o = d as Record<string, unknown>;
+      if (typeof o.message === "string") return o.message;
+      if (o.kind === "TESTTAG_BLOCK") return "Blocked by Test & Tag compliance";
+      return JSON.stringify(d);
+    }
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
+/** Pre-write validation for a kit checkout: composition parity (this kit + each
+ *  nested kit) and the T&T preflight over their permanent composition. THROWS
+ *  before any write, so a batch can run it per item and skip a drifted/blocked kit
+ *  cleanly (no writes staged) without sinking the rest. */
+async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine): Promise<void> {
+  const children = await childLines(ctx, kitLine.id, a.organizationId);
+  const nestedKitChildren = children.filter((c) => c.kitId);
+  const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+
+  // Parity: the project's kit snapshot (what we deploy) must match the live kit
+  // definition (what T&T verifies) — for this kit and each nested kit.
+  await assertKitCompositionParity(ctx, kitLine.id, a.kitId, a.organizationId);
+  for (const nestedChild of nestedKitChildren) {
+    await assertKitCompositionParity(ctx, nestedChild.id, nestedChild.kitId!, a.organizationId);
+  }
+
+  // T&T preflight over this kit + nested kits' permanent composition.
+  const ttAssets: string[] = [...(await kitSerializedAssetIds(ctx, a.kitId))];
+  const ttBulk: string[] = (await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect()).map((b) => b.bulkAssetId);
+  for (const nk of nestedKitIds) {
+    ttAssets.push(...(await kitSerializedAssetIds(ctx, nk)));
+    ttBulk.push(...(await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", nk)).collect()).map((b) => b.bulkAssetId));
+  }
+  await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
+}
+
+/** Write phase of checkoutKit for ONE already-validated kit (preflight passed).
+ *  `loc` (the project location) is passed so a batch resolves it once. Returns
+ *  [kitId, ...nestedKitIds]. CONSUMES bulk availability — `adjustBulkAvailability`
+ *  can throw on a short bulk (all-or-nothing per the singular). */
+async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, loc: string | null): Promise<string[]> {
     const children = await childLines(ctx, kitLine.id, a.organizationId);
     const nestedKitChildren = children.filter((c) => c.kitId);
     const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
-
-    // Parity: the project's kit snapshot (what we deploy) must match the live kit
-    // definition (what T&T verifies) — for this kit and each nested kit.
-    await assertKitCompositionParity(ctx, kitLine.id, a.kitId, a.organizationId);
-    for (const nestedChild of nestedKitChildren) {
-      await assertKitCompositionParity(ctx, nestedChild.id, nestedChild.kitId!, a.organizationId);
-    }
-
-    // T&T preflight over this kit + nested kits' permanent composition.
-    const ttAssets: string[] = [...(await kitSerializedAssetIds(ctx, a.kitId))];
-    const ttBulk: string[] = (await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.kitId)).collect()).map((b) => b.bulkAssetId);
-    for (const nk of nestedKitIds) {
-      ttAssets.push(...(await kitSerializedAssetIds(ctx, nk)));
-      ttBulk.push(...(await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", nk)).collect()).map((b) => b.bulkAssetId));
-    }
-    await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
 
     // checkedOutQuantity must be the LINE's own quantity, not a hardcoded 1 — a bulk
     // kit member with quantity 16 was rolling up as "1 on the job", which then let the
@@ -558,22 +581,69 @@ export const checkoutKit = mutation({
     await cascadeKitAccessoriesOut(ctx, kitLine.id, a.organizationId, { projectId: a.projectId, userId: a.userId, loc, now: a.now });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Kit deployed with all contents" });
-    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
-  },
-});
+    return [a.kitId, ...nestedKitIds];
+}
 
-export const checkinKit = mutation({
-  args: {
-    organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(),
-    returnCondition: v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING")), now: v.number(),
-  },
+export const checkoutKit = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
     if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
-    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const loc = project?.locationId ?? null;
+    await checkoutKitPreflight(ctx, a, kitLine);
+    const affectedKitIds = await checkoutKitCore(ctx, a, kitLine, loc);
+    return { kitId: a.kitId, affectedKitIds };
+  },
+});
 
+/**
+ * Batch kit checkout (bulk single-call invariant, Phase 3): deploy N kits in ONE
+ * array mutation instead of the client firing one `checkoutKit` per kit. `loc`
+ * (the shared project location — all kits are on `projectId`) is resolved ONCE.
+ * Per-item guards, in the singular's order: (1) org+project re-check via
+ * `kitParentLine` — a kit not on this org's project is SKIPPED with an error; (2)
+ * `checkoutKitPreflight` (composition parity + T&T) runs BEFORE any write, so a
+ * drifted/blocked kit is caught and SKIPPED cleanly ({succeeded, errors}) without
+ * sinking the rest — matching the old independent per-kit mutations. Only AFTER a
+ * kit passes preflight does its write core run. CAUTION: the write core CONSUMES
+ * bulk availability; a short-bulk (or accessory-level T&T) failure throws mid-write,
+ * and because a Convex mutation is ONE transaction that rolls the whole batch back
+ * (atomic) — the client surfaces the error and the operator retries.
+ */
+export const checkoutKitsBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const loc = project?.locationId ?? null;
+    const succeeded: string[] = [];
+    const errors: { kitId: string; message: string }[] = [];
+    const affected = new Set<string>();
+    for (const kitId of a.kitIds) {
+      const ka: KitOpArgs = { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now };
+      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
+      if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
+      // Pre-write validation only — a throw here has staged no writes, so the kit is
+      // skipped cleanly and the rest of the batch proceeds.
+      try {
+        await checkoutKitPreflight(ctx, ka, kitLine);
+      } catch (e) {
+        errors.push({ kitId, message: kitBatchErrorMessage(e) });
+        continue;
+      }
+      const aff = await checkoutKitCore(ctx, ka, kitLine, loc);
+      succeeded.push(kitId);
+      for (const k of aff) affected.add(k);
+    }
+    return { succeeded, errors, affectedKitIds: [...affected] };
+  },
+});
+
+/** Core of checkinKit for ONE validated kit. `defaultLocationId` (org default) is
+ *  passed so a batch resolves it once. Returns [kitId, ...nestedKitIds]. */
+async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLine, defaultLocationId: string | null): Promise<string[]> {
     const newKitStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "INCOMPLETE" : "AVAILABLE";
     const assetStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
     const ret = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: a.returnCondition, updatedAt: a.now };
@@ -611,7 +681,56 @@ export const checkinKit = mutation({
     await cascadeKitAccessoriesIn(ctx, kitLine.id, a.organizationId, { projectId: a.projectId, userId: a.userId, defaultLocationId, returnCondition: a.returnCondition });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Kit returned — condition: ${a.returnCondition}` });
-    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
+    return [a.kitId, ...nestedKitIds];
+}
+
+export const checkinKit = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(),
+    returnCondition: v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING")), now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+    if (!kitLine) throw new ConvexError("Kit not found on this project");
+    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
+    const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLocationId);
+    return { kitId: a.kitId, affectedKitIds };
+  },
+});
+
+/**
+ * Batch kit check-in (bulk single-call invariant, Phase 3): return N kits in ONE
+ * array mutation instead of one `checkinKit` per kit. The org default location is
+ * resolved ONCE. Per-item org+project re-check via `kitParentLine`: a kit not on
+ * this org's project is SKIPPED with an error before any of its writes
+ * ({succeeded, errors}). Check-in only RELEASES bulk availability (+1), which can't
+ * underflow, so a valid kit's core completes; but like any Convex mutation this is
+ * ONE transaction, so a genuine mid-execution failure (e.g. a missing bulk asset)
+ * rolls the whole batch back (atomic) and the operator retries.
+ */
+export const checkinKitsBatch = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), userId: v.string(),
+    items: v.array(v.object({ kitId: v.string(), returnCondition: v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING")) })),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
+    const succeeded: string[] = [];
+    const errors: { kitId: string; message: string }[] = [];
+    const affected = new Set<string>();
+    for (const item of a.items) {
+      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, item.kitId);
+      if (!kitLine) { errors.push({ kitId: item.kitId, message: "Kit not found on this project" }); continue; }
+      const aff = await checkinKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId: item.kitId, returnCondition: item.returnCondition, now: a.now }, kitLine, defaultLocationId);
+      succeeded.push(item.kitId);
+      for (const k of aff) affected.add(k);
+    }
+    return { succeeded, errors, affectedKitIds: [...affected] };
   },
 });
 
@@ -794,6 +913,7 @@ export const undeprepLine = mutation({
 
 /** Deployed → Prepped for a whole kit: reverse checkoutKit. */
 type KitOpArgs = { organizationId: string; projectId: string; userId: string; kitId: string; now: number };
+type KitCheckinArgs = KitOpArgs & { returnCondition: "GOOD" | "DAMAGED" | "MISSING" };
 type KitParentLine = NonNullable<Awaited<ReturnType<typeof kitParentLine>>>;
 
 /** Core of undeployKit for ONE validated kit (parent line found). `defLoc` is passed

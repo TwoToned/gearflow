@@ -169,6 +169,25 @@ describe("kit per-unit — reverse + force", () => {
     expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
   });
 
+  test("checkoutKitsBatch: checks out the kit + reports a not-on-project kit as an error", async () => {
+    const t = makeT();
+    await seedKit(t);
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1", "ghost"], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([{ kitId: "ghost", message: "Kit not found on this project" }]);
+    expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
+  });
+
+  test("checkinKitsBatch: checks in the kit in one call", async () => {
+    const t = makeT();
+    await seedKit(t);
+    await co(t);
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkinKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, items: [{ kitId: "k1", returnCondition: "GOOD" }], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([]);
+    expect(serialUnit(await memberUnits(t)).status).toBe("RETURNED");
+  });
+
   test("forceReturnKit flips member unit → RETURNED", async () => {
     const t = makeT();
     await seedKit(t);

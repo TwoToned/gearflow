@@ -710,12 +710,14 @@ export async function checkInKit(
 }
 
 /**
- * Bulk-deploy many kits in ONE server round-trip. Replaces the warehouse
- * "Deploy Selected" loop that fired one checkOutKit round-trip per kit. The
- * project-wide blocking-comment gate is checked once; each kit's atomic checkout
- * mutation runs in its own transaction with per-kit error isolation (one kit's
- * T&T preflight failure doesn't sink the rest — matching the old independent
- * per-kit mutations). Returns succeeded kit ids + per-kit errors.
+ * Bulk-deploy many kits in ONE server round-trip AND ONE Convex mutation
+ * (`checkoutKitsBatch`). Replaces the warehouse "Deploy Selected" loop that fired
+ * one checkOutKit round-trip per kit. The project-wide blocking-comment gate is
+ * checked once. The batch mutation reports each kit's pre-write validation failure
+ * (kit-not-on-project, composition drift, T&T preflight) as a per-kit error so one
+ * ineligible kit doesn't sink the rest — matching the old independent per-kit
+ * mutations. A mid-write condition (short bulk) is atomic across the batch. Returns
+ * succeeded kit ids + per-kit errors.
  */
 export async function checkOutKitsBatch(projectId: string, kitIds: string[]) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
@@ -727,19 +729,13 @@ export async function checkOutKitsBatch(projectId: string, kitIds: string[]) {
 
   const convex = await getConvexClient();
   const now = Date.now();
-  // Fire every kit's atomic checkout concurrently (was one serial round-trip per
-  // kit). Each kit stays in its own Convex mutation/transaction, so per-kit error
-  // isolation is preserved; allSettled collects successes + failures without one
-  // failing kit aborting the rest. (Concurrent checkouts on the SAME project touch
-  // shared line rollups → Convex may OCC-retry; it auto-retries, so it stays correct.)
-  const results = await Promise.allSettled(
-    unique.map((kitId) => convex.mutation(api.warehouseOps.checkoutKit, { organizationId, projectId, userId, kitId, now })),
-  );
-  const succeeded: string[] = [];
-  const errors: { kitId: string; message: string }[] = [];
-  results.forEach((r, i) => {
-    if (r.status === "fulfilled") succeeded.push(unique[i]);
-    else errors.push({ kitId: unique[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+  // ONE array mutation deploys every kit (was one round-trip per kit). Per-kit
+  // pre-write validation (kit-not-on-project, composition drift, T&T preflight) is
+  // reported as a per-kit error so one ineligible kit doesn't sink the rest —
+  // matching the old independent per-kit mutations. A mid-write failure (short bulk)
+  // is atomic across the batch (the mutation rejects and the operator retries).
+  const { succeeded, errors } = await convex.mutation(api.warehouseOps.checkoutKitsBatch, {
+    organizationId, projectId, userId, kitIds: unique, now,
   });
   await logActivityMany(
     succeeded.map((kitId) => ({
@@ -751,10 +747,11 @@ export async function checkOutKitsBatch(projectId: string, kitIds: string[]) {
 }
 
 /**
- * Bulk-return many kits in ONE server round-trip. Replaces the warehouse
- * "Return Selected" loop that fired one checkInKit round-trip per kit (for the
- * kits that pass the interactive verification/check-flow gates). Each kit's
- * atomic check-in runs in its own transaction with per-kit error isolation.
+ * Bulk-return many kits in ONE server round-trip AND ONE Convex mutation
+ * (`checkinKitsBatch`). Replaces the warehouse "Return Selected" loop that fired
+ * one checkInKit round-trip per kit (for the kits that pass the interactive
+ * verification/check-flow gates). A kit not on the project is reported as a per-kit
+ * error; the rest still return.
  */
 export async function checkInKitsBatch(
   projectId: string,
@@ -770,18 +767,12 @@ export async function checkInKitsBatch(
 
   const convex = await getConvexClient();
   const now = Date.now();
-  // Concurrent per-kit check-in (see checkOutKitsBatch for the isolation rationale).
-  const results = await Promise.allSettled(
-    uniqueKits.map((k) =>
-      convex.mutation(api.warehouseOps.checkinKit, { organizationId, projectId, userId, kitId: k.kitId, returnCondition: k.returnCondition, now })
-        .then(() => k),
-    ),
-  );
-  const succeeded: string[] = [];
-  const errors: { kitId: string; message: string }[] = [];
-  results.forEach((r, i) => {
-    if (r.status === "fulfilled") succeeded.push(uniqueKits[i].kitId);
-    else errors.push({ kitId: uniqueKits[i].kitId, message: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+  // ONE array mutation returns every kit (was one round-trip per kit). A kit not on
+  // the project is reported as a per-kit error; the rest still return.
+  const { succeeded, errors } = await convex.mutation(api.warehouseOps.checkinKitsBatch, {
+    organizationId, projectId, userId,
+    items: uniqueKits.map((k) => ({ kitId: k.kitId, returnCondition: k.returnCondition })),
+    now,
   });
   await logActivityMany(
     uniqueKits

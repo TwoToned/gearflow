@@ -963,6 +963,30 @@ export async function syncContainerStatus(projectId: string, containerName: stri
   return serialize(res);
 }
 
+/**
+ * Bulk single-call container sync (Phase 3 bulk invariant): roll up N containers in
+ * ONE Convex array mutation + ONE server round-trip — replaces the client's
+ * `for (const c of containers) await syncContainerStatus(...)` loop that fired one
+ * round-trip per affected container after a bulk checkout/check-in. Container names
+ * are deduped; the mutation reports each container's rollup result.
+ */
+export async function syncContainersBatch(projectId: string, containerNames: string[]) {
+  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+  const unique = [...new Set(containerNames)];
+  if (unique.length === 0) return serialize({ results: [] as Array<{ containerName: string; updated: boolean; status?: string }> });
+
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.syncContainersBatch, {
+    organizationId,
+    projectId,
+    containerNames: unique,
+    userId,
+    now: Date.now(),
+  });
+
+  return serialize(res);
+}
+
 type AvailableAssetRow = {
   id: string;
   assetTag: string;

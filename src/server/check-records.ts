@@ -826,6 +826,92 @@ export async function prepKitChildren(
   return serialize({ success: true });
 }
 
+/**
+ * Bulk single-call kit prep (Phase 3 bulk invariant): prep N kit trees in ONE
+ * server round-trip + ONE atomic Convex mutation (`prepKitsBatch`). Replaces the
+ * warehouse "Prep Selected" loop that fired one `prepKitChildren` round-trip per
+ * kit. The blocking-comment gate mirrors `prepKitChildren`'s per-kit check but
+ * reads the project summary + line groups ONCE. Per-kit org/project validation is
+ * the MUTATION's job — a kit not on this org's project surfaces in `res.errors`
+ * (partial-success) instead of sinking the rest. Returns succeeded parent line ids
+ * + per-kit errors.
+ */
+export async function prepKitsBatch(
+  projectId: string,
+  parentLineItemIds: string[]
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+  const unique = [...new Set(parentLineItemIds)];
+  if (unique.length === 0) return serialize({ succeeded: [] as string[], errors: [] as { lineItemId: string; message: string }[] });
+
+  const convex = await getConvexClient();
+
+  // Blocking-comment gate — one project summary + one line-groups read (was a
+  // per-kit assertNoBlockingComments in the singular). A project-level blocker
+  // (or a blocker on any prepped kit line / its group) fails the whole batch, just
+  // as the old loop threw on the first blocked kit.
+  const [summary, lineDocs] = await Promise.all([
+    getProjectBlockingSummary(organizationId, projectId),
+    convex.query(api.projectLineItems.listByIds, { ids: unique, orgId: organizationId }),
+  ]);
+  // Scope the gate to THIS org+project — listByIds is a global-index read, so a
+  // foreign/cross-project id must not feed its groupId to the project's blocking gate
+  // (it would falsely abort the whole batch). Cross-project/foreign ids fall through
+  // to the mutation, which skips them per-item with an error (partial-success).
+  const inProject = lineDocs.filter((l) => l.projectId === projectId && l.organizationId === organizationId);
+  const groupById = new Map(inProject.map((l) => [l.id, l.groupId ?? null]));
+  const kitIdByLine = new Map(inProject.map((l) => [l.id, l.kitId ?? null]));
+  for (const lineItemId of unique) {
+    if (!groupById.has(lineItemId)) continue; // not in this project → mutation handles it
+    const gate = evaluateBlockingGate(summary, {
+      lineItemId,
+      groupId: groupById.get(lineItemId) ?? null,
+      actionLabel: "prep this kit",
+    });
+    if (gate.blocked) throw new Error(gate.message);
+  }
+
+  // ONE atomic array mutation preps every kit tree (partial-success on org/project).
+  const { succeeded, errors } = await convex.mutation(api.checkRecordOps.prepKitsBatch, {
+    organizationId,
+    projectId,
+    parentLineItemIds: unique,
+    now: Date.now(),
+  });
+
+  // One audit row per prepped kit (kit name via the parent line's kitId), matching
+  // the single prepKitChildren's per-kit log.
+  const kitIds = [...new Set(succeeded.map((id: string) => kitIdByLine.get(id)).filter((x): x is string => !!x))];
+  const kitNameById = new Map<string, string>();
+  await Promise.all(
+    kitIds.map(async (kid) => {
+      const kit = await convex.query(api.kits.getById, { id: kid });
+      if (kit) kitNameById.set(kid, kit.name);
+    }),
+  );
+  await logActivityMany(
+    succeeded.map((lineItemId: string) => {
+      const kid = kitIdByLine.get(lineItemId);
+      return {
+        organizationId,
+        userId,
+        userName,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: lineItemId,
+        entityName: (kid && kitNameById.get(kid)) || "Kit",
+        summary: "Kit prepped (checks completed)",
+        projectId,
+      };
+    }),
+  );
+
+  return serialize({ succeeded, errors });
+}
+
 export async function unpackItem(projectId: string, lineItemId: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",

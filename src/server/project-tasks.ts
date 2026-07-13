@@ -411,13 +411,13 @@ export async function reorderProjectTasks(projectId: string, orderedIds: string[
   const { organizationId } = await requirePermission("project", "update");
 
   const convex = await getConvexClient();
-  const now = Date.now();
-  for (let index = 0; index < orderedIds.length; index++) {
-    await convex.mutation(api.projectTasks.update, {
-      id: orderedIds[index],
-      patch: { sortOrder: index, updatedAt: now },
-    });
-  }
+  // Single array mutation: sortOrder = index for every id, org re-checked per row
+  // inside Convex (was one `update` round-trip per task).
+  await convex.mutation(api.projectTasks.reorderMany, {
+    orgId: organizationId,
+    orderedIds,
+    now: Date.now(),
+  });
 }
 
 export async function getMyOpenTasks(limit = 25) {

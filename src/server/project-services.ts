@@ -224,24 +224,26 @@ export async function createProjectService(
     );
     const convex = await getConvexClient();
     const now = Date.now();
-    for (const crewMemberId of parsed.crewMemberIds) {
-      await convex.mutation(api.crewAssignments.createServiceAssignment, {
-        id: createId(),
-        organizationId,
-        projectId,
-        crewMemberId,
-        serviceId: service.id,
-        phase,
-        status: "PENDING",
-        ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
-        ...(serviceDate ? { startDate: serviceDate.getTime() } : {}),
-        ...(crewStart ? { startTime: crewStart } : {}),
-        ...(serviceEndDate ? { endDate: serviceEndDate.getTime() } : {}),
-        ...(crewEnd ? { endTime: crewEnd } : {}),
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    // Build every crew row up front, then insert them in ONE array mutation (was one
+    // createServiceAssignment round-trip per crew member). organizationId is stamped
+    // from the arg inside Convex; the partial-unique (project, member, service)
+    // invariant is re-enforced per row there.
+    const rows = parsed.crewMemberIds.map((crewMemberId) => ({
+      id: createId(),
+      projectId,
+      crewMemberId,
+      serviceId: service.id,
+      phase,
+      status: "PENDING" as const,
+      ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
+      ...(serviceDate ? { startDate: serviceDate.getTime() } : {}),
+      ...(crewStart ? { startTime: crewStart } : {}),
+      ...(serviceEndDate ? { endDate: serviceEndDate.getTime() } : {}),
+      ...(crewEnd ? { endTime: crewEnd } : {}),
+      createdAt: now,
+      updatedAt: now,
+    }));
+    await convex.mutation(api.crewAssignments.createManyServiceAssignments, { organizationId, rows });
   }
 
   // Always recalculate project totals — service charge/cost affects financials
@@ -346,8 +348,13 @@ export async function updateProjectService(
     const existingMemberIds = new Set(existingAssignments.map((a) => a.crewMemberId));
     const desiredMemberIds = new Set(parsed.crewMemberIds);
 
-    for (const a of existingAssignments.filter((a) => !desiredMemberIds.has(a.crewMemberId))) {
-      await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+    // Remove de-selected members' assignments in ONE cascade mutation (was one
+    // deleteCascade round-trip per removed member). Org re-checked per row in Convex.
+    const removeIds = existingAssignments
+      .filter((a) => !desiredMemberIds.has(a.crewMemberId))
+      .map((a) => a.id);
+    if (removeIds.length > 0) {
+      await convex.mutation(api.crewAssignments.deleteManyCascade, { ids: removeIds, orgId: organizationId });
     }
 
     const { crewStart, crewEnd } = deriveCrewTimes(
@@ -357,15 +364,17 @@ export async function updateProjectService(
       parsed.type,
     );
     const now = Date.now();
-    for (const crewMemberId of parsed.crewMemberIds.filter((m) => !existingMemberIds.has(m))) {
-      await convex.mutation(api.crewAssignments.createServiceAssignment, {
+    // Add newly-selected members in ONE array mutation (was one createServiceAssignment
+    // round-trip per added member). Partial-unique re-enforced per row in Convex.
+    const addRows = parsed.crewMemberIds
+      .filter((m) => !existingMemberIds.has(m))
+      .map((crewMemberId) => ({
         id: createId(),
-        organizationId,
         projectId: existing.projectId,
         crewMemberId,
         serviceId: id,
         phase,
-        status: "PENDING",
+        status: "PENDING" as const,
         ...(parsed.crewRoleId ? { crewRoleId: parsed.crewRoleId } : {}),
         ...(serviceDate ? { startDate: serviceDate.getTime() } : {}),
         ...(crewStart ? { startTime: crewStart } : {}),
@@ -373,9 +382,15 @@ export async function updateProjectService(
         ...(crewEnd ? { endTime: crewEnd } : {}),
         createdAt: now,
         updatedAt: now,
-      });
+      }));
+    if (addRows.length > 0) {
+      await convex.mutation(api.crewAssignments.createManyServiceAssignments, { organizationId, rows: addRows });
     }
 
+    // Role-change patch on surviving assignments stays a per-row loop: it's a
+    // patch-WITH-CLEAR (null crewRoleId → field removed), which no batch mutation
+    // expresses (patchManyStatus only sets status). Only fires when the role changed,
+    // so it's a bounded, rarely-hit fan-out — left as-is deliberately.
     if (parsed.crewRoleId !== existing.crewRoleId) {
       for (const a of existingAssignments.filter((a) => desiredMemberIds.has(a.crewMemberId))) {
         await convex.mutation(api.crewAssignments.patchAssignment, {

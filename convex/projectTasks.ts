@@ -189,3 +189,20 @@ export const removeMany = mutation({
     return { deleted, skipped, projectIds: [...projectIds] };
   },
 });
+
+/**
+ * Atomic drag-reorder: assign sortOrder = index for each id in `orderedIds`, in ONE
+ * mutation round-trip (was a server loop firing one `update` per task). Per-item org
+ * re-check: by_cuid is a GLOBAL index, so without the `doc.organizationId === orgId`
+ * skip a caller could reorder another org's tasks (mirrors reorderLineItems' guard).
+ */
+export const reorderMany = mutation({
+  args: { orgId: v.string(), orderedIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, orderedIds, now }) => {
+    await requireService(ctx);
+    for (let index = 0; index < orderedIds.length; index++) {
+      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).unique();
+      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
+    }
+  },
+});

@@ -387,3 +387,57 @@ export const createServiceAssignment = mutation({
     return { created: true, id: args.id };
   },
 });
+
+/**
+ * Create N service-derived crew assignments in ONE array mutation (bulk single-call
+ * invariant, Phase 3) — replaces the server firing one `createServiceAssignment` per
+ * selected crew member when assigning multiple crew to a service (N round-trips).
+ * `organizationId` is stamped from the ARG onto every row (a caller can't smuggle a
+ * per-row org). Each row honours the same partial-unique
+ * `(projectId, crewMemberId, serviceId)` invariant as the single mutation: an existing
+ * row for that triple is skipped (idempotent on retry). Returns how many were created.
+ */
+export const createManyServiceAssignments = mutation({
+  args: {
+    organizationId: v.string(),
+    rows: v.array(
+      v.object({
+        id: v.string(),
+        projectId: v.string(),
+        crewMemberId: v.string(),
+        serviceId: v.string(),
+        crewRoleId: v.optional(v.string()),
+        status: v.optional(enums.AssignmentStatus),
+        phase: v.optional(enums.ProjectPhase),
+        startDate: v.optional(v.number()),
+        startTime: v.optional(v.string()),
+        endDate: v.optional(v.number()),
+        endTime: v.optional(v.string()),
+        rateOverride: v.optional(v.number()),
+        rateType: v.optional(enums.CrewRateType),
+        estimatedHours: v.optional(v.number()),
+        estimatedCost: v.optional(v.number()),
+        notes: v.optional(v.string()),
+        createdAt: v.optional(v.number()),
+        updatedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, { organizationId, rows }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const r of rows) {
+      const dupe = await ctx.db
+        .query("crewAssignments")
+        .withIndex("by_serviceId", (q) => q.eq("serviceId", r.serviceId))
+        .filter((q) => q.and(q.eq(q.field("projectId"), r.projectId), q.eq(q.field("crewMemberId"), r.crewMemberId)))
+        .first();
+      if (dupe) continue;
+      const doc = { ...r, organizationId };
+      await ctx.db.insert("crewAssignments", doc);
+      await bumpCountersForTable(ctx, "crewAssignments", null, doc);
+      created++;
+    }
+    return { created };
+  },
+});

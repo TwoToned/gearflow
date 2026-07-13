@@ -600,6 +600,44 @@ export async function unreturnKit(projectId: string, kitId: string) {
   return serialize({ success: true, ...res });
 }
 
+/** Bulk single-call un-deploy: move N kits Deployed→Prepped in ONE array mutation +
+ *  one server round-trip (was one `undeployKit` per selected kit). Partial-success. */
+export async function undeployKitsBatch(projectId: string, kitIds: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+  if (kitIds.length === 0) throw new Error("No kits selected");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.undeployKitsBatch, {
+    organizationId, projectId, userId, kitIds, now: Date.now(),
+  });
+  if (res.succeeded.length > 0) {
+    await logActivity({
+      organizationId, userId, userName, action: "UPDATE", entityType: "kit",
+      entityId: res.succeeded[0], entityName: `${res.succeeded.length} kits`,
+      summary: `Moved ${res.succeeded.length} kit(s) back to Prepped (un-deploy)`, projectId,
+    });
+  }
+  return serialize({ success: true, ...res });
+}
+
+/** Bulk single-call un-return: move N kits Returned→Deployed in ONE array mutation +
+ *  one server round-trip (was one `unreturnKit` per selected kit). Partial-success. */
+export async function unreturnKitsBatch(projectId: string, kitIds: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+  if (kitIds.length === 0) throw new Error("No kits selected");
+  const convex = await getConvexClient();
+  const res = await convex.mutation(api.warehouseOps.unreturnKitsBatch, {
+    organizationId, projectId, userId, kitIds, now: Date.now(),
+  });
+  if (res.succeeded.length > 0) {
+    await logActivity({
+      organizationId, userId, userName, action: "UPDATE", entityType: "kit",
+      entityId: res.succeeded[0], entityName: `${res.succeeded.length} kits`,
+      summary: `Moved ${res.succeeded.length} kit(s) back to Deployed (un-return)`, projectId,
+    });
+  }
+  return serialize({ success: true, ...res });
+}
+
 export async function checkOutKit(projectId: string, kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 

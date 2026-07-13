@@ -39,8 +39,8 @@ import {
   undeployItems,
   unreturnItems,
   undeprepLine,
-  undeployKit,
-  unreturnKit,
+  undeployKitsBatch,
+  unreturnKitsBatch,
   getAvailableAssetsForModels,
   quickAddAndCheckOut,
   clearPrepContainer,
@@ -812,9 +812,13 @@ function WarehouseProjectPage({
     onSuccess: () => { toast.success("Moved back to Prepped"); invalidate(); },
     onError: (e) => showError(e),
   });
-  const undeployKitMutation = useServerMutation({
-    mutationFn: (kitId: string) => undeployKit(projectId, kitId),
-    onSuccess: () => { toast.success("Kit moved back to Prepped"); invalidate(); },
+  const undeployKitsMutation = useServerMutation<KitBatchResult, string[]>({
+    mutationFn: (kitIds: string[]) => undeployKitsBatch(projectId, kitIds),
+    onSuccess: (res) => {
+      if (res.succeeded.length > 0) toast.success(`Moved ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} back to Prepped`);
+      if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} skipped: ${res.errors[0].message}`);
+      invalidate();
+    },
     onError: (e) => showError(e),
   });
   const unreturnMutation = useServerMutation({
@@ -823,9 +827,13 @@ function WarehouseProjectPage({
     onSuccess: () => { toast.success("Moved back to Deployed"); invalidate(); },
     onError: (e) => showError(e),
   });
-  const unreturnKitMutation = useServerMutation({
-    mutationFn: (kitId: string) => unreturnKit(projectId, kitId),
-    onSuccess: () => { toast.success("Kit moved back to Deployed"); invalidate(); },
+  const unreturnKitsMutation = useServerMutation<KitBatchResult, string[]>({
+    mutationFn: (kitIds: string[]) => unreturnKitsBatch(projectId, kitIds),
+    onSuccess: (res) => {
+      if (res.succeeded.length > 0) toast.success(`Moved ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} back to Deployed`);
+      if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} skipped: ${res.errors[0].message}`);
+      invalidate();
+    },
     onError: (e) => showError(e),
   });
   const undeprepMutation = useServerMutation({
@@ -839,7 +847,7 @@ function WarehouseProjectPage({
   const moveBackSelection = (
     ids: Set<string>,
     fireItems: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => void,
-    fireKit: (kitId: string) => void,
+    fireKits: (kitIds: string[]) => void,
   ) => {
     if (ids.size === 0) return;
     const qtyMap = new Map<string, number>();
@@ -853,7 +861,8 @@ function WarehouseProjectPage({
         qtyMap.set(lineItemId, (qtyMap.get(lineItemId) || 0) + 1);
       }
     }
-    for (const kitId of kitIds) fireKit(kitId);
+    // Bulk single-call: ONE array mutation for all selected kits (was one per kit).
+    if (kitIds.size > 0) fireKits(Array.from(kitIds));
     const items = Array.from(qtyMap.entries()).map(([lineItemId, quantity]) => ({
       lineItemId,
       assetId: lineItems.find((l) => l.id === lineItemId)?.assetId || undefined,
@@ -864,12 +873,12 @@ function WarehouseProjectPage({
 
   // Deployed → Prepped
   const handleUndeploy = (ids: Set<string>) => {
-    moveBackSelection(ids, (items) => undeployMutation.mutate(items), (kitId) => undeployKitMutation.mutate(kitId));
+    moveBackSelection(ids, (items) => undeployMutation.mutate(items), (kitIds) => undeployKitsMutation.mutate(kitIds));
     setSelectedIn(new Set());
   };
   // Returned → Deployed
   const handleUnreturn = (ids: Set<string>) => {
-    moveBackSelection(ids, (items) => unreturnMutation.mutate(items), (kitId) => unreturnKitMutation.mutate(kitId));
+    moveBackSelection(ids, (items) => unreturnMutation.mutate(items), (kitIds) => unreturnKitsMutation.mutate(kitIds));
     setSelectedDeprep(new Set());
   };
 
@@ -2615,7 +2624,7 @@ function WarehouseProjectPage({
           handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
           handleUnreturn={handleUnreturn}
-          unreturnIsPending={unreturnMutation.isPending || unreturnKitMutation.isPending}
+          unreturnIsPending={unreturnMutation.isPending || unreturnKitsMutation.isPending}
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
@@ -2650,7 +2659,7 @@ function WarehouseProjectPage({
           handleReturnSelected={handleReturnSelected}
           checkInIsPending={checkInMutation.isPending}
           handleUndeploy={handleUndeploy}
-          undeployIsPending={undeployMutation.isPending || undeployKitMutation.isPending}
+          undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}

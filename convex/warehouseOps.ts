@@ -793,13 +793,12 @@ export const undeprepLine = mutation({
 });
 
 /** Deployed → Prepped for a whole kit: reverse checkoutKit. */
-export const undeployKit = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const defLoc = await defaultLocationId(ctx, a.organizationId);
+type KitOpArgs = { organizationId: string; projectId: string; userId: string; kitId: string; now: number };
+type KitParentLine = NonNullable<Awaited<ReturnType<typeof kitParentLine>>>;
+
+/** Core of undeployKit for ONE validated kit (parent line found). `defLoc` is passed
+ *  so a batch resolves it once. Returns [kitId, ...nestedKitIds]. */
+async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, defLoc: string | null): Promise<string[]> {
     const prepped = { status: "CONFIRMED" as const, prepStatus: "PACKED" as const, checkedOutQuantity: 0, updatedAt: a.now };
 
     const children = await childLines(ctx, kitLine.id, a.organizationId);
@@ -832,19 +831,53 @@ export const undeployKit = mutation({
     await cascadeKitAccessoriesReverse(ctx, kitLine.id, a.organizationId, { fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Prepped (un-deploy)" });
-    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
-  },
-});
+    return [a.kitId, ...nestedKitIds];
+}
 
-/** Returned → Deployed for a whole kit: reverse checkinKit. */
-export const unreturnKit = mutation({
+export const undeployKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
     if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const projLoc = project?.locationId ?? null;
+    const defLoc = await defaultLocationId(ctx, a.organizationId);
+    const affectedKitIds = await undeployKitCore(ctx, a, kitLine, defLoc);
+    return { kitId: a.kitId, affectedKitIds };
+  },
+});
+
+/**
+ * Batch un-deploy (bulk single-call invariant, Phase 3): move N kits Deployed→Prepped
+ * in ONE array mutation instead of the client firing one `undeployKit` per kit.
+ * Per-item org+project re-check via `kitParentLine`: a kit not on this org's project is
+ * SKIPPED with an error before any of its writes ({succeeded, errors}). Un-deploy only
+ * RESTORES bulk availability (+1), so a valid kit's core can't underflow — the batch
+ * effectively completes for every eligible kit. (Note: like any Convex mutation this is
+ * ONE transaction, so a genuine mid-execution failure would roll the whole batch back;
+ * the client surfaces the error and the operator retries.) `defLoc` resolved once.
+ */
+export const undeployKitsBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const defLoc = await defaultLocationId(ctx, a.organizationId);
+    const succeeded: string[] = [];
+    const errors: { kitId: string; message: string }[] = [];
+    const affected = new Set<string>();
+    for (const kitId of a.kitIds) {
+      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
+      if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
+      const aff = await undeployKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, defLoc);
+      succeeded.push(kitId);
+      for (const k of aff) affected.add(k);
+    }
+    return { succeeded, errors, affectedKitIds: [...affected] };
+  },
+});
+
+/** Returned → Deployed for a whole kit: reverse checkinKit. */
+/** Core of unreturnKit for ONE validated kit. `projLoc` passed so a batch resolves it once. */
+async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, projLoc: string | null): Promise<string[]> {
     const deployed = { status: "CHECKED_OUT" as const, returnedQuantity: 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now };
 
     const children = (await childLines(ctx, kitLine.id, a.organizationId)).filter((c) => c.status === "RETURNED");
@@ -877,7 +910,49 @@ export const unreturnKit = mutation({
     await cascadeKitAccessoriesReverse(ctx, kitLine.id, a.organizationId, { fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
 
     await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Kit moved back to Deployed (un-return)" });
-    return { kitId: a.kitId, affectedKitIds: [a.kitId, ...nestedKitIds] };
+    return [a.kitId, ...nestedKitIds];
+}
+
+export const unreturnKit = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+    if (!kitLine) throw new ConvexError("Kit not found on this project");
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const projLoc = project?.locationId ?? null;
+    const affectedKitIds = await unreturnKitCore(ctx, a, kitLine, projLoc);
+    return { kitId: a.kitId, affectedKitIds };
+  },
+});
+
+/**
+ * Batch un-return (bulk single-call invariant, Phase 3): move N kits Returned→Deployed
+ * in ONE array mutation instead of one `unreturnKit` per kit. Per-item org+project
+ * re-check via `kitParentLine`: a kit not on this org's project is SKIPPED with an error
+ * before any of its writes ({succeeded, errors}). Un-return RE-CONSUMES bulk availability
+ * (−1), so — unlike un-deploy — a valid kit could in principle underflow; because a
+ * Convex mutation is ONE transaction, such a mid-execution failure rolls the whole batch
+ * back (atomic) rather than leaving it half-applied. The client surfaces the error and
+ * the operator retries. `projLoc` resolved once (all kits share the projectId).
+ */
+export const unreturnKitsBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+    const projLoc = project?.locationId ?? null;
+    const succeeded: string[] = [];
+    const errors: { kitId: string; message: string }[] = [];
+    const affected = new Set<string>();
+    for (const kitId of a.kitIds) {
+      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
+      if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
+      const aff = await unreturnKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, projLoc);
+      succeeded.push(kitId);
+      for (const k of aff) affected.add(k);
+    }
+    return { succeeded, errors, affectedKitIds: [...affected] };
   },
 });
 

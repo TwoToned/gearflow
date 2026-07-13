@@ -53,6 +53,7 @@ import type * as files from "../files.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
+import type * as http from "../http.js";
 import type * as kitAllocations from "../kitAllocations.js";
 import type * as kitBulkItems from "../kitBulkItems.js";
 import type * as kitCheckItems from "../kitCheckItems.js";
@@ -135,7 +136,9 @@ import type * as warehouseDetail from "../warehouseDetail.js";
 import type * as warehouseList from "../warehouseList.js";
 import type * as warehouseOps from "../warehouseOps.js";
 import type * as webhooks from "../webhooks.js";
+import type * as wooCommerceActions from "../wooCommerceActions.js";
 import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
+import type * as wooCommerceInternal from "../wooCommerceInternal.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
 
 import type {
@@ -190,6 +193,7 @@ declare const fullApi: ApiFromModules<{
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;
+  http: typeof http;
   kitAllocations: typeof kitAllocations;
   kitBulkItems: typeof kitBulkItems;
   kitCheckItems: typeof kitCheckItems;
@@ -272,7 +276,9 @@ declare const fullApi: ApiFromModules<{
   warehouseList: typeof warehouseList;
   warehouseOps: typeof warehouseOps;
   webhooks: typeof webhooks;
+  wooCommerceActions: typeof wooCommerceActions;
   wooCommerceIntegrations: typeof wooCommerceIntegrations;
+  wooCommerceInternal: typeof wooCommerceInternal;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;
 }>;
 

@@ -99,6 +99,7 @@ import type * as overbooking from "../overbooking.js";
 import type * as parity from "../parity.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as projectCategories from "../projectCategories.js";
+import type * as projectCosts from "../projectCosts.js";
 import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
 import type * as projectGroups from "../projectGroups.js";
@@ -245,6 +246,7 @@ declare const fullApi: ApiFromModules<{
   parity: typeof parity;
   pendingSSOApprovals: typeof pendingSSOApprovals;
   projectCategories: typeof projectCategories;
+  projectCosts: typeof projectCosts;
   projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;
   projectGroups: typeof projectGroups;

@@ -321,7 +321,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "project-categories.getUncategorizedLineItems": { name: "project-categories.getUncategorizedLineItems", module: "project-categories", fn: "getUncategorizedLineItems", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-categories.reorderProjectCategories": { name: "project-categories.reorderProjectCategories", module: "project-categories", fn: "reorderProjectCategories", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "orderedIds", type: "string[]", optional: false }], dangerous: false, summary: "" },
   "project-categories.updateProjectCategory": { name: "project-categories.updateProjectCategory", module: "project-categories", fn: "updateProjectCategory", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "categoryId", type: "string", optional: false }, { name: "data", type: "Partial<ProjectCategoryFormValues>", optional: false }], dangerous: false, summary: "" },
-  "project-costs.getProjectOperationalCosts": { name: "project-costs.getProjectOperationalCosts", module: "project-costs", fn: "getProjectOperationalCosts", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "projectId", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-groups.acceptAllSuggestedPrices": { name: "project-groups.acceptAllSuggestedPrices", module: "project-groups", fn: "acceptAllSuggestedPrices", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "projectId", type: "string", optional: false }, { name: "categoryId", type: "string", optional: true }], dangerous: false, summary: "" },
   "project-groups.acceptSuggestedPrice": { name: "project-groups.acceptSuggestedPrice", module: "project-groups", fn: "acceptSuggestedPrice", kind: "write", resource: "project", action: "manage_line_items", scope: "project:manage_line_items", params: [{ name: "groupId", type: "string", optional: false }], dangerous: false, summary: "" },
   "project-groups.calculateSuggestedPrice": { name: "project-groups.calculateSuggestedPrice", module: "project-groups", fn: "calculateSuggestedPrice", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "groupId", type: "string", optional: false }], dangerous: false, summary: "Calculate the suggested price for a group based on its line items' rates." },
@@ -613,7 +612,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "org-calendar": () => import("@/server/org-calendar"),
   "org-members": () => import("@/server/org-members"),
   "project-categories": () => import("@/server/project-categories"),
-  "project-costs": () => import("@/server/project-costs"),
   "project-groups": () => import("@/server/project-groups"),
   "project-managers": () => import("@/server/project-managers"),
   "project-media": () => import("@/server/project-media"),
@@ -4285,4 +4283,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 528;
+export const OPERATION_COUNT = 527;

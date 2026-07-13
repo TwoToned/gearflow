@@ -13,9 +13,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectOperationalCosts } from "@/hooks/use-project-operational-costs";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { getProjectOperationalCosts } from "@/server/project-costs";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
 
@@ -76,11 +75,7 @@ interface ProjectCostsPanelProps {
 
 export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
   const [showDetail, setShowDetail] = useState(false);
-  const { data, isLoading } = useServerQuery({
-    queryKey: ["project-operational-costs", projectId],
-    queryFn: () => getProjectOperationalCosts(projectId),
-    enabled: !!projectId,
-  });
+  const { data, isLoading } = useProjectOperationalCosts(projectId);
 
   if (isLoading) {
     return (

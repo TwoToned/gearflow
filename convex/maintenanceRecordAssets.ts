@@ -103,6 +103,55 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Create many maintenance→asset links in ONE round trip (bulk single-call invariant —
+ * linking N assets to a record is one user action; the server was looping `create` per
+ * asset). Idempotent per `id`. maintenanceRecordAssets have no org column (they are
+ * parent-scoped), so defense-in-depth: every distinct `maintenanceRecordId` is verified
+ * to belong to `organizationId` before ANY insert (fail-closed via `.unique()`; a bad
+ * parent aborts the whole batch — a record's link set is a single logical write).
+ */
+export const createManyIfMissing = mutation({
+  args: {
+    organizationId: v.string(),
+    links: v.array(
+      v.object({ id: v.string(), maintenanceRecordId: v.string(), assetId: v.string() }),
+    ),
+  },
+  handler: async (ctx, { organizationId, links }) => {
+    await requireService(ctx);
+
+    const verifiedParents = new Map<string, boolean>();
+    for (const link of links) {
+      if (!verifiedParents.has(link.maintenanceRecordId)) {
+        const parent = await ctx.db
+          .query("maintenanceRecords")
+          .withIndex("by_cuid", (q) => q.eq("id", link.maintenanceRecordId))
+          .unique();
+        const ok = !!parent && parent.organizationId === organizationId;
+        verifiedParents.set(link.maintenanceRecordId, ok);
+        if (!ok) {
+          throw new ConvexError(
+            "Forbidden: maintenance record not found in organization: " + link.maintenanceRecordId,
+          );
+        }
+      }
+    }
+
+    let created = 0;
+    for (const link of links) {
+      const existing = await ctx.db
+        .query("maintenanceRecordAssets")
+        .withIndex("by_cuid", (q) => q.eq("id", link.id))
+        .unique();
+      if (existing) continue;
+      await ctx.db.insert("maintenanceRecordAssets", link);
+      created += 1;
+    }
+    return { created };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

@@ -3624,6 +3624,40 @@ secret were already Convex-only.)
   rejects `Date` values — a latent bug in the Next original that only fired when
   date-meta keys were configured).
 
+## Phase 2 (WS3) — versioned whole-org export
+
+A **semantic per-org export** (gate: a validated, versioned artifact before the
+irreversible Phase-4 `DROP TABLE` — distinct from the raw full-deployment Convex
+snapshot backup, which captures bytes but not org-scoped structure).
+
+- **`convex/orgExport.ts`** (service-gated) — generic paginated readers over any
+  table by name: `exportTablePage` (DIRECT, via `by_organizationId`),
+  `scanTableFiltered` (org-column, no index), `childRowsByParentIds` (parent-join
+  children), `getOrgRow`, `countTable` (independent re-count for validation).
+- **`scripts/org-export-tables.ts`** — the authoritative classification of all 101
+  tables, shared by the exporter and the coverage test, with a hard guard: a new
+  unclassified schema table makes the build **fail** (no silent drop). Buckets:
+  **DIRECT (75)** org-indexed; **FILTER (4)** org-column scan — `storedFiles` +
+  `comments`/`commentThreads`/`reviewMarkers` (which carry a direct `orgId` but only a
+  composite index); **PARENT_JOIN (7)** children collected via their org-scoped parent
+  (`subHireItems`/`subHireGroups`→subHires, `supplierOrderItems`→supplierOrders,
+  `crewShifts`→crewAssignments, `maintenanceRecordAssets`→maintenanceRecords,
+  `subTestRecords`→testTagRecords, `categorySlots`→projectCategories); **EXCLUDED (15)**
+  — Better Auth (8, incl. `passkeys` — a WebAuthn credential with no org index),
+  platform (3: `siteSettings`, `sentEmails`, `organizations` — the last exported
+  separately as `orgRow`), ephemeral (4: collaboration presence/locks, `activityEvents`,
+  `userNotificationPreferences`).
+- **`scripts/export-org.ts`** — assembles a versioned artifact
+  `{ schemaVersion, exportedAt, organizationId, orgRow, tables, fileManifest, counts,
+  coverage }`, pages every exported table fully, builds the file manifest from
+  `storedFiles` + `*Media`, then runs an **independent re-count validation** (exits
+  non-zero on any mismatch). Org identity comes from Postgres/Better Auth when the
+  Convex `organizations` mirror is empty (identity is deliberately not mirrored).
+- **Validated live on prod:** all 86 exported tables, 11,186 domain rows, re-count
+  matched for every table; 6.9 MB artifact; coverage 86 + 15 = 101.
+- **`convex/orgExport.test.ts`** — parses the live schema and asserts
+  classified ∪ = 101 (fails on an unclassified new table).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

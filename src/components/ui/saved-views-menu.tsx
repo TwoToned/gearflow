@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useSavedTableViews, fingerprintSavedTableViews } from "@/hooks/use-back-office";
+import { useSavedTableViews } from "@/hooks/use-back-office";
+import { mapSavedView, filterAndSortSavedViews, type SavedTableViewRow } from "@/lib/saved-views-filter";
 import { toast } from "sonner";
 import { BookmarkPlus, Check, Star, Trash2, ChevronDown, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  getSavedViews,
   createSavedView,
   updateSavedView,
   deleteSavedView,
@@ -64,25 +63,23 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   // (server queries are org-scoped, but the client cache must be too).
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryKey = ["saved-views", orgId, tableId];
+  const { data: session } = useSession();
+  const userId = session?.user.id;
 
-  const { data: views = [], isLoading, refetch } = useServerQuery({
-    queryKey,
-    queryFn: () => getSavedViews(tableId) as unknown as Promise<SavedTableView[]>,
-  });
-
-  // Cross-tab live sync: subscribe to the dual-written Convex savedTableViews
-  // table (filtered to this tableId); a fingerprint change (view added/renamed/
-  // default-changed/deleted in another tab) re-fetches this table's views.
+  // Browser-direct (was the getSavedViews server action): derive this table's views
+  // straight from the reactive Convex savedTableViews subscription — filtered to
+  // (userId, tableId), default-first then name-asc. Reactive, so a view
+  // created/renamed/deleted (here or in another tab) re-derives automatically; no
+  // separate fetch + refetch/fingerprint plumbing needed.
   const savedViewDocs = useSavedTableViews(orgId);
-  const savedViewFp = fingerprintSavedTableViews(savedViewDocs, tableId);
-  const prevSavedViewFp = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (savedViewFp !== undefined && prevSavedViewFp.current !== undefined && savedViewFp !== prevSavedViewFp.current) {
-      refetch();
-    }
-    if (savedViewFp !== undefined) prevSavedViewFp.current = savedViewFp;
-  }, [savedViewFp, refetch]);
+  const isLoading = savedViewDocs === undefined;
+  const views = useMemo<SavedTableViewRow[]>(
+    () =>
+      savedViewDocs && userId
+        ? filterAndSortSavedViews(savedViewDocs.map(mapSavedView), userId, tableId)
+        : [],
+    [savedViewDocs, userId, tableId],
+  );
 
   // Which saved view is currently "active" (last applied). Null = no view / custom.
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
@@ -107,7 +104,8 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, views]);
 
-  const invalidate = () => refetch();
+  // Reactive `views` auto-updates after a write lands in Convex — nothing to refetch.
+  const invalidate = () => {};
 
   const createMut = useServerMutation({
     mutationFn: (vars: { name: string; config: SavedViewConfig; isDefault: boolean }) =>
@@ -152,7 +150,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
   const isDirty = activeView ? !sameConfig(activeView.config, currentConfig) : false;
 
-  function apply(view: SavedTableView) {
+  function apply(view: SavedTableViewRow) {
     applyConfig(view.config);
     setActiveViewId(view.id);
   }

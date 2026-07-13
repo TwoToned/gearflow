@@ -6,7 +6,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { createId } from "@paralleldrive/cuid2";
 import type { SavedViewConfig } from "@/lib/saved-views";
-import { mapSavedView, getSavedViewsForUser } from "@/lib/saved-views-read";
+import { mapSavedView } from "@/lib/saved-views-read";
 import { logActivity } from "@/lib/activity-log";
 
 /**
@@ -17,15 +17,9 @@ import { logActivity } from "@/lib/activity-log";
  * Every query is scoped to BOTH `organizationId` and `userId`.
  */
 
-export async function getSavedViews(tableId: string) {
-  const { organizationId, userId } = await getOrgContext();
-
-  // Convex-only read (Phase A): savedTableView is dual-written + backfilled, so we
-  // read the Convex copy and apply the user + table scope and ordering in JS.
-  const views = await getSavedViewsForUser(organizationId, userId, tableId);
-
-  return serialize(views);
-}
+// getSavedViews (the read) went browser-direct: src/components/ui/saved-views-menu.tsx
+// derives the list from the reactive `useSavedTableViews` subscription via
+// src/lib/saved-views-filter.ts. These writes stay here.
 
 export async function createSavedView(data: {
   tableId: string;

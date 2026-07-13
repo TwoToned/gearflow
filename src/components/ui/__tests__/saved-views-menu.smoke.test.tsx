@@ -5,19 +5,18 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
+  useSession: () => ({ data: { user: { id: "u1" } } }),
 }));
 vi.mock("@/server/saved-views", () => ({
-  getSavedViews: vi.fn(async () => []),
   createSavedView: vi.fn(async () => ({})),
   updateSavedView: vi.fn(async () => ({})),
   deleteSavedView: vi.fn(async () => {}),
   setDefaultSavedView: vi.fn(async () => {}),
 }));
-// The component subscribes to Convex for cross-tab sync; stub the hook so the
-// smoke test doesn't need a ConvexProvider in the tree.
+// The list now derives from the reactive Convex subscription; stub the hook so the
+// smoke test doesn't need a ConvexProvider in the tree (undefined = loading → empty).
 vi.mock("@/hooks/use-back-office", () => ({
   useSavedTableViews: () => undefined,
-  fingerprintSavedTableViews: () => undefined,
 }));
 
 import { SavedViewsMenu } from "@/components/ui/saved-views-menu";

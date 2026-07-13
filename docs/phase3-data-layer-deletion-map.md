@@ -1,0 +1,64 @@
+# Phase 3 — server-action data-layer deletion map (authoritative worklist)
+
+**Goal (plan DoD):** delete the `src/server/` data layer. Browser reads via `useAuthedQuery(api.*)`, writes via `useMutation(api.*Writes.*)`, ALL business logic inside the Convex mutation/query. EXEMPT: `src/lib/*-read.ts` service-read helpers (PDF/CSV Node paths) + the KEEP-SERVER-ONLY set below.
+
+Built from an exhaustive 7-agent parallel audit of all ~78 `"use server"` files (2026-07-13). Execution mode: **sequential grind** (user-chosen). Per domain: author/relocate logic into Convex → browser-direct writes → re-home reads → delete server file → parity + codex + re-audit + live-validate.
+
+## Cross-cutting facts (shape every domain)
+- `logActivity()` is ALREADY Convex (`api.activityLogWrites.record` / `recordMany`) — fold audit INSIDE each authored `*Writes` mutation (don't leave a second round-trip).
+- `reserveAssetTags` / `reserveTestTagIds` / `reserveSubHireOrderNumber` are ALREADY atomic Convex mutations (`orgSettings.*`), but SERVICE-gated → extract the counter RMW into a shared helper callable from inside create mutations (browser can't call the service mutation).
+- **Reads are SERVICE-gated** (`requireService`) → re-homing a read requires a browser-callable variant (`requireOrgPermission(read)` / org-scoped) OR a new native query; most read exports also do Node-side composition (`*-read.ts` + JS join) that must move into the Convex query or the client.
+- **Better Auth `user`/`member`/`organization` stay Postgres.** Reads that resolve `createdBy`/`testedBy`/PM/assignee names via `prisma.user`/`member` (T&T, notifications, PM, tasks, sub-hires, supplier-orders, maintenance) need a Convex user/member name mirror OR keep a thin server read.
+- **Secret-stripping reads** must get sanitized native queries first, or secrets leak: `listApiKeys` (tokenHash), `getWooCommerceIntegration` (webhookSecret), `getWebhooks/Deliveries` (secret), `getActiveSessions` (session token).
+
+## Keystone foundations (build FIRST — unblock many domains)
+1. **Native `recalculateProjectTotals`** — math already duplicated byte-for-byte in `convex/lib/recalc.ts`; `lineItemWrites.recalcNative` exists behind `NATIVE_RECALC` (default OFF). Make canonical (flip + parity). Blocks: project-services, sub-hires, category-slots, project-groups, group-templates, line-items.
+2. **`reserveAssetTagCounter(ctx, orgId, count, now)` shared helper** (extract from `orgSettings.reserveAssetTags`) — call inside kit/asset/bulk create mutations. Blocks: kits, assets, bulk-assets, models(no), test-tag-assets.
+3. **Browser-callable org-read pattern** — the standard for re-homing reads (`requireOrgPermission(read)` + org-scope every row; by_cuid is global).
+4. **Convex user/member name-mirror read** — for the ~10 read files that join Better Auth user names.
+5. **Native availability/double-booking + auto-pricing helpers** in Convex — the line-items keystone; `addNative`/`patchNative`/`addKitNative` currently PRESUPPOSE the caller enforced availability.
+
+## KEEP-SERVER-ONLY (final exempt set — never delete)
+site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, api-keys (`node:crypto`), user-profile, invitations, org-members, public-org, changelog (`execSync`), notification-email-sender (Resend cron), woocommerce (crypto+webhook), webhooks (crypto+SSRF), test-tag-auditor (crypto+public), test-tag-reminders (email cron), test-tag-reports (CSV), org-calendar (crypto token), document-templates (pdfme), csv (RBAC+org.metadata counter+formula-escape), warehouse-display (crypto display token+public), crew-communication (email+crypto), crew-calendar (crypto ical writes), split-sibling-collapse (migration script). Media-delete blocked on `deleteFromS3` (Node) in `src/lib/media-write.ts` → keep a thin media-delete shim OR move S3 cleanup to a Convex action.
+
+## Domain sequence (risk-ascending) + per-domain blockers
+
+### Wave 1 — pure reads, Convex-only, no writes (author 1 browser-callable query each, rewire consumer, delete)
+- `roi.ts` (getFleetRoi/getModelRoi → api.roi.*; move computeRoi join into query/client)
+- `dashboard.ts` (getMyHomeData)
+- `tags.ts` (getOrgTags — 9-way Convex union → one query)
+- `availability.ts` (getModel/Asset/KitBookings, getCalendarData)
+- `project-costs.ts` (getProjectOperationalCosts — expose pure P&L helper as query)
+- `scan-lookup.ts` (fold 4 point-reads into 1 query)
+- `activity-log.ts` reads (getActivityLogs/getEntityActivityLog thin; keep exportCSV)
+- `search.ts` (thin over api.globalSearch.search; RELOCATE SearchResultType/SearchResult to src/lib — can't re-export from "use server"). NOTE: raw-SQL is GONE (memory note stale).
+
+### Wave 2 — simple Convex-only CRUD (author *Writes owning Zod+unique-guard+audit, browser-direct, re-home reads, delete)
+- `clients.ts` (LOWEST risk), `client-media.ts` + `location-media.ts` (trivial, need RBAC media-write mutation)
+- `saved-views.ts`, `notification-preferences.ts`, `custom-fields.ts`, `brand-templates.ts`, `test-tag-profiles.ts`
+- `categories.ts` (delete-guard→mutation), `locations.ts` (single-default toggle+delete-guard+cascade→mutation), `suppliers.ts` (delete-guard+rate cascade→mutation)
+- `notifications.ts` (dismissal writes; getNotifications has Prisma invitation/user seam), `collaboration.ts` (thin bridge; move RBAC into Convex + browser-authorize the service-only mutations)
+
+### Wave 3 — config + kit/asset (native mutations partly exist; move side-effects in)
+- `check-items.ts` (in-use delete-guard + sortOrder/dedup → mutations)
+- `kits.ts` (move reserveAssetTags+Zod off create; deleteKit line-item guard + checkItem/media cleanup into deleteNative; author audit-owning member-add/remove mutations), `kit-allocations.ts`, `kit-media.ts`(S3)
+- `assets.ts` (custom-field resolution + reserveAssetTags + T&T auto-register/backfill into mutations; author createAssets batch + bulkUpdateAssets native+audit), `asset-media.ts`(S3)
+- `bulk-assets.ts` (author ALL writes; qty recompute+ref guards+audit), `asset-accessories.ts` (author atomic guarded mutations — currently non-atomic TOCTOU + pool adjust)
+- `models.ts` (author modelWrites: archive cascade, rate math, T&T propagate/backfill), `model-accessories.ts`, `model-media.ts`(S3), `scan-lookup` done in W1
+
+### Wave 4 — crew (member CRUD done; author the rest)
+- `crew.ts` (delete cascade into deleteNative; author updateCrewMemberImage; linkCrewMemberToUser stays partly server — Better Auth member verify)
+- `crew-assignments.ts` (author rate cascade + CONFIRMED stamp + shift-generation mutations), `crew-availability.ts`, `crew-time.ts` (calculateTotalHours + EXPORTED-lock + status machines; bulk submit/approve near-done; keep exportTimesheetCSV), `crew-dashboard.ts` (pure reads)
+
+### Wave 5 — project keystone + money (LAST, hardest)
+- Foundation: native `recalculateProjectTotals` (keystone #1) FIRST
+- `project-managers.ts` / `project-tasks.ts` (Better Auth membership validation stays server — need Convex member mirror or thin shim), `project-media.ts` (ownership guard), `project-costs` done W1
+- `project-groups.ts`, `project-categories.ts` (cascade null-out + suggested-price math → mutations), `group-templates.ts` (applyGroupTemplate orchestration)
+- `line-items.ts` (THE keystone — availability/double-booking + merge-dedup + auto-pricing + stale-guard into mutations; batch writes need flags/native)
+- `projects.ts` (project-numbering sharded-counter into createNative; duplicate/saveAsTemplate/deleteTemplate/deleteProject cascade → mutations)
+- `project-services.ts`, `category-slots.ts` (recalc-blocked), `maintenance.ts` (asset state machine + still-held cross-check atomic; webhook stays server), `sub-hires.ts` (LAST — money-heaviest: recalculateSubHireTotals + generateSubHireLineItems + supplier-rate memory)
+- Warehouse cluster: `warehouse.ts` (author `lookupAssetForScan` T&T-compliant scan query; blocking-comment gate + webhook into mutations; force-return pre-guards), `warehouse-close.ts` (close-eligibility + counts into mutation), `bulk-checkin.ts`, `check-records.ts` (author `checkPredictiveMaintenance` auto-maintenance mutation — densest), `reservation-conflicts.ts` (RBAC into swap mutation), `warehouse-display.ts` KEEP.
+
+## Also required by DoD (parallel tracks)
+- **CSV bulk + benchmark** (task #8): convert import loops preserving partial-success; benchmark array mutations 50/200/500/1000 × 1/4/8 vs 16k-write/1s-CPU, chunk via scheduler/Workpool.
+- **`internal*` reduction**: AFTER server callers are deleted, the dumb service `api.X.create/patch/remove` mirrors become dead/internal — demote or delete them.

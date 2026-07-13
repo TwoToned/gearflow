@@ -1,7 +1,7 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -156,12 +156,9 @@ export async function getCategoryTree() {
 export async function getCaseCategoryIds(): Promise<string[]> {
   const { organizationId } = await getOrgContext();
 
-  // Read prepKitCategoryId from org settings
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { metadata: true },
-  });
-  const settings = org?.metadata ? JSON.parse(org.metadata as string) : {};
+  // prepKitCategoryId lives in the Convex org-settings blob now (org settings were
+  // inverted off the Better Auth org row); reading Postgres metadata would be stale.
+  const settings = await readOrgSettingsBlob(organizationId);
   const rootCatId = settings.prepKitCategoryId;
   if (!rootCatId) return [];
 

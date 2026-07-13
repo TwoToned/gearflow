@@ -136,7 +136,9 @@ export const EXCLUDED = {
   // index (by_cuid/by_userId/by_credentialID only), so it's auth, not domain data.
   auth: ["accounts", "backupCodes", "jwkses", "passkeys", "sessions", "twoFactors", "users", "verifications"],
   // Platform/global, not per-org restore state.
-  platform: ["siteSettings", "sentEmails", "organizations"],
+  // systemFlags is a platform-global singleton (the browser-write kill-switch) —
+  // operational state, not per-org domain data.
+  platform: ["siteSettings", "sentEmails", "organizations", "systemFlags"],
   // Ephemeral / live-only presence + preferences — no restore value.
   ephemeral: ["collaborationLocks", "collaborationPresence", "activityEvents", "userNotificationPreferences"],
 } as const;
@@ -170,7 +172,7 @@ export const EXCLUDED_TABLES: string[] = [
 /** Full classified set — the coverage guard asserts this equals the schema. */
 export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABLES];
 
-export const EXPECTED_TABLE_COUNT = 101;
+export const EXPECTED_TABLE_COUNT = 102;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

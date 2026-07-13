@@ -23,17 +23,22 @@ vi.mock("@/lib/org-context", () => ({
 }));
 
 import {
-  getSavedViews,
   createSavedView,
   updateSavedView,
   deleteSavedView,
   setDefaultSavedView,
 } from "@/server/saved-views";
+import { getSavedViewsForUser } from "@/lib/saved-views-read";
 
 async function actAs(orgId: string, userId: string) {
   h.ctx.organizationId = orgId;
   h.ctx.userId = userId;
 }
+
+// The getSavedViews read went browser-direct (deleted from the server action); this
+// read-oracle reproduces it exactly via the shared read helper the action used.
+const getSavedViews = (tableId: string) =>
+  getSavedViewsForUser(h.ctx.organizationId, h.ctx.userId, tableId);
 
 describe("saved table views", () => {
   beforeEach(async () => {

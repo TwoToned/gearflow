@@ -118,3 +118,26 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Atomic drag-reorder: assign each definition's sortOrder in ONE mutation round-trip
+ * (was a server-side `Promise.all` firing one getById + one update per row = 2N calls).
+ * Explicit {id, sortOrder} pairs (not array-index) so the caller can filter foreign/
+ * unresolved ids without compressing the survivors' positions. Per-item org re-check:
+ * by_cuid is a GLOBAL index, so the `doc.organizationId === orgId` skip stops a caller
+ * reordering another org's definitions (mirrors modelCheckItems.reorderMany).
+ */
+export const reorderMany = mutation({
+  args: {
+    orgId: v.string(),
+    items: v.array(v.object({ id: v.string(), sortOrder: v.number() })),
+    now: v.number(),
+  },
+  handler: async (ctx, { orgId, items, now }) => {
+    await requireService(ctx);
+    for (const it of items) {
+      const doc = await ctx.db.query("customFieldDefinitions").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
+      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, updatedAt: now }); // per-item org re-check
+    }
+  },
+});

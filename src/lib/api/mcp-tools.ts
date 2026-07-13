@@ -322,21 +322,6 @@ export const CURATED_TOOLS: CuratedTool[] = [
       required: ["projectId"],
     },
   },
-  {
-    name: "get_activity_log",
-    operation: "activity-log.getActivityLogs",
-    description:
-      "Audit trail of who changed what, when. Read-only. Useful for answering 'what happened to this booking'. Required scope: reports:read.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        filters: {
-          type: "object",
-          description: "Optional filters: { entityType?, entityId?, userId?, action?, limit? }",
-        },
-      },
-    },
-  },
 ];
 
 /**

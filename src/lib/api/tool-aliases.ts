@@ -38,7 +38,6 @@ export const TOOL_ALIASES: Record<string, string> = {
   get_pull_sheet: "warehouse.getProjectPullSheet",
   get_available_assets_for_model: "warehouse.getAvailableAssetsForModel",
   get_project_tasks: "project-tasks.getProjectTasks",
-  get_activity_log: "activity-log.getActivityLogs",
 };
 
 /** operation name → MCP tool name (inverse of {@link TOOL_ALIASES}). */

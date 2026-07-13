@@ -42,8 +42,8 @@ describe("OpenAPI document", () => {
   });
 
   it("does not pretend to have a schema it lacks", () => {
-    // activity-log.getActivityLogs takes ActivityLogFilters, a plain interface.
-    const post = doc.paths["/api/v1/ops/activity-log.getActivityLogs"].post!;
+    // activity-log.exportActivityLogCSV takes ActivityLogFilters, a plain interface.
+    const post = doc.paths["/api/v1/ops/activity-log.exportActivityLogCSV"].post!;
     const body = post.requestBody as {
       content: { "application/json": { schema: { properties: { arguments: { properties: Record<string, { description?: string }> } } } } };
     };

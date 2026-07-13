@@ -39,9 +39,7 @@ export interface OperationMeta {
 }
 
 export const OPERATIONS: Record<string, OperationMeta> = {
-  "activity-log.exportActivityLogCSV": { name: "activity-log.exportActivityLogCSV", module: "activity-log", fn: "exportActivityLogCSV", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "filters", type: "ActivityLogFilters", optional: true }], dangerous: false, summary: "" },
-  "activity-log.getActivityLogs": { name: "activity-log.getActivityLogs", module: "activity-log", fn: "getActivityLogs", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "filters", type: "ActivityLogFilters", optional: true }], dangerous: false, summary: "" },
-  "activity-log.getEntityActivityLog": { name: "activity-log.getEntityActivityLog", module: "activity-log", fn: "getEntityActivityLog", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "entityType", type: "string", optional: false }, { name: "entityId", type: "string", optional: false }, { name: "limit", type: "unknown", optional: true }], dangerous: false, summary: "" },
+  "activity-log.exportActivityLogCSV": { name: "activity-log.exportActivityLogCSV", module: "activity-log", fn: "exportActivityLogCSV", kind: "read", resource: "reports", action: "read", scope: "reports:read", params: [{ name: "filters", type: "ActivityLogFilters", optional: true }], dangerous: false, summary: "Activity-log CSV export (KEEP-SERVER-ONLY — Node string generation). The" },
   "api-keys.createApiKey": { name: "api-keys.createApiKey", module: "api-keys", fn: "createApiKey", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "input", type: "{ name: string; scopes: string[]; actingUserId?: string; expiresAt?: Date | string | null; }", optional: false }], dangerous: true, summary: "Mint a new key. Returns the raw token ONCE — show it to the user immediately;" },
   "api-keys.listApiKeys": { name: "api-keys.listApiKeys", module: "api-keys", fn: "listApiKeys", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "Management for agent-accessible API keys (docs/designs/api-mcp-agent-access.md)." },
   "api-keys.revokeApiKey": { name: "api-keys.revokeApiKey", module: "api-keys", fn: "revokeApiKey", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Revoke a single key (deactivate + stamp revokedAt). Idempotent. */" },
@@ -4283,4 +4281,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 527;
+export const OPERATION_COUNT = 525;

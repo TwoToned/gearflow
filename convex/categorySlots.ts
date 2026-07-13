@@ -127,6 +127,7 @@ export const remove = mutation({
  */
 export const reorderSlots = mutation({
   args: {
+    orgId: v.string(),
     categoryId: v.string(),
     items: v.array(v.object({
       kind: v.union(v.literal("projectGroup"), v.literal("subHireGroup")),
@@ -136,8 +137,13 @@ export const reorderSlots = mutation({
     })),
     now: v.number(),
   },
-  handler: async (ctx, { categoryId, items, now }) => {
+  handler: async (ctx, { orgId, categoryId, items, now }) => {
     await requireService(ctx);
+    // categorySlots has no org column, so scope to the caller's org via the category:
+    // a cross-org / missing category is a no-op, so a caller can't reorder (or create)
+    // slots under another org's category (by_cuid is a GLOBAL index).
+    const category = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", categoryId)).unique();
+    if (!category || category.organizationId !== orgId) return;
     const catSlots = await ctx.db
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", categoryId))

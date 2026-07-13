@@ -49,7 +49,7 @@ export async function reorderModelMedia(modelId: string, orderedIds: string[]) {
   const { organizationId } = await getOrgContext();
   const model = await getModelById(modelId);
   if (!model || model.organizationId !== organizationId) throw new Error("Model not found");
-  await reorderMediaConvex("model", orderedIds);
+  await reorderMediaConvex("model", orderedIds, organizationId);
 }
 
 export async function getModelMedia(modelId: string) {

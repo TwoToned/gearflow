@@ -687,14 +687,17 @@ export const patchMany = mutation({
 /** Atomic reorder: assign sortOrder = index (+ optional groupName) per id. */
 export const reorderLineItems = mutation({
   args: {
+    orgId: v.string(),
     items: v.array(v.object({ id: v.string(), sortOrder: v.number(), groupName: v.optional(v.string()) })),
     now: v.number(),
   },
-  handler: async (ctx, { items, now }) => {
+  handler: async (ctx, { orgId, items, now }) => {
     await requireService(ctx);
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
-      if (doc) await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
+      // Per-item org re-check: by_cuid is a GLOBAL index, so without this a caller
+      // could reorder another org's line items (mirrors reorderNative's guard).
+      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
     }
   },
 });

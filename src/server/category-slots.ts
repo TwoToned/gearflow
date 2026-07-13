@@ -524,6 +524,7 @@ export async function reorderMixedGroupsInCategory(
 
   const now = Date.now();
   await client.mutation(api.categorySlots.reorderSlots, {
+    orgId: organizationId,
     categoryId: parsed.categoryId,
     items: sortedByPrefixedId.map(({ prefixedId, displayIndex }) => {
       const parsedSlot = parseSlotId(prefixedId)!;

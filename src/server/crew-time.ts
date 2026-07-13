@@ -542,12 +542,14 @@ export async function submitTimeEntries(ids: string[]) {
 
   const convex = await getConvexClient();
   const now = Date.now();
-  for (const e of entries) {
-    await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
-      id: e.id,
-      set: { status: "SUBMITTED", updatedAt: now },
-    });
-  }
+  // ONE array mutation (was one round-trip per entry). The mutation re-checks org +
+  // the DRAFT|DISPUTED eligibility per item (TOCTOU-safe) and returns the count applied.
+  const { count } = await convex.mutation(api.crewTimeEntries.patchManyStatus, {
+    organizationId,
+    ids: entries.map((e) => e.id),
+    fromStatuses: ["DRAFT", "DISPUTED"],
+    set: { status: "SUBMITTED", updatedAt: now },
+  });
 
   await logActivity({
     organizationId,
@@ -556,11 +558,11 @@ export async function submitTimeEntries(ids: string[]) {
     action: "UPDATE",
     entityType: "crew_time_entry",
     entityId: ids.join(","),
-    entityName: `${entries.length} time entries`,
-    summary: `Submitted ${entries.length} time entries for approval`,
+    entityName: `${count} time entries`,
+    summary: `Submitted ${count} time entries for approval`,
   });
 
-  return { success: true, count: entries.length };
+  return { success: true, count };
 }
 
 export async function approveTimeEntries(ids: string[]) {
@@ -584,17 +586,14 @@ export async function approveTimeEntries(ids: string[]) {
 
   const convex = await getConvexClient();
   const now = Date.now();
-  for (const e of entries) {
-    await convex.mutation(api.crewTimeEntries.patchTimeEntry, {
-      id: e.id,
-      set: {
-        status: "APPROVED",
-        approvedById: userId,
-        approvedAt: now,
-        updatedAt: now,
-      },
-    });
-  }
+  // ONE array mutation (was one round-trip per entry). The mutation re-checks org +
+  // the SUBMITTED|DISPUTED eligibility per item (TOCTOU-safe) and returns the count applied.
+  const { count } = await convex.mutation(api.crewTimeEntries.patchManyStatus, {
+    organizationId,
+    ids: entries.map((e) => e.id),
+    fromStatuses: ["SUBMITTED", "DISPUTED"],
+    set: { status: "APPROVED", approvedById: userId, approvedAt: now, updatedAt: now },
+  });
 
   await logActivity({
     organizationId,
@@ -603,11 +602,11 @@ export async function approveTimeEntries(ids: string[]) {
     action: "UPDATE",
     entityType: "crew_time_entry",
     entityId: ids.join(","),
-    entityName: `${entries.length} time entries`,
-    summary: `Approved ${entries.length} time entries`,
+    entityName: `${count} time entries`,
+    summary: `Approved ${count} time entries`,
   });
 
-  return { success: true, count: entries.length };
+  return { success: true, count };
 }
 
 export async function disputeTimeEntry(id: string, reason?: string) {

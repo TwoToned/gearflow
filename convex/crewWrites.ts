@@ -22,6 +22,7 @@ import * as enums from "./lib/validators";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 export const createNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -92,6 +93,7 @@ export const createNative = mutation({
 });
 
 export const updateNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -156,6 +158,7 @@ export const updateNative = mutation({
  * row delete + audit.
  */
 export const deleteNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),

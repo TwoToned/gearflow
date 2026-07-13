@@ -51,6 +51,7 @@ const kitPatch = v.object({
 });
 
 export const createNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -122,6 +123,7 @@ export const createNative = mutation({
 });
 
 export const updateNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -177,6 +179,7 @@ export const updateNative = mutation({
 });
 
 export const updateNotesNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -223,6 +226,7 @@ export const updateNotesNative = mutation({
  * inside the mutation.
  */
 export const archiveNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "kit");
@@ -244,6 +248,7 @@ export const archiveNative = mutation({
 });
 
 export const deleteNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "kit");

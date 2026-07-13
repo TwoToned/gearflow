@@ -42,6 +42,7 @@ async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: Id<"projectLineI
 }
 
 export const removeNative = mutation({
+  returns: v.object({ projectId: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -109,6 +110,7 @@ const LINE_NEVER_CLEAR = new Set(["id", "organizationId", "projectId"]);
  * set/clear; the write + audit move here. recalc stays server-side (post-write).
  */
 export const patchNative = mutation({
+  returns: v.object({ projectId: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -181,6 +183,7 @@ async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId:
  * computed in-mutation (nextLineSort replica); recalc stays server-side (post-write).
  */
 export const addCustomNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -253,6 +256,7 @@ export const addCustomNative = mutation({
  * atomic write (parent + accessory children + units) + audit. recalc stays server-side.
  */
 export const addNative = mutation({
+  returns: v.object({ id: v.string(), sortOrder: v.number() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -344,6 +348,7 @@ export const addNative = mutation({
  * availability / double-booking check stays server-side; recalc stays server-side.
  */
 export const addKitNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -396,6 +401,7 @@ export const addKitNative = mutation({
  * audit (reorder is not audited on the legacy path).
  */
 export const reorderNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
   args: {
     orgId: v.string(),
     items: v.array(v.object({ id: v.string(), sortOrder: v.number(), groupName: v.optional(v.string()) })),
@@ -430,6 +436,7 @@ export const reorderNative = mutation({
  * convex/recalc.test.ts (recalcProjectTotals, the shared core).
  */
 export const recalcNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
   args: {
     projectId: v.string(),
     orgId: v.string(),

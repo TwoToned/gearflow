@@ -28,6 +28,7 @@ const NOTES_FIELD = v.union(
 );
 
 export const updateStatusNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -73,6 +74,7 @@ export const updateStatusNative = mutation({
 });
 
 export const updateNotesNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -114,6 +116,7 @@ export const updateNotesNative = mutation({
 });
 
 export const archiveNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -162,6 +165,7 @@ const PROJECT_NEVER_CLEAR = new Set(["id", "organizationId", "projectNumber"]);
  * identical); the write + audit move here.
  */
 export const updateNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -223,6 +227,7 @@ export const updateNative = mutation({
  * generateProjectNumber (the auto-number allocator) stays server-side.
  */
 export const createNative = mutation({
+  returns: v.object({ created: v.boolean(), id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -276,6 +281,7 @@ export const createNative = mutation({
  * counts are computed server-side and passed for the audit detail.
  */
 export const deleteNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),

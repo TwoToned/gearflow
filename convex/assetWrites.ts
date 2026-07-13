@@ -36,6 +36,7 @@ import * as enums from "./lib/validators";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 export const updateNotesNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -89,6 +90,7 @@ export const updateNotesNative = mutation({
  * wrote none — an intentional improvement, not a parity break on data state).
  */
 export const archiveNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -151,6 +153,7 @@ export const archiveNative = mutation({
  * reason (the mirror/UI reads `error.data`).
  */
 export const deleteNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -273,6 +276,7 @@ const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"
  * ConvexError({code:"DUPLICATE_ASSET_TAG"}) → mapped to UserFacingError by the caller.
  */
 export const createNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -355,6 +359,7 @@ export const createNative = mutation({
  * the T&T backfill; the dup guard + audit move here (atomic).
  */
 export const updateNative = mutation({
+  returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
     orgId: v.string(),

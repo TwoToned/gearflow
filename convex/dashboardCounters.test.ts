@@ -3,9 +3,17 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 
 // import.meta.glob typed via convex/import-meta-glob.d.ts (see convex/rbac.test.ts).
 const modules = import.meta.glob("./**/*.ts");
+// enforceBrowserWriteLimit (reconcileIfStale) calls the rate-limiter component for
+// user tokens; mount it so those paths resolve in tests. Service-token calls no-op.
+function makeT() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t, "rateLimiter");
+  return t;
+}
 const ORG = "org_1";
 const USER = "user_1";
 const SERVICE = { subject: "gearflow-service", svc: true };
@@ -72,7 +80,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
 
 describe("dashboardCounters", () => {
   test("reconcile computes the six counters from source", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     const values = await t.withIdentity(SERVICE).mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
     expect(values).toEqual({
@@ -86,7 +94,7 @@ describe("dashboardCounters", () => {
   });
 
   test("dashboardStats.bundle returns the 7 stats (counters + date-derived)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     await t.withIdentity(SERVICE).mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
     const stats = await t.withIdentity(asUser(ORG)).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW });
@@ -103,7 +111,7 @@ describe("dashboardCounters", () => {
   });
 
   test("bump adjusts a single field and clamps at 0", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     await t.withIdentity(SERVICE).mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.dashboardCounters.bump, { orgId: ORG, field: "checkedOutAssets", delta: 1, now: NOW + 1 });
@@ -116,7 +124,7 @@ describe("dashboardCounters", () => {
   });
 
   test("reconcileIfStale is a no-op while fresh, recomputes when stale", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     await t.withIdentity(SERVICE).mutation(api.dashboardCounters.reconcile, { orgId: ORG, now: NOW });
     // Within maxAge → no-op.
@@ -128,7 +136,7 @@ describe("dashboardCounters", () => {
   });
 
   test("dashboardStats denies a non-member", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await expect(
       t.withIdentity(asUser("other")).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW }),
     ).rejects.toThrow();
@@ -138,7 +146,7 @@ describe("dashboardCounters", () => {
   // the generated + custom mutations) must keep the counter row EQUAL to the
   // authoritative reconcile recompute after an arbitrary sequence of writes.
   test("counters stay equal to the reconcile recompute after a write sequence", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     const svc = t.withIdentity(SERVICE);
     // Backfill so the row exists — per-write deltas require it (an absent row is
@@ -186,7 +194,7 @@ describe("dashboardCounters", () => {
   });
 
   test("a per-write delta against a not-yet-backfilled org is skipped (reconcile seeds it)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seed(t);
     const svc = t.withIdentity(SERVICE);
     // No reconcile yet → row absent. A counted write must NOT create a partial row

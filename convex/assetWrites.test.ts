@@ -3,8 +3,16 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 
 const modules = import.meta.glob("./**/*.ts");
+// enforceBrowserWriteLimit (updateNotesNative) calls the rate-limiter component for
+// user tokens; mount it so those paths resolve in tests. Service-token calls no-op.
+function makeT() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t, "rateLimiter");
+  return t;
+}
 const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
@@ -43,7 +51,7 @@ async function seedAsset(t: ReturnType<typeof convexTest>, role?: string, orgOfA
 
 describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
   test("service identity is allowed and patches notes + writes the audit row (5c)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     const res = await t.withIdentity(SERVICE).mutation(api.assetWrites.updateNotesNative, baseArgs);
     expect(res.ok).toBe(true);
@@ -66,14 +74,14 @@ describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
   });
 
   test("a member (has asset:update) is allowed", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "member");
     const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, baseArgs);
     expect(res.ok).toBe(true);
   });
 
   test("a viewer (read-only) is denied asset:update", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "viewer");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, baseArgs),
@@ -81,7 +89,7 @@ describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
   });
 
   test("a non-member is denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t); // no member row
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, baseArgs),
@@ -89,7 +97,7 @@ describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
   });
 
   test("a user whose token org != the requested org is denied (org-scoping)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "member");
     await expect(
       t.withIdentity(asUser("org_other")).mutation(api.assetWrites.updateNotesNative, baseArgs),
@@ -97,7 +105,7 @@ describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
   });
 
   test("clears notes when null", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.withIdentity(SERVICE).mutation(api.assetWrites.updateNotesNative, { ...baseArgs, notes: null });
     await t.run(async (ctx) => {
@@ -109,7 +117,7 @@ describe("assetWrites.updateNotesNative — RBAC (5a)", () => {
 
 describe("assetWrites.updateNotesNative — invariants (5b)", () => {
   test("rejects when the asset belongs to a different org than requested", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     // Caller is a service token (RBAC passes), but the asset row is in another org.
     await seedAsset(t, undefined, "org_other");
     await expect(
@@ -118,7 +126,7 @@ describe("assetWrites.updateNotesNative — invariants (5b)", () => {
   });
 
   test("throws a ConvexError when the asset is missing", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await expect(
       t.withIdentity(SERVICE).mutation(api.assetWrites.updateNotesNative, baseArgs),
     ).rejects.toThrow(/not found/i);
@@ -129,7 +137,7 @@ const archiveArgs = { id: "a1", orgId: ORG, actor: ACTOR, auditId: "log1", now: 
 
 describe("assetWrites.archiveNative", () => {
   test("retires the asset + linked T&T and writes an audit row", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, assetId: "a1", testTagId: "TAG-1", description: "TAG-1", status: "NOT_YET_TESTED", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -148,7 +156,7 @@ describe("assetWrites.archiveNative", () => {
   });
 
   test("a viewer is denied (asset:update)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "viewer");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.archiveNative, archiveArgs),
@@ -160,7 +168,7 @@ const deleteArgs = { id: "a1", orgId: ORG, actor: ACTOR, auditId: "log1", now: N
 
 describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
   test("owner deletes a free asset + writes the DELETE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "owner");
     const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.deleteNative, deleteArgs);
     expect(res.id).toBe("a1");
@@ -173,7 +181,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
   });
 
   test("a manager (no asset:delete) is denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "manager");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.deleteNative, deleteArgs),
@@ -181,7 +189,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
   });
 
   test("blocked when referenced by a project line item (ASSET_IN_USE)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", assetId: "a1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
@@ -192,7 +200,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
   });
 
   test("blocked when the asset is a kit member (ASSET_IN_KIT)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
@@ -203,7 +211,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
   });
 
   test("blocked when the asset has accessory children (ASSET_HAS_ACCESSORIES)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "child", organizationId: ORG, modelId: "m1", assetTag: "CHILD", parentAssetId: "a1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -222,7 +230,7 @@ describe("assetWrites.createNative", () => {
   };
 
   test("member creates an asset + writes the CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
     });
@@ -237,7 +245,7 @@ describe("assetWrites.createNative", () => {
   });
 
   test("rejects a duplicate asset tag (DUPLICATE_ASSET_TAG)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t); // seeds TAG-1
     await expect(
       t.withIdentity(SERVICE).mutation(api.assetWrites.createNative, { ...createArgs, assetTag: "TAG-1" }),
@@ -245,7 +253,7 @@ describe("assetWrites.createNative", () => {
   });
 
   test("a viewer is denied (asset:create)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "viewer" });
     });
@@ -259,7 +267,7 @@ describe("assetWrites.updateNative", () => {
   const updArgs = { id: "a1", orgId: ORG, set: { assetTag: "TAG-1", status: "IN_MAINTENANCE" as const, updatedAt: NOW }, clear: [] as string[], actor: ACTOR, auditId: "log1", now: NOW };
 
   test("applies set + writes the UPDATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t);
     await t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, updArgs);
     await t.run(async (ctx) => {
@@ -271,7 +279,7 @@ describe("assetWrites.updateNative", () => {
   });
 
   test("clear removes an optional field", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", status: "AVAILABLE", condition: "GOOD", isActive: true, notes: "old", createdAt: NOW, updatedAt: NOW });
     });
@@ -283,7 +291,7 @@ describe("assetWrites.updateNative", () => {
   });
 
   test("rejects a tag change that collides with another asset (DUPLICATE_ASSET_TAG)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t); // a1 / TAG-1
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "TAKEN", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -294,7 +302,7 @@ describe("assetWrites.updateNative", () => {
   });
 
   test("a viewer is denied (asset:update)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedAsset(t, "viewer");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNative, updArgs),

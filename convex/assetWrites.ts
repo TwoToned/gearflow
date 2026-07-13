@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -45,6 +46,7 @@ export const updateNotesNative = mutation({
   },
   handler: async (ctx, { id, orgId, notes, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "asset"); // browser-direct kill-switch
+    await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
     await requireOrgPermission(ctx, orgId, "asset", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 

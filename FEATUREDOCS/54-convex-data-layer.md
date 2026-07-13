@@ -3723,6 +3723,26 @@ shared infra before any domain goes browser-direct.
   `convex/resolveActor.test.ts`. **Every new mutation that takes an `actor` arg MUST
   resolve it through this.**
 
+- **Rate limiter** (`@convex-dev/rate-limiter` component) — replaces the implicit
+  throttling the server-action tier used to give; once the browser calls mutations
+  directly there is nothing in front of the public surface. `convex/convex.config.ts`
+  registers the component (the app's first Convex component); `convex/lib/rateLimiter.ts`
+  defines a per-user `browserWrite` token bucket (300/min sustained, 100-op burst) and
+  `enforceBrowserWriteLimit(ctx)`:
+  - **USER token** → consumes the budget, keyed on the **verified token subject**
+    (unspoofable); throws a `ConvexError` (`kind: "RateLimited"`, with `retryAfter`)
+    once exhausted;
+  - **SERVICE / anonymous** → no-op (the trusted backend does its own throttling and
+    runs legitimate bulk/backfill; anonymous is rejected by the mutation's auth guard).
+
+  A bulk action is ONE array mutation, so it costs one token regardless of item count.
+  Call `enforceBrowserWriteLimit(ctx)` FIRST in every browser-direct mutation, alongside
+  `assertWritesEnabled`. Wired into the 2 live browser-direct mutations
+  (`assetWrites.updateNotesNative`, `dashboardCounters.reconcileIfStale`); the convention
+  extends to each new one. Tests: `convex/rateLimiter.test.ts` (exhaustion, service
+  exemption, per-user keying). **Convex-test callers must mount the component** via
+  `register(t, "rateLimiter")` from `@convex-dev/rate-limiter/test`.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

@@ -100,7 +100,8 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     endDate,
   } = filters;
 
-  let items: Array<{
+  const convex = await getConvexClient();
+  const items: Array<{
     createdAt: string | Date;
     userName: string;
     action: string;
@@ -108,10 +109,7 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     entityName: string;
     summary: string;
     details?: unknown;
-  }>;
-
-  const convex = await getConvexClient();
-  items = await convex.query(api.activityLog.exportRows, {
+  }> = await convex.query(api.activityLog.exportRows, {
     orgId: organizationId,
     entityType,
     entityId,

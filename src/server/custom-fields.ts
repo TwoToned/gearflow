@@ -237,21 +237,15 @@ export async function reorderCustomFieldDefinitions(orderedIds: string[]) {
   const { organizationId } = await requirePermission("orgSettings", "update");
   const convex = await getConvexClient();
   const now = Date.now();
-  // Convex-only: patch each definition's sortOrder. The old Prisma `updateMany`
-  // `where: { id, organizationId }` silently skipped foreign ids; replicate that
-  // org-guard by verifying ownership per id (the reorder list is small) so a
-  // stray/foreign id is a no-op rather than touching another org's row.
-  // Each definition is independent — verify ownership + patch sortOrder for all
-  // ids concurrently (was a sequential read+update per id).
-  await Promise.all(
-    orderedIds.map(async (id, idx) => {
-      const doc = await convex.query(api.customFieldDefinitions.getById, { id });
-      if (!doc || doc.organizationId !== organizationId) return;
-      await convex.mutation(api.customFieldDefinitions.update, {
-        id,
-        patch: { sortOrder: idx, updatedAt: now },
-      });
-    }),
-  );
+  // Convex-only, ONE round-trip: reorderMany loops server-side and verifies each
+  // row's org (by_cuid is a GLOBAL index) so a stray/foreign id is a no-op rather
+  // than touching another org's row — replicating the old Prisma `updateMany`
+  // `where: { id, organizationId }` guard. Explicit sortOrder = display index.
+  const items = orderedIds.map((id, sortOrder) => ({ id, sortOrder }));
+  await convex.mutation(api.customFieldDefinitions.reorderMany, {
+    orgId: organizationId,
+    items,
+    now,
+  });
   return { ok: true };
 }

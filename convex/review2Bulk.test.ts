@@ -62,6 +62,41 @@ describe("projectTasks.reorderMany — bulk drag-reorder, per-item org re-check"
   });
 });
 
+describe("customFieldDefinitions.reorderMany — {id,sortOrder} pairs, per-item org re-check", () => {
+  const cfSort = (t: T, id: string) =>
+    t.run(async (ctx) => (await ctx.db.query("customFieldDefinitions").withIndex("by_cuid", (q) => q.eq("id", id)).unique())?.sortOrder);
+
+  test("applies explicit sortOrder for in-org rows, skips a cross-org id without compressing positions", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("customFieldDefinitions", { id: "cf_a", organizationId: ORG, label: "A", fieldKey: "a", sortOrder: 5 });
+      await ctx.db.insert("customFieldDefinitions", { id: "cf_b", organizationId: ORG, label: "B", fieldKey: "b", sortOrder: 5 });
+      await ctx.db.insert("customFieldDefinitions", { id: "cf_x", organizationId: OTHER, label: "X", fieldKey: "x", sortOrder: 5 });
+    });
+    // The server filters foreign ids out but keeps explicit sortOrder so survivors
+    // don't shift: cf_a→0, cf_x (cross-org, dropped by server) would be 1, cf_b→2.
+    await t.withIdentity(SERVICE).mutation(api.customFieldDefinitions.reorderMany, {
+      orgId: ORG,
+      items: [{ id: "cf_a", sortOrder: 0 }, { id: "cf_b", sortOrder: 2 }, { id: "cf_x", sortOrder: 3 }],
+      now: NOW,
+    });
+    expect(await cfSort(t, "cf_a")).toBe(0);
+    expect(await cfSort(t, "cf_b")).toBe(2); // position preserved, not compressed to 1
+    expect(await cfSort(t, "cf_x")).toBe(5); // cross-org, untouched
+  });
+
+  test("a non-service token cannot call it", async () => {
+    const t = makeT();
+    await expect(
+      t.withIdentity({ subject: "u1", orgId: ORG }).mutation(api.customFieldDefinitions.reorderMany, {
+        orgId: ORG,
+        items: [{ id: "cf_a", sortOrder: 0 }],
+        now: NOW,
+      }),
+    ).rejects.toThrow(/server/i);
+  });
+});
+
 describe("crewAssignments.createManyServiceAssignments — bulk single-call", () => {
   const rowById = (t: T, id: string) =>
     t.run(async (ctx) => (await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique()));

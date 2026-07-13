@@ -447,8 +447,13 @@ export async function deleteProjectService(id: string) {
       .catch(() => {});
   }
   await convex.mutation(api.projectServices.remove, { id });
-  for (const a of serviceAssignments) {
-    await convex.mutation(api.crewAssignments.deleteCascade, { id: a.id });
+  if (serviceAssignments.length > 0) {
+    // ONE array mutation instead of one deleteCascade per assignment; org-scoped per
+    // row inside Convex (by_cuid is global — foreign ids skipped).
+    await convex.mutation(api.crewAssignments.deleteManyCascade, {
+      ids: serviceAssignments.map((a) => a.id),
+      orgId: organizationId,
+    });
   }
 
   await recalculateProjectTotals(service.projectId);

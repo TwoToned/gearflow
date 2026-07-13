@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useNativeKit } from "@/hooks/use-native-kit";
+import { useOptimisticKitNotes } from "@/hooks/use-native-kit-writes";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
@@ -116,6 +117,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // post-mutation refetch calls are redundant — `refetchKit` is kept as a no-op
   // (belt-and-braces) to avoid touching every call site.
   const native = useNativeKit(id, orgId);
+  const optimisticKitNotes = useOptimisticKitNotes(id, orgId);
   // The native reconstruction is a thin DTO of the same getKit shape (the page reads
   // only the fields it produces); cast to the server type so the page's typed field
   // access is preserved.
@@ -775,7 +777,9 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <NotesEditor
             initialNotes={kit.notes || ""}
             onChanged={() => refetchKit()}
-            onSave={(notes) => updateKitNotes(id, notes)}
+            onSave={(notes) =>
+              optimisticKitNotes.enabled ? optimisticKitNotes.save(notes) : updateKitNotes(id, notes)
+            }
             placeholder="Add notes about this kit..."
           />
         </DetailMain>

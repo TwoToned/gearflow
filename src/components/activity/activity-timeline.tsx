@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { getEntityActivityLog } from "@/server/activity-log";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useEntityActivityLog } from "@/hooks/use-activity-log";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -25,14 +23,7 @@ interface ActivityTimelineProps {
 }
 
 export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTimelineProps) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
-  const { data, isLoading } = useServerQuery({
-    queryKey: ["entity-activity", orgId, entityType, entityId, limit],
-    queryFn: () => getEntityActivityLog(entityType, entityId, limit),
-    enabled: !!entityId,
-  });
+  const { data, isLoading } = useEntityActivityLog(entityType, entityId, limit);
 
   const items = (data?.items ?? []) as Record<string, unknown>[];
   const total = data?.total ?? 0;

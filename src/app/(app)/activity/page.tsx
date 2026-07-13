@@ -2,14 +2,13 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useActivityLogs } from "@/hooks/use-activity-log";
 import { Download } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-import { getActivityLogs, exportActivityLogCSV } from "@/server/activity-log";
+import { exportActivityLogCSV } from "@/server/activity-log";
 import { useTablePreferences } from "@/lib/use-table-preferences";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -119,8 +118,6 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
 }
 
 function ActivityLogContent() {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
   const searchParams = useSearchParams();
   const urlEntityType = searchParams.get("entityType") || undefined;
@@ -154,11 +151,7 @@ function ActivityLogContent() {
     order: sortOrder,
   };
 
-  const { data, isLoading } = useServerQuery({
-    queryKey: ["activity-logs", orgId, queryFilters],
-    queryFn: () => getActivityLogs(queryFilters),
-    enabled: !!orgId,
-  });
+  const { data, isLoading } = useActivityLogs(queryFilters);
 
   const items = (data?.items || []) as AnyLog[];
   const total = data?.total || 0;

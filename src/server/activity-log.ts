@@ -1,104 +1,19 @@
 "use server";
 
 import { getOrgContext } from "@/lib/org-context";
-import { serialize } from "@/lib/serialize";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { type ActivityLogFilters, startMs, endMs } from "@/lib/activity-log-filters";
 
-interface ActivityLogFilters {
-  page?: number;
-  pageSize?: number;
-  entityType?: string;
-  action?: string;
-  userId?: string;
-  entityId?: string;
-  projectId?: string;
-  assetId?: string;
-  search?: string;
-  startDate?: string | Date;
-  endDate?: string | Date;
-  sort?: string;
-  order?: "asc" | "desc";
-}
-
-/** Convert a filter date to epoch ms; endDate is pushed to end-of-day (Prisma parity). */
-function startMs(d?: string | Date): number | undefined {
-  return d != null ? new Date(d).getTime() : undefined;
-}
-function endMs(d?: string | Date): number | undefined {
-  if (d == null) return undefined;
-  const end = new Date(d);
-  end.setHours(23, 59, 59, 999);
-  return end.getTime();
-}
-
-export async function getActivityLogs(filters: ActivityLogFilters = {}) {
-  const { organizationId } = await getOrgContext();
-  const {
-    page = 1,
-    pageSize = 50,
-    entityType,
-    action,
-    userId,
-    entityId,
-    projectId,
-    assetId,
-    search,
-    startDate,
-    endDate,
-    sort = "createdAt",
-    order = "desc",
-  } = filters;
-
-  // Convex-only (complete cross-domain history; the Postgres activity_log is frozen).
-  const convex = await getConvexClient();
-  const result = await convex.query(api.activityLog.list, {
-    orgId: organizationId,
-    page,
-    pageSize,
-    sort,
-    order,
-    entityType,
-    action,
-    userId,
-    entityId,
-    projectId,
-    assetId,
-    search,
-    startDateMs: startMs(startDate),
-    endDateMs: endMs(endDate),
-  });
-  return serialize(result);
-}
-
-export async function getEntityActivityLog(
-  entityType: string,
-  entityId: string,
-  limit = 5,
-) {
-  const { organizationId } = await getOrgContext();
-
-  const convex = await getConvexClient();
-  const result = await convex.query(api.activityLog.listByEntity, {
-    orgId: organizationId,
-    entityType,
-    entityId,
-    limit,
-  });
-  return serialize(result);
-}
-
+/**
+ * Activity-log CSV export (KEEP-SERVER-ONLY — Node string generation). The
+ * getActivityLogs / getEntityActivityLog READS moved browser-direct
+ * (`src/hooks/use-activity-log.ts` → `api.activityLog.list` / `listByEntity`); only
+ * the CSV serialization stays server-side per the DoD's Node-bound exclusion.
+ */
 export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
   const { organizationId } = await getOrgContext();
-  const {
-    entityType,
-    entityId,
-    action,
-    userId,
-    search,
-    startDate,
-    endDate,
-  } = filters;
+  const { entityType, entityId, action, userId, search, startDate, endDate } = filters;
 
   const convex = await getConvexClient();
   const items: Array<{

@@ -181,6 +181,82 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Create N test tag assets in ONE array mutation (bulk single-call invariant,
+ * Phase 3) — replaces the server firing one `createIfMissing` round-trip per
+ * reserved tag id when batch-creating from a bulk asset. `organizationId` is
+ * stamped from the ARG onto every row (a caller can't smuggle a per-row org),
+ * and each row is inserted only if its id is new (idempotent on retry).
+ * Returns how many were created.
+ */
+export const createManyIfMissing = mutation({
+  args: {
+    organizationId: v.string(),
+    rows: v.array(
+      v.object({
+        id: v.string(),
+        testTagId: v.string(),
+        description: v.string(),
+        equipmentClass: v.optional(enums.EquipmentClass),
+        applianceType: v.optional(enums.ApplianceType),
+        make: v.optional(v.string()),
+        modelName: v.optional(v.string()),
+        serialNumber: v.optional(v.string()),
+        location: v.optional(v.string()),
+        testIntervalMonths: v.optional(v.number()),
+        status: v.optional(enums.TestTagStatus),
+        lastTestDate: v.optional(v.number()),
+        nextDueDate: v.optional(v.number()),
+        notes: v.optional(v.string()),
+        assetId: v.optional(v.string()),
+        bulkAssetId: v.optional(v.string()),
+        testProfileId: v.optional(v.string()),
+        outletCount: v.optional(v.number()),
+        isActive: v.optional(v.boolean()),
+        createdAt: v.optional(v.number()),
+        updatedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, { organizationId, rows }) => {
+    await requireService(ctx);
+    let created = 0;
+    for (const r of rows) {
+      const existing = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", r.id)).unique();
+      if (existing) continue;
+      await ctx.db.insert("testTagAssets", { ...r, organizationId });
+      created++;
+    }
+    return { created };
+  },
+});
+
+/**
+ * Retire N test tag assets in ONE array mutation (bulk single-call invariant,
+ * Phase 3) — replaces the server firing one `update` round-trip per orphaned /
+ * dangling id in the backfill sweep. Each id is fetched via the GLOBAL by_cuid
+ * index and re-checked against the arg `organizationId` (skip on missing OR
+ * cross-tenant), then patched to RETIRED/inactive. Returns how many were retired.
+ */
+export const retireMany = mutation({
+  args: {
+    organizationId: v.string(),
+    ids: v.array(v.string()),
+    now: v.number(),
+  },
+  handler: async (ctx, { organizationId, ids, now }) => {
+    await requireService(ctx);
+    let retired = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== organizationId) continue;
+      await ctx.db.patch(doc._id, { status: "RETIRED", isActive: false, updatedAt: now });
+      retired++;
+    }
+    return { retired };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

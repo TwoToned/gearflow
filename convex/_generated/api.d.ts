@@ -72,6 +72,7 @@ import type * as lib_fulfillment from "../lib/fulfillment.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
+import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_recalc from "../lib/recalc.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
 import type * as lib_testtag from "../lib/testtag.js";
@@ -215,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   "lib/inventory": typeof lib_inventory;
   "lib/lineItemUnits": typeof lib_lineItemUnits;
   "lib/permissionsCore": typeof lib_permissionsCore;
+  "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/recalc": typeof lib_recalc;
   "lib/searchScore": typeof lib_searchScore;
   "lib/testtag": typeof lib_testtag;
@@ -314,4 +316,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+};

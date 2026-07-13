@@ -49,6 +49,7 @@ import type * as emailActions from "../emailActions.js";
 import type * as emails from "../emails.js";
 import type * as equipmentTab from "../equipmentTab.js";
 import type * as fileUploads from "../fileUploads.js";
+import type * as files from "../files.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
@@ -184,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   emails: typeof emails;
   equipmentTab: typeof equipmentTab;
   fileUploads: typeof fileUploads;
+  files: typeof files;
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;

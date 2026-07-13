@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "@/lib/convex-client";
-import { deleteFromS3 } from "@/lib/storage";
+import { deleteFromS3, storageKeyFromUrl } from "@/lib/storage";
 import { mapGalleryFile, type GalleryFile } from "@/lib/media-read";
 import { MEDIA_SPECS, type MediaKind } from "@/lib/media-specs";
 import { api } from "../../convex/_generated/api";
@@ -120,8 +120,12 @@ export async function removeMediaConvex(
   if (fileDoc) {
     try {
       await deleteFromS3(fileDoc.storageKey);
+      // The thumbnail is a separate Convex storage object with its OWN opaque id —
+      // extract it from thumbnailUrl (/api/files/{thumbStorageId}), not by rewriting
+      // the original key (which only worked for the old S3 path scheme).
       if (fileDoc.thumbnailUrl) {
-        await deleteFromS3(fileDoc.storageKey.replace(/(\.[^.]+)$/, "_thumb.jpg"));
+        const thumbKey = storageKeyFromUrl(fileDoc.thumbnailUrl);
+        if (thumbKey) await deleteFromS3(thumbKey);
       }
     } catch {
       // best-effort S3 cleanup

@@ -16,9 +16,31 @@ const NOW = 1_700_000_000_000;
 const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string, subject = USER) => ({ subject, orgId });
 
-// browserWrite bucket capacity (convex/lib/rateLimiter.ts). The (capacity+1)-th
-// write in a burst is rejected.
+// browserWrite bucket capacity (convex/lib/rateLimiter.ts). A burst beyond the
+// capacity is rejected.
 const CAPACITY = 100;
+
+// The token bucket refills on the wall clock (300/min ≈ 5/s), and each real
+// convex-test mutation takes a few ms, so a handful of tokens can refill during a
+// long burst. Asserting "exactly the (capacity+1)-th call rejects" is therefore
+// timing-fragile on a loaded CI runner. Instead, keep firing past the capacity and
+// assert the limiter DOES reject within a bounded extra burst that comfortably
+// exceeds any plausible refill — deterministic without depending on exact timing.
+async function expectRateLimitedWithin(
+  fire: (i: number) => Promise<unknown>,
+  startI: number,
+  extra = 60,
+): Promise<void> {
+  for (let i = startI; i < startI + extra; i++) {
+    try {
+      await fire(i);
+    } catch (e) {
+      if (/rate/i.test(e instanceof Error ? e.message : String(e))) return; // limited — invariant holds
+      throw e; // some other error is a real failure
+    }
+  }
+  throw new Error(`expected a rate-limit rejection within ${extra} calls past capacity, got none`);
+}
 
 function makeT() {
   const t = convexTest(schema, modules);
@@ -61,10 +83,11 @@ describe("enforceBrowserWriteLimit — per-user browser-direct budget", () => {
       const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i));
       expect(res.ok).toBe(true);
     }
-    // …the next one is rate-limited (ConvexError, kind: RateLimited).
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(CAPACITY)),
-    ).rejects.toThrow(/rate/i);
+    // …a continued burst past capacity is rate-limited (ConvexError, kind: RateLimited).
+    await expectRateLimitedWithin(
+      (i) => t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i)),
+      CAPACITY,
+    );
   });
 
   test("a service token is never rate-limited", async () => {
@@ -87,9 +110,10 @@ describe("enforceBrowserWriteLimit — per-user browser-direct budget", () => {
     for (let i = 0; i < CAPACITY; i++) {
       await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i));
     }
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(CAPACITY)),
-    ).rejects.toThrow(/rate/i);
+    await expectRateLimitedWithin(
+      (i) => t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i)),
+      CAPACITY,
+    );
     // user_2 still has a full bucket.
     const res = await t
       .withIdentity(asUser(ORG, "user_2"))

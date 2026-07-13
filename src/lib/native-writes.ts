@@ -36,22 +36,8 @@ export const nativeLineItemWrites = (): boolean =>
 export const nativeRecalc = (): boolean =>
   process.env.NATIVE_RECALC === "true";
 
-/**
- * Audit-log Phase 5c cutover (two independent flags so the write can lead the read):
- * - `NATIVE_ACTIVITY_WRITES` — `logActivity` ALSO mirrors each row into Convex
- *   `activityLogs` (via `api.activityLogWrites.record`), giving Convex the COMPLETE
- *   history across all domains, not just the 5 inverted ones. Keeps the Postgres write
- *   too (dual-write) so the read can fall back instantly.
- * - `NATIVE_ACTIVITY_READS` — the activity-log screens read Convex `activityLogs`
- *   instead of Postgres. Only flip AFTER writes have run long enough to backfill, or
- *   after a one-off backfill; otherwise the screen shows a truncated history.
- * Both default OFF.
- */
-export const nativeActivityWrites = (): boolean =>
-  process.env.NATIVE_ACTIVITY_WRITES === "true";
-
-export const nativeActivityReads = (): boolean =>
-  process.env.NATIVE_ACTIVITY_READS === "true";
+// Audit log is now Convex-only (write + read); the NATIVE_ACTIVITY_WRITES/READS
+// cutover flags were removed once the Postgres activity_log table was frozen.
 
 /**
  * Phase 6b — route post-write email side-effects through the Convex durable,

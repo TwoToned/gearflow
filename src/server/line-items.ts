@@ -1289,6 +1289,7 @@ export async function reorderLineItems(
     });
   } else {
     await reorderConvex.mutation(api.projectLineItems.reorderLineItems, {
+      orgId: reorderOrgId,
       items,
       now: Date.now(),
     });

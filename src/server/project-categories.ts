@@ -480,11 +480,11 @@ export async function reorderProjectCategories(
   projectId: string,
   orderedIds: string[],
 ) {
-  await requirePermission("project", "manage_line_items");
+  const { organizationId } = await requirePermission("project", "manage_line_items");
   const client = await getConvexClient();
 
   // Atomic reorder: contiguous sortOrder guaranteed in one transaction.
-  await client.mutation(api.projectCategories.reorder, { orderedIds, now: Date.now() });
+  await client.mutation(api.projectCategories.reorder, { orgId: organizationId, orderedIds, now: Date.now() });
 
   return serialize({ success: true });
 }

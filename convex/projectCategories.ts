@@ -158,15 +158,16 @@ export const createAtEnd = mutation({
  * against the winner's writes).
  */
 export const reorder = mutation({
-  args: { orderedIds: v.array(v.string()), now: v.number() },
-  handler: async (ctx, { orderedIds, now }) => {
+  args: { orgId: v.string(), orderedIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, orderedIds, now }) => {
     await requireService(ctx);
     for (let i = 0; i < orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectCategories")
         .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
         .unique();
-      if (doc) await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
+      // Per-item org re-check (by_cuid is a GLOBAL index).
+      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
     }
   },
 });

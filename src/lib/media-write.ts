@@ -171,10 +171,11 @@ export async function setPrimaryPhotoConvex(
   await convex.mutation(spec.convex.setPrimary, { parentId: opts.parentId, mediaId: opts.mediaId } as AnyArgs);
 }
 
-/** Reorder a parent's media by the given id order (atomic Convex mutation). */
-export async function reorderMediaConvex(kind: MediaKind, orderedIds: string[]): Promise<void> {
+/** Reorder a parent's media by the given id order (atomic Convex mutation). `orgId`
+ *  scopes the per-item org re-check in the mutation (by_cuid is a GLOBAL index). */
+export async function reorderMediaConvex(kind: MediaKind, orderedIds: string[], orgId: string): Promise<void> {
   const spec = MEDIA_SPECS[kind];
   if (!spec.convex.reorder) throw new Error(`${kind} media has no reorder`);
   const convex = await getConvexClient();
-  await convex.mutation(spec.convex.reorder, { orderedIds } as AnyArgs);
+  await convex.mutation(spec.convex.reorder, { orgId, orderedIds } as AnyArgs);
 }

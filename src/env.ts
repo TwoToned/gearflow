@@ -38,12 +38,7 @@ const serverEnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("RVLT Flow <noreply@gearflow.app>"),
 
-  // S3 / storage (optional, defaults match storage.ts behavior)
-  S3_REGION: z.string().default("ap-southeast-2"),
-  S3_ACCESS_KEY_ID: z.string().default(""),
-  S3_SECRET_ACCESS_KEY: z.string().default(""),
-  S3_BUCKET: z.string().default("gearflow-uploads"),
-  S3_ENDPOINT: z.string().optional(),
+  // (File storage moved to Convex `_storage`; the S3/Garage env vars were removed.)
 
   // Admin registration (legacy + new names — code references both)
   ADMIN_REGISTRATION_TOKEN: z.string().optional(),

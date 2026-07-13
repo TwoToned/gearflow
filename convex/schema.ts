@@ -214,6 +214,20 @@ export default defineSchema({
     .index("by_tokenHash", ["tokenHash"])
     .index("by_actingUserId", ["actingUserId"]),
 
+  // StoredFile — the org-association for a Convex-storage file (the byte store is
+  // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
+  // record's org (replacing the old S3 org-prefixed-key path auth). organizationId
+  // "avatars" = global (user avatars, viewable by any authed user); any other value =
+  // org-scoped (only that org's members). See src/lib/storage.ts.
+  storedFiles: defineTable({
+    storageId: v.string(),
+    organizationId: v.string(),
+    folder: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_storageId", ["storageId"]),
+
   // Webhook — outbound event endpoints (docs/designs/webhooks.md). The delivery
   // WORKER (HTTP send, HMAC signing, cron) stays in Next.js server code; only the
   // data lives here.

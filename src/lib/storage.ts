@@ -1,54 +1,22 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-  HeadBucketCommand,
-  CreateBucketCommand,
-} from "@aws-sdk/client-s3";
-import { randomUUID } from "crypto";
-import { env } from "@/env";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
-let s3Client: S3Client | null = null;
-
-function getS3Client(): S3Client {
-  if (s3Client) return s3Client;
-
-  const config: ConstructorParameters<typeof S3Client>[0] = {
-    region: env.S3_REGION,
-    credentials: {
-      accessKeyId: env.S3_ACCESS_KEY_ID,
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-    },
-  };
-
-  if (env.S3_ENDPOINT) {
-    config.endpoint = env.S3_ENDPOINT;
-    config.forcePathStyle = true; // Required for MinIO / R2
-  }
-
-  s3Client = new S3Client(config);
-  return s3Client;
-}
-
-function getBucket(): string {
-  return env.S3_BUCKET;
-}
+/**
+ * File storage on Convex `_storage` (replaces the self-hosted Garage/S3 box). The
+ * public API shape (uploadToS3 / deleteFromS3 / getProxyUrl / getFileAsDataUri) is
+ * kept so callers don't change — the "storageKey" is now a Convex storageId, and the
+ * `/api/files/{storageId}` proxy authorises a serve via the file's `storedFiles` org
+ * record (see convex/files.ts + the /api/files route). Uploads are server-side: mint a
+ * Convex upload URL, POST the bytes to it, then register the org association.
+ */
 
 export interface UploadResult {
   storageKey: string;
   url: string;
 }
 
-export async function ensureBucket(): Promise<void> {
-  const client = getS3Client();
-  const bucket = getBucket();
-  try {
-    await client.send(new HeadBucketCommand({ Bucket: bucket }));
-  } catch {
-    await client.send(new CreateBucketCommand({ Bucket: bucket }));
-  }
-}
+/** No-op — Convex storage needs no bucket. Retained so existing callers don't change. */
+export async function ensureBucket(): Promise<void> {}
 
 export async function uploadToS3(
   file: Buffer,
@@ -58,54 +26,47 @@ export async function uploadToS3(
     entityId: string;
     fileName: string;
     mimeType: string;
-  }
+  },
 ): Promise<UploadResult> {
-  const client = getS3Client();
-  const bucket = getBucket();
+  const convex = await getConvexClient();
+  const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {});
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": options.mimeType },
+    // Buffer isn't in the DOM BodyInit types; a plain Uint8Array view is.
+    body: new Uint8Array(file),
+  });
+  if (!res.ok) throw new Error(`Convex storage upload failed: ${res.status}`);
+  const { storageId } = (await res.json()) as { storageId: string };
 
-  const safeName = options.fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const uuid = randomUUID().split("-")[0];
-  const storageKey = `${options.organizationId}/${options.folder}/${options.entityId}/${uuid}-${safeName}`;
+  await convex.mutation(api.files.register, {
+    storageId,
+    organizationId: options.organizationId,
+    folder: options.folder,
+    fileName: options.fileName,
+    createdAt: Date.now(),
+  });
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: storageKey,
-      Body: file,
-      ContentType: options.mimeType,
-    })
-  );
-
-  return {
-    storageKey,
-    url: `/api/files/${storageKey}`,
-  };
+  return { storageKey: storageId, url: `/api/files/${storageId}` };
 }
 
 export async function deleteFromS3(storageKey: string): Promise<void> {
-  const client = getS3Client();
-  const bucket = getBucket();
-
-  await client.send(
-    new DeleteObjectCommand({
-      Bucket: bucket,
-      Key: storageKey,
-    })
-  );
+  const convex = await getConvexClient();
+  await convex.mutation(api.files.deleteFile, { storageId: storageKey });
 }
 
-export async function getFromS3(storageKey: string) {
-  const client = getS3Client();
-  const bucket = getBucket();
+export interface ServeInfo {
+  organizationId: string;
+  url: string;
+  contentType: string | null;
+  size: number | null;
+  fileName: string | null;
+}
 
-  const response = await client.send(
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: storageKey,
-    })
-  );
-
-  return response;
+/** Auth + streaming info for the /api/files proxy. Null → the storageId has no record. */
+export async function getServeInfo(storageKey: string): Promise<ServeInfo | null> {
+  const convex = await getConvexClient();
+  return await convex.query(api.files.getServeInfo, { storageId: storageKey });
 }
 
 export function getProxyUrl(storageKey: string): string {
@@ -120,54 +81,18 @@ export function storageKeyFromUrl(proxyUrl: string): string | null {
   return proxyUrl.slice(idx + prefix.length);
 }
 
-/** Read a file from S3 and return it as a base64 data URI */
+/** Read a file (by proxy URL) and return it as a base64 data URI (for PDF embedding). */
 export async function getFileAsDataUri(proxyUrl: string): Promise<string | null> {
   const key = storageKeyFromUrl(proxyUrl);
   if (!key) return null;
-
-  // Try the key directly first
-  const result = await fetchS3AsDataUri(key);
-  if (result) return result;
-
-  // If the URL was a thumbnail, try to find the original
-  if (proxyUrl.includes("_thumb")) {
-    // Strategy 1: strip _thumb suffix to reconstruct the original key
-    const thumbKey = storageKeyFromUrl(proxyUrl);
-    if (thumbKey) {
-      const originalKey = thumbKey.replace(/_thumb(\.[^.]+)$/, "$1");
-      if (originalKey !== thumbKey) {
-        const originalResult = await fetchS3AsDataUri(originalKey);
-        if (originalResult) return originalResult;
-      }
-    }
-
-    // Strategy 2: look up the FileUpload record by thumbnailUrl. file_upload is
-    // Convex-only — query by thumbnailUrl via the service token (no orgId in this
-    // path, so the Convex query is cross-org, mirroring the old global findFirst).
-    try {
-      const { getConvexClient } = await import("@/lib/convex-client");
-      const { api } = await import("../../convex/_generated/api");
-      const record = await (await getConvexClient()).query(api.fileUploads.getByThumbnailUrl, {
-        thumbnailUrl: proxyUrl,
-      });
-      if (record) {
-        return fetchS3AsDataUri(record.storageKey);
-      }
-    } catch {
-      // Lookup failed, give up
-    }
-  }
-
-  return null;
-}
-
-async function fetchS3AsDataUri(key: string): Promise<string | null> {
+  const info = await getServeInfo(key);
+  if (!info) return null;
   try {
-    const response = await getFromS3(key);
-    if (!response.Body) return null;
-    const bytes = await response.Body.transformToByteArray();
-    const contentType = response.ContentType || "image/png";
-    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+    const res = await fetch(info.url);
+    if (!res.ok) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const contentType = info.contentType || "image/png";
+    return `data:${contentType};base64,${bytes.toString("base64")}`;
   } catch {
     return null;
   }

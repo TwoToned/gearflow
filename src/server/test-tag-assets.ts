@@ -311,28 +311,24 @@ export async function createTestTagAssetsFromBulk(data: {
   const convex = await getConvexClient();
   const now = Date.now();
 
-  const createdIds: string[] = [];
-  for (const testTagId of ids) {
-    const id = createId();
-    await convex.mutation(api.testTagAssets.createIfMissing, {
-      id,
-      organizationId,
-      testTagId,
-      description: data.description,
-      equipmentClass: (data.equipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
-      applianceType: (data.applianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
-      ...(data.make && { make: data.make }),
-      ...(data.modelName && { modelName: data.modelName }),
-      ...(data.location && { location: data.location }),
-      testIntervalMonths: data.testIntervalMonths || 3,
-      bulkAssetId: data.bulkAssetId,
-      status: "NOT_YET_TESTED",
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-    createdIds.push(id);
-  }
+  const rows = ids.map((testTagId) => ({
+    id: createId(),
+    testTagId,
+    description: data.description,
+    equipmentClass: (data.equipmentClass as "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY") || "CLASS_I",
+    applianceType: (data.applianceType as "APPLIANCE" | "CORD_SET" | "EXTENSION_LEAD" | "POWER_BOARD" | "RCD_PORTABLE" | "RCD_FIXED" | "THREE_PHASE" | "OTHER") || "APPLIANCE",
+    ...(data.make && { make: data.make }),
+    ...(data.modelName && { modelName: data.modelName }),
+    ...(data.location && { location: data.location }),
+    testIntervalMonths: data.testIntervalMonths || 3,
+    bulkAssetId: data.bulkAssetId,
+    status: "NOT_YET_TESTED" as const,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  await convex.mutation(api.testTagAssets.createManyIfMissing, { organizationId, rows });
+  const createdIds = rows.map((r) => r.id);
 
   await logActivity({
     organizationId,
@@ -555,15 +551,12 @@ export async function backfillTestTagAssets() {
   );
 
   const retireIds = [...new Set([...orphaned.map((o) => o.id), ...dangling.map((d) => d.id)])];
-  let retired = 0;
   const now = Date.now();
-  for (const retireId of retireIds) {
-    await convex.mutation(api.testTagAssets.update, {
-      id: retireId,
-      patch: { status: "RETIRED", isActive: false, updatedAt: now },
-    });
-    retired++;
-  }
+  const { retired } = await convex.mutation(api.testTagAssets.retireMany, {
+    organizationId,
+    ids: retireIds,
+    now,
+  });
 
   if (unlinkedAssets.length === 0) return { created: 0, retired };
 

@@ -606,10 +606,20 @@ export async function updateServiceCrewStatus(
       if (status === "CANCELLED") return !["COMPLETED", "CANCELLED"].includes(a.status);
       return true;
     });
-    for (const a of targets) {
-      await convex.mutation(api.crewAssignments.patchAssignment, { id: a.id, set: { status } });
+    // Bulk single-call: ONE array mutation instead of one patchAssignment per target
+    // (mirrors updateAssignmentStatus' first-transition CONFIRMED stamp per row).
+    if (targets.length > 0) {
+      const { updated } = await convex.mutation(api.crewAssignments.patchManyStatus, {
+        ids: targets.map((a) => a.id),
+        orgId: organizationId,
+        status: status as "PENDING" | "OFFERED" | "ACCEPTED" | "CONFIRMED" | "DECLINED" | "CANCELLED" | "COMPLETED",
+        confirmedById: userId,
+        now: Date.now(),
+      });
+      updatedCount = updated;
+    } else {
+      updatedCount = 0;
     }
-    updatedCount = targets.length;
   }
 
   const statusLabels: Record<string, string> = {

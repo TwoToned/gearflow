@@ -111,6 +111,10 @@ export const CONVEX_READS: Record<string, ConvexReadMeta> = Object.fromEntries(
       [p("query", "string")],
       "Global search across every entity type (models, kits, assets, projects, clients, suppliers, locations, categories, maintenance, crew, ...). Min 2 chars; returns { results: [] } when nothing matches."),
 
+    // ── Org-wide tag autocomplete (was the tags.getOrgTags server action) ─────
+    read("tags.getOrgTags", api.tags.getOrgTags, "asset", "read", [],
+      "The distinct set of tags used across every taggable entity in the org (models, assets, kits, projects, clients, ...)."),
+
     // ── Collaboration: comments, threads, locks, presence, activity ───────────
     read("collaboration.listThreads", api.collaboration.listThreads, "project", "read",
       [p("entityType", "string"), p("entityId", "string"), p("targetType", "string", true), p("targetId", "string", true)],

@@ -457,7 +457,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "suppliers.getSuppliersPaginated": { name: "suppliers.getSuppliersPaginated", module: "suppliers", fn: "getSuppliersPaginated", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "params", type: "{ search?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: false }], dangerous: false, summary: "" },
   "suppliers.getSupplierSubhires": { name: "suppliers.getSupplierSubhires", module: "suppliers", fn: "getSupplierSubhires", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "supplierId", type: "string", optional: false }, { name: "params", type: "{ page?: number; pageSize?: number; }", optional: false }], dangerous: false, summary: "" },
   "suppliers.updateSupplier": { name: "suppliers.updateSupplier", module: "suppliers", fn: "updateSupplier", kind: "write", resource: "supplier", action: "update", scope: "supplier:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "SupplierFormValues", optional: false, schemaRef: "SupplierFormValues" }], dangerous: false, summary: "" },
-  "tags.getOrgTags": { name: "tags.getOrgTags", module: "tags", fn: "getOrgTags", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [], dangerous: false, summary: "Get all distinct tags used across the organization." },
   "test-tag-assets.backfillTestTagAssets": { name: "test-tag-assets.backfillTestTagAssets", module: "test-tag-assets", fn: "backfillTestTagAssets", kind: "write", resource: "testTag", action: "update", scope: "testTag:update", params: [], dangerous: false, summary: "Auto-register all serialized assets whose model requires T&T" },
   "test-tag-assets.createTestTagAsset": { name: "test-tag-assets.createTestTagAsset", module: "test-tag-assets", fn: "createTestTagAsset", kind: "write", resource: "testTag", action: "create", scope: "testTag:create", params: [{ name: "data", type: "{ testTagId?: string; description: string; equipmentClass?: string; applianceType?: string; make?: string; modelName?: string; serialNumber?: string; location?: string; testIntervalMonths?: number; testProfileId?: string; outletCount?: number; notes?: string; assetId?: string; bulkAssetId?: string; }", optional: false }], dangerous: false, summary: "" },
   "test-tag-assets.createTestTagAssetsFromBulk": { name: "test-tag-assets.createTestTagAssetsFromBulk", module: "test-tag-assets", fn: "createTestTagAssetsFromBulk", kind: "write", resource: "testTag", action: "create", scope: "testTag:create", params: [{ name: "data", type: "{ bulkAssetId: string; count: number; equipmentClass?: string; applianceType?: string; testIntervalMonths?: number; description: string; make?: string; modelName?: string; location?: string; }", optional: false }], dangerous: false, summary: "" },
@@ -623,7 +622,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "sub-hires": () => import("@/server/sub-hires"),
   "supplier-orders": () => import("@/server/supplier-orders"),
   "suppliers": () => import("@/server/suppliers"),
-  "tags": () => import("@/server/tags"),
   "test-tag-assets": () => import("@/server/test-tag-assets"),
   "test-tag-auditor": () => import("@/server/test-tag-auditor"),
   "test-tag-profiles": () => import("@/server/test-tag-profiles"),
@@ -4279,4 +4277,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 524;
+export const OPERATION_COUNT = 523;

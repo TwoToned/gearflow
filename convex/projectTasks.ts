@@ -159,6 +159,7 @@ export const updateMany = mutation({
       if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
       const applied: Record<string, unknown> = { ...p, updatedAt: now };
       delete applied.organizationId;
+      delete applied.id;
       if (p.status !== undefined && p.status !== doc.status) {
         applied.completedAt = p.status === "DONE" ? now : null;
       }

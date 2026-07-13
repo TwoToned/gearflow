@@ -74,6 +74,7 @@ import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_recalc from "../lib/recalc.js";
+import type * as lib_sanitizeSet from "../lib/sanitizeSet.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
 import type * as lib_shardedCounter from "../lib/shardedCounter.js";
 import type * as lib_testtag from "../lib/testtag.js";
@@ -219,6 +220,7 @@ declare const fullApi: ApiFromModules<{
   "lib/permissionsCore": typeof lib_permissionsCore;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/recalc": typeof lib_recalc;
+  "lib/sanitizeSet": typeof lib_sanitizeSet;
   "lib/searchScore": typeof lib_searchScore;
   "lib/shardedCounter": typeof lib_shardedCounter;
   "lib/testtag": typeof lib_testtag;

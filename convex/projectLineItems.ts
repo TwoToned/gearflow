@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { ensureBulkUnit, ensureSerialisedUnit, expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
+import { sanitizeClientSet } from "./lib/sanitizeSet";
 import * as enums from "./lib/validators";
 
 /**
@@ -665,7 +666,7 @@ export const patchMany = mutation({
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).unique();
       if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
-      const set = it.set as Record<string, unknown>;
+      const set = sanitizeClientSet(it.set, ["projectId"]); // strip organizationId/id/projectId
       if (it.clear.length === 0) {
         await ctx.db.patch(doc._id, set);
       } else {

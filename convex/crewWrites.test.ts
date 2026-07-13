@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
 const modules = import.meta.glob("./**/*.ts");
-// Counted crew writes go through the sharded counter component (gate #3); mount it.
+// Crew mutations enforce a browser write limit (rate-limiter component) and counted
+// crew writes go through the sharded counter component (gate #3); mount both.
 function makeT() {
   const tc = convexTest(schema, modules);
+  registerRateLimiter(tc, "rateLimiter");
   registerShardedCounter(tc, "shardedCounter");
   return tc;
 }

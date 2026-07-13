@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { convexTest } from "convex-test";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
@@ -7,8 +8,10 @@ import { api } from "./_generated/api";
 
 const modules = import.meta.glob("./**/*.ts");
 // Counted project writes go through the sharded counter component (gate #3); mount it.
+// enforceBrowserWriteLimit goes through the rate-limiter component; mount it too.
 function makeT() {
   const tc = convexTest(schema, modules);
+  registerRateLimiter(tc, "rateLimiter");
   registerShardedCounter(tc, "shardedCounter");
   return tc;
 }

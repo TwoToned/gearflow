@@ -1,6 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -34,6 +37,8 @@ export const updateStatusNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -78,6 +83,8 @@ export const updateNotesNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, field, notes, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -115,6 +122,8 @@ export const archiveNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -163,6 +172,8 @@ export const updateNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -170,7 +181,7 @@ export const updateNative = mutation({
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const setObj = (set ?? {}) as Record<string, unknown>;
+    const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
     if (clear.length === 0) {
       await ctx.db.patch(project._id, setObj);
       await bumpProjectCounters(ctx, orgId, project, { ...project, ...setObj });
@@ -223,6 +234,8 @@ export const createNative = mutation({
   },
   handler: async (ctx, args) => {
     const { actor: suppliedActor, auditId, ...fields } = args;
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "project", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -273,6 +286,8 @@ export const deleteNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, { id, orgId, freedAssets, freedKits, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();

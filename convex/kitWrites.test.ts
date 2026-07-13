@@ -3,8 +3,18 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 const modules = import.meta.glob("./**/*.ts");
+// Mount both components: the rate limiter (enforceBrowserWriteLimit) and the sharded
+// counter (counted writes). Both are required whenever a kit mutation runs with a USER identity.
+function makeT() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
+  return t;
+}
 const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
@@ -37,7 +47,7 @@ describe("kitWrites.createNative", () => {
   };
 
   test("a manager creates a kit + writes the CREATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
     });
@@ -53,7 +63,7 @@ describe("kitWrites.createNative", () => {
   });
 
   test("rejects a duplicate asset tag", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t); // KIT-1
     await expect(
       t.withIdentity(SERVICE).mutation(api.kitWrites.createNative, { ...createArgs, assetTag: "KIT-1" }),
@@ -61,7 +71,7 @@ describe("kitWrites.createNative", () => {
   });
 
   test("a viewer is denied (kit:create)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "viewer" });
     });
@@ -75,7 +85,7 @@ describe("kitWrites.updateNative", () => {
   const updArgs = { id: "k1", orgId: ORG, patch: { name: "Renamed", status: "IN_MAINTENANCE" as const, updatedAt: NOW }, actor: ACTOR, auditId: "log1", now: NOW };
 
   test("applies patch + writes the UPDATE audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.withIdentity(SERVICE).mutation(api.kitWrites.updateNative, updArgs);
     await t.run(async (ctx) => {
@@ -88,7 +98,7 @@ describe("kitWrites.updateNative", () => {
   });
 
   test("rejects a tag change that collides", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k2", organizationId: ORG, assetTag: "TAKEN", name: "Other", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -99,7 +109,7 @@ describe("kitWrites.updateNative", () => {
   });
 
   test("a viewer is denied (kit:update)", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, "viewer");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.kitWrites.updateNative, updArgs),
@@ -109,7 +119,7 @@ describe("kitWrites.updateNative", () => {
 
 describe("kitWrites.updateNotesNative", () => {
   test("patches notes + audit; clears on null", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t);
     await t.withIdentity(SERVICE).mutation(api.kitWrites.updateNotesNative, { id: "k1", orgId: ORG, notes: "spare fuse inside", actor: ACTOR, auditId: "log1", now: NOW });
     await t.run(async (ctx) => {
@@ -127,7 +137,7 @@ describe("kitWrites.updateNotesNative", () => {
 describe("kitWrites.archiveNative / deleteNative", () => {
   const args = { id: "k1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
   test("owner archives an AVAILABLE kit + releases members + audit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, "owner");
     await t.run(async (ctx) => { await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER }); });
     await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.archiveNative, args);
@@ -142,7 +152,7 @@ describe("kitWrites.archiveNative / deleteNative", () => {
     });
   });
   test("owner deletes an AVAILABLE kit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, "owner");
     await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.deleteNative, args);
     await t.run(async (ctx) => {
@@ -150,12 +160,12 @@ describe("kitWrites.archiveNative / deleteNative", () => {
     });
   });
   test("blocks archive of a non-AVAILABLE kit", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
     await expect(t.withIdentity(SERVICE).mutation(api.kitWrites.archiveNative, args)).rejects.toThrow(/AVAILABLE/i);
   });
   test("a manager (no kit:delete) is denied", async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     await seedKit(t, "manager");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.kitWrites.deleteNative, args)).rejects.toThrow(/insufficient permissions/i);
   });

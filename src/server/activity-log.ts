@@ -1,9 +1,7 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
-import { nativeActivityReads } from "@/lib/native-writes";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -52,70 +50,25 @@ export async function getActivityLogs(filters: ActivityLogFilters = {}) {
     order = "desc",
   } = filters;
 
-  // Phase 5c: native Convex read (complete cross-domain history via the logActivity
-  // mirror). Same shape as the Prisma path so the screen is agnostic.
-  if (nativeActivityReads()) {
-    const convex = await getConvexClient();
-    const result = await convex.query(api.activityLog.list, {
-      orgId: organizationId,
-      page,
-      pageSize,
-      sort,
-      order,
-      entityType,
-      action,
-      userId,
-      entityId,
-      projectId,
-      assetId,
-      search,
-      startDateMs: startMs(startDate),
-      endDateMs: endMs(endDate),
-    });
-    return serialize(result);
-  }
-
-  const where: Record<string, unknown> = { organizationId };
-
-  if (entityType) where.entityType = entityType;
-  if (action) where.action = action;
-  if (userId) where.userId = userId;
-  if (entityId) where.entityId = entityId;
-  if (projectId) where.projectId = projectId;
-  if (assetId) where.assetId = assetId;
-  if (search) where.summary = { contains: search, mode: "insensitive" };
-
-  if (startDate || endDate) {
-    const dateFilter: Record<string, Date> = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      dateFilter.lte = end;
-    }
-    where.createdAt = dateFilter;
-  }
-
-  const [items, total] = await Promise.all([
-    prisma.activityLog.findMany({
-      where,
-      include: {
-        user: { select: { id: true, name: true, image: true } },
-      },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: { [sort]: order },
-    }),
-    prisma.activityLog.count({ where }),
-  ]);
-
-  return serialize({
-    items,
-    total,
+  // Convex-only (complete cross-domain history; the Postgres activity_log is frozen).
+  const convex = await getConvexClient();
+  const result = await convex.query(api.activityLog.list, {
+    orgId: organizationId,
     page,
     pageSize,
-    totalPages: Math.ceil(total / pageSize),
+    sort,
+    order,
+    entityType,
+    action,
+    userId,
+    entityId,
+    projectId,
+    assetId,
+    search,
+    startDateMs: startMs(startDate),
+    endDateMs: endMs(endDate),
   });
+  return serialize(result);
 }
 
 export async function getEntityActivityLog(
@@ -125,32 +78,14 @@ export async function getEntityActivityLog(
 ) {
   const { organizationId } = await getOrgContext();
 
-  if (nativeActivityReads()) {
-    const convex = await getConvexClient();
-    const result = await convex.query(api.activityLog.listByEntity, {
-      orgId: organizationId,
-      entityType,
-      entityId,
-      limit,
-    });
-    return serialize(result);
-  }
-
-  const where = { organizationId, entityType, entityId };
-
-  const [items, total] = await Promise.all([
-    prisma.activityLog.findMany({
-      where,
-      include: {
-        user: { select: { id: true, name: true, image: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    }),
-    prisma.activityLog.count({ where }),
-  ]);
-
-  return serialize({ items, total });
+  const convex = await getConvexClient();
+  const result = await convex.query(api.activityLog.listByEntity, {
+    orgId: organizationId,
+    entityType,
+    entityId,
+    limit,
+  });
+  return serialize(result);
 }
 
 export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
@@ -175,42 +110,17 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     details?: unknown;
   }>;
 
-  if (nativeActivityReads()) {
-    const convex = await getConvexClient();
-    items = await convex.query(api.activityLog.exportRows, {
-      orgId: organizationId,
-      entityType,
-      entityId,
-      action,
-      userId,
-      search,
-      startDateMs: startMs(startDate),
-      endDateMs: endMs(endDate),
-    });
-  } else {
-    const where: Record<string, unknown> = { organizationId };
-    if (entityType) where.entityType = entityType;
-    if (entityId) where.entityId = entityId;
-    if (action) where.action = action;
-    if (userId) where.userId = userId;
-    if (search) where.summary = { contains: search, mode: "insensitive" };
-    if (startDate || endDate) {
-      const dateFilter: Record<string, Date> = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        dateFilter.lte = end;
-      }
-      where.createdAt = dateFilter;
-    }
-
-    items = await prisma.activityLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: 10000,
-    });
-  }
+  const convex = await getConvexClient();
+  items = await convex.query(api.activityLog.exportRows, {
+    orgId: organizationId,
+    entityType,
+    entityId,
+    action,
+    userId,
+    search,
+    startDateMs: startMs(startDate),
+    endDateMs: endMs(endDate),
+  });
 
   const escape = (s: string) => {
     if (s.includes(",") || s.includes('"') || s.includes("\n")) {

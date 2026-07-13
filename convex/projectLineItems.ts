@@ -69,7 +69,9 @@ export const listByIds = query({
         .query("projectLineItems")
         .withIndex("by_cuid", (q) => q.eq("id", id))
         .unique();
-      if (doc) out.push(doc);
+      // by_cuid is a GLOBAL index; requireOrgRead only authorizes the CALLER's org, so
+      // a caller-supplied foreign cuid would otherwise leak another org's line item.
+      if (doc && doc.organizationId === orgId) out.push(doc);
     }
     return out;
   },
@@ -80,8 +82,10 @@ export const listByIds = query({
  * warehouse-display dashboard to count items per dispatch/return/prep project
  * without scanning the whole org's line-item table on a public endpoint — only
  * the handful of projects the dashboard renders are queried, each via the
- * `by_projectId` index. Org-scoped: caller passes the org id so the service /
- * user token is authorized, and every returned row is its own project's.
+ * `by_projectId` index. Org-scoped: `requireOrgRead` authorizes the CALLER's org, and
+ * every returned row is re-checked to belong to it — `by_projectId` is a GLOBAL index,
+ * so a caller-supplied foreign projectId would otherwise leak another org's line items
+ * (same footgun as `listByProject`).
  */
 export const listByProjectIds = query({
   args: { orgId: v.string(), projectIds: v.array(v.string()) },
@@ -93,7 +97,7 @@ export const listByProjectIds = query({
         .query("projectLineItems")
         .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
         .collect();
-      for (const r of rows) out.push(r);
+      for (const r of rows) if (r.organizationId === orgId) out.push(r);
     }
     return out;
   },
@@ -558,6 +562,27 @@ export const createKitLineItem = mutation({
  * ITEMIZED pricing rather than duplicating it). Inserts the kit parent line + one
  * child line per serialized / bulk member, computing sortOrder in-mutation.
  */
+/**
+ * Guard the line-item create paths against inserting into ANOTHER org's project. The
+ * create mutations take `projectId` from the browser; `requireOrgPermission` only
+ * authorizes the CALLER's org, and `recalcProjectTotals` sweeps lines `by_projectId`
+ * with NO org filter — so a line inserted into a FOREIGN project (stamped with the
+ * caller's org) would be swept into that project's org's totals and corrupt them.
+ * Rejects only when the project EXISTS in a different org: a non-existent projectId has
+ * no recalc target (recalc returns early on a missing project) and thus no victim, so
+ * it's left permissive to avoid over-constraining callers/fixtures.
+ */
+export async function assertProjectInOrg(
+  ctx: MutationCtx,
+  projectId: string,
+  orgId: string,
+): Promise<void> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (project && project.organizationId !== orgId) {
+    throw new ConvexError({ code: "FORBIDDEN", message: "Forbidden: project belongs to another organization." });
+  }
+}
+
 export async function createKitLineItemCore(
   ctx: MutationCtx,
   a: {
@@ -573,6 +598,7 @@ export async function createKitLineItemCore(
     now: number;
   },
 ): Promise<{ id: string }> {
+    await assertProjectInOrg(ctx, a.projectId, a.organizationId);
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", a.kitId)).unique();
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     let sort = await nextLineSort(ctx, a.projectId, a.organizationId);

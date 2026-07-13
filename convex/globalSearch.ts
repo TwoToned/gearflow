@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, TableNames } from "./_generated/dataModel";
-import { requireService } from "./lib/auth";
+import { requireOrgRead } from "./lib/auth";
 import {
   parseTerms,
   matchesQuery,
@@ -125,7 +125,7 @@ function nonNull<T>(x: T | null): x is T {
 export const search = query({
   args: { orgId: v.string(), query: v.string() },
   handler: async (ctx, { orgId, query: rawQuery }): Promise<{ results: SearchResult[] }> => {
-    await requireService(ctx);
+    await requireOrgRead(ctx, orgId); // browser-callable (user token) + service (PDF/API) short-circuits allow
 
     if (!rawQuery || rawQuery.trim().length < 2) return { results: [] };
     const terms: SearchTerms = parseTerms(rawQuery);

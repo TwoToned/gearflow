@@ -390,7 +390,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "saved-views.setDefaultSavedView": { name: "saved-views.setDefaultSavedView", module: "saved-views", fn: "setDefaultSavedView", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "tableId", type: "string", optional: false }, { name: "id", type: "string | null", optional: false }], dangerous: false, summary: "Set (or clear) the default view for a table. Passing `id` makes that view the" },
   "saved-views.updateSavedView": { name: "saved-views.updateSavedView", module: "saved-views", fn: "updateSavedView", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "{ name?: string; config?: SavedViewConfig }", optional: false }], dangerous: false, summary: "" },
   "scan-lookup.scanLookup": { name: "scan-lookup.scanLookup", module: "scan-lookup", fn: "scanLookup", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "value", type: "string", optional: false }], dangerous: false, summary: "Look up a scanned barcode value and return the URL to navigate to." },
-  "search.globalSearch": { name: "search.globalSearch", module: "search", fn: "globalSearch", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "query", type: "string", optional: false }], dangerous: false, summary: "" },
   "settings.addMemberByEmail": { name: "settings.addMemberByEmail", module: "settings", fn: "addMemberByEmail", kind: "write", resource: "orgSettings", action: "update", scope: "orgSettings:update", params: [{ name: "email", type: "string", optional: false }, { name: "role", type: "string", optional: false }], dangerous: true, summary: "" },
   "settings.getMembers": { name: "settings.getMembers", module: "settings", fn: "getMembers", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
   "settings.getNextAssetTag": { name: "settings.getNextAssetTag", module: "settings", fn: "getNextAssetTag", kind: "read", resource: "orgSettings", action: "read", scope: "orgSettings:read", params: [], dangerous: false, summary: "" },
@@ -619,7 +618,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "reservation-conflicts": () => import("@/server/reservation-conflicts"),
   "saved-views": () => import("@/server/saved-views"),
   "scan-lookup": () => import("@/server/scan-lookup"),
-  "search": () => import("@/server/search"),
   "settings": () => import("@/server/settings"),
   "sso": () => import("@/server/sso"),
   "sub-hires": () => import("@/server/sub-hires"),
@@ -4281,4 +4279,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 525;
+export const OPERATION_COUNT = 524;

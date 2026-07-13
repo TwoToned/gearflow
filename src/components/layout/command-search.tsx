@@ -63,7 +63,8 @@ import {
   DialogContent,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { globalSearch, type SearchResult, type SearchResultType } from "@/server/search";
+import { type SearchResult, type SearchResultType } from "@/lib/search-types";
+import { useGlobalSearch } from "@/hooks/use-global-search";
 import { matchPageCommands, PAGE_COMMANDS, type PageCommand } from "@/lib/page-commands";
 import { matchSlashCommands, extractEntityId, type SlashCommand } from "@/lib/slash-commands";
 import { signOut } from "@/lib/auth-client";
@@ -170,6 +171,7 @@ const BREADCRUMB_MAX_WIDTH = "150px";
 
 export function CommandSearch() {
   const isMobile = useIsMobile();
+  const globalSearch = useGlobalSearch();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -344,7 +346,7 @@ export function CommandSearch() {
       });
     }, 200);
     return () => { aborted = true; clearTimeout(timer); };
-  }, [atSearchType, atSearchEntityQuery, atSearchStatusFilter]);
+  }, [atSearchType, atSearchEntityQuery, atSearchStatusFilter, globalSearch]);
 
   // Get entity text from the top match (if any space-separated text exists)
   const atEntityText = useMemo(() => {
@@ -590,7 +592,7 @@ export function CommandSearch() {
       });
     }, 200);
     return () => { aborted = true; clearTimeout(timer); };
-  }, [isAtEntityMode, drillQuery, atEntitySearchType, atEntityStatusFilter]);
+  }, [isAtEntityMode, drillQuery, atEntitySearchType, atEntityStatusFilter, globalSearch]);
 
   // ─── Normal search: filter drill children ────────────────────
 
@@ -675,7 +677,7 @@ export function CommandSearch() {
       });
     }, 200);
     return () => { aborted = true; clearTimeout(timer); };
-  }, [dateInfo, dateSearchQuery]);
+  }, [dateInfo, dateSearchQuery, globalSearch]);
 
   // Build the date availability item + entity results
   const dateItem = useMemo((): DisplayItem | null => {
@@ -839,7 +841,7 @@ export function CommandSearch() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [globalSearch]);
 
   const handleQueryChange = (value: string) => {
     if (isAtEntityMode) {

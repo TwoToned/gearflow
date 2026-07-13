@@ -103,6 +103,14 @@ export const CONVEX_READS: Record<string, ConvexReadMeta> = Object.fromEntries(
       [p("query", "string"), p("limit", "number", true)],
       "Typeahead search over suppliers."),
 
+    // ── Global cross-entity search (Cmd+K palette + `global_search` MCP tool). The
+    //    `src/server/search.ts` action was deleted; the browser calls the Convex
+    //    query directly, and this bridge keeps the agent op alive under the SAME
+    //    name (`search.globalSearch`) so the tool alias + scope are unchanged.
+    read("search.globalSearch", api.globalSearch.search, "asset", "read",
+      [p("query", "string")],
+      "Global search across every entity type (models, kits, assets, projects, clients, suppliers, locations, categories, maintenance, crew, ...). Min 2 chars; returns { results: [] } when nothing matches."),
+
     // ── Collaboration: comments, threads, locks, presence, activity ───────────
     read("collaboration.listThreads", api.collaboration.listThreads, "project", "read",
       [p("entityType", "string"), p("entityId", "string"), p("targetType", "string", true), p("targetId", "string", true)],

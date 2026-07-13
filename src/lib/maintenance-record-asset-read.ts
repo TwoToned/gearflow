@@ -84,19 +84,23 @@ export async function getMaintenanceAssetLinksByAssetIds(
 export async function createMaintenanceAssetLinks(
   maintenanceRecordId: string,
   assetIds: string[],
+  organizationId: string,
 ): Promise<void> {
   if (assetIds.length === 0) return;
   const convex = await getConvexClient();
   const existing = await getMaintenanceAssetLinksByRecordIds([maintenanceRecordId]);
   const have = new Set(existing.map((l) => l.assetId));
   const toCreate = Array.from(new Set(assetIds)).filter((aId) => !have.has(aId));
-  for (const assetId of toCreate) {
-    await convex.mutation(api.maintenanceRecordAssets.create, {
+  if (toCreate.length === 0) return;
+  // ONE array mutation (bulk single-call), org-verified per parent record.
+  await convex.mutation(api.maintenanceRecordAssets.createManyIfMissing, {
+    organizationId,
+    links: toCreate.map((assetId) => ({
       id: createId(),
       maintenanceRecordId,
       assetId,
-    });
-  }
+    })),
+  });
 }
 
 /**

@@ -208,7 +208,7 @@ async function checkPredictiveMaintenance(
           createdAt: now,
           updatedAt: now,
         });
-        await createMaintenanceAssetLinks(maintenanceId, [assetId]);
+        await createMaintenanceAssetLinks(maintenanceId, [assetId], organizationId);
 
         await logActivity({
           organizationId,

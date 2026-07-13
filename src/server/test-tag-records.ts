@@ -288,7 +288,7 @@ export async function createTestTagRecord(data: {
         createdAt: now,
         updatedAt: now,
       });
-      await createMaintenanceAssetLinks(maintenanceId, [testTagAsset.assetId]);
+      await createMaintenanceAssetLinks(maintenanceId, [testTagAsset.assetId], organizationId);
       // Mark the linked asset as in maintenance (asset is Convex-only now).
       await convex.mutation(api.assets.patchAsset, {
         id: testTagAsset.assetId,

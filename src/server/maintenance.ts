@@ -334,7 +334,7 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
   });
 
   // Convex-only join write (Phase B): link the assets to the new record.
-  await createMaintenanceAssetLinks(newRecordId, assetIds);
+  await createMaintenanceAssetLinks(newRecordId, assetIds, organizationId);
 
   const record = await getMaintenanceRecordById(newRecordId);
 
@@ -445,6 +445,7 @@ export async function updateMaintenanceRecord(
   await createMaintenanceAssetLinks(
     id,
     newAssetIds.filter((aId) => !existingAssetIds.includes(aId)),
+    organizationId,
   );
 
   const record = await getMaintenanceRecordById(id);

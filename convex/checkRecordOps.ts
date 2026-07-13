@@ -254,6 +254,35 @@ export const prepKitChildren = mutation({
   },
 });
 
+/**
+ * Batch kit prep (bulk single-call invariant, Phase 3): prep N kit trees in ONE
+ * array mutation instead of the client firing one `prepKitChildren` per kit.
+ * Per-item org+project re-check via the parent's `by_cuid` fetch (a GLOBAL index,
+ * so a kit not on this org's project is SKIPPED with a per-item error before any
+ * of its writes — {succeeded, errors}, mirroring undeployKitsBatch). Each eligible
+ * parent runs the identical `setKitTreePrep(... "PREP")` the singular does. Like any
+ * Convex mutation this is ONE transaction; setKitTreePrep only flips prep state
+ * (no inventory consumption) so a valid kit's core can't fail on a resource guard.
+ */
+export const prepKitsBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), parentLineItemIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const succeeded: string[] = [];
+    const errors: { lineItemId: string; message: string }[] = [];
+    for (const parentLineItemId of a.parentLineItemIds) {
+      const parent = await lineByCuid(ctx, parentLineItemId);
+      if (!parent || parent.projectId !== a.projectId || parent.organizationId !== a.organizationId) {
+        errors.push({ lineItemId: parentLineItemId, message: "Kit line item not found" });
+        continue;
+      }
+      await setKitTreePrep(ctx, parentLineItemId, a.organizationId, a.now, "PREP");
+      succeeded.push(parentLineItemId);
+    }
+    return { succeeded, errors };
+  },
+});
+
 export const deprepKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), parentLineItemId: v.string(), now: v.number() },
   handler: async (ctx, a) => {

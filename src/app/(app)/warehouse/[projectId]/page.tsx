@@ -45,7 +45,7 @@ import {
   quickAddAndCheckOut,
   clearPrepContainer,
   ensureContainerOnProject,
-  syncContainerStatus,
+  syncContainersBatch,
 } from "@/server/warehouse";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,7 @@ import {
   deprepKit,
   deprepItemsBatch,
   prepKitChildren,
+  prepKitsBatch,
   completeCheckAndPack,
   completeCheckAndFlag,
   unpackItem,
@@ -685,11 +686,12 @@ function WarehouseProjectPage({
   const checkOutMutation = useServerMutation({
     mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
       const result = await checkOutItems(projectId, params.items, params.includeAccessories);
-      // Sync container status for affected containers
+      // Sync container status for affected containers — ONE batch call (was one
+      // round-trip per container).
       const containers = new Set(
         params.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
       );
-      for (const c of containers) await syncContainerStatus(projectId, c);
+      if (containers.size > 0) await syncContainersBatch(projectId, [...containers]);
       return result;
     },
     onSuccess: invalidate,
@@ -701,11 +703,12 @@ function WarehouseProjectPage({
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
     }) => {
       const result = await checkInItems(projectId, data.items);
-      // Sync container status for affected containers
+      // Sync container status for affected containers — ONE batch call (was one
+      // round-trip per container).
       const containers = new Set(
         data.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
       );
-      for (const c of containers) await syncContainerStatus(projectId, c);
+      if (containers.size > 0) await syncContainersBatch(projectId, [...containers]);
       return result;
     },
     onSuccess: () => {
@@ -1817,7 +1820,11 @@ function WarehouseProjectPage({
         }
       }
 
-      // Prep kits — check verification first, then check flow or direct prep
+      // Prep kits — check verification first, then check flow or direct prep.
+      // Kits that go straight to direct prep (fully verified + no interactive check
+      // flow) are collected and prepped in ONE batch call after the loop, instead
+      // of firing one prepKitChildren round-trip per kit.
+      const directPrepKits: Array<{ id: string; name: string }> = [];
       for (const kitItemId of kitLineItemIds) {
         const li = lineItems.find((l) => l.id === kitItemId);
         if (li?.kitId) {
@@ -1842,14 +1849,24 @@ function WarehouseProjectPage({
           // Fully verified (or no verifiable items) — proceed
           const started = startKitCheckFlow(li.kitId, li, "PREP");
           if (!started) {
-            prepKitChildren(projectId, li.id)
-              .then(() => {
-                toast.success(`Kit prepped: ${li.description || li.kit?.name || "Kit"}`);
-                invalidate();
-              })
-              .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
+            directPrepKits.push({ id: li.id, name: li.description || li.kit?.name || "Kit" });
           }
         }
+      }
+      if (directPrepKits.length > 0) {
+        prepKitsBatch(projectId, directPrepKits.map((k) => k.id))
+          .then((res) => {
+            const ok = res.succeeded.length;
+            const failed = res.errors.length;
+            if (ok > 0) {
+              toast.success(ok === 1 ? `Kit prepped: ${directPrepKits[0].name}` : `Prepped ${ok} kits`);
+            }
+            if (failed > 0) {
+              toast.error(`${failed} kit${failed === 1 ? "" : "s"} skipped`);
+            }
+            invalidate();
+          })
+          .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
       }
 
       // Build check queue for bulk items with checks, and prep directly for those without
@@ -2760,11 +2777,10 @@ function WarehouseProjectPage({
                   size="sm"
                   onClick={() => {
                     if (kitConfirm.action === "deploy") {
-                      // Prep verified children
-                      Promise.all(
-                        kitConfirm.verifiedIds.map((id) =>
-                          prepItemDirect(projectId, id)
-                        )
+                      // Prep verified children — ONE batch call (was N round-trips).
+                      prepItemsBatch(
+                        projectId,
+                        kitConfirm.verifiedIds.map((id) => ({ lineItemId: id }))
                       ).then(() => {
                         toast.success(`Prepped ${kitConfirm.verifiedCount} verified items`);
                         invalidate();

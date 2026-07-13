@@ -1323,6 +1323,49 @@ export const syncContainerStatus = mutation({
   },
 });
 
+/**
+ * Batch container roll-up (bulk single-call invariant, Phase 3): sync N containers
+ * in ONE array mutation instead of the client firing one `syncContainerStatus` per
+ * container after a bulk checkout/checkin. The project's lines are read ONCE and
+ * bucketed by `prepContainer` (the singular re-scanned by_projectId every call);
+ * every line carries exactly one prepContainer, so the buckets are disjoint and a
+ * prior container's patch can't stale another's snapshot — identical to N singular
+ * calls. Each container runs the singular's rollup logic (flip the container line +
+ * its asset when all contents are uniformly deployed/returned). Org scoping is
+ * inherent (by_projectId scan filtered to organizationId).
+ */
+export const syncContainersBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), containerNames: v.array(v.string()), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const allLines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+      .filter((l) => l.organizationId === a.organizationId);
+    const results: Array<{ containerName: string; updated: boolean; status?: string }> = [];
+    for (const containerName of a.containerNames) {
+      const lines = allLines.filter((l) => l.prepContainer === containerName);
+      const containerLI = lines.find((l) => l.isContainerLineItem);
+      if (!containerLI) { results.push({ containerName, updated: false }); continue; }
+      const contents = lines.filter((l) => !l.isContainerLineItem);
+      if (contents.length === 0) { results.push({ containerName, updated: false }); continue; }
+      const allDeployed = contents.every((i) => i.status === "CHECKED_OUT");
+      const allReturned = contents.every((i) => i.status === "RETURNED");
+      const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
+      const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
+      if (!allDeployedFlag && !allReturnedFlag) { results.push({ containerName, updated: false }); continue; }
+      if (allDeployedFlag) {
+        await ctx.db.patch(containerLI._id, { status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
+      } else {
+        await ctx.db.patch(containerLI._id, { status: "RETURNED", returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD", updatedAt: a.now });
+      }
+      if (containerLI.assetId) {
+        await setAssetsStatus(ctx, [containerLI.assetId], allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE", null, false, a.now);
+      }
+      results.push({ containerName, updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
+    }
+    return { results };
+  },
+});
+
 // ── Bulk check-in (Group G) ───────────────────────────────────────────────────
 
 export const checkInBulkTotals = mutation({

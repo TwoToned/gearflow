@@ -75,6 +75,7 @@ import { addProjectMedia, removeProjectMedia } from "@/server/project-media";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
+import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import type { ProjectMediaType } from "@/generated/prisma/client";
@@ -153,6 +154,18 @@ export default function ProjectDetailPage({
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
+
+  // Phase 3 browser-direct: optimistic project-notes save (flag-gated, default OFF →
+  // falls back to the updateProjectNotes server action). Consequence: notes are safe
+  // to optimistic (a wrong save just re-renders; nothing irreversible happens).
+  const optimisticNotes = useOptimisticProjectNotes(id, orgId);
+  const saveProjectNotes = (
+    field: "crewNotes" | "internalNotes" | "clientNotes",
+    notes: string,
+  ) =>
+    optimisticNotes.enabled
+      ? optimisticNotes.save(field, notes)
+      : updateProjectNotes(id, field, notes);
 
   const { data: customTemplates } = useServerQuery({
     queryKey: ["document-templates-dropdown", orgId],
@@ -587,7 +600,7 @@ export default function ProjectDetailPage({
                       onChanged={() =>
                         refreshProjectDetail(id)
                       }
-                      onSave={(notes) => updateProjectNotes(id, "crewNotes", notes)}
+                      onSave={(notes) => saveProjectNotes("crewNotes", notes)}
                       placeholder="Notes for crew members..."
                       rows={4}
                     />
@@ -597,7 +610,7 @@ export default function ProjectDetailPage({
                       onChanged={() =>
                         refreshProjectDetail(id)
                       }
-                      onSave={(notes) => updateProjectNotes(id, "internalNotes", notes)}
+                      onSave={(notes) => saveProjectNotes("internalNotes", notes)}
                       placeholder="Internal notes (not visible to client)..."
                       rows={4}
                     />
@@ -607,7 +620,7 @@ export default function ProjectDetailPage({
                       onChanged={() =>
                         refreshProjectDetail(id)
                       }
-                      onSave={(notes) => updateProjectNotes(id, "clientNotes", notes)}
+                      onSave={(notes) => saveProjectNotes("clientNotes", notes)}
                       placeholder="Notes visible to client on documents..."
                       rows={4}
                     />

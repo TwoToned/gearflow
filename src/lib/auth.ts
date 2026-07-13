@@ -10,6 +10,7 @@ import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
 import { getSiteSettingsFromConvex } from "./site-settings-read";
+import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
 import { getTheOrg } from "./single-org";
 import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL } from "./convex-auth-constants";
@@ -290,17 +291,11 @@ export const auth = betterAuth({
               select: { organizationId: true },
             });
             if (!ssoProvider?.organizationId) return;
-            const org = await prisma.organization.findUnique({
-              where: { id: ssoProvider.organizationId },
-            });
-            if (!org) return;
-            const settings = org.metadata ? JSON.parse(org.metadata) : {};
+            // SSO config lives in the Convex org-settings blob (source of truth).
+            const settings = await readOrgSettingsBlob(ssoProvider.organizationId);
             if (settings.sso && !settings.sso.ssoTestedSuccessfully) {
               settings.sso.ssoTestedSuccessfully = true;
-              await prisma.organization.update({
-                where: { id: ssoProvider.organizationId },
-                data: { metadata: JSON.stringify(settings) },
-              });
+              await saveOrgSettings(ssoProvider.organizationId, settings);
             }
           } catch {
             // Non-critical — don't block login

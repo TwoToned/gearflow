@@ -183,16 +183,20 @@ export async function getApiKeyActorContext(
     }
   }
 
-  // Org kill-switch + acting-user name stay on Postgres (Better-Auth `organization`
-  // / `user`, which remain). apiKillSwitchAt gates ALL keys for the org instantly.
-  const [org, actingUser] = await Promise.all([
+  // Org existence + acting-user name stay on Postgres (Better-Auth `organization`
+  // / `user`, which remain). The kill-switch moved to the Convex org-settings row
+  // (Phase 1 inversion) — it gates ALL keys for the org instantly.
+  const [org, actingUser, orgSettings] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: key.organizationId },
-      select: { apiKillSwitchAt: true },
+      select: { id: true },
     }),
     prisma.user.findUnique({
       where: { id: key.actingUserId },
       select: { name: true },
+    }),
+    (await getConvexClient()).query(api.orgSettings.getByOrg, {
+      organizationId: key.organizationId,
     }),
   ]);
   // FAIL CLOSED: the old Postgres FK cascade auto-deleted a key when its org or acting
@@ -201,7 +205,7 @@ export async function getApiKeyActorContext(
   if (!org) {
     throw new ApiKeyAuthError("INVALID_KEY", "Invalid API key.");
   }
-  if (org.apiKillSwitchAt) {
+  if (orgSettings?.apiKillSwitchAt) {
     throw new ApiKeyAuthError(
       "ORG_KILL_SWITCH",
       "API access is disabled for this organization.",

@@ -12,14 +12,16 @@ vi.mock("@/lib/api-key", () => ({
 }));
 vi.mock("@/lib/request-actor", () => ({ getAmbientActor: () => undefined }));
 
-// ApiKey is a Convex domain now — mock the Convex client. member/organization stay
-// on Postgres (Better-Auth), so the prisma mock keeps those.
+// ApiKey + org kill-switch (org-settings) are Convex domains now — mock the Convex
+// client. member stays on Postgres (Better-Auth), so the prisma mock keeps that.
 const convexMock = vi.hoisted(() => ({ query: vi.fn(), mutation: vi.fn() }));
-vi.mock("@/lib/convex-client", () => ({ getConvexClient: vi.fn(async () => convexMock) }));
+vi.mock("@/lib/convex-client", () => ({
+  getConvexClient: vi.fn(async () => convexMock),
+  withConvexReadRetry: (fn: () => unknown) => fn(),
+}));
 
 const prismaMock = vi.hoisted(() => ({
   member: { findFirst: vi.fn() },
-  organization: { findUnique: vi.fn(), update: vi.fn() },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
@@ -82,21 +84,32 @@ describe("revokeApiKey", () => {
 });
 
 describe("setOrgApiKillSwitch", () => {
-  it("sets a timestamp when enabled and clears it when disabled", async () => {
+  it("toggles the kill switch via the Convex org-settings mutation", async () => {
+    convexMock.mutation.mockResolvedValue({ apiKillSwitchAt: Date.now() });
     await setOrgApiKillSwitch(true);
-    expect(prismaMock.organization.update.mock.calls[0][0].data.apiKillSwitchAt).toBeInstanceOf(Date);
+    expect(convexMock.mutation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: "org_1", enabled: true }),
+    );
 
+    convexMock.mutation.mockResolvedValue({ apiKillSwitchAt: null });
     await setOrgApiKillSwitch(false);
-    expect(prismaMock.organization.update.mock.calls[1][0].data.apiKillSwitchAt).toBeNull();
+    expect(convexMock.mutation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: "org_1", enabled: false }),
+    );
   });
 });
 
 describe("listApiKeys", () => {
   it("returns keys + kill-switch state without any secret", async () => {
-    convexMock.query.mockResolvedValue([
-      { id: "key_1", prefix: "gf_live_ab", name: "Agent", tokenHash: "hash", actingUserId: "user_1", createdAt: 1000 },
-    ]);
-    prismaMock.organization.findUnique.mockResolvedValue({ apiKillSwitchAt: null });
+    // apiKeys.list → keys; orgSettings.getByOrg (has `organizationId`) → no kill switch.
+    convexMock.query.mockImplementation((_ref: unknown, args: Record<string, unknown>) => {
+      if (args && "organizationId" in args) return Promise.resolve({ apiKillSwitchAt: undefined });
+      return Promise.resolve([
+        { id: "key_1", prefix: "gf_live_ab", name: "Agent", tokenHash: "hash", actingUserId: "user_1", createdAt: 1000 },
+      ]);
+    });
 
     const res = await listApiKeys();
 

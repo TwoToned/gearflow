@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ActorContext } from "./actor-context";
 
-// ApiKey lookup is Convex now; org kill-switch + acting-user name stay on Postgres.
+// ApiKey lookup + org kill-switch are Convex now; org existence + acting-user
+// name stay on Postgres. The Convex query mock dispatches by args shape:
+// `{ tokenHash }` → key lookup, `{ organizationId }` → org-settings (kill switch).
 const getByTokenHash = vi.fn();
+const getOrgSettings = vi.fn();
 const touchLastUsed = vi.fn();
 vi.mock("@/lib/convex-client", () => ({
   getConvexClient: vi.fn(async () => ({
-    query: (_ref: unknown, args: unknown) => getByTokenHash(args),
+    query: (_ref: unknown, args: Record<string, unknown>) => {
+      if (args && "tokenHash" in args) return getByTokenHash(args);
+      if (args && "organizationId" in args) return getOrgSettings(args);
+      return undefined;
+    },
     mutation: (_ref: unknown, args: unknown) => {
       touchLastUsed(args);
       return Promise.resolve();
@@ -50,7 +57,8 @@ function keyRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  orgFindUnique.mockResolvedValue({ apiKillSwitchAt: null });
+  orgFindUnique.mockResolvedValue({ id: "org_1" });
+  getOrgSettings.mockResolvedValue({ apiKillSwitchAt: undefined });
   userFindUnique.mockResolvedValue({ name: "Ada" });
 });
 
@@ -166,7 +174,7 @@ describe("getApiKeyActorContext — validation + resolution", () => {
 
   it("rejects every key when the org kill switch is set (ORG_KILL_SWITCH)", async () => {
     getByTokenHash.mockResolvedValue(keyRow());
-    orgFindUnique.mockResolvedValue({ apiKillSwitchAt: new Date() });
+    getOrgSettings.mockResolvedValue({ apiKillSwitchAt: Date.now() });
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "ORG_KILL_SWITCH" });
   });
 

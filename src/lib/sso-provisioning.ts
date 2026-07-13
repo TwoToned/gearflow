@@ -3,8 +3,8 @@ import { prisma } from "./prisma";
 import { getConvexClient } from "./convex-client";
 import { api } from "../../convex/_generated/api";
 import { upsertMemberMirrorByOrgUser } from "./member-mirror";
+import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import type { OrgSSOSettings, SSOGroupMapping } from "./sso-types";
-import type { Organization } from "@/generated/prisma/client";
 
 /**
  * Role hierarchy for resolving multiple group matches.
@@ -93,25 +93,12 @@ function extractIdpGroups(
 }
 
 /**
- * Parse SSO settings from organization metadata JSON.
- */
-function parseSSOSettings(metadata: string | null): OrgSSOSettings | null {
-  if (!metadata) return null;
-  try {
-    const parsed = JSON.parse(metadata);
-    return parsed.sso || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Auto-discover IdP groups: persist any previously-unseen groups to
  * the org's SSO group mappings (with unmapped=true, no role assigned).
  * This lets admins see what groups exist before they map them.
  */
 async function discoverNewGroups(
-  org: Organization,
+  organizationId: string,
   ssoSettings: OrgSSOSettings,
   idpGroups: string[],
   groupValueType: "name" | "id",
@@ -136,17 +123,13 @@ async function discoverNewGroups(
 
   if (newGroups.length === 0) return;
 
-  // Merge and persist
+  // Merge and persist into the Convex org-settings blob (source of truth).
   const updatedMappings = [...existing, ...newGroups];
   try {
-    const metadata = org.metadata ? JSON.parse(org.metadata as string) : {};
-    if (!metadata.sso) metadata.sso = {};
-    metadata.sso.groupMappings = updatedMappings;
-
-    await prisma.organization.update({
-      where: { id: org.id },
-      data: { metadata: JSON.stringify(metadata) },
-    });
+    const settings = await readOrgSettingsBlob(organizationId);
+    if (!settings.sso) settings.sso = {} as OrgSSOSettings;
+    settings.sso.groupMappings = updatedMappings;
+    await saveOrgSettings(organizationId, settings);
   } catch {
     // Non-critical — don't break login if discovery fails
   }
@@ -171,17 +154,20 @@ export async function handleSSOProvisioning(data: {
 
   const org = await prisma.organization.findUnique({
     where: { id: provider.organizationId },
+    select: { id: true },
   });
   if (!org) return;
 
-  const ssoSettings = parseSSOSettings(org.metadata);
+  // SSO config lives in the Convex org-settings blob (source of truth).
+  const settings = await readOrgSettingsBlob(provider.organizationId);
+  const ssoSettings = settings.sso ?? null;
   if (!ssoSettings?.enabled) return;
 
   const providerType = provider.samlConfig ? "saml" : "oidc";
   const idpGroups = extractIdpGroups(userInfo, ssoSettings, providerType);
 
   // Auto-discover new groups from IdP (non-blocking, won't break login)
-  await discoverNewGroups(org, ssoSettings, idpGroups, ssoSettings.groupValueType || "name");
+  await discoverNewGroups(provider.organizationId, ssoSettings, idpGroups, ssoSettings.groupValueType || "name");
 
   const { role } = resolveRoleFromGroups(
     idpGroups,

@@ -3556,6 +3556,42 @@ organization writes stay Postgres (Better Auth owns them — Tier E).
   multi-field searches (e.g. the model picker's name+manufacturer) need a second index
   or a denormalized search field before cutover.
 
+## Phase 1 (WS1) — org business settings → Convex
+
+Per-org **business settings** moved off the Better Auth `organization` row into a
+dedicated Convex table so the org row keeps only auth-identity fields (name, slug,
+logo). The three legacy Postgres columns — `metadata` (the `OrgSettings` JSON blob:
+branding, testTag, SSO config, asset-tag + project-number config, ical, tax label,
+timezone…), `defaultTaxRate`, `apiKillSwitchAt` — are now **Convex-only source of
+truth**.
+
+- **Table** (`convex/schema.ts` `orgSettings`, one row per org, `by_organizationId`):
+  `settings` (the JSON blob, verbatim), plus denormalised `defaultTaxRate`,
+  `apiKillSwitchAt`, and `icalToken`. `icalToken` is set **only while the feed is
+  enabled** and indexed (`by_icalToken`) — so the public calendar route resolves a
+  token to a live org with an indexed lookup instead of scanning every org's metadata.
+- **Functions** (`convex/orgSettings.ts`, all SERVICE-gated — RBAC/validation/audit
+  stay in the Next.js server actions for now): `getByOrg`, `getByIcalToken`,
+  `upsertSettings` (full-blob replace), atomic `reserveAssetTags` / `reserveTestTagIds`
+  (counter read-modify-write **inside** the mutation → serializable, no TOCTOU),
+  `setApiKillSwitch`, and `createIfMissing` (backfill).
+- **Server helper** (`src/lib/org-settings-read.ts`): `readOrgSettings` /
+  `readOrgSettingsBlob` / `readOrgDefaultTaxRate` / `saveOrgSettings` /
+  `reserveAssetTagsConvex` / `reserveTestTagIdsConvex` / `setApiKillSwitchConvex` /
+  `orgIdForIcalToken`. `saveOrgSettings` derives the denormalised `icalToken` from the
+  blob (enabled feeds only).
+- **Consumers rewired** off `prisma.organization` metadata/tax/kill-switch reads:
+  `server/settings.ts`, `server/org-calendar.ts`, `server/sso.ts`,
+  `lib/sso-provisioning.ts`, `lib/auth.ts` (SSO test-success flag on login),
+  `server/api-keys.ts` + `lib/api-key.ts` (kill-switch check on every API request),
+  `server/line-items.ts` (org default tax), the iCal feed route + the two crew calendar
+  routes, the test-tag report route + `server/test-tag-assets.ts`, and both PDF
+  doc-data builders. Org **name** reads stay on the Better Auth org row.
+- **Backfill** (`scripts/convex-backfill-org-settings.ts`, idempotent): copies each
+  org's `metadata`/`defaultTaxRate`/`apiKillSwitchAt` into `orgSettings`. **Run in the
+  prod container immediately after deploy** — before any asset/test-tag creation — so
+  the atomic counters resume from the stored value rather than re-initialising at 0.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

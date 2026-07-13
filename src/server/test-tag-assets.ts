@@ -1,7 +1,7 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { reserveTestTagIds, peekNextTestTagIds, getOrgTestTagSettings } from "@/server/settings";
@@ -436,17 +436,9 @@ export async function getTestTagDashboardStats() {
 
   const now = new Date();
 
-  // Get org settings for dueSoonThreshold
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  let dueSoonDays = 14;
-  if (org?.metadata) {
-    try {
-      const settings = JSON.parse(org.metadata);
-      dueSoonDays = settings.testTag?.dueSoonThresholdDays || 14;
-    } catch { /* ignore */ }
-  }
+  // Get org settings for dueSoonThreshold (Convex org-settings blob).
+  const settings = await readOrgSettingsBlob(organizationId);
+  const dueSoonDays = settings.testTag?.dueSoonThresholdDays || 14;
 
   const dueSoonDate = new Date(now);
   dueSoonDate.setDate(dueSoonDate.getDate() + dueSoonDays);

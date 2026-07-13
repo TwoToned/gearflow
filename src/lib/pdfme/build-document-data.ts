@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../convex/_generated/api";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getClientById } from "@/lib/clients-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
@@ -86,19 +87,14 @@ export async function buildDocumentData(
   // also wants packer order. A separate setting can split them later if a
   // user asks for one without the other.
   const packerSort = expandProjectGroups;
-  // Load org
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-
-  let orgSettings: Record<string, unknown> = {};
-  if (org?.metadata) {
-    try {
-      orgSettings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
+  // Load org identity (name) from Better Auth; business settings from Convex.
+  const [org, orgSettings] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true },
+    }),
+    readOrgSettingsBlob(organizationId) as Promise<Record<string, unknown>>,
+  ]);
 
   const branding = orgSettings.branding as {
     primaryColor?: string;

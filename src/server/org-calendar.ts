@@ -5,32 +5,25 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import type { OrgSettings } from "./settings";
+import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-async function getSettingsForOrg(organizationId: string) {
+// Org name for the activity log (identity stays on the Better Auth org row).
+async function getOrgName(organizationId: string): Promise<string> {
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
+    select: { name: true },
   });
   if (!org) throw new Error("Organization not found");
-
-  let settings: OrgSettings = {};
-  if (org.metadata) {
-    try {
-      settings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
-  return { org, settings };
+  return org.name;
 }
 
 export async function getOrgIcalSettings() {
   const { organizationId } = await getOrgContext();
-  const { settings } = await getSettingsForOrg(organizationId);
+  const settings = await readOrgSettingsBlob(organizationId);
 
   return serialize({
     icalEnabled: settings.icalEnabled || false,
@@ -44,16 +37,12 @@ export async function enableOrgIcalFeed() {
     "update"
   );
 
-  const { org, settings } = await getSettingsForOrg(organizationId);
+  const settings = await readOrgSettingsBlob(organizationId);
 
   const token = settings.icalToken || generateToken();
   settings.icalToken = token;
   settings.icalEnabled = true;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   await logActivity({
     organizationId,
@@ -62,7 +51,7 @@ export async function enableOrgIcalFeed() {
     action: "UPDATE",
     entityType: "settings",
     entityId: organizationId,
-    entityName: org.name,
+    entityName: await getOrgName(organizationId),
     summary: "Enabled organization calendar feeds",
   });
 
@@ -75,14 +64,10 @@ export async function disableOrgIcalFeed() {
     "update"
   );
 
-  const { org, settings } = await getSettingsForOrg(organizationId);
+  const settings = await readOrgSettingsBlob(organizationId);
 
   settings.icalEnabled = false;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   await logActivity({
     organizationId,
@@ -91,7 +76,7 @@ export async function disableOrgIcalFeed() {
     action: "UPDATE",
     entityType: "settings",
     entityId: organizationId,
-    entityName: org.name,
+    entityName: await getOrgName(organizationId),
     summary: "Disabled organization calendar feeds",
   });
 
@@ -104,16 +89,12 @@ export async function regenerateOrgIcalToken() {
     "update"
   );
 
-  const { org, settings } = await getSettingsForOrg(organizationId);
+  const settings = await readOrgSettingsBlob(organizationId);
 
   const token = generateToken();
   settings.icalToken = token;
   settings.icalEnabled = true;
-
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { metadata: JSON.stringify(settings) },
-  });
+  await saveOrgSettings(organizationId, settings);
 
   await logActivity({
     organizationId,
@@ -122,7 +103,7 @@ export async function regenerateOrgIcalToken() {
     action: "UPDATE",
     entityType: "settings",
     entityId: organizationId,
-    entityName: org.name,
+    entityName: await getOrgName(organizationId),
     summary: "Regenerated organization calendar feed token",
   });
 

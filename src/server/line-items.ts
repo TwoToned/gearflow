@@ -1,8 +1,8 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
 import {
   lineItemSchema,
   customLineItemSchema,
@@ -38,11 +38,8 @@ import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
  * their in-transaction recalc uses the authoritative rate for the no-override fallback.
  */
 async function orgDefaultTaxRateFor(orgId: string): Promise<number | null> {
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: { defaultTaxRate: true },
-  });
-  return org?.defaultTaxRate != null ? Number(org.defaultTaxRate) : null;
+  // Org default tax lives in the Convex org-settings row (Phase 1 inversion).
+  return readOrgDefaultTaxRate(orgId);
 }
 
 /**
@@ -1638,15 +1635,13 @@ export async function recalculateProjectTotals(projectId: string) {
   // wave (was ~5 SEQUENTIAL round-trips: groups/lines → services → assignments →
   // subHires → a conditional org-tax read). This is the common write-latency tail.
   const needsOrgTax = project.taxRate == null;
-  const [groups, projectLines, allOrgServices, assignments, allSubHires, orgTaxRow] = await Promise.all([
+  const [groups, projectLines, allOrgServices, assignments, allSubHires, orgDefaultTaxRate] = await Promise.all([
     convex.query(api.projectGroups.listByProject, { projectId, orgId }),
     convex.query(api.projectLineItems.listByProject, { projectId, orgId }),
     getProjectServicesByOrg(orgId),
     getAssignmentsByProject(projectId, orgId),
     getSubHiresByProject(projectId, orgId),
-    needsOrgTax
-      ? prisma.organization.findUnique({ where: { id: orgId }, select: { defaultTaxRate: true } })
-      : Promise.resolve(null),
+    needsOrgTax ? orgDefaultTaxRateFor(orgId) : Promise.resolve(null),
   ]);
 
   // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
@@ -1756,8 +1751,8 @@ export async function recalculateProjectTotals(projectId: string) {
   let taxRate = 10;
   if (project.taxRate != null) {
     taxRate = Number(project.taxRate);
-  } else if (orgTaxRow?.defaultTaxRate != null) {
-    taxRate = Number(orgTaxRow.defaultTaxRate);
+  } else if (orgDefaultTaxRate != null) {
+    taxRate = Number(orgDefaultTaxRate);
   }
 
   const taxAmount = roundCurrency(taxableAmount * (taxRate / 100));

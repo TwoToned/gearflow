@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
 import {
@@ -7,7 +6,7 @@ import {
   buildDateTime,
   type ICalEvent,
 } from "@/lib/ical";
-import type { OrgSettings } from "@/server/settings";
+import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getCrewRoleMap } from "@/lib/crew-read";
@@ -15,17 +14,8 @@ import { getShiftsByAssignmentIds } from "@/lib/crew-scheduling-read";
 
 /** Read the org's configured IANA timezone (default Australia/Sydney). */
 async function getOrgTimezone(organizationId: string): Promise<string> {
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { metadata: true },
-  });
-  if (!org?.metadata) return "Australia/Sydney";
-  try {
-    const settings = JSON.parse(org.metadata) as OrgSettings;
-    return settings.timezone || "Australia/Sydney";
-  } catch {
-    return "Australia/Sydney";
-  }
+  const settings = await readOrgSettingsBlob(organizationId);
+  return settings.timezone || "Australia/Sydney";
 }
 
 /**

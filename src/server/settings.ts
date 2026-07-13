@@ -7,6 +7,13 @@ import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorById, removeMemberMirror } from "@/lib/member-mirror";
+import {
+  readOrgSettings,
+  readOrgSettingsBlob,
+  saveOrgSettings,
+  reserveAssetTagsConvex,
+  reserveTestTagIdsConvex,
+} from "@/lib/org-settings-read";
 import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import { validateProjectNumberFormat, type IncrementReset } from "@/lib/project-number";
@@ -72,16 +79,11 @@ export async function getOrganization() {
 
   if (!org) throw new Error("Organization not found");
 
-  let settings: OrgSettings = {};
-  if (org.metadata) {
-    try {
-      settings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
+  // Business settings are Convex-only now (blob + defaultTaxRate); the Postgres
+  // columns are frozen/legacy. Identity fields (name/slug/logo) stay on the org row.
+  const { settings, defaultTaxRate } = await readOrgSettings(organizationId);
 
-  return serialize({ ...org, settings });
+  return serialize({ ...org, defaultTaxRate, settings });
 }
 
 export async function updateOrganization(data: {
@@ -99,16 +101,13 @@ export async function updateOrganization(data: {
     if (err) throw new Error(`Project number format: ${err}`);
   }
 
+  // Identity (name) stays on the Better Auth org row; business settings + tax
+  // rate go to Convex (source of truth).
   const updated = await prisma.organization.update({
     where: { id: organizationId },
-    data: {
-      name: data.name,
-      metadata: JSON.stringify(data.settings),
-      ...(data.defaultTaxRate !== undefined && {
-        defaultTaxRate: data.defaultTaxRate,
-      }),
-    },
+    data: { name: data.name },
   });
+  await saveOrgSettings(organizationId, data.settings, data.defaultTaxRate);
 
   await logActivity({
     organizationId,
@@ -121,39 +120,21 @@ export async function updateOrganization(data: {
     summary: `Updated organization settings`,
   });
 
-  return serialize(updated);
+  return serialize({ ...updated, settings: data.settings, defaultTaxRate: data.defaultTaxRate });
 }
 
 /** Get org-level T&T settings (for fallback defaults). */
 export async function getOrgTestTagSettings(): Promise<TestTagSettings> {
   const { organizationId } = await getOrgContext();
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-  if (!org?.metadata) return {};
-  try {
-    const settings = JSON.parse(org.metadata) as OrgSettings;
-    return settings.testTag || {};
-  } catch {
-    return {};
-  }
+  const settings = await readOrgSettingsBlob(organizationId);
+  return settings.testTag || {};
 }
 
 /** Read-only preview of the next N asset tags — does NOT increment the counter. */
 export async function peekNextAssetTags(count = 1): Promise<string[]> {
   const { organizationId } = await getOrgContext();
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  let settings: OrgSettings = {};
-  if (org.metadata) {
-    try {
-      settings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
+  const settings = await readOrgSettingsBlob(organizationId);
 
   const prefix = settings.assetTagPrefix || "ASSET";
   const digits = settings.assetTagDigits || 4;
@@ -169,59 +150,15 @@ export async function peekNextAssetTags(count = 1): Promise<string[]> {
 /** Atomically reserve N asset tags — increments the counter. Call only at creation time. */
 export async function reserveAssetTags(count = 1): Promise<string[]> {
   const { organizationId } = await getOrgContext();
-
-  return prisma.$transaction(async (tx) => {
-    const org = await tx.organization.findUnique({
-      where: { id: organizationId },
-    });
-    if (!org) throw new Error("Organization not found");
-
-    let settings: OrgSettings = {};
-    if (org.metadata) {
-      try {
-        settings = JSON.parse(org.metadata);
-      } catch {
-        // ignore
-      }
-    }
-
-    const prefix = settings.assetTagPrefix || "ASSET";
-    const digits = settings.assetTagDigits || 4;
-    const currentCounter = settings.assetTagCounter || 0;
-
-    const tags: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      tags.push(`${prefix}${String(currentCounter + i).padStart(digits, "0")}`);
-    }
-
-    settings.assetTagCounter = currentCounter + count;
-
-    await tx.organization.update({
-      where: { id: organizationId },
-      data: { metadata: JSON.stringify(settings) },
-    });
-
-    return tags;
-  });
+  // Atomic in a single Convex mutation (serializable → no read-modify-write race).
+  return reserveAssetTagsConvex(organizationId, count);
 }
 
 /** Read-only preview of the next N test tag IDs — does NOT increment the counter. */
 export async function peekNextTestTagIds(count = 1): Promise<string[]> {
   const { organizationId } = await getOrgContext();
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  let settings: OrgSettings = {};
-  if (org.metadata) {
-    try {
-      settings = JSON.parse(org.metadata);
-    } catch {
-      // ignore
-    }
-  }
+  const settings = await readOrgSettingsBlob(organizationId);
 
   const tt = settings.testTag || {};
   const prefix = tt.prefix || "TT";
@@ -238,41 +175,8 @@ export async function peekNextTestTagIds(count = 1): Promise<string[]> {
 /** Atomically reserve N test tag IDs — increments the counter. Call only at creation time. */
 export async function reserveTestTagIds(count = 1): Promise<string[]> {
   const { organizationId } = await getOrgContext();
-
-  return prisma.$transaction(async (tx) => {
-    const org = await tx.organization.findUnique({
-      where: { id: organizationId },
-    });
-    if (!org) throw new Error("Organization not found");
-
-    let settings: OrgSettings = {};
-    if (org.metadata) {
-      try {
-        settings = JSON.parse(org.metadata);
-      } catch {
-        // ignore
-      }
-    }
-
-    const tt = settings.testTag || {};
-    const prefix = tt.prefix || "TT";
-    const digits = tt.digits || 4;
-    const currentCounter = tt.counter || 0;
-
-    const ids: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      ids.push(`${prefix}${String(currentCounter + i).padStart(digits, "0")}`);
-    }
-
-    settings.testTag = { ...tt, counter: currentCounter + count };
-
-    await tx.organization.update({
-      where: { id: organizationId },
-      data: { metadata: JSON.stringify(settings) },
-    });
-
-    return ids;
-  });
+  // Atomic in a single Convex mutation (serializable → no read-modify-write race).
+  return reserveTestTagIdsConvex(organizationId, count);
 }
 
 /** @deprecated Use peekNextAssetTags for preview, reserveAssetTags for creation */

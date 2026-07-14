@@ -44,6 +44,91 @@ export const listByProject = query({
   },
 });
 
+// ─── Browser-direct composite reads (Phase 3 — replace the getProjectTasks /
+// getTaskAssignees server actions). Assignee names come from the Convex users +
+// crewMembers mirrors (the deleted action's Prisma user/member seam is gone). ────
+
+/** People a task can be assigned to: org members (users) + crew members. */
+export const assignees = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const members = await ctx.db
+      .query("members")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    members.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)); // Prisma orderBy createdAt asc
+    const users: { id: string; name: string; image: string | null }[] = [];
+    for (const m of members) {
+      const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", m.userId)).first();
+      if (u) users.push({ id: u.id, name: u.name, image: u.image ?? null });
+    }
+    const crewDocs = await ctx.db
+      .query("crewMembers")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    const crew = crewDocs
+      .filter((c) => c.status !== "ARCHIVED")
+      .map((c) => ({ id: c.id, firstName: c.firstName, lastName: c.lastName }))
+      .sort((a, b) => a.firstName.localeCompare(b.firstName) || a.lastName.localeCompare(b.lastName));
+    return { users, crew };
+  },
+});
+
+/**
+ * A project's tasks (sorted sortOrder→createdAt) with the assignee join relations the
+ * board renders. dueDate is returned as an ISO string (the consumer slices it to
+ * YYYY-MM-DD), matching the deleted server action's serialized shape.
+ */
+export const listByProjectWithRelations = query({
+  args: { projectId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = (
+      await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+    ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
+    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
+
+    const out = [];
+    for (const t of rows) {
+      let assigneeUser: { id: string; name: string; image: string | null } | null = null;
+      if (t.assigneeUserId) {
+        // Only expose the user's name/image if they are a MEMBER of this org (the
+        // users mirror is global — gate the join on by_org_user so a stale/foreign
+        // assigneeUserId can't leak another org's user; mirrors the assigneeCrew check).
+        const member = await ctx.db
+          .query("members")
+          .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", t.assigneeUserId as string))
+          .first();
+        if (member) {
+          const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", t.assigneeUserId as string)).first();
+          assigneeUser = u ? { id: u.id, name: u.name, image: u.image ?? null } : null;
+        }
+      }
+      let assigneeCrew: { id: string; firstName: string; lastName: string } | null = null;
+      if (t.assigneeCrewId) {
+        const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", t.assigneeCrewId as string)).first();
+        // Crew is org-scoped domain data; re-check org before exposing the name.
+        assigneeCrew = c && c.organizationId === orgId ? { id: c.id, firstName: c.firstName, lastName: c.lastName } : null;
+      }
+      out.push({
+        id: t.id,
+        title: t.title,
+        description: t.description ?? null,
+        status: t.status ?? "TODO",
+        priority: t.priority ?? "NORMAL",
+        dueDate: t.dueDate != null ? new Date(t.dueDate).toISOString() : null,
+        checklist: t.checklist ?? null,
+        assigneeUserId: t.assigneeUserId ?? null,
+        assigneeCrewId: t.assigneeCrewId ?? null,
+        assigneeUser,
+        assigneeCrew,
+      });
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

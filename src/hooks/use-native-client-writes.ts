@@ -23,6 +23,7 @@ export function useClientWrites() {
   const updateM = useMutation(api.clientWrites.updateNative);
   const notesM = useMutation(api.clientWrites.updateNotesNative);
   const archiveM = useMutation(api.clientWrites.archiveNative);
+  const archiveManyM = useMutation(api.clientWrites.archiveManyNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -80,6 +81,17 @@ export function useClientWrites() {
     archive: async (id: string): Promise<void> => {
       const org = requireOrg();
       await archiveM({ id, orgId: org, actor: actor(), auditId: createId(), now: Date.now() });
+    },
+    bulkArchive: async (ids: string[]): Promise<{ archived: number }> => {
+      const org = requireOrg();
+      // One array mutation (Appendix A single-call invariant); the caller mints a
+      // unique auditId per id so each archived client gets its own audit row.
+      return await archiveManyM({
+        orgId: org,
+        items: ids.map((id) => ({ id, auditId: createId() })),
+        actor: actor(),
+        now: Date.now(),
+      });
     },
   };
 }

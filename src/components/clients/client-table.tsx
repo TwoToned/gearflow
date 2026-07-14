@@ -2,15 +2,19 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Archive } from "lucide-react";
+import { toast } from "sonner";
 
 import { getClientProjectCounts } from "@/server/clients";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useClients } from "@/hooks/use-clients";
+import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -137,8 +141,21 @@ export function ClientTable() {
   } = useTablePreferences("clients", { sortBy: "name", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  const { bulkArchive } = useClientWrites();
+  const clearSelection = () => setSelectedIds(new Set());
+  const bulkArchiveMutation = useServerMutation({
+    mutationFn: () => bulkArchive(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      toast.success(`Archived ${result.archived} client${result.archived === 1 ? "" : "s"}`);
+      clearSelection();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Reactive client list straight from Convex (auto-updates on any client
   // create/update/archive). Project counts are cross-domain (projects still in
@@ -203,31 +220,71 @@ export function ClientTable() {
   );
 
   return (
-    <DataTable
-      data={clients}
-      columns={columns}
-      totalRows={total}
-      page={page}
-      pageSize={pageSize}
-      onPageChange={setPage}
-      onPageSizeChange={setPageSize}
-      sortField={sortBy}
-      sortDirection={sortOrder}
-      onSortChange={handleSort}
-      filters={filters}
-      onFilterChange={setFilter}
-      searchValue={search}
-      onSearchChange={(v) => { setSearch(v); setPage(1); }}
-      searchPlaceholder="Search by name, contact, or email..."
-      columnVisibility={columnVisibility}
-      onToggleColumnVisibility={toggleColumnVisibility}
-      onResetPreferences={resetPreferences}
-      savedViews={{ tableId: "clients", currentConfig, applyConfig }}
-      isLoading={isLoading}
-      emptyPreset="clients"
-      emptyTitle="No clients yet"
-      emptyDescription="Add a client to start quoting and tracking their projects."
-      toolbarActions={toolbarActions}
-    />
+    <div className="space-y-4">
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 rounded-[var(--r)] border-2 border-line-2 bg-paper-2/50 px-4 py-2">
+          <span className="text-ui-text font-medium text-ink tabular-nums">{selectedIds.size} selected</span>
+          <CanDo resource="client" action="update">
+            <Button
+              size="sm"
+              variant="line"
+              className="text-warn"
+              loading={bulkArchiveMutation.isPending}
+              onClick={() => setBulkArchiveOpen(true)}
+            >
+              <Archive className="mr-2 h-3 w-3" />
+              Archive
+            </Button>
+          </CanDo>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <DataTable
+        data={clients}
+        columns={columns}
+        totalRows={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        sortField={sortBy}
+        sortDirection={sortOrder}
+        onSortChange={handleSort}
+        filters={filters}
+        onFilterChange={setFilter}
+        searchValue={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        searchPlaceholder="Search by name, contact, or email..."
+        columnVisibility={columnVisibility}
+        onToggleColumnVisibility={toggleColumnVisibility}
+        onResetPreferences={resetPreferences}
+        savedViews={{ tableId: "clients", currentConfig, applyConfig }}
+        isLoading={isLoading}
+        emptyPreset="clients"
+        emptyTitle="No clients yet"
+        emptyDescription="Add a client to start quoting and tracking their projects."
+        enableRowSelection
+        selectedRows={selectedIds}
+        onSelectionChange={setSelectedIds}
+        toolbarActions={toolbarActions}
+      />
+
+      <DeleteDialog
+        open={bulkArchiveOpen}
+        onOpenChange={setBulkArchiveOpen}
+        title={`Archive ${selectedIds.size} client${selectedIds.size === 1 ? "" : "s"}?`}
+        description="Archived clients are hidden from the active list but keep their history and projects. You can reactivate a client from its detail page."
+        confirmLabel={`Archive ${selectedIds.size}`}
+        onConfirm={() => {
+          bulkArchiveMutation.mutate();
+          setBulkArchiveOpen(false);
+        }}
+        pending={bulkArchiveMutation.isPending}
+      />
+    </div>
   );
 }

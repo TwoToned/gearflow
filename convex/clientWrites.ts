@@ -193,3 +193,52 @@ export const archiveNative = mutation({
     return { id };
   },
 });
+
+/**
+ * Bulk-archive N clients in a SINGLE call (Appendix A invariant — powers the
+ * clients table bulk-bar "Archive"). Same 4 guards as archiveNative, a per-row
+ * org re-check (by_cuid is GLOBAL — foreign/missing ids are skipped, not thrown),
+ * and one atomic audit row per newly-archived client (caller mints an auditId per
+ * id). Idempotent: an already-archived client is counted but not re-audited.
+ * Returns the count of org-matched clients now archived.
+ */
+export const archiveManyNative = mutation({
+  returns: v.object({ archived: v.number() }),
+  args: {
+    orgId: v.string(),
+    items: v.array(v.object({ id: v.string(), auditId: v.string() })),
+    actor: actorValidator,
+    now: v.number(),
+  },
+  handler: async (ctx, { orgId, items, actor: suppliedActor, now }) => {
+    await assertWritesEnabled(ctx, "client");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "client", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    let archived = 0;
+    const seen = new Set<string>();
+    for (const { id, auditId } of items) {
+      if (seen.has(id)) continue; // dedup — a repeated id must not double-count
+      seen.add(id);
+      const doc = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!doc || doc.organizationId !== orgId) continue; // per-row org re-check
+      archived++;
+      if (doc.isActive === false) continue; // already archived — idempotent, no re-audit
+      await ctx.db.patch(doc._id, { isActive: false, updatedAt: now });
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "DELETE",
+        entityType: "client",
+        entityId: id,
+        entityName: doc.name,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Archived client ${doc.name}`,
+        createdAt: now,
+      });
+    }
+    return { archived };
+  },
+});

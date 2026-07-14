@@ -90,4 +90,53 @@ describe("clientWrites", () => {
       }),
     ).rejects.toThrow();
   });
+
+  test("archiveMany: bulk-archives own clients, skips foreign, idempotent, one audit each", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("clients", { id: "c2", organizationId: ORG, name: "Beta", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("clients", { id: "c3", organizationId: ORG, name: "Gone", isActive: false, createdAt: NOW, updatedAt: NOW }); // already archived
+      await ctx.db.insert("clients", { id: "cX", organizationId: OTHER, name: "Other", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+
+    const res = await t.withIdentity(asUser).mutation(api.clientWrites.archiveManyNative, {
+      orgId: ORG,
+      items: [
+        { id: "c1", auditId: "b1" },
+        { id: "c2", auditId: "b2" },
+        { id: "c3", auditId: "b3" }, // already archived → counted, not re-audited
+        { id: "cX", auditId: "bx" }, // foreign org → skipped
+        { id: "missing", auditId: "bm" }, // missing → skipped
+      ],
+      actor,
+      now: NOW + 1,
+    });
+    // c1, c2, c3 are org-matched → counted (3); cX + missing skipped.
+    expect(res).toEqual({ archived: 3 });
+
+    expect((await getClient(t, "c1"))?.isActive).toBe(false);
+    expect((await getClient(t, "c2"))?.isActive).toBe(false);
+    expect((await getClient(t, "cX"))?.isActive).toBe(true); // untouched
+
+    // One audit row per NEWLY-archived client (c1, c2 only — c3 was already archived).
+    const audits = await t.run(async (ctx) =>
+      ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect(),
+    );
+    const archiveAudits = audits.filter((a) => a.entityType === "client" && a.action === "DELETE");
+    expect(archiveAudits.map((a) => a.entityId).sort()).toEqual(["c1", "c2"]);
+  });
+
+  test("archiveMany rejects a non-member (RBAC)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.clientWrites.archiveManyNative, {
+        orgId: ORG, items: [{ id: "c1", auditId: "b1" }], actor, now: NOW,
+      }),
+    ).rejects.toThrow();
+  });
 });

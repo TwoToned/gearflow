@@ -18,48 +18,15 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { nativeKitWrites, mapNativeWriteError } from "@/lib/native-writes";
 
-import { getPrimaryPhotoMap, getKitMediaFromConvex, withResolvedFile } from "@/lib/media-read";
+import { getKitMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getCategoryMap } from "@/lib/categories-read";
 import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { getAssetById, getBulkAssetById, getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc, mapConvexAssetToPrisma, mapConvexBulkAssetToPrisma } from "@/lib/assets-read";
-import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, getKitByAssetTag, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
+import { getKitById, getKitByAssetTag, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 
-/**
- * Per-kit member-item counts + primary photo (kitId -> meta).
- * Cross-domain for the counts (kit member tables come off the fresh Prisma
- * mirror); the primary photo comes off the Convex `kitMedia` + `fileUploads`
- * mirror via getPrimaryPhotoMap (Phase 6 decommission — kit_media is now
- * dual-written). Used by the reactive kit table, which subscribes to the kit
- * list via Convex and merges these (non-reactive) values in. Excludes prep-kits
- * (isPrep) to match the kit list.
- *
- * Phase A: the member counts now come off the dual-written Convex
- * `kitSerializedItems` / `kitBulkItems` lists (counted in JS by countKitMembers)
- * instead of two Prisma `groupBy`s; the primary photo already came from Convex.
- */
-export async function getKitCounts(): Promise<
-  Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
-> {
-  const { organizationId } = await getOrgContext();
-  const [serializedItems, bulkItems, photoMap] = await Promise.all([
-    getKitSerializedItemsByOrg(organizationId),
-    getKitBulkItemsByOrg(organizationId),
-    getPrimaryPhotoMap("kit", organizationId),
-  ]);
-  const memberCounts = countKitMembers(serializedItems, bulkItems);
-  const out: Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
-  const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
-  for (const [kitId, c] of Object.entries(memberCounts)) {
-    const e = ensure(kitId);
-    e.serializedItems = c.serializedItems;
-    e.bulkItems = c.bulkItems;
-  }
-  for (const [kitId, meta] of Object.entries(photoMap)) ensure(kitId).media = meta;
-  return serialize(out);
-}
 
 // Single kit with all relations.
 //

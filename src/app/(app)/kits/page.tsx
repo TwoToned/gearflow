@@ -7,8 +7,7 @@ import { Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { cn, focusRing } from "@/lib/utils";
 
-import { getKitCounts } from "@/server/kits";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useKitCounts } from "@/hooks/use-kit-counts";
 import { useKits } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
@@ -222,11 +221,7 @@ export default function KitsPage() {
   // merged in below; category/location names resolve from the lists already
   // loaded for the filter options.
   const allKits = useKits(orgId);
-  const { data: kitCounts } = useServerQuery({
-    queryKey: ["kit-counts", orgId],
-    queryFn: () => getKitCounts(),
-    enabled: !!orgId,
-  });
+  const kitCounts = useKitCounts(orgId);
 
   // Filter (active, non-prep + search tag/name/description + status/condition/
   // location/category/tags) → sort → paginate, all client-side over the reactive

@@ -246,7 +246,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "kits.getAvailableAssetsForKit": { name: "kits.getAvailableAssetsForKit", module: "kits", fn: "getAvailableAssetsForKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [{ name: "modelId", type: "string", optional: true }], dangerous: false, summary: "Serialized assets not in any kit. Reads off the dual-written Convex `assets`" },
   "kits.getAvailableBulkAssetsForKit": { name: "kits.getAvailableBulkAssetsForKit", module: "kits", fn: "getAvailableBulkAssetsForKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [], dangerous: false, summary: "Bulk assets with available quantity. Reads off the dual-written Convex" },
   "kits.getKit": { name: "kits.getKit", module: "kits", fn: "getKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Single kit with all relations." },
-  "kits.getKitCounts": { name: "kits.getKitCounts", module: "kits", fn: "getKitCounts", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [], dangerous: false, summary: "Per-kit member-item counts + primary photo (kitId -> meta)." },
   "kits.removeBulkItemFromKit": { name: "kits.removeBulkItemFromKit", module: "kits", fn: "removeBulkItemFromKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "bulkItemId", type: "string", optional: false }], dangerous: true, summary: "" },
   "kits.removeSerializedItemFromKit": { name: "kits.removeSerializedItemFromKit", module: "kits", fn: "removeSerializedItemFromKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "assetId", type: "string", optional: false }], dangerous: true, summary: "" },
   "kits.updateKit": { name: "kits.updateKit", module: "kits", fn: "updateKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "KitFormValues", optional: false, schemaRef: "KitFormValues" }], dangerous: false, summary: "" },
@@ -4270,4 +4269,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 517;
+export const OPERATION_COUNT = 516;

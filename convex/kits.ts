@@ -38,6 +38,51 @@ export const getById = query({
 });
 
 /**
+ * Per-kit member counts + primary photo (kitId → { serializedItems, bulkItems,
+ * media }) for the kits table — browser-native replacement for the getKitCounts
+ * server action. Parity: counts kitSerializedItems + kitBulkItems by kitId
+ * (countKitMembers); media = the kit's PHOTO+isPrimary kitMedia row's file
+ * url/thumbnailUrl (buildPrimaryPhotoMap), org-scoped file resolve. Fetched
+ * ONE-SHOT by the table (no liveness need) → not a reactive org-wide subscription
+ * (Appendix B).
+ */
+export const counts = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    type Entry = { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null };
+    const out: Record<string, Entry> = {};
+    const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
+
+    const serialized = await ctx.db
+      .query("kitSerializedItems")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const s of serialized) if (s.kitId) ensure(s.kitId).serializedItems++;
+
+    const bulk = await ctx.db
+      .query("kitBulkItems")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const b of bulk) if (b.kitId) ensure(b.kitId).bulkItems++;
+
+    // Primary photo per kit (PHOTO + isPrimary), file resolved org-scoped.
+    const media = await ctx.db
+      .query("kitMedia")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const m of media) {
+      if (m.type !== "PHOTO" || !m.isPrimary) continue;
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+      const resolved = file && file.organizationId === orgId ? file : null;
+      ensure(m.kitId).media = { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null };
+    }
+
+    return out;
+  },
+});
+
+/**
  * Batch point-read kits by cuid, scoped to one org — lets a composite read only
  * the kits its line items reference (e.g. buildProjectEquipmentTree) instead of
  * getKitsByOrg (every kit in the org). Cross-org ids are dropped.

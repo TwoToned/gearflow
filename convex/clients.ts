@@ -58,6 +58,80 @@ export const projectCounts = query({
   },
 });
 
+/**
+ * Client DETAIL composite for the client detail page — browser-native replacement
+ * for the getClient server action. Returns the client doc plus its recent projects
+ * (each with a total line-item count) and its media gallery (files resolved). All
+ * reads are CLIENT-scoped (by_clientId / by_projectId) with a per-row org re-check
+ * on the global-index fetches — bounded, not org-wide, so this is safe as a reactive
+ * subscription (Appendix B). Returns null if the client is missing / in another org.
+ */
+export const detail = query({
+  args: { orgId: v.string(), id: v.string() },
+  handler: async (ctx, { orgId, id }) => {
+    await requireOrgRead(ctx, orgId);
+
+    const client = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!client || client.organizationId !== orgId) return null;
+
+    // Recent projects for this client — newest first, capped at 20 (parity with the
+    // action). by_clientId is a GLOBAL index → re-check organizationId per row.
+    const clientProjects = (
+      await ctx.db.query("projects").withIndex("by_clientId", (q) => q.eq("clientId", id)).collect()
+    )
+      .filter((p) => p.organizationId === orgId)
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      .slice(0, 20);
+
+    // Per-project TOTAL line-item count (all rows, matching countAllLineItemsByProject).
+    // by_projectId is a GLOBAL index → re-check organizationId per row (parity with
+    // the deleted listByProjectIds, which org-filters; defense-in-depth even though
+    // projectId is a unique cuid).
+    const projects = await Promise.all(
+      clientProjects.map(async (p) => {
+        const lineItems = await ctx.db
+          .query("projectLineItems")
+          .withIndex("by_projectId", (q) => q.eq("projectId", p.id))
+          .collect();
+        const lineItemCount = lineItems.filter((li) => li.organizationId === orgId).length;
+        return { ...p, _count: { lineItems: lineItemCount } };
+      }),
+    );
+
+    // Media gallery — clientMedia by_clientId (org re-check), sorted by sortOrder,
+    // with the nested `file` point-read and resolved (drop rows whose file is
+    // missing / cross-org — matches withResolvedFile on the required FK).
+    const mediaRows = (
+      await ctx.db.query("clientMedia").withIndex("by_clientId", (q) => q.eq("clientId", id)).collect()
+    )
+      .filter((m) => m.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+    const media = [];
+    for (const m of mediaRows) {
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+      if (!file || file.organizationId !== orgId) continue;
+      media.push({
+        id: m.id,
+        fileId: m.fileId,
+        type: m.type ?? "OTHER",
+        displayName: m.displayName ?? null,
+        sortOrder: m.sortOrder ?? 0,
+        file: {
+          id: file.id,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+          mimeType: file.mimeType,
+          url: file.url,
+          thumbnailUrl: file.thumbnailUrl ?? null,
+        },
+      });
+    }
+
+    return { ...client, projects, media };
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

@@ -2,13 +2,8 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "@/lib/convex-client";
-import { getClientMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { getClientById, getClientsByOrg, type ConvexClient } from "@/lib/clients-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
-import {
-  getLineItemsByProjectIds,
-  countAllLineItemsByProject,
-} from "@/lib/line-item-count-read";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
@@ -89,39 +84,6 @@ export async function getClients(params?: {
   }));
 
   return serialize({ clients: withCounts, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
-}
-
-export async function getClient(id: string) {
-  const { organizationId } = await getOrgContext();
-  const client = await getClientById(id);
-  if (!client || client.organizationId !== organizationId) return serialize(null);
-
-  const [allOrgProjects, media] = await Promise.all([
-    getProjectsByOrg(organizationId),
-    // clientMedia gallery now read from the Convex mirror (was a Prisma
-    // clientMedia + file join). Dual-written, so identical data. See media-read.ts.
-    getClientMediaFromConvex(id),
-  ]);
-
-  const clientProjects = allOrgProjects
-    .filter((p) => p.clientId === id)
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    .slice(0, 20);
-
-  // Per-project line-item counts (all line items, like the old groupBy scoped by
-  // the project's clientId) now come from the dual-written Convex line items, for
-  // exactly the projects rendered on the detail page.
-  const projectIds = clientProjects.map((p) => p.id);
-  const lineItemCountMap = countAllLineItemsByProject(
-    await getLineItemsByProjectIds(organizationId, projectIds),
-    projectIds,
-  );
-  const projects = clientProjects.map((p) => ({
-    ...p,
-    _count: { lineItems: lineItemCountMap.get(p.id) ?? 0 },
-  }));
-
-  return serialize({ ...client, projects, media: withResolvedFile(media) });
 }
 
 export async function createClient(data: ClientFormValues) {

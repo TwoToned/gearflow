@@ -33,6 +33,51 @@ export const getById = query({
   },
 });
 
+/**
+ * Per-model ACTIVE asset + bulk-asset counts + primary photo (modelId → { assets,
+ * bulkAssets, media }) for the models table — browser-native replacement for the
+ * getModelCounts server action. Parity: counts assets/bulkAssets with
+ * isActive !== false; media = the model's PHOTO+isPrimary modelMedia row's file
+ * url/thumbnailUrl (buildPrimaryPhotoMap), org-scoped file resolve. Fetched
+ * ONE-SHOT by the table (no liveness need), so this reads 3 org tables + point
+ * file reads without being a reactive org-wide subscription (Appendix B).
+ */
+export const counts = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    type Entry = { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null };
+    const out: Record<string, Entry> = {};
+    const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
+
+    const assets = await ctx.db
+      .query("assets")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const a of assets) if (a.isActive !== false) ensure(a.modelId).assets++;
+
+    const bulkAssets = await ctx.db
+      .query("bulkAssets")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const b of bulkAssets) if (b.isActive !== false) ensure(b.modelId).bulkAssets++;
+
+    // Primary photo per model (PHOTO + isPrimary), file resolved org-scoped.
+    const media = await ctx.db
+      .query("modelMedia")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const m of media) {
+      if (m.type !== "PHOTO" || !m.isPrimary) continue;
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+      const resolved = file && file.organizationId === orgId ? file : null;
+      ensure(m.modelId).media = { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null };
+    }
+
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

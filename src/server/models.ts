@@ -187,31 +187,6 @@ export async function getModels(params?: {
   return serialize({ models, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
-/**
- * Per-model asset/bulk-asset counts + primary photo (modelId -> meta).
- * Cross-domain: assets + bulk assets still live in Prisma (counts come off the
- * fresh mirror); the primary photo comes off the Convex `modelMedia` +
- * `fileUploads` mirror via getPrimaryPhotoMap (Phase 6 decommission — model_media
- * is now dual-written). Used by the reactive model table, which subscribes to the
- * model list via Convex and merges these (non-reactive) values in.
- */
-export async function getModelCounts(): Promise<
-  Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
-> {
-  const { organizationId } = await getOrgContext();
-  const [allAssets, allBulkAssets, photoMap] = await Promise.all([
-    getAssetsByOrg(organizationId),
-    getBulkAssetsByOrg(organizationId),
-    getPrimaryPhotoMap("model", organizationId),
-  ]);
-  const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
-  const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
-  for (const a of allAssets) if (a.isActive !== false) ensure(a.modelId).assets++;
-  for (const b of allBulkAssets) if (b.isActive !== false) ensure(b.modelId).bulkAssets++;
-  for (const [modelId, meta] of Object.entries(photoMap)) ensure(modelId).media = meta;
-  return serialize(out);
-}
-
 // Detail-page composite. Models are Convex-only (Phase B), so the deep Prisma
 // `include` of the dropped back-relations (assets / bulkAssets) is rebuilt from
 // the Convex asset/bulk mirror (active only, assetTag ASC, location attached).

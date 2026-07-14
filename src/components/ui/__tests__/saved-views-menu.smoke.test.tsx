@@ -7,11 +7,15 @@ vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
   useSession: () => ({ data: { user: { id: "u1" } } }),
 }));
-vi.mock("@/server/saved-views", () => ({
-  createSavedView: vi.fn(async () => ({})),
-  updateSavedView: vi.fn(async () => ({})),
-  deleteSavedView: vi.fn(async () => {}),
-  setDefaultSavedView: vi.fn(async () => {}),
+// Writes are now browser-direct (useMutation(api.savedTableViewsWrites.*)); stub the
+// hook so the smoke test needs no ConvexProvider in the tree.
+vi.mock("@/hooks/use-saved-views-writes", () => ({
+  useSavedViewWrites: () => ({
+    create: vi.fn(async () => ({ id: "v1", name: "x" })),
+    update: vi.fn(async () => {}),
+    remove: vi.fn(async () => {}),
+    setDefault: vi.fn(async () => {}),
+  }),
 }));
 // The list now derives from the reactive Convex subscription; stub the hook so the
 // smoke test doesn't need a ConvexProvider in the tree (undefined = loading → empty).

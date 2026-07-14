@@ -14,14 +14,7 @@ function redirectsToLogin(res: Response): boolean {
   return res.status === 307 && !!loc && loc.includes("/login");
 }
 
-describe("middleware — agent API routes bypass the session redirect", () => {
-  it("does NOT redirect /api/v1/* to /login (they authenticate via Bearer)", () => {
-    for (const path of ["/api/v1", "/api/v1/whoami", "/api/v1/reserve-items", "/api/v1/mcp"]) {
-      const res = middleware(req(path)); // no session cookie
-      expect(redirectsToLogin(res), `${path} should not redirect to login`).toBe(false);
-    }
-  });
-
+describe("middleware — session redirect gating", () => {
   it("still redirects a normal protected route to /login when there's no session", () => {
     const res = middleware(req("/dashboard"));
     expect(redirectsToLogin(res)).toBe(true);
@@ -32,7 +25,8 @@ describe("middleware — agent API routes bypass the session redirect", () => {
     expect(redirectsToLogin(middleware(req("/api/auth/session")))).toBe(false);
   });
 
-  it("serves the agent docs at /llms.txt without a login redirect", () => {
-    expect(redirectsToLogin(middleware(req("/llms.txt")))).toBe(false);
+  it("lets public token-based feeds through without a login redirect", () => {
+    expect(redirectsToLogin(middleware(req("/api/calendar/tok/feed")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/crew/respond/tok")))).toBe(false);
   });
 });

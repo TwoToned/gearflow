@@ -62,6 +62,55 @@ export const createIfMissing = mutation({
   },
 });
 
+/**
+ * Bulk-dismiss N notifications for one user in a SINGLE call (Appendix A bulk
+ * single-call invariant — powers the /notifications "Dismiss All"). Idempotent:
+ * each key is deduped against the user's existing dismissals via the
+ * by_userId_notificationKey index (Convex has no unique index), so re-dismissing
+ * keeps the original row. org/userId are supplied by the server action from the
+ * verified session — the service token gates the write.
+ */
+export const createManyIfMissing = mutation({
+  args: {
+    organizationId: v.string(),
+    userId: v.string(),
+    items: v.array(
+      v.object({
+        id: v.string(),
+        notificationKey: v.string(),
+        dismissedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  returns: v.object({ created: v.number(), skipped: v.number() }),
+  handler: async (ctx, { organizationId, userId, items }) => {
+    await requireService(ctx);
+    let created = 0;
+    let skipped = 0;
+    for (const item of items) {
+      const existing = await ctx.db
+        .query("notificationDismissals")
+        .withIndex("by_userId_notificationKey", (q) =>
+          q.eq("userId", userId).eq("notificationKey", item.notificationKey),
+        )
+        .first();
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      await ctx.db.insert("notificationDismissals", {
+        id: item.id,
+        organizationId,
+        userId,
+        notificationKey: item.notificationKey,
+        dismissedAt: item.dismissedAt,
+      });
+      created++;
+    }
+    return { created, skipped };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

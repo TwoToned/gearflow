@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
@@ -20,7 +20,7 @@ import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { getClient } from "@/server/clients";
+import { api } from "../../../../../convex/_generated/api";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
@@ -73,10 +73,11 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: client, isLoading, refetch } = useServerQuery({
-    queryKey: ["client", orgId, id],
-    queryFn: () => getClient(id),
-  });
+  // Browser-native reactive detail bundle (replaces the getClient server action).
+  // Client writes (notes/archive) + media add/remove write to Convex, so this
+  // subscription auto-updates — no manual refetch needed.
+  const client = useAuthedQuery(api.clients.detail, orgId ? { orgId, id } : "skip");
+  const isLoading = client === undefined;
 
   const clientWrites = useClientWrites();
   const archiveMutation = useServerMutation({
@@ -366,7 +367,6 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <TabsContent value="notes" className="mt-4">
                   <NotesEditor
                     initialNotes={client.notes || ""}
-                    onChanged={refetch}
                     onSave={(notes) => clientWrites.updateNotes(id, notes)}
                     placeholder="Add notes about this client..."
                   />
@@ -380,7 +380,6 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       entityId={id}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
                       existingMedia={(client.media || []).map((m: MediaItem) => m)}
-                      onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
                         await addClientMedia({
                           clientId: id,

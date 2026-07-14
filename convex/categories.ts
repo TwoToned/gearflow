@@ -32,6 +32,37 @@ export const getById = query({
   },
 });
 
+/**
+ * Per-category model + kit counts (categoryId → { models, kits }) for the category
+ * manager — browser-native replacement for the getCategoryCounts server action.
+ * Tallies every org model and kit that has a categoryId (parity with
+ * buildModelKitCounts, no filter). Fetched ONE-SHOT by the manager (counts have no
+ * liveness need), so this is not a reactive org-wide subscription (Appendix B).
+ */
+export const counts = query({
+  args: { orgId: v.string() },
+  returns: v.record(v.string(), v.object({ models: v.number(), kits: v.number() })),
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const out: Record<string, { models: number; kits: number }> = {};
+    const ensure = (id: string) => (out[id] ??= { models: 0, kits: 0 });
+
+    const models = await ctx.db
+      .query("models")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const m of models) if (m.categoryId) ensure(m.categoryId).models++;
+
+    const kits = await ctx.db
+      .query("kits")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const k of kits) if (k.categoryId) ensure(k.categoryId).kits++;
+
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

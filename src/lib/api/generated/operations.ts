@@ -89,7 +89,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "categories.getCaseCategoryIds": { name: "categories.getCaseCategoryIds", module: "categories", fn: "getCaseCategoryIds", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Get category + all descendant IDs for container cases." },
   "categories.getCategories": { name: "categories.getCategories", module: "categories", fn: "getCategories", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Equipment Categories are CONVEX-ONLY (Phase B write inversion): every" },
   "categories.getCategory": { name: "categories.getCategory", module: "categories", fn: "getCategory", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
-  "categories.getCategoryCounts": { name: "categories.getCategoryCounts", module: "categories", fn: "getCategoryCounts", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Per-category model + kit counts (categoryId -> counts). Cross-domain: models" },
   "categories.getCategoryTree": { name: "categories.getCategoryTree", module: "categories", fn: "getCategoryTree", kind: "read", resource: "model", action: "read", scope: "model:read", params: [], dangerous: false, summary: "Category tree — READ FROM CONVEX (Phase A). Tree rebuilt client-side from the" },
   "categories.searchContainerAssets": { name: "categories.searchContainerAssets", module: "categories", fn: "searchContainerAssets", kind: "read", resource: "model", action: "read", scope: "model:read", params: [{ name: "query", type: "string", optional: true }], dangerous: false, summary: "---------------------------------------------------------------------------" },
   "categories.updateCategory": { name: "categories.updateCategory", module: "categories", fn: "updateCategory", kind: "write", resource: "model", action: "update", scope: "model:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "CategoryFormValues", optional: false, schemaRef: "CategoryFormValues" }], dangerous: false, summary: "" },
@@ -4273,4 +4272,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 520;
+export const OPERATION_COUNT = 519;

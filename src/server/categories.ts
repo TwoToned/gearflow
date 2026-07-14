@@ -9,7 +9,6 @@ import { getModelMap, mapConvexModelToRow, getModelsByOrg } from "@/lib/models-r
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import {
   listCategoriesWithCounts,
-  getCategoryModelKitCounts,
   listCategoryTree,
   collectDescendantCategoryIds,
   getMappedCategoriesByOrg,
@@ -130,19 +129,6 @@ export async function getCategory(id: string) {
     _count: { models: ownCounts.models, kits: ownCounts.kits, children: childCounts.get(id) ?? 0 },
     models,
   });
-}
-
-/**
- * Per-category model + kit counts (categoryId -> counts). Cross-domain: models
- * and kits still live in Prisma, so this can't come from Convex. Used by the
- * reactive category manager, which subscribes to the category list via Convex and
- * merges these (non-reactive) counts in. (Children counts are derived client-side
- * from the reactive list itself.)
- */
-export async function getCategoryCounts(): Promise<Record<string, { models: number; kits: number }>> {
-  const { organizationId } = await getOrgContext();
-  // Models AND kits live in Convex — count by categoryId in JS from both lists.
-  return serialize(await getCategoryModelKitCounts(organizationId));
 }
 
 // Category tree — READ FROM CONVEX (Phase A). Tree rebuilt client-side from the

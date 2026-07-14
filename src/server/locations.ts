@@ -5,7 +5,6 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
-import { getKitsByOrg } from "@/lib/kits-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -101,25 +100,6 @@ export async function getLocations(params?: {
       sortOrder,
     }),
   );
-}
-
-/**
- * Asset + bulk-asset + kit counts per location (locationId -> counts).
- * All three domains live in Convex — aggregate in JS from the org-level lists.
- */
-export async function getLocationCounts(): Promise<Record<string, { assets: number; bulkAssets: number; kits: number }>> {
-  const { organizationId } = await getOrgContext();
-  const [allAssets, allBulkAssets, allKits] = await Promise.all([
-    getAssetsByOrg(organizationId),
-    getBulkAssetsByOrg(organizationId),
-    getKitsByOrg(organizationId),
-  ]);
-  const counts: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
-  const ensure = (id: string) => (counts[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
-  for (const a of allAssets) if (a.locationId) ensure(a.locationId).assets++;
-  for (const b of allBulkAssets) if (b.locationId) ensure(b.locationId).bulkAssets++;
-  for (const k of allKits) if (k.locationId) ensure(k.locationId).kits++;
-  return serialize(counts);
 }
 
 // Detail-page composite — READ FROM CONVEX (Phase B). The deep Prisma include

@@ -269,7 +269,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "locations.createLocation": { name: "locations.createLocation", module: "locations", fn: "createLocation", kind: "write", resource: "location", action: "create", scope: "location:create", params: [{ name: "data", type: "LocationFormValues", optional: false, schemaRef: "LocationFormValues" }], dangerous: false, summary: "" },
   "locations.deleteLocation": { name: "locations.deleteLocation", module: "locations", fn: "deleteLocation", kind: "write", resource: "location", action: "delete", scope: "location:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "locations.getLocation": { name: "locations.getLocation", module: "locations", fn: "getLocation", kind: "read", resource: "location", action: "read", scope: "location:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Detail-page composite — READ FROM CONVEX (Phase B). The deep Prisma include" },
-  "locations.getLocationCounts": { name: "locations.getLocationCounts", module: "locations", fn: "getLocationCounts", kind: "read", resource: "location", action: "read", scope: "location:read", params: [], dangerous: false, summary: "Asset + bulk-asset + kit counts per location (locationId -> counts)." },
   "locations.getLocations": { name: "locations.getLocations", module: "locations", fn: "getLocations", kind: "read", resource: "location", action: "read", scope: "location:read", params: [{ name: "params", type: "{ search?: string; type?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "Locations list — READ FROM CONVEX. Filter/sort/paginate + the parent name" },
   "locations.updateLocation": { name: "locations.updateLocation", module: "locations", fn: "updateLocation", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "LocationFormValues", optional: false, schemaRef: "LocationFormValues" }], dangerous: false, summary: "" },
   "locations.updateLocationNotes": { name: "locations.updateLocationNotes", module: "locations", fn: "updateLocationNotes", kind: "write", resource: "location", action: "update", scope: "location:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -4272,4 +4271,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 519;
+export const OPERATION_COUNT = 518;

@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useConvex, useConvexAuth } from "convex/react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectTasks as useConvexProjectTasks } from "@/hooks/use-projects";
+import { useProjectTaskWrites, type ProjectTaskInput } from "@/hooks/use-project-tasks-writes";
+import { api } from "../../../convex/_generated/api";
+
+type BulkTaskPatch = Pick<
+  ProjectTaskInput,
+  "status" | "priority" | "dueDate" | "assigneeUserId" | "assigneeCrewId"
+>;
 import { toast } from "sonner";
 import {
   Plus,
@@ -48,15 +56,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import {
-  getProjectTasks,
-  getTaskAssignees,
-  createProjectTask,
-  updateProjectTask,
-  deleteProjectTask,
-  bulkUpdateProjectTasks,
-  bulkDeleteProjectTasks,
-} from "@/server/project-tasks";
 import { useSelection } from "./use-selection";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
@@ -106,20 +105,29 @@ function dueState(due: string | null): { label: string; overdue: boolean } | nul
 export function TasksPanel({ projectId }: { projectId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const writes = useProjectTaskWrites();
   const tasksKey = ["project-tasks", orgId, projectId];
 
   const { data: tasks = [], isLoading, refetch } = useServerQuery({
     queryKey: tasksKey,
-    queryFn: () => getProjectTasks(projectId) as unknown as Promise<Task[]>,
+    queryFn: () =>
+      convex.query(api.projectTasks.listByProjectWithRelations, {
+        projectId,
+        orgId: orgId as string,
+      }) as unknown as Promise<Task[]>,
+    enabled: !!orgId && isAuthenticated,
   });
 
   const { data: assignees } = useServerQuery({
     queryKey: ["task-assignees", orgId],
     queryFn: () =>
-      getTaskAssignees() as unknown as Promise<{
+      convex.query(api.projectTasks.assignees, { orgId: orgId as string }) as unknown as Promise<{
         users: { id: string; name: string; image: string | null }[];
         crew: { id: string; firstName: string; lastName: string }[];
       }>,
+    enabled: !!orgId && isAuthenticated,
   });
 
   const [newTitle, setNewTitle] = useState("");
@@ -151,7 +159,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   }, [taskFp, refetch]);
 
   const createMut = useServerMutation({
-    mutationFn: (title: string) => createProjectTask({ projectId, title }),
+    mutationFn: (title: string) => writes.create({ projectId, title }),
     onSuccess: () => {
       invalidate();
       setNewTitle("");
@@ -160,14 +168,14 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   });
 
   const updateMut = useServerMutation({
-    mutationFn: (vars: { id: string; data: Parameters<typeof updateProjectTask>[1] }) =>
-      updateProjectTask(vars.id, vars.data),
+    mutationFn: (vars: { id: string; data: ProjectTaskInput }) =>
+      writes.update(vars.id, vars.data),
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message || "Could not update task"),
   });
 
   const deleteMut = useServerMutation({
-    mutationFn: (id: string) => deleteProjectTask(id),
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: () => {
       invalidate();
       toast.success("Task deleted");
@@ -183,8 +191,8 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   const allSelected = allTaskIds.length > 0 && selectedTaskIds.length === allTaskIds.length;
 
   const bulkUpdateMut = useServerMutation({
-    mutationFn: (vars: { ids: string[]; patch: Parameters<typeof bulkUpdateProjectTasks>[1] }) =>
-      bulkUpdateProjectTasks(vars.ids, vars.patch),
+    mutationFn: (vars: { ids: string[]; patch: BulkTaskPatch }) =>
+      writes.bulkUpdate(vars.ids, vars.patch),
     onSuccess: (r: { updated: number; skipped: number }) => {
       invalidate();
       selection.clearSelection();
@@ -194,7 +202,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   });
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => bulkDeleteProjectTasks(ids),
+    mutationFn: (ids: string[]) => writes.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       invalidate();
       selection.clearSelection();
@@ -541,7 +549,7 @@ function TaskEditDialog({
   task: Task;
   assigneeOptions: { value: string; label: string }[];
   onClose: () => void;
-  onSave: (data: Parameters<typeof updateProjectTask>[1]) => void;
+  onSave: (data: ProjectTaskInput) => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");

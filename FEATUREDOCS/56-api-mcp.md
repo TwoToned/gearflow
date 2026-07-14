@@ -1,5 +1,19 @@
 # 56 — Agent-Accessible API + MCP
 
+> **⚠️ REMOVED 2026-07-14 (dormant — to be reinstated).** The entire agent-API request
+> surface was deleted during the Convex-native migration: `src/lib/api/*` (operations
+> registry, dispatch, MCP, OpenAPI, tool aliases, CONVEX_READS bridge, reserve-items),
+> the `/api/v1/*` routes, `public/llms.txt`, the `scripts/generate-api-registry.ts`
+> generator, and the `/settings/api-keys` UI. The generated registry dynamically imported
+> and invoked every `src/server/*.ts` action, which coupled the API contract (+114 guard
+> tests) to the server-action data layer and blocked the Phase-3 server-action deletions.
+> **The `ApiKey` backend (`src/server/api-keys.ts`, `src/lib/api-key.ts`, the `apiKey`
+> table) is kept dormant** so reinstating is cheap. Reinstate *after* the domains are
+> Convex-native — rebuild the surface over the native queries/mutations (a
+> `CONVEX_READS`/`CONVEX_WRITES` bridge) rather than over server actions. This doc + the
+> design of record below are the blueprint. The rest of this file describes the removed
+> design.
+
 Lets AI agents (Claude, OpenClaw, scripts) and power users read and write GearFlow
 through a stable, org-scoped API exposed **MCP-first** with a REST facade.
 

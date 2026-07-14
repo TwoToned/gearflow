@@ -33,6 +33,45 @@ export const getById = query({
   },
 });
 
+/**
+ * A supplier's orders for the supplier detail table (Phase 3 browser-direct — replaces
+ * the getSupplierOrders server action's supplier-scoped read). Newest first, with the
+ * project reference + item count each row renders. Scoped to (org, supplier) via the
+ * composite index (org-checked implicitly); the project join is org-re-checked.
+ */
+export const listBySupplier = query({
+  args: { orgId: v.string(), supplierId: v.string() },
+  handler: async (ctx, { orgId, supplierId }) => {
+    await requireOrgRead(ctx, orgId);
+    const orders = await ctx.db
+      .query("supplierOrders")
+      .withIndex("by_organizationId_supplierId", (q) => q.eq("organizationId", orgId).eq("supplierId", supplierId))
+      .collect();
+    orders.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)); // createdAt desc (default sort)
+
+    const out = [];
+    for (const o of orders) {
+      const items = await ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", o.id)).collect();
+      let project: { id: string; name: string; projectNumber: string } | null = null;
+      if (o.projectId) {
+        const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", o.projectId as string)).first();
+        project = p && p.organizationId === orgId ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null;
+      }
+      out.push({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        type: o.type,
+        status: o.status ?? "DRAFT",
+        orderDate: o.orderDate ?? null,
+        total: o.total ?? null,
+        project,
+        _count: { items: items.length },
+      });
+    }
+    return { orders: out, total: out.length };
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

@@ -17,7 +17,6 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
-import { getSupplierOrders } from "@/server/supplier-orders";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
@@ -88,8 +87,9 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const { data: ordersData, refetch: refetchOrders } = useServerQuery({
     queryKey: ["supplier-orders", orgId, id],
-    queryFn: () => getSupplierOrders({ supplierId: id, pageSize: 50 }),
-    enabled: !!supplier,
+    queryFn: () =>
+      convex.query(api.supplierOrders.listBySupplier, { orgId: orgId as string, supplierId: id }),
+    enabled: !!supplier && !!orgId && isAuthenticated,
   });
 
   // Cross-tab live sync: subscribe to the dual-written Convex supplierOrders

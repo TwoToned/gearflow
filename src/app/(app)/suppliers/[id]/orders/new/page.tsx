@@ -12,7 +12,7 @@ import { Truck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { supplierOrderSchema, type SupplierOrderFormValues } from "@/lib/validations/supplier-order";
-import { createSupplierOrder } from "@/server/supplier-orders";
+import { useSupplierOrderWrites } from "@/hooks/use-supplier-order-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../../../convex/_generated/api";
 import { supplierOrderStatusLabels } from "@/lib/status-labels";
@@ -60,6 +60,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
 function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: supplierId } = use(params);
   const router = useRouter();
+  const orderWrites = useSupplierOrderWrites();
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
@@ -85,7 +86,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
   });
 
   const mutation = useServerMutation({
-    mutationFn: (data: SupplierOrderFormValues) => createSupplierOrder(data),
+    mutationFn: (data: SupplierOrderFormValues) => orderWrites.create(data),
     onSuccess: () => {
       toast.success("Order created");
       router.push(`/suppliers/${supplierId}`);

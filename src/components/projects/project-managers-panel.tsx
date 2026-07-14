@@ -9,10 +9,7 @@ import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { getMembers } from "@/server/settings";
-import {
-  addProjectManager,
-  removeProjectManager,
-} from "@/server/project-managers";
+import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
 import { Button } from "@/components/ui/button";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
@@ -41,6 +38,7 @@ export function ProjectManagersPanel({
 }: ProjectManagersPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const [showPicker, setShowPicker] = useState(false);
+  const writes = useProjectManagerWrites();
 
   const { data: members } = useServerQuery({
     queryKey: ["members", activeOrg?.id],
@@ -64,7 +62,7 @@ export function ProjectManagersPanel({
     );
 
   const addMutation = useServerMutation({
-    mutationFn: (userId: string) => addProjectManager(projectId, userId),
+    mutationFn: (userId: string) => writes.add(projectId, userId),
     onSuccess: () => {
       refreshProjectDetail(projectId);
       setShowPicker(false);
@@ -73,7 +71,7 @@ export function ProjectManagersPanel({
   });
 
   const removeMutation = useServerMutation({
-    mutationFn: (userId: string) => removeProjectManager(projectId, userId),
+    mutationFn: (userId: string) => writes.remove(projectId, userId),
     onSuccess: () => {
       refreshProjectDetail(projectId);
     },

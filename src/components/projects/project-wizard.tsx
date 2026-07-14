@@ -18,7 +18,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
 import { createProject, updateProject, peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
-import { setProjectManagers } from "@/server/project-managers";
+import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
 import { useClientSearch, useClient } from "@/hooks/use-clients";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLocations } from "@/hooks/use-locations";
@@ -112,6 +112,7 @@ export function ProjectWizard({
 }) {
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
+  const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
 
   const isEditing = !!project;
@@ -234,7 +235,7 @@ export function ProjectWizard({
         managerIds.length !== initialManagerIds.length ||
         managerIds.some((id) => !initialManagerIds.includes(id));
       if (managersChanged) {
-        await setProjectManagers(result.id, managerIds);
+        await managerWrites.set(result.id, managerIds);
       }
       return result;
     },

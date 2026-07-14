@@ -91,17 +91,6 @@ export async function getClients(params?: {
   return serialize({ clients: withCounts, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
-/**
- * Project counts per client (clientId -> count). From Convex.
- */
-export async function getClientProjectCounts(): Promise<Record<string, number>> {
-  const { organizationId } = await getOrgContext();
-  const allProjects = await getProjectsByOrg(organizationId);
-  const counts: Record<string, number> = {};
-  for (const p of allProjects) if (p.clientId) counts[p.clientId] = (counts[p.clientId] ?? 0) + 1;
-  return serialize(counts);
-}
-
 export async function getClient(id: string) {
   const { organizationId } = await getOrgContext();
   const client = await getClientById(id);

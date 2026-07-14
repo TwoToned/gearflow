@@ -1,5 +1,15 @@
 # Phase 3 — server-action data-layer deletion map (authoritative worklist)
 
+> **★ 2026-07-14 — the agent/MCP API surface was REMOVED (PR #506).** The generated
+> operations registry that dynamically invoked every server action is gone (`src/lib/api/`,
+> `/api/v1/*`, `llms.txt`, `scripts/generate-api-registry.ts`, `/settings/api-keys` UI).
+> **Deleting a server action no longer touches any agent-API contract.** The per-deletion
+> checklist is now just: author native query/mutation → rewire consumers → delete server
+> file → `tsc`/`vitest`/`next build` → ship. **Ignore all older steps about regenerating
+> the registry, editing `mcp-tools`/`tool-aliases`/`llms.txt`, the `CONVEX_READS` bridge,
+> or repointing `src/lib/api/*` fixtures — those files no longer exist.** The ApiKey backend
+> is dormant; reinstate the API later over native Convex fns (see FEATUREDOCS/56).
+
 **Goal (plan DoD):** delete the `src/server/` data layer. Browser reads via `useAuthedQuery(api.*)`, writes via `useMutation(api.*Writes.*)`, ALL business logic inside the Convex mutation/query. EXEMPT: `src/lib/*-read.ts` service-read helpers (PDF/CSV Node paths) + the KEEP-SERVER-ONLY set below.
 
 Built from an exhaustive 7-agent parallel audit of all ~78 `"use server"` files (2026-07-13). Execution mode: **sequential grind** (user-chosen). Per domain: author/relocate logic into Convex → browser-direct writes → re-home reads → delete server file → parity + codex + re-audit + live-validate.

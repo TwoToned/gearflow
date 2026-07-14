@@ -64,6 +64,80 @@ export const counts = query({
   },
 });
 
+/**
+ * Supplier DETAIL composite for the supplier detail + new-order pages — browser-native
+ * replacement for the getSupplierById server action. Returns the mapped supplier (Prisma
+ * row shape: null/default coercion + ISO dates, matching mapSupplier + serialize) plus
+ * `_count` of its assets / orders / referencing line items. Every count is index-scoped
+ * to the supplier and org re-checked (the by_supplierId indexes are global). Throws
+ * "Supplier not found" for a missing / cross-org id, matching the server action.
+ */
+export const detail = query({
+  args: { orgId: v.string(), id: v.string() },
+  returns: v.object({
+    id: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    contactName: v.union(v.string(), v.null()),
+    email: v.union(v.string(), v.null()),
+    phone: v.union(v.string(), v.null()),
+    website: v.union(v.string(), v.null()),
+    address: v.union(v.string(), v.null()),
+    latitude: v.union(v.number(), v.null()),
+    longitude: v.union(v.number(), v.null()),
+    notes: v.union(v.string(), v.null()),
+    accountNumber: v.union(v.string(), v.null()),
+    paymentTerms: v.union(v.string(), v.null()),
+    defaultLeadTime: v.union(v.string(), v.null()),
+    tags: v.array(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    _count: v.object({ assets: v.number(), orders: v.number(), lineItems: v.number() }),
+  }),
+  handler: async (ctx, { orgId, id }) => {
+    await requireOrgRead(ctx, orgId);
+    const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc || doc.organizationId !== orgId) throw new ConvexError("Supplier not found");
+
+    // Counts — index-scoped to the supplier, org re-checked (by_supplierId is global).
+    const assets = (
+      await ctx.db.query("assets").withIndex("by_supplierId", (q) => q.eq("supplierId", id)).collect()
+    ).filter((a) => a.organizationId === orgId).length;
+    const orders = (
+      await ctx.db
+        .query("supplierOrders")
+        .withIndex("by_organizationId_supplierId", (q) => q.eq("organizationId", orgId).eq("supplierId", id))
+        .collect()
+    ).length;
+    const lineItems = (
+      await ctx.db.query("projectLineItems").withIndex("by_supplierId", (q) => q.eq("supplierId", id)).collect()
+    ).filter((li) => li.organizationId === orgId).length;
+
+    return {
+      id: doc.id,
+      organizationId: doc.organizationId,
+      name: doc.name,
+      contactName: doc.contactName ?? null,
+      email: doc.email ?? null,
+      phone: doc.phone ?? null,
+      website: doc.website ?? null,
+      address: doc.address ?? null,
+      latitude: doc.latitude ?? null,
+      longitude: doc.longitude ?? null,
+      notes: doc.notes ?? null,
+      accountNumber: doc.accountNumber ?? null,
+      paymentTerms: doc.paymentTerms ?? null,
+      defaultLeadTime: doc.defaultLeadTime ?? null,
+      tags: doc.tags ?? [],
+      isActive: doc.isActive ?? true,
+      createdAt: new Date(doc.createdAt ?? 0).toISOString(),
+      updatedAt: new Date(doc.updatedAt ?? 0).toISOString(),
+      _count: { assets, orders, lineItems },
+    };
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

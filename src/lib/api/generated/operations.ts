@@ -440,7 +440,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "suppliers.createSupplier": { name: "suppliers.createSupplier", module: "suppliers", fn: "createSupplier", kind: "write", resource: "supplier", action: "create", scope: "supplier:create", params: [{ name: "data", type: "SupplierFormValues", optional: false, schemaRef: "SupplierFormValues" }], dangerous: false, summary: "" },
   "suppliers.deleteSupplier": { name: "suppliers.deleteSupplier", module: "suppliers", fn: "deleteSupplier", kind: "write", resource: "supplier", action: "delete", scope: "supplier:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "suppliers.getSupplierAssets": { name: "suppliers.getSupplierAssets", module: "suppliers", fn: "getSupplierAssets", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "supplierId", type: "string", optional: false }, { name: "params", type: "{ page?: number; pageSize?: number; }", optional: false }], dangerous: false, summary: "" },
-  "suppliers.getSupplierById": { name: "suppliers.getSupplierById", module: "suppliers", fn: "getSupplierById", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
   "suppliers.getSuppliers": { name: "suppliers.getSuppliers", module: "suppliers", fn: "getSuppliers", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [], dangerous: false, summary: "" },
   "suppliers.getSuppliersPaginated": { name: "suppliers.getSuppliersPaginated", module: "suppliers", fn: "getSuppliersPaginated", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "params", type: "{ search?: string; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: false }], dangerous: false, summary: "" },
   "suppliers.getSupplierSubhires": { name: "suppliers.getSupplierSubhires", module: "suppliers", fn: "getSupplierSubhires", kind: "read", resource: "supplier", action: "read", scope: "supplier:read", params: [{ name: "supplierId", type: "string", optional: false }, { name: "params", type: "{ page?: number; pageSize?: number; }", optional: false }], dangerous: false, summary: "" },
@@ -4263,4 +4262,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 511;
+export const OPERATION_COUNT = 510;

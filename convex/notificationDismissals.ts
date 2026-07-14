@@ -88,13 +88,18 @@ export const createManyIfMissing = mutation({
     let created = 0;
     let skipped = 0;
     for (const item of items) {
+      // Dedup PER-ORG, not globally. Most keys embed an entity cuid (org-unique),
+      // but the two crew keys (crew-pending-offers/-timesheets) are constant across
+      // orgs — a multi-org user must be able to dismiss them in each org separately
+      // (reads are org-scoped via list({orgId})). by_userId_notificationKey is
+      // GLOBAL, so filter its (few — one per membership) rows by organizationId.
       const existing = await ctx.db
         .query("notificationDismissals")
         .withIndex("by_userId_notificationKey", (q) =>
           q.eq("userId", userId).eq("notificationKey", item.notificationKey),
         )
-        .first();
-      if (existing) {
+        .collect();
+      if (existing.some((d) => d.organizationId === organizationId)) {
         skipped++;
         continue;
       }

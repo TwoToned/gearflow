@@ -58,6 +58,7 @@ import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
 import type * as http from "../http.js";
 import type * as kitAllocations from "../kitAllocations.js";
+import type * as kitAllocationsWrites from "../kitAllocationsWrites.js";
 import type * as kitBulkItems from "../kitBulkItems.js";
 import type * as kitCheckItems from "../kitCheckItems.js";
 import type * as kitDetail from "../kitDetail.js";
@@ -213,6 +214,7 @@ declare const fullApi: ApiFromModules<{
   groupTemplates: typeof groupTemplates;
   http: typeof http;
   kitAllocations: typeof kitAllocations;
+  kitAllocationsWrites: typeof kitAllocationsWrites;
   kitBulkItems: typeof kitBulkItems;
   kitCheckItems: typeof kitCheckItems;
   kitDetail: typeof kitDetail;

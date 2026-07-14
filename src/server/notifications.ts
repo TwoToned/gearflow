@@ -58,21 +58,35 @@ export async function getDismissedKeys(): Promise<string[]> {
  */
 export async function dismissNotification(notificationKey: string): Promise<void> {
   if (!notificationKey) return;
+  // Delegate to the bulk path with a single item. The @@unique([userId,
+  // notificationKey]) guard (Convex has no unique index) is enforced ATOMICALLY
+  // inside createManyIfMissing via the by_userId_notificationKey index — no
+  // read-then-create TOCTOU (which could otherwise double-insert on a retry).
+  await dismissNotifications([notificationKey]);
+}
+
+/**
+ * Bulk-persist N notification dismissals for the current user in ONE call
+ * (Appendix A bulk single-call invariant — powers the /notifications "Dismiss
+ * All"). Idempotent: already-dismissed keys are skipped Convex-side by
+ * (userId, notificationKey). Replaces the page's former localStorage-only
+ * "Dismiss All".
+ */
+export async function dismissNotifications(notificationKeys: string[]): Promise<void> {
+  if (!notificationKeys || notificationKeys.length === 0) return;
   const { organizationId, userId } = await getOrgContext();
 
-  // Convex-only write. Re-implement the @@unique([userId, notificationKey]) DB
-  // guard (Convex has no unique index): read the user's existing dismissals and
-  // no-op if this key is already dismissed (keeps the original dismissedAt),
-  // otherwise create. App-level dedup replaces the old Prisma upsert.
-  const existing = await getDismissalsForUser(organizationId, userId);
-  if (existing.some((d) => d.notificationKey === notificationKey)) return;
+  const unique = [...new Set(notificationKeys.filter(Boolean))];
+  if (unique.length === 0) return;
 
-  await (await getConvexClient()).mutation(api.notificationDismissals.create, {
-    id: createId(),
+  await (await getConvexClient()).mutation(api.notificationDismissals.createManyIfMissing, {
     organizationId,
     userId,
-    notificationKey,
-    dismissedAt: Date.now(),
+    items: unique.map((notificationKey) => ({
+      id: createId(),
+      notificationKey,
+      dismissedAt: Date.now(),
+    })),
   });
 }
 

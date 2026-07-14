@@ -19,11 +19,22 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
-import { type AppNotification } from "@/server/notifications";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import {
+  type AppNotification,
+  dismissNotification,
+  dismissNotifications,
+  getDismissedKeys,
+  pruneStaleDismissals,
+} from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow, isToday, isYesterday, isThisWeek } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
 
+// Optimistic-UI fallback only. The DB (Convex notificationDismissals, via the
+// server actions below) is the source of truth — this just hides items instantly
+// while the mutation is in flight, and is shared with the app-shell bell.
 const DISMISSED_KEY = "gearflow-dismissed-notifications";
 
 function getDismissedIds(): Set<string> {
@@ -107,49 +118,96 @@ export default function NotificationsPage() {
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // Local optimistic set (mirrors localStorage); unioned with the DB dismissals.
+  const [localDismissed, setLocalDismissed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setDismissed(getDismissedIds());
+    setLocalDismissed(getDismissedIds());
   }, []);
 
   // Shared, deduped, visibility-aware poll (one scan per interval across this page
   // + the app-shell bell). See use-notifications-feed.
   const { data: notifications, isLoading } = useNotificationsFeed(orgId);
 
-  // Prune dismissed IDs that no longer exist
+  // DB-backed dismissals — the source of truth (survives browser/device changes),
+  // matching the app-shell bell. Union with the local optimistic set so a
+  // just-clicked item hides instantly even before its mutation resolves.
+  const { data: serverDismissed, refetch: refetchDismissed } = useServerQuery({
+    queryKey: ["notification-dismissals", orgId],
+    queryFn: getDismissedKeys,
+    refetchInterval: 60_000,
+  });
+
+  const dismissed = useMemo(() => {
+    const merged = new Set<string>(serverDismissed ?? []);
+    for (const id of localDismissed) merged.add(id);
+    return merged;
+  }, [serverDismissed, localDismissed]);
+
+  // Prune stale dismissals (server rows + the local set) when the active list changes.
   useEffect(() => {
     if (!notifications || notifications.length === 0) return;
-    const currentIds = new Set(notifications.map((n) => n.id));
-    const stored = getDismissedIds();
-    let changed = false;
-    for (const id of stored) {
-      if (!currentIds.has(id)) {
-        stored.delete(id);
-        changed = true;
-      }
-    }
-    if (changed) {
-      saveDismissedIds(stored);
-      setDismissed(new Set(stored));
-    }
+    const activeKeys = notifications.map((n) => n.id);
+    // Fire-and-forget server GC; the next refetch picks up the trimmed list.
+    void pruneStaleDismissals(activeKeys).catch(() => {});
+    const active = new Set(activeKeys);
+    setLocalDismissed((prev) => {
+      const next = new Set([...prev].filter((id) => active.has(id)));
+      if (next.size === prev.size) return prev;
+      saveDismissedIds(next);
+      return next;
+    });
   }, [notifications]);
 
-  const dismiss = useCallback((id: string) => {
-    setDismissed((prev) => {
+  // Roll the optimistic hide back out of the local set if the write fails, so a
+  // failed dismissal reappears instead of staying hidden forever (the visible
+  // set unions local ∪ server, and a failed write never reaches the server).
+  const rollbackLocal = useCallback((ids: string[]) => {
+    setLocalDismissed((prev) => {
       const next = new Set(prev);
-      next.add(id);
+      for (const id of ids) next.delete(id);
       saveDismissedIds(next);
       return next;
     });
   }, []);
 
+  const dismissMutation = useServerMutation({
+    mutationFn: (id: string) => dismissNotification(id),
+    onError: (_e, id) => rollbackLocal([id]),
+    onSettled: () => refetchDismissed(),
+  });
+  const dismissAllMutation = useServerMutation({
+    mutationFn: (ids: string[]) => dismissNotifications(ids),
+    onError: (_e, ids) => rollbackLocal(ids),
+    onSettled: () => refetchDismissed(),
+  });
+
+  const dismiss = useCallback(
+    (id: string) => {
+      // Optimistic: hide locally now, persist to the DB in the background.
+      setLocalDismissed((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        saveDismissedIds(next);
+        return next;
+      });
+      dismissMutation.mutate(id);
+    },
+    [dismissMutation],
+  );
+
   const dismissAll = useCallback(() => {
     if (!notifications) return;
-    const allIds = new Set(notifications.map((n) => n.id));
-    saveDismissedIds(allIds);
-    setDismissed(allIds);
-  }, [notifications]);
+    const allIds = notifications.map((n) => n.id);
+    // Optimistic locally + one bulk server call (Appendix A single-call invariant).
+    setLocalDismissed((prev) => {
+      const next = new Set(prev);
+      for (const id of allIds) next.add(id);
+      saveDismissedIds(next);
+      return next;
+    });
+    dismissAllMutation.mutate(allIds);
+  }, [notifications, dismissAllMutation]);
 
   const visible = useMemo(
     () => (notifications || []).filter((n) => !dismissed.has(n.id)),

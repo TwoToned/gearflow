@@ -24,12 +24,9 @@ import {
   isWithinInterval,
 } from "date-fns";
 
-import {
-  getModelBookings,
-  getAssetBookings,
-  getKitBookings,
-  type BookingEntry,
-} from "@/server/availability";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import type { BookingEntry } from "@/lib/availability-types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -102,6 +99,8 @@ export function BookingCalendar({
   initialDate,
 }: BookingCalendarProps) {
   const router = useRouter();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const today = useMemo(() => new Date(), []);
@@ -122,21 +121,35 @@ export function BookingCalendar({
   });
   const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
 
-  const dateRange = {
-    startDate: gridStart.toISOString(),
-    endDate: gridEnd.toISOString(),
-  };
+  const startMs = gridStart.getTime();
+  const endMs = gridEnd.getTime();
 
   const { data, isLoading } = useServerQuery({
     queryKey: ["bookings", orgId, entityType, entityId, format(currentMonth, "yyyy-MM")],
+    enabled: !!orgId && isAuthenticated,
     queryFn: async () => {
       if (entityType === "model") {
-        return getModelBookings(entityId, dateRange);
+        return convex.query(api.availability.modelBookings, {
+          orgId: orgId!,
+          modelId: entityId,
+          startMs,
+          endMs,
+        });
       } else if (entityType === "asset") {
-        const bookings = await getAssetBookings(entityId, dateRange);
+        const bookings = await convex.query(api.availability.assetBookings, {
+          orgId: orgId!,
+          assetId: entityId,
+          startMs,
+          endMs,
+        });
         return { bookings, totalStock: 1, effectiveStock: 1 };
       } else {
-        const bookings = await getKitBookings(entityId, dateRange);
+        const bookings = await convex.query(api.availability.kitBookings, {
+          orgId: orgId!,
+          kitId: entityId,
+          startMs,
+          endMs,
+        });
         return { bookings, totalStock: 1, effectiveStock: 1 };
       }
     },
@@ -145,8 +158,14 @@ export function BookingCalendar({
   // For serialized assets: also fetch model-level bookings to show "model booked" days
   const { data: modelData } = useServerQuery({
     queryKey: ["bookings", orgId, "model-context", modelId, format(currentMonth, "yyyy-MM")],
-    queryFn: () => getModelBookings(modelId!, dateRange),
-    enabled: entityType === "asset" && !!modelId,
+    queryFn: () =>
+      convex.query(api.availability.modelBookings, {
+        orgId: orgId!,
+        modelId: modelId!,
+        startMs,
+        endMs,
+      }),
+    enabled: entityType === "asset" && !!modelId && !!orgId && isAuthenticated,
   });
   const modelBookings = modelData?.bookings ?? [];
 

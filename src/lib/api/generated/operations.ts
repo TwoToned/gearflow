@@ -64,10 +64,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "assets.getAssets": { name: "assets.getAssets", module: "assets", fn: "getAssets", kind: "read", resource: "asset", action: "read", scope: "asset:read", params: [{ name: "params", type: "{ search?: string; categoryId?: string; status?: string; condition?: string; locationId?: string; modelId?: string; isActive?: boolean; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; filters?: Record<string, FilterValue>; }", optional: true }], dangerous: false, summary: "" },
   "assets.updateAsset": { name: "assets.updateAsset", module: "assets", fn: "updateAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }], dangerous: false, summary: "" },
   "assets.updateAssetNotes": { name: "assets.updateAssetNotes", module: "assets", fn: "updateAssetNotes", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
-  "availability.getAssetBookings": { name: "availability.getAssetBookings", module: "availability", fn: "getAssetBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "assetId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific serialized asset within a date range." },
-  "availability.getCalendarData": { name: "availability.getCalendarData", module: "availability", fn: "getCalendarData", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "params", type: "{ startDate: string; endDate: string; }", optional: false }], dangerous: false, summary: "" },
-  "availability.getKitBookings": { name: "availability.getKitBookings", module: "availability", fn: "getKitBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "kitId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific kit within a date range." },
-  "availability.getModelBookings": { name: "availability.getModelBookings", module: "availability", fn: "getModelBookings", kind: "read", resource: "project", action: "read", scope: "project:read", params: [{ name: "modelId", type: "string", optional: false }, { name: "params", type: "{ startDate: string; endDate: string }", optional: false }], dangerous: false, summary: "Get bookings for a specific model within a date range." },
   "brand-templates.createBrandTemplate": { name: "brand-templates.createBrandTemplate", module: "brand-templates", fn: "createBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "data", type: "CreateBrandTemplateValues", optional: false, schemaRef: "CreateBrandTemplateValues" }], dangerous: false, summary: "Create a new brand template." },
   "brand-templates.deleteBrandTemplate": { name: "brand-templates.deleteBrandTemplate", module: "brand-templates", fn: "deleteBrandTemplate", kind: "write", resource: "document", action: "manage_templates", scope: "document:manage_templates", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "Delete a brand template. Unlinks any document templates using it." },
   "brand-templates.getBrandTemplate": { name: "brand-templates.getBrandTemplate", module: "brand-templates", fn: "getBrandTemplate", kind: "read", resource: "document", action: "read", scope: "document:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "Get a single brand template with full settings." },
@@ -564,7 +560,6 @@ export const MODULE_LOADERS: Record<string, () => Promise<Record<string, unknown
   "asset-accessories": () => import("@/server/asset-accessories"),
   "asset-media": () => import("@/server/asset-media"),
   "assets": () => import("@/server/assets"),
-  "availability": () => import("@/server/availability"),
   "brand-templates": () => import("@/server/brand-templates"),
   "bulk-assets": () => import("@/server/bulk-assets"),
   "bulk-checkin": () => import("@/server/bulk-checkin"),
@@ -4269,4 +4264,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 516;
+export const OPERATION_COUNT = 512;

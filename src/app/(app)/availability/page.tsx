@@ -29,7 +29,9 @@ import {
   differenceInCalendarDays,
 } from "date-fns";
 
-import { getCalendarData, type CalendarProject } from "@/server/availability";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import type { CalendarProject } from "@/lib/availability-types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -172,6 +174,8 @@ type ViewMode = "month" | "agenda";
 function AvailabilityPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const today = useMemo(() => new Date(), []);
@@ -208,10 +212,12 @@ function AvailabilityPage() {
 
   const { data: projects = [], isLoading } = useServerQuery({
     queryKey: ["calendar", orgId, format(currentMonth, "yyyy-MM")],
+    enabled: !!orgId && isAuthenticated,
     queryFn: () =>
-      getCalendarData({
-        startDate: gridStart.toISOString(),
-        endDate: gridEnd.toISOString(),
+      convex.query(api.availability.calendarData, {
+        orgId: orgId!,
+        startMs: gridStart.getTime(),
+        endMs: gridEnd.getTime(),
       }),
   });
 

@@ -8,10 +8,10 @@ import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategoryCounts } from "@/hooks/use-category-counts";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -45,11 +45,7 @@ export function CategoryManager() {
   // they come from a separate, non-reactive server query; children counts are
   // derived from the flat reactive list itself.
   const allCategories = useCategories(orgId);
-  const { data: categoryCounts } = useServerQuery({
-    queryKey: ["category-counts", orgId],
-    queryFn: () => getCategoryCounts(),
-    enabled: !!orgId,
-  });
+  const categoryCounts = useCategoryCounts(orgId);
   const isLoading = allCategories === undefined;
 
   const categories = useMemo(() => {

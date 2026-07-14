@@ -8,10 +8,10 @@ import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Folder, FolderTree,
 import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
-import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategoryCounts } from "@/hooks/use-category-counts";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
@@ -67,11 +67,7 @@ function CategoriesContent() {
   // mirrors CategoryManager.
   const allCategories = useCategories(orgId);
   const isLoading = allCategories === undefined;
-  const { data: categoryCounts } = useServerQuery({
-    queryKey: ["category-counts", orgId],
-    queryFn: () => getCategoryCounts(),
-    enabled: !!orgId,
-  });
+  const categoryCounts = useCategoryCounts(orgId);
   const categories = useMemo(() => {
     const source = allCategories ?? [];
     const childCount = new Map<string, number>();

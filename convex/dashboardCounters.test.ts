@@ -112,6 +112,27 @@ describe("dashboardCounters", () => {
     });
   });
 
+  // The date-derived metrics now range-scan by composite index (Appendix B).
+  // A `.lte`/`.lt(now)` range sweeps in rows whose date field is undefined (they
+  // sort before all numbers), so the handler must drop them with a != null guard.
+  test("dashboardStats excludes open maintenance / overdue-status rows that have no date", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "viewer" });
+      // Open maintenance with NO scheduledDate — swept by the lte range, must be excluded.
+      await ctx.db.insert("maintenanceRecords", { id: "mr_nd", organizationId: ORG, title: "nd", type: "REPAIR", status: "SCHEDULED" });
+      // One genuinely due record for a positive control.
+      await ctx.db.insert("maintenanceRecords", { id: "mr_due", organizationId: ORG, title: "due", type: "REPAIR", status: "IN_PROGRESS", scheduledDate: NOW - DAY });
+      // Non-terminal project with NO rentalEndDate — swept by the lt range, must be excluded.
+      await ctx.db.insert("projects", { id: "p_nd", organizationId: ORG, projectNumber: "PND", name: "PND", status: "CHECKED_OUT", isTemplate: false });
+      await ctx.db.insert("projectLineItems", { id: "li_nd", organizationId: ORG, projectId: "p_nd", status: "CHECKED_OUT", quantity: 1 });
+    });
+    // No reconcile → countersReady false, but the date-derived metrics still compute.
+    const stats = await t.withIdentity(asUser(ORG)).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW });
+    expect(stats.maintenanceDue).toBe(1); // only mr_due (mr_nd has no date)
+    expect(stats.overdueReturns).toBe(0); // p_nd has no rentalEndDate → not overdue
+  });
+
   test("bump adjusts a single field and clamps at 0", async () => {
     const t = makeT();
     await seed(t);

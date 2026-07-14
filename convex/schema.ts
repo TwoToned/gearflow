@@ -759,7 +759,11 @@ export default defineSchema({
     .index("by_reportedById", ["reportedById"])
     .index("by_assignedToId", ["assignedToId"])
     .index("by_status", ["status"])
-    .index("by_scheduledDate", ["scheduledDate"]),
+    .index("by_scheduledDate", ["scheduledDate"])
+    // Range-scan an org's OPEN maintenance whose scheduledDate has arrived
+    // (dashboardStats.maintenanceDue) — bounds the reactive read-set to the due
+    // records instead of collecting the whole org's maintenance table.
+    .index("by_organizationId_status_scheduledDate", ["organizationId", "status", "scheduledDate"]),
 
 
   // MaintenanceRecordAsset
@@ -862,6 +866,10 @@ export default defineSchema({
     // Range-scan an org's projects by rental date (fleet ROI window). A prefix
     // take + filter reads the wrong projects once an org outgrows the cap.
     .index("by_organizationId_rentalStartDate", ["organizationId", "rentalStartDate"])
+    // Range-scan an org's overdue projects by rentalEndDate (dashboardStats.
+    // overdueReturns) — bounds the reactive read-set to past-end-date projects
+    // instead of collecting the whole org's projects table.
+    .index("by_organizationId_rentalEndDate", ["organizationId", "rentalEndDate"])
     .index("by_isTemplate", ["isTemplate"])
     .index("by_organizationId_status", ["organizationId", "status"]),
   // (No project search index: the app never picks a project in a combobox — projects

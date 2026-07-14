@@ -62,7 +62,7 @@ site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, a
 
 ### Wave 5 — project keystone + money (LAST, hardest)
 - Foundation: native `recalculateProjectTotals` (keystone #1) FIRST
-- `project-managers.ts` / `project-tasks.ts` (Better Auth membership validation stays server — need Convex member mirror or thin shim), `project-media.ts` (ownership guard), `project-costs` done W1
+- ~~`project-managers.ts`~~ **DONE (#520)** — deleted; getProjectManagers was DEAD (panel reads managers from the project-detail composite); 3 writes → `convex/projectManagersWrites.ts` add/remove/setNative. ★ The Better Auth seam is ELIMINATED — member validation (`members` by_org_user) + user-label audit (`users` mirror name||email||id) run inside the mutation via the existing Convex mirrors, no Prisma. RBAC project:manage = owner-only via the shared permissionsCore wildcard (exact parity). / `project-tasks.ts` (Better Auth assignee-name seam — same users-mirror approach applies), `project-media.ts` (ownership guard), `project-costs` done W1
 - `project-groups.ts`, `project-categories.ts` (cascade null-out + suggested-price math → mutations), `group-templates.ts` (applyGroupTemplate orchestration)
 - `line-items.ts` (THE keystone — availability/double-booking + merge-dedup + auto-pricing + stale-guard into mutations; batch writes need flags/native)
 - `projects.ts` (project-numbering sharded-counter into createNative; duplicate/saveAsTemplate/deleteTemplate/deleteProject cascade → mutations)

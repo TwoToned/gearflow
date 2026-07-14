@@ -27,12 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  createSavedView,
-  updateSavedView,
-  deleteSavedView,
-  setDefaultSavedView,
-} from "@/server/saved-views";
+import { useSavedViewWrites } from "@/hooks/use-saved-views-writes";
 import type { SavedTableView, SavedViewConfig } from "@/lib/saved-views";
 
 interface Props {
@@ -106,10 +101,11 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
 
   // Reactive `views` auto-updates after a write lands in Convex — nothing to refetch.
   const invalidate = () => {};
+  const writes = useSavedViewWrites();
 
   const createMut = useServerMutation({
     mutationFn: (vars: { name: string; config: SavedViewConfig; isDefault: boolean }) =>
-      createSavedView({ tableId, ...vars }) as unknown as Promise<SavedTableView>,
+      writes.create({ tableId, ...vars }) as unknown as Promise<SavedTableView>,
     onSuccess: (view: SavedTableView) => {
       invalidate();
       setActiveViewId(view.id);
@@ -123,7 +119,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
 
   const updateMut = useServerMutation({
     mutationFn: (vars: { id: string; config: SavedViewConfig }) =>
-      updateSavedView(vars.id, { config: vars.config }),
+      writes.update(vars.id, vars.config),
     onSuccess: () => {
       invalidate();
       toast.success("View updated");
@@ -132,7 +128,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   });
 
   const deleteMut = useServerMutation({
-    mutationFn: (id: string) => deleteSavedView(id),
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: (_d, id) => {
       invalidate();
       if (activeViewId === id) setActiveViewId(null);
@@ -142,7 +138,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   });
 
   const defaultMut = useServerMutation({
-    mutationFn: (id: string | null) => setDefaultSavedView(tableId, id),
+    mutationFn: (id: string | null) => writes.setDefault(tableId, id),
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message || "Could not set default"),
   });

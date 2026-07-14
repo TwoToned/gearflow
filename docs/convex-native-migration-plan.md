@@ -227,10 +227,10 @@ Assets bulk-edit + force-return; **all line-item bulk** (delete/edit/move + all 
 
 ### Not multi-select today (no batch needed unless you want the *feature*)
 suppliers, locations, categories still have **no multi-select UI**. Note: assets have **no category field** (category is on the model), so "apply category to N assets" isn't applicable.
-- **DONE (built 12 Jul):** **bulk-tag N assets** (append semantics — `api.assets.bulkAddTags` array mutation + `bulkTagAssets` server action + "Add tags" bulk-bar action) and **bulk-archive N clients** (`api.clients.bulkArchive` + `bulkArchiveClients` + row-selection added to the clients table). Both are single-call array mutations with per-item org re-check, matching the invariant.
+- **DONE (built 14 Jul — the "12 Jul" claim here was inaccurate; neither existed on main until now):** **bulk-tag N assets** (append semantics — `assets.bulkAddTags` array mutation + `bulkTagAssets` server action + "Add tags" bulk-bar action, PR #491) and **bulk-archive N clients** (`clientWrites.archiveManyNative` browser-direct array mutation + `useClientWrites().bulkArchive` + row-selection added to the clients table, PR #492). Both are single-call array mutations with per-row org re-check, matching the invariant.
 
 ### Cleanups surfaced by the sweep
-- **DONE (12 Jul): Notifications "Dismiss All"** now persists server-side via the same DB-backed dismissal system as the bell, in **one bulk call** (`dismissNotifications` → `notificationDismissals.createManyIfMissing`). Was localStorage-only.
+- **DONE (14 Jul, PR #490 — the "12 Jul" claim was inaccurate; the page was still localStorage-only until now): Notifications "Dismiss All"** (and single dismiss) on the `/notifications` page now persists server-side via the same DB-backed dismissal system as the bell, in **one bulk call** (`dismissNotifications` → `notificationDismissals.createManyIfMissing`). Was localStorage-only.
 - **Dead/unwired batch fns (still open):** `reorderCustomFieldDefinitions` (no UI), test-tag `BatchCreateDialog` (orphaned), `acceptAllSuggestedPrices` (no call site). Wire or delete.
 
 ---
@@ -265,7 +265,7 @@ suppliers, locations, categories still have **no multi-select UI**. Note: assets
 | 4 | `swapLineItemAsset` reads all org projects per reassign | `projectLineItems.ts:722` | range-scan `by_organizationId_rentalStartDate` (exists) | ✅ done (PR #426) |
 | 4 | `checkAvailability` reads all org projects | `availabilityCheck.ts:26` | referenced-only by projectId | ✅ done (PR #426) |
 | 5 | `dashboardLists` upcoming/home/blocking read whole projects + PM tables | `dashboardLists.ts:67,100,149` | use range-scan + `by_projectManagerId`/`by_userId` | ✅ done (PR #425) |
-| 5 | `dashboardStats` whole projects/maintenance collect (minute-bucketed reactive) | `dashboardStats.ts:33-48` | composite index range-scan | ⚙ needs index (maintenance) |
+| 5 | `dashboardStats` whole projects/maintenance collect (minute-bucketed reactive) | `dashboardStats.ts:33-48` | composite index range-scan | ✅ done (PR #489). New `by_organizationId_status_scheduledDate` (maintenance) + `by_organizationId_rentalEndDate` (projects); range-scan `MIN_TS < date <= now` per open status, bounding the reactive read-set to dated-and-due rows. The 6 numeric counters were already O(1) sharded. |
 | 6 | `nextLineSort` (both copies) collect whole set to compute max(sortOrder) (O(N), bulk→O(N²)) | `projectLineItems.ts`, `lineItemWrites.ts` | `by_projectId_sortOrder` `.order("desc").first()` | ✅ done (PR #427). Groups/categories/warehouse copies operate on tiny sets (<~20) → low-value, skipped |
 | 6 | `fileUploads.getByThumbnailUrl` full-table cross-org scan | `fileUploads.ts:43` | add `by_thumbnailUrl` index | ✅ done (PR #427) |
 | 7 | `models.list` whole-table reactive (4.5K) for pickers | `models.ts:16` + `use-models.ts` | field-project; route search-pickers to `search.models` | ▶ behaviour |

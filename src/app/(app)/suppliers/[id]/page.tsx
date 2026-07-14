@@ -12,7 +12,9 @@ import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { getSupplierById, getSupplierAssets, getSupplierSubhires, deleteSupplier } from "@/server/suppliers";
+import { getSupplierAssets, getSupplierSubhires, deleteSupplier } from "@/server/suppliers";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { getSupplierOrders } from "@/server/supplier-orders";
@@ -73,12 +75,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
   const { data: supplier, isLoading } = useServerQuery({
     queryKey: ["supplier", orgId, id],
-    queryFn: () => getSupplierById(id),
+    enabled: !!orgId && isAuthenticated,
+    queryFn: () => convex.query(api.suppliers.detail, { orgId: orgId!, id }),
   });
 
   const { data: ordersData, refetch: refetchOrders } = useServerQuery({

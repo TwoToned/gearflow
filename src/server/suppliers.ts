@@ -140,27 +140,6 @@ export async function getSuppliersPaginated(params: {
   return serialize({ suppliers, total });
 }
 
-
-export async function getSupplierById(id: string) {
-  const { organizationId } = await getOrgContext();
-  const doc = await getConvexSupplierById(id);
-  if (!doc || doc.organizationId !== organizationId) throw new Error("Supplier not found");
-
-  // assets/orders/lineItems counts all from Convex now.
-  // The embedded `orders` array the old shape carried is dropped — the detail page
-  // fetches its order list via getSupplierOrders, never reads `supplier.orders`.
-  const counts = await getOrgSupplierCounts(organizationId);
-
-  return serialize({
-    ...mapSupplier(doc),
-    _count: {
-      assets: counts.get(id)?.assets ?? 0,
-      orders: counts.get(id)?.orders ?? 0,
-      lineItems: counts.get(id)?.lineItems ?? 0,
-    },
-  });
-}
-
 export async function getSupplierAssets(supplierId: string, params: {
   page?: number;
   pageSize?: number;

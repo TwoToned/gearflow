@@ -13,7 +13,8 @@ import { Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supplierOrderSchema, type SupplierOrderFormValues } from "@/lib/validations/supplier-order";
 import { createSupplierOrder } from "@/server/supplier-orders";
-import { getSupplierById } from "@/server/suppliers";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../../convex/_generated/api";
 import { supplierOrderStatusLabels } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -59,12 +60,15 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
 function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: supplierId } = use(params);
   const router = useRouter();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
   const { data: supplier, isLoading, error } = useServerQuery({
     queryKey: ["supplier", orgId, supplierId],
-    queryFn: () => getSupplierById(supplierId),
+    enabled: !!orgId && isAuthenticated,
+    queryFn: () => convex.query(api.suppliers.detail, { orgId: orgId!, id: supplierId }),
   });
 
   const form = useForm<SupplierOrderFormValues>({

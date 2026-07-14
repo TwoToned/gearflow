@@ -5,10 +5,9 @@ import Link from "next/link";
 import { Plus, Archive } from "lucide-react";
 import { toast } from "sonner";
 
-import { getClientProjectCounts } from "@/server/clients";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useClients } from "@/hooks/use-clients";
+import { useClientProjectCounts } from "@/hooks/use-client-project-counts";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -161,11 +160,7 @@ export function ClientTable() {
   // create/update/archive). Project counts are cross-domain (projects still in
   // Prisma) so they come from a separate, non-reactive server query.
   const allClients = useClients(orgId);
-  const { data: projectCounts } = useServerQuery({
-    queryKey: ["client-project-counts", orgId],
-    queryFn: () => getClientProjectCounts(),
-    enabled: !!orgId,
-  });
+  const projectCounts = useClientProjectCounts(orgId);
 
   // Filter / sort / paginate in the browser over the reactive list.
   const { clients, total } = useMemo(() => {

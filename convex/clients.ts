@@ -33,6 +33,31 @@ export const getById = query({
   },
 });
 
+/**
+ * Project-count-per-client map (clientId → count) for the clients table's
+ * "Projects" column — the browser-native replacement for the getClientProjectCounts
+ * server action. Tallies every org project that has a clientId (parity with the
+ * action, which counted the whole projects.list including templates). Fetched
+ * ONE-SHOT by the client (counts have no liveness need), so this is not a reactive
+ * org-wide subscription (Appendix B).
+ */
+export const projectCounts = query({
+  args: { orgId: v.string() },
+  returns: v.record(v.string(), v.number()),
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    const counts: Record<string, number> = {};
+    for (const p of projects) {
+      if (p.clientId) counts[p.clientId] = (counts[p.clientId] ?? 0) + 1;
+    }
+    return counts;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

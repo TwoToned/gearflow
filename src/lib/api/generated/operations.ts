@@ -141,7 +141,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "clients.archiveClient": { name: "clients.archiveClient", module: "clients", fn: "archiveClient", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
   "clients.createClient": { name: "clients.createClient", module: "clients", fn: "createClient", kind: "write", resource: "client", action: "create", scope: "client:create", params: [{ name: "data", type: "ClientFormValues", optional: false, schemaRef: "ClientFormValues" }], dangerous: false, summary: "" },
   "clients.getClient": { name: "clients.getClient", module: "clients", fn: "getClient", kind: "read", resource: "client", action: "read", scope: "client:read", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "" },
-  "clients.getClientProjectCounts": { name: "clients.getClientProjectCounts", module: "clients", fn: "getClientProjectCounts", kind: "read", resource: "client", action: "read", scope: "client:read", params: [], dangerous: false, summary: "Project counts per client (clientId -> count). From Convex." },
   "clients.getClients": { name: "clients.getClients", module: "clients", fn: "getClients", kind: "read", resource: "client", action: "read", scope: "client:read", params: [{ name: "params", type: "{ search?: string; type?: string; isActive?: boolean; filters?: Record<string, FilterValue>; page?: number; pageSize?: number; sortBy?: string; sortOrder?: \"asc\" | \"desc\"; }", optional: true }], dangerous: false, summary: "" },
   "clients.updateClient": { name: "clients.updateClient", module: "clients", fn: "updateClient", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }, { name: "data", type: "ClientFormValues", optional: false, schemaRef: "ClientFormValues" }], dangerous: false, summary: "" },
   "clients.updateClientNotes": { name: "clients.updateClientNotes", module: "clients", fn: "updateClientNotes", kind: "write", resource: "client", action: "update", scope: "client:update", params: [{ name: "id", type: "string", optional: false }, { name: "notes", type: "string", optional: false }], dangerous: false, summary: "" },
@@ -4276,4 +4275,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 523;
+export const OPERATION_COUNT = 522;

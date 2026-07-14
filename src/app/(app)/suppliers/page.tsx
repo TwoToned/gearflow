@@ -9,8 +9,7 @@ import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { FadeIn } from "@/components/ui/motion";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { getSupplierCounts } from "@/server/suppliers";
+import { useSupplierCounts } from "@/hooks/use-supplier-counts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,11 +51,7 @@ export default function SuppliersPage() {
   // Same reactive list + counts the SupplierTable consumes — we aggregate it
   // client-side for the dashboard tiles so there's no extra server work.
   const allSuppliers = useSuppliers(orgId);
-  const { data: supplierCounts } = useServerQuery({
-    queryKey: ["supplier-counts", orgId],
-    queryFn: () => getSupplierCounts(),
-    enabled: !!orgId,
-  });
+  const supplierCounts = useSupplierCounts(orgId);
 
   const stats = useMemo(() => {
     const list = allSuppliers ?? [];

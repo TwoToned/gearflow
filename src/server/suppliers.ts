@@ -18,8 +18,6 @@ import {
   type SubhireProjectSelect,
 } from "@/lib/line-item-count-read";
 import {
-  getSupplierOrdersByOrg,
-  countSupplierAssetsAndOrders,
   getSupplierById as getConvexSupplierById,
   getMappedSuppliersByOrg,
   mapSupplier,
@@ -142,22 +140,6 @@ export async function getSuppliersPaginated(params: {
   return serialize({ suppliers, total });
 }
 
-/**
- * Asset + order counts per supplier (supplierId -> { assets, orders }).
- * Both inputs now come off Convex — assets via getAssetsByOrg and supplier orders
- * via getSupplierOrdersByOrg (both dual-written) — counted in JS by
- * countSupplierAssetsAndOrders, replacing the Prisma `supplierOrder.groupBy`
- * (Phase A). Used by the reactive supplier table, which subscribes to the supplier
- * list via Convex and merges these (non-reactive) counts.
- */
-export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
-  const { organizationId } = await getOrgContext();
-  const [allAssets, orders] = await Promise.all([
-    getAssetsByOrg(organizationId),
-    getSupplierOrdersByOrg(organizationId),
-  ]);
-  return serialize(countSupplierAssetsAndOrders(allAssets, orders));
-}
 
 export async function getSupplierById(id: string) {
   const { organizationId } = await getOrgContext();

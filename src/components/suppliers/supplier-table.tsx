@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { getSupplierCounts } from "@/server/suppliers";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useSupplierCounts } from "@/hooks/use-supplier-counts";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -147,13 +146,9 @@ export function SupplierTable() {
   // Reactive supplier list straight from Convex (auto-updates on any supplier
   // create/update/delete). Asset + order counts are a cross-domain aggregate
   // that nothing invalidates (no liveness need) so they come from a one-shot,
-  // non-reactive server query (useServerQuery, not React Query).
+  // non-reactive browser-native Convex query (useSupplierCounts → suppliers.counts).
   const allSuppliers = useSuppliers(orgId);
-  const { data: supplierCounts } = useServerQuery({
-    queryKey: ["supplier-counts", orgId],
-    queryFn: () => getSupplierCounts(),
-    enabled: !!orgId,
-  });
+  const supplierCounts = useSupplierCounts(orgId);
 
   // Filter / sort / paginate in the browser over the reactive list (mirrors the
   // old getSuppliersPaginated where: isActive enum filter + name/contact/email/

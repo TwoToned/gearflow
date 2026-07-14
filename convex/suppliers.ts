@@ -32,6 +32,38 @@ export const getById = query({
   },
 });
 
+/**
+ * Asset + order counts per supplier (supplierId → { assets, orders }) for the
+ * suppliers table — browser-native replacement for the getSupplierCounts server
+ * action. Tallies every org asset and supplier order that has a supplierId,
+ * matching countSupplierAssetsAndOrders (no isActive filter). Fetched ONE-SHOT by
+ * the table (counts have no liveness need), so this is not a reactive org-wide
+ * subscription (Appendix B).
+ */
+export const counts = query({
+  args: { orgId: v.string() },
+  returns: v.record(v.string(), v.object({ assets: v.number(), orders: v.number() })),
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const out: Record<string, { assets: number; orders: number }> = {};
+    const ensure = (id: string) => (out[id] ??= { assets: 0, orders: 0 });
+
+    const assets = await ctx.db
+      .query("assets")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const a of assets) if (a.supplierId) ensure(a.supplierId).assets++;
+
+    const orders = await ctx.db
+      .query("supplierOrders")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const o of orders) if (o.supplierId) ensure(o.supplierId).orders++;
+
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

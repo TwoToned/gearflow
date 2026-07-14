@@ -27,7 +27,7 @@ site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, a
 - `roi.ts` (getFleetRoi/getModelRoi → api.roi.*; move computeRoi join into query/client)
 - `dashboard.ts` (getMyHomeData)
 - `tags.ts` (getOrgTags — 9-way Convex union → one query)
-- `availability.ts` (getModel/Asset/KitBookings, getCalendarData)
+- ~~`availability.ts` (getModel/Asset/KitBookings, getCalendarData)~~ **DONE** — deleted; browser-direct via `convex/availability.ts` (4 one-shot queries: modelBookings/assetBookings/kitBookings/calendarData, scoped `by_modelId`/`by_kitId`/`by_assetId` fetches + per-row org re-check). Pure builders ported to `convex/lib/availabilityBookings.ts` (+ test); public shapes moved to `src/lib/availability-types.ts`; `src/lib/availability-read.ts` (+ test) deleted. Not a curated agent tool → the 4 ops just drop.
 - `project-costs.ts` (getProjectOperationalCosts — expose pure P&L helper as query)
 - `scan-lookup.ts` (fold 4 point-reads into 1 query)
 - `activity-log.ts` reads (getActivityLogs/getEntityActivityLog thin; keep exportCSV)

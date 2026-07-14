@@ -23,6 +23,7 @@ import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as brandTemplates from "../brandTemplates.js";
 import type * as bulkAssets from "../bulkAssets.js";
 import type * as categories from "../categories.js";
+import type * as categoriesWrites from "../categoriesWrites.js";
 import type * as categorySlots from "../categorySlots.js";
 import type * as checkItems from "../checkItems.js";
 import type * as checkRecordOps from "../checkRecordOps.js";
@@ -185,6 +186,7 @@ declare const fullApi: ApiFromModules<{
   brandTemplates: typeof brandTemplates;
   bulkAssets: typeof bulkAssets;
   categories: typeof categories;
+  categoriesWrites: typeof categoriesWrites;
   categorySlots: typeof categorySlots;
   checkItems: typeof checkItems;
   checkRecordOps: typeof checkRecordOps;

@@ -127,7 +127,8 @@ import {
   saveChildItemChecks,
 } from "@/server/check-records";
 import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
-import { searchContainerAssets } from "@/server/categories";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -341,6 +342,8 @@ function WarehouseProjectPage({
   const isMobile = useIsMobile();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const wConvex = useConvex();
+  const { isAuthenticated: wAuthed } = useConvexAuth();
 
   // Container state for prep grouping
   const [selectedContainer, setSelectedContainer] = useState<string>("");
@@ -1362,7 +1365,8 @@ function WarehouseProjectPage({
   // Fetch container assets from the configured case category
   const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
-    queryFn: () => searchContainerAssets(""),
+    queryFn: () => wConvex.query(convexApi.categories.containerAssetSearch, { orgId: orgId as string, query: "" }),
+    enabled: !!orgId && wAuthed,
   });
 
   type ContainerAsset = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };

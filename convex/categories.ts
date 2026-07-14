@@ -63,6 +63,147 @@ export const counts = query({
   },
 });
 
+// ─── Browser-direct composite reads (Phase 3 — replace getCategory +
+// searchContainerAssets in src/server/categories.ts). getCategories/getCategoryTree
+// were dead (pickers use the reactive useCategories hook). ──────────────────────
+
+/**
+ * The category detail composite: parent, children (+ counts), kits (+ member counts),
+ * active models (+ asset count + primary photo), and own counts. Rebuilds the deep
+ * Prisma include from the org's Convex domain lists (all org-scoped by requireOrgRead).
+ */
+export const detail = query({
+  args: { id: v.string(), orgId: v.string() },
+  handler: async (ctx, { id, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const category = cats.find((c) => c.id === id);
+    if (!category) throw new ConvexError("Category not found");
+
+    const [models, kits, assets, media] = await Promise.all([
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("modelMedia").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+
+    // modelKitCounts[catId] = { models, kits }; childCounts[catId] = # children.
+    const mk = new Map<string, { models: number; kits: number }>();
+    const ensureMk = (cid: string) => { let e = mk.get(cid); if (!e) { e = { models: 0, kits: 0 }; mk.set(cid, e); } return e; };
+    for (const m of models) if (m.categoryId) ensureMk(m.categoryId).models++;
+    for (const k of kits) if (k.categoryId) ensureMk(k.categoryId).kits++;
+    const childCounts = new Map<string, number>();
+    for (const c of cats) if (c.parentId) childCounts.set(c.parentId, (childCounts.get(c.parentId) ?? 0) + 1);
+
+    // Active-asset count per model + primary photo per model.
+    const assetCount = new Map<string, number>();
+    for (const a of assets) if (a.isActive !== false && a.modelId) assetCount.set(a.modelId, (assetCount.get(a.modelId) ?? 0) + 1);
+    const photo = new Map<string, { url: string | null; thumbnailUrl: string | null }>();
+    for (const md of media) {
+      if (md.type !== "PHOTO" || !md.isPrimary) continue;
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", md.fileId)).unique();
+      const resolved = file && file.organizationId === orgId ? file : null;
+      photo.set(md.modelId, { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null });
+    }
+
+    const parent = category.parentId ? cats.find((c) => c.id === category.parentId) ?? null : null;
+    const children = cats
+      .filter((c) => c.parentId === id)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))
+      .map((c) => ({ ...c, _count: { models: mk.get(c.id)?.models ?? 0, kits: mk.get(c.id)?.kits ?? 0, children: childCounts.get(c.id) ?? 0 } }));
+
+    const catKits = kits.filter((k) => k.categoryId === id).sort((a, b) => a.name.localeCompare(b.name));
+    const kitsOut = [];
+    for (const k of catKits) {
+      const [ser, bulk] = await Promise.all([
+        ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", k.id)).collect(),
+        ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", k.id)).collect(),
+      ]);
+      // by_kitId is a global index — org-filter the member rows (defense-in-depth).
+      const serN = ser.filter((r) => r.organizationId === orgId).length;
+      const bulkN = bulk.filter((r) => r.organizationId === orgId).length;
+      kitsOut.push({ ...k, _count: { serializedItems: serN, bulkItems: bulkN } });
+    }
+
+    const modelsOut = models
+      .filter((m) => m.categoryId === id && m.isActive !== false)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((m) => {
+        const p = photo.get(m.id);
+        return { ...m, _count: { assets: assetCount.get(m.id) ?? 0 }, media: p ? [{ url: p.url, thumbnailUrl: p.thumbnailUrl }] : [] };
+      });
+
+    const ownCounts = mk.get(id) ?? { models: 0, kits: 0 };
+    return {
+      ...category,
+      parent,
+      children,
+      kits: kitsOut,
+      models: modelsOut,
+      _count: { models: ownCounts.models, kits: ownCounts.kits, children: childCounts.get(id) ?? 0 },
+    };
+  },
+});
+
+/** Collect a category + all its descendant ids (parentId walk). */
+function collectDescendants(cats: { id: string; parentId?: string | null }[], rootId: string): Set<string> {
+  const byParent = new Map<string, string[]>();
+  for (const c of cats) if (c.parentId) { const l = byParent.get(c.parentId) ?? []; l.push(c.id); byParent.set(c.parentId, l); }
+  const ids = new Set<string>([rootId]);
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    for (const child of byParent.get(cur) ?? []) if (!ids.has(child)) { ids.add(child); stack.push(child); }
+  }
+  return ids;
+}
+
+/**
+ * Search assets in the org's configured container category (orgSettings.prepKitCategoryId
+ * + descendants). Returns up to 20 picker options. Empty when no container category is set.
+ */
+export const containerAssetSearch = query({
+  args: { orgId: v.string(), query: v.optional(v.string()) },
+  handler: async (ctx, { orgId, query: search }) => {
+    await requireOrgRead(ctx, orgId);
+    const settingsRow = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).first();
+    let rootCatId: string | undefined;
+    if (settingsRow?.settings) {
+      try { rootCatId = (JSON.parse(settingsRow.settings) as { prepKitCategoryId?: string }).prepKitCategoryId; } catch { rootCatId = undefined; }
+    }
+    if (!rootCatId) return [];
+
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const categoryIds = collectDescendants(cats, rootCatId);
+    const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const modelById = new Map(models.map((m) => [m.id, m]));
+
+    const q = (search ?? "").toLowerCase();
+    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q2) => q2.eq("organizationId", orgId)).collect();
+    const matched = assets
+      .filter((a) => {
+        const model = a.modelId ? modelById.get(a.modelId) : undefined;
+        if (!model?.categoryId || !categoryIds.has(model.categoryId)) return false;
+        if (!q) return true;
+        const name = model.name?.toLowerCase() ?? "";
+        return a.assetTag.toLowerCase().includes(q) || (a.customName ?? "").toLowerCase().includes(q) || name.includes(q);
+      })
+      .sort((a, b) => a.assetTag.localeCompare(b.assetTag))
+      .slice(0, 20);
+
+    return matched.map((a) => {
+      const modelName = a.modelId ? modelById.get(a.modelId)?.name : undefined;
+      return {
+        value: a.customName || a.assetTag,
+        label: a.customName ? `${a.customName} (${a.assetTag})` : `${modelName} — ${a.assetTag}`,
+        assetId: a.id,
+        assetTag: a.assetTag,
+        modelId: a.modelId ?? null,
+      };
+    });
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

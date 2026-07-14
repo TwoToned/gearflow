@@ -18,7 +18,12 @@ import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
  */
 
 const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
-const OPEN_MAINTENANCE = new Set(["SCHEDULED", "IN_PROGRESS"]);
+const OPEN_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as const;
+// A range `.lte`/`.lt(now)` sweeps in rows whose date field is undefined (undefined
+// sorts before all numbers in a Convex index). Pin the lower bound at the minimum
+// representable timestamp so undated rows stay OUT of the read-set entirely (matters
+// for date-less draft/quote projects), keeping the reactive read-set minimal.
+const MIN_TS = -8_640_000_000_000_000;
 
 export const bundle = query({
   args: { orgId: v.string(), now: v.number() },
@@ -38,28 +43,37 @@ export const bundle = query({
     const counter = ready ? await readCounterValues(ctx, orgId) : ZERO_COUNTERS;
 
     // ── Date-derived: maintenanceDue (open + scheduledDate arrived) ──
-    const maintenance = await ctx.db
-      .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .collect();
-    const maintenanceDue = maintenance.filter(
-      (m) => OPEN_MAINTENANCE.has(m.status ?? "") && m.scheduledDate != null && (m.scheduledDate as number) <= now,
-    ).length;
+    // Range-scan by (org, status, MIN_TS < scheduledDate <= now) per open status so
+    // the reactive read-set is only the dated-and-due records, not the whole
+    // maintenance table (Appendix B). The lower bound keeps undated rows out.
+    let maintenanceDue = 0;
+    for (const status of OPEN_MAINTENANCE_STATUSES) {
+      const due = await ctx.db
+        .query("maintenanceRecords")
+        .withIndex("by_organizationId_status_scheduledDate", (q) =>
+          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lte("scheduledDate", now),
+        )
+        .collect();
+      maintenanceDue += due.length;
+    }
 
     // ── Date-derived: overdueReturns (CHECKED_OUT line items in overdue projects) ──
     // Overdue = non-template project past its rentalEndDate, not in a terminal
-    // status. The overdue set is small; read CHECKED_OUT line items per overdue
-    // project via by_projectId_status (bounded), NOT the whole org's line items.
-    const projects = await ctx.db
+    // status. Range-scan by (org, MIN_TS < rentalEndDate < now) so the reactive
+    // read-set is only past-end-date projects, not the whole org's projects table
+    // (Appendix B); the lower bound keeps date-less draft/quote projects out. Then
+    // read CHECKED_OUT line items per overdue project via by_projectId_status
+    // (bounded), NOT the whole org's line items.
+    const overdueProjects = await ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId_rentalEndDate", (q) =>
+        q.eq("organizationId", orgId).gt("rentalEndDate", MIN_TS).lt("rentalEndDate", now),
+      )
       .collect();
-    const overdueProjectIds = projects
+    const overdueProjectIds = overdueProjects
       .filter(
         (p) =>
           p.isTemplate !== true &&
-          p.rentalEndDate != null &&
-          (p.rentalEndDate as number) < now &&
           !RETURN_TERMINAL.has(p.status ?? ""),
       )
       .map((p) => p.id);

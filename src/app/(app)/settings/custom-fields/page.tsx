@@ -14,12 +14,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, GripVertical, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  createCustomFieldDefinition,
-  updateCustomFieldDefinition,
-  deleteCustomFieldDefinition,
-} from "@/server/custom-fields";
 import { useCustomFieldDefinitions } from "@/hooks/use-custom-fields";
+import { useCustomFieldWrites } from "@/hooks/use-custom-fields-writes";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   customFieldDefinitionSchema,
@@ -103,6 +99,7 @@ function FieldDialog({
 
   const fieldType = form.watch("fieldType");
   const label = form.watch("label");
+  const writes = useCustomFieldWrites();
 
   const mutation = useServerMutation({
     mutationFn: (data: CustomFieldDefinitionInput) => {
@@ -111,7 +108,7 @@ function FieldDialog({
         .map((s: string) => s.trim())
         .filter(Boolean);
       if (isEdit) {
-        return updateCustomFieldDefinition(editing.id, {
+        return writes.update(editing.id, {
           label: data.label,
           fieldType: data.fieldType ?? "TEXT",
           options,
@@ -121,7 +118,7 @@ function FieldDialog({
           isActive: data.isActive ?? true,
         });
       }
-      return createCustomFieldDefinition({ ...data, options });
+      return writes.create({ ...data, options });
     },
     onSuccess: () => {
       // No invalidation: the page (useCustomFieldDefinitions) and the field
@@ -242,6 +239,7 @@ export default function CustomFieldsSettingsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Def | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Def | null>(null);
+  const writes = useCustomFieldWrites();
 
   // Reactive custom-field list straight from Convex (auto-updates on any
   // create/update/delete/reorder). The Convex list returns ALL entity types for
@@ -250,7 +248,7 @@ export default function CustomFieldsSettingsPage() {
   const isLoading = allDefs === undefined;
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteCustomFieldDefinition(id),
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: () => {
       // Reactive: consumers subscribe to Convex (see create/update above).
       toast.success("Custom field removed");

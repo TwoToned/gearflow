@@ -94,6 +94,7 @@ import type * as maintenanceRecordAssets from "../maintenanceRecordAssets.js";
 import type * as maintenanceRecords from "../maintenanceRecords.js";
 import type * as members from "../members.js";
 import type * as modelBulkAccessories from "../modelBulkAccessories.js";
+import type * as modelBulkAccessoriesWrites from "../modelBulkAccessoriesWrites.js";
 import type * as modelCheckItems from "../modelCheckItems.js";
 import type * as modelMedia from "../modelMedia.js";
 import type * as models from "../models.js";
@@ -250,6 +251,7 @@ declare const fullApi: ApiFromModules<{
   maintenanceRecords: typeof maintenanceRecords;
   members: typeof members;
   modelBulkAccessories: typeof modelBulkAccessories;
+  modelBulkAccessoriesWrites: typeof modelBulkAccessoriesWrites;
   modelCheckItems: typeof modelCheckItems;
   modelMedia: typeof modelMedia;
   models: typeof models;

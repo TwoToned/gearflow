@@ -41,6 +41,7 @@ import type * as crewTimeEntries from "../crewTimeEntries.js";
 import type * as crewWrites from "../crewWrites.js";
 import type * as crons from "../crons.js";
 import type * as customFieldDefinitions from "../customFieldDefinitions.js";
+import type * as customFieldDefinitionsWrites from "../customFieldDefinitionsWrites.js";
 import type * as dashboardActivity from "../dashboardActivity.js";
 import type * as dashboardCounters from "../dashboardCounters.js";
 import type * as dashboardLists from "../dashboardLists.js";
@@ -194,6 +195,7 @@ declare const fullApi: ApiFromModules<{
   crewWrites: typeof crewWrites;
   crons: typeof crons;
   customFieldDefinitions: typeof customFieldDefinitions;
+  customFieldDefinitionsWrites: typeof customFieldDefinitionsWrites;
   dashboardActivity: typeof dashboardActivity;
   dashboardCounters: typeof dashboardCounters;
   dashboardLists: typeof dashboardLists;

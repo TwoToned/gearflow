@@ -45,7 +45,7 @@ site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, a
 
 ### Wave 2 — simple Convex-only CRUD (author *Writes owning Zod+unique-guard+audit, browser-direct, re-home reads, delete)
 - `clients.ts` (LOWEST risk), `client-media.ts` + `location-media.ts` (trivial, need RBAC media-write mutation)
-- `saved-views.ts`, `notification-preferences.ts`, `custom-fields.ts`, `brand-templates.ts`, `test-tag-profiles.ts`
+- `saved-views.ts`, ~~`notification-preferences.ts`~~ **DONE (#512)** — deleted; browser-direct via `convex/userNotificationPreferences.ts` `mine`/`upsertMine` (USER-scoped: row key + audit derive from the verified token subject, never a client arg; defaults/resolve ported to `convex/lib/notificationPreferences.ts`). `src/lib/user-notification-preferences-read.ts` KEPT (email-sender cron), ~~`custom-fields.ts`~~ **DONE (#513)** — deleted; reads were already native (`useCustomFieldDefinitions` reactive), reorder was unwired (dead), writes → browser-direct `convex/customFieldDefinitionsWrites.ts` (create/update/remove, 4 guards + per-row org re-check + unique-fieldKey guard via `by_organizationId_entityType_fieldKey` + immutable fieldKey/entityType/createdAt + boundary normalization + audit). `src/lib/custom-fields-read.ts` KEPT (asset create/edit + entity forms), ~~`brand-templates.ts`~~ **DONE (#509)**, `test-tag-profiles.ts`
 - `categories.ts` (delete-guard→mutation), `locations.ts` (single-default toggle+delete-guard+cascade→mutation), `suppliers.ts` (delete-guard+rate cascade→mutation)
 - `notifications.ts` (dismissal writes; getNotifications has Prisma invitation/user seam), `collaboration.ts` (thin bridge; move RBAC into Convex + browser-authorize the service-only mutations)
 

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createCategory } from "@/server/categories";
+import { useCategoryWrites } from "@/hooks/use-category-writes";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
@@ -47,8 +47,9 @@ export function QuickCreateCategory({ open, onOpenChange, onCreated }: QuickCrea
     [categories],
   );
 
+  const writes = useCategoryWrites();
   const mutation = useServerMutation({
-    mutationFn: () => createCategory({ name, parentId: parentId || undefined }),
+    mutationFn: () => writes.create({ name, parentId: parentId || undefined }),
     onSuccess: (result) => {
       toast.success("Category created");
       onCreated?.(result.id);

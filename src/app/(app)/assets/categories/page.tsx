@@ -8,7 +8,7 @@ import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Folder, FolderTree,
 import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
-import { createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategoryWrites } from "@/hooks/use-category-writes";
 import { useCategoryCounts } from "@/hooks/use-category-counts";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -91,8 +91,9 @@ function CategoriesContent() {
     defaultValues: { name: "", description: "", icon: "", sortOrder: 0 },
   });
 
+  const writes = useCategoryWrites();
   const createMutation = useServerMutation({
-    mutationFn: createCategory,
+    mutationFn: (data: CategoryFormValues) => writes.create(data),
     onSuccess: () => {
       toast.success("Category created");
       resetForm();
@@ -101,7 +102,7 @@ function CategoriesContent() {
   });
 
   const updateMutation = useServerMutation({
-    mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => updateCategory(id, data),
+    mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => writes.update(id, data),
     onSuccess: () => {
       toast.success("Category updated");
       resetForm();
@@ -110,7 +111,7 @@ function CategoriesContent() {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: deleteCategory,
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: () => {
       toast.success("Category deleted");
     },

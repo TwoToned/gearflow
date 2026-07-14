@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategoryWrites } from "@/hooks/use-category-writes";
 import { useCategoryCounts } from "@/hooks/use-category-counts";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -73,8 +73,9 @@ export function CategoryManager() {
     defaultValues: { name: "", description: "", icon: "", sortOrder: 0 },
   });
 
+  const writes = useCategoryWrites();
   const createMutation = useServerMutation({
-    mutationFn: createCategory,
+    mutationFn: (data: CategoryFormValues) => writes.create(data),
     onSuccess: () => {
       toast.success("Category created");
       resetForm();
@@ -83,7 +84,7 @@ export function CategoryManager() {
   });
 
   const updateMutation = useServerMutation({
-    mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => updateCategory(id, data),
+    mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => writes.update(id, data),
     onSuccess: () => {
       toast.success("Category updated");
       resetForm();
@@ -92,7 +93,7 @@ export function CategoryManager() {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: deleteCategory,
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: () => {
       toast.success("Category deleted");
     },

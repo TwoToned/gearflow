@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 
-import { getCategory } from "@/server/categories";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,10 +54,13 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const { data: category, isLoading, error, refetch } = useServerQuery({
     queryKey: ["category", orgId, id],
-    queryFn: () => getCategory(id),
+    queryFn: () => convex.query(api.categories.detail, { id, orgId: orgId as string }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   if (isLoading) {

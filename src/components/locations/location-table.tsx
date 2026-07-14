@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Star } from "lucide-react";
 
-import { getLocationCounts } from "@/server/locations";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useLocationCounts } from "@/hooks/use-location-counts";
 import { useLocations } from "@/hooks/use-locations";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -157,11 +156,7 @@ export function LocationTable() {
   // create/update/delete). Asset/bulk/kit counts are cross-domain (still in
   // Prisma) so they come from a separate, non-reactive server query.
   const allLocations = useLocations(orgId);
-  const { data: locationCounts } = useServerQuery({
-    queryKey: ["location-counts", orgId],
-    queryFn: () => getLocationCounts(),
-    enabled: !!orgId,
-  });
+  const locationCounts = useLocationCounts(orgId);
 
   // Filter (search name/address + type) → sort siblings (isDefault first, then
   // the chosen column) → build the hierarchy tree → paginate the tree rows. All

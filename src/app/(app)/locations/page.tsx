@@ -9,8 +9,7 @@ import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { FadeIn } from "@/components/ui/motion";
 import { useLocations } from "@/hooks/use-locations";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { getLocationCounts } from "@/server/locations";
+import { useLocationCounts } from "@/hooks/use-location-counts";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -25,11 +24,7 @@ function LocationsDashboardHeader() {
   const orgId = activeOrg?.id;
 
   const locations = useLocations(orgId);
-  const { data: counts } = useServerQuery({
-    queryKey: ["location-counts", orgId],
-    queryFn: () => getLocationCounts(),
-    enabled: !!orgId,
-  });
+  const counts = useLocationCounts(orgId);
 
   const stats = useMemo(() => {
     const list = locations ?? [];

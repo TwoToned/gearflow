@@ -33,6 +33,46 @@ export const getById = query({
   },
 });
 
+/**
+ * Asset + bulk-asset + kit counts per location (locationId → { assets, bulkAssets,
+ * kits }) for the locations table — browser-native replacement for the
+ * getLocationCounts server action. Tallies every org asset/bulkAsset/kit that has a
+ * locationId (parity with the action, no filter). Fetched ONE-SHOT by the table
+ * (counts have no liveness need) → not a reactive org-wide subscription (Appendix B).
+ */
+export const counts = query({
+  args: { orgId: v.string() },
+  returns: v.record(
+    v.string(),
+    v.object({ assets: v.number(), bulkAssets: v.number(), kits: v.number() }),
+  ),
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const out: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
+    const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
+
+    const assets = await ctx.db
+      .query("assets")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const a of assets) if (a.locationId) ensure(a.locationId).assets++;
+
+    const bulkAssets = await ctx.db
+      .query("bulkAssets")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const b of bulkAssets) if (b.locationId) ensure(b.locationId).bulkAssets++;
+
+    const kits = await ctx.db
+      .query("kits")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    for (const k of kits) if (k.locationId) ensure(k.locationId).kits++;
+
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

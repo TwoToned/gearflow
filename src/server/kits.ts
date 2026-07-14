@@ -24,7 +24,7 @@ import { getLocationMap } from "@/lib/locations-read";
 import { getCategoryMap } from "@/lib/categories-read";
 import { mapLineItemDoc } from "@/lib/project-line-item-read";
 import { getAssetById, getBulkAssetById, getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc, mapConvexAssetToPrisma, mapConvexBulkAssetToPrisma } from "@/lib/assets-read";
-import { getKitById, getKitByAssetTag, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
+import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 
 
@@ -432,28 +432,6 @@ export async function archiveKit(id: string) {
   }
 
   return serialize(archived);
-}
-
-// ---------------------------------------------------------------------------
-// canDeleteKit – predicate for UI to decide which delete options are available
-// ---------------------------------------------------------------------------
-export async function canDeleteKit(id: string) {
-  const { organizationId } = await requirePermission("kit", "delete");
-
-  // The kit row comes off Convex (the dual-written reactive mirror); a miss
-  // reads null with no Prisma fallback (a fallback would mask mirror drift).
-  const convexKit = await getKitById(id);
-  if (!convexKit || convexKit.organizationId !== organizationId) {
-    throw new Error("Kit not found");
-  }
-
-  // ProjectLineItem references stay on Prisma until the keystone
-  // project-line-item tree migrates (see FEATUREDOCS/54).
-  const referencingLineItems = (await (await getConvexClient()).query(api.projectLineItems.listByKitId, { kitId: id, orgId: organizationId })).length;
-
-  return serialize(
-    computeKitDeletability(coerceKitDeletabilityRow(convexKit), referencingLineItems),
-  );
 }
 
 // ---------------------------------------------------------------------------

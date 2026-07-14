@@ -83,6 +83,53 @@ export const counts = query({
 });
 
 /**
+ * Kit deletability preview for the delete-kit dialog — browser-native replacement
+ * for the `canDeleteKit` server action. Returns whether the kit can be archived /
+ * hard-deleted plus the count of referencing project line items. The decision logic
+ * is a byte-for-byte port of `computeKitDeletability` (src/lib/kits-read.ts, pinned
+ * by kits-read.test.ts); the kit is org-re-checked (by_cuid is global) and the
+ * line-item count is org-filtered (by_kitId is global).
+ */
+export const deletability = query({
+  args: { orgId: v.string(), id: v.string() },
+  returns: v.object({
+    canArchive: v.boolean(),
+    canHardDelete: v.boolean(),
+    referencingLineItems: v.number(),
+    reason: v.optional(v.string()),
+  }),
+  handler: async (ctx, { orgId, id }) => {
+    await requireOrgRead(ctx, orgId);
+    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!kit || kit.organizationId !== orgId) throw new ConvexError("Kit not found");
+
+    const referencingLineItems = (
+      await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", id)).collect()
+    ).filter((r) => r.organizationId === orgId).length;
+
+    const status = kit.status ?? "AVAILABLE";
+    const isActive = kit.isActive ?? true;
+
+    // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
+    const canArchive = status === "AVAILABLE" && isActive;
+    // Hard delete adds: no ProjectLineItem references, AVAILABLE status.
+    const canHardDelete = status === "AVAILABLE" && isActive && referencingLineItems === 0;
+
+    let reason: string | undefined;
+    if (!canArchive) {
+      reason =
+        status !== "AVAILABLE"
+          ? `Kit status is ${status} — only AVAILABLE kits can be archived or deleted.`
+          : "Kit is already archived.";
+    } else if (!canHardDelete) {
+      reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
+    }
+
+    return { canArchive, canHardDelete, referencingLineItems, reason };
+  },
+});
+
+/**
  * Batch point-read kits by cuid, scoped to one org — lets a composite read only
  * the kits its line items reference (e.g. buildProjectEquipmentTree) instead of
  * getKitsByOrg (every kit in the org). Cross-org ids are dropped.

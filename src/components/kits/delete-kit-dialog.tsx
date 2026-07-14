@@ -15,7 +15,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { archiveKit, deleteKit, canDeleteKit } from "@/server/kits";
+import { archiveKit, deleteKit } from "@/server/kits";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { useActiveOrganization } from "@/lib/auth-client";
 
 interface DeleteKitDialogProps {
   kitId: string;
@@ -35,11 +38,15 @@ export function DeleteKitDialog({
   onDeleted,
 }: DeleteKitDialogProps) {
   const [mode, setMode] = useState<DeleteMode>("archive");
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
 
   const { data: info, isLoading: infoLoading } = useServerQuery({
-    queryKey: ["kit-delete-info", kitId],
-    queryFn: () => canDeleteKit(kitId),
-    enabled: open,
+    queryKey: ["kit-delete-info", orgId, kitId],
+    queryFn: () => convex.query(api.kits.deletability, { orgId: orgId!, id: kitId }),
+    enabled: open && !!orgId && isAuthenticated,
   });
 
   const archiveMutation = useServerMutation({

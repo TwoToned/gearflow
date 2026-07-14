@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useConvex, useConvexAuth, useMutation } from "convex/react";
+import { createId } from "@paralleldrive/cuid2";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
@@ -12,13 +14,12 @@ import { Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
-import {
-  getNotificationPreferences,
-  updateNotificationPreferences,
-} from "@/server/notification-preferences";
+import { useSession } from "@/lib/auth-client";
+import { api } from "../../../../../convex/_generated/api";
 import {
   NOTIFICATION_PREFERENCE_DEFAULTS,
   NOTIFICATION_PREFERENCE_LABELS,
+  notificationPreferenceSchema,
   type NotificationPreferenceValues,
 } from "@/lib/validations/notification-preferences";
 
@@ -32,11 +33,19 @@ export default function NotificationPreferencesPage() {
   });
   const [hydrated, setHydrated] = useState(false);
 
-  // Settings read+write island: single reader, single writer, no other consumer
-  // or SSE key → useServerQuery + refetch on save is data-identical.
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const { data: session } = useSession();
+  const upsertMine = useMutation(api.userNotificationPreferences.upsertMine);
+
+  // Settings read+write island: single reader, single writer, no other consumer or
+  // SSE key, no liveness need → a one-shot native query (browser-direct, keyed on the
+  // verified token subject) + refetch on save is data-identical to the old server
+  // action. Gated on Convex auth so it doesn't fire before the user token is set.
   const query = useServerQuery({
     queryKey: ["notification-preferences"],
-    queryFn: getNotificationPreferences,
+    queryFn: () => convex.query(api.userNotificationPreferences.mine, {}),
+    enabled: isAuthenticated,
   });
 
   useEffect(() => {
@@ -47,8 +56,23 @@ export default function NotificationPreferencesPage() {
   }, [query.data, hydrated]);
 
   const saveMutation = useServerMutation({
-    mutationFn: (next: NotificationPreferenceValues) =>
-      updateNotificationPreferences(next),
+    mutationFn: async (
+      next: NotificationPreferenceValues,
+    ): Promise<NotificationPreferenceValues> => {
+      // Match the deleted server action's validation before the browser-direct write.
+      const parsed = notificationPreferenceSchema.parse(next);
+      await upsertMine({
+        id: createId(),
+        prefs: parsed,
+        actor: {
+          userId: session?.user.id ?? "",
+          userName: session?.user.name ?? "",
+        },
+        auditId: createId(),
+        now: Date.now(),
+      });
+      return parsed;
+    },
     onSuccess: (saved) => {
       setValues(saved);
       query.refetch();

@@ -18,17 +18,16 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeftRight, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
+import { useConvex, useConvexAuth } from "convex/react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useProjectConflicts, refreshProjectConflicts } from "@/hooks/use-project-conflicts";
-import {
-  getSwapCandidates,
-  swapLineItemAsset,
-} from "@/server/reservation-conflicts";
+import { useReservationSwap } from "@/hooks/use-reservation-swap";
+import { api } from "../../../convex/_generated/api";
 import type {
   ReservationConflict,
   SwapCandidate,
-} from "@/lib/reservation-conflicts";
+} from "@/lib/reservation-conflicts-types";
 import { Button } from "@/components/ui/button";
 import { showError } from "@/lib/show-error";
 import { cn } from "@/lib/utils";
@@ -47,14 +46,20 @@ function SwapPicker({
   onSwapped: () => void;
 }) {
   const [swappingId, setSwappingId] = useState<string | null>(null);
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const swap = useReservationSwap();
   const { data: candidates, isLoading } = useServerQuery({
     queryKey: ["swap-candidates", conflict.lineItemId],
-    queryFn: () => getSwapCandidates(conflict.lineItemId),
+    queryFn: () =>
+      convex.query(api.reservationConflicts.swapCandidates, {
+        lineItemId: conflict.lineItemId,
+      }),
+    enabled: isAuthenticated,
   });
 
   const swapMutation = useServerMutation({
-    mutationFn: (newAssetId: string) =>
-      swapLineItemAsset(conflict.lineItemId, newAssetId),
+    mutationFn: (newAssetId: string) => swap(conflict.lineItemId, newAssetId),
     onSuccess: () => {
       toast.success("Asset swapped", {
         description: "The conflicting line item is now on a free asset.",

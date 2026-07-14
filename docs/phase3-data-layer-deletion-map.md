@@ -54,7 +54,7 @@ site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, a
 - `kits.ts` (move reserveAssetTags+Zod off create; deleteKit line-item guard + checkItem/media cleanup into deleteNative; author audit-owning member-add/remove mutations), ~~`kit-allocations.ts`~~ **DONE (#516)** — deleted; getKitAllocation already browser-callable (requireOrgRead), writes → `convex/kitAllocationsWrites.ts` replaceNative/clearNative (4 guards + kit org re-check + money invariants at the boundary [model-in-kit/sum-100/range/no-dup/non-finite reject] + org-filtered wholesale delete + audit), `kit-media.ts`(S3)
 - `assets.ts` (custom-field resolution + reserveAssetTags + T&T auto-register/backfill into mutations; author createAssets batch + bulkUpdateAssets native+audit), `asset-media.ts`(S3)
 - `bulk-assets.ts` (author ALL writes; qty recompute+ref guards+audit), `asset-accessories.ts` (author atomic guarded mutations — currently non-atomic TOCTOU + pool adjust)
-- `models.ts` (author modelWrites: archive cascade, rate math, T&T propagate/backfill), `model-accessories.ts`, `model-media.ts`(S3), `scan-lookup` done in W1
+- `models.ts` (author modelWrites: archive cascade, rate math, T&T propagate/backfill), ~~`model-accessories.ts`~~ **DONE (#517)** — deleted; 2 writes → `convex/modelBulkAccessoriesWrites.ts` addNative/removeNative (4 guards + model/bulk/accessory org re-checks + dup-guard + sortOrder + quantity/notes bounds moved in; list is a parent prop refetched via onChanged). `model-media.ts`(S3), `scan-lookup` done in W1
 
 ### Wave 4 — crew (member CRUD done; author the rest)
 - `crew.ts` (delete cascade into deleteNative; author updateCrewMemberImage; linkCrewMemberToUser stays partly server — Better Auth member verify)

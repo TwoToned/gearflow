@@ -80,6 +80,7 @@ import type * as lib_notificationPreferences from "../lib/notificationPreference
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_recalc from "../lib/recalc.js";
+import type * as lib_reservationConflicts from "../lib/reservationConflicts.js";
 import type * as lib_sanitizeSet from "../lib/sanitizeSet.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
 import type * as lib_shardedCounter from "../lib/shardedCounter.js";
@@ -120,6 +121,7 @@ import type * as projectTasks from "../projectTasks.js";
 import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
 import type * as purgeRemovedTables from "../purgeRemovedTables.js";
+import type * as reservationConflicts from "../reservationConflicts.js";
 import type * as revenueAllocation from "../revenueAllocation.js";
 import type * as roi from "../roi.js";
 import type * as savedTableViews from "../savedTableViews.js";
@@ -237,6 +239,7 @@ declare const fullApi: ApiFromModules<{
   "lib/permissionsCore": typeof lib_permissionsCore;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/recalc": typeof lib_recalc;
+  "lib/reservationConflicts": typeof lib_reservationConflicts;
   "lib/sanitizeSet": typeof lib_sanitizeSet;
   "lib/searchScore": typeof lib_searchScore;
   "lib/shardedCounter": typeof lib_shardedCounter;
@@ -277,6 +280,7 @@ declare const fullApi: ApiFromModules<{
   projectWrites: typeof projectWrites;
   projects: typeof projects;
   purgeRemovedTables: typeof purgeRemovedTables;
+  reservationConflicts: typeof reservationConflicts;
   revenueAllocation: typeof revenueAllocation;
   roi: typeof roi;
   savedTableViews: typeof savedTableViews;

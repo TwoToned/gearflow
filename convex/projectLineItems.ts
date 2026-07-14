@@ -2,7 +2,10 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { writeActivityLog } from "./lib/audit";
 import { ensureBulkUnit, ensureSerialisedUnit, expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
@@ -822,9 +825,23 @@ const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "IN
 /** Reassign a line's asset, re-checking free-in-window + writing in ONE mutation
  *  (the double-booking TOCTOU guard — OCC makes the check+write race-safe). */
 export const swapLineItemAsset = mutation({
-  args: { organizationId: v.string(), lineItemId: v.string(), newAssetId: v.string(), now: v.number() },
+  returns: v.object({ lineItemId: v.string(), assetId: v.string() }),
+  args: {
+    organizationId: v.string(),
+    lineItemId: v.string(),
+    newAssetId: v.string(),
+    now: v.number(),
+    actor: v.object({ userId: v.string(), userName: v.string() }),
+    auditId: v.string(),
+  },
   handler: async (ctx, a) => {
-    await requireService(ctx);
+    // Browser-direct (Phase 3 — replaces the swapLineItemAsset server action). Gates on
+    // project:manage_line_items (it reassigns a line item's asset). The authoritative
+    // double-booking guard + write below stay atomic (OCC re-check + patch, race-safe).
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, a.actor);
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId)).unique();
     if (!line || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found");
     const newAsset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", a.newAssetId)).unique();
@@ -871,6 +888,21 @@ export const swapLineItemAsset = mutation({
       }
     }
     await ctx.db.patch(line._id, { assetId: a.newAssetId, updatedAt: a.now });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.organizationId,
+      action: "UPDATE",
+      entityType: "project",
+      entityId: line.projectId,
+      projectId: line.projectId,
+      entityName: newAsset.assetTag ?? "line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Swapped a conflicting line item onto asset ${newAsset.assetTag ?? a.newAssetId}`,
+      createdAt: a.now,
+    });
+
     return { lineItemId: a.lineItemId, assetId: a.newAssetId };
   },
 });

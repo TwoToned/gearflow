@@ -30,7 +30,28 @@ vi.mock("@/lib/org-context", () => ({
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
 import { addLineItem, removeLineItem } from "@/server/line-items";
-import { addModelBulkAccessory } from "@/server/model-accessories";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+
+/** Local setup helper — the model-accessories server action was deleted in Phase 3
+ *  (writes are browser-direct now). This inserts the same modelBulkAccessories row via
+ *  the Convex service client so the project-expansion assertions below are unchanged. */
+async function addModelBulkAccessory(
+  modelId: string,
+  data: { bulkAssetId: string; quantity: number },
+) {
+  const convex = await getConvexClient();
+  await convex.mutation(api.modelBulkAccessories.create, {
+    id: createId(),
+    organizationId: h.ctx.organizationId,
+    modelId,
+    bulkAssetId: data.bulkAssetId,
+    quantity: data.quantity,
+    sortOrder: 0,
+    addedAt: Date.now(),
+    addedById: h.ctx.userId,
+  });
+}
 
 async function seed() {
   const org = await createOrgFixture();

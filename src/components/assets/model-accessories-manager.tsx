@@ -16,10 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  addModelBulkAccessory,
-  removeModelBulkAccessory,
-} from "@/server/model-accessories";
+import { useModelAccessoryWrites } from "@/hooks/use-model-accessories-writes";
 import { getAvailableBulkAssetsForKit } from "@/server/kits";
 
 type BulkAccessory = {
@@ -42,6 +39,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
 
   const refresh = () => onChanged?.();
   const hasAny = bulkAccessories.length > 0;
+  const writes = useModelAccessoryWrites();
 
   const { data: availableBulk = [] } = useServerQuery({
     queryKey: ["model-accessory-bulk"],
@@ -53,7 +51,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
   });
 
   const add = useServerMutation({
-    mutationFn: () => addModelBulkAccessory(modelId, { bulkAssetId: bulkId, quantity: bulkQty }),
+    mutationFn: () => writes.add(modelId, { bulkAssetId: bulkId, quantity: bulkQty }),
     onSuccess: () => {
       toast.success("Default accessory added");
       setBulkId("");
@@ -64,7 +62,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
     onError: (e) => toast.error(e.message),
   });
   const remove = useServerMutation({
-    mutationFn: (id: string) => removeModelBulkAccessory(modelId, id),
+    mutationFn: (id: string) => writes.remove(modelId, id),
     onSuccess: () => {
       toast.success("Default accessory removed");
       refresh();

@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, requireService } from "./lib/auth";
+import { requireOrgRead } from "./lib/auth";
 import { suggestKitAllocation, allocationCoversKit } from "./lib/allocation";
 
 /**
@@ -19,7 +19,7 @@ import { suggestKitAllocation, allocationCoversKit } from "./lib/allocation";
  */
 
 /** Collapse a kit's asset/bulk member rows into (modelId → units in the kit). */
-async function kitModelQuantities(
+export async function kitModelQuantities(
   ctx: QueryCtx,
   kitId: string,
 ): Promise<Map<string, number>> {
@@ -105,78 +105,5 @@ export const getKitAllocation = query({
   },
 });
 
-/**
- * Replace a kit's allocation wholesale. Percentages are validated in the server
- * action (which owns RBAC + audit); this enforces the invariants that must hold no
- * matter who calls: every model is in the kit, and the split sums to 100.
- */
-export const replaceKitAllocation = mutation({
-  args: {
-    kitId: v.string(),
-    orgId: v.string(),
-    rows: v.array(v.object({ id: v.string(), modelId: v.string(), allocationPercent: v.number() })),
-    now: v.number(),
-  },
-  handler: async (ctx, { kitId, orgId, rows, now }) => {
-    await requireService(ctx);
-
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
-    if (!kit || kit.organizationId !== orgId) throw new ConvexError(`kit not found: ${kitId}`);
-
-    if (rows.length > 0) {
-      const quantities = await kitModelQuantities(ctx, kitId);
-      for (const r of rows) {
-        if (!quantities.has(r.modelId)) {
-          throw new ConvexError(`model ${r.modelId} is not in kit ${kitId}`);
-        }
-        if (r.allocationPercent < 0 || r.allocationPercent > 100) {
-          throw new ConvexError(`allocationPercent out of range for model ${r.modelId}`);
-        }
-      }
-      if (new Set(rows.map((r) => r.modelId)).size !== rows.length) {
-        throw new ConvexError(`duplicate model in allocation for kit ${kitId}`);
-      }
-      const sum = rows.reduce((s, r) => s + r.allocationPercent, 0);
-      if (Math.abs(sum - 100) > 0.01) {
-        throw new ConvexError(`allocation must sum to 100%, got ${sum.toFixed(2)}%`);
-      }
-    }
-
-    const existing = await ctx.db
-      .query("kitRevenueAllocations")
-      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
-      .collect();
-    for (const row of existing) await ctx.db.delete(row._id);
-
-    for (const r of rows) {
-      await ctx.db.insert("kitRevenueAllocations", {
-        id: r.id,
-        organizationId: orgId,
-        kitId,
-        modelId: r.modelId,
-        allocationPercent: r.allocationPercent,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    return { ok: true as const, count: rows.length };
-  },
-});
-
-/** Drop a kit's allocation entirely; bookings revert to the weight chain. */
-export const clearKitAllocation = mutation({
-  args: { kitId: v.string(), orgId: v.string() },
-  handler: async (ctx, { kitId, orgId }) => {
-    await requireService(ctx);
-    const rows = await ctx.db
-      .query("kitRevenueAllocations")
-      .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
-      .collect();
-    for (const row of rows) {
-      if (row.organizationId !== orgId) continue;
-      await ctx.db.delete(row._id);
-    }
-    return { ok: true as const, count: rows.length };
-  },
-});
+// Kit allocation WRITES (browser-direct) live in convex/kitAllocationsWrites.ts;
+// they reuse kitModelQuantities (exported above) for the money invariants.

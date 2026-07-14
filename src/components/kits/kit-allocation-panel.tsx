@@ -9,9 +9,12 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CanDo } from "@/components/auth/permission-gate";
+import { useConvex, useConvexAuth } from "convex/react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { getKitAllocation, saveKitAllocation, clearKitAllocation } from "@/server/kit-allocations";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useKitAllocationWrites } from "@/hooks/use-kit-allocation-writes";
+import { api } from "../../../convex/_generated/api";
 import { formatCurrency } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import type { KitAllocationView } from "@/lib/validations/kit-allocation";
@@ -46,9 +49,22 @@ const draftFrom = (view: KitAllocationView): Draft =>
   );
 
 export function KitAllocationPanel({ kitId }: { kitId: string }) {
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+
+  // Browser-direct native read (was the getKitAllocation server action). One-shot +
+  // refetch-on-save: the panel remounts the editor on the server signature, so it has
+  // no live-subscription need. Gated on Convex auth so a pre-token orgId doesn't reject.
   const { data, isLoading, refetch } = useServerQuery({
-    queryKey: ["kit-allocation", kitId],
-    queryFn: () => getKitAllocation(kitId) as Promise<KitAllocationView>,
+    queryKey: ["kit-allocation", kitId, orgId ?? ""],
+    queryFn: () =>
+      convex.query(api.kitAllocations.getKitAllocation, {
+        kitId,
+        orgId: orgId as string,
+      }) as Promise<KitAllocationView>,
+    enabled: !!orgId && isAuthenticated,
   });
 
   if (isLoading || !data) return <Skeleton className="h-64 w-full" />;
@@ -89,6 +105,7 @@ function AllocationEditor({
 }) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(data));
   const [dirty, setDirty] = useState(false);
+  const writes = useKitAllocationWrites();
 
   const total = useMemo(
     () => Object.values(draft).reduce((s, v) => s + toNumber(v), 0),
@@ -103,7 +120,7 @@ function AllocationEditor({
 
   const save = useServerMutation({
     mutationFn: () =>
-      saveKitAllocation(
+      writes.save(
         kitId,
         Object.entries(draft).map(([modelId, v]) => ({
           modelId,
@@ -119,7 +136,7 @@ function AllocationEditor({
   });
 
   const clear = useServerMutation({
-    mutationFn: () => clearKitAllocation(kitId),
+    mutationFn: () => writes.clear(kitId),
     onSuccess: () => {
       toast.success("Allocation cleared — bookings will fall back to cost weighting");
       onSaved();

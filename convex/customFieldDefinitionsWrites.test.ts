@@ -150,6 +150,43 @@ describe("customFieldDefinitionsWrites", () => {
     expect(await getDef(t, "dX")).not.toBeNull();
   });
 
+  test("createNative re-enforces the schema at the boundary (bypassing the client hook)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    const bad = (over: Record<string, unknown>) =>
+      t.withIdentity(asUser).mutation(api.customFieldDefinitionsWrites.createNative, {
+        id: "d1", organizationId: ORG, ...baseCreate, createdAt: NOW, actor, auditId: "a1", ...over,
+      });
+    await expect(bad({ label: "" })).rejects.toThrow(/label is required/i);
+    await expect(bad({ fieldKey: "bad key!" })).rejects.toThrow(/letters, numbers/i);
+    await expect(bad({ fieldType: "SELECT", options: [] })).rejects.toThrow(/at least one option/i);
+    await expect(bad({ fieldType: "SELECT", options: [""] })).rejects.toThrow(/1.80 characters/i);
+    await expect(bad({ sortOrder: -1 })).rejects.toThrow(/non-negative/i);
+    // A valid definition still succeeds.
+    await bad({});
+    expect(await getDef(t, "d1")).not.toBeNull();
+  });
+
+  test("updateNative re-enforces the schema at the boundary (no fieldKey check)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.customFieldDefinitionsWrites.createNative, {
+      id: "d1", organizationId: ORG, ...baseCreate, createdAt: NOW, actor, auditId: "a1",
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.customFieldDefinitionsWrites.updateNative, {
+        id: "d1", orgId: ORG, label: "", fieldType: "TEXT", options: [], required: false,
+        sortOrder: 0, isActive: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/label is required/i);
+    await expect(
+      t.withIdentity(asUser).mutation(api.customFieldDefinitionsWrites.updateNative, {
+        id: "d1", orgId: ORG, label: "OK", fieldType: "SELECT", options: [], required: false,
+        sortOrder: 0, isActive: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/at least one option/i);
+  });
+
   test("rejects a member without orgSettings:update permission", async () => {
     const t = makeT();
     await seedMember(t, "viewer");

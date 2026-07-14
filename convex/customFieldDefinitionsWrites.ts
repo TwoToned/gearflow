@@ -23,6 +23,55 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
+// A fieldKey must be a stable, JSON-safe identifier (mirrors fieldKeyRegex in
+// src/lib/validations/custom-field.ts — the Convex bundler can't import the zod module).
+const FIELD_KEY_REGEX = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
+/**
+ * Re-enforce the customFieldDefinitionSchema invariants at the mutation boundary.
+ * Client hooks run zod before calling, but this is now the PUBLIC write surface — a
+ * direct caller could otherwise persist an empty label / malformed fieldKey / optionless
+ * SELECT / over-long values. `checkKey` is false on update (fieldKey is immutable there).
+ */
+function assertValidDefinition(
+  input: {
+    label: string;
+    fieldType: string;
+    options: string[];
+    helpText?: string;
+    sortOrder: number;
+    fieldKey?: string;
+  },
+  checkKey: boolean,
+): void {
+  // Raw-length checks (exact parity with the client zod, which does not trim).
+  if (input.label.length < 1) throw new ConvexError("Label is required");
+  if (input.label.length > 60) throw new ConvexError("Label must be 60 characters or fewer");
+  if (checkKey) {
+    const key = input.fieldKey ?? "";
+    if (!key) throw new ConvexError("Key is required");
+    if (key.length > 40) throw new ConvexError("Key must be 40 characters or fewer");
+    if (!FIELD_KEY_REGEX.test(key)) {
+      throw new ConvexError("Key must start with a letter; letters, numbers, underscores only");
+    }
+  }
+  if (input.helpText !== undefined && input.helpText.length > 200) {
+    throw new ConvexError("Help text must be 200 characters or fewer");
+  }
+  if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) {
+    throw new ConvexError("Sort order must be a non-negative integer");
+  }
+  if (input.fieldType === "SELECT") {
+    if (input.options.length === 0) throw new ConvexError("SELECT fields need at least one option");
+    if (input.options.length > 50) throw new ConvexError("A field can have at most 50 options");
+    for (const opt of input.options) {
+      if (opt.length < 1 || opt.length > 80) {
+        throw new ConvexError("Each option must be 1–80 characters");
+      }
+    }
+  }
+}
+
 export const createNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -47,6 +96,8 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "orgSettings", "update");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    assertValidDefinition(fields, true);
 
     // Re-implement the @@unique([organizationId, entityType, fieldKey]) DB guard:
     // reject a duplicate fieldKey for this org + entity type (composite index).
@@ -113,6 +164,8 @@ export const updateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "orgSettings", "update");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    assertValidDefinition(patch, false);
 
     const doc = await ctx.db
       .query("customFieldDefinitions")

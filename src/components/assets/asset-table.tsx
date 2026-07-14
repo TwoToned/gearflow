@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 
-import { Plus, Pencil, Download, Upload, RotateCcw } from "lucide-react";
+import { Plus, Pencil, Download, Upload, RotateCcw, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn, focusRing, disabledState } from "@/lib/utils";
-import { bulkUpdateAssets, getAssetRegistryPhotos } from "@/server/assets";
+import { bulkUpdateAssets, bulkTagAssets, getAssetRegistryPhotos } from "@/server/assets";
 import { useAssets, useBulkAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
 import { bulkForceReturnAssets } from "@/server/warehouse";
@@ -26,6 +26,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { TagInput } from "@/components/ui/tag-input";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import {
   Dialog,
   DialogContent,
@@ -363,6 +365,7 @@ export function AssetTable() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
 
@@ -534,6 +537,7 @@ export function AssetTable() {
   const clearSelection = () => {
     setSelectedIds(new Set());
     setBulkEditOpen(false);
+    setBulkTagsOpen(false);
   };
 
   const forceReturnMutation = useServerMutation({
@@ -615,6 +619,12 @@ export function AssetTable() {
             <Button size="sm" variant="line" onClick={() => setBulkEditOpen(true)}>
               <Pencil className="mr-2 h-3 w-3" />
               Bulk edit
+            </Button>
+          </CanDo>
+          <CanDo resource="asset" action="update">
+            <Button size="sm" variant="line" onClick={() => setBulkTagsOpen(true)}>
+              <Tag className="mr-2 h-3 w-3" />
+              Add tags
             </Button>
           </CanDo>
           <CanDo resource="warehouse" action="check_in">
@@ -724,6 +734,16 @@ export function AssetTable() {
         onOpenChange={setBulkEditOpen}
         selectedIds={selectedIds}
         locations={locations}
+        onSuccess={() => {
+          clearSelection();
+        }}
+      />
+
+      <BulkAddTagsDialog
+        open={bulkTagsOpen}
+        onOpenChange={setBulkTagsOpen}
+        selectedIds={selectedIds}
+        orgId={orgId}
         onSuccess={() => {
           clearSelection();
         }}
@@ -846,6 +866,64 @@ function BulkEditDialog({
           </Button>
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!hasChanges}>
             Update {selectedIds.size} assets
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function BulkAddTagsDialog({
+  open,
+  onOpenChange,
+  selectedIds,
+  orgId,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectedIds: Set<string>;
+  orgId: string | undefined;
+  onSuccess: () => void;
+}) {
+  const [tags, setTags] = useState<string[]>([]);
+  const orgTags = useOrgTags(orgId);
+
+  const mutation = useServerMutation({
+    mutationFn: () => bulkTagAssets(Array.from(selectedIds), tags),
+    onSuccess: (result) => {
+      toast.success(`Added tags to ${result.count} asset${result.count === 1 ? "" : "s"}`);
+      setTags([]);
+      onSuccess();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setTags([]);
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add tags to {selectedIds.size} asset{selectedIds.size === 1 ? "" : "s"}</DialogTitle>
+        </DialogHeader>
+        <p className="text-ui-text text-muted">
+          Tags are appended — existing tags on each asset are kept. Duplicates are ignored.
+        </p>
+        <div className="space-y-2 py-2">
+          <Label>Tags</Label>
+          <TagInput value={tags} onChange={setTags} suggestions={orgTags} placeholder="Add tags…" />
+        </div>
+        <DialogFooter>
+          <Button variant="line" onClick={() => { setTags([]); onOpenChange(false); }}>
+            Cancel
+          </Button>
+          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={tags.length === 0}>
+            Add to {selectedIds.size} asset{selectedIds.size === 1 ? "" : "s"}
           </Button>
         </DialogFooter>
       </DialogContent>

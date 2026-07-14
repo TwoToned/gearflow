@@ -54,6 +54,7 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "asset-media.removeAssetMedia": { name: "asset-media.removeAssetMedia", module: "asset-media", fn: "removeAssetMedia", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "mediaId", type: "string", optional: false }], dangerous: true, summary: "" },
   "asset-media.setAssetPrimaryPhoto": { name: "asset-media.setAssetPrimaryPhoto", module: "asset-media", fn: "setAssetPrimaryPhoto", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "assetId", type: "string", optional: false }, { name: "mediaId", type: "string", optional: false }], dangerous: false, summary: "" },
   "assets.archiveAsset": { name: "assets.archiveAsset", module: "assets", fn: "archiveAsset", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "" },
+  "assets.bulkTagAssets": { name: "assets.bulkTagAssets", module: "assets", fn: "bulkTagAssets", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "ids", type: "string[]", optional: false }, { name: "tags", type: "string[]", optional: false }], dangerous: false, summary: "" },
   "assets.bulkUpdateAssets": { name: "assets.bulkUpdateAssets", module: "assets", fn: "bulkUpdateAssets", kind: "write", resource: "asset", action: "update", scope: "asset:update", params: [{ name: "ids", type: "string[]", optional: false }, { name: "data", type: "{ status?: string; condition?: string; locationId?: string | null; }", optional: false }], dangerous: false, summary: "" },
   "assets.createAsset": { name: "assets.createAsset", module: "assets", fn: "createAsset", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }], dangerous: false, summary: "" },
   "assets.createAssets": { name: "assets.createAssets", module: "assets", fn: "createAssets", kind: "write", resource: "asset", action: "create", scope: "asset:create", params: [{ name: "data", type: "AssetFormValues", optional: false, schemaRef: "AssetFormValues" }, { name: "assets", type: "{ tag: string; serialNumber?: string }[]", optional: false }], dangerous: false, summary: "" },
@@ -4275,4 +4276,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 522;
+export const OPERATION_COUNT = 523;

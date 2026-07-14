@@ -820,6 +820,36 @@ export async function bulkUpdateAssets(
   return { count };
 }
 
+export async function bulkTagAssets(ids: string[], tags: string[]) {
+  const { organizationId } = await requirePermission("asset", "update");
+  if (ids.length === 0) {
+    throw new UserFacingError({
+      code: "NO_SELECTION",
+      title: "Nothing selected",
+      message: "Select at least one asset before adding tags.",
+    });
+  }
+  const clean = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+  if (clean.length === 0) {
+    throw new UserFacingError({
+      code: "NO_TAGS",
+      title: "No tags entered",
+      message: "Enter at least one tag to add to the selected assets.",
+    });
+  }
+
+  // APPEND semantics — unions into each asset's existing tags in one array
+  // mutation (Appendix A single-call invariant), with a per-row org re-check.
+  const convex = await getConvexClient();
+  const count = await convex.mutation(api.assets.bulkAddTags, {
+    organizationId,
+    ids,
+    tags: clean,
+  });
+
+  return { count };
+}
+
 export async function deleteAsset(id: string) {
   const { organizationId, userId, userName } = await requirePermission("asset", "delete");
 

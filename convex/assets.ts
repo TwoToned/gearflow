@@ -406,6 +406,39 @@ export const bulkUpdate = mutation({
   },
 });
 
+/**
+ * Bulk APPEND tags to N assets in a SINGLE call (Appendix A invariant — powers
+ * the assets bulk-bar "Add tags"). Unlike bulkUpdate (which replaces a field),
+ * this unions the supplied tags into each asset's existing `tags` array. Per-row
+ * org re-check (by_cuid is GLOBAL). Idempotent: a tag already present is a no-op.
+ * Tags don't feed any counter, so no counter bump. Returns the count of
+ * org-matched assets processed.
+ */
+export const bulkAddTags = mutation({
+  args: {
+    organizationId: v.string(),
+    ids: v.array(v.string()),
+    tags: v.array(v.string()),
+  },
+  returns: v.number(),
+  handler: async (ctx, { organizationId, ids, tags }) => {
+    await requireService(ctx);
+    const add = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+    if (add.length === 0) return 0;
+    let n = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      if (!doc || doc.organizationId !== organizationId) continue;
+      n++;
+      const existing = doc.tags ?? [];
+      const merged = [...new Set([...existing, ...add])];
+      if (merged.length === existing.length) continue; // all already present
+      await ctx.db.patch(doc._id, { tags: merged, updatedAt: Date.now() });
+    }
+    return n;
+  },
+});
+
 // ── CUSTOM (Phase C H) — child-asset lookup ──
 export const listByParentAssetId = query({
   args: { parentAssetId: v.string(), orgId: v.string() },

@@ -236,7 +236,6 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   "kits.addSerializedItemsToKit": { name: "kits.addSerializedItemsToKit", module: "kits", fn: "addSerializedItemsToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "items", type: "Array<{ assetId: string; position?: string }>", optional: false }], dangerous: false, summary: "Batch add multiple serialized assets." },
   "kits.addSerializedItemToKit": { name: "kits.addSerializedItemToKit", module: "kits", fn: "addSerializedItemToKit", kind: "write", resource: "kit", action: "update", scope: "kit:update", params: [{ name: "kitId", type: "string", optional: false }, { name: "data", type: "KitSerializedItemFormValues", optional: false, schemaRef: "KitSerializedItemFormValues" }], dangerous: false, summary: "" },
   "kits.archiveKit": { name: "kits.archiveKit", module: "kits", fn: "archiveKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "---------------------------------------------------------------------------" },
-  "kits.canDeleteKit": { name: "kits.canDeleteKit", module: "kits", fn: "canDeleteKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: false, summary: "---------------------------------------------------------------------------" },
   "kits.createKit": { name: "kits.createKit", module: "kits", fn: "createKit", kind: "write", resource: "kit", action: "create", scope: "kit:create", params: [{ name: "data", type: "KitFormValues", optional: false, schemaRef: "KitFormValues" }], dangerous: false, summary: "" },
   "kits.deleteKit": { name: "kits.deleteKit", module: "kits", fn: "deleteKit", kind: "write", resource: "kit", action: "delete", scope: "kit:delete", params: [{ name: "id", type: "string", optional: false }], dangerous: true, summary: "---------------------------------------------------------------------------" },
   "kits.getAvailableAssetsForKit": { name: "kits.getAvailableAssetsForKit", module: "kits", fn: "getAvailableAssetsForKit", kind: "read", resource: "kit", action: "read", scope: "kit:read", params: [{ name: "modelId", type: "string", optional: true }], dangerous: false, summary: "Serialized assets not in any kit. Reads off the dual-written Convex `assets`" },
@@ -4264,4 +4263,4 @@ export const PARAM_SCHEMAS: Record<string, JsonSchema> = {
   }
 };
 
-export const OPERATION_COUNT = 512;
+export const OPERATION_COUNT = 511;

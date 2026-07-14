@@ -16,9 +16,9 @@ import {
 import { toast } from "sonner";
 
 import { cn, focusRing } from "@/lib/utils";
-import { getModelCounts, bulkUpdateRates } from "@/server/models";
+import { bulkUpdateRates } from "@/server/models";
 import { useModels } from "@/hooks/use-models";
-import { useServerQuery } from "@/hooks/use-server-query";
+import { useModelCounts } from "@/hooks/use-model-counts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -248,11 +248,7 @@ export function ModelTable() {
   // cross-domain (assets + model media still live in Prisma) so they come from a
   // separate, non-reactive server query and are merged in below.
   const allModels = useModels(orgId);
-  const { data: modelCounts } = useServerQuery({
-    queryKey: ["model-counts", orgId],
-    queryFn: () => getModelCounts(),
-    enabled: !!orgId,
-  });
+  const modelCounts = useModelCounts(orgId);
 
   // Filter (active only + search name/manufacturer/modelNumber/sku + category +
   // assetType) → sort → paginate, all client-side over the reactive list. The

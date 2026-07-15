@@ -1,10 +1,6 @@
 "use client";
 
 import { createSharedResource } from "./use-shared-resource";
-import {
-  getUncategorizedSubHireGroups,
-  getUncategorizedProjectGroups,
-} from "@/server/category-slots";
 import { getSubHires, getSubHire } from "@/server/sub-hires";
 
 /**
@@ -19,18 +15,12 @@ import { getSubHires, getSubHire } from "@/server/sub-hires";
  * (cross-domain composition). SSE is dead so no cross-user liveness is lost.
  */
 
-// NOTE: project categories, uncategorized line items, and project overbooked status
-// are now reactive native Convex subscriptions (useProjectCategoriesWithGroups in
-// use-projects.ts + the equipment-tab's native read path) — the old server-action
-// shared stores here were removed with the project-categories server action.
-
-const uncatSubHireGroups = createSharedResource((projectId: string) => getUncategorizedSubHireGroups(projectId));
-export const useUncategorizedSubHireGroups = uncatSubHireGroups.use;
-export const refreshUncategorizedSubHireGroups = uncatSubHireGroups.refresh;
-
-const uncatProjectGroups = createSharedResource((projectId: string) => getUncategorizedProjectGroups(projectId));
-export const useUncategorizedProjectGroups = uncatProjectGroups.use;
-export const refreshUncategorizedProjectGroups = uncatProjectGroups.refresh;
+// NOTE: project categories, uncategorized line items/groups, and project overbooked
+// status are now reactive native Convex subscriptions (useProjectCategoriesWithGroups
+// in use-projects.ts + the equipment-tab's native reconstruct path in
+// use-native-equipment-tab.ts) — the old server-action shared stores here (including
+// the uncategorized sub-hire / project group reads) were removed with the
+// project-categories + category-slots server actions.
 
 const subHires = createSharedResource((projectId: string) => getSubHires({ projectId }));
 /** Subscribe to the project's sub-hires. Key = projectId. */

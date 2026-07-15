@@ -17,10 +17,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  moveSubHireGroupToCategory,
-  createCategoryAndPlaceGroup,
-} from "@/server/category-slots";
+import { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
 import {
   Dialog,
   DialogContent,
@@ -77,6 +74,7 @@ function MoveSubHireGroupDialogBody({
   onInvalidate,
 }: MoveSubHireGroupDialogProps) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(UNCATEGORISED_VALUE);
+  const slotWrites = useCategorySlotWrites();
 
   function refreshCaches() {
     onInvalidate();
@@ -87,7 +85,7 @@ function MoveSubHireGroupDialogBody({
       if (!groupId) throw new Error("No sub-hire group selected");
       const categoryId =
         selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId;
-      return moveSubHireGroupToCategory({ groupId, categoryId });
+      return slotWrites.moveSubHireGroup(groupId, categoryId);
     },
     onSuccess: () => {
       refreshCaches();
@@ -104,7 +102,7 @@ function MoveSubHireGroupDialogBody({
   const createMut = useServerMutation({
     mutationFn: async (name: string) => {
       if (!groupId) throw new Error("No sub-hire group selected");
-      return createCategoryAndPlaceGroup({
+      return slotWrites.createCategoryAndPlaceGroup({
         projectId,
         name,
         slot: { subHireGroupId: groupId },

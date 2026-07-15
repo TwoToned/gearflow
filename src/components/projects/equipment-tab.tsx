@@ -6,16 +6,9 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import {
-  // Read hooks are retired here (the tab reads natively) — but the refresh
-  // chokepoints for the still-server-action sub-hire slot stores stay, keeping
-  // the add-form / sub-hire dialog in sync after a tab write. Category / overbooked /
-  // uncategorized-item reads are now reactive native subscriptions (no store to refresh).
-  refreshUncategorizedSubHireGroups,
-  refreshUncategorizedProjectGroups,
-} from "@/hooks/use-project-equipment";
 import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
+import { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import {
   NATIVE_LINEITEM_OPTIMISTIC,
@@ -34,12 +27,6 @@ import { toast } from "sonner";
 import { useProjectServices } from "@/hooks/use-project-services";
 import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
-import {
-  getUncategorizedSubHireGroups,
-  getUncategorizedProjectGroups,
-  moveSubHireGroupToCategory,
-  reorderMixedGroupsInCategory,
-} from "@/server/category-slots";
 import {
   removeLineItem,
   updateLineItem,
@@ -432,8 +419,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   );
 
   const invalidate = useCallback(() => {
-    refreshUncategorizedSubHireGroups(projectId);
-    refreshUncategorizedProjectGroups(projectId);
     refreshProjectDetail(projectId);
   }, [projectId]);
 
@@ -445,6 +430,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // move) — guarded api.projectGroupsWrites.* mutations; each folds the suggested-price
   // recompute + in-mutation recalcProjectTotals + audit into one transaction.
   const groupWrites = useProjectGroupWrites();
+
+  // Browser-direct cross-type category-slot writes (reorder mixed groups + the
+  // move/create-and-place flows used by the move dialogs) — guarded
+  // api.categorySlotsWrites.* mutations, each folding recalc + audit atomically.
+  const categorySlotWrites = useCategorySlotWrites();
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
@@ -715,7 +705,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       const orderedIds = reordered.map((s) =>
         s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
       );
-      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds }).catch(() => {
+      categorySlotWrites.reorderMixed(cat.id, orderedIds).catch(() => {
         toast.error("Failed to reorder groups");
       });
     }

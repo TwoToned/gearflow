@@ -21,10 +21,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  moveProjectGroupToCategory,
-  createCategoryAndPlaceGroup,
-} from "@/server/category-slots";
+import { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
 import {
   Dialog,
   DialogContent,
@@ -85,6 +82,7 @@ function MoveProjectGroupDialogBody({
   // Picking a category from the dropdown still lets them move into
   // a specific destination; typing a new name routes to create-by-name.
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(UNCATEGORISED_VALUE);
+  const slotWrites = useCategorySlotWrites();
 
   function refreshCaches() {
     onInvalidate();
@@ -94,11 +92,10 @@ function MoveProjectGroupDialogBody({
     mutationFn: async () => {
       if (!groupId) throw new Error("No project group selected");
       if (!selectedCategoryId) throw new Error("Pick a destination");
-      return moveProjectGroupToCategory({
+      return slotWrites.moveProjectGroup(
         groupId,
-        categoryId:
-          selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId,
-      });
+        selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId,
+      );
     },
     onSuccess: () => {
       refreshCaches();
@@ -115,7 +112,7 @@ function MoveProjectGroupDialogBody({
   const createMut = useServerMutation({
     mutationFn: async (name: string) => {
       if (!groupId) throw new Error("No project group selected");
-      return createCategoryAndPlaceGroup({
+      return slotWrites.createCategoryAndPlaceGroup({
         projectId,
         name,
         slot: { projectGroupId: groupId },

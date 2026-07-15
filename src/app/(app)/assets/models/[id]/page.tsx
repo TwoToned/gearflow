@@ -14,7 +14,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { useModelWrites } from "@/hooks/use-model-writes";
-import { archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
+import { useBulkAssetWrites } from "@/hooks/use-bulk-asset-writes";
 import { forceReturnAsset } from "@/server/warehouse";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
@@ -79,6 +79,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const modelWrites = useModelWrites();
+  const bulkWrites = useBulkAssetWrites();
 
   const { data: model, isLoading, refetch } = useServerQuery({
     queryKey: ["model", orgId, id, isAuthenticated],
@@ -96,7 +97,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const archiveBulkMutation = useServerMutation({
-    mutationFn: (bulkId: string) => archiveBulkAsset(bulkId),
+    mutationFn: (bulkId: string) => bulkWrites.archive(bulkId),
     onSuccess: () => {
       toast.success("Bulk asset archived");
       refetch();
@@ -105,7 +106,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const deleteBulkMutation = useServerMutation({
-    mutationFn: (bulkId: string) => deleteBulkAsset(bulkId),
+    mutationFn: (bulkId: string) => bulkWrites.remove(bulkId),
     onSuccess: () => {
       toast.success("Bulk asset deleted");
       refetch();

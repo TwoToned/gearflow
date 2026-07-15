@@ -18,7 +18,8 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { getAssets } from "@/server/assets";
-import { getBulkAssets } from "@/server/bulk-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,8 @@ function NewTestTagAssetInner() {
   const preselectedBulkAssetId = searchParams.get("bulkAssetId") || "";
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const form = useForm<TestTagAssetFormValues>({
     resolver: zodResolver(testTagAssetSchema),
@@ -79,8 +82,9 @@ function NewTestTagAssetInner() {
   });
 
   const bulkAssetsQuery = useServerQuery({
-    queryKey: ["bulk-assets", orgId, { pageSize: 500 }],
-    queryFn: () => getBulkAssets({ pageSize: 500 }),
+    queryKey: ["bulk-assets", orgId, isAuthenticated, { pageSize: 500 }],
+    queryFn: () => convex.query(api.bulkAssets.listPage, { orgId: orgId!, pageSize: 500 }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   // Reactive: testProfiles subscribes to Convex (filter isActive client-side).

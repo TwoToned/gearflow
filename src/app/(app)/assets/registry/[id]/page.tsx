@@ -32,7 +32,9 @@ import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { forceReturnAsset } from "@/server/warehouse";
-import { getBulkAsset, archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
+import { useBulkAssetWrites } from "@/hooks/use-bulk-asset-writes";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -122,14 +124,18 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const assetLoading = !isBulk && native.isLoading;
   const refetchAsset = useCallback(() => {}, []);
 
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const bulkWrites = useBulkAssetWrites();
+
   const { data: bulkAsset, isLoading: bulkLoading } = useServerQuery({
-    queryKey: ["bulk-asset", orgId, id],
-    queryFn: () => getBulkAsset(id),
-    enabled: isBulk,
+    queryKey: ["bulk-asset", orgId, id, isAuthenticated],
+    queryFn: () => convex.query(api.bulkAssets.detail, { id, orgId: orgId! }),
+    enabled: isBulk && !!orgId && isAuthenticated,
   });
 
   const archiveMutation = useServerMutation({
-    mutationFn: async () => { isBulk ? await archiveBulkAsset(id) : await archiveAsset(id); },
+    mutationFn: async () => { isBulk ? await bulkWrites.archive(id) : await archiveAsset(id); },
     onSuccess: () => {
       toast.success("Asset archived");
       router.push("/assets/registry");
@@ -138,7 +144,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: async () => { isBulk ? await deleteBulkAsset(id) : await deleteAsset(id); },
+    mutationFn: async () => { isBulk ? await bulkWrites.remove(id) : await deleteAsset(id); },
     onSuccess: () => {
       toast.success("Asset deleted");
       router.push("/assets/registry");

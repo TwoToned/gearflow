@@ -34,10 +34,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useCrewWrites } from "@/hooks/use-crew-writes";
-import {
-  updateAssignmentStatus,
-  deleteAssignment,
-} from "@/server/crew-assignments";
+import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { useConvex, useConvexAuth } from "convex/react";
 import { useCrewAvailabilityWrites } from "@/hooks/use-crew-availability-writes";
@@ -325,9 +322,10 @@ export default function CrewMemberDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const asgWrites = useCrewAssignmentWrites();
   const updateAssignmentStatusMutation = useServerMutation({
     mutationFn: ({ assignmentId, status }: { assignmentId: string; status: string }) =>
-      updateAssignmentStatus(assignmentId, status),
+      asgWrites.updateStatus(assignmentId, status),
     onSuccess: () => {
       toast.success("Assignment status updated");
       refetchMember();
@@ -336,7 +334,7 @@ export default function CrewMemberDetailPage({
   });
 
   const deleteAssignmentMutation = useServerMutation({
-    mutationFn: (assignmentId: string) => deleteAssignment(assignmentId),
+    mutationFn: (assignmentId: string) => asgWrites.remove(assignmentId),
     onSuccess: () => {
       toast.success("Assignment removed");
       refetchMember();

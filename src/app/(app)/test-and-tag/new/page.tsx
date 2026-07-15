@@ -15,7 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validations/test-tag";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
+import { peekNextTestTagIds } from "@/server/settings";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -173,9 +174,11 @@ function NewTestTagAssetInner() {
   const watchAssetId = v.assetId;
   const watchProfileId = v.testProfileId;
 
+  const ttWrites = useTestTagWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: TestTagAssetFormValues) =>
-      createTestTagAsset({
+      ttWrites.create({
         testTagId: data.testTagId,
         description: data.description,
         equipmentClass: data.equipmentClass,

@@ -5,7 +5,7 @@ import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Zap, AlertTriangle, RotateCcw } from "lucide-react";
-import { lookupTestTagAsset, reactivateTestTagAsset } from "@/server/test-tag-assets";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -27,6 +27,7 @@ export function ScanStep({
   const convex = useConvex();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const ttWrites = useTestTagWrites();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -37,7 +38,7 @@ export function ScanStep({
     if (!value.trim()) return;
 
     try {
-      const asset = await lookupTestTagAsset(value.trim());
+      const asset = orgId ? await convex.query(api.testTagAssets.lookup, { orgId, testTagId: value.trim() }) : null;
       if (!asset) {
         toast.error(`No asset found for tag "${value.trim()}"`);
         return;
@@ -66,7 +67,7 @@ export function ScanStep({
   const handleReactivate = async () => {
     if (!state.asset) return;
     try {
-      await reactivateTestTagAsset(state.asset.id);
+      await ttWrites.reactivate(state.asset.id);
       dispatch({ type: "SET_RETIRED", isRetired: false });
       toast.success("Asset reactivated");
       // Re-lookup to get fresh data

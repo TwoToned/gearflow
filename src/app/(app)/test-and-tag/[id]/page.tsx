@@ -20,7 +20,9 @@ import {
   Clock,
 } from "lucide-react";
 
-import { getTestTagAsset, retireTestTagAsset, deleteTestTagAsset } from "@/server/test-tag-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -89,14 +91,18 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const ttWrites = useTestTagWrites();
 
   const { data: item, isLoading, error, refetch } = useServerQuery({
-    queryKey: ["test-tag-asset", orgId, id],
-    queryFn: () => getTestTagAsset(id),
+    queryKey: ["test-tag-asset", orgId, id, isAuthenticated],
+    queryFn: () => convex.query(api.testTagAssets.detail, { id, orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const retireMutation = useServerMutation({
-    mutationFn: () => retireTestTagAsset(id),
+    mutationFn: () => ttWrites.retire(id),
     onSuccess: () => {
       toast.success("Test tag asset retired");
       refetch();
@@ -105,7 +111,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteTestTagAsset(id),
+    mutationFn: () => ttWrites.remove(id),
     onSuccess: () => {
       toast.success("Test tag asset deleted");
       router.push("/test-and-tag/registry");
@@ -230,13 +236,13 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <StatusIndicator
                   category="testTag"
                   value={item.status}
-                  label={testTagStatusLabels[item.status] || item.status}
+                  label={testTagStatusLabels[item.status ?? "NOT_YET_TESTED"] || (item.status ?? "")}
                 />
                 {latestRecord && (
                   <StatusIndicator
                     category="testTagResult"
                     value={latestRecord.result}
-                    label={`Last: ${testTagResultLabels[latestRecord.result] ?? latestRecord.result}`}
+                    label={`Last: ${testTagResultLabels[latestRecord.result ?? ""] ?? latestRecord.result}`}
                   />
                 )}
               </div>
@@ -305,13 +311,13 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <div>
                   <dt className="text-ui-text text-muted">Equipment class</dt>
                   <dd className="mt-0.5 font-medium text-ui-text text-ink">
-                    {equipmentClassLabels[item.equipmentClass] || item.equipmentClass}
+                    {equipmentClassLabels[item.equipmentClass ?? "CLASS_I"] || item.equipmentClass}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-ui-text text-muted">Appliance type</dt>
                   <dd className="mt-0.5 font-medium text-ui-text text-ink">
-                    {applianceTypeLabels[item.applianceType] || item.applianceType}
+                    {applianceTypeLabels[item.applianceType ?? "APPLIANCE"] || item.applianceType}
                   </dd>
                 </div>
                 <div>
@@ -559,7 +565,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <StatusIndicator
                     category="testTag"
                     value={item.status}
-                    label={testTagStatusLabels[item.status] || item.status}
+                    label={testTagStatusLabels[item.status ?? "NOT_YET_TESTED"] || (item.status ?? "")}
                   />
                 </div>
                 {latestRecord && (
@@ -567,7 +573,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <StatusIndicator
                       category="testTagResult"
                       value={latestRecord.result}
-                      label={`Last result: ${testTagResultLabels[latestRecord.result] ?? latestRecord.result}`}
+                      label={`Last result: ${testTagResultLabels[latestRecord.result ?? ""] ?? latestRecord.result}`}
                     />
                   </div>
                 )}
@@ -610,13 +616,13 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <div className="flex justify-between">
                     <span className="text-muted">Class</span>
                     <span className="font-medium text-ink">
-                      {equipmentClassLabels[item.equipmentClass] || item.equipmentClass}
+                      {equipmentClassLabels[item.equipmentClass ?? "CLASS_I"] || item.equipmentClass}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted">Type</span>
                     <span className="font-medium text-ink">
-                      {applianceTypeLabels[item.applianceType] || item.applianceType}
+                      {applianceTypeLabels[item.applianceType ?? "APPLIANCE"] || item.applianceType}
                     </span>
                   </div>
                   {item.serialNumber && (
@@ -711,7 +717,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <LabelTemplate
             testTagId={item.testTagId}
             result={latestRecord.result === "PASS" ? "PASS" : "FAIL"}
-            testDate={latestRecord.testDate}
+            testDate={latestRecord.testDate ?? ""}
             nextDueDate={item.nextDueDate || latestRecord.testDate}
             testerName={latestRecord.testedBy?.name || latestRecord.testerName || "—"}
           />

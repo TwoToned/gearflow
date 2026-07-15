@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/layout/page-header";
 import { TestTagTable } from "@/components/test-tag/test-tag-table";
-import { backfillTestTagAssets } from "@/server/test-tag-assets";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 
@@ -23,9 +23,10 @@ export default function TestTagRegistryPage() {
   // reader). The cross-route test-tag-dashboard-stats reader (the dashboard
   // landing) is on useServerQuery and remounts on navigation — no invalidate.
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const ttWrites = useTestTagWrites();
 
   const backfillMutation = useServerMutation({
-    mutationFn: () => backfillTestTagAssets(),
+    mutationFn: () => ttWrites.backfill(),
     onSuccess: (result) => {
       const parts: string[] = [];
       if (result.created > 0) parts.push(`registered ${result.created}`);

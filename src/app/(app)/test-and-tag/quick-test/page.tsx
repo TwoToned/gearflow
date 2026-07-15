@@ -10,8 +10,6 @@ import Link from "next/link";
 import { ArrowLeft, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react";
 
 import { createTestTagRecord } from "@/server/test-tag-records";
-import { lookupTestTagAsset } from "@/server/test-tag-assets";
-import { updateTestTagAsset } from "@/server/test-tag-assets";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -97,7 +95,7 @@ function QuickTestContent() {
 
     (async () => {
       try {
-        const asset = await lookupTestTagAsset(preloadId);
+        const asset = orgId ? await convex.query(api.testTagAssets.lookup, { orgId, testTagId: preloadId }) : null;
         if (!asset) {
           toast.error(`No asset found for tag "${preloadId}"`);
           return;

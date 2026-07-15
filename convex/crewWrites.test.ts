@@ -193,4 +193,16 @@ describe("crew reads", () => {
     const linkable = await t.withIdentity(asUser(ORG)).query(api.crew.orgUsersForCrewLink, { orgId: ORG });
     expect(linkable.find((u) => u.id === USER)?.alreadyLinked).toBe(true);
   });
+
+  test("memberDetail/memberExtras enforce crew:read (not just org membership)", async () => {
+    // A member of the org whose role lacks crew:read (unknown role → fail-closed).
+    // requireOrgRead would have served crew PII on org-match alone; the tightened
+    // requireOrgPermission gate must reject — parity with the old requirePermission.
+    const t = makeT(); await member(t, "norole");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", isActive: true });
+    });
+    await expect(t.withIdentity(asUser(ORG)).query(api.crew.memberDetail, { id: "c1", orgId: ORG })).rejects.toThrow(/Forbidden|permission/i);
+    await expect(t.withIdentity(asUser(ORG)).query(api.crew.memberExtras, { orgId: ORG })).rejects.toThrow(/Forbidden|permission/i);
+  });
 });

@@ -126,7 +126,6 @@ import {
   saveKitLevelChecks,
   saveChildItemChecks,
 } from "@/server/check-records";
-import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
@@ -3036,8 +3035,8 @@ function WarehouseProjectPage({
 
                 // Fetch check items (kit-level or model-level)
                 const checkItems = isKitLevelItem
-                  ? await getKitCheckItems(item.kitId!)
-                  : await getModelCheckItems(item.modelId!);
+                  ? await wConvex.query(convexApi.kitCheckItems.assignmentsForKit, { orgId: orgId as string, kitId: item.kitId! })
+                  : await wConvex.query(convexApi.modelCheckItems.assignmentsForModel, { orgId: orgId as string, modelId: item.modelId! });
                 const checks: CheckRecordFormValues[] = (checkItems as Array<{ checkItem: { id: string; type: string } }>).map((mci) => ({
                   checkItemId: mci.checkItem.id,
                   result: mci.checkItem.type === "NOTES" ? "NOTES_ONLY" as const : "PASS" as const,

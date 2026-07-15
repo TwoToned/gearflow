@@ -15,11 +15,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 
-import {
-  addCheckItemToKit,
-  removeCheckItemFromKit,
-  reorderKitCheckItems,
-} from "@/server/check-items";
+import { useCheckItemWrites } from "@/hooks/use-check-item-writes";
 import { useKitCheckItems } from "@/hooks/use-check-item-assignments";
 import { useCheckItems } from "@/hooks/use-check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -88,10 +84,11 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
   // PER_ITEM mode the list isn't rendered; the subscription is harmless.)
   const kitCheckItems = useKitCheckItems(orgId, kitId);
   const isLoading = kitCheckItems === undefined;
+  const writes = useCheckItemWrites();
 
   const removeMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
-      removeCheckItemFromKit(kitId, checkItemId),
+      writes.removeCheckItemFromKit(kitId, checkItemId),
     onSuccess: () => {
       toast.success("Check item removed");
     },
@@ -102,7 +99,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
 
   const reorderMutation = useServerMutation({
     mutationFn: (orderedIds: string[]) =>
-      reorderKitCheckItems(kitId, orderedIds),
+      writes.reorderKitCheckItems(kitId, orderedIds),
     onError: (e) => toast.error(e.message),
   });
 
@@ -389,10 +386,11 @@ function KitCheckItemPicker({
 
   const allCheckItems = useCheckItems(orgId);
   const isLoading = allCheckItems === undefined;
+  const writes = useCheckItemWrites();
 
   const addMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
-      addCheckItemToKit(kitId, checkItemId),
+      writes.addCheckItemToKit(kitId, checkItemId),
     onSuccess: () => {
       toast.success("Check item added");
     },

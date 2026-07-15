@@ -18,11 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  createCheckItem,
-  updateCheckItem,
-  deleteCheckItem,
-} from "@/server/check-items";
+import { useCheckItemWrites } from "@/hooks/use-check-item-writes";
 import { useCheckItems } from "@/hooks/use-check-items";
 import { useModelCheckItemUsageCounts } from "@/hooks/use-check-item-assignments";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -107,9 +103,10 @@ export default function CheckItemsPage() {
   const allCheckItems = useCheckItems(orgId);
   const modelUsageCounts = useModelCheckItemUsageCounts(orgId);
   const isLoading = allCheckItems === undefined;
+  const writes = useCheckItemWrites();
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteCheckItem(id),
+    mutationFn: (id: string) => writes.deleteCheckItem(id),
     onSuccess: () => {
       toast.success("Check item deleted");
     },
@@ -456,8 +453,9 @@ function CheckItemDialog({
   // No invalidation: every check-item-library reader (this page + the model-table
   // bulk-assign dialog) subscribes to Convex, so the dual-write server action's
   // Convex write pushes the update live.
+  const writes = useCheckItemWrites();
   const createMutation = useServerMutation({
-    mutationFn: (data: CheckItemFormValues) => createCheckItem(data),
+    mutationFn: (data: CheckItemFormValues) => writes.createCheckItem(data),
     onSuccess: () => {
       toast.success("Check item created");
       onOpenChange(false);
@@ -467,7 +465,7 @@ function CheckItemDialog({
 
   const updateMutation = useServerMutation({
     mutationFn: (data: CheckItemFormValues) =>
-      updateCheckItem(editing!.id as string, data),
+      writes.updateCheckItem(editing!.id as string, data),
     onSuccess: () => {
       toast.success("Check item updated");
       onOpenChange(false);

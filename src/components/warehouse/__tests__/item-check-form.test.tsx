@@ -73,9 +73,12 @@ const mockItems = [
 // rule (the factory may only close over mock-prefixed outer bindings).
 let mockCurrentItems: typeof mockItems = mockItems;
 
-vi.mock("@/server/check-items", () => ({
-  getModelCheckItems: vi.fn(async () => mockCurrentItems),
-  getKitCheckItems: vi.fn(async () => mockCurrentItems),
+// The form now reads check items browser-direct via a one-shot Convex query
+// (api.modelCheckItems.assignmentsForModel / kitCheckItems.assignmentsForKit).
+// Mock the convex client so the query resolves to this test's data set.
+vi.mock("convex/react", () => ({
+  useConvex: () => ({ query: vi.fn(async () => mockCurrentItems) }),
+  useConvexAuth: () => ({ isAuthenticated: true }),
 }));
 
 vi.mock("@/lib/auth-client", () => ({

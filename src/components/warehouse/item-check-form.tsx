@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { cn, focusRing } from "@/lib/utils";
@@ -103,11 +104,18 @@ export function ItemCheckForm({
 }: ItemCheckFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const { data: modelCheckItems = [], isLoading } = useServerQuery<unknown[]>({
-    queryKey: kitId ? ["kit-check-items", orgId, kitId] : ["model-check-items", orgId, modelId],
-    queryFn: () => (kitId ? getKitCheckItems(kitId) : getModelCheckItems(modelId!)) as Promise<unknown[]>,
-    enabled: open && !!(modelId || kitId),
+    // isAuthenticated is in the key so the query re-runs once Convex auth is ready
+    // (useServerQuery won't otherwise retry a read that ran before auth settled).
+    queryKey: kitId ? ["kit-check-items", orgId, kitId, isAuthenticated] : ["model-check-items", orgId, modelId, isAuthenticated],
+    queryFn: () =>
+      (kitId
+        ? convex.query(api.kitCheckItems.assignmentsForKit, { orgId: orgId!, kitId })
+        : convex.query(api.modelCheckItems.assignmentsForModel, { orgId: orgId!, modelId: modelId! })) as Promise<unknown[]>,
+    enabled: open && !!orgId && isAuthenticated && !!(modelId || kitId),
   });
 
   const items = modelCheckItems as unknown as CheckItemData[];

@@ -14,11 +14,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 
-import {
-  addCheckItemToModel,
-  removeCheckItemFromModel,
-  reorderModelCheckItems,
-} from "@/server/check-items";
+import { useCheckItemWrites } from "@/hooks/use-check-item-writes";
 import { useModelCheckItems } from "@/hooks/use-check-item-assignments";
 import { useCheckItems } from "@/hooks/use-check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -79,10 +75,11 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
   // dual-write server actions push a live update, no manual invalidation.
   const modelCheckItems = useModelCheckItems(orgId, modelId);
   const isLoading = modelCheckItems === undefined;
+  const writes = useCheckItemWrites();
 
   const removeMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
-      removeCheckItemFromModel(modelId, checkItemId),
+      writes.removeCheckItemFromModel(modelId, checkItemId),
     onSuccess: () => {
       toast.success("Check item removed");
     },
@@ -94,7 +91,7 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
   // Drag reorder via move up/down buttons (simpler than DnD for now)
   const reorderMutation = useServerMutation({
     mutationFn: (orderedIds: string[]) =>
-      reorderModelCheckItems({ modelId, orderedCheckItemIds: orderedIds }),
+      writes.reorderModelCheckItems(modelId, orderedIds),
     onError: (e) => toast.error(e.message),
   });
 
@@ -353,10 +350,11 @@ function CheckItemPicker({
 
   const allCheckItems = useCheckItems(orgId);
   const isLoading = allCheckItems === undefined;
+  const writes = useCheckItemWrites();
 
   const addMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
-      addCheckItemToModel(modelId, checkItemId),
+      writes.addCheckItemToModel(modelId, checkItemId),
     onSuccess: () => {
       toast.success("Check item added");
     },

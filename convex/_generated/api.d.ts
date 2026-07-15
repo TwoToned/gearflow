@@ -67,6 +67,7 @@ import type * as files from "../files.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
+import type * as groupTemplatesWrites from "../groupTemplatesWrites.js";
 import type * as http from "../http.js";
 import type * as kitAllocations from "../kitAllocations.js";
 import type * as kitAllocationsWrites from "../kitAllocationsWrites.js";
@@ -256,6 +257,7 @@ declare const fullApi: ApiFromModules<{
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;
+  groupTemplatesWrites: typeof groupTemplatesWrites;
   http: typeof http;
   kitAllocations: typeof kitAllocations;
   kitAllocationsWrites: typeof kitAllocationsWrites;

@@ -31,7 +31,8 @@ import {
 import { toast } from "sonner";
 
 import { useProjectServices } from "@/hooks/use-project-services";
-import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
+import { useGroupTemplates } from "@/hooks/use-group-templates";
+import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
   createProjectGroup,
   updateProjectGroup,
@@ -47,7 +48,6 @@ import {
   moveSubHireGroupToCategory,
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
-import { applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import {
   removeLineItem,
   updateLineItem,
@@ -431,10 +431,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const projectSubHires = native.projectSubHires as any[];
 
   const { data: templates = [] } = useGroupTemplates(orgId);
+  const templateWrites = useGroupTemplateWrites();
 
   const { data: servicesData } = useProjectServices(projectId);
 
-  const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
+  const templateOptions = templates.map(
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
   );
 
@@ -606,29 +607,41 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   const saveAsTemplateMut = useServerMutation({
     mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
-      saveGroupAsTemplate(groupId, name, description),
-    onSuccess: (t: unknown) => {
-      const name = (t as { name?: string })?.name ?? "Template";
+      templateWrites.saveGroupAsTemplate(groupId, name, description),
+    onSuccess: (t: { name?: string }) => {
+      const name = t?.name ?? "Template";
       toast.success(`Saved as template "${name}"`);
-      refreshGroupTemplates(orgId);
       setSaveAsTemplateGroup(null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const createGroupMut = useServerMutation({
-    mutationFn: ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
+    mutationFn: async ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
         // when the user picks Uncategorised so they can still create the
         // group structurally. The template can be applied via a follow-up
         // move + recalculate if they later want to materialise its items.
         if (!categoryId) {
-          return createProjectGroup(projectId, { categoryId: null, title, quantity: 1 });
+          await createProjectGroup(projectId, { categoryId: null, title, quantity: 1 });
+          return;
         }
-        return applyGroupTemplate(projectId, { templateId, categoryId, title });
+        const tpl = templates.find((t) => t.id === templateId);
+        await templateWrites.applyTemplate({
+          templateId,
+          projectId,
+          categoryId,
+          title,
+          items: (tpl?.items ?? []).map((it) => ({
+            modelId: it.modelId,
+            kitId: it.kitId,
+            quantity: it.quantity,
+          })),
+        });
+        return;
       }
-      return createProjectGroup(projectId, { categoryId, title, quantity: 1 });
+      await createProjectGroup(projectId, { categoryId, title, quantity: 1 });
     },
     onSuccess: () => {
       invalidate();

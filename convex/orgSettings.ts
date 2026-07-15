@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -103,23 +104,8 @@ export const reserveAssetTags = mutation({
   args: { organizationId: v.string(), count: v.number(), now: v.number() },
   handler: async (ctx, { organizationId, count, now }) => {
     await requireService(ctx);
-    const existing = await loadByOrg(ctx, organizationId);
-    const blob = existing?.settings ? safeParse(existing.settings) : {};
-    const prefix = (blob.assetTagPrefix as string) || "ASSET";
-    const digits = (blob.assetTagDigits as number) || 4;
-    const current = (blob.assetTagCounter as number) || 0;
-    const tags: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      tags.push(`${prefix}${String(current + i).padStart(digits, "0")}`);
-    }
-    blob.assetTagCounter = current + count;
-    const settings = JSON.stringify(blob);
-    if (existing) {
-      await ctx.db.patch(existing._id, { settings, updatedAt: now });
-    } else {
-      await ctx.db.insert("orgSettings", { organizationId, settings, createdAt: now, updatedAt: now });
-    }
-    return { tags };
+    // Shared RMW (keystone) — also called INSIDE browser-direct create mutations.
+    return await reserveAssetTagCounter(ctx, organizationId, count, now);
   },
 });
 

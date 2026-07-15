@@ -10,7 +10,7 @@ import { Layers } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { bulkAssetSchema, type BulkAssetFormValues } from "@/lib/validations/asset";
-import { createBulkAsset, updateBulkAsset } from "@/server/bulk-assets";
+import { useBulkAssetWrites } from "@/hooks/use-bulk-asset-writes";
 import { bulkAssetStatusLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
@@ -96,9 +96,11 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const bulkWrites = useBulkAssetWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: BulkAssetFormValues) =>
-      isEditing ? updateBulkAsset(initialData.id, data) : createBulkAsset(data),
+      isEditing ? bulkWrites.update(initialData.id, data) : bulkWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Bulk asset updated" : "Bulk asset created");
       router.push(`/assets/registry/${result.id}?type=bulk`);

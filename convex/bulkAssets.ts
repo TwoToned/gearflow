@@ -35,6 +35,135 @@ export const getById = query({
   },
 });
 
+const BULK_STATUS_RANK: Record<string, number> = { ACTIVE: 0, LOW_STOCK: 1, OUT_OF_STOCK: 2, RETIRED: 3 };
+function bulkMatchesSearch(haystacks: (string | null | undefined)[], search: string): boolean {
+  const needle = search.toLowerCase();
+  return haystacks.some((h) => (h ?? "").toLowerCase().includes(needle));
+}
+function bulkCompare(av: unknown, bv: unknown, dir: 1 | -1): number {
+  const aNull = av == null, bNull = bv == null;
+  if (aNull && bNull) return 0;
+  if (aNull) return dir === 1 ? 1 : -1;
+  if (bNull) return dir === 1 ? -1 : 1;
+  if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+  if (typeof av === "boolean" && typeof bv === "boolean") return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
+  return String(av).localeCompare(String(bv)) * dir;
+}
+
+/**
+ * Paginated BULK-ASSET list — browser-native replacement for the getBulkAssets
+ * server action. Fetches the org's bulk assets (by_organizationId) + model/location
+ * maps, then filters/sorts/paginates in JS (parity with filterBulkAssets/sortBulkAssets/
+ * paginate). Each row carries its model (with category) + location. One-shot (the only
+ * consumer — the T&T-new picker — reads it non-reactively).
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    categoryId: v.optional(v.string()),
+    status: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    modelId: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const isActive = a.isActive ?? true;
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "assetTag";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const [rows, models, categories, locations] = await Promise.all([
+      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const modelNameFor = (id: string) => modelMap.get(id)?.name;
+    const categoryFor = (id: string) => modelMap.get(id)?.categoryId;
+    const locationNameFor = (id: string | null) => (id ? locationMap.get(id)?.name : null);
+
+    const filtered = rows.filter((b) => {
+      if ((b.isActive ?? true) !== isActive) return false;
+      if (a.status && (b.status ?? "ACTIVE") !== a.status) return false;
+      if (a.locationId && (b.locationId ?? null) !== a.locationId) return false;
+      if (a.modelId && b.modelId !== a.modelId) return false;
+      if (a.categoryId && categoryFor(b.modelId) !== a.categoryId) return false;
+      if (a.search && !bulkMatchesSearch([b.assetTag, modelNameFor(b.modelId)], a.search)) return false;
+      return true;
+    });
+    const total = filtered.length;
+    const keyFn = (b: typeof rows[number]): unknown => {
+      if (sortBy === "model") return modelNameFor(b.modelId);
+      if (sortBy === "location") return locationNameFor(b.locationId ?? null);
+      if (sortBy === "status") return BULK_STATUS_RANK[b.status ?? "ACTIVE"];
+      return (b as unknown as Record<string, unknown>)[sortBy];
+    };
+    const sorted = [...filtered].sort((x, y) => bulkCompare(keyFn(x), keyFn(y), dir));
+    const pageRows = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+
+    const bulkAssets = pageRows.map((b) => {
+      const model = modelMap.get(b.modelId) ?? null;
+      return {
+        id: b.id,
+        organizationId: b.organizationId,
+        modelId: b.modelId,
+        assetTag: b.assetTag,
+        totalQuantity: b.totalQuantity ?? 0,
+        availableQuantity: b.availableQuantity ?? 0,
+        purchasePricePerUnit: b.purchasePricePerUnit ?? null,
+        locationId: b.locationId ?? null,
+        status: b.status ?? "ACTIVE",
+        notes: b.notes ?? null,
+        tags: b.tags ?? [],
+        isActive: b.isActive ?? true,
+        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        location: b.locationId ? locationMap.get(b.locationId) ?? null : null,
+      };
+    });
+
+    return { bulkAssets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  },
+});
+
+/**
+ * Single BULK-ASSET (mapped scalars) — browser-native replacement for the
+ * getBulkAsset server action. Returns null for a missing/wrong-org row (parity
+ * with the old `serialize(null)`). The only consumer (registry detail) reads
+ * modelId + existence to redirect to the model page, so the heavy lineItems/
+ * scanLogs/testTagAssets composite the old action built is dropped (unused).
+ */
+export const detail = query({
+  args: { id: v.string(), orgId: v.string() },
+  handler: async (ctx, { id, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc || doc.organizationId !== orgId) return null; // graceful not-found / wrong-org (parity)
+    return {
+      id: doc.id,
+      organizationId: doc.organizationId,
+      modelId: doc.modelId,
+      assetTag: doc.assetTag,
+      totalQuantity: doc.totalQuantity ?? 0,
+      availableQuantity: doc.availableQuantity ?? 0,
+      locationId: doc.locationId ?? null,
+      status: doc.status ?? "ACTIVE",
+      notes: doc.notes ?? null,
+      tags: doc.tags ?? [],
+      isActive: doc.isActive ?? true,
+    };
+  },
+});
+
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {

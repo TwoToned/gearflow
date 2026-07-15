@@ -57,6 +57,11 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, fields.organizationId, "client", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
+    // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
+    // makes another org's getById .unique() crash (and makes a retried create non-idempotent).
+    const dup = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dup) throw new ConvexError("Client already exists");
+
     await ctx.db.insert("clients", fields);
 
     await writeActivityLog(ctx, {

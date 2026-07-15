@@ -100,6 +100,10 @@ export const createNative = mutation({
         message: `Asset tag "${fields.assetTag}" already exists`,
       });
     }
+    // The assetTag guard is org-scoped and does NOT catch a cross-org cuid collision —
+    // dup-guard the client-minted id too (else another org's kit getById .unique() crashes).
+    const dupId = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dupId) throw new ConvexError("Kit already exists");
 
     await ctx.db.insert("kits", fields);
 

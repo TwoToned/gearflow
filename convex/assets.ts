@@ -53,10 +53,11 @@ export const listByModel = query({
   args: { modelId: v.string(), orgId: v.string() },
   handler: async (ctx, { modelId, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    // by_modelId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    return (await ctx.db
       .query("assets")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
-      .collect();
+      .collect()).filter((r) => r.organizationId === orgId);
   },
 });
 

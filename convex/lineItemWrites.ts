@@ -31,12 +31,14 @@ import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-/** Delete a line + its fulfillment units (replica of deleteLineWithUnits). */
-async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: Id<"projectLineItems">, lineCuid: string) {
-  const units = await ctx.db
+/** Delete a line + its fulfillment units (replica of deleteLineWithUnits). The unit
+ *  cascade org-filters: by_lineItemId is a GLOBAL index, so without the org guard a
+ *  cuid-colliding line in another org could have its units swept. */
+async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: Id<"projectLineItems">, lineCuid: string, orgId: string) {
+  const units = (await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineCuid))
-    .collect();
+    .collect()).filter((u) => u.organizationId === orgId);
   for (const u of units) await ctx.db.delete(u._id);
   await ctx.db.delete(lineDocId);
 }
@@ -73,12 +75,12 @@ export const removeNative = mutation({
 
     // Cascade-delete the children (+ their units) and the line (+ its units) — the
     // exact removeLineItemCascade sequence, now atomic with the guard + audit.
-    const children = await ctx.db
+    const children = (await ctx.db
       .query("projectLineItems")
       .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
-      .collect();
-    for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
-    await deleteLineWithUnits(ctx, line._id, line.id);
+      .collect()).filter((c) => c.organizationId === orgId);
+    for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, orgId);
+    await deleteLineWithUnits(ctx, line._id, line.id, orgId);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -214,6 +216,11 @@ export const addCustomNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
     await assertProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org (see helper)
 
+    // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
+    // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
+    const dup = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dup) throw new ConvexError("Line item already exists");
+
     const sortOrder = await nextLineSort(ctx, projectId, organizationId);
     await ctx.db.insert("projectLineItems", {
       id,
@@ -301,6 +308,11 @@ export const addNative = mutation({
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     await assertProjectInOrg(ctx, projectId, organizationId);
 
+    // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
+    // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
+    const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dupLine) throw new ConvexError("Line item already exists");
+
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).
     const sortOrder = await nextLineSort(ctx, projectId, organizationId);
@@ -377,6 +389,10 @@ export const addKitNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
+    const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dupKit) throw new ConvexError("Line item already exists");
 
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,

@@ -67,6 +67,11 @@ export const createNative = mutation({
     const { userId, orgId, actor } = await requireUserOrg(ctx, suppliedActor);
     const cleanName = assertName(name);
 
+    // Dup-guard the client-minted id (by_cuid is global) so a retried create is
+    // idempotent and a colliding id can't make requireOwnView's .first() nondeterministic.
+    const dup = await ctx.db.query("savedTableViews").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dup) throw new ConvexError("Saved view already exists");
+
     // Atomically clear any existing default for (user, table, org) before inserting a
     // new default — mirrors savedTableViews.createForUser (prevents two defaults).
     if (isDefault) {

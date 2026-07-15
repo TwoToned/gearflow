@@ -252,6 +252,13 @@ export const createNative = mutation({
       .unique();
     if (clash) return { created: false as const, id: clash.id };
 
+    // The projectNumber clash-guard is org-scoped and doesn't catch a cross-org cuid
+    // collision — dup-guard the client-minted id too. THROW (not the `{created:false}`
+    // number-clash signal, which callers retry with the SAME id): a cuid collision is a
+    // hard error, else another org's by_cuid reads get muddied.
+    const dupId = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dupId) throw new ConvexError("Project already exists");
+
     await ctx.db.insert("projects", fields);
     await bumpProjectCounters(ctx, fields.organizationId, null, fields);
 

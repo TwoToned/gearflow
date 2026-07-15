@@ -115,6 +115,10 @@ export const createNative = mutation({
         `A custom field with key "${fields.fieldKey}" already exists for ${fields.entityType.toLowerCase()}s.`,
       );
     }
+    // The fieldKey guard is org-scoped and doesn't catch a cross-org cuid collision —
+    // dup-guard the client-minted id too (else another org's getById .unique() crashes).
+    const dupId = await ctx.db.query("customFieldDefinitions").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dupId) throw new ConvexError("Custom field already exists");
 
     // Normalize at the mutation boundary (parity with the deleted server action):
     // non-SELECT fields carry no options; blank help text stores as absent.

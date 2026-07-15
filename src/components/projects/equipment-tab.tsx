@@ -8,15 +8,13 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
   // Read hooks are retired here (the tab reads natively) — but the refresh
-  // chokepoints stay: they invalidate the shared server-action stores that the
-  // still-server-action equipment add-form / sub-hire dialog read (category
-  // dropdowns etc.), keeping those in sync after a tab write.
-  refreshProjectCategories,
-  refreshUncategorizedItems,
+  // chokepoints for the still-server-action sub-hire slot stores stay, keeping
+  // the add-form / sub-hire dialog in sync after a tab write. Category / overbooked /
+  // uncategorized-item reads are now reactive native subscriptions (no store to refresh).
   refreshUncategorizedSubHireGroups,
   refreshUncategorizedProjectGroups,
-  refreshProjectOverbooked,
 } from "@/hooks/use-project-equipment";
+import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import {
   NATIVE_LINEITEM_OPTIMISTIC,
@@ -43,14 +41,6 @@ import {
   moveLineItemsToGroup,
   updateGroupPrice,
 } from "@/server/project-groups";
-import {
-  createProjectCategory,
-  updateProjectCategory,
-  deleteProjectCategory,
-  reorderProjectCategories,
-  getUncategorizedLineItems,
-  getProjectOverbookedStatus,
-} from "@/server/project-categories";
 import {
   getUncategorizedSubHireGroups,
   getUncategorizedProjectGroups,
@@ -449,13 +439,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   );
 
   const invalidate = useCallback(() => {
-    refreshProjectCategories(projectId);
-    refreshUncategorizedItems(projectId);
     refreshUncategorizedSubHireGroups(projectId);
     refreshUncategorizedProjectGroups(projectId);
     refreshProjectDetail(projectId);
-    refreshProjectOverbooked(projectId);
   }, [projectId]);
+
+  // Browser-direct project-category writes (create / rename / delete / reorder) —
+  // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
+  const categoryWrites = useProjectCategoryWrites();
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
@@ -466,7 +457,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createCategoryMut = useServerMutation({
-    mutationFn: (name: string) => createProjectCategory(projectId, { name }),
+    mutationFn: (name: string) => categoryWrites.create(projectId, name),
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
@@ -476,7 +467,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const renameCategoryMut = useServerMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => updateProjectCategory(id, { name }),
+    mutationFn: ({ id, name }: { id: string; name: string }) => categoryWrites.update(id, name),
     onSuccess: () => {
       invalidate();
       setRenameCategoryId(null);
@@ -486,7 +477,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const deleteCategoryMut = useServerMutation({
-    mutationFn: (id: string) => deleteProjectCategory(id),
+    mutationFn: (id: string) => categoryWrites.remove(id),
     onSuccess: () => {
       invalidate();
       toast.success("Category deleted — items moved to uncategorized");
@@ -684,7 +675,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     const reordered = [...cats];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
-    reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
+    categoryWrites.reorder(reordered.map((c) => c.id)).catch(() => {
       toast.error("Failed to reorder categories");
     });
     invalidate();

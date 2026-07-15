@@ -168,6 +168,24 @@ describe("reconstructProjectCategories", () => {
     ]);
   });
 
+  it("keeps a kit-parent line (kitId + groupId) inside its group, not in category-level lineItems", () => {
+    // Migrated regression from the deleted project-categories-mixed.int.test: a top-level
+    // kit parent (kitId set, NOT a kit child) placed in a group must render inside that
+    // group and must NOT leak into the category's direct lineItems bucket.
+    const b = bundle({
+      categories: [d({ id: "c1", organizationId: ORG, projectId: PROJ, name: "Lighting", sortOrder: 0 })],
+      groups: [d({ id: "g1", organizationId: ORG, projectId: PROJ, categoryId: "c1", title: "Rig", quantity: 1, sortOrder: 0 })],
+      categorySlots: [d({ id: "sl1", projectCategoryId: "c1", projectGroupId: "g1", sortOrder: 0 })],
+      lineItems: [
+        li({ id: "kitParent", kitId: "k1", groupId: "g1" }), // kit parent, grouped
+        li({ id: "kc", parentLineItemId: "kitParent", isKitChild: true, kitId: "k1", groupId: "g1" }), // its child — excluded
+      ],
+    });
+    const [cat] = reconstructProjectCategories(b);
+    expect(cat.groups[0].lineItems?.map((i) => i.id)).toEqual(["kitParent"]);
+    expect(cat.lineItems?.map((i) => i.id) ?? []).not.toContain("kitParent");
+  });
+
   it("places a sub-hire-group parent line (subHireGroupId + categoryId) in BOTH buckets, like the server's dual pass", () => {
     const b = bundle({
       categories: [d({ id: "c1", organizationId: ORG, projectId: PROJ, name: "Audio", sortOrder: 0 })],
@@ -180,6 +198,45 @@ describe("reconstructProjectCategories", () => {
     const [cat] = reconstructProjectCategories(b);
     expect(cat.subHireGroupTargets?.[0].lineItems?.map((i) => i.id)).toEqual(["shgParent"]);
     expect(cat.lineItems?.map((i) => i.id)).toEqual(["shgParent"]); // also in the category bucket
+  });
+
+  // Migrated from the deleted project-categories-mixed.int.test.ts (Phase 5b): the
+  // mixedGroups order falls back to each group's own sortOrder when there's no slot row.
+  it("falls back to per-table sortOrder when a group has no CategorySlot row", () => {
+    const b = bundle({
+      categories: [d({ id: "c1", organizationId: ORG, projectId: PROJ, name: "Audio", sortOrder: 0 })],
+      groups: [d({ id: "g1", organizationId: ORG, projectId: PROJ, categoryId: "c1", title: "Mics", quantity: 1, sortOrder: 5 })],
+      subHires: [d({ id: "sh1", organizationId: ORG, projectId: PROJ, supplierId: "sup1", createdById: "u1", orderNumber: "SH-1", status: "ON_HIRE" })],
+      subHireGroups: [d({ id: "shg1", subHireId: "sh1", title: "Hired", sortOrder: 2, targetCategoryId: "c1" })],
+      // No categorySlots — both fall back to their own sortOrder (sub-hire 2, project 5).
+      suppliers: [d({ id: "sup1", organizationId: ORG, name: "AVHire Co" })],
+    });
+    const [cat] = reconstructProjectCategories(b);
+    expect(cat.mixedGroups).toEqual([
+      { kind: "subHire", sortOrder: 2, subHireGroupId: "shg1" },
+      { kind: "project", sortOrder: 5, projectGroupId: "g1" },
+    ]);
+  });
+
+  // Migrated from the deleted project-categories-mixed.int.test.ts (Phase 5b): a
+  // sub-hire group whose targetCategoryId points at another category isn't attached here.
+  it("ignores sub-hire groups whose targetCategoryId points elsewhere", () => {
+    const b = bundle({
+      categories: [
+        d({ id: "cA", organizationId: ORG, projectId: PROJ, name: "A", sortOrder: 0 }),
+        d({ id: "cB", organizationId: ORG, projectId: PROJ, name: "B", sortOrder: 1 }),
+      ],
+      subHires: [d({ id: "sh1", organizationId: ORG, projectId: PROJ, supplierId: "sup1", createdById: "u1", orderNumber: "SH-1", status: "ON_HIRE" })],
+      subHireGroups: [d({ id: "shg1", subHireId: "sh1", title: "Hired", sortOrder: 0, targetCategoryId: "cB" })],
+      suppliers: [d({ id: "sup1", organizationId: ORG, name: "AVHire Co" })],
+    });
+    const cats = reconstructProjectCategories(b);
+    const a = cats.find((c) => c.id === "cA");
+    const bCat = cats.find((c) => c.id === "cB");
+    expect(a!.subHireGroupTargets ?? []).toHaveLength(0);
+    expect(a!.mixedGroups).toHaveLength(0);
+    expect(bCat!.subHireGroupTargets?.map((s) => s.id)).toEqual(["shg1"]);
+    expect(bCat!.mixedGroups).toEqual([{ kind: "subHire", sortOrder: 0, subHireGroupId: "shg1" }]);
   });
 });
 

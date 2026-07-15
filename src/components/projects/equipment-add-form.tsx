@@ -15,7 +15,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { useProjectCategories, refreshProjectCategories, refreshUncategorizedItems, refreshProjectOverbooked } from "@/hooks/use-project-equipment";
+import { useProjectCategoriesWithGroups } from "@/hooks/use-projects";
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -108,10 +108,13 @@ export function EquipmentAddForm({
   // Categories for the optional category picker (only when not pre-set).
   // Passing an undefined key when a category is pre-set preserves the old
   // `enabled: !categoryId` (no fetch).
-  const { data: categoriesData } = useProjectCategories(categoryId ? undefined : projectId);
+  const categoriesData = useProjectCategoriesWithGroups(
+    categoryId ? undefined : projectId,
+    categoryId ? undefined : orgId,
+  );
 
   // CategoryData[] (id, name, groups) for the shared PlacementFields picker —
-  // getProjectCategories already includes each category's groups.
+  // native categories + their project groups composed reactively.
   const placementCategories = (categoriesData ?? []) as unknown as CategoryData[];
 
   const modelOptions = activeModels.map((m) => ({
@@ -210,9 +213,6 @@ export function EquipmentAddForm({
         toast.success("Equipment added");
       }
       refreshProjectDetail(projectId);
-      refreshProjectCategories(projectId);
-      refreshUncategorizedItems(projectId);
-      refreshProjectOverbooked(projectId);
       onInvalidate?.();
       onClose();
     },

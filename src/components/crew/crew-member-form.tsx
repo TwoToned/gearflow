@@ -9,7 +9,9 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
-import { createCrewMember, updateCrewMember, getOrgUsersForCrewLink } from "@/server/crew";
+import { useCrewWrites } from "@/hooks/use-crew-writes";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { crewMemberTypeLabels, crewMemberStatusLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useCrewRoles } from "@/hooks/use-crew";
@@ -48,10 +50,14 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
 
   const orgTags = useOrgTags(orgId);
   const crewRoles = useCrewRoles(orgId) ?? [];
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const crewWrites = useCrewWrites();
 
   const { data: linkableUsers } = useServerQuery({
-    queryKey: ["crew-linkable-users", orgId],
-    queryFn: () => getOrgUsersForCrewLink(),
+    queryKey: ["crew-linkable-users", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.crew.orgUsersForCrewLink, { orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const form = useForm<CrewMemberFormValues>({
@@ -87,7 +93,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
 
   const mutation = useServerMutation({
     mutationFn: (data: CrewMemberFormValues) =>
-      isEditing ? updateCrewMember(initialData.id, data) : createCrewMember(data),
+      isEditing ? crewWrites.update(initialData.id, data) : crewWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Crew member updated" : "Crew member created");
       router.push(`/crew/${result.id}`);

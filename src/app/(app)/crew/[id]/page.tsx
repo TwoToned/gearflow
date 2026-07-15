@@ -33,10 +33,7 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import {
-  getCrewMemberById,
-  deleteCrewMember,
-} from "@/server/crew";
+import { useCrewWrites } from "@/hooks/use-crew-writes";
 import {
   updateAssignmentStatus,
   deleteAssignment,
@@ -222,13 +219,15 @@ export default function CrewMemberDetailPage({
     return () => window.removeEventListener("slash-command", handler);
   }, []);
 
+  const crewWrites = useCrewWrites();
   const { data: member, isLoading, refetch: refetchMember } = useServerQuery({
-    queryKey: ["crew-member", orgId, id],
-    queryFn: () => getCrewMemberById(id),
+    queryKey: ["crew-member", orgId, id, caAuthed],
+    queryFn: () => caConvex.query(crewAvailApi.crew.memberDetail, { id, orgId: orgId as string }),
+    enabled: !!orgId && caAuthed,
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteCrewMember(id),
+    mutationFn: () => crewWrites.remove(id),
     onSuccess: () => {
       toast.success("Crew member deleted");
       // The crew roster (/crew) is Convex-reactive (useCrewMembers); the old

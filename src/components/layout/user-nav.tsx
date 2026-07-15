@@ -7,7 +7,8 @@ import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProfile } from "@/hooks/use-profile";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { getMyCrewMemberId } from "@/server/crew";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,10 +40,12 @@ export function UserNav() {
   const userImage = profile?.image || user?.image;
 
   // Check if user has a linked crew profile
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: myCrewId } = useServerQuery({
-    queryKey: ["my-crew-id", orgId],
-    queryFn: () => getMyCrewMemberId(),
-    enabled: !!orgId,
+    queryKey: ["my-crew-id", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.crew.myCrewMemberId, { orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   return (

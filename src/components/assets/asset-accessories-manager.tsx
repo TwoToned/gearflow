@@ -20,7 +20,6 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useAssetAccessoryWrites } from "@/hooks/use-asset-accessory-writes";
 import { api } from "../../../convex/_generated/api";
-import { getAvailableBulkAssetsForKit } from "@/server/kits";
 
 type SerializedChild = {
   id: string;
@@ -87,12 +86,12 @@ export function AssetAccessoriesManager({
     enabled: open && tab === "serialized" && !!accOrgId && isAuthenticated,
   });
   const { data: availableBulk = [] } = useServerQuery({
-    queryKey: ["accessory-bulk"],
+    queryKey: ["accessory-bulk", accOrgId, isAuthenticated],
     queryFn: () =>
-      getAvailableBulkAssetsForKit() as Promise<
+      convex.query(api.kits.availableBulkAssets, { orgId: accOrgId as string }) as unknown as Promise<
         Array<{ id: string; assetTag: string; model: { name: string }; availableQuantity: number }>
       >,
-    enabled: open && tab === "bulk",
+    enabled: open && tab === "bulk" && !!accOrgId && isAuthenticated,
   });
 
   const addSerial = useServerMutation({

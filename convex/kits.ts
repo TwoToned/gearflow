@@ -147,6 +147,48 @@ export const listByIds = query({
   },
 });
 
+/**
+ * Serialized assets eligible to add to a kit — browser-native replacement for the
+ * getAvailableAssetsForKit server action. Active + AVAILABLE + not already in a kit
+ * (+ optional model filter), assetTag ASC, model attached. One-shot picker read.
+ */
+export const availableAssets = query({
+  args: { orgId: v.string(), modelId: v.optional(v.string()) },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    const [assets, models] = await Promise.all([
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    return assets
+      .filter((a) => a.isActive !== false && (a.status ?? "AVAILABLE") === "AVAILABLE" && (a.kitId ?? null) === null && (!modelId || a.modelId === modelId))
+      .sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0))
+      .map((a) => ({ ...a, model: a.modelId ? modelMap.get(a.modelId) ?? null : null }));
+  },
+});
+
+/**
+ * Bulk assets with available quantity — browser-native replacement for
+ * getAvailableBulkAssetsForKit. Active + ACTIVE + availableQuantity > 0, assetTag
+ * ASC, model attached. One-shot picker read.
+ */
+export const availableBulkAssets = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const [bulk, models] = await Promise.all([
+      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    return bulk
+      .filter((b) => b.isActive !== false && (b.status ?? "ACTIVE") === "ACTIVE" && (b.availableQuantity ?? 0) > 0)
+      .sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0))
+      .map((b) => ({ ...b, model: b.modelId ? modelMap.get(b.modelId) ?? null : null }));
+  },
+});
+
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
@@ -298,7 +340,7 @@ export const remove = mutation({
 // same asset (the check + write are serializable; OCC retries the loser).
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: string) {
+export async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: string) {
   const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
   if (!kit || kit.organizationId !== organizationId) throw new ConvexError("Kit not found");
   if (kit.status !== "AVAILABLE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
@@ -306,7 +348,7 @@ async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: st
 }
 
 /** Set kitId + the kit's location on an asset (clearing location if the kit has none). */
-async function assignAssetToKit(
+export async function assignAssetToKit(
   ctx: MutationCtx,
   asset: NonNullable<Awaited<ReturnType<typeof getAssetDoc>>>,
   kitId: string,
@@ -322,7 +364,7 @@ async function assignAssetToKit(
 }
 
 /** Release an asset back to inventory (kitId cleared, status AVAILABLE). */
-async function releaseAsset(ctx: MutationCtx, assetId: string, now: number) {
+export async function releaseAsset(ctx: MutationCtx, assetId: string, now: number) {
   const asset = await getAssetDoc(ctx, assetId);
   if (!asset) return;
   const { _id, _creationTime, kitId: _k, ...rest } = asset;
@@ -331,7 +373,7 @@ async function releaseAsset(ctx: MutationCtx, assetId: string, now: number) {
   await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "AVAILABLE" });
 }
 
-async function getAssetDoc(ctx: MutationCtx, id: string) {
+export async function getAssetDoc(ctx: MutationCtx, id: string) {
   return await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
 }
 
@@ -450,12 +492,16 @@ export const removeBulkItem = mutation({
 
 /** Release all members + (archive: soft-delete / delete: hard-delete) the kit, atomically. */
 export async function releaseKitMembers(ctx: MutationCtx, kitId: string, organizationId: string, now: number) {
-  const serialized = await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
+  // by_kitId is GLOBAL — org-filter the member rows (defense-in-depth; a kitId maps
+  // to one org, but never release/delete a foreign-org row).
+  const serialized = (await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
+    .filter((m) => m.organizationId === organizationId);
   for (const m of serialized) {
     await releaseAsset(ctx, m.assetId, now);
     await ctx.db.delete(m._id);
   }
-  const bulk = await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
+  const bulk = (await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
+    .filter((m) => m.organizationId === organizationId);
   for (const m of bulk) {
     await adjustBulkAvailability(ctx, organizationId, [{ bulkAssetId: m.bulkAssetId, delta: m.quantity }]);
     await ctx.db.delete(m._id);

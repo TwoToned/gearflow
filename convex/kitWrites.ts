@@ -1,11 +1,14 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
-import { releaseKitMembers } from "./kits";
+import { reserveAssetTagCounter } from "./lib/assetTagCounter";
+import { adjustBulkAvailability } from "./lib/inventory";
+import { releaseKitMembers, getKitGuarded, assignAssetToKit, releaseAsset, getAssetDoc } from "./kits";
 import * as enums from "./lib/validators";
 
 /**
@@ -106,6 +109,8 @@ export const createNative = mutation({
     if (dupId) throw new ConvexError("Kit already exists");
 
     await ctx.db.insert("kits", fields);
+    // Advance the asset-tag counter (parity — createKit reserved 1 after insert).
+    await reserveAssetTagCounter(ctx, fields.organizationId, 1, fields.createdAt ?? fields.updatedAt ?? 0);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -262,13 +267,163 @@ export const deleteNative = mutation({
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
     if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });
+
+    // Referencing-line-item guard (org-filtered — by_kitId is GLOBAL). Blocks hard
+    // delete if any project line item references the kit (preserve historical data).
+    const referencing = (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", id)).collect())
+      .filter((li) => li.organizationId === orgId).length;
+    if (referencing > 0) {
+      throw new ConvexError({
+        code: "KIT_REFERENCED",
+        message: `This kit is referenced by ${referencing} project line item${referencing === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`,
+      });
+    }
+
     await releaseKitMembers(ctx, id, orgId, now);
     await ctx.db.delete(kit._id);
+
+    // Clean up kit-scoped metadata the member cascade doesn't cover (org-filtered).
+    // Files are left in storage (parity with the old cascade).
+    const checkItems = (await ctx.db.query("kitCheckItems").withIndex("by_kitId", (q) => q.eq("kitId", id)).collect())
+      .filter((r) => r.organizationId === orgId);
+    for (const r of checkItems) await ctx.db.delete(r._id);
+    const mediaRows = (await ctx.db.query("kitMedia").withIndex("by_kitId", (q) => q.eq("kitId", id)).collect())
+      .filter((r) => r.organizationId === orgId);
+    for (const m of mediaRows) await ctx.db.delete(m._id);
+
     await writeActivityLog(ctx, {
       id: auditId, organizationId: orgId, action: "DELETE", entityType: "kit", entityId: id,
       entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
-      summary: `Deleted kit ${kit.assetTag} - ${kit.name}`, kitId: id, createdAt: now,
+      summary: `Permanently deleted kit ${kit.assetTag} - ${kit.name}`, createdAt: now,
     });
     return { id };
+  },
+});
+
+/**
+ * Kit MEMBER writes (Phase 3 browser-direct — replace kits.addSerializedItems /
+ * removeSerializedItem / addBulkItem / removeBulkItem). Each runs the 4 guards +
+ * the kit-AVAILABLE + per-asset availability guards (via the shared kits.ts
+ * helpers) atomically + an audit row (the old server member ops were unaudited;
+ * these consequential inventory changes now log). RBAC(kit, update).
+ */
+
+export const addSerializedItemsNative = mutation({
+  returns: v.object({ ids: v.array(v.string()) }),
+  args: {
+    orgId: v.string(),
+    kitId: v.string(),
+    items: v.array(v.object({ assetId: v.string(), position: v.optional(v.string()) })),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { orgId, kitId, items, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+    if (items.length === 0) throw new ConvexError("No items to add");
+
+    const kit = await getKitGuarded(ctx, kitId, orgId);
+    const ids: string[] = [];
+    for (const it of items) {
+      const asset = await getAssetDoc(ctx, it.assetId);
+      if (!asset || asset.organizationId !== orgId) throw new ConvexError("Asset not found");
+      if (asset.status !== "AVAILABLE") throw new ConvexError(`Asset ${asset.assetTag} is not AVAILABLE`);
+      if (asset.kitId) throw new ConvexError(`Asset ${asset.assetTag} is already in another kit`);
+      if (asset.parentAssetId) throw new ConvexError(`Asset ${asset.assetTag} is an accessory — detach it first`);
+      const id = createId();
+      await ctx.db.insert("kitSerializedItems", { id, organizationId: orgId, kitId, assetId: it.assetId, position: it.position, addedById: actor.userId, addedAt: now });
+      await assignAssetToKit(ctx, asset, kitId, kit.locationId, now);
+      ids.push(id);
+    }
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "UPDATE", entityType: "kit", entityId: kitId,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Added ${ids.length} asset${ids.length === 1 ? "" : "s"} to kit ${kit.assetTag}`, kitId, createdAt: now,
+    });
+    return { ids };
+  },
+});
+
+export const removeSerializedItemNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), kitId: v.string(), assetId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, kitId, assetId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const kit = await getKitGuarded(ctx, kitId, orgId);
+    const member = await ctx.db
+      .query("kitSerializedItems")
+      .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", assetId))
+      .unique();
+    if (!member || member.kitId !== kitId) throw new ConvexError("Kit item not found");
+    // Org-check the asset before releasing it (releaseAsset fetches by global cuid).
+    const asset = await getAssetDoc(ctx, assetId);
+    if (asset && asset.organizationId !== orgId) throw new ConvexError("Asset not found");
+    await ctx.db.delete(member._id);
+    await releaseAsset(ctx, assetId, now);
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "UPDATE", entityType: "kit", entityId: kitId,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Removed an asset from kit ${kit.assetTag}`, kitId, createdAt: now,
+    });
+    return { id: member.id };
+  },
+});
+
+export const addBulkItemNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    orgId: v.string(), kitId: v.string(), bulkAssetId: v.string(), quantity: v.number(),
+    position: v.optional(v.string()), notes: v.optional(v.string()),
+    actor: actorValidator, auditId: v.string(), now: v.number(),
+  },
+  handler: async (ctx, { orgId, kitId, bulkAssetId, quantity, position, notes, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+    if (!Number.isInteger(quantity) || quantity < 1) throw new ConvexError("Quantity must be at least 1");
+
+    const kit = await getKitGuarded(ctx, kitId, orgId);
+    const id = createId();
+    await ctx.db.insert("kitBulkItems", { id, organizationId: orgId, kitId, bulkAssetId, quantity, position, notes, addedById: actor.userId, addedAt: now });
+    // Guarded decrement (throws + rolls back if insufficient).
+    await adjustBulkAvailability(ctx, orgId, [{ bulkAssetId, delta: -quantity }]);
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "UPDATE", entityType: "kit", entityId: kitId,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Added ${quantity}× bulk item to kit ${kit.assetTag}`, kitId, createdAt: now,
+    });
+    return { id };
+  },
+});
+
+export const removeBulkItemNative = mutation({
+  returns: v.object({ bulkAssetId: v.string() }),
+  args: { orgId: v.string(), kitId: v.string(), bulkItemId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, kitId, bulkItemId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const kit = await getKitGuarded(ctx, kitId, orgId);
+    const member = await ctx.db.query("kitBulkItems").withIndex("by_cuid", (q) => q.eq("id", bulkItemId)).unique();
+    if (!member || member.organizationId !== orgId) throw new ConvexError("Bulk item not found");
+    if (member.kitId !== kitId) throw new ConvexError("Bulk item does not belong to this kit");
+    await ctx.db.delete(member._id);
+    await adjustBulkAvailability(ctx, orgId, [{ bulkAssetId: member.bulkAssetId, delta: member.quantity }]);
+    await writeActivityLog(ctx, {
+      id: auditId, organizationId: orgId, action: "UPDATE", entityType: "kit", entityId: kitId,
+      entityName: kit.assetTag, userId: actor.userId, userName: actor.userName,
+      summary: `Removed a bulk item from kit ${kit.assetTag}`, kitId, createdAt: now,
+    });
+    return { bulkAssetId: member.bulkAssetId };
   },
 });

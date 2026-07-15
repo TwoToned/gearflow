@@ -9,7 +9,7 @@ import { Truck, Mail } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
-import { createSupplier, updateSupplier } from "@/server/suppliers";
+import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
@@ -34,6 +34,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
   const isEditing = !!initialData;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const supplierWrites = useSupplierWrites();
   const orgCountry = useOrgCountry();
 
   const orgTags = useOrgTags(orgId);
@@ -62,7 +63,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
 
   const mutation = useServerMutation({
     mutationFn: (data: SupplierFormValues) =>
-      isEditing ? updateSupplier(initialData.id, data) : createSupplier(data),
+      isEditing ? supplierWrites.update(initialData.id, data) : supplierWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Supplier updated" : "Supplier created");
       router.push(`/suppliers/${result.id}`);

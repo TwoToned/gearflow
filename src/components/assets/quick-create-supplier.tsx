@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { createSupplier } from "@/server/suppliers";
+import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +28,9 @@ export function QuickCreateSupplier({ open, onOpenChange, onCreated }: QuickCrea
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
 
+  const supplierWrites = useSupplierWrites();
   const mutation = useServerMutation({
-    mutationFn: () => createSupplier({ name, phone: phone || undefined, email: email || undefined }),
+    mutationFn: () => supplierWrites.create({ name, phone: phone || undefined, email: email || undefined }),
     onSuccess: (result: { id: string }) => {
       toast.success("Supplier created");
       onCreated?.(result.id);

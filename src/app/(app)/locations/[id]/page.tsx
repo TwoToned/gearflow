@@ -34,7 +34,7 @@ import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { addLocationMedia, removeLocationMedia } from "@/server/location-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const locWrites = useLocationWrites();
+  const media = useMediaWrites("location");
 
   const { data: location, isLoading, refetch } = useServerQuery({
     queryKey: ["location", orgId, id],
@@ -528,13 +529,10 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                     existingMedia={(location.media || []).filter((m) => m.file).map((m) => m as MediaItem)}
                     onChanged={refetch}
                     onUploadComplete={async (fileUpload) => {
-                      await addLocationMedia({
-                        locationId: id,
-                        fileId: fileUpload.id,
-                      });
+                      await media.add({ parentId: id, fileId: fileUpload.id, type: "DOCUMENT" });
                     }}
                     onRemove={async (mediaId) => {
-                      await removeLocationMedia(mediaId);
+                      await media.remove(mediaId);
                     }}
                   />
                 </TabsContent>

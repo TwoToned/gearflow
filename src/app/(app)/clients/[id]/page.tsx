@@ -30,7 +30,7 @@ import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-
 import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { NotesEditor } from "@/components/ui/notes-editor";
-import { addClientMedia, removeClientMedia } from "@/server/client-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +80,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const isLoading = client === undefined;
 
   const clientWrites = useClientWrites();
+  const media = useMediaWrites("client");
   const archiveMutation = useServerMutation({
     mutationFn: () => clientWrites.archive(id),
     onSuccess: () => {
@@ -381,13 +382,10 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
                       existingMedia={(client.media || []).map((m: MediaItem) => m)}
                       onUploadComplete={async (fileUpload) => {
-                        await addClientMedia({
-                          clientId: id,
-                          fileId: fileUpload.id,
-                        });
+                        await media.add({ parentId: id, fileId: fileUpload.id, type: "DOCUMENT" });
                       }}
                       onRemove={async (mediaId) => {
-                        await removeClientMedia(mediaId);
+                        await media.remove(mediaId);
                       }}
                     />
                   </div>

@@ -63,7 +63,8 @@ import {
   approveTimeEntries,
   disputeTimeEntry,
 } from "@/server/crew-time";
-import { getCrewPickerList } from "@/server/crew-dashboard";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api as crewApi } from "../../../../../convex/_generated/api";
 import {
   crewTimeEntrySchema,
   type CrewTimeEntryFormValues,
@@ -79,6 +80,8 @@ import { FadeIn } from "@/components/ui/motion";
 export default function TimesheetsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const tsConvex = useConvex();
+  const { isAuthenticated: tsAuthed } = useConvexAuth();
 
   const {
     sortBy,
@@ -120,7 +123,8 @@ export default function TimesheetsPage() {
   // Fetch crew list for filter options
   const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
-    queryFn: getCrewPickerList,
+    queryFn: () => tsConvex.query(crewApi.crewDashboard.pickerList, { orgId: orgId as string }),
+    enabled: !!orgId && tsAuthed,
   });
 
   const crewFilterOptions =
@@ -714,6 +718,8 @@ function LogTimeDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const tsConvex = useConvex();
+  const { isAuthenticated: tsAuthed } = useConvexAuth();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
@@ -722,8 +728,8 @@ function LogTimeDialog({
 
   const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
-    queryFn: getCrewPickerList,
-    enabled: open,
+    queryFn: () => tsConvex.query(crewApi.crewDashboard.pickerList, { orgId: orgId as string }),
+    enabled: open && !!orgId && tsAuthed,
   });
 
   const filteredCrew = crewList?.filter((c: any) => {

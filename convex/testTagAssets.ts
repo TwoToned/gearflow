@@ -261,10 +261,14 @@ export const detail = query({
     if (!item || item.organizationId !== orgId) return null;
 
     const { total, records } = await ttRecordsFor(ctx, orgId, id, 10);
-    const profile = item.testProfileId ? await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", item.testProfileId!)).unique() : null;
-    const resolvedProfile = profile && profile.organizationId === orgId ? profile : null;
+    // Org-wide profile map so EACH record resolves its OWN testProfile (parity with the
+    // old getTestTagAsset profileMap — a record tested under a since-changed profile must
+    // still show that profile's name, not null).
+    const profiles = await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const profileById = new Map(profiles.map((p) => [p.id, p]));
+    const resolvedProfile = item.testProfileId ? profileById.get(item.testProfileId) ?? null : null;
     const withProfileRecords = records.map((r) => {
-      const p = r.testProfileId ? (r.testProfileId === resolvedProfile?.id ? resolvedProfile : null) : null;
+      const p = r.testProfileId ? profileById.get(r.testProfileId) ?? null : null;
       return { ...r, testProfile: p ? { id: p.id, name: p.name } : null };
     });
     const la = item.assetId ? await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", item.assetId!)).unique() : null;

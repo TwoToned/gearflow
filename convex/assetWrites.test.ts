@@ -342,6 +342,24 @@ describe("assetWrites — Phase 3 folds (counter + T&T)", () => {
   });
 });
 
+describe("assetWrites.updateNative updatedAt", () => {
+  test("stamps updatedAt from the mutation now (both patch + clear branches)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m", assetTag: "A1", status: "AVAILABLE", condition: "GOOD", notes: "keep", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    // patch branch (no clear)
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNative, { id: "a1", orgId: ORG, set: { assetTag: "A1", status: "IN_MAINTENANCE", tags: [], images: [] }, clear: [], actor: ACTOR, auditId: "l1", now: NOW + 1000 });
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first()))?.updatedAt).toBe(NOW + 1000);
+    // clear branch (clears notes)
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNative, { id: "a1", orgId: ORG, set: { assetTag: "A1", tags: [], images: [] }, clear: ["notes"], actor: ACTOR, auditId: "l2", now: NOW + 2000 });
+    const d = await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first());
+    expect(d?.updatedAt).toBe(NOW + 2000);
+    expect(d?.notes).toBeUndefined();
+  });
+});
+
 describe("assetWrites.createManyNative", () => {
   async function seedManager(t: ReturnType<typeof convexTest>) {
     await t.run(async (ctx) => {

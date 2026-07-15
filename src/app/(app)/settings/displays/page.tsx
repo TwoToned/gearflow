@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useConvex, useConvexAuth } from "convex/react";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { api } from "../../../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
@@ -37,7 +40,6 @@ import {
   updateDisplayToken,
   regenerateDisplayToken,
 } from "@/server/warehouse-display";
-import { getLocations } from "@/server/locations";
 
 interface DisplayToken {
   id: string;
@@ -166,19 +168,23 @@ export default function DisplaySettingsPage() {
   const [editLocationId, setEditLocationId] = useState("");
   const [editLayout, setEditLayout] = useState("standard");
 
+  const dConvex = useConvex();
+  const { isAuthenticated: dAuthed } = useConvexAuth();
+  const { data: dActiveOrg } = useActiveOrganization();
+  const dOrgId = dActiveOrg?.id;
+
   const { data: tokens, isLoading, refetch } = useServerQuery({
     queryKey: ["display-tokens"],
     queryFn: getDisplayTokens,
   });
 
   const { data: locationsData } = useServerQuery({
-    queryKey: ["locations-for-display"],
-    queryFn: () => getLocations({ pageSize: 100, sortBy: "name" }),
+    queryKey: ["locations-for-display", dOrgId],
+    queryFn: () => dConvex.query(api.locations.listSimple, { orgId: dOrgId as string }),
+    enabled: !!dOrgId && dAuthed,
   });
 
-  const locations =
-    (locationsData as { locations: Array<{ id: string; name: string; type: string }> })
-      ?.locations ?? [];
+  const locations = (locationsData as Array<{ id: string; name: string; type: string }>) ?? [];
 
   const invalidate = () => refetch();
 

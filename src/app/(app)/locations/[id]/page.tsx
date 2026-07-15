@@ -25,7 +25,9 @@ import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { getLocation, deleteLocation, updateLocationNotes } from "@/server/locations";
+import { useConvex, useConvexAuth } from "convex/react";
+import { useLocationWrites } from "@/hooks/use-location-writes";
+import { api } from "../../../../../convex/_generated/api";
 import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatusLabels, locationTypeLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn, focusRing } from "@/lib/utils";
@@ -74,14 +76,18 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const locWrites = useLocationWrites();
 
   const { data: location, isLoading, refetch } = useServerQuery({
     queryKey: ["location", orgId, id],
-    queryFn: () => getLocation(id),
+    queryFn: () => convex.query(api.locations.detail, { id, orgId: orgId as string }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteLocation(id),
+    mutationFn: () => locWrites.remove(id),
     onSuccess: () => {
       toast.success("Location deleted");
       router.push("/locations");
@@ -509,7 +515,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   <NotesEditor
                     initialNotes={location.notes || ""}
                     onChanged={refetch}
-                    onSave={(notes) => updateLocationNotes(id, notes)}
+                    onSave={(notes) => locWrites.updateNotes(id, notes)}
                     placeholder="Add notes about this location..."
                   />
                 </TabsContent>

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
+import { useGroupTemplates } from "@/hooks/use-group-templates";
+import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
   Bookmark,
   Trash2,
@@ -17,10 +18,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  updateGroupTemplate,
-  deleteGroupTemplate,
-} from "@/server/group-templates";
 import { useCanDo } from "@/lib/use-permissions";
 
 import { Button } from "@/components/ui/button";
@@ -77,12 +74,13 @@ export default function GroupTemplatesSettingsPage() {
     [templates],
   );
 
+  const templateWrites = useGroupTemplateWrites();
+
   const updateMut = useServerMutation({
     mutationFn: ({ id, name, description }: { id: string; name: string; description?: string }) =>
-      updateGroupTemplate(id, { name, description }),
+      templateWrites.updateTemplate(id, { name, description }),
     onSuccess: () => {
       toast.success("Template updated");
-      refreshGroupTemplates(orgId);
       setEditTemplate(null);
       setEditName("");
       setEditDescription("");
@@ -91,10 +89,9 @@ export default function GroupTemplatesSettingsPage() {
   });
 
   const deleteMut = useServerMutation({
-    mutationFn: (id: string) => deleteGroupTemplate(id),
+    mutationFn: (id: string) => templateWrites.deleteTemplate(id),
     onSuccess: () => {
       toast.success("Template deleted");
-      refreshGroupTemplates(orgId);
       setDeleteTemplate(null);
     },
     onError: (e: Error) => toast.error(e.message),

@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgRead } from "./lib/auth";
 
 /**
  * Thin CRUD for GroupTemplate (Convex table "groupTemplates"). GENERATED — Phase 2/5.
@@ -15,7 +15,10 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    // Browser-readable (Phase 3): the group-templates settings page + equipment tab
+    // subscribe reactively. requireOrgRead accepts the service token OR a user token
+    // scoped to `orgId`; rows are org-scoped via by_organizationId.
+    await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("groupTemplates")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))

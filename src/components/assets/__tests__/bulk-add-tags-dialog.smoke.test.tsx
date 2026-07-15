@@ -12,8 +12,9 @@ beforeAll(() => {
 
 // Org-tag suggestions come from a Convex query hook — stub it out.
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: vi.fn(() => ["blue", "green"]) }));
-// The server action isn't invoked on render, but keep it inert.
-vi.mock("@/server/assets", () => ({ bulkTagAssets: vi.fn() }));
+// The browser-direct writes hook isn't invoked on render — stub it (avoids needing
+// a ConvexProvider for useMutation).
+vi.mock("@/hooks/use-asset-writes", () => ({ useAssetWrites: () => ({ bulkTag: vi.fn() }) }));
 
 import { BulkAddTagsDialog } from "@/components/assets/asset-table";
 

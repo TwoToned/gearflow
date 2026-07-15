@@ -28,7 +28,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
-import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/assets";
+import { useAssetWrites } from "@/hooks/use-asset-writes";
+import type { NativeAssetDetail } from "@/lib/asset-detail-reconstruct";
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { forceReturnAsset } from "@/server/warehouse";
@@ -119,7 +120,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const optimisticNotes = useOptimisticAssetNotes(id, orgId);
   // Thin DTO of the getAsset shape (the page reads only produced fields); cast to the
   // server type so the page's typed field access is preserved.
-  type AssetDetail = Awaited<ReturnType<typeof getAsset>>;
+  type AssetDetail = NativeAssetDetail;
   const asset = native.data as unknown as AssetDetail | undefined;
   const assetLoading = !isBulk && native.isLoading;
   const refetchAsset = useCallback(() => {}, []);
@@ -127,6 +128,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const bulkWrites = useBulkAssetWrites();
+  const assetWrites = useAssetWrites();
 
   const { data: bulkAsset, isLoading: bulkLoading } = useServerQuery({
     queryKey: ["bulk-asset", orgId, id, isAuthenticated],
@@ -135,7 +137,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const archiveMutation = useServerMutation({
-    mutationFn: async () => { isBulk ? await bulkWrites.archive(id) : await archiveAsset(id); },
+    mutationFn: async () => { isBulk ? await bulkWrites.archive(id) : await assetWrites.archive(id); },
     onSuccess: () => {
       toast.success("Asset archived");
       router.push("/assets/registry");
@@ -144,7 +146,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: async () => { isBulk ? await bulkWrites.remove(id) : await deleteAsset(id); },
+    mutationFn: async () => { isBulk ? await bulkWrites.remove(id) : await assetWrites.remove(id); },
     onSuccess: () => {
       toast.success("Asset deleted");
       router.push("/assets/registry");
@@ -299,7 +301,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <StatusIndicator
           category="maintenance"
           value={link.maintenanceRecord.status}
-          label={maintenanceStatusLabels[link.maintenanceRecord.status] || formatLabel(link.maintenanceRecord.status)}
+          label={maintenanceStatusLabels[link.maintenanceRecord.status ?? ""] || formatLabel(link.maintenanceRecord.status ?? "")}
           variant="pill"
         />
       ),
@@ -575,7 +577,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                 <Badge status="neutral">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
                               </TableCell>
                               <TableCell>
-                                <StatusIndicator category="maintenance" value={mr.status} label={maintenanceStatusLabels[mr.status] || formatLabel(mr.status)} variant="pill" />
+                                <StatusIndicator category="maintenance" value={mr.status ?? ""} label={maintenanceStatusLabels[mr.status ?? ""] || formatLabel(mr.status ?? "")} variant="pill" />
                               </TableCell>
                               <TableCell className="text-table-cell text-muted tabular-nums hidden sm:table-cell">
                                 {formatDate(mr.completedDate || mr.scheduledDate)}
@@ -686,7 +688,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <NotesEditor
                   initialNotes={asset.notes || ""}
                   onChanged={() => refetchAsset()}
-                  onSave={optimisticNotes.enabled ? optimisticNotes.save : (notes) => updateAssetNotes(id, notes)}
+                  onSave={optimisticNotes.enabled ? optimisticNotes.save : (notes) => assetWrites.updateNotes(id, notes)}
                   placeholder="Add notes about this asset..."
                 />
               </TabsContent>

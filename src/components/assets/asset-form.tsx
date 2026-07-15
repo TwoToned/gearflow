@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { assetSchema, type AssetFormValues } from "@/lib/validations/asset";
-import { createAsset, createAssets, updateAsset } from "@/server/assets";
+import { useAssetWrites } from "@/hooks/use-asset-writes";
 import { peekNextAssetTags } from "@/server/settings";
 import { assetStatusLabels, conditionLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -130,19 +130,21 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
     setExtraAssets((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
   };
 
+  const assetWrites = useAssetWrites();
+
   const mutation = useServerMutation({
     mutationFn: async (data: AssetFormValues) => {
       if (isEditing) {
-        return updateAsset(initialData.id, data);
+        return assetWrites.update(initialData.id, data);
       }
       if (extraAssets.length > 0) {
         const allAssets = [
           { tag: data.assetTag, serialNumber: data.serialNumber || "" },
           ...extraAssets,
         ].filter((a) => a.tag);
-        return createAssets(data, allAssets);
+        return assetWrites.createMany(data, allAssets);
       }
-      return createAsset(data);
+      return assetWrites.create(data);
     },
     onSuccess: (result) => {
       if (isEditing) {

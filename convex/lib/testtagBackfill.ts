@@ -40,6 +40,49 @@ export async function orgDefaultIntervalMonths(ctx: MutationCtx, organizationId:
   }
 }
 
+/**
+ * Register a single asset in the T&T registry if its model requires T&T and it has
+ * no active linked entry yet (idempotent). Convex-native port of the per-asset
+ * registration in createAsset/createAssets. Mints the cuid inline.
+ */
+export async function registerAssetTestTag(
+  ctx: MutationCtx,
+  a: { organizationId: string; assetId: string; assetTag: string; serialNumber?: string; modelId: string },
+  now: number,
+): Promise<void> {
+  const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.modelId)).unique();
+  if (!model || model.organizationId !== a.organizationId || model.requiresTestAndTag !== true) return;
+
+  // Idempotent: skip if an active T&T row already links this asset.
+  const existing = (await ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
+    .filter((t) => t.organizationId === a.organizationId && t.isActive !== false);
+  if (existing.length > 0) return;
+
+  const intervalMonths = model.testAndTagIntervalDays
+    ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
+    : await orgDefaultIntervalMonths(ctx, a.organizationId);
+  const equipmentClass = (EQUIPMENT_CLASSES.includes(model.defaultEquipmentClass as EquipmentClass) ? model.defaultEquipmentClass : "CLASS_I") as EquipmentClass;
+  const applianceType = (APPLIANCE_TYPES.includes(model.defaultApplianceType as ApplianceType) ? model.defaultApplianceType : "APPLIANCE") as ApplianceType;
+  await ctx.db.insert("testTagAssets", {
+    id: createId(),
+    organizationId: a.organizationId,
+    testTagId: a.assetTag,
+    description: `${model.manufacturer ? model.manufacturer + " " : ""}${model.name} (${a.assetTag})`,
+    equipmentClass,
+    applianceType,
+    ...(model.manufacturer && { make: model.manufacturer }),
+    ...(model.modelNumber && { modelName: model.modelNumber }),
+    ...(a.serialNumber && { serialNumber: a.serialNumber }),
+    testIntervalMonths: intervalMonths,
+    ...(model.defaultTestProfileId && { testProfileId: model.defaultTestProfileId }),
+    status: "NOT_YET_TESTED" as const,
+    assetId: a.assetId,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 export async function backfillTestTagAssetsCore(
   ctx: MutationCtx,
   organizationId: string,

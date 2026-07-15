@@ -4,7 +4,8 @@ import { use } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getCrewMemberById } from "@/server/crew";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
 import { CrewMemberForm } from "@/components/crew/crew-member-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -30,10 +31,13 @@ function EditCrewMemberContent({ params }: { params: Promise<{ id: string }> }) 
   const { id } = use(params);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const { data: member, isLoading } = useServerQuery({
-    queryKey: ["crew-member", orgId, id],
-    queryFn: () => getCrewMemberById(id),
+    queryKey: ["crew-member", orgId, id, isAuthenticated],
+    queryFn: () => convex.query(api.crew.memberDetail, { id, orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   if (isLoading) return <FadeIn><div className="mx-auto max-w-5xl"><FormSkeleton /></div></FadeIn>;

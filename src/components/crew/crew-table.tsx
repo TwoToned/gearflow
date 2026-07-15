@@ -7,7 +7,8 @@ import { Plus } from "lucide-react";
 
 import { focusRing } from "@/lib/utils";
 
-import { getCrewMemberExtras } from "@/server/crew";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useCrewMembers, useCrewRoles } from "@/hooks/use-crew";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -190,10 +191,12 @@ export function CrewTable() {
   // crewRole name/color is resolved from the reactive crewRoles list.
   const allMembers = useCrewMembers(orgId);
   const roles = useCrewRoles(orgId);
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: extras } = useServerQuery({
-    queryKey: ["crew-member-extras", orgId],
-    queryFn: () => getCrewMemberExtras(),
-    enabled: !!orgId,
+    queryKey: ["crew-member-extras", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.crew.memberExtras, { orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   // Filter (search + type/department/status) → sort → paginate, all client-side

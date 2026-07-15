@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
+import { useProjectSubHires, refreshProjectSubHires, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
+import { useProjectCategoriesWithGroups } from "@/hooks/use-projects";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -153,7 +154,7 @@ function PlacementPicker({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: categories } = useProjectCategories(projectId) as { data: any[] | undefined };
+  const categories = useProjectCategoriesWithGroups(projectId, activeOrg?.id) as any[] | undefined;
 
   // Build a flat encoded value: "uncategorized", "cat:ID", or "grp:ID"
   const encoded = value.groupId
@@ -665,9 +666,8 @@ function SubHireManageView({
     refreshSubHire(subHireId);
     refreshProjectSubHires(projectId);
     refreshProjectDetail(projectId);
-    // Refresh equipment tab data when line items are generated/modified
-    refreshProjectCategories(projectId);
-    refreshUncategorizedItems(projectId);
+    // Category / uncategorized-item reads are reactive native subscriptions now —
+    // line-item + category changes push live, so there's no server store to refresh.
   }
 
   if (isLoading) {

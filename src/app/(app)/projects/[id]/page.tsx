@@ -8,7 +8,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
 import { useProjectLabourCost } from "@/hooks/use-project-crew";
-import { refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import {
   Pencil,
   Archive,
@@ -182,8 +181,7 @@ export default function ProjectDetailPage({
       toast.success("Status updated");
       refreshProjectDetail(id);
       // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
-      // stock; any other open project's overbook/availability caches are now stale.
-      refreshProjectOverbooked(id);
+      // stock; overbook/availability now reads reactively from Convex (no store to bust).
     },
     onError: (e) => toast.error(e.message),
   });
@@ -193,7 +191,6 @@ export default function ProjectDetailPage({
     onSuccess: () => {
       toast.success("Project cancelled");
       refreshProjectDetail(id);
-      refreshProjectOverbooked(id);
     },
     onError: (e) => toast.error(e.message),
   });

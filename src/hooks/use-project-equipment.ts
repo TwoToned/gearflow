@@ -2,11 +2,6 @@
 
 import { createSharedResource } from "./use-shared-resource";
 import {
-  getProjectCategories,
-  getUncategorizedLineItems,
-  getProjectOverbookedStatus,
-} from "@/server/project-categories";
-import {
   getUncategorizedSubHireGroups,
   getUncategorizedProjectGroups,
 } from "@/server/category-slots";
@@ -24,14 +19,10 @@ import { getSubHires, getSubHire } from "@/server/sub-hires";
  * (cross-domain composition). SSE is dead so no cross-user liveness is lost.
  */
 
-const categories = createSharedResource((projectId: string) => getProjectCategories(projectId));
-/** Subscribe to the project's category/group composition. Key = projectId. */
-export const useProjectCategories = categories.use;
-export const refreshProjectCategories = categories.refresh;
-
-const uncatItems = createSharedResource((projectId: string) => getUncategorizedLineItems(projectId));
-export const useUncategorizedItems = uncatItems.use;
-export const refreshUncategorizedItems = uncatItems.refresh;
+// NOTE: project categories, uncategorized line items, and project overbooked status
+// are now reactive native Convex subscriptions (useProjectCategoriesWithGroups in
+// use-projects.ts + the equipment-tab's native read path) — the old server-action
+// shared stores here were removed with the project-categories server action.
 
 const uncatSubHireGroups = createSharedResource((projectId: string) => getUncategorizedSubHireGroups(projectId));
 export const useUncategorizedSubHireGroups = uncatSubHireGroups.use;
@@ -40,10 +31,6 @@ export const refreshUncategorizedSubHireGroups = uncatSubHireGroups.refresh;
 const uncatProjectGroups = createSharedResource((projectId: string) => getUncategorizedProjectGroups(projectId));
 export const useUncategorizedProjectGroups = uncatProjectGroups.use;
 export const refreshUncategorizedProjectGroups = uncatProjectGroups.refresh;
-
-const overbooked = createSharedResource((projectId: string) => getProjectOverbookedStatus(projectId));
-export const useProjectOverbooked = overbooked.use;
-export const refreshProjectOverbooked = overbooked.refresh;
 
 const subHires = createSharedResource((projectId: string) => getSubHires({ projectId }));
 /** Subscribe to the project's sub-hires. Key = projectId. */

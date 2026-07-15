@@ -16,6 +16,7 @@ import {
   loadModelAvailabilityBundle,
   computeModelAvailability,
   findAssetConflict,
+  findKitConflict,
 } from "./lib/availabilityCore";
 
 /**
@@ -555,9 +556,50 @@ export const addKitNative = mutation({
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
+    // The client supplies projectId; verify it's the caller's org before reading it or
+    // sweeping its lines (by_cuid is global) — same guard addNative applies.
+    await assertProjectInOrg(ctx, projectId, organizationId);
+
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dupKit) throw new ConvexError("Line item already exists");
+
+    // Kit availability enforcement (parity with addKitLineItem, src/server/line-items.ts:
+    // 811-860). UNCONDITIONAL — no allowOverbook for kits. (createKitLineItemCore re-reads
+    // + org-validates the kit; this pre-read is only for the guards.)
+    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
+    if (kit && kit.organizationId === organizationId) {
+      // (a) Block truly unavailable kits (allow checked-out — the date check handles those).
+      if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
+        throw new ConvexError({
+          code: "KIT_UNAVAILABLE",
+          title: "Kit cannot be added",
+          message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
+          hint: kit.status === "IN_MAINTENANCE"
+            ? "Wait for maintenance to finish, or pick a different kit."
+            : "Complete the kit's missing items before booking it.",
+        });
+      }
+      // (b) Dated double-booking on an overlapping project (parent kit line only).
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+      if (project?.rentalStartDate != null && project?.rentalEndDate != null) {
+        const conflict = await findKitConflict(ctx, {
+          kitId,
+          orgId: organizationId,
+          excludeProjectId: projectId,
+          rentalStart: project.rentalStartDate,
+          rentalEnd: project.rentalEndDate,
+        });
+        if (conflict) {
+          throw new ConvexError({
+            code: "KIT_DOUBLE_BOOKED",
+            title: "Kit already booked",
+            message: `Kit ${kit.assetTag} is on ${conflict.projectNumber ?? conflict.id} — ${conflict.name ?? ""} during those dates.`,
+            hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
+          });
+        }
+      }
+    }
 
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,

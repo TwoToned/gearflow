@@ -458,6 +458,33 @@ describe("lineItemWrites.addKitNative", () => {
     await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("throws KIT_UNAVAILABLE when the kit is IN_MAINTENANCE (unconditional)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "IN_MAINTENANCE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs),
+    ).rejects.toThrow(/KIT-1 is in maintenance/i);
+  });
+
+  test("throws KIT_DOUBLE_BOOKED on a dated overlap with another project", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      // Target project (dated).
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 });
+      // Another overlapping project already has the kit booked (parent line).
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 });
+      await ctx.db.insert("projectLineItems", { id: "kl0", organizationId: ORG, projectId: "p2", kitId: "k1", type: "EQUIPMENT", status: "CONFIRMED", isKitChild: false });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs),
+    ).rejects.toThrow(/KIT-1 is on P2/i);
+  });
 });
 
 describe("lineItemWrites.reorderNative", () => {

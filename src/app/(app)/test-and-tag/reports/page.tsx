@@ -16,7 +16,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { getTestTagAssets } from "@/server/test-tag-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { cn, focusRing } from "@/lib/utils";
@@ -133,19 +134,21 @@ export default function TestTagReportsPage() {
   const [searchInput, setSearchInput] = useState("");
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   // For item-history: search test tag assets
   const { data: searchResults } = useServerQuery({
-    queryKey: ["test-tag-search", orgId, searchInput],
-    queryFn: () => getTestTagAssets({ search: searchInput, pageSize: 5 }),
-    enabled: activeReport?.key === "item-history" && searchInput.length >= 2,
+    queryKey: ["test-tag-search", orgId, searchInput, isAuthenticated],
+    queryFn: () => convex.query(api.testTagAssets.listPage, { orgId: orgId!, search: searchInput, pageSize: 5 }),
+    enabled: activeReport?.key === "item-history" && searchInput.length >= 2 && !!orgId && isAuthenticated,
   });
 
   // For bulk-summary: search bulk-linked test tag assets
   const { data: bulkAssets } = useServerQuery({
-    queryKey: ["test-tag-bulk-assets", orgId],
-    queryFn: () => getTestTagAssets({ assetLinkType: "bulk", pageSize: 100 }),
-    enabled: activeReport?.key === "bulk-summary",
+    queryKey: ["test-tag-bulk-assets", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.testTagAssets.listPage, { orgId: orgId!, assetLinkType: "bulk", pageSize: 100 }),
+    enabled: activeReport?.key === "bulk-summary" && !!orgId && isAuthenticated,
   });
 
   const handleGenerate = useCallback(async (format: "pdf" | "csv") => {

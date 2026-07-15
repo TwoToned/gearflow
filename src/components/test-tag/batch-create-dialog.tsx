@@ -7,7 +7,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 
 import { batchCreateTestTagSchema, type BatchCreateTestTagFormValues } from "@/lib/validations/test-tag";
-import { createTestTagAssetsFromBulk } from "@/server/test-tag-assets";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import {
   Dialog,
   DialogContent,
@@ -94,9 +94,11 @@ export function BatchCreateDialog({
     }
   }, [open, bulkAssetId, bulkAssetName, form]);
 
+  const ttWrites = useTestTagWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: BatchCreateTestTagFormValues) =>
-      createTestTagAssetsFromBulk({
+      ttWrites.createFromBulk({
         bulkAssetId: data.bulkAssetId,
         count: Number(data.count),
         description: data.description,

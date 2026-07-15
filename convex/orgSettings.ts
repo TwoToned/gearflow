@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
+import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -139,24 +140,7 @@ export const reserveTestTagIds = mutation({
   args: { organizationId: v.string(), count: v.number(), now: v.number() },
   handler: async (ctx, { organizationId, count, now }) => {
     await requireService(ctx);
-    const existing = await loadByOrg(ctx, organizationId);
-    const blob = existing?.settings ? safeParse(existing.settings) : {};
-    const tt = (blob.testTag as Record<string, unknown>) || {};
-    const prefix = (tt.prefix as string) || "TT";
-    const digits = (tt.digits as number) || 4;
-    const current = (tt.counter as number) || 0;
-    const ids: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      ids.push(`${prefix}${String(current + i).padStart(digits, "0")}`);
-    }
-    blob.testTag = { ...tt, counter: current + count };
-    const settings = JSON.stringify(blob);
-    if (existing) {
-      await ctx.db.patch(existing._id, { settings, updatedAt: now });
-    } else {
-      await ctx.db.insert("orgSettings", { organizationId, settings, createdAt: now, updatedAt: now });
-    }
-    return { ids };
+    return await reserveTestTagIdCounter(ctx, organizationId, count, now);
   },
 });
 

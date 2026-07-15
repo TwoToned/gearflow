@@ -1,7 +1,8 @@
 "use client";
 
 import { useServerQuery } from "@/hooks/use-server-query";
-import { getTestTagDashboardStats } from "@/server/test-tag-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import Link from "next/link";
 import { Zap, Plus, List, AlertTriangle, Clock, CheckCircle, XCircle, HelpCircle } from "lucide-react";
 
@@ -44,10 +45,13 @@ function formatClass(cls: string) {
 export default function TestAndTagPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const { data: stats, isLoading } = useServerQuery({
-    queryKey: ["test-tag-dashboard-stats", orgId],
-    queryFn: () => getTestTagDashboardStats(),
+    queryKey: ["test-tag-dashboard-stats", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.testTagAssets.dashboardStats, { orgId: orgId!, nowMs: Date.now() }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   return (

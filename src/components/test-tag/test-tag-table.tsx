@@ -4,7 +4,8 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter } from "next/navigation";
 import { useState, Suspense } from "react";
 import Link from "next/link";
-import { getTestTagAssets } from "@/server/test-tag-assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -193,6 +194,8 @@ function TestTagTableContent({ refreshSignal = 0 }: { refreshSignal?: number }) 
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const {
     sortBy, sortOrder, pageSize, page,
@@ -208,18 +211,23 @@ function TestTagTableContent({ refreshSignal = 0 }: { refreshSignal?: number }) 
     queryKey: [
       "test-tag-assets",
       orgId,
+      isAuthenticated,
       { search, filters, page, pageSize, sortBy, sortOrder },
       refreshSignal,
     ],
     queryFn: () =>
-      getTestTagAssets({
+      convex.query(api.testTagAssets.listPage, {
+        orgId: orgId!,
         search: search || undefined,
-        status: Array.isArray(filters.status) ? filters.status[0] : undefined,
-        equipmentClass: Array.isArray(filters.equipmentClass) ? filters.equipmentClass[0] : undefined,
-        applianceType: Array.isArray(filters.applianceType) ? filters.applianceType[0] : undefined,
+        status: Array.isArray(filters.status) ? (filters.status[0] as string) : undefined,
+        equipmentClass: Array.isArray(filters.equipmentClass) ? (filters.equipmentClass[0] as string) : undefined,
+        applianceType: Array.isArray(filters.applianceType) ? (filters.applianceType[0] as string) : undefined,
         page,
         pageSize,
+        sortBy,
+        sortOrder,
       }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const items = data?.items || [];

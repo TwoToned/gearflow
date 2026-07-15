@@ -37,10 +37,11 @@ export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    return (await ctx.db
       .query("subHires")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
+      .collect()).filter((r) => r.organizationId === orgId);
   },
 });
 

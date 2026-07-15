@@ -14,6 +14,151 @@ import * as enums from "./lib/validators";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
  */
 
+// ── Pure scheduling helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
+const PHASE_RANK: Record<string, number> = { BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7 };
+const EXCLUDED_STATUSES = new Set(["CANCELLED", "DECLINED"]);
+const isoMs = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
+function ascNullsLast<T>(a: T | null | undefined, b: T | null | undefined): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1; if (b == null) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function rangeOverlaps(rowStart: number | null | undefined, rowEnd: number | null | undefined, rs: number, re: number): boolean {
+  if (rowStart == null || rowEnd == null) return false;
+  return rowStart <= re && rowEnd >= rs;
+}
+
+/**
+ * A project's crew — browser-native replacement for getProjectCrew. Assignments
+ * (by_projectId, org-filtered) + member/role/service joins + shifts (by_assignmentId)
+ * + confirmedBy from the users mirror. sortProjectCrew order (PM desc, phase rank,
+ * lastName). One-shot composite (shared-store consumer).
+ */
+export const projectCrew = query({
+  args: { projectId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+    if (!project || project.organizationId !== orgId) throw new ConvexError("Project not found");
+
+    const [assignmentsRaw, members, roles, services] = await Promise.all([
+      ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((a) => a.organizationId === orgId)),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((s) => s.organizationId === orgId)),
+    ]);
+    const memberById = new Map(members.map((m) => [m.id, m]));
+    const roleById = new Map(roles.map((r) => [r.id, r]));
+    const serviceById = new Map(services.map((s) => [s.id, s]));
+
+    const filtered = assignmentsRaw.filter((a) => memberById.has(a.crewMemberId));
+    filtered.sort((a, b) => {
+      if ((a.isProjectManager ?? false) !== (b.isProjectManager ?? false)) return a.isProjectManager ? -1 : 1;
+      const ar = a.phase == null ? Infinity : PHASE_RANK[a.phase] ?? Infinity;
+      const br = b.phase == null ? Infinity : PHASE_RANK[b.phase] ?? Infinity;
+      if (ar !== br) return ar - br;
+      return ascNullsLast(memberById.get(a.crewMemberId)?.lastName, memberById.get(b.crewMemberId)?.lastName);
+    });
+
+    const out = [];
+    for (const a of filtered) {
+      const m = memberById.get(a.crewMemberId)!;
+      const role = a.crewRoleId ? roleById.get(a.crewRoleId) ?? null : null;
+      const service = a.serviceId ? serviceById.get(a.serviceId) ?? null : null;
+      const shifts = (await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", a.id)).collect())
+        .sort((x, y) => ascNullsLast(x.date, y.date))
+        .map((s) => ({ id: s.id, assignmentId: s.assignmentId, date: isoMs(s.date), callTime: s.callTime ?? null, endTime: s.endTime ?? null, breakMinutes: s.breakMinutes ?? null, location: s.location ?? null, notes: s.notes ?? null, status: s.status ?? "SCHEDULED" }));
+      let confirmedBy = null;
+      if (a.confirmedById) {
+        // Membership-gate the users-mirror join (a foreign id can't leak another org's name).
+        const mem = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", a.confirmedById!)).first();
+        if (mem) {
+          const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", a.confirmedById!)).unique();
+          confirmedBy = u ? { id: u.id, name: u.name ?? null } : null;
+        }
+      }
+      out.push({
+        ...a,
+        startDate: isoMs(a.startDate), endDate: isoMs(a.endDate), confirmedAt: isoMs(a.confirmedAt), offeredAt: isoMs(a.offeredAt), respondedAt: isoMs(a.respondedAt), createdAt: isoMs(a.createdAt), updatedAt: isoMs(a.updatedAt),
+        crewMember: { id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null, defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null },
+        crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null, defaultRate: role.defaultRate ?? null, rateType: role.rateType ?? null } : null,
+        service: service ? { id: service.id, title: service.title, type: service.type } : null,
+        shifts,
+        confirmedBy,
+      });
+    }
+    return out;
+  },
+});
+
+/** Aggregate project labour cost — browser-native replacement for getProjectLabourCost. */
+export const projectLabourCost = query({
+  args: { projectId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
+      .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? ""));
+    return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
+  },
+});
+
+/**
+ * Active crew members for the assignment picker — browser-native replacement for
+ * getCrewMembersForAssignment. Active+ACTIVE members (search, lastName asc, top 50) +
+ * their assignments on THIS project + (optional) cross-project conflicts + unavailability.
+ */
+export const membersForAssignment = query({
+  args: { projectId: v.string(), orgId: v.string(), search: v.optional(v.string()), rangeStartMs: v.optional(v.number()), rangeEndMs: v.optional(v.number()) },
+  handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs }) => {
+    await requireOrgRead(ctx, orgId);
+    const [allMembers, allAssignments, roles, projects] = await Promise.all([
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const roleById = new Map(roles.map((r) => [r.id, r]));
+    const projectsById = new Map(projects.map((p) => [p.id, p]));
+    const needle = search?.trim().toLowerCase();
+    const members = allMembers
+      .filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE")
+      .filter((m) => !needle || m.firstName.toLowerCase().includes(needle) || m.lastName.toLowerCase().includes(needle) || (m.email ?? "").toLowerCase().includes(needle) || (m.department ?? "").toLowerCase().includes(needle))
+      .sort((a, b) => ascNullsLast(a.lastName, b.lastName))
+      .slice(0, 50);
+
+    const projectAssignmentsByMember = new Map<string, typeof allAssignments>();
+    for (const a of allAssignments) {
+      if (a.projectId !== projectId) continue;
+      const list = projectAssignmentsByMember.get(a.crewMemberId) ?? [];
+      list.push(a); projectAssignmentsByMember.set(a.crewMemberId, list);
+    }
+    const baseShape = (m: typeof members[number]) => {
+      const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
+      return {
+        id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null,
+        department: m.department ?? null, defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null,
+        crewRole: role ? { id: role.id, name: role.name } : null,
+        assignments: (projectAssignmentsByMember.get(m.id) ?? []).map((a) => ({ id: a.id, phase: a.phase ?? null, status: a.status ?? null, serviceId: a.serviceId ?? null })),
+      };
+    };
+
+    if (rangeStartMs != null && rangeEndMs != null) {
+      const memberIds = new Set(members.map((m) => m.id));
+      const avails = (await Promise.all([...memberIds].map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())))
+        .flat().filter((b) => b.organizationId == null || b.organizationId === orgId);
+      const unavailable = new Set<string>();
+      for (const b of avails) { if (b.type === "UNAVAILABLE" && rangeOverlaps(b.startDate, b.endDate, rangeStartMs, rangeEndMs)) unavailable.add(b.crewMemberId); }
+      return members.map((m) => {
+        const conflicts = allAssignments
+          .filter((a) => a.crewMemberId === m.id && a.projectId !== projectId && !EXCLUDED_STATUSES.has(a.status ?? "") && rangeOverlaps(a.startDate, a.endDate, rangeStartMs, rangeEndMs))
+          .map((c) => { const p = projectsById.get(c.projectId) ?? null; return { crewMemberId: c.crewMemberId, projectId: c.projectId, project: p ? { projectNumber: p.projectNumber, name: p.name } : null, startDate: isoMs(c.startDate), endDate: isoMs(c.endDate) }; });
+        return { ...baseShape(m), conflicts, isUnavailable: unavailable.has(m.id) };
+      });
+    }
+    return members.map((m) => ({ ...baseShape(m), conflicts: [] as never[], isUnavailable: false }));
+  },
+});
+
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {

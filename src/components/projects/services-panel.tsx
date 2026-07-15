@@ -52,7 +52,8 @@ import { useSelection } from "./use-selection";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { useCrewRoles } from "@/hooks/use-crew";
-import { getCrewMembersForAssignment } from "@/server/crew-assignments";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api as crewAsgApi } from "../../../convex/_generated/api";
 import {
   projectServiceSchema,
   type ProjectServiceFormValues,
@@ -1255,10 +1256,12 @@ function ServiceDialog({
     [roleDocs],
   );
 
+  const spConvex = useConvex();
+  const { isAuthenticated: spAuthed } = useConvexAuth();
   const { data: crewMembers = [] } = useServerQuery({
-    queryKey: ["crew-members-for-assignment", orgId, projectId],
-    queryFn: () => getCrewMembersForAssignment(projectId),
-    enabled: open,
+    queryKey: ["crew-members-for-assignment", orgId, projectId, spAuthed],
+    queryFn: () => spConvex.query(crewAsgApi.crewAssignments.membersForAssignment, { projectId, orgId: orgId as string }),
+    enabled: open && !!orgId && spAuthed,
   });
 
   const crewMemberOptions: { value: string; label: string; icon: React.ReactNode }[] =

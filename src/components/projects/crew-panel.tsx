@@ -26,15 +26,7 @@ import {
 import { toast } from "sonner";
 
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
-import {
-  createAssignment,
-  updateAssignment,
-  deleteAssignment,
-  updateAssignmentStatus,
-  bulkDeleteAssignments,
-  bulkUpdateAssignmentStatus,
-  getCrewMembersForAssignment,
-} from "@/server/crew-assignments";
+import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
 import { useSelection } from "./use-selection";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
@@ -145,12 +137,13 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const [offerAllOpen, setOfferAllOpen] = useState(false);
   const [removeAssignmentId, setRemoveAssignmentId] = useState<string | null>(null);
 
-  const { data: assignments, isLoading } = useProjectCrew(projectId);
+  const asgWrites = useCrewAssignmentWrites();
+  const { data: assignments, isLoading } = useProjectCrew(projectId, orgId);
 
-  const { data: labourCost } = useProjectLabourCost(projectId);
+  const { data: labourCost } = useProjectLabourCost(projectId, orgId);
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteAssignment(id),
+    mutationFn: (id: string) => asgWrites.remove(id),
     onSuccess: () => {
       toast.success("Crew member removed");
       refreshProjectCrew(projectId);
@@ -161,7 +154,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
   const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      updateAssignmentStatus(id, status),
+      asgWrites.updateStatus(id, status),
     onSuccess: () => {
       toast.success("Status updated");
       refreshProjectCrew(projectId);
@@ -196,7 +189,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     allAssignmentIds.length > 0 && selectedAssignmentIds.length === allAssignmentIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => bulkDeleteAssignments(ids),
+    mutationFn: (ids: string[]) => asgWrites.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Removed ${r.deleted} assignment${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -209,7 +202,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
   const bulkStatusMut = useServerMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
-      bulkUpdateAssignmentStatus(ids, status),
+      asgWrites.bulkStatus(ids, status),
     onSuccess: (_r, { ids }) => {
       toast.success(`Updated ${ids.length} assignment${ids.length === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -916,10 +909,11 @@ function AssignmentDialog({
   const orgId = activeOrg?.id;
   const cpConvex = useConvex();
   const { isAuthenticated: cpAuthed } = useConvexAuth();
+  const dlgWrites = useCrewAssignmentWrites();
   const { data: crewMembers } = useServerQuery({
-    queryKey: ["crew-for-assignment", orgId, projectId],
-    queryFn: () => getCrewMembersForAssignment(projectId),
-    enabled: open && mode === "add",
+    queryKey: ["crew-for-assignment", orgId, projectId, cpAuthed],
+    queryFn: () => cpConvex.query(crewApi.crewAssignments.membersForAssignment, { projectId, orgId: orgId as string }),
+    enabled: open && mode === "add" && !!orgId && cpAuthed,
   });
 
   // Reactive crew roles (Convex), skipped while the dialog is closed (mirrors the
@@ -1040,7 +1034,7 @@ function AssignmentDialog({
 
   const createMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
-      createAssignment(projectId, data),
+      dlgWrites.create(projectId, data),
     onSuccess: () => {
       toast.success("Crew member assigned");
       refreshProjectCrew(projectId);
@@ -1054,7 +1048,7 @@ function AssignmentDialog({
 
   const updateMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
-      updateAssignment(assignment!.id as string, data),
+      dlgWrites.update(assignment!.id as string, data),
     onSuccess: () => {
       toast.success("Assignment updated");
       refreshProjectCrew(projectId);

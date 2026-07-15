@@ -850,7 +850,8 @@ function ProjectSummaryStrip({
   equipmentRevenue: number | null;
   total: number | null;
 }) {
-  const { data: labourData } = useProjectLabourCost(projectId);
+  const { data: summaryOrg } = useActiveOrganization();
+  const { data: labourData } = useProjectLabourCost(projectId, summaryOrg?.id);
 
   const { data: serviceData } = useProjectServicesSummary(projectId);
 

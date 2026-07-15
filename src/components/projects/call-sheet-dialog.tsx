@@ -6,6 +6,7 @@ import { Loader2, FileText, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
 import { useProjectCrew } from "@/hooks/use-project-crew";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { getCallSheetDates } from "@/server/projects";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,7 +62,8 @@ export function CallSheetDialog({
   const [selectedRoleId, setSelectedRoleId] = useState<string>("all");
   const [generating, setGenerating] = useState(false);
 
-  const crewQuery = useProjectCrew(open ? projectId : undefined);
+  const { data: activeOrg } = useActiveOrganization();
+  const crewQuery = useProjectCrew(open ? projectId : undefined, activeOrg?.id);
 
   const datesQuery = useServerQuery({
     queryKey: ["call-sheet-dates", projectId],

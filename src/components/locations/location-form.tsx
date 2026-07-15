@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
-import { createLocation, updateLocation } from "@/server/locations";
+import { useLocationWrites } from "@/hooks/use-location-writes";
 import { useLocations } from "@/hooks/use-locations";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -74,9 +74,10 @@ export function LocationForm({ initialData }: LocationFormProps) {
 
   const v = form.watch();
 
+  const locWrites = useLocationWrites();
   const mutation = useServerMutation({
     mutationFn: (data: LocationFormValues) =>
-      isEditing ? updateLocation(initialData!.id, data) : createLocation(data),
+      isEditing ? locWrites.update(initialData!.id, data) : locWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Location updated" : "Location created");
       const id = isEditing ? initialData!.id : (result as { id: string }).id;

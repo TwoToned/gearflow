@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createLocation } from "@/server/locations";
+import { useLocationWrites } from "@/hooks/use-location-writes";
 import { useLocations } from "@/hooks/use-locations";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
@@ -45,8 +45,9 @@ export function QuickCreateLocation({ open, onOpenChange, onCreated }: QuickCrea
       description: loc.type,
     }));
 
+  const locWrites = useLocationWrites();
   const mutation = useServerMutation({
-    mutationFn: () => createLocation({ name, type, parentId: parentId || null }),
+    mutationFn: () => locWrites.create({ name, type, parentId: parentId || null }),
     onSuccess: (result) => {
       toast.success("Location created");
       onCreated?.(result.id);

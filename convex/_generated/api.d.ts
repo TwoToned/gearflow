@@ -92,6 +92,7 @@ import type * as lineItemMergeMaps from "../lineItemMergeMaps.js";
 import type * as lineItemWrites from "../lineItemWrites.js";
 import type * as locationMedia from "../locationMedia.js";
 import type * as locations from "../locations.js";
+import type * as locationsWrites from "../locationsWrites.js";
 import type * as maintenanceRecordAssets from "../maintenanceRecordAssets.js";
 import type * as maintenanceRecords from "../maintenanceRecords.js";
 import type * as members from "../members.js";
@@ -255,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   lineItemWrites: typeof lineItemWrites;
   locationMedia: typeof locationMedia;
   locations: typeof locations;
+  locationsWrites: typeof locationsWrites;
   maintenanceRecordAssets: typeof maintenanceRecordAssets;
   maintenanceRecords: typeof maintenanceRecords;
   members: typeof members;

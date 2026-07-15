@@ -36,6 +36,8 @@ import type * as clients from "../clients.js";
 import type * as collaboration from "../collaboration.js";
 import type * as crewAssignments from "../crewAssignments.js";
 import type * as crewAvailabilities from "../crewAvailabilities.js";
+import type * as crewAvailability from "../crewAvailability.js";
+import type * as crewAvailabilityWrites from "../crewAvailabilityWrites.js";
 import type * as crewMembers from "../crewMembers.js";
 import type * as crewRoles from "../crewRoles.js";
 import type * as crewShifts from "../crewShifts.js";
@@ -202,6 +204,8 @@ declare const fullApi: ApiFromModules<{
   collaboration: typeof collaboration;
   crewAssignments: typeof crewAssignments;
   crewAvailabilities: typeof crewAvailabilities;
+  crewAvailability: typeof crewAvailability;
+  crewAvailabilityWrites: typeof crewAvailabilityWrites;
   crewMembers: typeof crewMembers;
   crewRoles: typeof crewRoles;
   crewShifts: typeof crewShifts;

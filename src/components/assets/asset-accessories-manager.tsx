@@ -16,13 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  getAvailableAccessoryAssets,
-  addSerializedChildToAsset,
-  addBulkChildToAsset,
-  removeSerializedChildFromAsset,
-  removeBulkChildFromAsset,
-} from "@/server/asset-accessories";
+import { useConvex, useConvexAuth } from "convex/react";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useAssetAccessoryWrites } from "@/hooks/use-asset-accessory-writes";
+import { api } from "../../../convex/_generated/api";
 import { getAvailableBulkAssetsForKit } from "@/server/kits";
 
 type SerializedChild = {
@@ -66,6 +63,11 @@ export function AssetAccessoriesManager({
   inheritedBulkItems = [],
   onChanged,
 }: Props) {
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const { data: activeOrg } = useActiveOrganization();
+  const accOrgId = activeOrg?.id;
+  const accWrites = useAssetAccessoryWrites();
   const ownBulkIds = new Set(childBulkItems.map((c) => c.bulkAssetId).filter(Boolean) as string[]);
   const visibleInherited = inheritedBulkItems.filter((i) => !ownBulkIds.has(i.bulkAssetId));
   const [open, setOpen] = useState(false);
@@ -81,8 +83,8 @@ export function AssetAccessoriesManager({
 
   const { data: availableAssets = [] } = useServerQuery({
     queryKey: ["accessory-assets", assetId],
-    queryFn: () => getAvailableAccessoryAssets(assetId) as Promise<SerializedChild[]>,
-    enabled: open && tab === "serialized",
+    queryFn: () => convex.query(api.assetAccessories.availableSerialized, { orgId: accOrgId as string, parentAssetId: assetId }) as unknown as Promise<SerializedChild[]>,
+    enabled: open && tab === "serialized" && !!accOrgId && isAuthenticated,
   });
   const { data: availableBulk = [] } = useServerQuery({
     queryKey: ["accessory-bulk"],
@@ -94,7 +96,7 @@ export function AssetAccessoriesManager({
   });
 
   const addSerial = useServerMutation({
-    mutationFn: () => addSerializedChildToAsset(assetId, { childAssetId: serialId }),
+    mutationFn: () => accWrites.addSerialized(assetId, { childAssetId: serialId }),
     onSuccess: () => {
       toast.success("Accessory attached");
       setSerialId("");
@@ -104,7 +106,7 @@ export function AssetAccessoriesManager({
     onError: (e) => toast.error(e.message),
   });
   const addBulk = useServerMutation({
-    mutationFn: () => addBulkChildToAsset(assetId, { bulkAssetId: bulkId, quantity: bulkQty }),
+    mutationFn: () => accWrites.addBulk(assetId, { bulkAssetId: bulkId, quantity: bulkQty }),
     onSuccess: () => {
       toast.success("Accessory attached");
       setBulkId("");
@@ -115,7 +117,7 @@ export function AssetAccessoriesManager({
     onError: (e) => toast.error(e.message),
   });
   const removeSerial = useServerMutation({
-    mutationFn: (childId: string) => removeSerializedChildFromAsset(assetId, childId),
+    mutationFn: (childId: string) => accWrites.removeSerialized(assetId, childId),
     onSuccess: () => {
       toast.success("Accessory detached");
       refresh();
@@ -123,7 +125,7 @@ export function AssetAccessoriesManager({
     onError: (e) => toast.error(e.message),
   });
   const removeBulk = useServerMutation({
-    mutationFn: (bulkChildId: string) => removeBulkChildFromAsset(assetId, bulkChildId),
+    mutationFn: (bulkChildId: string) => accWrites.removeBulk(assetId, bulkChildId),
     onSuccess: () => {
       toast.success("Accessory detached");
       refresh();

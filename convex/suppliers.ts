@@ -64,6 +64,46 @@ export const counts = query({
   },
 });
 
+// ─── Browser-direct tab reads (Phase 3 — replace getSupplierAssets /
+// getSupplierSubhires; getSuppliers/getSuppliersPaginated were dead — reactive hooks). ──
+
+/** A supplier's assets (tag asc), paginated, with the model name attached. */
+export const assetsPage = query({
+  args: { orgId: v.string(), supplierId: v.string(), page: v.number(), pageSize: v.number() },
+  handler: async (ctx, { orgId, supplierId, page, pageSize }) => {
+    await requireOrgRead(ctx, orgId);
+    const filtered = (await ctx.db.query("assets").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).collect())
+      .filter((a) => a.organizationId === orgId && a.isActive !== false)
+      .sort((a, b) => a.assetTag.localeCompare(b.assetTag));
+    const total = filtered.length;
+    const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m]));
+    return { assets: rows.map((a) => ({ ...a, model: a.modelId ? models.get(a.modelId) ?? null : null })), total };
+  },
+});
+
+/** A supplier's sub-hire line items (createdAt desc), paginated, with project + model. */
+export const subhiresPage = query({
+  args: { orgId: v.string(), supplierId: v.string(), page: v.number(), pageSize: v.number() },
+  handler: async (ctx, { orgId, supplierId, page, pageSize }) => {
+    await requireOrgRead(ctx, orgId);
+    const matching = (await ctx.db.query("projectLineItems").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).collect())
+      .filter((li) => li.organizationId === orgId && li.subHireId != null)
+      .sort((a, b) => (b.createdAt ?? -Infinity) - (a.createdAt ?? -Infinity));
+    const total = matching.length;
+    const rows = matching.slice((page - 1) * pageSize, page * pageSize);
+    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p]));
+    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m]));
+    return {
+      lineItems: rows.map((li) => {
+        const p = projById.get(li.projectId);
+        return { ...li, project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber ?? null, status: p.status ?? "" } : null, model: li.modelId ? models.get(li.modelId) ?? null : null };
+      }),
+      total,
+    };
+  },
+});
+
 /**
  * Supplier DETAIL composite for the supplier detail + new-order pages — browser-native
  * replacement for the getSupplierById server action. Returns the mapped supplier (Prisma

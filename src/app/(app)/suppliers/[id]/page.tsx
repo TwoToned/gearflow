@@ -12,7 +12,7 @@ import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { getSupplierAssets, getSupplierSubhires, deleteSupplier } from "@/server/suppliers";
+import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -76,6 +76,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const router = useRouter();
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
+  const supplierWrites = useSupplierWrites();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -107,18 +108,18 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const { data: assetsData } = useServerQuery({
     queryKey: ["supplier-assets", orgId, id],
-    queryFn: () => getSupplierAssets(id, { pageSize: 50 }),
-    enabled: !!supplier,
+    queryFn: () => convex.query(api.suppliers.assetsPage, { orgId: orgId as string, supplierId: id, page: 1, pageSize: 50 }),
+    enabled: !!supplier && !!orgId && isAuthenticated,
   });
 
   const { data: subhiresData } = useServerQuery({
     queryKey: ["supplier-subhires", orgId, id],
-    queryFn: () => getSupplierSubhires(id, { pageSize: 50 }),
-    enabled: !!supplier,
+    queryFn: () => convex.query(api.suppliers.subhiresPage, { orgId: orgId as string, supplierId: id, page: 1, pageSize: 50 }),
+    enabled: !!supplier && !!orgId && isAuthenticated,
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteSupplier(id),
+    mutationFn: () => supplierWrites.remove(id),
     onSuccess: () => {
       toast.success("Supplier deleted");
       router.push("/suppliers");

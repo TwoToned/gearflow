@@ -32,7 +32,7 @@ import { DollarSign } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { exportModelsCSV } from "@/server/csv";
-import { bulkAddCheckItemsToModels } from "@/server/check-items";
+import { useCheckItemWrites } from "@/hooks/use-check-item-writes";
 import { useCheckItems } from "@/hooks/use-check-items";
 import { CSVImportDialog } from "@/components/assets/csv-import-dialog";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -490,10 +490,11 @@ function BulkAssignChecksDialog({
   const allCheckItemsData = useCheckItems(open ? orgId : undefined);
   const allCheckItems = allCheckItemsData ?? [];
   const isLoading = allCheckItemsData === undefined;
+  const writes = useCheckItemWrites();
 
   const mutation = useServerMutation({
     mutationFn: () =>
-      bulkAddCheckItemsToModels(
+      writes.bulkAddCheckItemsToModels(
         Array.from(selectedModelIds),
         Array.from(selectedCheckIds)
       ),

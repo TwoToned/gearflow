@@ -28,6 +28,7 @@ import type * as categories from "../categories.js";
 import type * as categoriesWrites from "../categoriesWrites.js";
 import type * as categorySlots from "../categorySlots.js";
 import type * as checkItems from "../checkItems.js";
+import type * as checkItemsWrites from "../checkItemsWrites.js";
 import type * as checkRecordOps from "../checkRecordOps.js";
 import type * as checkRecords from "../checkRecords.js";
 import type * as clientMedia from "../clientMedia.js";
@@ -198,6 +199,7 @@ declare const fullApi: ApiFromModules<{
   categoriesWrites: typeof categoriesWrites;
   categorySlots: typeof categorySlots;
   checkItems: typeof checkItems;
+  checkItemsWrites: typeof checkItemsWrites;
   checkRecordOps: typeof checkRecordOps;
   checkRecords: typeof checkRecords;
   clientMedia: typeof clientMedia;

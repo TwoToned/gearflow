@@ -51,6 +51,29 @@ export const listByModel = query({
   },
 });
 
+/**
+ * Enriched assignments for one model (sortOrder asc) with the nested `checkItem`
+ * doc — browser-direct replacement for getModelCheckItems (item-check-form +
+ * warehouse "pass all remaining"). Joins the checkItem by id (org re-checked;
+ * by_cuid is global) and drops rows whose check item is missing/cross-org.
+ */
+export const assignmentsForModel = query({
+  args: { orgId: v.string(), modelId: v.string() },
+  handler: async (ctx, { orgId, modelId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = (await ctx.db.query("modelCheckItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect())
+      .filter((r) => r.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const out = [];
+    for (const r of rows) {
+      const ci = await ctx.db.query("checkItems").withIndex("by_cuid", (q) => q.eq("id", r.checkItemId)).first();
+      if (!ci || ci.organizationId !== orgId) continue;
+      out.push({ id: r.id, sortOrder: r.sortOrder ?? 0, checkItem: ci });
+    }
+    return out;
+  },
+});
+
 /** Assignments for one model, org-scoped. Replaces a Prisma findMany by modelId. */
 export const listByModelId = query({
   args: { orgId: v.string(), modelId: v.string() },

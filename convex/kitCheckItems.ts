@@ -45,6 +45,28 @@ export const listByKitId = query({
   },
 });
 
+/**
+ * Enriched assignments for one kit (sortOrder asc) with the nested `checkItem`
+ * doc — browser-direct replacement for getKitCheckItems (item-check-form +
+ * warehouse "pass all remaining"). Joins the checkItem by id (org re-checked).
+ */
+export const assignmentsForKit = query({
+  args: { orgId: v.string(), kitId: v.string() },
+  handler: async (ctx, { orgId, kitId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = (await ctx.db.query("kitCheckItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
+      .filter((r) => r.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const out = [];
+    for (const r of rows) {
+      const ci = await ctx.db.query("checkItems").withIndex("by_cuid", (q) => q.eq("id", r.checkItemId)).first();
+      if (!ci || ci.organizationId !== orgId) continue;
+      out.push({ id: r.id, sortOrder: r.sortOrder ?? 0, checkItem: ci });
+    }
+    return out;
+  },
+});
+
 /** Assignments for one check item across all kits, org-scoped (delete guard). */
 export const listByCheckItemId = query({
   args: { orgId: v.string(), checkItemId: v.string() },

@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Zap, AlertTriangle, RotateCcw } from "lucide-react";
 import { lookupTestTagAsset, reactivateTestTagAsset } from "@/server/test-tag-assets";
-import { resolveTestProfile } from "@/server/test-tag-profiles";
+import { useConvex } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { getLatestTestRecord } from "@/server/test-tag-records";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,9 @@ export function ScanStep({
   dispatch: React.Dispatch<WizardAction>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const convex = useConvex();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -41,7 +46,9 @@ export function ScanStep({
       // Resolve profile
       let profile: ProfileInfo | null = null;
       try {
-        profile = await resolveTestProfile(asset.id) as ProfileInfo | null;
+        if (orgId) {
+          profile = await convex.query(api.testProfiles.resolveForAsset, { orgId, testTagAssetId: asset.id }) as ProfileInfo | null;
+        }
       } catch {
         // No profile found — user will need to select one
       }

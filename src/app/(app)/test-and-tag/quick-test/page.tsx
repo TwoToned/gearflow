@@ -12,7 +12,8 @@ import { ArrowLeft, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-reac
 import { createTestTagRecord } from "@/server/test-tag-records";
 import { lookupTestTagAsset } from "@/server/test-tag-assets";
 import { updateTestTagAsset } from "@/server/test-tag-assets";
-import { resolveTestProfile } from "@/server/test-tag-profiles";
+import { useConvex } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -68,6 +69,7 @@ function QuickTestContent() {
   const { data: activeOrg } = useActiveOrganization();
   const { data: session } = useSession();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [sessionLogExpanded, setSessionLogExpanded] = useState(false);
 
@@ -102,7 +104,9 @@ function QuickTestContent() {
         }
         let profile: ProfileInfo | null = null;
         try {
-          profile = await resolveTestProfile(asset.id) as ProfileInfo | null;
+          if (orgId) {
+            profile = await convex.query(api.testProfiles.resolveForAsset, { orgId, testTagAssetId: asset.id }) as ProfileInfo | null;
+          }
         } catch {
           // No profile — user will select
         }

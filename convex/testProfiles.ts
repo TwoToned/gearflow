@@ -33,6 +33,52 @@ export const getById = query({
   },
 });
 
+/**
+ * Resolve the best test profile for a test-tag asset (browser-direct replacement
+ * for resolveTestProfile). Cascade: asset.testProfileId → model.defaultTestProfileId
+ * → org default for class+type → any active for class+type → null. Every hop is
+ * org re-checked (all lookups use the GLOBAL by_cuid index). Returns null when the
+ * asset isn't in this org OR no profile matches. See FEATUREDOCS/54.
+ */
+export const resolveForAsset = query({
+  args: { orgId: v.string(), testTagAssetId: v.string() },
+  handler: async (ctx, { orgId, testTagAssetId }) => {
+    await requireOrgRead(ctx, orgId);
+    const orgProfile = async (id: string) => {
+      const p = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      return p && p.organizationId === orgId ? p : null;
+    };
+
+    const asset = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", testTagAssetId)).first();
+    if (!asset || asset.organizationId !== orgId) return null;
+
+    // 1. Asset-level profile.
+    if (asset.testProfileId) {
+      const own = await orgProfile(asset.testProfileId);
+      if (own) return own;
+    }
+    // 2. Model default (testTagAsset.assetId → asset.modelId → model.defaultTestProfileId).
+    if (asset.assetId) {
+      const linked = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", asset.assetId!)).first();
+      if (linked && linked.organizationId === orgId && linked.modelId) {
+        const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", linked.modelId!)).first();
+        if (model && model.organizationId === orgId && model.defaultTestProfileId) {
+          const modelProfile = await orgProfile(model.defaultTestProfileId);
+          if (modelProfile) return modelProfile;
+        }
+      }
+    }
+    // 3/4. Org default, then any active, for the asset's class+type.
+    const orgProfiles = (await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect());
+    const matches = (p: (typeof orgProfiles)[number]) => p.equipmentClass === asset.equipmentClass && p.applianceType === asset.applianceType;
+    return (
+      orgProfiles.find((p) => matches(p) && p.isDefault === true && p.isActive === true) ??
+      orgProfiles.find((p) => matches(p) && p.isActive === true) ??
+      null
+    );
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

@@ -109,11 +109,13 @@ describe("testTagAssets reads", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "PA-1", modelId: "m1", isActive: true });
       await ctx.db.insert("testProfiles", { id: "prof1", organizationId: ORG, name: "Standard", visualChecks: {}, electricalTests: {}, thresholds: {} });
+      await ctx.db.insert("testProfiles", { id: "prof2", organizationId: ORG, name: "Historical", visualChecks: {}, electricalTests: {}, thresholds: {} });
       await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
       await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "TT0002", description: "B", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "OVERDUE", nextDueDate: NOW - 1000, assetId: "as1", testProfileId: "prof1", isActive: true });
       await ctx.db.insert("testTagAssets", { id: "tt2", organizationId: ORG, testTagId: "TT0001", description: "A", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "CURRENT", isActive: true });
       await ctx.db.insert("testTagAssets", { id: "ttX", organizationId: OTHER, testTagId: "ZZ", description: "F", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "CURRENT", isActive: true });
-      await ctx.db.insert("testTagRecords", { id: "rec1", organizationId: ORG, testTagAssetId: "tt1", testDate: NOW, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
+      // rec1 tested under prof2 (NOT the asset's current prof1) — detail must still name it.
+      await ctx.db.insert("testTagRecords", { id: "rec1", organizationId: ORG, testTagAssetId: "tt1", testDate: NOW, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW, testProfileId: "prof2" });
     });
   }
 
@@ -133,6 +135,8 @@ describe("testTagAssets reads", () => {
     const res = await t.withIdentity(asUser).query(api.testTagAssets.detail, { id: "tt1", orgId: ORG });
     expect(res?.testTagId).toBe("TT0002");
     expect(res?.testRecords[0].testedBy.name).toBe("Alice");
+    expect(res?.testRecords[0].testProfile?.name).toBe("Historical"); // record's OWN profile, not the asset's current
+    expect(res?.testProfile?.name).toBe("Standard"); // the asset's current profile
     expect(res?.asset?.assetTag).toBe("PA-1");
     expect(await t.withIdentity(asUser).query(api.testTagAssets.detail, { id: "ttX", orgId: ORG })).toBeNull();
   });

@@ -405,13 +405,15 @@ export const updateNative = mutation({
       }
     }
 
-    // Apply set (+ clear-to-null) — the patchAsset pattern.
+    // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
+    // mutation `now` (the client `set` omits it; parity with the old updateAsset).
+    const setWithTs = { ...set, updatedAt: now };
     if (clear.length === 0) {
-      await ctx.db.patch(doc._id, set);
-      await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...set });
+      await ctx.db.patch(doc._id, setWithTs);
+      await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...setWithTs });
     } else {
       const { _id, _creationTime, ...rest } = doc;
-      const merged: Record<string, unknown> = { ...rest, ...set };
+      const merged: Record<string, unknown> = { ...rest, ...setWithTs };
       for (const k of clear) {
         if (ASSET_NEVER_CLEAR.has(k)) continue;
         delete merged[k];

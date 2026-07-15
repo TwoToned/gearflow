@@ -122,6 +122,26 @@ describe("projectWrites.updateNative", () => {
     await seedProject(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
   });
+  test("strips forged money totals + isTemplate from a client set (injection guard)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, total: 500, margin: 100, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+      ...uargs,
+      set: { name: "Edited", total: 0, margin: 999999999, equipmentRevenue: 1e9, isTemplate: true, updatedAt: NOW },
+      clear: [],
+    });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.name).toBe("Edited"); // legit field applied
+      expect(p?.total).toBe(500); // recalc-owned totals untouched
+      expect(p?.margin).toBe(100);
+      expect(p?.equipmentRevenue).toBeUndefined();
+      expect(p?.isTemplate).toBe(false); // no in-place template flip
+    });
+  });
 });
 
 describe("projectWrites.createNative", () => {
@@ -156,6 +176,17 @@ describe("projectWrites.createNative", () => {
     const t = makeT();
     await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "viewer" }); });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+  test("strips forged money totals from a create (recalc owns them)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, total: 999999, margin: 888888, equipmentRevenue: 777777 } as typeof cargs);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first();
+      expect(p?.total).toBeUndefined();
+      expect(p?.margin).toBeUndefined();
+      expect(p?.equipmentRevenue).toBeUndefined();
+    });
   });
 });
 

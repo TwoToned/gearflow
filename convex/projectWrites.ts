@@ -156,7 +156,27 @@ export const archiveNative = mutation({
   },
 });
 
-const PROJECT_NEVER_CLEAR = new Set(["id", "organizationId", "projectNumber"]);
+/**
+ * The recalc-OWNED money totals. They are derived from the full line-item/service/
+ * sub-hire/assignment set by `recalcProjectTotals` (convex/lib/recalc.ts) and must NEVER
+ * come from a client — a browser-direct caller could otherwise `set:{ total:0, margin:1e9 }`
+ * and forge the project's financials. The legit server path never sends these (createProject
+ * omits them; updateProject builds a Zod-validated set with no totals), so stripping is
+ * non-breaking. `taxRate`/`discountPercent` are recalc INPUTS and stay settable.
+ */
+const PROJECT_MONEY_ANCHORS = [
+  "equipmentRevenue", "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
+  "subtotal", "discountAmount", "taxAmount", "total", "margin",
+] as const;
+
+/** Immutable on a general `updateNative` patch: the money anchors + `isTemplate` (a project
+ * is never flipped to a template in place — that's a saveAsTemplate copy). `projectNumber`
+ * stays editable (a legit code edit). */
+const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, "isTemplate"] as const;
+
+const PROJECT_NEVER_CLEAR = new Set<string>([
+  "id", "organizationId", "projectNumber", ...PROJECT_UPDATE_IMMUTABLE,
+]);
 
 /**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
@@ -185,7 +205,9 @@ export const updateNative = mutation({
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
+    // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors
+    // and isTemplate (no client-forged totals / in-place template flip).
+    const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
     if (clear.length === 0) {
       await ctx.db.patch(project._id, setObj);
       await bumpProjectCounters(ctx, orgId, project, { ...project, ...setObj });
@@ -259,7 +281,15 @@ export const createNative = mutation({
     const dupId = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dupId) throw new ConvexError("Project already exists");
 
-    await ctx.db.insert("projects", fields);
+    // Strip the recalc-owned money totals: a new project starts with none, and
+    // recalcProjectTotals is the only writer. A browser-direct caller could otherwise
+    // mint a project with forged financials (projectWriteFields exposes them as args).
+    // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
+    // status/isTemplate, not money, so it's unaffected by the strip.)
+    const insertFields = { ...fields };
+    for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
+
+    await ctx.db.insert("projects", insertFields);
     await bumpProjectCounters(ctx, fields.organizationId, null, fields);
 
     await writeActivityLog(ctx, {

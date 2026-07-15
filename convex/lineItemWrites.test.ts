@@ -126,6 +126,37 @@ describe("lineItemWrites.patchNative", () => {
     await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { updatedAt: NOW }, clear: [] })).rejects.toThrow(/insufficient permissions/i);
   });
+  test("strips structural/lifecycle fields from a client set (injection guard)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    // A malicious set tries to cancel the line (drop it from revenue), forge the tree,
+    // and spoof a fulfillment counter — alongside a legit quantity edit.
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs,
+      set: { quantity: 4, status: "CANCELLED", isKitChild: true, parentLineItemId: "evil", checkedOutQuantity: 999, allocatedRevenue: 1e9, updatedAt: NOW },
+      clear: [],
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(4); // legit field applied
+      expect(li?.status).toBe("CONFIRMED"); // structural field stripped
+      expect(li?.isKitChild).toBe(false);
+      expect(li?.parentLineItemId).toBeUndefined();
+      expect(li?.checkedOutQuantity).toBeUndefined();
+      expect(li?.allocatedRevenue).toBeUndefined();
+    });
+  });
+  test("rejects a non-finite money field in a patch set", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { lineTotal: Number.NaN, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow();
+  });
 });
 
 describe("lineItemWrites.addCustomNative", () => {
@@ -150,6 +181,26 @@ describe("lineItemWrites.addCustomNative", () => {
     const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects non-finite / out-of-range money (would poison recalc)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    const bad = async (fields: Record<string, unknown>) =>
+      expect(
+        t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, fields: { description: "x", quantity: 1, ...fields } }),
+      ).rejects.toThrow();
+    await bad({ unitPrice: Number.NaN });
+    await bad({ lineTotal: Number.POSITIVE_INFINITY });
+    await bad({ unitPrice: -5 });
+    await bad({ quantity: 0 });
+    await bad({ quantity: 1.5 });
+    await bad({ duration: 99999 });
+    // Nothing was inserted.
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first();
+      expect(li).toBeNull();
+    });
   });
 });
 

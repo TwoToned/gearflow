@@ -6,6 +6,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
+import { assertLineMoneyFields } from "./lib/moneyGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
@@ -103,7 +104,31 @@ export const removeNative = mutation({
   },
 });
 
-const LINE_NEVER_CLEAR = new Set(["id", "organizationId", "projectId"]);
+/**
+ * Fields a client must NEVER set or clear on a line via `patchNative` (a public mutation
+ * with a `set: v.any()` surface). None are sent by the two legit callers
+ * (src/server/line-items.ts updateLineItem — quantity/pricingType/duration/isOptional/
+ * showSubhireOnDocs/description/unitPrice/discount/lineTotal/groupName/notes/
+ * subhireOrderNumber/modelId/assetId/bulkAssetId/supplierId), so stripping them is
+ * non-breaking. Covers: the tenant/immutable anchors, the parent/child structural tree
+ * (a forged `isKitChild`/`parentLineItemId` corrupts the ~40 kit-child filters + recalc),
+ * lifecycle/status (`status:"CANCELLED"` silently drops a line from revenue), the
+ * warehouse fulfillment counters, the recalc-owned allocation fields, and the internal
+ * sub-hire linkage. Money integrity of the ALLOWED fields is enforced separately by
+ * assertLineMoneyFields. */
+const LINE_IMMUTABLE_ON_PATCH = [
+  "projectId",
+  // NOTE: `type` is intentionally NOT here — updateLineItem legitimately patches it.
+  "kitId", "isKitChild", "childKind", "parentLineItemId", "pricingMode", "isCustomItem", "isContainerLineItem",
+  "status", "returnStatus", "prepStatus", "prepContainer", "returnCondition", "returnNotes",
+  "checkedOutQuantity", "returnedQuantity", "assignedQuantity", "packedQuantity", "damagedQuantity", "lostQuantity",
+  "checkedOutAt", "checkedOutById", "returnedAt", "returnedById",
+  "allocatedRevenue", "allocationBasis",
+  "subHireId", "subHireItemId", "subHireGroupId", "supplierOrderId",
+  "createdAt",
+] as const;
+
+const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTABLE_ON_PATCH]);
 
 /**
  * patchNative — apply a set/clear patch to a line item + UPDATE audit, atomic.
@@ -134,7 +159,13 @@ export const patchNative = mutation({
     if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const setObj = sanitizeClientSet(set, ["projectId"]); // strip organizationId/id/projectId
+    // Strip organizationId/id + the structural/fulfillment/allocation/lifecycle fields a
+    // client must never patch (see LINE_IMMUTABLE_ON_PATCH), then bound-check the money
+    // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
+    const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
+    assertLineMoneyFields(setObj as {
+      quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
+    });
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setObj);
     } else {
@@ -215,6 +246,8 @@ export const addCustomNative = mutation({
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
     await assertProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org (see helper)
+
+    assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
 
     // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
     // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
@@ -307,6 +340,7 @@ export const addNative = mutation({
     // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     await assertProjectInOrg(ctx, projectId, organizationId);
+    assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
 
     // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
     // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.

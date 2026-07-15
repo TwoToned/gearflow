@@ -91,6 +91,7 @@ import type * as lib_dto from "../lib/dto.js";
 import type * as lib_fulfillment from "../lib/fulfillment.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
+import type * as lib_moneyGuards from "../lib/moneyGuards.js";
 import type * as lib_notificationPreferences from "../lib/notificationPreferences.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
@@ -276,6 +277,7 @@ declare const fullApi: ApiFromModules<{
   "lib/fulfillment": typeof lib_fulfillment;
   "lib/inventory": typeof lib_inventory;
   "lib/lineItemUnits": typeof lib_lineItemUnits;
+  "lib/moneyGuards": typeof lib_moneyGuards;
   "lib/notificationPreferences": typeof lib_notificationPreferences;
   "lib/permissionsCore": typeof lib_permissionsCore;
   "lib/rateLimiter": typeof lib_rateLimiter;

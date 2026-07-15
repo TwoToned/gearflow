@@ -28,7 +28,7 @@ import {
   createModelFixture,
 } from "../../tests/helpers/integration";
 import { createId } from "@paralleldrive/cuid2";
-import { calculateSuggestedPrice } from "./project-groups";
+import { calculateSuggestedPrice } from "@/lib/project-groups-pricing";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({

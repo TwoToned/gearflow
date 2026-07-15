@@ -17,7 +17,7 @@ import { api } from "../../convex/_generated/api";
 import { nativeLineItemWrites, nativeRecalc, mapNativeWriteError } from "@/lib/native-writes";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
-import { calculateSuggestedPrice } from "./project-groups";
+import { calculateSuggestedPrice } from "@/lib/project-groups-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";

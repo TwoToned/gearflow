@@ -72,7 +72,16 @@ mints cuids inline — Convex mutations tolerate `createId()`) is shared by mode
 - `crew-assignments.ts` (author rate cascade + CONFIRMED stamp + shift-generation mutations), ~~`crew-availability.ts`~~ **DONE (#529)** — memberAvailability/conflicts/plannerData reads + add/remove writes, `crew-time.ts` (calculateTotalHours + EXPORTED-lock + status machines; bulk submit/approve near-done; keep exportTimesheetCSV), ~~`crew-dashboard.ts`~~ **DONE (#531)** — 6 composite reads → convex/crewDashboard.ts
 
 ### Wave 5 — project keystone + money (LAST, hardest)
-- Foundation: native `recalculateProjectTotals` (keystone #1) FIRST
+> **★ 2026-07-16 — SCOPING/PARITY AUDIT DONE.** Full gap map:
+> `docs/audits/2026-07-16-money-keystone-parity-gap-map.md`. Key facts: native recalc
+> (`convex/lib/recalc.ts`) + prod money flags are ALREADY live (math de-risked; keystone #1
+> below is DONE). `lineItemWrites`/`projectWrites` `*Native` mutations exist but were built
+> early presupposing the server action — need MF-1 (in-mutation availability/double-booking)
+> + MF-2/3/4 hardening before browser-direct. The other 8 domains have ONLY `requireService`
+> CRUD mirrors → each needs a `*Writes.ts` authored to the `projectManagersWrites.ts` bar.
+> **PR #551 (MERGED)** = slice 1a defensive hardening (finite guards + patch structural-strip
+> + project money-anchor strip; `convex/lib/moneyGuards.ts`). NEXT: line-items keystone MF-1.
+- Foundation: native `recalculateProjectTotals` (keystone #1) FIRST — **DONE** (`convex/lib/recalc.ts` + `lineItemWrites.recalcNative`, prod flag `NATIVE_RECALC=true`)
 - ~~`project-managers.ts`~~ **DONE (#520)** — deleted; getProjectManagers was DEAD (panel reads managers from the project-detail composite); 3 writes → `convex/projectManagersWrites.ts` add/remove/setNative. ★ The Better Auth seam is ELIMINATED — member validation (`members` by_org_user) + user-label audit (`users` mirror name||email||id) run inside the mutation via the existing Convex mirrors, no Prisma. RBAC project:manage = owner-only via the shared permissionsCore wildcard (exact parity). / ~~`project-tasks.ts`~~ **DONE (#522)** — deleted; getMyOpenTasks/reorder dead; 2 composite reads (assignees + listByProjectWithRelations, users/crew mirrors, assigneeUser membership-gated) + 5 writes (create/update/delete/bulkUpdate/bulkDelete, project:update), `project-media.ts` (ownership guard), `project-costs` done W1
 - `project-groups.ts`, `project-categories.ts` (cascade null-out + suggested-price math → mutations), `group-templates.ts` (applyGroupTemplate orchestration)
 - `line-items.ts` (THE keystone — availability/double-booking + merge-dedup + auto-pricing + stale-guard into mutations; batch writes need flags/native)

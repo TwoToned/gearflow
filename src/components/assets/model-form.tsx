@@ -11,7 +11,7 @@ import { Package } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createModel, updateModel } from "@/server/models";
+import { useModelWrites } from "@/hooks/use-model-writes";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -83,9 +83,11 @@ export function ModelForm({ initialData }: ModelFormProps) {
 
   const v = form.watch();
 
+  const modelWrites = useModelWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: ModelFormValues) =>
-      isEditing ? updateModel(initialData.id, data) : createModel(data),
+      isEditing ? modelWrites.update(initialData.id, data) : modelWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Model updated" : "Model created");
       router.push(`/assets/models/${result.id}`);

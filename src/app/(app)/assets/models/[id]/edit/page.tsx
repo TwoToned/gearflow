@@ -11,7 +11,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { getModel } from "@/server/models";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../../convex/_generated/api";
 import { ModelForm } from "@/components/assets/model-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -32,9 +33,12 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: model, isLoading } = useServerQuery({
-    queryKey: ["model", orgId, id],
-    queryFn: () => getModel(id),
+    queryKey: ["model", orgId, id, isAuthenticated],
+    queryFn: () => convex.query(api.models.detail, { id }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   if (isLoading) return <FadeIn><div className="mx-auto max-w-5xl"><FormSkeleton /></div></FadeIn>;

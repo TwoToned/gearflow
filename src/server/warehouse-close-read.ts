@@ -1,6 +1,5 @@
 "use server";
 
-import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -10,14 +9,19 @@ import { getProjectById } from "@/lib/projects-read";
 import { getWarehouseCloseByProject } from "@/lib/warehouse-close-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
-import { logActivity } from "@/lib/activity-log";
-import {
-  warehouseCloseSchema,
-  type WarehouseCloseFormValues,
-} from "@/lib/validations/check-item";
 
-// ─── Close-Out Summary ──────────────────────────────────────────────────────
-
+/**
+ * Close-out summary READ (relocated out of the deleted src/server/warehouse-close.ts,
+ * whose closeOutProject/batchCloseOut writes are now browser-direct — see
+ * convex/warehouseCloseWrites.ts + src/hooks/use-warehouse-close-writes.ts).
+ *
+ * This stays a server action because it composes a Prisma read (the closer's display
+ * name from the kept Postgres `user` table — auth stays on Prisma) on top of the
+ * Convex line-item / model / asset / warehouse-close reads. A future full-native
+ * re-home is possible (the `users` mirror carries name/email, so the closer name
+ * could come from Convex), but the model-name + asset-tag composition makes a native
+ * composite non-trivial and is out of scope for the write migration.
+ */
 export async function getCloseOutSummary(projectId: string) {
   const { organizationId } = await requirePermission("warehouse", "close");
 
@@ -180,158 +184,4 @@ export async function getCloseOutSummary(projectId: string) {
       existingClose?.closedAt != null ? new Date(existingClose.closedAt) : null,
     closedBy: closedByName,
   });
-}
-
-// ─── Close Out Project ──────────────────────────────────────────────────────
-
-export async function closeOutProject(data: WarehouseCloseFormValues) {
-  const { organizationId, userId, userName } = await requirePermission(
-    "warehouse",
-    "close"
-  );
-  const parsed = warehouseCloseSchema.parse(data);
-
-  const project = await getProjectById(parsed.projectId);
-  if (!project || project.organizationId !== organizationId || project.isTemplate) {
-    throw new Error("Project not found");
-  }
-
-  // projectLineItem is Convex-only — read this project's lines once and apply
-  // the type/isKitChild/status where-filters in JS.
-  const convex = await getConvexClient();
-  const projectLines = (
-    await convex.query(api.projectLineItems.listByProject, {
-      projectId: parsed.projectId,
-      orgId: organizationId,
-    })
-  ).filter((li) => li.type === "EQUIPMENT" && li.isKitChild !== true);
-
-  // Verify all items are in a terminal state (returned)
-  const pendingItems = projectLines.filter(
-    (li) => li.status !== "RETURNED" && li.status !== "CANCELLED",
-  ).length;
-
-  if (pendingItems > 0) {
-    throw new Error(
-      `Cannot close: ${pendingItems} item${pendingItems === 1 ? "" : "s"} still not returned`
-    );
-  }
-
-  // Get counts for the close record
-  const lineItems = projectLines.filter((li) => li.status === "RETURNED");
-
-  const storedCount = lineItems.filter(
-    (i) => !i.returnCondition || i.returnCondition === "GOOD"
-  ).length;
-  const damagedCount = lineItems.filter(
-    (i) => i.returnCondition === "DAMAGED"
-  ).length;
-  const lostCount = lineItems.filter(
-    (i) => i.returnCondition === "MISSING"
-  ).length;
-
-  // warehouseCloses is Convex-only (Phase C). The [projectId, organizationId]
-  // uniqueness invariant the old Prisma unique constraint enforced now lives in
-  // the closeOutIfNotClosed mutation (race-safe via Convex serializable OCC).
-  const id = createId();
-  const closedAt = Date.now();
-  const { alreadyClosed } = await (await getConvexClient()).mutation(
-    api.warehouseCloses.closeOutIfNotClosed,
-    {
-      id,
-      organizationId,
-      projectId: parsed.projectId,
-      closedById: userId,
-      closedAt,
-      storedCount,
-      damagedCount,
-      lostCount,
-    },
-  );
-  if (alreadyClosed) {
-    throw new Error("Project has already been closed out");
-  }
-
-  const result = {
-    id,
-    organizationId,
-    projectId: parsed.projectId,
-    closedById: userId,
-    closedAt: new Date(closedAt),
-    storedCount,
-    damagedCount,
-    lostCount,
-    project: { name: project.name, projectNumber: project.projectNumber },
-    closedBy: { name: userName },
-  };
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "project",
-    entityId: parsed.projectId,
-    entityName: project.name,
-    summary: `Closed out warehouse for "${project.name}" — ${storedCount} stored, ${damagedCount} damaged, ${lostCount} lost`,
-    projectId: parsed.projectId,
-  });
-
-  return serialize(result);
-}
-
-// ─── Batch Close Out ────────────────────────────────────────────────────────
-
-export async function batchCloseOut(projectIds: string[]) {
-  const { organizationId, userId, userName } = await requirePermission(
-    "warehouse",
-    "close"
-  );
-
-  if (projectIds.length === 0) {
-    throw new Error("No projects selected");
-  }
-
-  if (projectIds.length > 25) {
-    throw new Error("Maximum 25 projects per batch close-out");
-  }
-
-  const results: Array<{
-    projectId: string;
-    projectName: string;
-    success: boolean;
-    error?: string;
-  }> = [];
-
-  for (const projectId of projectIds) {
-    const projectForName = await getProjectById(projectId);
-    const projectName = projectForName?.name || projectId;
-    try {
-      await closeOutProject({ projectId });
-      results.push({ projectId, projectName, success: true });
-    } catch (error) {
-      results.push({
-        projectId,
-        projectName,
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
-
-  const successCount = results.filter((r) => r.success).length;
-  if (successCount > 0) {
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "UPDATE",
-      entityType: "project",
-      entityId: projectIds[0],
-      entityName: `Batch close-out`,
-      summary: `Batch closed ${successCount} of ${projectIds.length} projects`,
-    });
-  }
-
-  return serialize(results);
 }

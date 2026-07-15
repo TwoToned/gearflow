@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getCloseOutSummary, closeOutProject } from "@/server/warehouse-close";
+import { getCloseOutSummary } from "@/server/warehouse-close-read";
+import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
 
@@ -57,6 +58,7 @@ export function CloseOutTab({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const canClose = useCanDo("warehouse", "close");
+  const { closeOut } = useWarehouseCloseWrites();
 
   const [confirmStep, setConfirmStep] = useState(0); // 0 = none, 1 = first click, 2 = confirmed
 
@@ -79,7 +81,7 @@ export function CloseOutTab({
   }, [closeFp, refetch]);
 
   const closeMutation = useServerMutation({
-    mutationFn: () => closeOutProject({ projectId }),
+    mutationFn: () => closeOut(projectId),
     onSuccess: () => {
       toast.success("Project closed out successfully");
       refetch();

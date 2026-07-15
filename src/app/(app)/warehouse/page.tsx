@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 import { updateProjectStatus } from "@/server/projects";
-import { batchCloseOut } from "@/server/warehouse-close";
+import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -242,6 +242,7 @@ export default function WarehousePage() {
   const [selectedForClose, setSelectedForClose] = useState<Set<string>>(new Set());
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const { batchCloseOut } = useWarehouseCloseWrites();
 
   // Native warehouse landing list (Phase 4 — the version-vector + getProjects
   // server-action path is retired). ONE warehouseList.bundle subscription returns

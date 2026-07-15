@@ -3832,6 +3832,46 @@ yet re-homed onto Convex queries. That residual orchestration must move into the
 before deletion is safe; `src/lib/*-read.ts` stays exempt. This is the remaining bulk of
 WS2 and is largely Phase-4-adjacent mechanical work.
 
+## Phase 3 (WS2) — browser-direct, `warehouseClose` domain (2026-07-16)
+
+Migrated the warehouse close-out WRITES off the server actions onto the
+browser-direct native surface (following the just-merged `projectCategoriesWrites` /
+`projectManagersWrites` pattern). This deletes `src/server/warehouse-close.ts`.
+
+- **`convex/warehouseCloseWrites.ts` — 2 public mutations, `warehouse:close`-gated.**
+  Both run the standard 4-guard prologue (`assertWritesEnabled("warehouseClose")` →
+  `enforceBrowserWriteLimit` → `requireOrgPermission(orgId,"warehouse","close")` →
+  `resolveActor`). A shared `closeOutCore` helper is the byte-parity port of the old
+  `closeOutProject` body (project-in-org + non-template check → top-level EQUIPMENT
+  line tally → pending-items guard → **folded-in** `closeOutIfNotClosed` uniqueness
+  check on `by_projectId_organizationId` → insert → per-project `UPDATE` audit). The
+  three old Convex/Postgres round-trips (listByProject → closeOutIfNotClosed → Postgres
+  logActivity) collapse into ONE atomic mutation.
+  - `closeOutNative` — single close; client mints the `warehouseClose` cuid + `auditId`
+    and passes `closedById` (session user). Returns `{id, storedCount, damagedCount, lostCount}`.
+  - `batchCloseOutNative` — partial-success loop over `closeOutCore` (per-project
+    ConvexError captured as a `{projectId, projectName, success, error}` row, never
+    aborts the batch). Client mints a `{id, auditId}` per item + one `batchAuditId`;
+    the single batch-summary audit is written only when ≥1 project closes. `empty`/`>25`
+    guards preserved. `convex/warehouseCloseWrites.test.ts` (11 tests: tally + audit,
+    pending guard, already-closed, template/other-org reject, viewer denied, batch
+    partial-success + batch-audit-once + empty/>25).
+- **`src/hooks/use-warehouse-close-writes.ts`** — `useWarehouseCloseWrites()` exposes
+  `closeOut(projectId)` + `batchCloseOut(projectIds)`; actor from `useSession`, orgId
+  from `useActiveOrganization`, all cuids/`now` minted client-side. Wired into
+  `close-out-tab.tsx` (`closeMutation`) and `warehouse/page.tsx` (`batchCloseMutation`).
+- **The `getCloseOutSummary` READ stays a server action**, relocated verbatim to
+  `src/server/warehouse-close-read.ts` (so the old writes file could be deleted). It
+  composes Convex line-item/model/asset reads PLUS a Prisma `user` lookup for the
+  closer's display name (auth stays on Postgres), so it cannot be a pure native query
+  today. A future full-native re-home is possible (the `users` mirror carries name/email)
+  but the model-name + asset-tag composition makes it non-trivial — out of scope here.
+- **Untouched (parity infra):** the `requireService` CRUD + `closeOutIfNotClosed` in
+  `convex/warehouseCloses.ts` (no longer called from `src/` but left for backfill /
+  project-delete cascade / regeneration parity). `warehouseCloseSchema` /
+  `WarehouseCloseFormValues` in `validations/check-item.ts` are now unused by app code
+  (only their own unit test references them); left in place.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

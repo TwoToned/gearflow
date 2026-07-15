@@ -53,7 +53,11 @@ function mapRole(d: Record<string, unknown>) {
 export const memberDetail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    // crew:read (membership + permission) — parity with the old getCrewMemberById's
+    // requirePermission; requireOrgRead alone would serve crew PII (icalToken/rates/DOB)
+    // to a stale-token ex-member or a no-crew-read role (audit). Sibling orgUsersForCrewLink
+    // already gates on crew:update.
+    await requireOrgPermission(ctx, orgId, "crew", "read");
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc || doc.organizationId !== orgId) return null;
     const member = mapMember(doc);
@@ -87,9 +91,14 @@ export const memberDetail = query({
     const assignments = assignmentRows.map((a) => {
       const proj = a.projectId ? projById.get(a.projectId) ?? null : null;
       const arole = a.crewRoleId ? roleById.get(a.crewRoleId) : null;
+      // Strip the Convex system fields and the single-use offer-respond bearer token
+      // (never consumed here) from the wire; ISO every date incl. offer/response stamps (audit).
+      const { _id, _creationTime, responseToken, ...rest } = a;
+      void _id; void _creationTime; void responseToken;
       return {
-        ...a,
+        ...rest,
         startDate: iso(a.startDate), endDate: iso(a.endDate), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt),
+        offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt),
         project: proj,
         crewRole: arole ? { id: arole.id, name: arole.name, color: arole.color } : null,
       };
@@ -103,7 +112,7 @@ export const memberDetail = query({
 export const memberExtras = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgPermission(ctx, orgId, "crew", "read"); // parity with getCrewMemberExtras (audit)
     const [members, skillMap] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
       orgSkillMap(ctx, orgId),

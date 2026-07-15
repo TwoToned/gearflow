@@ -77,8 +77,12 @@ export const projectCrew = query({
           confirmedBy = u ? { id: u.id, name: u.name ?? null } : null;
         }
       }
+      // Strip Convex system fields + the single-use offer-respond bearer token (no
+      // consumer reads it off projectCrew) before it reaches any crew:read caller (audit).
+      const { _id, _creationTime, responseToken, ...arest } = a;
+      void _id; void _creationTime; void responseToken;
       out.push({
-        ...a,
+        ...arest,
         startDate: isoMs(a.startDate), endDate: isoMs(a.endDate), confirmedAt: isoMs(a.confirmedAt), offeredAt: isoMs(a.offeredAt), respondedAt: isoMs(a.respondedAt), createdAt: isoMs(a.createdAt), updatedAt: isoMs(a.updatedAt),
         crewMember: { id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null, defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null },
         crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null, defaultRate: role.defaultRate ?? null, rateType: role.rateType ?? null } : null,

@@ -121,6 +121,15 @@ export const createManyNative = mutation({
       const member = await memberName(ctx, a.orgId, e.crewMemberId);
       if (!member.ok) { errors.push({ crewMemberId: e.crewMemberId, message: "Crew member not found" }); continue; }
       if (a.shared.assignmentId && assignmentMember != null && assignmentMember !== e.crewMemberId) { errors.push({ crewMemberId: e.crewMemberId, message: "Crew member does not match assignment" }); continue; }
+      // Idempotent on the client-minted cuid (parity with the old createIfMissing) — a
+      // retried batch can't double-insert. by_cuid is GLOBAL, so only a same-org hit is a
+      // genuine retry → skip as success; a foreign-org id fails closed (never suppress the
+      // insert on a cross-tenant collision, which would silently drop the real entry).
+      const dup = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", e.id)).first();
+      if (dup) {
+        if (dup.organizationId === a.orgId) { created.push(e.crewMemberId); continue; }
+        errors.push({ crewMemberId: e.crewMemberId, message: "Duplicate id" }); continue;
+      }
       await ctx.db.insert("crewTimeEntries", buildDoc({ ...a.shared, crewMemberId: e.crewMemberId }, a.orgId, e.id, a.now));
       await logTime(ctx, { orgId: a.orgId, actor, auditId: e.auditId, now: a.now, action: "CREATE", id: e.id, name: member.name, summary: `Logged time for ${member.name} on ${projectName}` });
       created.push(e.crewMemberId);

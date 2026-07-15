@@ -52,6 +52,25 @@ describe("crewTimeEntriesWrites", () => {
     expect(res.errors[0].crewMemberId).toBe("ghost");
   });
 
+  test("createMany: same-org id is an idempotent skip; foreign-org id fails closed (no insert suppression)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewTimeEntries", { id: "dup1", organizationId: ORG, crewMemberId: "c1", date: NOW, startTime: "09:00", endTime: "17:00", status: "DRAFT" });
+      await ctx.db.insert("crewTimeEntries", { id: "dupX", organizationId: OTHER, crewMemberId: "cX", date: NOW, startTime: "09:00", endTime: "17:00", status: "DRAFT" });
+    });
+    const res = await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createManyNative, {
+      orgId: ORG, now: NOW, actor,
+      shared: { date: NOW, startTime: "09:00", endTime: "17:00", breakMinutes: 0 },
+      entries: [{ id: "dup1", crewMemberId: "c1", auditId: "l1" }, { id: "dupX", crewMemberId: "c1", auditId: "l2" }],
+    });
+    expect(res.created).toEqual(["c1"]);        // same-org dup1 → idempotent skip, reported created
+    expect(res.errors[0].crewMemberId).toBe("c1"); // foreign-org dupX → error, not silent suppression
+    // the foreign row is untouched (still OTHER's), and no new row minted under its id
+    const rows = await t.run(async (ctx) => ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "dupX")).collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organizationId).toBe(OTHER);
+  });
+
   test("status machine: submit (DRAFT→SUBMITTED) then approve (→APPROVED w/ approver stamp); from-gate skips ineligible", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, base);

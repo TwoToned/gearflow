@@ -10,7 +10,7 @@ import { Boxes } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { kitSchema, type KitFormValues } from "@/lib/validations/kit";
-import { createKit, updateKit } from "@/server/kits";
+import { useKitWrites } from "@/hooks/use-kit-writes";
 import { kitStatusLabels, conditionLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
@@ -103,9 +103,11 @@ export function KitForm({ initialData }: KitFormProps) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const kitWrites = useKitWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: KitFormValues) =>
-      isEditing ? updateKit(initialData.id, data) : createKit(data),
+      isEditing ? kitWrites.update(initialData.id, data) : kitWrites.create(data),
     onSuccess: (result) => {
       toast.success(isEditing ? "Kit updated" : "Kit created");
       router.push(`/kits/${result.id}`);

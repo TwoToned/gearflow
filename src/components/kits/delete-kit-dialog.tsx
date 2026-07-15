@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { archiveKit, deleteKit } from "@/server/kits";
+import { useKitWrites } from "@/hooks/use-kit-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -49,8 +49,10 @@ export function DeleteKitDialog({
     enabled: open && !!orgId && isAuthenticated,
   });
 
+  const kitWrites = useKitWrites();
+
   const archiveMutation = useServerMutation({
-    mutationFn: () => archiveKit(kitId),
+    mutationFn: () => kitWrites.archive(kitId),
     onSuccess: () => {
       toast.success(`Archived ${kitLabel}`);
       onOpenChange(false);
@@ -60,7 +62,7 @@ export function DeleteKitDialog({
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteKit(kitId),
+    mutationFn: () => kitWrites.remove(kitId),
     onSuccess: () => {
       toast.success(`Deleted ${kitLabel} permanently`);
       onOpenChange(false);

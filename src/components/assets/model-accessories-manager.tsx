@@ -17,7 +17,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useModelAccessoryWrites } from "@/hooks/use-model-accessories-writes";
-import { getAvailableBulkAssetsForKit } from "@/server/kits";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { useActiveOrganization } from "@/lib/auth-client";
 
 type BulkAccessory = {
   id: string;
@@ -40,14 +42,18 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
   const refresh = () => onChanged?.();
   const hasAny = bulkAccessories.length > 0;
   const writes = useModelAccessoryWrites();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
 
   const { data: availableBulk = [] } = useServerQuery({
-    queryKey: ["model-accessory-bulk"],
+    queryKey: ["model-accessory-bulk", orgId, isAuthenticated],
     queryFn: () =>
-      getAvailableBulkAssetsForKit() as Promise<
+      convex.query(api.kits.availableBulkAssets, { orgId: orgId as string }) as unknown as Promise<
         Array<{ id: string; assetTag: string; model: { name: string }; availableQuantity: number }>
       >,
-    enabled: open,
+    enabled: open && !!orgId && isAuthenticated,
   });
 
   const add = useServerMutation({

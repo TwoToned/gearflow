@@ -6,23 +6,16 @@ import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useNativeKit } from "@/hooks/use-native-kit";
 import { useOptimisticKitNotes } from "@/hooks/use-native-kit-writes";
+import { useKitWrites } from "@/hooks/use-kit-writes";
+import type { NativeKitDetail } from "@/lib/kit-detail-reconstruct";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
-import {
-  getKit,
-  updateKit,
-  updateKitNotes,
-  addSerializedItemsToKit,
-  removeSerializedItemFromKit,
-  addBulkItemToKit,
-  removeBulkItemFromKit,
-  getAvailableAssetsForKit,
-  getAvailableBulkAssetsForKit,
-} from "@/server/kits";
 import { forceReturnKit } from "@/server/warehouse";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { Button } from "@/components/ui/button";
@@ -115,10 +108,13 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const native = useNativeKit(id, orgId);
   const media = useMediaWrites("kit");
   const optimisticKitNotes = useOptimisticKitNotes(id, orgId);
-  // The native reconstruction is a thin DTO of the same getKit shape (the page reads
-  // only the fields it produces); cast to the server type so the page's typed field
-  // access is preserved.
-  type KitDetail = Awaited<ReturnType<typeof getKit>>;
+  const kitWrites = useKitWrites();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  // The native reconstruction is a thin DTO of the getKit shape the page reads.
+  // Widen media → MediaItem[] + add an index signature to preserve the loose field
+  // access the old (deleted) getKit return type permitted.
+  type KitDetail = Omit<NativeKitDetail, "media"> & { media: MediaItem[]; [key: string]: unknown };
   const kit = native.data as unknown as KitDetail | undefined;
   const isLoading = native.isLoading;
   const refetchKit = useCallback(() => {}, []);
@@ -126,21 +122,21 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // Dialog-gated cross-domain reads (NOT in the SSE map; no cross-user liveness).
   // After an add, the mutation calls refetch() to drop the just-added rows.
   const { data: availableAssets = [], refetch: refetchAvailableAssets } = useServerQuery({
-    queryKey: ["available-assets-for-kit", orgId],
-    queryFn: () => getAvailableAssetsForKit(),
-    enabled: showAddItem,
+    queryKey: ["available-assets-for-kit", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.kits.availableAssets, { orgId: orgId! }),
+    enabled: showAddItem && !!orgId && isAuthenticated,
   });
 
   const { data: availableBulkAssets = [], refetch: refetchAvailableBulkAssets } = useServerQuery({
-    queryKey: ["available-bulk-assets-for-kit", orgId],
-    queryFn: () => getAvailableBulkAssetsForKit(),
-    enabled: showAddBulkItem,
+    queryKey: ["available-bulk-assets-for-kit", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.kits.availableBulkAssets, { orgId: orgId! }),
+    enabled: showAddBulkItem && !!orgId && isAuthenticated,
   });
 
   const statusMutation = useServerMutation({
     mutationFn: (newStatus: string) => {
       if (!kit) throw new Error("Kit not loaded");
-      return updateKit(id, {
+      return kitWrites.update(id, {
         name: kit.name,
         assetTag: kit.assetTag,
         status: newStatus as "AVAILABLE" | "CHECKED_OUT" | "IN_MAINTENANCE" | "RETIRED" | "INCOMPLETE",
@@ -174,7 +170,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const addItemsMutation = useServerMutation({
     mutationFn: () =>
-      addSerializedItemsToKit(
+      kitWrites.addSerializedItems(
         id,
         stagedItems.map((item) => ({ assetId: item.assetId })),
       ),
@@ -189,7 +185,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const removeItemMutation = useServerMutation({
-    mutationFn: (assetId: string) => removeSerializedItemFromKit(id, assetId),
+    mutationFn: (assetId: string) => kitWrites.removeSerializedItem(id, assetId),
     onSuccess: () => {
       toast.success("Item removed from kit");
       refetchKit();
@@ -199,7 +195,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const addBulkMutation = useServerMutation({
     mutationFn: () =>
-      addBulkItemToKit(id, {
+      kitWrites.addBulkItem(id, {
         bulkAssetId: addBulkAssetId,
         quantity: addBulkQuantity,
         position: addBulkPosition || undefined,
@@ -217,7 +213,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const removeBulkMutation = useServerMutation({
-    mutationFn: (bulkItemId: string) => removeBulkItemFromKit(id, bulkItemId),
+    mutationFn: (bulkItemId: string) => kitWrites.removeBulkItem(id, bulkItemId),
     onSuccess: () => {
       toast.success("Bulk item removed from kit");
       refetchKit();
@@ -229,7 +225,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   if (!kit) return <div className="py-20 text-center text-muted">Kit not found.</div>;
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
-  const kitPhotoUrl = resolveKitPhotoUrl(kit, false);
+  const kitPhotoUrl = resolveKitPhotoUrl(kit as unknown as Parameters<typeof resolveKitPhotoUrl>[0], false);
 
   // Find current assignment (active line item on a project)
   const currentAssignment = kit.lineItems.find(
@@ -268,7 +264,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       header: "Condition",
       mobile: "badge",
       cell: (item) => (
-        <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
+        <StatusIndicator category="condition" value={item.asset.condition ?? "NEW"} label={conditionLabels[item.asset.condition ?? "NEW"] || formatLabel(item.asset.condition ?? "NEW")} />
       ),
     },
     {
@@ -542,7 +538,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             {item.position || "\u2014"}
                           </TableCell>
                           <TableCell>
-                            <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
+                            <StatusIndicator category="condition" value={item.asset.condition ?? "NEW"} label={conditionLabels[item.asset.condition ?? "NEW"] || formatLabel(item.asset.condition ?? "NEW")} />
                           </TableCell>
                           <TableCell>
                             <CanDo resource="kit" action="update">
@@ -771,7 +767,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             initialNotes={kit.notes || ""}
             onChanged={() => refetchKit()}
             onSave={(notes) =>
-              optimisticKitNotes.enabled ? optimisticKitNotes.save(notes) : updateKitNotes(id, notes)
+              optimisticKitNotes.enabled ? optimisticKitNotes.save(notes) : kitWrites.updateNotes(id, notes)
             }
             placeholder="Add notes about this kit..."
           />

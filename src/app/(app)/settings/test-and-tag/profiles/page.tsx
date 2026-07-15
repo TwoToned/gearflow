@@ -12,13 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 
-import {
-  createTestProfile,
-  updateTestProfile,
-  duplicateTestProfile,
-  deleteTestProfile,
-  seedDefaultProfiles,
-} from "@/server/test-tag-profiles";
+import { useTestProfileWrites } from "@/hooks/use-test-profile-writes";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useCanDo } from "@/lib/use-permissions";
@@ -111,12 +105,13 @@ export default function TestProfilesPage() {
   // getTestProfiles default) and sort by name client-side.
   const allProfiles = useTestProfiles(orgId);
   const isLoading = allProfiles === undefined;
+  const writes = useTestProfileWrites();
 
   // No invalidation: every testProfiles reader (this page, model-form,
-  // test-and-tag/new) subscribes to Convex, so the dual-write server action's
-  // Convex write pushes the update live.
+  // test-and-tag/new) subscribes to Convex, so the browser-direct write's
+  // Convex mutation pushes the update live.
   const seedMutation = useServerMutation({
-    mutationFn: seedDefaultProfiles,
+    mutationFn: writes.seedDefaultProfiles,
     onSuccess: (data) => {
       toast.success(`Created ${(data as { created: number }).created} default profiles`);
     },
@@ -124,7 +119,7 @@ export default function TestProfilesPage() {
   });
 
   const duplicateMutation = useServerMutation({
-    mutationFn: duplicateTestProfile,
+    mutationFn: writes.duplicateProfile,
     onSuccess: () => {
       toast.success("Profile duplicated");
     },
@@ -132,7 +127,7 @@ export default function TestProfilesPage() {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: deleteTestProfile,
+    mutationFn: writes.deleteProfile,
     onSuccess: () => {
       toast.success("Profile deleted");
     },
@@ -441,8 +436,9 @@ function ProfileEditDialog({
   const [subTestLabel, setSubTestLabel] = useState(profile?.subTestLabel || "Outlet");
   const [isActive, setIsActive] = useState(profile?.isActive ?? true);
 
+  const writes = useTestProfileWrites();
   const createMutation = useServerMutation({
-    mutationFn: createTestProfile,
+    mutationFn: writes.createProfile,
     onSuccess: () => {
       toast.success("Profile created");
       onClose();
@@ -451,8 +447,8 @@ function ProfileEditDialog({
   });
 
   const updateMutation = useServerMutation({
-    mutationFn: (data: Parameters<typeof updateTestProfile>[1]) =>
-      updateTestProfile(profile!.id, data),
+    mutationFn: (data: Parameters<typeof writes.updateProfile>[1]) =>
+      writes.updateProfile(profile!.id, data),
     onSuccess: () => {
       toast.success("Profile updated");
       onClose();

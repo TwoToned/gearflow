@@ -156,6 +156,7 @@ import type * as suppliersWrites from "../suppliersWrites.js";
 import type * as systemFlags from "../systemFlags.js";
 import type * as tags from "../tags.js";
 import type * as testProfiles from "../testProfiles.js";
+import type * as testProfilesWrites from "../testProfilesWrites.js";
 import type * as testTagAssets from "../testTagAssets.js";
 import type * as testTagAuditorTokens from "../testTagAuditorTokens.js";
 import type * as testTagRecords from "../testTagRecords.js";
@@ -327,6 +328,7 @@ declare const fullApi: ApiFromModules<{
   systemFlags: typeof systemFlags;
   tags: typeof tags;
   testProfiles: typeof testProfiles;
+  testProfilesWrites: typeof testProfilesWrites;
   testTagAssets: typeof testTagAssets;
   testTagAuditorTokens: typeof testTagAuditorTokens;
   testTagRecords: typeof testTagRecords;

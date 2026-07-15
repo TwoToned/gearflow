@@ -28,6 +28,7 @@ import type * as bulkAssetsWrites from "../bulkAssetsWrites.js";
 import type * as categories from "../categories.js";
 import type * as categoriesWrites from "../categoriesWrites.js";
 import type * as categorySlots from "../categorySlots.js";
+import type * as categorySlotsWrites from "../categorySlotsWrites.js";
 import type * as checkItems from "../checkItems.js";
 import type * as checkItemsWrites from "../checkItemsWrites.js";
 import type * as checkRecordOps from "../checkRecordOps.js";
@@ -220,6 +221,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   categoriesWrites: typeof categoriesWrites;
   categorySlots: typeof categorySlots;
+  categorySlotsWrites: typeof categorySlotsWrites;
   checkItems: typeof checkItems;
   checkItemsWrites: typeof checkItemsWrites;
   checkRecordOps: typeof checkRecordOps;

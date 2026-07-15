@@ -42,11 +42,9 @@ import {
   deleteAssignment,
 } from "@/server/crew-assignments";
 import { sendCrewOffer } from "@/server/crew-communication";
-import {
-  getCrewAvailability,
-  addAvailability,
-  removeAvailability,
-} from "@/server/crew-availability";
+import { useConvex, useConvexAuth } from "convex/react";
+import { useCrewAvailabilityWrites } from "@/hooks/use-crew-availability-writes";
+import { api as crewAvailApi } from "../../../../../convex/_generated/api";
 import {
   getIcalSettings,
   enableIcalFeed,
@@ -188,6 +186,9 @@ export default function CrewMemberDetailPage({
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const caConvex = useConvex();
+  const { isAuthenticated: caAuthed } = useConvexAuth();
+  const availWrites = useCrewAvailabilityWrites();
   const { data: session } = useSession();
   const canReadCrew = useCanDo("crew", "read");
 
@@ -239,7 +240,8 @@ export default function CrewMemberDetailPage({
 
   const { data: availabilityRecords, refetch: refetchAvailability } = useServerQuery({
     queryKey: ["crew-availability", orgId, id],
-    queryFn: () => getCrewAvailability(id),
+    queryFn: () => caConvex.query(crewAvailApi.crewAvailability.memberAvailability, { orgId: orgId as string, crewMemberId: id }),
+    enabled: !!orgId && caAuthed,
   });
 
   const { data: icalSettings, refetch: refetchIcal } = useServerQuery({
@@ -280,7 +282,7 @@ export default function CrewMemberDetailPage({
   });
 
   const removeAvailMutation = useServerMutation({
-    mutationFn: (availId: string) => removeAvailability(availId),
+    mutationFn: (availId: string) => availWrites.remove(availId),
     onSuccess: () => {
       toast.success("Availability block removed");
       refetchAvailability();
@@ -1963,9 +1965,10 @@ function AddAvailabilityDialog({
   });
 
   const isAllDay = form.watch("isAllDay");
+  const availWrites = useCrewAvailabilityWrites();
 
   const mutation = useServerMutation({
-    mutationFn: (data: CrewAvailabilityFormValues) => addAvailability(data),
+    mutationFn: (data: CrewAvailabilityFormValues) => availWrites.add(data),
     onSuccess: () => {
       toast.success("Availability block added");
       onSaved();

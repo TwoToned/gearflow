@@ -14,7 +14,8 @@ import {
   CircleSlash,
 } from "lucide-react";
 
-import { getCrewPlannerData } from "@/server/crew-availability";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCrewAssignments, fingerprintCrewAssignments, useOrgAvailabilities, fingerprintAvailabilities } from "@/hooks/use-crew-scheduling";
 import { getStatusColor } from "@/lib/status-colors";
@@ -101,6 +102,8 @@ const DAYS_TO_SHOW = 14;
 export default function CrewPlannerPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const pConvex = useConvex();
+  const { isAuthenticated: pAuthed } = useConvexAuth();
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
 
@@ -123,7 +126,8 @@ export default function CrewPlannerPage() {
 
   const { data: members, isLoading, error, refetch } = useServerQuery({
     queryKey: ["crew-planner", orgId, startDate, endDate],
-    queryFn: () => getCrewPlannerData(startDate, endDate),
+    queryFn: () => pConvex.query(api.crewAvailability.plannerData, { orgId: orgId as string, startMs: new Date(startDate).getTime(), endMs: new Date(endDate).getTime() }),
+    enabled: !!orgId && pAuthed,
   });
 
   // Cross-tab live sync: subscribe to the dual-written Convex crewAssignments +

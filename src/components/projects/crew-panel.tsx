@@ -38,7 +38,9 @@ import {
 import { useSelection } from "./use-selection";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
-import { checkCrewConflicts, type CrewConflict } from "@/server/crew-availability";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api as crewApi } from "../../../convex/_generated/api";
+import type { CrewConflict } from "@/lib/crew-availability-types";
 import {
   sendCrewOffer,
   sendCrewOfferAll,
@@ -912,6 +914,8 @@ function AssignmentDialog({
 }: AssignmentDialogProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const cpConvex = useConvex();
+  const { isAuthenticated: cpAuthed } = useConvexAuth();
   const { data: crewMembers } = useServerQuery({
     queryKey: ["crew-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
@@ -1017,13 +1021,14 @@ function AssignmentDialog({
       mode === "edit" ? assignment?.id : null,
     ],
     queryFn: () =>
-      checkCrewConflicts(
-        watchCrewMemberId,
-        startDateStr,
-        endDateStr,
-        mode === "edit" ? (assignment?.id as string) : undefined
-      ),
-    enabled: !!watchCrewMemberId && !!startDateStr && !!endDateStr,
+      cpConvex.query(crewApi.crewAvailability.conflicts, {
+        orgId: orgId as string,
+        crewMemberId: watchCrewMemberId,
+        startMs: new Date(startDateStr).getTime(),
+        endMs: new Date(endDateStr).getTime(),
+        excludeAssignmentId: mode === "edit" ? (assignment?.id as string) : undefined,
+      }),
+    enabled: !!watchCrewMemberId && !!startDateStr && !!endDateStr && !!orgId && cpAuthed,
   });
 
   const hardConflicts = (conflicts || []).filter(

@@ -878,14 +878,19 @@ export async function addKitLineItem(
   };
   if (nativeLineItemWrites()) {
     // Native: parent + expanded member children (shared core) + CREATE audit atomic.
-    // The kit availability/double-booking check above stays server-side.
-    await kitConvex.mutation(api.lineItemWrites.addKitNative, {
-      ...kitLineArgs,
-      kitLabel: `${kit.assetTag} - ${kit.name}`,
-      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
-      actor: { userId, userName },
-      auditId: createId(),
-    });
+    // The server pre-check above already gated kit availability identically; the mutation
+    // re-checks belt-and-braces, so map any ConvexError back to the rich toast.
+    try {
+      await kitConvex.mutation(api.lineItemWrites.addKitNative, {
+        ...kitLineArgs,
+        kitLabel: `${kit.assetTag} - ${kit.name}`,
+        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
+        actor: { userId, userName },
+        auditId: createId(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
   } else {
     await kitConvex.mutation(api.projectLineItems.createKitLineItem, kitLineArgs);
   }

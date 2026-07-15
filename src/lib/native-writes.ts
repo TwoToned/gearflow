@@ -116,6 +116,16 @@ const ASSET_WRITE_ERROR_MAP: Record<
     message: "This asset is unavailable.",
     hint: "Pick a different asset.",
   },
+  KIT_UNAVAILABLE: {
+    title: "Kit cannot be added",
+    message: "This kit is unavailable.",
+    hint: "Pick a different kit.",
+  },
+  KIT_DOUBLE_BOOKED: {
+    title: "Kit already booked",
+    message: "This kit is already booked during those dates.",
+    hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
+  },
 };
 
 export function mapAssetWriteError(e: unknown): unknown {

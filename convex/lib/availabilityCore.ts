@@ -255,3 +255,59 @@ export async function findAssetConflict(
   const conflictProjId = lineConflict?.projectId ?? unitConflictProjId;
   return conflictProjId ? (projectMap.get(conflictProjId) ?? null) : null;
 }
+
+// ─── Dated kit double-booking (mirror of line-items.ts:823-860) ───────────────
+
+/**
+ * Dated-only kit double-booking. Returns the FIRST other-project doc the kit is booked
+ * on (a non-cancelled, non-child parent kit line) during `[rentalStart, rentalEnd]`, or
+ * null. Bounded to the kit's referenced projects (parity-equivalent to the server's
+ * whole-org conflictSet, which is only probed via `conflictSet.has(kitLine.projectId)`).
+ */
+export async function findKitConflict(
+  ctx: MutationCtx,
+  opts: {
+    kitId: string;
+    orgId: string;
+    excludeProjectId: string;
+    rentalStart: number;
+    rentalEnd: number;
+  },
+): Promise<Doc<"projects"> | null> {
+  const { kitId, orgId, excludeProjectId, rentalStart, rentalEnd } = opts;
+
+  const kitLinesRaw = await ctx.db
+    .query("projectLineItems")
+    .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
+    .collect();
+  const kitLines = kitLinesRaw.filter(
+    (li) =>
+      li.organizationId === orgId &&
+      li.kitId === kitId &&
+      !li.isKitChild &&
+      li.status !== "CANCELLED",
+  );
+
+  const projectIds = [...new Set(kitLines.map((li) => li.projectId))];
+  const projectDocs = await Promise.all(
+    projectIds.map((pid) =>
+      ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique(),
+    ),
+  );
+  const projectMap = new Map<string, Doc<"projects">>();
+  const conflictSet = new Set<string>();
+  for (const p of projectDocs) {
+    if (!p || p.organizationId !== orgId) continue;
+    projectMap.set(p.id, p);
+    if (p.id === excludeProjectId) continue;
+    if (p.isTemplate) continue;
+    if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) continue;
+    if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
+    if ((p.rentalStartDate as number) <= rentalEnd && (p.rentalEndDate as number) >= rentalStart) {
+      conflictSet.add(p.id);
+    }
+  }
+
+  const conflict = kitLines.find((li) => conflictSet.has(li.projectId));
+  return conflict ? (projectMap.get(conflict.projectId) ?? null) : null;
+}

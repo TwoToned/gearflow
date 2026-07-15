@@ -17,7 +17,6 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
-import { getAssets } from "@/server/assets";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
@@ -77,8 +76,9 @@ function NewTestTagAssetInner() {
   });
 
   const assetsQuery = useServerQuery({
-    queryKey: ["assets", orgId, { pageSize: 500 }],
-    queryFn: () => getAssets({ pageSize: 500 }),
+    queryKey: ["assets", orgId, isAuthenticated, { pageSize: 500 }],
+    queryFn: () => convex.query(api.assets.listPage, { orgId: orgId!, pageSize: 500 }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const bulkAssetsQuery = useServerQuery({

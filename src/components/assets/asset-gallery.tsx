@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ImageIcon, Plus, Search } from "lucide-react";
 
 import { cn, focusRing } from "@/lib/utils";
-import { getAssetRegistryPhotos } from "@/server/assets";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -45,10 +46,12 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
   const allModels = useModels(orgId);
   const locationsDocs = useLocations(orgId);
   const categoriesDocs = useCategories(orgId);
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: photos } = useServerQuery({
-    queryKey: ["asset-registry-photos", orgId],
-    queryFn: () => getAssetRegistryPhotos(),
-    enabled: !!orgId,
+    queryKey: ["asset-registry-photos", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.assets.registryPhotos, { orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const modelById = useMemo(() => new Map((allModels ?? []).map((m) => [m.id, m])), [allModels]);

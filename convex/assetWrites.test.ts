@@ -311,3 +311,117 @@ describe("assetWrites.updateNative", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("assetWrites — Phase 3 folds (counter + T&T)", () => {
+  const createArgs = {
+    id: "cA", organizationId: ORG, modelId: "mTT", assetTag: "PA-1", status: "AVAILABLE" as const,
+    condition: "GOOD" as const, isActive: true, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId: "log1",
+  };
+  async function seedManager(t: ReturnType<typeof convexTest>) {
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" }); });
+  }
+
+  test("createNative advances the tag counter + auto-registers T&T for a T&T model", async () => {
+    const t = makeT(); await seedManager(t);
+    await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mTT", organizationId: ORG, name: "PA", requiresTestAndTag: true, testAndTagIntervalDays: 90 }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
+    const settings = await t.run(async (ctx) => ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).first());
+    expect(JSON.parse(settings!.settings!).assetTagCounter).toBe(1);
+    const tt = await t.run(async (ctx) => ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", "cA")).collect());
+    expect(tt).toHaveLength(1);
+    expect(tt[0].testTagId).toBe("PA-1");
+    expect(tt[0].testIntervalMonths).toBe(3);
+  });
+
+  test("createNative does NOT register T&T when the model doesn't require it", async () => {
+    const t = makeT(); await seedManager(t);
+    await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mTT", organizationId: ORG, name: "Cam", requiresTestAndTag: false }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
+    const tt = await t.run(async (ctx) => ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", "cA")).collect());
+    expect(tt).toHaveLength(0);
+  });
+});
+
+describe("assetWrites.createManyNative", () => {
+  async function seedManager(t: ReturnType<typeof convexTest>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("models", { id: "mTT", organizationId: ORG, name: "PA", requiresTestAndTag: true });
+    });
+  }
+  test("creates N assets + counter(N) + per-asset T&T + dup-tag guard", async () => {
+    const t = makeT(); await seedManager(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createManyNative, {
+      orgId: ORG, now: NOW, actor: ACTOR,
+      assets: [
+        { id: "b1", auditId: "l1", modelId: "mTT", assetTag: "PA-1" },
+        { id: "b2", auditId: "l2", modelId: "mTT", assetTag: "PA-2" },
+      ],
+    });
+    expect(res.ids).toEqual(["b1", "b2"]);
+    const settings = await t.run(async (ctx) => ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).first());
+    expect(JSON.parse(settings!.settings!).assetTagCounter).toBe(2);
+    const tt = await t.run(async (ctx) => ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());
+    expect(tt).toHaveLength(2);
+    // dup tag rejected
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createManyNative, { orgId: ORG, now: NOW, actor: ACTOR, assets: [{ id: "b3", auditId: "l3", modelId: "mTT", assetTag: "PA-1" }] })).rejects.toThrow(/already exists/i);
+  });
+});
+
+describe("assetWrites.bulkUpdateNative / bulkTagNative", () => {
+  async function seed(t: ReturnType<typeof convexTest>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m", assetTag: "A1", status: "AVAILABLE", condition: "GOOD", tags: ["x"], isActive: true });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m", assetTag: "A2", status: "AVAILABLE", condition: "GOOD", isActive: true });
+      await ctx.db.insert("assets", { id: "aX", organizationId: "org_2", modelId: "m", assetTag: "Z", status: "AVAILABLE", condition: "GOOD", isActive: true });
+    });
+  }
+  test("bulkUpdate applies set + org re-check (foreign skipped)", async () => {
+    const t = makeT(); await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.bulkUpdateNative, { orgId: ORG, ids: ["a1", "a2", "aX"], set: { status: "IN_MAINTENANCE" }, clear: [], now: NOW });
+    expect(res.count).toBe(2);
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first()))?.status).toBe("IN_MAINTENANCE");
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "aX")).first()))?.status).toBe("AVAILABLE");
+  });
+  test("bulkTag unions tags idempotently", async () => {
+    const t = makeT(); await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.bulkTagNative, { orgId: ORG, ids: ["a1", "a2"], tags: ["x", "y"], now: NOW });
+    expect(res.count).toBe(2);
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first()))?.tags).toEqual(["x", "y"]);
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a2")).first()))?.tags).toEqual(["x", "y"]);
+  });
+});
+
+describe("assets reads (listPage / registryPhotos)", () => {
+  test("listPage: active + tag asc, model+location attached", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cam" });
+      await ctx.db.insert("locations", { id: "loc1", organizationId: ORG, name: "WH", type: "WAREHOUSE" });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "B", status: "AVAILABLE", condition: "GOOD", locationId: "loc1", isActive: true });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A", status: "AVAILABLE", condition: "GOOD", isActive: true });
+      await ctx.db.insert("assets", { id: "a3", organizationId: ORG, modelId: "m1", assetTag: "C", status: "AVAILABLE", condition: "GOOD", isActive: false });
+      await ctx.db.insert("assets", { id: "aX", organizationId: "org_2", modelId: "m1", assetTag: "Z", status: "AVAILABLE", condition: "GOOD", isActive: true });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.assets.listPage, { orgId: ORG, pageSize: 100 });
+    expect(res.total).toBe(2);
+    expect(res.assets.map((a) => a.id)).toEqual(["a1", "a2"]);
+    expect(res.assets[0].model?.name).toBe("Cam");
+    expect(res.assets[1].location?.name).toBe("WH");
+  });
+  test("registryPhotos: asset + model primary photo maps", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "a.jpg", fileSize: 1, mimeType: "image/jpeg", storageKey: "k", url: "http://x/a.jpg", uploadedById: USER, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assetMedia", { id: "am1", organizationId: ORG, assetId: "a1", fileId: "f1", type: "PHOTO", isPrimary: true });
+      await ctx.db.insert("fileUploads", { id: "f2", organizationId: ORG, fileName: "m.jpg", fileSize: 1, mimeType: "image/jpeg", storageKey: "k2", url: "http://x/m.jpg", uploadedById: USER, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("modelMedia", { id: "mm1", organizationId: ORG, modelId: "mdl1", fileId: "f2", type: "PHOTO", isPrimary: true });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.assets.registryPhotos, { orgId: ORG });
+    expect(res.assetPhotos["a1"].url).toBe("http://x/a.jpg");
+    expect(res.modelPhotos["mdl1"].url).toBe("http://x/m.jpg");
+  });
+});

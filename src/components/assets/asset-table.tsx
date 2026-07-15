@@ -9,7 +9,9 @@ import { Plus, Pencil, Download, Upload, RotateCcw, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn, focusRing, disabledState } from "@/lib/utils";
-import { bulkUpdateAssets, bulkTagAssets, getAssetRegistryPhotos } from "@/server/assets";
+import { useAssetWrites } from "@/hooks/use-asset-writes";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useAssets, useBulkAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
 import { bulkForceReturnAssets } from "@/server/warehouse";
@@ -418,10 +420,12 @@ export function AssetTable() {
   const allAssets = useAssets(orgId);
   const allBulkAssets = useBulkAssets(orgId);
   const allModels = useModels(orgId);
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
   const { data: photos } = useServerQuery({
-    queryKey: ["asset-registry-photos", orgId],
-    queryFn: () => getAssetRegistryPhotos(),
-    enabled: !!orgId,
+    queryKey: ["asset-registry-photos", orgId, isAuthenticated],
+    queryFn: () => convex.query(api.assets.registryPhotos, { orgId: orgId! }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   const modelById = useMemo(() => new Map((allModels ?? []).map((m) => [m.id, m])), [allModels]);
@@ -784,9 +788,10 @@ function BulkEditDialog({
   const [bulkCondition, setBulkCondition] = useState("");
   const [bulkLocationId, setBulkLocationId] = useState<string | undefined>(undefined);
 
+  const assetWrites = useAssetWrites();
   const mutation = useServerMutation({
     mutationFn: () =>
-      bulkUpdateAssets(Array.from(selectedIds), {
+      assetWrites.bulkUpdate(Array.from(selectedIds), {
         status: bulkStatus || undefined,
         condition: bulkCondition || undefined,
         locationId: bulkLocationId,
@@ -888,9 +893,10 @@ export function BulkAddTagsDialog({
 }) {
   const [tags, setTags] = useState<string[]>([]);
   const orgTags = useOrgTags(orgId);
+  const assetWrites = useAssetWrites();
 
   const mutation = useServerMutation({
-    mutationFn: () => bulkTagAssets(Array.from(selectedIds), tags),
+    mutationFn: () => assetWrites.bulkTag(Array.from(selectedIds), tags),
     onSuccess: (result) => {
       toast.success(`Added tags to ${result.count} asset${result.count === 1 ? "" : "s"}`);
       setTags([]);

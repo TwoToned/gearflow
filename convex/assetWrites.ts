@@ -1,10 +1,13 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
-import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { MutationCtx } from "./_generated/server";
+import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
-import { bumpAssetCounters } from "./lib/counters";
+import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
+import { reserveAssetTagCounter } from "./lib/assetTagCounter";
+import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import * as enums from "./lib/validators";
 
 /**
@@ -332,6 +335,13 @@ export const createNative = mutation({
 
     await ctx.db.insert("assets", fields);
     await bumpAssetCounters(ctx, fields.organizationId, null, fields);
+    const createNow = fields.createdAt ?? fields.updatedAt ?? 0;
+    // Advance the asset-tag counter + auto-register T&T (parity with createAsset).
+    await reserveAssetTagCounter(ctx, fields.organizationId, 1, createNow);
+    await registerAssetTestTag(ctx, {
+      organizationId: fields.organizationId, assetId: fields.id, assetTag: fields.assetTag,
+      serialNumber: fields.serialNumber, modelId: fields.modelId,
+    }, createNow);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -425,6 +435,158 @@ export const updateNative = mutation({
       createdAt: now,
     });
 
+    // Auto-register/reconcile T&T if the (new) model requires it (parity: updateAsset
+    // runs the full backfill when the model requires T&T).
+    const modelId = set.modelId ?? doc.modelId;
+    const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
+    if (model && model.organizationId === orgId && model.requiresTestAndTag === true) {
+      await backfillTestTagAssetsCore(ctx, orgId, now);
+    }
+
     return { id };
+  },
+});
+
+const actorLog = async (ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; id: string; assetTag: string; modelId: string }) => {
+  await writeActivityLog(ctx, {
+    id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "asset", entityId: a.id,
+    entityName: a.assetTag, userId: a.actor.userId, userName: a.actor.userName,
+    summary: `Created asset ${a.assetTag}`, details: { created: { assetTag: a.assetTag, modelId: a.modelId } },
+    assetId: a.id, createdAt: a.now,
+  });
+};
+
+/**
+ * createManyNative — batch asset create (browser-direct). Insert N assets with a
+ * per-asset dup-tag guard + counter bumps + tag-counter advance(N) + per-asset T&T
+ * auto-register + one CREATE audit per asset, atomic. Each asset carries its own
+ * client-minted id + auditId. RBAC(asset,create). Mirrors createAssets.
+ */
+export const createManyNative = mutation({
+  returns: v.object({ ids: v.array(v.string()) }),
+  args: {
+    orgId: v.string(),
+    now: v.number(),
+    actor: actorValidator,
+    assets: v.array(v.object({
+      id: v.string(),
+      auditId: v.string(),
+      modelId: v.string(),
+      assetTag: v.string(),
+      serialNumber: v.optional(v.string()),
+      customName: v.optional(v.string()),
+      status: v.optional(enums.AssetStatus),
+      condition: v.optional(enums.AssetCondition),
+      purchaseDate: v.optional(v.number()),
+      purchasePrice: v.optional(v.number()),
+      purchaseSupplier: v.optional(v.string()),
+      supplierId: v.optional(v.string()),
+      warrantyExpiry: v.optional(v.number()),
+      notes: v.optional(v.string()),
+      locationId: v.optional(v.string()),
+      customFieldValues: v.optional(v.any()),
+      barcode: v.optional(v.string()),
+      qrCode: v.optional(v.string()),
+      images: v.optional(v.array(v.string())),
+      tags: v.optional(v.array(v.string())),
+      isActive: v.optional(v.boolean()),
+    })),
+  },
+  handler: async (ctx, { orgId, now, actor: suppliedActor, assets }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+    if (assets.length === 0) throw new ConvexError("No assets to create");
+
+    const ids: string[] = [];
+    for (const a of assets) {
+      const dup = await ctx.db.query("assets")
+        .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", a.assetTag)).first();
+      if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag, message: `Asset tag "${a.assetTag}" already exists.` });
+      const { auditId: _auditId, ...assetFields } = a;
+      const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
+      await ctx.db.insert("assets", fields);
+      await bumpCountersForTable(ctx, "assets", null, fields);
+      await registerAssetTestTag(ctx, { organizationId: orgId, assetId: a.id, assetTag: a.assetTag, serialNumber: a.serialNumber, modelId: a.modelId }, now);
+      await actorLog(ctx, { orgId, actor, auditId: a.auditId, now, id: a.id, assetTag: a.assetTag, modelId: a.modelId });
+      ids.push(a.id);
+    }
+    // Advance the tag counter once for the whole batch.
+    await reserveAssetTagCounter(ctx, orgId, assets.length, now);
+    return { ids };
+  },
+});
+
+/**
+ * bulkUpdateNative — apply a shared set/clear patch to N assets (status/condition/
+ * location bulk-bar), per-row org re-check + counter bumps. RBAC(asset,update).
+ * No audit (parity — bulkUpdateAssets logged none). Returns the count applied.
+ */
+export const bulkUpdateNative = mutation({
+  returns: v.object({ count: v.number() }),
+  // Restricted to the 3 bulk-bar fields (status/condition/location) — NOT the full
+  // assetSet, so a browser caller can't bulk-change assetTag/modelId/tags/… and
+  // bypass the dup-tag / T&T invariants (codex).
+  args: {
+    orgId: v.string(),
+    ids: v.array(v.string()),
+    set: v.object({ status: v.optional(enums.AssetStatus), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
+    clear: v.array(v.literal("locationId")),
+    now: v.number(),
+  },
+  handler: async (ctx, { orgId, ids, set, clear, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    if (ids.length === 0) throw new ConvexError("Nothing selected");
+    if (Object.keys(set).length === 0 && clear.length === 0) throw new ConvexError("No changes specified");
+
+    const patch = { ...set, updatedAt: now };
+    let count = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!doc || doc.organizationId !== orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
+      if (clear.length === 0) {
+        await ctx.db.patch(doc._id, patch);
+        await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
+      } else {
+        const { _id, _creationTime, ...rest } = doc;
+        const merged: Record<string, unknown> = { ...rest, ...patch };
+        for (const k of clear) { if (ASSET_NEVER_CLEAR.has(k)) continue; delete merged[k]; }
+        await ctx.db.replace(doc._id, merged as typeof rest);
+        await bumpAssetCounters(ctx, orgId, doc, merged);
+      }
+      count++;
+    }
+    return { count };
+  },
+});
+
+/**
+ * bulkTagNative — APPEND tags to N assets (union into each asset's existing tags),
+ * per-row org re-check, idempotent. RBAC(asset,update). No counter/audit (parity).
+ */
+export const bulkTagNative = mutation({
+  returns: v.object({ count: v.number() }),
+  args: { orgId: v.string(), ids: v.array(v.string()), tags: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, ids, tags, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    if (ids.length === 0) throw new ConvexError("Nothing selected");
+    const add = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+    if (add.length === 0) throw new ConvexError("No tags entered");
+    let count = 0;
+    for (const id of ids) {
+      const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!doc || doc.organizationId !== orgId) continue;
+      count++;
+      const existing = doc.tags ?? [];
+      const merged = [...new Set([...existing, ...add])];
+      if (merged.length === existing.length) continue; // all present
+      await ctx.db.patch(doc._id, { tags: merged, updatedAt: now });
+    }
+    return { count };
   },
 });

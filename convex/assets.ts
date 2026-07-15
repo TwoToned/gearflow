@@ -29,6 +29,136 @@ export const list = query({
   },
 });
 
+const A_STATUS_RANK: Record<string, number> = { AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5 };
+const A_CONDITION_RANK: Record<string, number> = { NEW: 0, GOOD: 1, FAIR: 2, POOR: 3, DAMAGED: 4 };
+function aMatchesSearch(hs: (string | null | undefined)[], search: string): boolean {
+  const n = search.toLowerCase();
+  return hs.some((h) => (h ?? "").toLowerCase().includes(n));
+}
+function aCompare(av: unknown, bv: unknown, dir: 1 | -1): number {
+  const aN = av == null, bN = bv == null;
+  if (aN && bN) return 0;
+  if (aN) return dir === 1 ? 1 : -1;
+  if (bN) return dir === 1 ? -1 : 1;
+  if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+  if (typeof av === "boolean" && typeof bv === "boolean") return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
+  return String(av).localeCompare(String(bv)) * dir;
+}
+
+/**
+ * Paginated ASSET list — browser-native replacement for the getAssets server action.
+ * Fetches the org's assets + model(with category)/location maps, then filters/sorts/
+ * paginates in JS (parity with filterAssets/sortAssets/paginate). One-shot (the only
+ * consumer — the T&T-new picker — reads it non-reactively).
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    categoryId: v.optional(v.string()),
+    status: v.optional(v.string()),
+    condition: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    modelId: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+    statusIn: v.optional(v.array(v.string())),
+    conditionIn: v.optional(v.array(v.string())),
+    locationIdIn: v.optional(v.array(v.string())),
+    categoryIdIn: v.optional(v.array(v.string())),
+    tagsHasSome: v.optional(v.array(v.string())),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const isActive = a.isActive ?? true;
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "assetTag";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const [rows, models, categories, locations] = await Promise.all([
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const modelNameFor = (id: string) => modelMap.get(id)?.name;
+    const categoryFor = (id: string) => modelMap.get(id)?.categoryId;
+    const locationNameFor = (id: string | null) => (id ? locationMap.get(id)?.name : null);
+
+    const filtered = rows.filter((r) => {
+      const status = r.status ?? "AVAILABLE";
+      const condition = r.condition ?? "GOOD";
+      if ((r.isActive ?? true) !== isActive) return false;
+      if (a.status && status !== a.status) return false;
+      if (a.condition && condition !== a.condition) return false;
+      if (a.locationId && (r.locationId ?? null) !== a.locationId) return false;
+      if (a.modelId && r.modelId !== a.modelId) return false;
+      if (a.categoryId && categoryFor(r.modelId) !== a.categoryId) return false;
+      if (a.statusIn && a.statusIn.length > 0 && !a.statusIn.includes(status)) return false;
+      if (a.conditionIn && a.conditionIn.length > 0 && !a.conditionIn.includes(condition)) return false;
+      if (a.locationIdIn && a.locationIdIn.length > 0 && !(r.locationId != null && a.locationIdIn.includes(r.locationId))) return false;
+      if (a.categoryIdIn && a.categoryIdIn.length > 0) { const cat = categoryFor(r.modelId); if (!(cat != null && a.categoryIdIn.includes(cat))) return false; }
+      if (a.tagsHasSome && a.tagsHasSome.length > 0 && !(r.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
+      if (a.search && !aMatchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
+      return true;
+    });
+    const total = filtered.length;
+    const keyFn = (r: typeof rows[number]): unknown => {
+      if (sortBy === "model") return modelNameFor(r.modelId);
+      if (sortBy === "location") return locationNameFor(r.locationId ?? null);
+      if (sortBy === "status") return A_STATUS_RANK[r.status ?? "AVAILABLE"];
+      if (sortBy === "condition") return A_CONDITION_RANK[r.condition ?? "GOOD"];
+      return (r as unknown as Record<string, unknown>)[sortBy];
+    };
+    const sorted = [...filtered].sort((x, y) => aCompare(keyFn(x), keyFn(y), dir));
+    const pageRows = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+
+    const assets = pageRows.map((r) => {
+      const model = modelMap.get(r.modelId) ?? null;
+      return {
+        ...r,
+        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
+      };
+    });
+    return { assets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  },
+});
+
+/**
+ * Primary-photo maps for the asset registry table + gallery — browser-native
+ * replacement for getAssetRegistryPhotos. Returns { assetPhotos, modelPhotos }:
+ * each id → { url, thumbnailUrl } of its PHOTO+isPrimary media row's file (org-scoped).
+ */
+export const registryPhotos = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    type Photo = { url: string | null; thumbnailUrl: string | null };
+    const build = async (table: "assetMedia" | "modelMedia", fk: "assetId" | "modelId"): Promise<Record<string, Photo>> => {
+      const out: Record<string, Photo> = {};
+      const rows = await ctx.db.query(table).withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+      for (const m of rows) {
+        if (m.type !== "PHOTO" || !m.isPrimary) continue;
+        const parentId = (m as Record<string, unknown>)[fk] as string;
+        const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+        const resolved = file && file.organizationId === orgId ? file : null;
+        out[parentId] = { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null };
+      }
+      return out;
+    };
+    const [assetPhotos, modelPhotos] = await Promise.all([build("assetMedia", "assetId"), build("modelMedia", "modelId")]);
+    return { assetPhotos, modelPhotos };
+  },
+});
+
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {

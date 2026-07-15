@@ -7,6 +7,8 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api as crewApi } from "../../../../convex/_generated/api";
 import { useCanDo } from "@/lib/use-permissions";
 import {
   Users,
@@ -48,14 +50,6 @@ import { CrewTable } from "@/components/crew/crew-table";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { PageHeader } from "@/components/layout/page-header";
-import {
-  getCrewDashboardStats,
-  getPendingTimeEntries,
-  getActiveAssignmentsSummary,
-  getPendingOffers,
-  getUpcomingShifts,
-  getCrewPickerList,
-} from "@/server/crew-dashboard";
 import {
   approveTimeEntries,
   disputeTimeEntry,
@@ -112,6 +106,8 @@ function CrewListView() {
 function CrewDashboard() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const cdConvex = useConvex();
+  const { isAuthenticated: cdAuthed } = useConvexAuth();
   const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -134,7 +130,8 @@ function CrewDashboard() {
     refetch: refetchStats,
   } = useServerQuery({
     queryKey: ["crew-dashboard-stats", orgId],
-    queryFn: getCrewDashboardStats,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.stats, { orgId: orgId as string, nowMs: Date.now() }),
+    enabled: !!orgId && cdAuthed,
   });
 
   const {
@@ -144,7 +141,8 @@ function CrewDashboard() {
     refetch: refetchPendingTime,
   } = useServerQuery({
     queryKey: ["crew-pending-time", orgId],
-    queryFn: getPendingTimeEntries,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.pendingTimeEntries, { orgId: orgId as string }),
+    enabled: !!orgId && cdAuthed,
   });
 
   const {
@@ -154,7 +152,8 @@ function CrewDashboard() {
     refetch: refetchActiveAssignments,
   } = useServerQuery({
     queryKey: ["crew-active-assignments", orgId],
-    queryFn: getActiveAssignmentsSummary,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.activeAssignmentsSummary, { orgId: orgId as string, nowMs: Date.now() }),
+    enabled: !!orgId && cdAuthed,
   });
 
   const {
@@ -164,7 +163,8 @@ function CrewDashboard() {
     refetch: refetchPendingOffers,
   } = useServerQuery({
     queryKey: ["crew-pending-offers", orgId],
-    queryFn: getPendingOffers,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.pendingOffers, { orgId: orgId as string }),
+    enabled: !!orgId && cdAuthed,
   });
 
   const {
@@ -174,7 +174,8 @@ function CrewDashboard() {
     refetch: refetchUpcomingShifts,
   } = useServerQuery({
     queryKey: ["crew-upcoming-shifts", orgId],
-    queryFn: getUpcomingShifts,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.upcomingShifts, { orgId: orgId as string, nowMs: Date.now() }),
+    enabled: !!orgId && cdAuthed,
   });
 
   const approveMutation = useServerMutation({
@@ -784,6 +785,8 @@ function LogTimeDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const cdConvex = useConvex();
+  const { isAuthenticated: cdAuthed } = useConvexAuth();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
@@ -792,8 +795,8 @@ function LogTimeDialog({
 
   const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
-    queryFn: getCrewPickerList,
-    enabled: open,
+    queryFn: () => cdConvex.query(crewApi.crewDashboard.pickerList, { orgId: orgId as string }),
+    enabled: open && !!orgId && cdAuthed,
   });
 
   const filteredCrew = crewList?.filter((c: any) => {

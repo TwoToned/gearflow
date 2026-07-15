@@ -38,6 +38,7 @@ import type * as crewAssignments from "../crewAssignments.js";
 import type * as crewAvailabilities from "../crewAvailabilities.js";
 import type * as crewAvailability from "../crewAvailability.js";
 import type * as crewAvailabilityWrites from "../crewAvailabilityWrites.js";
+import type * as crewDashboard from "../crewDashboard.js";
 import type * as crewMembers from "../crewMembers.js";
 import type * as crewRoles from "../crewRoles.js";
 import type * as crewShifts from "../crewShifts.js";
@@ -206,6 +207,7 @@ declare const fullApi: ApiFromModules<{
   crewAvailabilities: typeof crewAvailabilities;
   crewAvailability: typeof crewAvailability;
   crewAvailabilityWrites: typeof crewAvailabilityWrites;
+  crewDashboard: typeof crewDashboard;
   crewMembers: typeof crewMembers;
   crewRoles: typeof crewRoles;
   crewShifts: typeof crewShifts;

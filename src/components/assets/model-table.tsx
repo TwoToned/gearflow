@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { cn, focusRing } from "@/lib/utils";
-import { bulkUpdateRates } from "@/server/models";
+import { useModelWrites } from "@/hooks/use-model-writes";
 import { useModels } from "@/hooks/use-models";
 import { useModelCounts } from "@/hooks/use-model-counts";
 import { Input } from "@/components/ui/input";
@@ -664,6 +664,7 @@ function BulkRateUpdateDialog({
   const [rateType, setRateType] = useState<"dailyRate" | "weeklyRate" | "monthlyRate">("dailyRate");
   const [operation, setOperation] = useState<"set" | "multiply" | "increase_percent">("set");
   const [value, setValue] = useState("");
+  const modelWrites = useModelWrites();
 
   const rateTypeLabels: Record<string, string> = {
     dailyRate: "Daily rate",
@@ -679,7 +680,7 @@ function BulkRateUpdateDialog({
 
   const mutation = useServerMutation({
     mutationFn: () =>
-      bulkUpdateRates(
+      modelWrites.bulkUpdateRates(
         Array.from(selectedModelIds),
         rateType,
         operation,

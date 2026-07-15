@@ -11,7 +11,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
-import { getModel, archiveModel } from "@/server/models";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
+import { useModelWrites } from "@/hooks/use-model-writes";
 import { archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
 import { forceReturnAsset } from "@/server/warehouse";
 import { useMediaWrites } from "@/hooks/use-media-writes";
@@ -74,14 +76,19 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     return isNaN(parsed.getTime()) ? null : parsed;
   }, [searchParams]);
 
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
+  const modelWrites = useModelWrites();
+
   const { data: model, isLoading, refetch } = useServerQuery({
-    queryKey: ["model", orgId, id],
-    queryFn: () => getModel(id),
+    queryKey: ["model", orgId, id, isAuthenticated],
+    queryFn: () => convex.query(api.models.detail, { id }),
+    enabled: !!orgId && isAuthenticated,
   });
   const media = useMediaWrites("model");
 
   const archiveMutation = useServerMutation({
-    mutationFn: () => archiveModel(id),
+    mutationFn: () => modelWrites.archive(id),
     onSuccess: () => {
       toast.success("Model archived");
       router.push("/assets/models");

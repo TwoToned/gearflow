@@ -78,6 +78,145 @@ export const counts = query({
   },
 });
 
+/**
+ * Model DETAIL composite — browser-native replacement for the `getModel` server
+ * action. Returns the model scalars + category + active assets/bulkAssets
+ * (assetTag ASC, location attached) + media gallery (file-resolved) + bulk
+ * accessories (with bulkAsset + model name). Org derived + authorized from the
+ * fetched model via requireOrgReadDoc; null-model short-circuits to null (parity
+ * with the old `serialize(null)` not-found path). Every relation is fetched by a
+ * SCOPED index (by_modelId/by_organizationId) and org-re-checked (the by_modelId /
+ * by_cuid indexes are GLOBAL). One-shot composite (Appendix B — not reactive).
+ */
+export const detail = query({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!model) return null;
+    await requireOrgReadDoc(ctx, model);
+    const orgId = model.organizationId;
+
+    // Org locations → map (attachLocation equivalent).
+    const locations = await ctx.db
+      .query("locations")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const attachLoc = <T extends { locationId?: string | null }>(r: T) => ({
+      ...r,
+      location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
+    });
+
+    // Active assets + bulk assets for this model (assetTag ASC), org-re-checked.
+    const byAssetTag = (a: { assetTag: string }, b: { assetTag: string }) => a.assetTag.localeCompare(b.assetTag);
+    const assetsRaw = await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect();
+    const assets = assetsRaw
+      .filter((a) => a.organizationId === orgId && a.isActive !== false)
+      .sort(byAssetTag)
+      .map((a) => attachLoc({ ...a, locationId: a.locationId ?? null, status: a.status ?? "AVAILABLE" }));
+    const bulkRaw = await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect();
+    const bulkAssets = bulkRaw
+      .filter((b) => b.organizationId === orgId && b.isActive !== false)
+      .sort(byAssetTag)
+      .map((b) => attachLoc({
+        ...b,
+        locationId: b.locationId ?? null,
+        status: b.status ?? "ACTIVE",
+        availableQuantity: b.availableQuantity ?? 0,
+        totalQuantity: b.totalQuantity ?? 0,
+        isActive: b.isActive ?? true,
+      }));
+
+    // Category from the org category map.
+    const category = model.categoryId
+      ? await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", model.categoryId!)).unique()
+      : null;
+    const resolvedCategory = category && category.organizationId === orgId ? category : null;
+
+    // Media gallery (modelMedia + resolved file), sorted by sortOrder, drop unresolved.
+    const mediaRows = (await ctx.db.query("modelMedia").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect())
+      .filter((m) => m.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const media: Array<{
+      id: string; organizationId: string; fileId: string; displayName: string | null; sortOrder: number;
+      modelId: string; type: string; isPrimary: boolean;
+      file: { id: string; fileName: string; fileSize: number; mimeType: string; url: string; thumbnailUrl: string | null };
+    }> = [];
+    for (const m of mediaRows) {
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+      if (!file || file.organizationId !== orgId) continue;
+      media.push({
+        id: m.id,
+        organizationId: m.organizationId,
+        fileId: m.fileId,
+        displayName: m.displayName ?? null,
+        sortOrder: m.sortOrder ?? 0,
+        modelId: m.modelId,
+        type: m.type ?? "PHOTO",
+        isPrimary: m.isPrimary ?? false,
+        file: {
+          id: file.id,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+          mimeType: file.mimeType,
+          url: file.url,
+          thumbnailUrl: file.thumbnailUrl ?? null,
+        },
+      });
+    }
+
+    // Bulk accessories (with bulkAsset assetTag + model name).
+    const modelsForOrg = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const modelNameMap = new Map(modelsForOrg.map((m) => [m.id, m]));
+    const accRows = (await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect())
+      .filter((r) => r.organizationId === orgId);
+    const bulkAccessories: Array<{
+      id: string; organizationId: string; modelId: string; bulkAssetId: string; quantity: number;
+      sortOrder: number | null; notes: string | null; addedAt: number | null; addedById: string;
+      bulkAsset: { id: string; assetTag: string; modelId: string | null; model: { id: string; name: string } | null };
+    }> = [];
+    for (const ba of accRows) {
+      const bulkAsset = ba.bulkAssetId
+        ? await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", ba.bulkAssetId)).unique()
+        : null;
+      const resolvedBulk = bulkAsset && bulkAsset.organizationId === orgId ? bulkAsset : null;
+      const bulkModel = resolvedBulk?.modelId ? modelNameMap.get(resolvedBulk.modelId) ?? null : null;
+      bulkAccessories.push({
+        id: ba.id,
+        organizationId: ba.organizationId,
+        modelId: ba.modelId,
+        bulkAssetId: ba.bulkAssetId,
+        quantity: ba.quantity,
+        sortOrder: ba.sortOrder ?? null,
+        notes: ba.notes ?? null,
+        addedAt: ba.addedAt ?? null,
+        addedById: ba.addedById,
+        bulkAsset: {
+          id: ba.bulkAssetId,
+          assetTag: resolvedBulk?.assetTag ?? "",
+          modelId: resolvedBulk?.modelId ?? null,
+          model: bulkModel ? { id: bulkModel.id, name: bulkModel.name } : null,
+        },
+      });
+    }
+
+    return {
+      ...model,
+      images: model.images ?? [],
+      manuals: model.manuals ?? [],
+      tags: model.tags ?? [],
+      assetType: model.assetType ?? "SERIALIZED",
+      requiresTestAndTag: model.requiresTestAndTag ?? false,
+      isActive: model.isActive ?? true,
+      category: resolvedCategory,
+      assets,
+      bulkAssets,
+      media,
+      bulkAccessories,
+    };
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

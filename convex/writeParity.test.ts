@@ -95,7 +95,7 @@ describe("write-parity: line-items", () => {
   test("addNative == createLineItem (same resulting parent line)", async () => {
     const t = makeT();
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
-    await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW });
+    await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, allowOverbook: true, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW });
     const svc = normalize(await readByCuid(t, "projectLineItems", "svc"));
     const nat = normalize(await readByCuid(t, "projectLineItems", "nat"));
     // sortOrder differs (svc got 0, nat got 1) — normalize it.

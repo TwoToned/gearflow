@@ -12,6 +12,11 @@ import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
 import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
+import {
+  loadModelAvailabilityBundle,
+  computeModelAvailability,
+  findAssetConflict,
+} from "./lib/availabilityCore";
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -145,11 +150,12 @@ export const patchNative = mutation({
     set: v.any(),
     clear: v.array(v.string()),
     entityName: v.string(),
+    allowOverbook: v.boolean(),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -166,6 +172,57 @@ export const patchNative = mutation({
     assertLineMoneyFields(setObj as {
       quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
     });
+
+    // Availability re-check on a quantity INCREASE (parity with updateLineItem's
+    // server-side re-check). Only EQUIPMENT, model-backed, non-sub-hire lines that grow
+    // are re-validated. The EFFECTIVE post-patch view must respect `clear` (a caller can
+    // clear modelId to convert to a custom line — the server then skips enforcement).
+    const currentQty = doc.quantity ?? 0;
+    const clearSet = new Set(clear.filter((k) => !LINE_NEVER_CLEAR.has(k)));
+    const effField = (key: string): unknown =>
+      clearSet.has(key) ? undefined : ((setObj as Record<string, unknown>)[key] ?? (doc as Record<string, unknown>)[key]);
+    const effType = effField("type");
+    const effModelId = effField("modelId") as string | undefined;
+    const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
+    // Gate is `newQty > currentQty` (NOT `!sameModel || ...`) to stay BYTE-parity with
+    // updateLineItem (src/server/line-items.ts:565-573), which ALSO skips enforcement when
+    // the new qty isn't an increase — even on a model change. Over-enforcing here would
+    // throw where the service-token server path does not, breaking the legit path. (A model
+    // change with a lower qty escaping the check is a pre-existing server gap, out of scope
+    // for a parity port.)
+    if (
+      effType === "EQUIPMENT" &&
+      effModelId &&
+      doc.subHireId == null && // subHireId is immutable-on-patch, so read from the doc
+      !allowOverbook &&
+      newQty > currentQty
+    ) {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", doc.projectId)).unique();
+      const bundle = await loadModelAvailabilityBundle(ctx, effModelId, orgId);
+      if (bundle.model) {
+        const { available, booked, unavailable, totalStock } = computeModelAvailability(bundle, {
+          rentalStart: project?.rentalStartDate ?? null,
+          rentalEnd: project?.rentalEndDate ?? null,
+          excludeProjectId: doc.projectId,
+        });
+        // If the model is UNCHANGED, this line's currentQty is already in `booked`, so
+        // compare the DELTA (== updateLineItem's exclude-this-line semantics). If the model
+        // CHANGED, the line is NOT in the new model's `booked`, so compare the full newQty.
+        const sameModel = doc.modelId != null && effModelId === doc.modelId;
+        const requested = sameModel ? newQty - currentQty : newQty;
+        if (requested > available) {
+          const detail = unavailable > 0
+            ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
+            : `${booked} already booked out of ${totalStock} total`;
+          throw new ConvexError({
+            code: "INSUFFICIENT_STOCK",
+            message: `Only ${available} of ${requested} requested are free during those dates.`,
+            hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
+          });
+        }
+      }
+    }
+
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setObj);
     } else {
@@ -324,12 +381,13 @@ export const addNative = mutation({
       subhireOrderNumber: v.optional(v.string()),
     }),
     includeAccessories: v.boolean(),
+    allowOverbook: v.boolean(),
     orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, allowOverbook, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -346,6 +404,79 @@ export const addNative = mutation({
     // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
     const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dupLine) throw new ConvexError("Line item already exists");
+
+    // Availability / double-booking enforcement, IN the mutation (parity with the
+    // server-action pre-check at src/server/line-items.ts). Runs in ADDITION to the
+    // service-authed server pre-check; it only throws in the same cases the server
+    // does, so it's non-breaking for the legit path and self-sufficient for a future
+    // browser-direct caller. Sub-hire items never consume our stock (excluded).
+    if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+      const rentalStart = project?.rentalStartDate ?? null;
+      const rentalEnd = project?.rentalEndDate ?? null;
+      const hasDates = rentalStart != null && rentalEnd != null;
+
+      if (fields.assetId) {
+        // (a) Kit membership — a kit asset must be booked via the kit workflow.
+        const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.assetId!)).unique();
+        if (asset && asset.organizationId === organizationId && asset.kitId) {
+          const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).unique();
+          const kitTag = kit && kit.organizationId === organizationId ? kit.assetTag : asset.kitId;
+          throw new ConvexError({
+            code: "ASSET_IN_KIT",
+            title: "Asset is in a kit",
+            message: `This asset belongs to Kit ${kitTag}.`,
+            hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
+          });
+        }
+        // (b) Dated double-booking across overlapping projects (legacy line OR unit).
+        if (hasDates) {
+          const conflict = await findAssetConflict(ctx, {
+            assetId: fields.assetId,
+            orgId: organizationId,
+            excludeProjectId: projectId,
+            rentalStart,
+            rentalEnd,
+          });
+          if (conflict) {
+            throw new ConvexError({
+              code: "ASSET_DOUBLE_BOOKED",
+              message: `This asset is booked on ${conflict.projectNumber} — ${conflict.name} during those dates.`,
+            });
+          }
+        }
+        // (c) Permanently unavailable (retired / lost).
+        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST")) {
+          throw new ConvexError({
+            code: "ASSET_UNAVAILABLE",
+            message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,
+            hint: asset.status === "LOST"
+              ? "Find the asset and mark it Available, or pick a different one."
+              : "Retired assets cannot be booked. Pick a different asset.",
+          });
+        }
+      } else {
+        // Model-level — enforce quantity against effective stock.
+        const bundle = await loadModelAvailabilityBundle(ctx, fields.modelId, organizationId);
+        if (bundle.model) {
+          const { available, booked, unavailable, totalStock } = computeModelAvailability(bundle, {
+            rentalStart,
+            rentalEnd,
+            excludeProjectId: projectId,
+          });
+          if (fields.quantity > available) {
+            const detail = unavailable > 0
+              ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
+              : `${booked} already booked out of ${totalStock} total`;
+            throw new ConvexError({
+              code: "INSUFFICIENT_STOCK",
+              message: `Only ${available} of ${fields.quantity} requested are free during those dates.`,
+              hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
+            });
+          }
+        }
+      }
+    }
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).

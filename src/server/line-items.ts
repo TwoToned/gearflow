@@ -315,6 +315,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
             set: mergeSet,
             clear: [],
             entityName: existing.description || "Line item",
+            allowOverbook,
             orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
             actor: { userId, userName },
             auditId: createId(),
@@ -429,19 +430,25 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   };
   if (nativeLineItemWrites()) {
     // Native: atomic insert + accessory expansion (the shared expandAccessoryChildLines
-    // helper, same as createLineItem) + CREATE audit. The cross-project availability
-    // check above + the price computation stay server-side.
-    await convex.mutation(api.lineItemWrites.addNative, {
-      id: newLineId,
-      organizationId,
-      projectId,
-      fields: lineFields,
-      includeAccessories,
-      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
+    // helper, same as createLineItem) + CREATE audit. The server pre-check above already
+    // gated availability identically; the mutation re-checks belt-and-braces, so map any
+    // ConvexError back to the rich UserFacingError toast if it ever fires.
+    try {
+      await convex.mutation(api.lineItemWrites.addNative, {
+        id: newLineId,
+        organizationId,
+        projectId,
+        fields: lineFields,
+        includeAccessories,
+        allowOverbook,
+        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
+        actor: { userId, userName },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
   } else {
     await convex.mutation(api.projectLineItems.createLineItem, {
       id: newLineId,
@@ -717,6 +724,7 @@ export async function updateLineItem(
         set,
         clear,
         entityName: parsed.description || "Line item",
+        allowOverbook,
         orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),

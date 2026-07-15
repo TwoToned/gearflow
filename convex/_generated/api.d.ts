@@ -83,6 +83,7 @@ import type * as lib_audit from "../lib/audit.js";
 import type * as lib_auditChanges from "../lib/auditChanges.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_availabilityBookings from "../lib/availabilityBookings.js";
+import type * as lib_availabilityCore from "../lib/availabilityCore.js";
 import type * as lib_bulkCheckin from "../lib/bulkCheckin.js";
 import type * as lib_counters from "../lib/counters.js";
 import type * as lib_crewRate from "../lib/crewRate.js";
@@ -269,6 +270,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auditChanges": typeof lib_auditChanges;
   "lib/auth": typeof lib_auth;
   "lib/availabilityBookings": typeof lib_availabilityBookings;
+  "lib/availabilityCore": typeof lib_availabilityCore;
   "lib/bulkCheckin": typeof lib_bulkCheckin;
   "lib/counters": typeof lib_counters;
   "lib/crewRate": typeof lib_crewRate;

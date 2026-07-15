@@ -65,6 +65,10 @@ const ASSET_WRITE_ERROR_MAP: Record<
     hint: "Archive it instead so the history stays intact.",
   },
   ASSET_IN_KIT: {
+    // Shared code across the asset-DELETE path (convex/assetWrites.ts) and the line-item
+    // ADD path (convex/lineItemWrites.ts addNative). These are the DELETE-context static
+    // fallbacks; the add path passes its own dynamic title/message/hint (all three are
+    // preferred over these statics — see mapAssetWriteError), so neither context regresses.
     title: "Cannot delete",
     message: "This asset is part of a kit.",
     hint: "Remove it from the kit first, then delete.",
@@ -94,6 +98,24 @@ const ASSET_WRITE_ERROR_MAP: Record<
     message: "This item is an accessory of another asset.",
     hint: "Remove the parent asset's line to remove it, or detach the accessory from the asset in the catalog.",
   },
+  // Line-item availability guards (mirror src/server/line-items.ts). All carry a
+  // dynamic message (and ASSET_UNAVAILABLE / INSUFFICIENT_STOCK a dynamic hint) from
+  // the mutation; these are the static fallbacks / titles.
+  INSUFFICIENT_STOCK: {
+    title: "Not enough available",
+    message: "Not enough stock is free during those dates.",
+    hint: "Reduce the quantity, change the dates, or add a sub-hire to cover the gap.",
+  },
+  ASSET_DOUBLE_BOOKED: {
+    title: "Asset already booked",
+    message: "This asset is already booked during those dates.",
+    hint: "Pick a different asset, adjust the rental dates, or remove it from the other project.",
+  },
+  ASSET_UNAVAILABLE: {
+    title: "Asset cannot be added",
+    message: "This asset is unavailable.",
+    hint: "Pick a different asset.",
+  },
 };
 
 export function mapAssetWriteError(e: unknown): unknown {
@@ -111,7 +133,14 @@ export function mapAssetWriteError(e: unknown): unknown {
       // offending asset tag) over the static fallback.
       const dyn = (e.data as { message?: unknown }).message;
       const message = typeof dyn === "string" && dyn ? dyn : mapped.message;
-      return new UserFacingError({ code, title: mapped.title, message, hint: mapped.hint });
+      // Prefer the mutation's own hint + title too (e.g. LOST vs RETIRED guidance, the
+      // stock-breakdown detail, or the add-vs-delete context of a shared code like
+      // ASSET_IN_KIT) over the static fallback — mirrors the message rule.
+      const dynHint = (e.data as { hint?: unknown }).hint;
+      const hint = typeof dynHint === "string" && dynHint ? dynHint : mapped.hint;
+      const dynTitle = (e.data as { title?: unknown }).title;
+      const title = typeof dynTitle === "string" && dynTitle ? dynTitle : mapped.title;
+      return new UserFacingError({ code, title, message, hint });
     }
   }
   return e;

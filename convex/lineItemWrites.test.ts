@@ -92,7 +92,7 @@ describe("lineItemWrites.removeNative", () => {
 });
 
 describe("lineItemWrites.patchNative", () => {
-  const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", actor: ACTOR, auditId: "log1", now: NOW };
+  const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -205,7 +205,7 @@ describe("lineItemWrites.addCustomNative", () => {
 });
 
 describe("lineItemWrites.addNative", () => {
-  const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+  const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, allowOverbook: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds an inventory line (sortOrder in-mutation) + CREATE audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -227,6 +227,204 @@ describe("lineItemWrites.addNative", () => {
     const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+describe("lineItemWrites.addNative availability enforcement", () => {
+  const DAY = 86_400_000;
+  const enfArgs = (fields: { modelId?: string; assetId?: string; quantity: number }, over = false) => ({
+    id: "nx", organizationId: ORG, projectId: "p1",
+    fields: { type: "EQUIPMENT" as const, ...fields },
+    includeAccessories: false, allowOverbook: over, orgDefaultTaxRate: null,
+    actor: ACTOR, auditId: "log1", now: NOW,
+  });
+
+  // A SERIALIZED model with `n` active AVAILABLE assets, a project, and an existing
+  // booking on THIS project (dateless → only this-project bookings count).
+  async function seedModelStock(t: ReturnType<typeof makeT>, n: number, bookedQty: number, dates?: { s: number; e: number }) {
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, ...(dates ? { rentalStartDate: dates.s, rentalEndDate: dates.e } : {}) });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      for (let i = 0; i < n; i++) {
+        await ctx.db.insert("assets", { id: `a${i}`, organizationId: ORG, modelId: "m1", assetTag: `A-${i}`, status: "AVAILABLE", isActive: true });
+      }
+      if (bookedQty > 0) {
+        await ctx.db.insert("projectLineItems", { id: "lx", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: bookedQty, status: "CONFIRMED", isKitChild: false });
+      }
+    });
+  }
+
+  test("model path throws INSUFFICIENT_STOCK when qty exceeds available", async () => {
+    const t = makeT();
+    await seedModelStock(t, 3, 3); // 3 stock, 3 already booked on this project → 0 free
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", quantity: 1 })),
+    ).rejects.toThrow(/Only 0 of 1 requested are free/);
+  });
+
+  test("model path SUCCEEDS with allowOverbook:true (enforcement bypassed)", async () => {
+    const t = makeT();
+    await seedModelStock(t, 3, 3);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", quantity: 1 }, true));
+    expect(res.id).toBe("nx");
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "nx")).first();
+      expect(li?.quantity).toBe(1);
+    });
+  });
+
+  test("model path allows a qty that exactly fills free stock (boundary)", async () => {
+    const t = makeT();
+    await seedModelStock(t, 3, 1); // 3 stock, 1 booked → 2 free
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", quantity: 2 }));
+    expect(res.id).toBe("nx");
+  });
+
+  test("asset path throws ASSET_IN_KIT (precedence: beats a RETIRED status)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      // Asset is BOTH kit-owned AND retired — the kit guard must win (runs first).
+      await ctx.db.insert("assets", { id: "ak", organizationId: ORG, modelId: "m1", assetTag: "A-K", status: "RETIRED", isActive: true, kitId: "k1" });
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-9", name: "L", status: "AVAILABLE", condition: "GOOD", isActive: true });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", assetId: "ak", quantity: 1 })),
+    ).rejects.toThrow(/Kit KIT-9/);
+  });
+
+  test("asset path throws ASSET_DOUBLE_BOOKED on a dated overlap (via a line booking)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 5 * DAY });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Festival", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW + DAY, rentalEndDate: NOW + 3 * DAY });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "AVAILABLE", isActive: true });
+      // A2 already booked on the overlapping project P2 via a legacy line.assetId row.
+      await ctx.db.insert("projectLineItems", { id: "lp2", organizationId: ORG, projectId: "p2", modelId: "m1", assetId: "a2", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isKitChild: false });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", assetId: "a2", quantity: 1 })),
+    ).rejects.toThrow(/booked on P2 — Festival during those dates/);
+  });
+
+  test("asset path throws ASSET_UNAVAILABLE for a RETIRED asset (not kit, not double-booked)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      await ctx.db.insert("assets", { id: "a3", organizationId: ORG, modelId: "m1", assetTag: "A-3", status: "RETIRED", isActive: true });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, enfArgs({ modelId: "m1", assetId: "a3", quantity: 1 })),
+    ).rejects.toThrow(/marked retired/);
+  });
+});
+
+describe("lineItemWrites.patchNative availability enforcement", () => {
+  const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
+  // Dateless project, SERIALIZED model with 3 active assets, one existing line (li1)
+  // on the project booking `oldQty` of the model.
+  async function seed(t: ReturnType<typeof makeT>, oldQty: number) {
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      for (let i = 0; i < 3; i++) {
+        await ctx.db.insert("assets", { id: `a${i}`, organizationId: ORG, modelId: "m1", assetTag: `A-${i}`, status: "AVAILABLE", isActive: true });
+      }
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: oldQty, status: "CONFIRMED", isKitChild: false });
+    });
+  }
+
+  test("throws on a qty increase that exceeds available (delta > free)", async () => {
+    const t = makeT();
+    await seed(t, 1); // 3 stock, this line booked 1 → 2 free; delta 5-1=4 > 2
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 5, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/Only 2 of 4 requested are free/);
+  });
+
+  test("allows a resize that exactly fills stock (boundary: delta == free)", async () => {
+    const t = makeT();
+    await seed(t, 1); // 3 stock, 1 booked → 2 free; delta 3-1=2 == 2 → allowed
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(3);
+    });
+  });
+
+  test("allows a qty DECREASE without an availability check", async () => {
+    const t = makeT();
+    await seed(t, 3); // decrease 3 → 1: gate is newQty > currentQty, so it's skipped
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 1, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(1);
+    });
+  });
+
+  test("qty increase SUCCEEDS with allowOverbook:true", async () => {
+    const t = makeT();
+    await seed(t, 1);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, allowOverbook: true, set: { quantity: 9, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(9);
+    });
+  });
+
+  test("model CHANGE compares FULL newQty (not delta) against the new model", async () => {
+    const t = makeT();
+    await seed(t, 1); // line is on m1 (3 stock)
+    await t.run(async (ctx) => {
+      // A second model with only 2 stock; the line is NOT booked against it.
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Fresnel", assetType: "SERIALIZED" });
+      for (let i = 0; i < 2; i++) await ctx.db.insert("assets", { id: `b${i}`, organizationId: ORG, modelId: "m2", assetTag: `B-${i}`, status: "AVAILABLE", isActive: true });
+    });
+    // Switch to m2 and request 3 — m2 has 2 free, line not in m2's booked → full 3 > 2 → throw.
+    // (A delta check 3-1=2 would have WRONGLY allowed it.)
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, modelId: "m2", updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/Only 2 of 3 requested are free/);
+  });
+
+  test("CLEARING modelId skips enforcement (converting to a custom line)", async () => {
+    const t = makeT();
+    await seed(t, 3); // fully booked on m1
+    // Clear modelId + bump qty: the server skips enforcement when there's no model, so must we.
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 8, updatedAt: NOW }, clear: ["modelId"] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.quantity).toBe(8);
+      expect(li?.modelId).toBeUndefined();
+    });
+  });
+});
+
+describe("lineItemWrites availability org-isolation", () => {
+  test("a cross-org asset sharing the modelId does NOT inflate available stock", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      // Our org: exactly 1 active asset for the model.
+      await ctx.db.insert("assets", { id: "mine", organizationId: ORG, modelId: "m1", assetTag: "A-0", status: "AVAILABLE", isActive: true });
+      // ANOTHER org: an asset with the SAME modelId (by_modelId is global). Must not count.
+      await ctx.db.insert("assets", { id: "theirs", organizationId: "org_other", modelId: "m1", assetTag: "X-0", status: "AVAILABLE", isActive: true });
+    });
+    // Adding qty 2 must fail — only 1 unit is ours, despite 2 assets sharing the modelId.
+    const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, modelId: "m1", description: "PAR", quantity: 2 }, includeAccessories: false, allowOverbook: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs),
+    ).rejects.toThrow(/Only 1 of 2 requested are free/);
   });
 });
 

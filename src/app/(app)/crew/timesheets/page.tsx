@@ -54,15 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  getAllTimeEntries,
-  createTimeEntries,
-  updateTimeEntry,
-  deleteTimeEntry,
-  submitTimeEntries,
-  approveTimeEntries,
-  disputeTimeEntry,
-} from "@/server/crew-time";
+import { useCrewTimeWrites } from "@/hooks/use-crew-time-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as crewApi } from "../../../../../convex/_generated/api";
 import {
@@ -82,6 +74,7 @@ export default function TimesheetsPage() {
   const orgId = activeOrg?.id;
   const tsConvex = useConvex();
   const { isAuthenticated: tsAuthed } = useConvexAuth();
+  const timeWrites = useCrewTimeWrites();
 
   const {
     sortBy,
@@ -140,7 +133,8 @@ export default function TimesheetsPage() {
       { search, filters, page, pageSize, sortBy, sortOrder },
     ],
     queryFn: () =>
-      getAllTimeEntries({
+      tsConvex.query(crewApi.crewTimeEntries.allEntries, {
+        orgId: orgId as string,
         search: search || undefined,
         filters,
         page,
@@ -148,6 +142,7 @@ export default function TimesheetsPage() {
         sortBy,
         sortOrder,
       }),
+    enabled: !!orgId && tsAuthed,
   });
 
   // Cross-tab live sync: subscribe to the dual-written Convex crewTimeEntries
@@ -167,7 +162,7 @@ export default function TimesheetsPage() {
   const total = data?.total || 0;
 
   const submitMutation = useServerMutation({
-    mutationFn: (ids: string[]) => submitTimeEntries(ids),
+    mutationFn: (ids: string[]) => timeWrites.submit(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries submitted`);
       refetchEntries();
@@ -176,7 +171,7 @@ export default function TimesheetsPage() {
   });
 
   const approveMutation = useServerMutation({
-    mutationFn: (ids: string[]) => approveTimeEntries(ids),
+    mutationFn: (ids: string[]) => timeWrites.approve(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
       refetchEntries();
@@ -185,7 +180,7 @@ export default function TimesheetsPage() {
   });
 
   const disputeMutation = useServerMutation({
-    mutationFn: (id: string) => disputeTimeEntry(id),
+    mutationFn: (id: string) => timeWrites.dispute(id),
     onSuccess: () => {
       toast.success("Entry disputed");
       refetchEntries();
@@ -194,7 +189,7 @@ export default function TimesheetsPage() {
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteTimeEntry(id),
+    mutationFn: (id: string) => timeWrites.remove(id),
     onSuccess: () => {
       toast.success("Entry deleted");
       refetchEntries();
@@ -506,6 +501,7 @@ function EditTimeEntryDialog({
   /** Refresh the parent timesheet table after an edit. */
   onSaved?: () => void;
 }) {
+  const timeWrites = useCrewTimeWrites();
   const [isGeneral, setIsGeneral] = useState(false);
 
   const form = useForm<CrewTimeEntryFormValues>({
@@ -547,7 +543,7 @@ function EditTimeEntryDialog({
 
   const mutation = useServerMutation({
     mutationFn: (data: CrewTimeEntryFormValues) =>
-      updateTimeEntry(entry?.id, data),
+      timeWrites.update(entry?.id as string, data),
     onSuccess: () => {
       toast.success("Time entry updated");
       // Refresh the parent table; crew-time-entries (crew/[id]) + crew-pending-time
@@ -720,6 +716,7 @@ function LogTimeDialog({
   const orgId = activeOrg?.id;
   const tsConvex = useConvex();
   const { isAuthenticated: tsAuthed } = useConvexAuth();
+  const timeWrites = useCrewTimeWrites();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
@@ -781,7 +778,7 @@ function LogTimeDialog({
       // One batch call for all selected crew — the server validates each crew
       // member individually and returns per-crew errors, preserving the old
       // loop's partial-success behaviour.
-      const res = await createTimeEntries(data, selectedCrewIds);
+      const res = await timeWrites.createMany(data, selectedCrewIds);
       const successCount = res.created.length;
       if (successCount > 0) {
         toast.success(

@@ -1,7 +1,133 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+
+// ── Time-entry read helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
+const iso = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
+const TE_SORT_KEYS = new Set(["date", "crewMember", "startTime", "totalHours", "status"]);
+function ascNL<T>(a: T | null | undefined, b: T | null | undefined): number {
+  if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function descNF<T>(a: T | null | undefined, b: T | null | undefined): number {
+  if (a == null && b == null) return 0; if (a == null) return -1; if (b == null) return 1;
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+type TE = { id: string; assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; totalHours?: number; status?: string; approvedById?: string; approvedAt?: number; notes?: string; createdAt?: number; updatedAt?: number };
+function teWire(e: TE) {
+  return {
+    id: e.id, assignmentId: e.assignmentId ?? null, crewMemberId: e.crewMemberId, description: e.description ?? null,
+    date: new Date(e.date).toISOString(), startTime: e.startTime, endTime: e.endTime, breakMinutes: e.breakMinutes ?? 0,
+    totalHours: e.totalHours ?? null, status: e.status ?? "DRAFT", approvedById: e.approvedById ?? null,
+    approvedAt: iso(e.approvedAt), notes: e.notes ?? null, createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt),
+  };
+}
+/** Membership-gated approver-name map (users mirror). */
+async function approverNames(ctx: QueryCtx, orgId: string, entries: TE[]): Promise<Map<string, string | null>> {
+  const ids = [...new Set(entries.map((e) => e.approvedById).filter((x): x is string => !!x))];
+  const out = new Map<string, string | null>();
+  for (const id of ids) {
+    const mem = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", id)).first();
+    if (!mem) { out.set(id, null); continue; }
+    const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    out.set(id, u?.name ?? null);
+  }
+  return out;
+}
+
+/**
+ * Paginated timesheet list — browser-native replacement for getAllTimeEntries. Filter
+ * (search + status/crewMember) + sort + paginate + member/assignment(+project/role) joins
+ * + membership-gated approvedBy. One-shot (timesheets table).
+ */
+export const allEntries = query({
+  args: {
+    orgId: v.string(), search: v.optional(v.string()), filters: v.optional(v.any()),
+    page: v.optional(v.number()), pageSize: v.optional(v.number()), sortBy: v.optional(v.string()), sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page && a.page > 0 ? a.page : 1; // clamp (parity with `params?.page || 1`)
+    const pageSize = a.pageSize && a.pageSize > 0 ? a.pageSize : 25;
+    const sortBy = TE_SORT_KEYS.has(a.sortBy ?? "") ? a.sortBy! : "date";
+    const order = a.sortOrder ?? "desc";
+
+    const [allE, assignments, members, roles, projects] = await Promise.all([
+      ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const memberById = new Map(members.map((m) => [m.id, m]));
+    const asgById = new Map(assignments.map((x) => [x.id, x]));
+    const roleById = new Map(roles.map((r) => [r.id, r]));
+    const projById = new Map(projects.map((p) => [p.id, p]));
+    const projectOf = (e: TE) => { const asg = e.assignmentId ? asgById.get(e.assignmentId) : null; return asg ? projById.get(asg.projectId) ?? null : null; };
+
+    let filtered = allE as TE[];
+    const needle = a.search?.trim().toLowerCase();
+    if (needle) filtered = filtered.filter((e) => { const m = memberById.get(e.crewMemberId); const p = projectOf(e); return (m?.firstName ?? "").toLowerCase().includes(needle) || (m?.lastName ?? "").toLowerCase().includes(needle) || (e.description ?? "").toLowerCase().includes(needle) || (p?.name ?? "").toLowerCase().includes(needle) || (p?.projectNumber ?? "").toLowerCase().includes(needle); });
+    const f = (a.filters ?? {}) as Record<string, string[]>;
+    if (f.status?.length) { const set = new Set(f.status); filtered = filtered.filter((e) => set.has(e.status ?? "DRAFT")); }
+    if (f.crewMemberId?.length) { const set = new Set(f.crewMemberId); filtered = filtered.filter((e) => set.has(e.crewMemberId)); }
+
+    const cmp = order === "asc" ? ascNL : descNF;
+    const valueOf = (e: TE): string | number | null | undefined => sortBy === "crewMember" ? memberById.get(e.crewMemberId)?.lastName : sortBy === "startTime" ? e.startTime : sortBy === "totalHours" ? (e.totalHours ?? null) : sortBy === "status" ? (e.status ?? "DRAFT") : e.date;
+    const sorted = [...filtered].sort((x, y) => { const p = cmp(valueOf(x), valueOf(y)); if (p !== 0) return p; if (sortBy === "date") return descNF(x.startTime, y.startTime); return 0; });
+    const total = filtered.length;
+    const pageE = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const approvers = await approverNames(ctx, a.orgId, pageE);
+
+    const entries = pageE.map((e) => {
+      const member = memberById.get(e.crewMemberId) ?? null;
+      const asg = e.assignmentId ? asgById.get(e.assignmentId) ?? null : null;
+      const project = asg ? projById.get(asg.projectId) ?? null : null;
+      const role = asg?.crewRoleId ? roleById.get(asg.crewRoleId) ?? null : null;
+      return {
+        ...teWire(e),
+        crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null,
+        assignment: asg ? { id: asg.id, phase: asg.phase ?? null, status: asg.status ?? null, project: project ? { id: project.id, name: project.name, projectNumber: project.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null,
+        approvedBy: e.approvedById ? { name: approvers.get(e.approvedById) ?? null } : null,
+      };
+    });
+    return { entries, total };
+  },
+});
+
+/** A crew member's time entries (date desc, then startTime desc) + joins — replaces getTimeEntriesForMember. */
+export const forMember = query({
+  args: { crewMemberId: v.string(), orgId: v.string() },
+  handler: async (ctx, { crewMemberId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", crewMemberId)).unique();
+    if (!member || member.organizationId !== orgId) throw new ConvexError("Crew member not found");
+
+    const [entriesRaw, assignments, roles, projects] = await Promise.all([
+      ctx.db.query("crewTimeEntries").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).collect().then((rows) => rows.filter((e) => e.organizationId === orgId)),
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const asgById = new Map(assignments.map((x) => [x.id, x]));
+    const roleById = new Map(roles.map((r) => [r.id, r]));
+    const projById = new Map(projects.map((p) => [p.id, p]));
+    const sorted = (entriesRaw as TE[]).sort((a, b) => { const d = descNF(a.date, b.date); if (d !== 0) return d; return descNF(a.startTime, b.startTime); });
+    const approvers = await approverNames(ctx, orgId, sorted);
+    return sorted.map((e) => {
+      const asg = e.assignmentId ? asgById.get(e.assignmentId) ?? null : null;
+      const project = asg ? projById.get(asg.projectId) ?? null : null;
+      const role = asg?.crewRoleId ? roleById.get(asg.crewRoleId) ?? null : null;
+      return {
+        ...teWire(e),
+        assignment: asg ? { id: asg.id, phase: asg.phase ?? null, status: asg.status ?? null, project: project ? { name: project.name, projectNumber: project.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null,
+        approvedBy: e.approvedById ? { name: approvers.get(e.approvedById) ?? null } : null,
+      };
+    });
+  },
+});
 
 /**
  * Thin CRUD for CrewTimeEntry (Convex table "crewTimeEntries"). GENERATED — Phase 2/5.

@@ -45,15 +45,7 @@ import {
   disableIcalFeed,
   regenerateIcalToken,
 } from "@/server/crew-calendar";
-import {
-  getTimeEntriesForMember,
-  createTimeEntry,
-  updateTimeEntry,
-  deleteTimeEntry,
-  submitTimeEntries,
-  approveTimeEntries,
-  disputeTimeEntry,
-} from "@/server/crew-time";
+import { useCrewTimeWrites } from "@/hooks/use-crew-time-writes";
 import {
   crewMemberStatusLabels,
   crewMemberTypeLabels,
@@ -245,9 +237,11 @@ export default function CrewMemberDetailPage({
     queryFn: () => getIcalSettings(id),
   });
 
+  const timeWrites = useCrewTimeWrites();
   const { data: timeEntries, refetch: refetchTimeEntries } = useServerQuery({
-    queryKey: ["crew-time-entries", orgId, id],
-    queryFn: () => getTimeEntriesForMember(id),
+    queryKey: ["crew-time-entries", orgId, id, caAuthed],
+    queryFn: () => caConvex.query(crewAvailApi.crewTimeEntries.forMember, { crewMemberId: id, orgId: orgId as string }),
+    enabled: !!orgId && caAuthed,
   });
 
   const enableIcalMutation = useServerMutation({
@@ -287,7 +281,7 @@ export default function CrewMemberDetailPage({
   });
 
   const deleteTimeMutation = useServerMutation({
-    mutationFn: (entryId: string) => deleteTimeEntry(entryId),
+    mutationFn: (entryId: string) => timeWrites.remove(entryId),
     onSuccess: () => {
       toast.success("Time entry deleted");
       refetchTimeEntries();
@@ -296,7 +290,7 @@ export default function CrewMemberDetailPage({
   });
 
   const submitTimeMutation = useServerMutation({
-    mutationFn: (ids: string[]) => submitTimeEntries(ids),
+    mutationFn: (ids: string[]) => timeWrites.submit(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries submitted for approval`);
       refetchTimeEntries();
@@ -305,7 +299,7 @@ export default function CrewMemberDetailPage({
   });
 
   const approveTimeMutation = useServerMutation({
-    mutationFn: (ids: string[]) => approveTimeEntries(ids),
+    mutationFn: (ids: string[]) => timeWrites.approve(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
       refetchTimeEntries();
@@ -314,7 +308,7 @@ export default function CrewMemberDetailPage({
   });
 
   const disputeTimeMutation = useServerMutation({
-    mutationFn: (entryId: string) => disputeTimeEntry(entryId),
+    mutationFn: (entryId: string) => timeWrites.dispute(entryId),
     onSuccess: () => {
       toast.success("Time entry disputed");
       refetchTimeEntries();
@@ -2094,6 +2088,7 @@ function AddTimeEntryDialog({
   onSaved: () => void;
 }) {
   const isEditing = !!editingEntry;
+  const timeWrites = useCrewTimeWrites();
   const [isGeneral, setIsGeneral] = useState(false);
 
   const form = useForm<CrewTimeEntryFormValues>({
@@ -2146,7 +2141,7 @@ function AddTimeEntryDialog({
   }
 
   const createMutation = useServerMutation({
-    mutationFn: (data: CrewTimeEntryFormValues) => createTimeEntry(data),
+    mutationFn: (data: CrewTimeEntryFormValues) => timeWrites.create(data),
     onSuccess: () => {
       toast.success("Time entry added");
       onSaved();
@@ -2158,7 +2153,7 @@ function AddTimeEntryDialog({
 
   const updateMutation = useServerMutation({
     mutationFn: (data: CrewTimeEntryFormValues) =>
-      updateTimeEntry(editingEntry?.id, data),
+      timeWrites.update(editingEntry?.id as string, data),
     onSuccess: () => {
       toast.success("Time entry updated");
       onSaved();

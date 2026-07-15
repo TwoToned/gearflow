@@ -50,11 +50,7 @@ import { CrewTable } from "@/components/crew/crew-table";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { PageHeader } from "@/components/layout/page-header";
-import {
-  approveTimeEntries,
-  disputeTimeEntry,
-  createTimeEntries,
-} from "@/server/crew-time";
+import { useCrewTimeWrites } from "@/hooks/use-crew-time-writes";
 import { sendCrewOffer } from "@/server/crew-communication";
 import {
   crewTimeEntrySchema,
@@ -108,6 +104,7 @@ function CrewDashboard() {
   const orgId = activeOrg?.id;
   const cdConvex = useConvex();
   const { isAuthenticated: cdAuthed } = useConvexAuth();
+  const timeWrites = useCrewTimeWrites();
   const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -179,7 +176,7 @@ function CrewDashboard() {
   });
 
   const approveMutation = useServerMutation({
-    mutationFn: (ids: string[]) => approveTimeEntries(ids),
+    mutationFn: (ids: string[]) => timeWrites.approve(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
       refetchPendingTime();
@@ -189,7 +186,7 @@ function CrewDashboard() {
   });
 
   const disputeMutation = useServerMutation({
-    mutationFn: (id: string) => disputeTimeEntry(id),
+    mutationFn: (id: string) => timeWrites.dispute(id),
     onSuccess: () => {
       toast.success("Time entry disputed");
       refetchPendingTime();
@@ -787,6 +784,7 @@ function LogTimeDialog({
   const orgId = activeOrg?.id;
   const cdConvex = useConvex();
   const { isAuthenticated: cdAuthed } = useConvexAuth();
+  const timeWrites = useCrewTimeWrites();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
@@ -858,7 +856,7 @@ function LogTimeDialog({
       // One batch call for all selected crew — the server validates each crew
       // member individually and returns per-crew errors, preserving the old
       // loop's partial-success behaviour.
-      const res = await createTimeEntries(data, selectedCrewIds);
+      const res = await timeWrites.createMany(data, selectedCrewIds);
       const successCount = res.created.length;
       if (successCount > 0) {
         toast.success(`${successCount} time ${successCount === 1 ? "entry" : "entries"} added`);

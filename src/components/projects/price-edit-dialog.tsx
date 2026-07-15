@@ -21,7 +21,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { updateGroupPrice } from "@/server/project-groups";
+import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
 import { updateSubHireGroup } from "@/server/sub-hires";
 import {
   Dialog,
@@ -96,9 +96,11 @@ function PriceEditDialogBody({
     target.kind === "subHire" && target.cost != null ? String(target.cost) : "",
   );
 
+  const groupWrites = useProjectGroupWrites();
+
   const projectMut = useServerMutation({
     mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
-      updateGroupPrice(groupId, price),
+      groupWrites.updatePrice(groupId, price),
     onSuccess: () => {
       onInvalidate();
       toast.success("Group price updated");

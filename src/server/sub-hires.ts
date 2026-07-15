@@ -1017,7 +1017,7 @@ async function generateSubHireLineItems(
 
   // Recalculate suggestedPrice on any project groups that received items
   if (affectedProjectGroupIds.size > 0) {
-    const { calculateSuggestedPrice } = await import("@/server/project-groups");
+    const { calculateSuggestedPrice } = await import("@/lib/project-groups-pricing");
     // NOTE: calculateSuggestedPrice is pure (computes + returns, no persist), so
     // this loop's result was already discarded — kept as-is behaviourally, just
     // run the (independent) recalcs concurrently instead of sequentially.
@@ -1120,7 +1120,7 @@ async function syncNewSubHireLineItem(
 
   // Recalculate affected project group's suggestedPrice
   if (placementGroupId) {
-    const { calculateSuggestedPrice } = await import("@/server/project-groups");
+    const { calculateSuggestedPrice } = await import("@/lib/project-groups-pricing");
     await calculateSuggestedPrice(placementGroupId);
   }
 

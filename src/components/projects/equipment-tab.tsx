@@ -15,6 +15,7 @@ import {
   refreshUncategorizedProjectGroups,
 } from "@/hooks/use-project-equipment";
 import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
+import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import {
   NATIVE_LINEITEM_OPTIMISTIC,
@@ -33,15 +34,6 @@ import { toast } from "sonner";
 import { useProjectServices } from "@/hooks/use-project-services";
 import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
-import {
-  createProjectGroup,
-  updateProjectGroup,
-  deleteProjectGroup,
-  reorderProjectGroups,
-  moveLineItemToGroup,
-  moveLineItemsToGroup,
-  updateGroupPrice,
-} from "@/server/project-groups";
 import {
   getUncategorizedSubHireGroups,
   getUncategorizedProjectGroups,
@@ -449,6 +441,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
   const categoryWrites = useProjectCategoryWrites();
 
+  // Browser-direct project-group writes (create / update / price / delete / reorder /
+  // move) — guarded api.projectGroupsWrites.* mutations; each folds the suggested-price
+  // recompute + in-mutation recalcProjectTotals + audit into one transaction.
+  const groupWrites = useProjectGroupWrites();
+
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
   // rolled back on error (row reappears) and pruned once the refetch confirms the
@@ -491,7 +488,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       lineItemId: string;
       targetGroupId: string | null;
       targetCategoryId: string | null;
-    }) => moveLineItemToGroup({ lineItemId, targetGroupId, targetCategoryId }),
+    }) => groupWrites.moveLineItem({ lineItemId, targetGroupId, targetCategoryId }),
     onSuccess: () => {
       invalidate();
       // Close whichever dialog drove this mutation. Cheap to call
@@ -587,7 +584,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       ids: string[];
       targetGroupId: string | null;
       targetCategoryId: string | null;
-    }) => moveLineItemsToGroup({ lineItemIds: ids, targetGroupId, targetCategoryId }),
+    }) => groupWrites.moveLineItems({ lineItemIds: ids, targetGroupId, targetCategoryId }),
     onSuccess: (r: { moved: number; skipped: number }) => {
       invalidate();
       selection.clearSelection();
@@ -624,7 +621,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // group structurally. The template can be applied via a follow-up
         // move + recalculate if they later want to materialise its items.
         if (!categoryId) {
-          await createProjectGroup(projectId, { categoryId: null, title, quantity: 1 });
+          await groupWrites.create(projectId, null, title);
           return;
         }
         const tpl = templates.find((t) => t.id === templateId);
@@ -641,7 +638,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         });
         return;
       }
-      await createProjectGroup(projectId, { categoryId, title, quantity: 1 });
+      await groupWrites.create(projectId, categoryId, title);
     },
     onSuccess: () => {
       invalidate();
@@ -652,7 +649,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
 
   const deleteGroupMut = useServerMutation({
-    mutationFn: (groupId: string) => deleteProjectGroup(groupId),
+    mutationFn: (groupId: string) => groupWrites.remove(groupId),
     onSuccess: () => {
       invalidate();
       setDeleteGroupId(null);
@@ -664,7 +661,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   const updateGroupMut = useServerMutation({
     mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number }> }) =>
-      updateProjectGroup(groupId, data),
+      groupWrites.update(groupId, data),
     onSuccess: () => {
       invalidate();
       setEditGroupData(null);
@@ -711,8 +708,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
     const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
     if (!hasAnySubHire) {
-      reorderProjectGroups(
-        cat.id,
+      groupWrites.reorder(
         reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
       ).catch(() => toast.error("Failed to reorder groups"));
     } else {
@@ -1869,7 +1865,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         onSubmit={(groupId, values, price) => {
           updateGroupMut.mutate({ groupId, data: values });
           if (price !== undefined) {
-            updateGroupPrice(groupId, price)
+            groupWrites.updatePrice(groupId, price)
               .then(() => invalidate())
               .catch((e: Error) => toast.error(e.message));
           }

@@ -58,7 +58,7 @@ site-admin, settings (member/org half; peek/reserve exports re-homeable), sso, a
 
 ### Wave 4 — crew (member CRUD done; author the rest)
 - `crew.ts` (delete cascade into deleteNative; author updateCrewMemberImage; linkCrewMemberToUser stays partly server — Better Auth member verify)
-- `crew-assignments.ts` (author rate cascade + CONFIRMED stamp + shift-generation mutations), ~~`crew-availability.ts`~~ **DONE (#529)** — memberAvailability/conflicts/plannerData reads + add/remove writes, `crew-time.ts` (calculateTotalHours + EXPORTED-lock + status machines; bulk submit/approve near-done; keep exportTimesheetCSV), `crew-dashboard.ts` (pure reads)
+- `crew-assignments.ts` (author rate cascade + CONFIRMED stamp + shift-generation mutations), ~~`crew-availability.ts`~~ **DONE (#529)** — memberAvailability/conflicts/plannerData reads + add/remove writes, `crew-time.ts` (calculateTotalHours + EXPORTED-lock + status machines; bulk submit/approve near-done; keep exportTimesheetCSV), ~~`crew-dashboard.ts`~~ **DONE (#531)** — 6 composite reads → convex/crewDashboard.ts
 
 ### Wave 5 — project keystone + money (LAST, hardest)
 - Foundation: native `recalculateProjectTotals` (keystone #1) FIRST

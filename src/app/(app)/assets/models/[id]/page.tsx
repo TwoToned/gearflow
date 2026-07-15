@@ -14,12 +14,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getModel, archiveModel } from "@/server/models";
 import { archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
 import { forceReturnAsset } from "@/server/warehouse";
-import {
-  addModelMedia,
-  removeModelMedia,
-  setModelPrimaryPhoto,
-  reorderModelMedia,
-} from "@/server/model-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -83,6 +78,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     queryKey: ["model", orgId, id],
     queryFn: () => getModel(id),
   });
+  const media = useMediaWrites("model");
 
   const archiveMutation = useServerMutation({
     mutationFn: () => archiveModel(id),
@@ -662,20 +658,16 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       existingMedia={photos}
                       onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
-                        await addModelMedia({
-                          modelId: id,
-                          fileId: fileUpload.id,
-                          type: "PHOTO",
-                        });
+                        await media.add({ parentId: id, fileId: fileUpload.id, type: "PHOTO" });
                       }}
                       onRemove={async (mediaId) => {
-                        await removeModelMedia(mediaId);
+                        await media.remove(mediaId);
                       }}
                       onSetPrimary={async (mediaId) => {
-                        await setModelPrimaryPhoto(id, mediaId);
+                        await media.setPrimary(id, mediaId);
                       }}
                       onReorder={async (orderedIds) => {
-                        await reorderModelMedia(id, orderedIds);
+                        await media.reorder(orderedIds);
                       }}
                     />
                 </div>
@@ -691,14 +683,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       existingMedia={documents}
                       onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
-                        await addModelMedia({
-                          modelId: id,
-                          fileId: fileUpload.id,
-                          type: "MANUAL",
-                        });
+                        await media.add({ parentId: id, fileId: fileUpload.id, type: "MANUAL" });
                       }}
                       onRemove={async (mediaId) => {
-                        await removeModelMedia(mediaId);
+                        await media.remove(mediaId);
                       }}
                     />
                 </div>

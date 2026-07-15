@@ -24,11 +24,7 @@ import {
   getAvailableBulkAssetsForKit,
 } from "@/server/kits";
 import { forceReturnKit } from "@/server/warehouse";
-import {
-  addKitMedia,
-  removeKitMedia,
-  setKitPrimaryPhoto,
-} from "@/server/kit-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PersonAvatar } from "@/components/ui/avatar";
@@ -117,6 +113,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // post-mutation refetch calls are redundant — `refetchKit` is kept as a no-op
   // (belt-and-braces) to avoid touching every call site.
   const native = useNativeKit(id, orgId);
+  const media = useMediaWrites("kit");
   const optimisticKitNotes = useOptimisticKitNotes(id, orgId);
   // The native reconstruction is a thin DTO of the same getKit shape (the page reads
   // only the fields it produces); cast to the server type so the page's typed field
@@ -758,17 +755,13 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               existingMedia={kitPhotos}
               onChanged={() => refetchKit()}
               onUploadComplete={async (fileUpload) => {
-                await addKitMedia({
-                  kitId: id,
-                  fileId: fileUpload.id,
-                  type: "PHOTO",
-                });
+                await media.add({ parentId: id, fileId: fileUpload.id, type: "PHOTO" });
               }}
               onRemove={async (mediaId) => {
-                await removeKitMedia(mediaId);
+                await media.remove(mediaId);
               }}
               onSetPrimary={async (mediaId) => {
-                await setKitPrimaryPhoto(id, mediaId);
+                await media.setPrimary(id, mediaId);
               }}
             />
           </div>

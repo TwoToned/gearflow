@@ -33,11 +33,7 @@ import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { forceReturnAsset } from "@/server/warehouse";
 import { getBulkAsset, archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
-import {
-  addAssetMedia,
-  removeAssetMedia,
-  setAssetPrimaryPhoto,
-} from "@/server/asset-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -116,6 +112,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // subscription, so the historic post-mutation refetch calls are redundant —
   // `refetchAsset` is kept as a no-op (belt-and-braces) to avoid touching call sites.
   const native = useNativeAsset(isBulk ? undefined : id, orgId);
+  const media = useMediaWrites("asset");
   // Phase 5d — optimistic native notes write (flag-gated, default off).
   const optimisticNotes = useOptimisticAssetNotes(id, orgId);
   // Thin DTO of the getAsset shape (the page reads only produced fields); cast to the
@@ -630,17 +627,13 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     existingMedia={assetPhotos}
                     onChanged={() => refetchAsset()}
                     onUploadComplete={async (fileUpload) => {
-                      await addAssetMedia({
-                        assetId: id,
-                        fileId: fileUpload.id,
-                        type: "PHOTO",
-                      });
+                      await media.add({ parentId: id, fileId: fileUpload.id, type: "PHOTO" });
                     }}
                     onRemove={async (mediaId) => {
-                      await removeAssetMedia(mediaId);
+                      await media.remove(mediaId);
                     }}
                     onSetPrimary={async (mediaId) => {
-                      await setAssetPrimaryPhoto(id, mediaId);
+                      await media.setPrimary(id, mediaId);
                     }}
                   />
                 </div>

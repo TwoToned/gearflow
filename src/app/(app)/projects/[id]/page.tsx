@@ -71,14 +71,13 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { addProjectMedia, removeProjectMedia } from "@/server/project-media";
+import { useMediaWrites } from "@/hooks/use-media-writes";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
-import type { ProjectMediaType } from "@/generated/prisma/client";
 import { FadeIn } from "@/components/ui/motion";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
@@ -154,6 +153,7 @@ export default function ProjectDetailPage({
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
+  const media = useMediaWrites("project");
 
   // Phase 3 browser-direct: optimistic project-notes save (flag-gated, default OFF →
   // falls back to the updateProjectNotes server action). Consequence: notes are safe
@@ -639,14 +639,10 @@ export default function ProjectDetailPage({
                         refreshProjectDetail(id)
                       }
                       onUploadComplete={async (fileUpload) => {
-                        await addProjectMedia({
-                          projectId: id,
-                          fileId: fileUpload.id,
-                          type: "OTHER" as ProjectMediaType,
-                        });
+                        await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
                       }}
                       onRemove={async (mediaId) => {
-                        await removeProjectMedia(mediaId);
+                        await media.remove(mediaId);
                       }}
                     />
                   </div>

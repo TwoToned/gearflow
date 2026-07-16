@@ -157,11 +157,11 @@ export default function AdminOrgDetailPage({
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const members: any[] = org?.members ?? [];
+  // Domain counts (assets/projects/kits) are Convex-native now; only the KEPT
+  // auth relations remain countable via Prisma.
   const counts = org?._count ?? {
-    assets: 0,
-    bulkAssets: 0,
-    projects: 0,
-    kits: 0,
+    members: 0,
+    invitations: 0,
   };
 
   return (
@@ -206,13 +206,13 @@ export default function AdminOrgDetailPage({
 
         {/* Stats */}
         {org && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg bg-bg-surface p-4 surface-ring">
               <div className="flex items-center gap-3">
                 <Package className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="t-title t-data">{counts.assets}</p>
-                  <p className="text-xs text-fg-3">Assets</p>
+                  <p className="t-title t-data">{counts.members}</p>
+                  <p className="text-xs text-fg-3">Members</p>
                 </div>
               </div>
             </div>
@@ -220,26 +220,8 @@ export default function AdminOrgDetailPage({
               <div className="flex items-center gap-3">
                 <Boxes className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="t-title t-data">{counts.bulkAssets}</p>
-                  <p className="text-xs text-fg-3">Bulk Assets</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-              <div className="flex items-center gap-3">
-                <FolderKanban className="h-5 w-5 text-fg-3" />
-                <div>
-                  <p className="t-title t-data">{counts.projects}</p>
-                  <p className="text-xs text-fg-3">Projects</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-              <div className="flex items-center gap-3">
-                <BoxIcon className="h-5 w-5 text-fg-3" />
-                <div>
-                  <p className="t-title t-data">{counts.kits}</p>
-                  <p className="text-xs text-fg-3">Kits</p>
+                  <p className="t-title t-data">{counts.invitations}</p>
+                  <p className="text-xs text-fg-3">Invitations</p>
                 </div>
               </div>
             </div>

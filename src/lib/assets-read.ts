@@ -1,8 +1,60 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import type { Asset, BulkAsset } from "@/generated/prisma/client";
 import { Prisma } from "@/generated/prisma/client";
+
+// The Asset/BulkAsset Prisma models are dropped (domain data is Convex-native).
+// These local interfaces preserve the exact Prisma scalar-row shape the mapping
+// helpers below emit and the filter helpers consume, so downstream behaviour is
+// unchanged.
+interface Asset {
+  id: string;
+  organizationId: string;
+  modelId: string;
+  assetTag: string;
+  serialNumber: string | null;
+  customName: string | null;
+  status: string;
+  condition: string;
+  purchaseDate: Date | null;
+  purchasePrice: Prisma.Decimal | null;
+  purchaseSupplier: string | null;
+  supplierId: string | null;
+  purchaseOrderNumber: string | null;
+  supplierOrderId: string | null;
+  warrantyExpiry: Date | null;
+  notes: string | null;
+  locationId: string | null;
+  customFieldValues: Prisma.JsonValue | null;
+  lastTestAndTagDate: Date | null;
+  nextTestAndTagDate: Date | null;
+  barcode: string | null;
+  qrCode: string | null;
+  images: string[];
+  tags: string[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  kitId: string | null;
+  parentAssetId: string | null;
+}
+
+interface BulkAsset {
+  id: string;
+  organizationId: string;
+  modelId: string;
+  assetTag: string;
+  totalQuantity: number;
+  availableQuantity: number;
+  purchasePricePerUnit: Prisma.Decimal | null;
+  locationId: string | null;
+  status: string;
+  notes: string | null;
+  tags: string[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 /**
  * Server-side read helpers for the Asset + BulkAsset domains (Phase 3 cutover).

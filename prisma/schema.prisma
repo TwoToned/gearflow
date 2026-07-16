@@ -29,26 +29,10 @@ model User {
   members  Member[]
 
   // App relations
-  reportedMaintenance       MaintenanceRecord[]         @relation("ReportedBy")
-  assignedMaintenance       MaintenanceRecord[]         @relation("AssignedTo")
-  managedProjects           Project[]                   @relation("ProjectManager")
-  scanLogs                  AssetScanLog[]
-  checkedOutLineItems       ProjectLineItem[]           @relation("CheckedOutBy")
-  returnedLineItems         ProjectLineItem[]           @relation("ReturnedBy")
-  addedKitSerializedItems   KitSerializedItem[]         @relation("KitSerializedItemAddedBy")
-  addedKitBulkItems         KitBulkItem[]               @relation("KitBulkItemAddedBy")
-  addedAssetBulkChildren    AssetBulkChild[]            @relation("AssetBulkChildAddedBy")
-  addedModelBulkAccessories ModelBulkAccessory[]        @relation("ModelBulkAccessoryAddedBy")
-  uploads                   FileUpload[]
-  testTagRecords            TestTagRecord[]
   twoFactors                TwoFactor[]
   backupCodes               BackupCode[]
   activityLogs              ActivityLog[]
   passkeys                  Passkey[]
-  supplierOrders            SupplierOrder[]
-  crewMembers               CrewMember[]
-  confirmedAssignments      CrewAssignment[]            @relation("ConfirmedBy")
-  approvedTimeEntries       CrewTimeEntry[]             @relation("TimeEntryApprovedBy")
   ssoProviders              SsoProvider[]
   pendingSSOApprovals       PendingSSOApproval[]
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
@@ -56,17 +40,7 @@ model User {
   testTagAuditorTokens      TestTagAuditorToken[]
   apiKeysActingAs           ApiKey[]                    @relation("ApiKeyActingUser")
   createdApiKeys            ApiKey[]                    @relation("ApiKeyCreatedBy")
-  checkItems                CheckItem[]
-  checkRecords              CheckRecord[]               @relation("CheckRecordPerformedBy")
-  warehouseCloses           WarehouseClose[]            @relation("WarehouseClosedBy")
-  projectManagerAssignments ProjectManager[]            @relation("ProjectManagerAssignment")
-  subHires                  SubHire[]
-  notificationDismissals    NotificationDismissal[]
-  notificationPreference    UserNotificationPreference?
   notificationEmailLogs     NotificationEmailLog[]
-  assignedProjectTasks      ProjectTask[]               @relation("ProjectTaskAssignee")
-  createdProjectTasks       ProjectTask[]               @relation("ProjectTaskCreatedBy")
-  savedTableViews           SavedTableView[]
 
   @@map("user")
 }
@@ -150,48 +124,9 @@ model Organization {
   invitations Invitation[]
 
   // App relations
-  categories               Category[]
-  models                   Model[]
-  assets                   Asset[]
-  bulkAssets               BulkAsset[]
-  locations                Location[]
-  maintenanceRecords       MaintenanceRecord[]
-  clients                  Client[]
-  projects                 Project[]
-  projectLineItems         ProjectLineItem[]
-  projectLineItemUnits     ProjectLineItemUnit[]
   lineItemMergeMaps        LineItemMergeMap[]
-  scanLogs                 AssetScanLog[]
-  suppliers                Supplier[]
-  supplierOrders           SupplierOrder[]
-  kits                     Kit[]
-  kitSerializedItems       KitSerializedItem[]
-  kitBulkItems             KitBulkItem[]
-  kitRevenueAllocations    KitRevenueAllocation[]
-  projectModelRevenues     ProjectModelRevenue[]
-  assetBulkChildren        AssetBulkChild[]
-  modelBulkAccessories     ModelBulkAccessory[]
-  fileUploads              FileUpload[]
-  modelMedia               ModelMedia[]
-  assetMedia               AssetMedia[]
-  kitMedia                 KitMedia[]
-  projectMedia             ProjectMedia[]
-  clientMedia              ClientMedia[]
-  locationMedia            LocationMedia[]
-  subHireMedia             SubHireMedia[]
-  testProfiles             TestProfile[]
-  testTagAssets            TestTagAsset[]
-  testTagRecords           TestTagRecord[]
   activityLogs             ActivityLog[]
-  crewMembers              CrewMember[]
-  crewRoles                CrewRole[]
-  crewSkills               CrewSkill[]
-  crewAssignments          CrewAssignment[]
-  crewTimeEntries          CrewTimeEntry[]
-  projectServices          ProjectService[]
-  serviceTemplates         ServiceTemplate[]
   documentTemplates        DocumentTemplate[]
-  brandTemplates           BrandTemplate[]
   sectionPresets           SectionPreset[]
   ssoProviders             SsoProvider[]
   pendingSSOApprovals      PendingSSOApproval[]
@@ -200,25 +135,7 @@ model Organization {
   apiKeys                  ApiKey[]
   webhooks                 Webhook[]
   wooCommerceIntegration   WooCommerceIntegration?
-  wooCommerceOrderLogs     WooCommerceOrderLog[]
-  checkItems               CheckItem[]
-  modelCheckItems          ModelCheckItem[]
-  kitCheckItems            KitCheckItem[]
-  checkRecords             CheckRecord[]
-  warehouseCloses          WarehouseClose[]
-  projectCategories        ProjectCategory[]
-  projectGroups            ProjectGroup[]
-  groupTemplates           GroupTemplate[]
-  groupTemplateItems       GroupTemplateItem[]
-  projectManagers          ProjectManager[]
-  subHires                 SubHire[]
-  supplierModelRates       SupplierModelRate[]
-  notificationDismissals   NotificationDismissal[]
   notificationEmailLogs    NotificationEmailLog[]
-  customFieldDefinitions   CustomFieldDefinition[]
-  projectNumberSequences   ProjectNumberSequence[]
-  projectTasks             ProjectTask[]
-  savedTableViews          SavedTableView[]
 
   @@map("organization")
 }
@@ -637,483 +554,19 @@ enum ProjectMediaType {
 
 // ─── Category ────────────────────────────────────────────────────────────────
 
-model Category {
-  id                 String       @id @default(cuid())
-  organizationId     String
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name               String
-  parentId           String? // self-reference to a Convex categories doc; FK dropped Phase B (tree rebuilt client-side in categories-read)
-  description        String?
-  icon               String?
-  sortOrder          Int          @default(0)
-  tags               String[]     @default([])
-  suggestedCrewRoles String[]     @default([])
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-
-  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
-  // categories are now CONVEX-ONLY (no Prisma `category` row is written), so the
-  // inbound FK constraints from model.categoryId, kit.categoryId, and the self-ref
-  // category.parentId were dropped (migration 20260617131300_drop_category_fk_constraints).
-  // Dependent rows keep a plain `categoryId`/`parentId` referencing the Convex doc.
-
-  @@index([organizationId])
-  @@index([parentId])
-  @@map("category")
-}
-
 // ─── Model (Equipment Template) ──────────────────────────────────────────────
-
-model Model {
-  id                      String          @id @default(cuid())
-  organizationId          String
-  organization            Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name                    String
-  manufacturer            String?
-  modelNumber             String?
-  sku                     String?
-  categoryId              String? // references a Convex categories doc; FK dropped Phase B
-  description             String?
-  image                   String?
-  images                  String[]        @default([])
-  manuals                 String[]        @default([])
-  specifications          Json? // key-value pairs
-  customFields            Json? // org-defined fields inherited by assets
-  defaultRentalPrice      Decimal?        @db.Decimal(10, 2)
-  dailyRate               Decimal?        @db.Decimal(10, 2)
-  weeklyRate              Decimal?        @db.Decimal(10, 2)
-  monthlyRate             Decimal?        @db.Decimal(10, 2)
-  defaultPurchasePrice    Decimal?        @db.Decimal(10, 2)
-  replacementCost         Decimal?        @db.Decimal(10, 2)
-  weight                  Decimal?        @db.Decimal(8, 2)
-  powerDraw               Int?
-  requiresTestAndTag      Boolean         @default(false)
-  testAndTagIntervalDays  Int?
-  defaultEquipmentClass   EquipmentClass?
-  defaultApplianceType    ApplianceType?
-  defaultTestProfileId    String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
-  maintenanceIntervalDays Int?
-  assetType               AssetType       @default(SERIALIZED)
-  barcodeLabelTemplate    String?
-  tags                    String[]        @default([])
-  isActive                Boolean         @default(true)
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
-
-  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
-  // models are now CONVEX-ONLY (no Prisma `model` row is written), so the inbound
-  // FK constraints from asset / bulk_asset / project_line_item / model_media /
-  // model_check_item / group_template_item / model_bulk_accessory /
-  // supplier_order_item / sub_hire_item / supplier_model_rate were dropped (see
-  // migration 20260617131200_drop_model_fk_constraints). The dependent rows keep a
-  // plain `modelId` referencing the Convex `models` doc.
-
-  @@unique([organizationId, sku])
-  @@index([organizationId])
-  @@index([categoryId])
-  @@index([isActive])
-  @@map("model")
-}
 
 // ─── Supplier ───────────────────────────────────────────────────────────────
 
-model Supplier {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name            String
-  contactName     String?
-  email           String?
-  phone           String?
-  website         String?
-  address         String?
-  latitude        Float?
-  longitude       Float?
-  notes           String?
-  accountNumber   String?
-  paymentTerms    String?
-  defaultLeadTime String?
-  tags            String[]     @default([])
-  isActive        Boolean      @default(true)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
-  // suppliers are now CONVEX-ONLY (no Prisma `supplier` row is written), so the
-  // inbound FK constraints from asset / project_line_item / supplier_order /
-  // sub_hire / supplier_model_rate were dropped (see migration
-  // 20260617131100_drop_supplier_fk_constraints). The dependent rows keep a plain
-  // `supplierId String?` referencing the Convex `suppliers` doc.
-
-  @@unique([organizationId, name])
-  @@index([organizationId])
-  @@map("supplier")
-}
-
 // ─── Supplier Orders ────────────────────────────────────────────────────────
-
-model SupplierOrder {
-  id             String              @id @default(cuid())
-  organizationId String
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
-  orderNumber    String
-  type           SupplierOrderType
-  status         SupplierOrderStatus @default(DRAFT)
-  orderDate      DateTime?
-  expectedDate   DateTime?
-  receivedDate   DateTime?
-  subtotal       Decimal?            @db.Decimal(10, 2)
-  taxAmount      Decimal?            @db.Decimal(10, 2)
-  total          Decimal?            @db.Decimal(10, 2)
-  projectId      String?
-  project        Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  notes          String?
-  createdById    String?
-  createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  items          SupplierOrderItem[]
-  assets         Asset[]
-  lineItems      ProjectLineItem[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-
-  @@index([organizationId])
-  @@index([organizationId, supplierId])
-  @@index([organizationId, orderNumber])
-  @@map("supplier_order")
-}
-
-model SupplierOrderItem {
-  id          String        @id @default(cuid())
-  orderId     String
-  order       SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  description String
-  quantity    Int           @default(1)
-  unitPrice   Decimal?      @db.Decimal(10, 2)
-  lineTotal   Decimal?      @db.Decimal(10, 2)
-  modelId     String? // references a Convex models doc; FK dropped Phase B
-  assetId     String?
-  asset       Asset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  notes       String?
-  sortOrder   Int           @default(0)
-
-  @@index([orderId])
-  @@map("supplier_order_item")
-}
 
 // ─── Sub-Hire (Renting gear from third-party suppliers) ─────────────────────
 
-model SubHire {
-  id                      String               @id @default(cuid())
-  organizationId          String
-  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId              String // references a Convex suppliers doc; FK dropped Phase B
-  projectId               String?
-  project                 Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  createdById             String
-  createdBy               User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  orderNumber             String
-  supplierReference       String? // Supplier's invoice/order/PO number
-  status                  SubHireStatus        @default(DRAFT)
-  hireStart               DateTime?
-  hireEnd                 DateTime?
-  totalCost               Decimal              @default(0) @db.Decimal(10, 2)
-  totalCharge             Decimal              @default(0) @db.Decimal(10, 2)
-  pricingMode             SubHirePricingMode   @default(ITEMIZED)
-  orderTotalCost          Decimal?             @db.Decimal(10, 2)
-  orderTotalCharge        Decimal?             @db.Decimal(10, 2)
-  showOnDocs              Boolean              @default(false) // Default for new items
-  paymentStatus           SubHirePaymentStatus @default(UNPAID)
-  notes                   String?
-  // Default placement for items that don't override
-  defaultTargetCategoryId String?
-  defaultTargetCategory   ProjectCategory?     @relation(fields: [defaultTargetCategoryId], references: [id], onDelete: SetNull)
-  defaultTargetGroupId    String?
-  defaultTargetGroup      ProjectGroup?        @relation("SubHireDefaultTargetGroup", fields: [defaultTargetGroupId], references: [id], onDelete: SetNull)
-  groups                  SubHireGroup[]
-  items                   SubHireItem[]
-  lineItems               ProjectLineItem[]
-  media                   SubHireMedia[]
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-
-  @@unique([organizationId, orderNumber])
-  @@index([organizationId])
-  @@index([organizationId, supplierId])
-  @@index([organizationId, status])
-  @@index([organizationId, projectId])
-  @@map("sub_hire")
-}
-
-model SubHireItem {
-  id               String            @id @default(cuid())
-  subHireId        String
-  subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
-  groupId          String?
-  group            SubHireGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  modelId          String? // references a Convex models doc; FK dropped Phase B
-  description      String
-  quantity         Int               @default(1)
-  unitCost         Decimal           @default(0) @db.Decimal(10, 2)
-  unitCharge       Decimal           @default(0) @db.Decimal(10, 2)
-  pricingType      PricingType       @default(FLAT)
-  duration         Int               @default(1)
-  discount         Decimal           @default(0) @db.Decimal(5, 2)
-  showOnQuote      Boolean           @default(true) // Whether item appears on client quote/invoice
-  showOnDocs       Boolean           @default(false) // Whether to show "sub-hired" label on client docs
-  sortOrder        Int               @default(0)
-  // Placement on project (ungrouped items only; grouped items use their group's target)
-  targetCategoryId String?
-  targetCategory   ProjectCategory?  @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
-  targetGroupId    String?
-  targetGroup      ProjectGroup?     @relation("SubHireItemTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
-  lineItems        ProjectLineItem[]
-
-  @@index([subHireId])
-  @@index([groupId])
-  @@index([modelId])
-  @@map("sub_hire_item")
-}
-
-model SubHireGroup {
-  id               String            @id @default(cuid())
-  subHireId        String
-  subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
-  title            String
-  sortOrder        Int               @default(0)
-  // Pricing — cost (supplier) and charge (client), both optional overrides
-  quantity         Int               @default(1)
-  cost             Decimal?          @db.Decimal(12, 2)
-  charge           Decimal?          @db.Decimal(12, 2)
-  discount         Decimal           @default(0) @db.Decimal(5, 2) // % off the group charge (client side), like SubHireItem.discount
-  showOnQuote      Boolean           @default(true) // Whether group items appear on client quote/invoice
-  showOnDocs       Boolean           @default(false) // Whether to show "sub-hired" label on client docs
-  // Placement on project (where the group's parent line item lands)
-  targetCategoryId String?
-  targetCategory   ProjectCategory?  @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
-  targetGroupId    String?
-  targetGroup      ProjectGroup?     @relation("SubHireGroupTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
-  items            SubHireItem[]
-  lineItems        ProjectLineItem[]
-  // Cross-type category ordering. Optional — sub-hire groups can live
-  // uncategorised (no slot row). When categorised, the slot owns sortOrder
-  // across the mixed ProjectGroup + SubHireGroup list in that category.
-  slot             CategorySlot?
-
-  @@index([subHireId])
-  @@map("sub_hire_group")
-}
-
-model SupplierModelRate {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
-  modelId        String // references a Convex models doc; FK dropped Phase B
-  lastUnitCost   Decimal      @db.Decimal(10, 2)
-  pricingType    PricingType  @default(FLAT)
-  lastUsedAt     DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@unique([organizationId, supplierId, modelId])
-  @@index([organizationId, supplierId])
-  @@index([organizationId, modelId])
-  @@map("supplier_model_rate")
-}
-
 // ─── Kit (Physical Container) ────────────────────────────────────────────────
-
-model Kit {
-  id                String         @id @default(cuid())
-  organizationId    String
-  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assetTag          String
-  name              String
-  description       String?
-  categoryId        String? // references a Convex categories doc; FK dropped Phase B
-  status            KitStatus      @default(AVAILABLE)
-  condition         AssetCondition @default(NEW)
-  locationId        String? // references a Convex locations doc; FK dropped Phase B
-  weight            Decimal?       @db.Decimal(8, 2)
-  caseType          String?
-  caseDimensions    String?
-  image             String?
-  images            String[]       @default([])
-  barcode           String?
-  qrCode            String?
-  notes             String?
-  purchaseDate      DateTime?
-  purchasePrice     Decimal?       @db.Decimal(10, 2)
-  customFieldValues Json?
-  tags              String[]       @default([])
-  checkMode         KitCheckMode   @default(KIT_LEVEL)
-  isPrep            Boolean        @default(false)
-  isActive          Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  serializedItems    KitSerializedItem[]
-  bulkItems          KitBulkItem[]
-  assets             Asset[]
-  lineItems          ProjectLineItem[]
-  scanLogs           AssetScanLog[]
-  maintenanceRecords MaintenanceRecord[]
-  media              KitMedia[]
-  kitCheckItems      KitCheckItem[]
-  checkRecords       CheckRecord[]
-
-  @@unique([organizationId, assetTag])
-  @@index([organizationId])
-  @@index([status])
-  @@index([categoryId])
-  @@index([locationId])
-  @@index([isActive])
-  @@map("kit")
-}
-
-model KitSerializedItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId          String
-  kit            Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  assetId        String       @unique
-  asset          Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  position       String?
-  sortOrder      Int          @default(0)
-  addedAt        DateTime     @default(now())
-  addedById      String
-  addedBy        User         @relation("KitSerializedItemAddedBy", fields: [addedById], references: [id])
-  notes          String?
-
-  @@unique([organizationId, assetId])
-  @@index([kitId])
-  @@map("kit_serialized_item")
-}
-
-model KitBulkItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId          String
-  kit            Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  bulkAssetId    String
-  bulkAsset      BulkAsset    @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
-  quantity       Int
-  position       String?
-  sortOrder      Int          @default(0)
-  addedAt        DateTime     @default(now())
-  addedById      String
-  addedBy        User         @relation("KitBulkItemAddedBy", fields: [addedById], references: [id])
-  notes          String?
-
-  @@index([kitId])
-  @@index([bulkAssetId])
-  @@map("kit_bulk_item")
-}
 
 // ─── Serialized Asset ────────────────────────────────────────────────────────
 
-model Asset {
-  id                  String         @id @default(cuid())
-  organizationId      String
-  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId             String // references a Convex models doc; FK dropped Phase B
-  assetTag            String
-  serialNumber        String?
-  customName          String?
-  status              AssetStatus    @default(AVAILABLE)
-  condition           AssetCondition @default(NEW)
-  purchaseDate        DateTime?
-  purchasePrice       Decimal?       @db.Decimal(10, 2)
-  purchaseSupplier    String?
-  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
-  purchaseOrderNumber String?
-  supplierOrderId     String?
-  supplierOrder       SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
-  warrantyExpiry      DateTime?
-  notes               String?
-  locationId          String? // references a Convex locations doc; FK dropped Phase B
-  customFieldValues   Json?
-  lastTestAndTagDate  DateTime?
-  nextTestAndTagDate  DateTime?
-  barcode             String?
-  qrCode              String?
-  images              String[]       @default([])
-  tags                String[]       @default([])
-  isActive            Boolean        @default(true)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-
-  kitId   String?
-  kit     Kit?               @relation(fields: [kitId], references: [id])
-  kitItem KitSerializedItem?
-
-  // Child assets / accessories — a serialised asset can be permanently
-  // attached to a parent serialised asset (e.g. an IEC cable on a mixer).
-  // parentAssetId is single-valued: a child has exactly one parent.
-  parentAssetId  String?
-  parentAsset    Asset?           @relation("AssetAccessories", fields: [parentAssetId], references: [id], onDelete: SetNull)
-  childAssets    Asset[]          @relation("AssetAccessories")
-  childBulkItems AssetBulkChild[]
-
-  maintenanceLinks   MaintenanceRecordAsset[]
-  lineItems          ProjectLineItem[]
-  lineItemUnits      ProjectLineItemUnit[]
-  scanLogs           AssetScanLog[]
-  media              AssetMedia[]
-  testTagAsset       TestTagAsset?
-  supplierOrderItems SupplierOrderItem[]
-  checkRecords       CheckRecord[]
-
-  @@unique([organizationId, assetTag])
-  @@index([organizationId])
-  @@index([status])
-  @@index([modelId])
-  @@index([locationId])
-  @@index([supplierId])
-  @@index([supplierOrderId])
-  @@index([kitId])
-  @@index([parentAssetId])
-  @@index([isActive])
-  @@map("asset")
-}
-
 // ─── Bulk Asset ──────────────────────────────────────────────────────────────
-
-model BulkAsset {
-  id                   String          @id @default(cuid())
-  organizationId       String
-  organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId              String // references a Convex models doc; FK dropped Phase B
-  assetTag             String
-  totalQuantity        Int             @default(0)
-  availableQuantity    Int             @default(0)
-  purchasePricePerUnit Decimal?        @db.Decimal(10, 2)
-  locationId           String? // references a Convex locations doc; FK dropped Phase B
-  status               BulkAssetStatus @default(ACTIVE)
-  notes                String?
-  tags                 String[]        @default([])
-  isActive             Boolean         @default(true)
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-
-  kitBulkItems       KitBulkItem[]
-  assetChildItems    AssetBulkChild[]
-  modelAccessoryUses ModelBulkAccessory[]
-  lineItems          ProjectLineItem[]
-  lineItemUnits      ProjectLineItemUnit[]
-  scanLogs           AssetScanLog[]
-  testTagAssets      TestTagAsset[]
-  checkRecords       CheckRecord[]
-
-  @@unique([organizationId, assetTag])
-  @@index([organizationId])
-  @@index([status])
-  @@index([modelId])
-  @@index([isActive])
-  @@map("bulk_asset")
-}
 
 /// How a bulk accessory is allocated against the shared pool.
 /// SHIPS_WITH: the parent "ships with" N of this bulk asset; the N are drawn
@@ -1128,28 +581,6 @@ enum AccessoryAllocationMode {
 
 /// A bulk asset attached as a permanent accessory to a parent serialised asset
 /// (e.g. "this light ships with 2 clamps"). Mirrors KitBulkItem.
-model AssetBulkChild {
-  id             String                  @id @default(cuid())
-  organizationId String
-  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  parentAssetId  String
-  parentAsset    Asset                   @relation(fields: [parentAssetId], references: [id], onDelete: Cascade)
-  bulkAssetId    String
-  bulkAsset      BulkAsset               @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
-  quantity       Int
-  allocationMode AccessoryAllocationMode @default(SHIPS_WITH)
-  sortOrder      Int                     @default(0)
-  notes          String?
-  addedAt        DateTime                @default(now())
-  addedById      String
-  addedBy        User                    @relation("AssetBulkChildAddedBy", fields: [addedById], references: [id])
-
-  @@index([organizationId])
-  @@index([parentAssetId])
-  @@index([bulkAssetId])
-  @@map("asset_bulk_child")
-}
-
 /// A bulk asset declared as a default accessory at the Model level —
 /// "every asset of this model ships with N of this bulk asset". When any
 /// asset of the model is added to a project, model-level bulk accessories
@@ -1158,345 +589,15 @@ model AssetBulkChild {
 /// always SHIPS_WITH (drawn from the live pool at prep) — DEDICATED only
 /// makes sense at the asset level (you can't permanently reserve N from the
 /// pool against every asset of a model — that'd drain the whole shelf).
-model ModelBulkAccessory {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String // references a Convex models doc; FK dropped Phase B
-  bulkAssetId    String
-  bulkAsset      BulkAsset    @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
-  quantity       Int
-  sortOrder      Int          @default(0)
-  notes          String?
-  addedAt        DateTime     @default(now())
-  addedById      String
-  addedBy        User         @relation("ModelBulkAccessoryAddedBy", fields: [addedById], references: [id])
-
-  @@unique([modelId, bulkAssetId])
-  @@index([organizationId])
-  @@index([modelId])
-  @@index([bulkAssetId])
-  @@map("model_bulk_accessory")
-}
-
 // ─── Location ────────────────────────────────────────────────────────────────
-
-model Location {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  address        String?
-  latitude       Float?
-  longitude      Float?
-  type           LocationType @default(WAREHOUSE)
-  isDefault      Boolean      @default(false)
-  parentId       String? // self-reference to a Convex locations doc; FK dropped Phase B (tree rebuilt client-side in locations-read)
-  notes          String?
-  tags           String[]     @default([])
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  // Inbound FK back-relations (assets/bulkAssets/kits/projects/media/
-  // warehouseDashboardTokens/children) were removed Phase B — those tables now
-  // hold a plain locationId/parentId string referencing the Convex locations doc.
-
-  @@index([organizationId])
-  @@index([parentId])
-  @@map("location")
-}
 
 // ─── Maintenance Record ──────────────────────────────────────────────────────
 
-model MaintenanceRecord {
-  id             String             @id @default(cuid())
-  organizationId String
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId          String?
-  kit            Kit?               @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  // Optional link to the project that incurred the maintenance need. Used by
-  // ProjectOperationalSummary to roll maintenance cost into project P&L
-  // (operational, not financial — Xero owns invoicing per P8). Nullable
-  // because preventive maintenance has no causal project.
-  projectId      String?
-  project        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  type           MaintenanceType
-  status         MaintenanceStatus  @default(SCHEDULED)
-  title          String
-  description    String?
-  reportedById   String?
-  reportedBy     User?              @relation("ReportedBy", fields: [reportedById], references: [id])
-  assignedToId   String?
-  assignedTo     User?              @relation("AssignedTo", fields: [assignedToId], references: [id])
-  scheduledDate  DateTime?
-  completedDate  DateTime?
-  cost           Decimal?           @db.Decimal(10, 2)
-  partsUsed      String?
-  attachments    String[]           @default([])
-  /**
-   * Before/after photos uploaded during repair — string URLs from
-   * /api/uploads. Workshop kanban cards render up to 4 thumbnails.
-   */
-  photos         String[]           @default([])
-  result         MaintenanceResult?
-  nextDueDate    DateTime?
-  tags           String[]           @default([])
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-
-  assets MaintenanceRecordAsset[]
-
-  @@index([organizationId])
-  @@index([status])
-  @@index([scheduledDate])
-  @@index([projectId])
-  @@map("maintenance_record")
-}
-
-model MaintenanceRecordAsset {
-  id                  String            @id @default(cuid())
-  maintenanceRecordId String
-  maintenanceRecord   MaintenanceRecord @relation(fields: [maintenanceRecordId], references: [id], onDelete: Cascade)
-  assetId             String
-  asset               Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
-
-  @@unique([maintenanceRecordId, assetId])
-  @@index([assetId])
-  @@map("maintenance_record_asset")
-}
-
 // ─── Client ──────────────────────────────────────────────────────────────────
-
-model Client {
-  id                String       @id @default(cuid())
-  organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name              String
-  type              ClientType   @default(COMPANY)
-  contactName       String?
-  contactEmail      String?
-  contactPhone      String?
-  billingAddress    String?
-  billingLatitude   Float?
-  billingLongitude  Float?
-  shippingAddress   String?
-  shippingLatitude  Float?
-  shippingLongitude Float?
-  taxId             String?
-  paymentTerms      String?
-  defaultDiscount   Decimal?     @db.Decimal(5, 2)
-  notes             String?
-  tags              String[]     @default([])
-  isActive          Boolean      @default(true)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-
-  // NOTE: Clients were HARD-CUTOVER to Convex (sole source of truth). This Prisma
-  // table is frozen/vestigial (read only by the one-time backfill). The former
-  // `projects` / `media` back-relations were removed so the live FKs into this
-  // frozen table don't reject net-new Convex-only clients. See FEATUREDOCS/54.
-
-  @@index([organizationId])
-  @@index([isActive])
-  @@map("client")
-}
 
 // ─── Project ─────────────────────────────────────────────────────────────────
 
-model Project {
-  id                    String        @id @default(cuid())
-  organizationId        String
-  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectNumber         String
-  name                  String
-  // clientId references a Convex `clients` doc (cuid). Clients were HARD-CUTOVER to
-  // Convex (sole source of truth), so this is a plain external id, NOT a Prisma FK —
-  // a net-new Convex-only client would otherwise FK-fail. See FEATUREDOCS/54.
-  clientId              String?
-  status                ProjectStatus @default(ENQUIRY)
-  type                  ProjectType   @default(OTHER)
-  description           String?
-  locationId            String? // references a Convex locations doc; FK dropped Phase B
-  siteContactName       String?
-  siteContactPhone      String?
-  siteContactEmail      String?
-  loadInDate            DateTime?
-  loadInTime            String?
-  eventStartDate        DateTime?
-  eventStartTime        String?
-  eventEndDate          DateTime?
-  eventEndTime          String?
-  loadOutDate           DateTime?
-  loadOutTime           String?
-  rentalStartDate       DateTime?
-  rentalEndDate         DateTime?
-  projectManagerId      String?
-  projectManager        User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
-  defaultRentalPeriod   RentalPeriod?
-  defaultRentalQuantity Int?
-  taxRate               Decimal?      @db.Decimal(5, 2)
-  equipmentRevenue      Decimal?      @db.Decimal(12, 2)
-  serviceCostTotal      Decimal?      @db.Decimal(12, 2)
-  labourCostTotal       Decimal?      @db.Decimal(12, 2)
-  subHireCostTotal      Decimal?      @db.Decimal(12, 2)
-  margin                Decimal?      @db.Decimal(12, 2)
-  crewNotes             String?
-  internalNotes         String?
-  clientNotes           String?
-  subtotal              Decimal?      @db.Decimal(12, 2)
-  discountPercent       Decimal?      @db.Decimal(5, 2)
-  discountAmount        Decimal?      @db.Decimal(12, 2)
-  taxAmount             Decimal?      @db.Decimal(12, 2)
-  total                 Decimal?      @db.Decimal(12, 2)
-  depositPercent        Decimal?      @db.Decimal(5, 2)
-  depositPaid           Decimal?      @db.Decimal(12, 2)
-  invoicedTotal         Decimal?      @db.Decimal(12, 2)
-  tags                  String[]      @default([])
-  isTemplate            Boolean       @default(false)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-
-  lineItems            ProjectLineItem[]
-  scanLogs             AssetScanLog[]
-  media                ProjectMedia[]
-  supplierOrders       SupplierOrder[]
-  subHires             SubHire[]
-  crewAssignments      CrewAssignment[]
-  services             ProjectService[]
-  wooCommerceOrderLogs WooCommerceOrderLog[]
-  warehouseCloses      WarehouseClose[]
-  categories           ProjectCategory[]
-  groups               ProjectGroup[]
-  projectManagers      ProjectManager[]
-  maintenanceRecords   MaintenanceRecord[]
-  tasks                ProjectTask[]
-
-  @@unique([organizationId, projectNumber])
-  @@index([organizationId])
-  @@index([status])
-  @@index([clientId])
-  @@index([locationId])
-  @@index([rentalStartDate, rentalEndDate])
-  // Lets the fleet ROI report RANGE-SCAN an org's projects by rental date instead
-  // of taking an index prefix and filtering. Without it, a trailing-window report
-  // on a large org reads the wrong projects entirely. See convex/roi.ts.
-  @@index([organizationId, rentalStartDate])
-  @@index([isTemplate])
-  @@map("project")
-}
-
 // ─── Project Line Item ───────────────────────────────────────────────────────
-
-model ProjectLineItem {
-  id                  String                @id @default(cuid())
-  organizationId      String
-  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId           String
-  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type                LineItemType          @default(EQUIPMENT)
-  modelId             String? // references a Convex models doc; FK dropped Phase B
-  assetId             String?
-  asset               Asset?                @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId         String?
-  bulkAsset           BulkAsset?            @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  kitId               String?
-  kit                 Kit?                  @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  // `isKitChild` is the structural "is a non-top-level child" flag — it is set
-  // on kit children, sub-hire group children, AND (since the accessories
-  // feature) accessory children. The ~40 `isKitChild: false` filters across the
-  // app rely on it to exclude every kind of child from top-level totals/counts.
-  // `childKind` is the discriminator that distinguishes WHAT kind of child a row
-  // is, for behaviour that differs (render label, remove-error copy, scan routing).
-  isKitChild          Boolean               @default(false)
-  childKind           LineItemChildKind?
-  parentLineItemId    String?
-  parentLineItem      ProjectLineItem?      @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
-  childLineItems      ProjectLineItem[]     @relation("KitLineItemChildren")
-  pricingMode         KitPricingMode?
-  description         String?
-  quantity            Int                   @default(1)
-  unitPrice           Decimal?              @db.Decimal(10, 2)
-  pricingType         PricingType           @default(PER_DAY)
-  duration            Int                   @default(1)
-  discount            Decimal?              @db.Decimal(10, 2)
-  lineTotal           Decimal?              @db.Decimal(12, 2)
-  // This line's share of the revenue it helped generate, in dollars. Written by
-  // the allocation pass inside recalcProjectTotals — never computed at read time,
-  // which is what makes it a snapshot (a later price change on the model does not
-  // move a past project's numbers). `allocationBasis` records HOW it was split and
-  // gates which rows count toward model ROI. See docs/revenue-allocation-design.md.
-  allocatedRevenue    Decimal?              @db.Decimal(12, 2)
-  allocationBasis     AllocationBasis?
-  priceBreakdown      String?
-  priceOverridden     Boolean               @default(false)
-  overrideReason      String?
-  sortOrder           Int                   @default(0)
-  groupName           String?
-  categoryId          String?
-  category            ProjectCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  groupId             String?
-  group               ProjectGroup?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  notes               String?
-  isOptional          Boolean               @default(false)
-  status              LineItemStatus        @default(QUOTED)
-  checkedOutQuantity  Int                   @default(0)
-  returnedQuantity    Int                   @default(0)
-  // Rollup counters derived from ProjectLineItemUnit rows. Kept in sync
-  // transactionally on every unit write once Phase 3 lands.
-  assignedQuantity    Int                   @default(0)
-  packedQuantity      Int                   @default(0)
-  damagedQuantity     Int                   @default(0)
-  lostQuantity        Int                   @default(0)
-  checkedOutAt        DateTime?
-  checkedOutById      String?
-  checkedOutBy        User?                 @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
-  returnedAt          DateTime?
-  returnedById        String?
-  returnedBy          User?                 @relation("ReturnedBy", fields: [returnedById], references: [id])
-  returnCondition     ReturnCondition?
-  returnNotes         String?
-  prepStatus          PrepStatus?
-  prepContainer       String?
-  isContainerLineItem Boolean               @default(false)
-  isCustomItem        Boolean               @default(false)
-  returnStatus        ReturnStatus?
-  // `isSubhire` removed (Wave 2). Sub-hire detection is now
-  // `subHireId != null` — single source of truth. Production
-  // verified to have 0 legacy-only rows before drop. See
-  // 20260514XXXXXX_drop_line_item_isSubhire migration.
-  showSubhireOnDocs   Boolean               @default(false)
-  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
-  subhireOrderNumber  String?
-  supplierOrderId     String?
-  supplierOrder       SupplierOrder?        @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
-  subHireId           String?
-  subHire             SubHire?              @relation(fields: [subHireId], references: [id], onDelete: SetNull)
-  subHireItemId       String?
-  subHireItem         SubHireItem?          @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
-  subHireGroupId      String?
-  subHireGroup        SubHireGroup?         @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
-  service             ProjectService?
-  checkRecords        CheckRecord[]
-  units               ProjectLineItemUnit[]
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-
-  @@index([organizationId])
-  @@index([projectId])
-  @@index([modelId])
-  @@index([assetId])
-  @@index([bulkAssetId])
-  @@index([kitId])
-  @@index([parentLineItemId])
-  @@index([supplierId])
-  @@index([supplierOrderId])
-  @@index([subHireId])
-  @@index([subHireItemId])
-  @@index([subHireGroupId])
-  @@index([categoryId])
-  @@index([groupId])
-  @@map("project_line_item")
-}
 
 // ─── Project Line-Item Unit ─────────────────────────────────────────────────
 // One physical unit assigned to an order line. Replaces the old "split a
@@ -1504,48 +605,6 @@ model ProjectLineItem {
 // (quantity 1), bulk assets get one row carrying a quantity. Per-unit deploy /
 // return state lives here, not on the order line.
 // See docs/designs/line-item-fulfillment-model.md.
-
-model ProjectLineItemUnit {
-  id                String           @id @default(cuid())
-  organizationId    String
-  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lineItemId        String
-  lineItem          ProjectLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  ordinal           Int
-  assetId           String?
-  asset             Asset?           @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId       String?
-  bulkAsset         BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  // For an ACCESSORY-line unit: the parent unit's asset this accessory travels
-  // with (the specific handheld a battery kit is packed under). Null on normal
-  // (non-accessory) units. Denormalised link to the parent asset id, mirroring
-  // how serialised accessory children use Asset.parentAssetId — lets prep/return
-  // and the per-unit docket render scope an accessory to one parent unit.
-  parentUnitAssetId String?
-  quantity          Int              @default(1)
-  returnedQuantity  Int              @default(0)
-  status            LineItemStatus   @default(CONFIRMED)
-  prepStatus        PrepStatus?
-  prepContainer     String?
-  checkedOutAt      DateTime?
-  checkedOutById    String?
-  returnedAt        DateTime?
-  returnedById      String?
-  returnCondition   ReturnCondition?
-  returnStatus      ReturnStatus?
-  returnNotes       String?
-  checkRecords      CheckRecord[]
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-
-  @@unique([lineItemId, assetId])
-  @@unique([lineItemId, ordinal])
-  @@index([organizationId, assetId, status])
-  @@index([organizationId, bulkAssetId, status])
-  @@index([lineItemId, status])
-  @@index([lineItemId, parentUnitAssetId])
-  @@map("project_line_item_unit")
-}
 
 /// Audit trail for the Phase 3.8 split-sibling collapse migration.
 ///
@@ -1585,31 +644,6 @@ model LineItemMergeMap {
 
 // ─── Project Category ───────────────────────────────────────────────────────
 
-model ProjectCategory {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name           String
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  groups              ProjectGroup[]
-  lineItems           ProjectLineItem[]
-  // Sub-hire placement targets
-  subHireDefaults     SubHire[]
-  subHireGroupTargets SubHireGroup[]
-  subHireItemTargets  SubHireItem[]
-  // Cross-type ordering: project + sub-hire groups share one sort sequence per category
-  slots               CategorySlot[]
-
-  @@index([projectId])
-  @@index([organizationId])
-  @@map("project_category")
-}
-
 // ─── Category Slot ──────────────────────────────────────────────────────────
 //
 // Cross-type ordering for ProjectGroup + SubHireGroup within a ProjectCategory.
@@ -1621,12 +655,9 @@ model ProjectCategory {
 model CategorySlot {
   id                String          @id @default(cuid())
   projectCategoryId String
-  projectCategory   ProjectCategory @relation(fields: [projectCategoryId], references: [id], onDelete: Cascade)
   sortOrder         Int
   projectGroupId    String?         @unique
-  projectGroup      ProjectGroup?   @relation(fields: [projectGroupId], references: [id], onDelete: Cascade)
   subHireGroupId    String?         @unique
-  subHireGroup      SubHireGroup?   @relation(fields: [subHireGroupId], references: [id], onDelete: Cascade)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -1637,63 +668,7 @@ model CategorySlot {
 
 // ─── Project Group ──────────────────────────────────────────────────────────
 
-model ProjectGroup {
-  id             String           @id @default(cuid())
-  organizationId String
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  // Nullable since v0.9.4.0 — groups can live in the project's
-  // Uncategorized zone, mirroring SubHireGroup.targetCategoryId.
-  // The relation's onDelete switched from Cascade to SetNull so
-  // deleting a category no longer destroys its groups; they
-  // become orphaned and surface in the Uncategorized zone.
-  categoryId     String?
-  category       ProjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  title          String
-  description    String?
-  quantity       Int              @default(1)
-  price          Decimal?         @db.Decimal(12, 2)
-  suggestedPrice Decimal?         @db.Decimal(12, 2)
-  rentalPeriod   RentalPeriod?
-  rentalQuantity Int?
-  sortOrder      Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-
-  lineItems           ProjectLineItem[]
-  // Sub-hire placement targets
-  subHireDefaults     SubHire[]         @relation("SubHireDefaultTargetGroup")
-  subHireGroupTargets SubHireGroup[]    @relation("SubHireGroupTargetGroup")
-  subHireItemTargets  SubHireItem[]     @relation("SubHireItemTargetGroup")
-  // Cross-type category ordering. At most one slot per group; created when the
-  // group is placed in a category (which all ProjectGroups are).
-  slot                CategorySlot?
-
-  @@index([projectId])
-  @@index([categoryId])
-  @@index([organizationId])
-  @@map("project_group")
-}
-
 // ─── Project Manager (join table) ───────────────────────────────────────────
-
-model ProjectManager {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User         @relation("ProjectManagerAssignment", fields: [userId], references: [id], onDelete: Cascade)
-  addedAt        DateTime     @default(now())
-
-  @@unique([projectId, userId])
-  @@index([projectId])
-  @@index([userId])
-  @@index([organizationId])
-  @@map("project_manager")
-}
 
 // ─── Kit Revenue Allocation ─────────────────────────────────────────────────
 
@@ -1711,24 +686,6 @@ model ProjectManager {
 // the saved model set exactly covers the kit's CURRENT contents. Kit contents can
 // change without ever touching this table (warehouse, CSV import), so the runtime
 // falls through to the weight chain rather than trusting a stale split.
-model KitRevenueAllocation {
-  id                String       @id @default(cuid())
-  organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId             String // references a Convex kits doc; no FK (Phase C)
-  modelId           String // references a Convex models doc; no FK (Phase B)
-  /// 0–100. Validated to sum to 100 (±0.01) per kit on save.
-  allocationPercent Decimal      @db.Decimal(5, 2)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-
-  @@unique([kitId, modelId])
-  @@index([organizationId])
-  @@index([kitId])
-  @@index([modelId])
-  @@map("kit_revenue_allocation")
-}
-
 // ─── Project Model Revenue (rollup) ─────────────────────────────────────────
 
 // Derived rollup: one row per (project, model), rebuilt wholesale by the same
@@ -1740,45 +697,7 @@ model KitRevenueAllocation {
 // budget. See the "Query cost" section of docs/revenue-allocation-design.md.
 //
 // CONVEX-ONLY (Phase C): no Prisma row is ever written.
-model ProjectModelRevenue {
-  id               String       @id @default(cuid())
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId        String // references a Convex projects doc; no FK (Phase C)
-  modelId          String // references a Convex models doc; no FK (Phase B)
-  /// SUM of this model's ROI-counted allocatedRevenue within this project.
-  allocatedRevenue Decimal      @db.Decimal(12, 2)
-  updatedAt        DateTime     @updatedAt
-
-  @@unique([projectId, modelId])
-  @@index([organizationId])
-  @@index([projectId])
-  @@index([modelId])
-  @@index([organizationId, modelId])
-  @@map("project_model_revenue")
-}
-
 // ─── Group Template ─────────────────────────────────────────────────────────
-
-model GroupTemplate {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  description    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  // GroupTemplate PARENT rows are CONVEX-ONLY (Phase B write inversion). No
-  // Prisma row is written; the Convex `groupTemplates` doc is the sole source of
-  // truth. This model is retained only as a (now-unwritten) anchor for the raw
-  // search query. The `items` back-relation is gone — the child
-  // group_template_item.templateId FK was dropped (Phase B), so the cascade
-  // delete is re-implemented cross-store in deleteGroupTemplate.
-
-  @@index([organizationId])
-  @@map("group_template")
-}
 
 // ─── Group Template Item ────────────────────────────────────────────────────
 
@@ -1786,393 +705,17 @@ model GroupTemplate {
 // checkout) OR a rigid Kit (hard reference to a pre-built rack/case). Exactly
 // one of modelId / kitId is set. Kit items expand via addKitLineItem when the
 // template is applied, pulling in the kit's children as usual.
-model GroupTemplateItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  templateId     String // references a Convex groupTemplates doc; FK dropped Phase B
-  modelId        String? // references a Convex models doc; FK dropped Phase B
-  kitId          String? // references a Convex kits doc; FK dropped Phase C
-  quantity       Int          @default(1)
-  sortOrder      Int          @default(0)
-
-  @@index([templateId])
-  @@index([modelId])
-  @@index([kitId])
-  @@index([organizationId])
-  @@map("group_template_item")
-}
-
 // ─── Asset Scan Log ──────────────────────────────────────────────────────────
-
-model AssetScanLog {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assetId        String?
-  asset          Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId    String?
-  bulkAsset      BulkAsset?   @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  kitId          String?
-  kit            Kit?         @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  projectId      String?
-  project        Project?     @relation(fields: [projectId], references: [id])
-  action         ScanAction
-  scannedById    String
-  scannedBy      User         @relation(fields: [scannedById], references: [id])
-  scannedAt      DateTime     @default(now())
-  notes          String?
-  location       String?
-
-  @@index([organizationId])
-  @@index([assetId])
-  @@index([bulkAssetId])
-  @@index([projectId])
-  @@index([scannedAt])
-  @@map("asset_scan_log")
-}
 
 // ─── File Upload & Media ────────────────────────────────────────────────────
 
-model FileUpload {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  fileName       String
-  fileSize       Int
-  mimeType       String
-  storageKey     String
-  url            String
-  thumbnailUrl   String?
-  width          Int?
-  height         Int?
-  uploadedById   String
-  uploadedBy     User         @relation(fields: [uploadedById], references: [id])
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  modelMedia    ModelMedia[]
-  assetMedia    AssetMedia[]
-  kitMedia      KitMedia[]
-  projectMedia  ProjectMedia[]
-  clientMedia   ClientMedia[]
-  locationMedia LocationMedia[]
-  subHireMedia  SubHireMedia[]
-
-  @@index([organizationId])
-  @@map("file_upload")
-}
-
-model ModelMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String // references a Convex models doc; FK dropped Phase B
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(PHOTO)
-  isPrimary      Boolean      @default(false)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([modelId, fileId])
-  @@index([organizationId])
-  @@index([modelId])
-  @@map("model_media")
-}
-
-model AssetMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assetId        String
-  asset          Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(PHOTO)
-  isPrimary      Boolean      @default(false)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([assetId, fileId])
-  @@index([organizationId])
-  @@index([assetId])
-  @@map("asset_media")
-}
-
-model KitMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId          String
-  kit            Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(PHOTO)
-  isPrimary      Boolean      @default(false)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([kitId, fileId])
-  @@index([organizationId])
-  @@index([kitId])
-  @@map("kit_media")
-}
-
-model ProjectMedia {
-  id             String           @id @default(cuid())
-  organizationId String
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  fileId         String
-  file           FileUpload       @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           ProjectMediaType @default(OTHER)
-  displayName    String?
-  sortOrder      Int              @default(0)
-  createdAt      DateTime         @default(now())
-
-  @@unique([projectId, fileId])
-  @@index([organizationId])
-  @@index([projectId])
-  @@map("project_media")
-}
-
-model ClientMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  // clientId references a Convex `clients` doc (cuid) — see Project.clientId. Not a
-  // Prisma FK (Clients hard-cutover to Convex). client-media writes for a net-new
-  // client would otherwise FK-fail. See FEATUREDOCS/54.
-  clientId       String
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(DOCUMENT)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([clientId, fileId])
-  @@index([organizationId])
-  @@index([clientId])
-  @@map("client_media")
-}
-
-model LocationMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId     String // references a Convex locations doc; FK (Cascade) dropped Phase B — cascade re-implemented in deleteLocation
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(DOCUMENT)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([locationId, fileId])
-  @@index([organizationId])
-  @@index([locationId])
-  @@map("location_media")
-}
-
-model SubHireMedia {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  subHireId      String
-  subHire        SubHire      @relation(fields: [subHireId], references: [id], onDelete: Cascade)
-  fileId         String
-  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  type           MediaType    @default(DOCUMENT)
-  displayName    String?
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([subHireId, fileId])
-  @@index([organizationId])
-  @@index([subHireId])
-  @@map("sub_hire_media")
-}
-
 // ─── Test Profile ─────────────────────────────────────────────────────────
-
-model TestProfile {
-  id                  String         @id @default(cuid())
-  organizationId      String
-  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name                String
-  equipmentClass      EquipmentClass @default(CLASS_I)
-  applianceType       ApplianceType  @default(APPLIANCE)
-  visualChecks        Json // Array of {key, label, enabled}
-  electricalTests     Json // Array of {key, label, threshold, operator, unit, enabled}
-  thresholds          Json // {earthMax, insulationMin, leakageMax, rcdTripTimeMax, ...}
-  requiresSubTests    Boolean        @default(false)
-  defaultSubTestCount Int            @default(1)
-  subTestLabel        String         @default("Outlet") // "Outlet" | "Phase" | custom
-  isDefault           Boolean        @default(false)
-  isActive            Boolean        @default(true)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-
-  // Inbound SetNull FKs (model.defaultTestProfileId, test_tag_asset.testProfileId,
-  // test_tag_record.testProfileId) were dropped in Phase B (write inversion) — those
-  // columns now hold a Convex testProfiles doc cuid, so the Prisma back-relations
-  // are gone. The organizationId FK stays (test profiles remain org-cascade-scoped).
-
-  @@unique([organizationId, name])
-  @@index([organizationId, isActive])
-  @@index([organizationId, equipmentClass, applianceType])
-  @@map("test_profile")
-}
 
 // ─── Test & Tag Asset ───────────────────────────────────────────────────────
 
-model TestTagAsset {
-  id                 String         @id @default(cuid())
-  organizationId     String
-  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  testTagId          String
-  description        String
-  equipmentClass     EquipmentClass @default(CLASS_I)
-  applianceType      ApplianceType  @default(APPLIANCE)
-  make               String?
-  modelName          String?
-  serialNumber       String?
-  location           String?
-  testIntervalMonths Int            @default(3)
-  status             TestTagStatus  @default(NOT_YET_TESTED)
-  lastTestDate       DateTime?
-  nextDueDate        DateTime?
-  notes              String?
-
-  assetId     String?    @unique
-  asset       Asset?     @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId String?
-  bulkAsset   BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-
-  testProfileId String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
-  outletCount   Int?
-
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  testRecords TestTagRecord[]
-
-  @@unique([organizationId, testTagId])
-  @@index([organizationId, status])
-  @@index([organizationId, nextDueDate])
-  @@index([organizationId, assetId])
-  @@index([organizationId, bulkAssetId])
-  @@index([testProfileId])
-  @@map("test_tag_asset")
-}
-
 // ─── Test & Tag Record ──────────────────────────────────────────────────────
 
-model TestTagRecord {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  testTagAssetId String
-  testTagAsset   TestTagAsset @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
-  testProfileId  String? // references a Convex testProfiles doc (cuid); FK dropped in Phase B
-  testDate       DateTime
-  testedById     String
-  testedBy       User         @relation(fields: [testedById], references: [id])
-  testerName     String
-
-  result TestResult @default(PASS)
-
-  // Visual inspection
-  visualInspectionResult  TestResult @default(PASS)
-  visualCordCondition     Boolean?
-  visualPlugCondition     Boolean?
-  visualHousingCondition  Boolean?
-  visualSwitchCondition   Boolean?
-  visualVentsUnobstructed Boolean?
-  visualCordGrip          Boolean?
-  visualEarthPin          Boolean?
-  visualMarkingsLegible   Boolean?
-  visualNoModifications   Boolean?
-  visualNotes             String?
-
-  // Electrical tests
-  equipmentClassTested EquipmentClass @default(CLASS_I)
-  testMethod           TestMethod     @default(INSULATION_RESISTANCE)
-
-  // Earth continuity (Class I only)
-  earthContinuityResult  TestResult @default(NOT_APPLICABLE)
-  earthContinuityReading Float?
-
-  // Insulation resistance
-  insulationResult      TestResult @default(NOT_APPLICABLE)
-  insulationReading     Float?
-  insulationTestVoltage Int?
-
-  // Leakage current
-  leakageCurrentResult  TestResult @default(NOT_APPLICABLE)
-  leakageCurrentReading Float?
-
-  // Polarity
-  polarityResult TestResult @default(NOT_APPLICABLE)
-
-  // RCD trip time
-  rcdTripTimeResult  TestResult @default(NOT_APPLICABLE)
-  rcdTripTimeReading Float?
-
-  // Functional test
-  functionalTestResult TestResult @default(NOT_APPLICABLE)
-  functionalTestNotes  String?
-
-  // Failure actions
-  failureAction FailureAction @default(NONE)
-  failureNotes  String?
-
-  // Next test
-  nextDueDate DateTime
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  subTestRecords SubTestRecord[]
-
-  @@index([organizationId, testTagAssetId])
-  @@index([organizationId, testDate])
-  @@index([testProfileId])
-  @@map("test_tag_record")
-}
-
 // ─── Sub-Test Record ──────────────────────────────────────────────────────
-
-model SubTestRecord {
-  id              String        @id @default(cuid())
-  testTagRecordId String
-  testTagRecord   TestTagRecord @relation(fields: [testTagRecordId], references: [id], onDelete: Cascade)
-  label           String // "Outlet 1", "Phase L1-L2", etc.
-  sortOrder       Int           @default(0)
-  result          TestResult    @default(PASS)
-
-  // Electrical readings (same columns as parent record)
-  earthContinuityResult  TestResult @default(NOT_APPLICABLE)
-  earthContinuityReading Float?
-  insulationResult       TestResult @default(NOT_APPLICABLE)
-  insulationReading      Float?
-  leakageCurrentResult   TestResult @default(NOT_APPLICABLE)
-  leakageCurrentReading  Float?
-  polarityResult         TestResult @default(NOT_APPLICABLE)
-  notes                  String?
-
-  createdAt DateTime @default(now())
-
-  @@index([testTagRecordId, sortOrder])
-  @@map("sub_test_record")
-}
 
 // ─── Better Auth Two-Factor Tables ──────────────────────────────────────────
 
@@ -2270,71 +813,6 @@ model ActivityLog {
 
 // ─── Crew Management ─────────────────────────────────────────────────────────
 
-model CrewMember {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  // Identity
-  firstName String
-  lastName  String
-  email     String?
-  phone     String?
-  image     String?
-
-  // Link to platform user (optional)
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  // Employment type
-  type       CrewMemberType   @default(FREELANCER)
-  status     CrewMemberStatus @default(ACTIVE)
-  department String?
-
-  // Rates
-  defaultDayRate     Decimal? @db.Decimal(10, 2)
-  defaultHourlyRate  Decimal? @db.Decimal(10, 2)
-  overtimeMultiplier Decimal? @db.Decimal(3, 2)
-  currency           String?
-
-  // Contact & personal
-  address               String?
-  addressLatitude       Float?
-  addressLongitude      Float?
-  emergencyContactName  String?
-  emergencyContactPhone String?
-  dateOfBirth           DateTime?
-  abnOrGst              String?
-
-  // Notes & tags
-  notes String?
-  tags  String[] @default([])
-
-  // Calendar integration
-  icalEnabled Boolean @default(false)
-  icalToken   String? @unique
-
-  // Relations
-  skills       CrewSkill[]
-  assignments  CrewAssignment[]
-  availability CrewAvailability[]
-  timeEntries  CrewTimeEntry[]
-  crewRoleId   String?
-  crewRole     CrewRole?          @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
-
-  assignedProjectTasks ProjectTask[] @relation("ProjectTaskCrewAssignee")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  isActive  Boolean  @default(true)
-
-  @@unique([organizationId, email])
-  @@index([organizationId])
-  @@index([organizationId, status])
-  @@index([userId])
-  @@map("crew_member")
-}
-
 enum CrewMemberType {
   EMPLOYEE
   FREELANCER
@@ -2349,114 +827,10 @@ enum CrewMemberStatus {
   ARCHIVED
 }
 
-model CrewRole {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name        String
-  description String?
-  department  String?
-  color       String?
-  defaultRate Decimal?      @db.Decimal(10, 2)
-  rateType    CrewRateType?
-  sortOrder   Int           @default(0)
-  isActive    Boolean       @default(true)
-
-  crewMembers     CrewMember[]
-  assignments     CrewAssignment[]
-  projectServices ProjectService[]
-
-  @@unique([organizationId, name])
-  @@index([organizationId])
-  @@map("crew_role")
-}
-
 enum CrewRateType {
   HOURLY
   DAILY
   FLAT
-}
-
-model CrewSkill {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name     String
-  category String?
-
-  crewMembers CrewMember[]
-
-  @@unique([organizationId, name])
-  @@index([organizationId])
-  @@map("crew_skill")
-}
-
-model CrewAssignment {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  crewMemberId String
-  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
-
-  crewRoleId String?
-  crewRole   CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
-
-  status           AssignmentStatus @default(PENDING)
-  phase            ProjectPhase?
-  isProjectManager Boolean          @default(false)
-
-  // Schedule
-  startDate DateTime?
-  startTime String?
-  endDate   DateTime?
-  endTime   String?
-
-  // Rate
-  rateOverride   Decimal?      @db.Decimal(10, 2)
-  rateType       CrewRateType?
-  estimatedHours Decimal?      @db.Decimal(6, 2)
-  estimatedCost  Decimal?      @db.Decimal(10, 2)
-
-  // Notes
-  notes         String?
-  internalNotes String?
-
-  // Response tracking
-  responseToken String?   @unique
-  offeredAt     DateTime?
-  respondedAt   DateTime?
-  responseNote  String?
-
-  // Confirmation
-  confirmedAt   DateTime?
-  confirmedById String?
-  confirmedBy   User?     @relation("ConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-
-  // Service link (when assigned via a ProjectService)
-  serviceId String?
-  service   ProjectService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-
-  shifts      CrewShift[]
-  timeEntries CrewTimeEntry[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Partial unique index created via raw SQL migration:
-  // UNIQUE(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL
-  @@index([organizationId])
-  @@index([projectId])
-  @@index([crewMemberId])
-  @@index([crewMemberId, startDate])
-  @@index([crewMemberId, startDate, endDate])
-  @@index([serviceId])
-  @@map("crew_assignment")
 }
 
 enum AssignmentStatus {
@@ -2480,24 +854,6 @@ enum ProjectPhase {
   FULL_DURATION
 }
 
-model CrewShift {
-  id           String         @id @default(cuid())
-  assignmentId String
-  assignment   CrewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-
-  date         DateTime
-  callTime     String?
-  endTime      String?
-  breakMinutes Int?
-  location     String?
-  notes        String?
-  status       ShiftStatus @default(SCHEDULED)
-
-  @@index([assignmentId])
-  @@index([assignmentId, date])
-  @@map("crew_shift")
-}
-
 enum ShiftStatus {
   SCHEDULED
   IN_PROGRESS
@@ -2508,27 +864,6 @@ enum ShiftStatus {
 
 // ─── Crew Availability ──────────────────────────────────────────────────────
 
-model CrewAvailability {
-  id           String     @id @default(cuid())
-  crewMemberId String
-  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
-
-  startDate DateTime
-  endDate   DateTime
-  type      AvailabilityType @default(UNAVAILABLE)
-  reason    String?
-  isAllDay  Boolean          @default(true)
-  startTime String?
-  endTime   String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([crewMemberId])
-  @@index([crewMemberId, startDate, endDate])
-  @@map("crew_availability")
-}
-
 enum AvailabilityType {
   UNAVAILABLE
   TENTATIVE
@@ -2536,40 +871,6 @@ enum AvailabilityType {
 }
 
 // ── Time Tracking ──────────────────────────────────────────────────
-
-model CrewTimeEntry {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  assignmentId String?
-  assignment   CrewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-
-  crewMemberId String
-  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
-
-  description String? // For standalone shifts not linked to a project
-
-  date         DateTime
-  startTime    String
-  endTime      String
-  breakMinutes Int      @default(0)
-  totalHours   Decimal? @db.Decimal(6, 2)
-
-  status       TimeEntryStatus @default(DRAFT)
-  approvedById String?
-  approvedBy   User?           @relation("TimeEntryApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt   DateTime?
-  notes        String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([organizationId])
-  @@index([assignmentId])
-  @@index([crewMemberId, date])
-  @@map("crew_time_entry")
-}
 
 enum TimeEntryStatus {
   DRAFT
@@ -2580,77 +881,6 @@ enum TimeEntryStatus {
 }
 
 // ─── Project Services ───────────────────────────────────────────────────────
-
-model ProjectService {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  // Type & description
-  type        ServiceType
-  title       String
-  description String?
-  notes       String?
-
-  // Schedule
-  date              DateTime?
-  endDate           DateTime?
-  startTime         String?
-  endTime           String?
-  scheduledTime     String? // Delivery/pickup time (separate from service work window)
-  estimatedDuration Int?
-
-  // Address (for delivery/pickup)
-  address   String?
-  latitude  Float?
-  longitude Float?
-
-  // Status
-  status ServiceStatus @default(PLANNED)
-
-  // Financial
-  showOnDocuments  Boolean      @default(false)
-  billableToClient Boolean      @default(false)
-  unitPrice        Decimal?     @db.Decimal(10, 2)
-  quantity         Int          @default(1)
-  pricingType      PricingType?
-  duration         Decimal?     @db.Decimal(6, 2)
-  discount         Decimal?     @db.Decimal(5, 2)
-  lineTotal        Decimal?     @db.Decimal(10, 2)
-  costTotal        Decimal?     @db.Decimal(12, 2)
-  taxable          Boolean      @default(true)
-
-  // Linked line item (legacy — being phased out, kept for migration)
-  lineItemId String?          @unique
-  lineItem   ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
-
-  // Transport-specific (for DELIVERY/PICKUP)
-  vehicleDescription String?
-  numberOfTrips      Int?
-
-  // Labour-specific
-  crewCountRequired Int?
-  crewRoleId        String?
-  crewRole          CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
-
-  // Crew assignments linked to this service
-  crewAssignments CrewAssignment[]
-
-  // Ordering
-  sortOrder Int @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([organizationId])
-  @@index([projectId])
-  @@index([projectId, type])
-  @@index([projectId, date])
-  @@map("project_service")
-}
 
 enum ServiceType {
   DELIVERY
@@ -2671,52 +901,7 @@ enum ServiceStatus {
 
 // ─── Service Templates ──────────────────────────────────────────────────────
 
-model ServiceTemplate {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  type               ServiceType
-  title              String
-  description        String?
-  defaultCrewCount   Int?
-  defaultVehicle     String?
-  defaultPricingType PricingType?
-  defaultUnitPrice   Decimal?     @db.Decimal(10, 2)
-  showOnDocuments    Boolean      @default(false)
-  isAutoAdded        Boolean      @default(false)
-  sortOrder          Int          @default(0)
-  isActive           Boolean      @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([organizationId])
-  @@map("service_template")
-}
-
 // ─── Brand Templates ─────────────────────────────────────────────────────────
-
-model BrandTemplate {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name           String
-  headerSettings String   @db.Text // JSON — logo mode, org details visibility
-  footerSettings String   @db.Text // JSON — footer text, visibility
-  accentColor    String? // hex color override (null = use org's documentColor)
-  isDefault      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // Phase B (Convex domain-only decommission): brand_template is Convex-only.
-  // The inbound document_template.brandTemplateId FK was dropped; the
-  // back-relation is removed (DocumentTemplate now carries a plain string id).
-
-  @@index([organizationId])
-  @@map("brand_template")
-}
 
 // ─── Document Templates ──────────────────────────────────────────────────────
 
@@ -2913,33 +1098,6 @@ model WooCommerceIntegration {
   @@map("woocommerce_integration")
 }
 
-model WooCommerceOrderLog {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  wooOrderId     Int // WooCommerce order ID
-  wooOrderNumber String? // WooCommerce order number (may differ from ID)
-  status         WooOrderLogStatus // RECEIVED, PROCESSING, COMPLETED, FAILED, DUPLICATE
-
-  // What was created
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  clientId  String?
-
-  // Debugging
-  payload        Json // Full webhook payload (for debugging)
-  errorMessage   String? // If FAILED
-  matchResults   Json? // Which products matched which models
-  dateExtraction Json? // Date parsing results for display
-
-  createdAt DateTime @default(now())
-
-  @@index([organizationId])
-  @@index([wooOrderId])
-  @@map("woocommerce_order_log")
-}
-
 enum WooOrderLogStatus {
   RECEIVED
   PROCESSING
@@ -2949,118 +1107,6 @@ enum WooOrderLogStatus {
 }
 
 // ─── Check Item System ───────────────────────────────────────────────────────
-
-model CheckItem {
-  id              String        @id @default(cuid())
-  organizationId  String
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  label           String
-  description     String?
-  type            CheckItemType @default(PASS_FAIL)
-  category        String?
-  measurementUnit String? // for MEASUREMENT type (e.g. "mm", "kg", "V")
-  measurementMin  Float? // pass threshold minimum
-  measurementMax  Float? // pass threshold maximum
-  dropdownOptions Json? // for DROPDOWN type: { label: string, isFail: boolean }[]
-  createdById     String?
-  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  modelCheckItems ModelCheckItem[]
-  kitCheckItems   KitCheckItem[]
-  checkRecords    CheckRecord[]
-
-  @@index([organizationId])
-  @@index([organizationId, category])
-  @@map("check_item")
-}
-
-model ModelCheckItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId        String // references a Convex models doc; FK dropped Phase B
-  checkItemId    String
-  checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([modelId, checkItemId])
-  @@index([organizationId])
-  @@index([organizationId, modelId])
-  @@map("model_check_item")
-}
-
-model KitCheckItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  kitId          String
-  kit            Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  checkItemId    String
-  checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-
-  @@unique([kitId, checkItemId])
-  @@index([organizationId])
-  @@index([organizationId, kitId])
-  @@map("kit_check_item")
-}
-
-model CheckRecord {
-  id                     String               @id @default(cuid())
-  organizationId         String
-  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  context                CheckContext
-  lineItemId             String? // null for AD_HOC
-  lineItem               ProjectLineItem?     @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
-  lineItemUnitId         String?
-  lineItemUnit           ProjectLineItemUnit? @relation(fields: [lineItemUnitId], references: [id], onDelete: SetNull)
-  assetId                String? // null when no serialized asset assigned
-  asset                  Asset?               @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  bulkAssetId            String? // for bulk asset checks
-  bulkAsset              BulkAsset?           @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  kitId                  String? // for kit-level checks
-  kit                    Kit?                 @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  checkItemId            String
-  checkItem              CheckItem            @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
-  checkItemLabelSnapshot String
-  checkItemTypeSnapshot  CheckItemType
-  result                 CheckResult
-  value                  String? // measurement reading or dropdown selection
-  notes                  String?
-  photos                 String[]             @default([]) // S3 keys
-  performedById          String
-  performedBy            User                 @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
-  performedAt            DateTime             @default(now())
-
-  @@index([organizationId])
-  @@index([organizationId, assetId])
-  @@index([organizationId, checkItemId])
-  @@index([lineItemId])
-  @@index([lineItemUnitId])
-  @@map("check_record")
-}
-
-model WarehouseClose {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  closedById     String
-  closedBy       User         @relation("WarehouseClosedBy", fields: [closedById], references: [id], onDelete: Cascade)
-  closedAt       DateTime     @default(now())
-  storedCount    Int          @default(0)
-  damagedCount   Int          @default(0)
-  lostCount      Int          @default(0)
-
-  @@unique([projectId, organizationId])
-  @@index([organizationId])
-  @@map("warehouse_close")
-}
 
 // ─── Notifications ───────────────────────────────────────────────────────────
 
@@ -3074,20 +1120,6 @@ model WarehouseClose {
  * by user; if the same notification re-fires for a new entity instance it gets
  * a different key and re-surfaces.
  */
-model NotificationDismissal {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId          String
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notificationKey String
-  dismissedAt     DateTime     @default(now())
-
-  @@unique([userId, notificationKey])
-  @@index([organizationId, userId])
-  @@map("notification_dismissal")
-}
-
 /**
  * Per-user opt-in flags for email delivery of in-app notifications. One row
  * per user, lazily created the first time they visit the preferences UI.
@@ -3095,26 +1127,6 @@ model NotificationDismissal {
  * events default to ON (overdue maintenance / returns, low stock, invitations,
  * expiring certs, flagged assets).
  */
-model UserNotificationPreference {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  overdueMaintenance Boolean @default(true)
-  overdueReturn      Boolean @default(true)
-  upcomingProject    Boolean @default(false)
-  lowStock           Boolean @default(true)
-  pendingInvitation  Boolean @default(true)
-  expiringCert       Boolean @default(true)
-  pendingOffers      Boolean @default(false)
-  pendingTimesheets  Boolean @default(false)
-  flaggedAsset       Boolean @default(true)
-
-  updatedAt DateTime @updatedAt
-
-  @@map("user_notification_preference")
-}
-
 /**
  * Dedupe ledger for outbound notification emails. We don't want to re-email
  * the same user about the same notification every time the cron fires — one
@@ -3144,36 +1156,6 @@ model NotificationEmailLog {
  * entityType is an enum for forward-compat — v1 wires ASSET only; KIT /
  * PROJECT / BULK_ASSET follow once they all carry a values column.
  */
-model CustomFieldDefinition {
-  id             String            @id @default(cuid())
-  organizationId String
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  entityType     CustomFieldEntity @default(ASSET)
-  /**
-   * Human label shown on the form, e.g. "Rig Number".
-   */
-  label          String
-  /**
-   * Stable machine key into the customFieldValues JSON. Immutable once set.
-   */
-  fieldKey       String
-  fieldType      CustomFieldType   @default(TEXT)
-  /**
-   * Choices for SELECT type. Empty for other types.
-   */
-  options        String[]          @default([])
-  required       Boolean           @default(false)
-  helpText       String?
-  sortOrder      Int               @default(0)
-  isActive       Boolean           @default(true)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-
-  @@unique([organizationId, entityType, fieldKey])
-  @@index([organizationId, entityType])
-  @@map("custom_field_definition")
-}
-
 enum CustomFieldEntity {
   ASSET
   BULK_ASSET
@@ -3194,56 +1176,7 @@ enum CustomFieldType {
 // configured reset period (e.g. "2026-06" monthly, "2026" yearly, "GLOBAL" none).
 // Incremented atomically via INSERT ... ON CONFLICT so concurrent project
 // creation can't hand out duplicate numbers.
-model ProjectNumberSequence {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  scopeKey       String
-  value          Int          @default(0)
-
-  updatedAt DateTime @default(now()) @updatedAt
-
-  @@unique([organizationId, scopeKey])
-  @@map("project_number_sequence")
-}
-
 // ─── Project Tasks (Asana-style per-project to-do list) ──────────────────────
-model ProjectTask {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  title       String
-  description String?
-  status      ProjectTaskStatus   @default(TODO)
-  priority    ProjectTaskPriority @default(NORMAL)
-  dueDate     DateTime?
-  // Manual ordering within a project's list (drag/sort). Lower = higher.
-  sortOrder   Int                 @default(0)
-  // Optional sub-steps: [{ id, text, done }] — kept inline as JSON, not a table.
-  checklist   Json?
-
-  // Assignee is EITHER an org user OR a crew member (at most one). Both nullable.
-  assigneeUserId String?
-  assigneeUser   User?       @relation("ProjectTaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-  assigneeCrewId String?
-  assigneeCrew   CrewMember? @relation("ProjectTaskCrewAssignee", fields: [assigneeCrewId], references: [id], onDelete: SetNull)
-
-  createdById String?
-  createdBy   User?     @relation("ProjectTaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  completedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([organizationId, projectId])
-  @@index([projectId, status])
-  @@index([assigneeUserId, status])
-  @@map("project_task")
-}
-
 enum ProjectTaskStatus {
   TODO
   IN_PROGRESS
@@ -3259,31 +1192,6 @@ enum ProjectTaskPriority {
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
 
 // ─── Saved Table Views (per-user, org-scoped list filter/sort/column presets) ─
-model SavedTableView {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Logical list identifier (matches useTablePreferences tableId), e.g. "assets",
-  // "clients", "projects". A view only ever applies to its own table.
-  tableId   String
-  name      String
-  // SavedViewConfig JSON: { filters, sortBy, sortOrder, columnVisibility, pageSize }.
-  config    Json
-  // At most one default per (user, tableId); enforced in the server action, not the DB.
-  isDefault Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([organizationId, userId, tableId, name])
-  @@index([userId, tableId])
-  @@index([organizationId])
-  @@map("saved_table_view")
-}
-
 // ---------------------------------------------------------------------------
 // Webhooks — outbound events for agents/integrations.
 // See docs/designs/webhooks.md.

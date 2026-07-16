@@ -31,22 +31,12 @@ import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/wa
 import {
   lookupAssetForScan,
   checkOutItems,
-  checkInItems,
   checkOutKit,
-  checkInKit,
   checkOutKitsBatch,
-  checkInKitsBatch,
-  undeployItems,
-  unreturnItems,
-  undeprepLine,
-  undeployKitsBatch,
-  unreturnKitsBatch,
   getAvailableAssetsForModels,
   quickAddAndCheckOut,
-  clearPrepContainer,
-  ensureContainerOnProject,
-  syncContainersBatch,
 } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -666,6 +656,9 @@ function WarehouseProjectPage({
   const project = native.data as any;
   const isLoading = native.isLoading;
 
+  // Browser-direct warehouse writes (PR-A: return / undeploy / container family).
+  const warehouseWrites = useWarehouseWrites();
+
   // Post-write refresh is now a no-op: the native subscription pushes every
   // warehouseOps change live over the WebSocket, so an explicit refetch is
   // redundant (kept to avoid touching every call site).
@@ -681,9 +674,9 @@ function WarehouseProjectPage({
     const asset = selectedContainerAssetRef.current;
     const container = selectedContainerRef.current;
     if (asset?.assetId && asset.modelId) {
-      await ensureContainerOnProject(projectId, asset.assetId, asset.modelId, container);
+      await warehouseWrites.ensureContainerOnProject(projectId, asset.assetId, asset.modelId, container);
     }
-  }, [projectId]);
+  }, [projectId, warehouseWrites]);
 
   const checkOutMutation = useServerMutation({
     mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
@@ -693,7 +686,7 @@ function WarehouseProjectPage({
       const containers = new Set(
         params.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
       );
-      if (containers.size > 0) await syncContainersBatch(projectId, [...containers]);
+      if (containers.size > 0) await warehouseWrites.syncContainersBatch(projectId, [...containers]);
       return result;
     },
     onSuccess: invalidate,
@@ -704,13 +697,13 @@ function WarehouseProjectPage({
     mutationFn: async (data: {
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
     }) => {
-      const result = await checkInItems(projectId, data.items);
+      const result = await warehouseWrites.checkInItems(projectId, data.items);
       // Sync container status for affected containers — ONE batch call (was one
       // round-trip per container).
       const containers = new Set(
         data.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
       );
-      if (containers.size > 0) await syncContainersBatch(projectId, [...containers]);
+      if (containers.size > 0) await warehouseWrites.syncContainersBatch(projectId, [...containers]);
       return result;
     },
     onSuccess: () => {
@@ -771,7 +764,7 @@ function WarehouseProjectPage({
 
   const kitCheckInMutation = useServerMutation({
     mutationFn: (data: { kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) =>
-      checkInKit(projectId, data.kitId, data.returnCondition),
+      warehouseWrites.checkInKit(projectId, data.kitId, data.returnCondition),
     onSuccess: () => invalidate(),
     onError: (e) => showError(e),
   });
@@ -789,7 +782,7 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
   const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
-    mutationFn: (kits) => checkInKitsBatch(projectId, kits),
+    mutationFn: (kits) => warehouseWrites.checkInKitsBatch(projectId, kits),
     onSuccess: (res) => {
       if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
@@ -813,12 +806,12 @@ function WarehouseProjectPage({
   // ── Move-back (reverse a stage) mutations ──────────────────────────────────
   const undeployMutation = useServerMutation({
     mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
-      undeployItems(projectId, items),
+      warehouseWrites.undeployItems(projectId, items),
     onSuccess: () => { toast.success("Moved back to Prepped"); invalidate(); },
     onError: (e) => showError(e),
   });
   const undeployKitsMutation = useServerMutation<KitBatchResult, string[]>({
-    mutationFn: (kitIds: string[]) => undeployKitsBatch(projectId, kitIds),
+    mutationFn: (kitIds: string[]) => warehouseWrites.undeployKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
       if (res.succeeded.length > 0) toast.success(`Moved ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} back to Prepped`);
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} skipped: ${res.errors[0].message}`);
@@ -828,12 +821,12 @@ function WarehouseProjectPage({
   });
   const unreturnMutation = useServerMutation({
     mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
-      unreturnItems(projectId, items),
+      warehouseWrites.unreturnItems(projectId, items),
     onSuccess: () => { toast.success("Moved back to Deployed"); invalidate(); },
     onError: (e) => showError(e),
   });
   const unreturnKitsMutation = useServerMutation<KitBatchResult, string[]>({
-    mutationFn: (kitIds: string[]) => unreturnKitsBatch(projectId, kitIds),
+    mutationFn: (kitIds: string[]) => warehouseWrites.unreturnKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
       if (res.succeeded.length > 0) toast.success(`Moved ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} back to Deployed`);
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} skipped: ${res.errors[0].message}`);
@@ -842,7 +835,7 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
   const undeprepMutation = useServerMutation({
-    mutationFn: (lineItemId: string) => undeprepLine(projectId, lineItemId),
+    mutationFn: (lineItemId: string) => warehouseWrites.undeprepLine(projectId, lineItemId),
     onSuccess: () => { toast.success("Re-packed — back to Returned"); invalidate(); },
     onError: (e) => showError(e),
   });
@@ -888,7 +881,7 @@ function WarehouseProjectPage({
   };
 
   const clearContainerMutation = useServerMutation({
-    mutationFn: (containerName: string) => clearPrepContainer(projectId, containerName),
+    mutationFn: (containerName: string) => warehouseWrites.clearPrepContainer(projectId, containerName),
     onSuccess: () => {
       toast.success("Container removed");
       invalidate();
@@ -3081,7 +3074,7 @@ function WarehouseProjectPage({
                     // RETURN store with no checks — return to inventory via the
                     // no-check check-in path (same as finishCheckQueue's direct
                     // items) rather than completeCheckAndStore (min(1)).
-                    await checkInItems(projectId, [
+                    await warehouseWrites.checkInItems(projectId, [
                       {
                         lineItemId: item.lineItemId,
                         assetId: item.assetId || undefined,

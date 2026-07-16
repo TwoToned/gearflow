@@ -684,6 +684,16 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     return [a.kitId, ...nestedKitIds];
 }
 
+/** Full check-in for one kit (parent-line lookup + default loc + core). Shared. */
+export async function checkinKitFull(ctx: Ctx, a: KitCheckinArgs): Promise<{ kitId: string; affectedKitIds: string[] }> {
+  const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+  if (!kitLine) throw new ConvexError("Kit not found on this project");
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
+  const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLoc);
+  return { kitId: a.kitId, affectedKitIds };
+}
+
 export const checkinKit = mutation({
   args: {
     organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(),
@@ -691,12 +701,7 @@ export const checkinKit = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
-    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
-    const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLocationId);
-    return { kitId: a.kitId, affectedKitIds };
+    return checkinKitFull(ctx, a);
   },
 });
 
@@ -710,6 +715,29 @@ export const checkinKit = mutation({
  * ONE transaction, so a genuine mid-execution failure (e.g. a missing bulk asset)
  * rolls the whole batch back (atomic) and the operator retries.
  */
+export type CheckinKitsBatchArgs = {
+  organizationId: string; projectId: string; userId: string;
+  items: Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>;
+  now: number;
+};
+
+/** Core batch check-in (per-kit org/project re-check, default loc once). Shared. */
+export async function checkinKitsBatchCore(ctx: Ctx, a: CheckinKitsBatchArgs): Promise<KitBatchResult> {
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
+  const succeeded: string[] = [];
+  const errors: { kitId: string; message: string }[] = [];
+  const affected = new Set<string>();
+  for (const item of a.items) {
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, item.kitId);
+    if (!kitLine) { errors.push({ kitId: item.kitId, message: "Kit not found on this project" }); continue; }
+    const aff = await checkinKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId: item.kitId, returnCondition: item.returnCondition, now: a.now }, kitLine, defaultLoc);
+    succeeded.push(item.kitId);
+    for (const k of aff) affected.add(k);
+  }
+  return { succeeded, errors, affectedKitIds: [...affected] };
+}
+
 export const checkinKitsBatch = mutation({
   args: {
     organizationId: v.string(), projectId: v.string(), userId: v.string(),
@@ -718,21 +746,53 @@ export const checkinKitsBatch = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
-    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
-    const succeeded: string[] = [];
-    const errors: { kitId: string; message: string }[] = [];
-    const affected = new Set<string>();
-    for (const item of a.items) {
-      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, item.kitId);
-      if (!kitLine) { errors.push({ kitId: item.kitId, message: "Kit not found on this project" }); continue; }
-      const aff = await checkinKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId: item.kitId, returnCondition: item.returnCondition, now: a.now }, kitLine, defaultLocationId);
-      succeeded.push(item.kitId);
-      for (const k of aff) affected.add(k);
-    }
-    return { succeeded, errors, affectedKitIds: [...affected] };
+    return checkinKitsBatchCore(ctx, a);
   },
 });
+
+export type CheckinItemsArgs = {
+  organizationId: string;
+  projectId: string;
+  userId: string;
+  items: Array<{
+    lineItemId: string;
+    assetId?: string;
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    quantity?: number;
+    notes?: string;
+  }>;
+  now: number;
+};
+
+/** Core check-in (unit returns, asset/bulk restores, scan logs, accessory cascade,
+ *  line rollups). Shared by the requireService mutation + the browser-direct write. */
+export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{ updatedLineIds: string[] }> {
+  // org default location to restore assets to
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
+
+  const updated = new Set<string>();
+  for (const item of a.items) {
+    const { unitsFlipped, assetsTouched } = await returnLineUnits(ctx, {
+      organizationId: a.organizationId, projectId: a.projectId, lineItemId: item.lineItemId, assetId: item.assetId,
+      returnCondition: item.returnCondition, quantity: item.quantity, notes: item.notes, userId: a.userId, defaultLocationId,
+    });
+    if (assetsTouched.length === 1) {
+      await scanLog(ctx, { organizationId: a.organizationId, assetId: assetsTouched[0], projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes ?? undefined });
+    } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
+      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
+    }
+    await syncLineItemRollup(ctx, item.lineItemId);
+    if (unitsFlipped > 0) {
+      await checkinAccessoryChildren(ctx, {
+        organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
+        returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId: item.assetId ?? null,
+      });
+    }
+    updated.add(item.lineItemId);
+  }
+  return { updatedLineIds: [...updated] };
+}
 
 export const checkinItems = mutation({
   args: {
@@ -750,31 +810,7 @@ export const checkinItems = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    // org default location to restore assets to
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
-    const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
-
-    const updated = new Set<string>();
-    for (const item of a.items) {
-      const { unitsFlipped, assetsTouched } = await returnLineUnits(ctx, {
-        organizationId: a.organizationId, projectId: a.projectId, lineItemId: item.lineItemId, assetId: item.assetId,
-        returnCondition: item.returnCondition, quantity: item.quantity, notes: item.notes, userId: a.userId, defaultLocationId,
-      });
-      if (assetsTouched.length === 1) {
-        await scanLog(ctx, { organizationId: a.organizationId, assetId: assetsTouched[0], projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes ?? undefined });
-      } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
-        await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
-      }
-      await syncLineItemRollup(ctx, item.lineItemId);
-      if (unitsFlipped > 0) {
-        await checkinAccessoryChildren(ctx, {
-          organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
-          returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId: item.assetId ?? null,
-        });
-      }
-      updated.add(item.lineItemId);
-    }
-    return { updatedLineIds: [...updated] };
+    return checkinItemsCore(ctx, a);
   },
 });
 
@@ -835,79 +871,104 @@ const reverseItemArg = v.object({ lineItemId: v.string(), assetId: v.optional(v.
 
 /** Deployed → Prepped: reverse checkoutItems. Units CHECKED_OUT → prepped,
  *  assets back to AVAILABLE at the default location. */
+export type ReverseItemsArgs = {
+  organizationId: string;
+  projectId: string;
+  userId: string;
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>;
+  now: number;
+};
+
+/** Core Deployed → Prepped (reverse checkoutItems). Shared by requireService + browser. */
+export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<{ updatedLineIds: string[] }> {
+  const defLoc = await defaultLocationId(ctx, a.organizationId);
+  const updated = new Set<string>();
+  for (const item of a.items) {
+    const line = await lineByCuid(ctx, item.lineItemId);
+    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
+    const { flipped } = await flipLineUnits(ctx, {
+      organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
+      toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
+      locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
+    });
+    const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
+    if (wholeLine) {
+      // Legacy unit-less line — set counters directly; a rollup would zero them.
+      await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
+    }
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+    if (!wholeLine) await syncLineItemRollup(ctx, line.id);
+    await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
+    updated.add(line.id);
+  }
+  return { updatedLineIds: [...updated] };
+}
+
 export const undeployItems = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), items: v.array(reverseItemArg), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const defLoc = await defaultLocationId(ctx, a.organizationId);
-    const updated = new Set<string>();
-    for (const item of a.items) {
-      const line = await lineByCuid(ctx, item.lineItemId);
-      if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-      const { flipped } = await flipLineUnits(ctx, {
-        organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
-        toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
-        locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
-      });
-      const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
-      if (wholeLine) {
-        // Legacy unit-less line — set counters directly; a rollup would zero them.
-        await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
-      }
-      await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
-      if (!wholeLine) await syncLineItemRollup(ctx, line.id);
-      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
-      updated.add(line.id);
-    }
-    return { updatedLineIds: [...updated] };
+    return undeployItemsCore(ctx, a);
   },
 });
 
 /** Returned → Deployed: reverse checkinItems. Units RETURNED → CHECKED_OUT,
  *  assets back out at the project location. */
+/** Core Returned → Deployed (reverse checkinItems). Shared by requireService + browser. */
+export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<{ updatedLineIds: string[] }> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  const projLoc = project?.locationId ?? null;
+  const updated = new Set<string>();
+  for (const item of a.items) {
+    const line = await lineByCuid(ctx, item.lineItemId);
+    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
+    const { flipped } = await flipLineUnits(ctx, {
+      organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
+      toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
+      locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
+    });
+    const wholeLine = flipped === 0 && line.status === "RETURNED";
+    if (wholeLine) {
+      // Legacy unit-less line — restore checked-out counters directly; a rollup
+      // would zero checkedOutQuantity (no units to recompute from).
+      await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
+    }
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+    if (!wholeLine) await syncLineItemRollup(ctx, line.id);
+    await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
+    updated.add(line.id);
+  }
+  return { updatedLineIds: [...updated] };
+}
+
 export const unreturnItems = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), items: v.array(reverseItemArg), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const projLoc = project?.locationId ?? null;
-    const updated = new Set<string>();
-    for (const item of a.items) {
-      const line = await lineByCuid(ctx, item.lineItemId);
-      if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-      const { flipped } = await flipLineUnits(ctx, {
-        organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
-        toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
-        locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
-      });
-      const wholeLine = flipped === 0 && line.status === "RETURNED";
-      if (wholeLine) {
-        // Legacy unit-less line — restore checked-out counters directly; a rollup
-        // would zero checkedOutQuantity (no units to recompute from).
-        await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
-      }
-      await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
-      if (!wholeLine) await syncLineItemRollup(ctx, line.id);
-      await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
-      updated.add(line.id);
-    }
-    return { updatedLineIds: [...updated] };
+    return unreturnItemsCore(ctx, a);
   },
 });
 
 /** De-prepped → Returned: re-pack a returned line (prepStatus back to PACKED).
  *  Status stays RETURNED; this only reverses the de-prep prepStatus reset. */
+export type UndeprepLineArgs = { organizationId: string; projectId: string; lineItemId: string; now: number };
+
+/** Core De-prepped → Returned (re-pack a returned line). Shared by requireService + browser. */
+export async function undeprepLineCore(ctx: Ctx, a: UndeprepLineArgs): Promise<{ id: string }> {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+  await ctx.db.patch(line._id, { prepStatus: "PACKED", updatedAt: a.now });
+  for (const child of (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY")) {
+    await ctx.db.patch(child._id, { prepStatus: "PACKED", updatedAt: a.now });
+  }
+  return { id: a.lineItemId };
+}
+
 export const undeprepLine = mutation({
   args: { organizationId: v.string(), projectId: v.string(), lineItemId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const line = await lineByCuid(ctx, a.lineItemId);
-    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
-    await ctx.db.patch(line._id, { prepStatus: "PACKED", updatedAt: a.now });
-    for (const child of (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY")) {
-      await ctx.db.patch(child._id, { prepStatus: "PACKED", updatedAt: a.now });
-    }
-    return { id: a.lineItemId };
+    return undeprepLineCore(ctx, a);
   },
 });
 
@@ -954,15 +1015,20 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
     return [a.kitId, ...nestedKitIds];
 }
 
+/** Full Deployed → Prepped for one kit (parent-line lookup + defLoc + core). Shared. */
+export async function undeployKitFull(ctx: Ctx, a: KitOpArgs): Promise<{ kitId: string; affectedKitIds: string[] }> {
+  const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+  if (!kitLine) throw new ConvexError("Kit not found on this project");
+  const defLoc = await defaultLocationId(ctx, a.organizationId);
+  const affectedKitIds = await undeployKitCore(ctx, a, kitLine, defLoc);
+  return { kitId: a.kitId, affectedKitIds };
+}
+
 export const undeployKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const defLoc = await defaultLocationId(ctx, a.organizationId);
-    const affectedKitIds = await undeployKitCore(ctx, a, kitLine, defLoc);
-    return { kitId: a.kitId, affectedKitIds };
+    return undeployKitFull(ctx, a);
   },
 });
 
@@ -976,22 +1042,30 @@ export const undeployKit = mutation({
  * ONE transaction, so a genuine mid-execution failure would roll the whole batch back;
  * the client surfaces the error and the operator retries.) `defLoc` resolved once.
  */
+export type KitsBatchArgs = { organizationId: string; projectId: string; userId: string; kitIds: string[]; now: number };
+export type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string }[]; affectedKitIds: string[] };
+
+/** Core batch Deployed → Prepped (per-kit org/project re-check, defLoc once). Shared. */
+export async function undeployKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise<KitBatchResult> {
+  const defLoc = await defaultLocationId(ctx, a.organizationId);
+  const succeeded: string[] = [];
+  const errors: { kitId: string; message: string }[] = [];
+  const affected = new Set<string>();
+  for (const kitId of a.kitIds) {
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
+    if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
+    const aff = await undeployKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, defLoc);
+    succeeded.push(kitId);
+    for (const k of aff) affected.add(k);
+  }
+  return { succeeded, errors, affectedKitIds: [...affected] };
+}
+
 export const undeployKitsBatch = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const defLoc = await defaultLocationId(ctx, a.organizationId);
-    const succeeded: string[] = [];
-    const errors: { kitId: string; message: string }[] = [];
-    const affected = new Set<string>();
-    for (const kitId of a.kitIds) {
-      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
-      if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
-      const aff = await undeployKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, defLoc);
-      succeeded.push(kitId);
-      for (const k of aff) affected.add(k);
-    }
-    return { succeeded, errors, affectedKitIds: [...affected] };
+    return undeployKitsBatchCore(ctx, a);
   },
 });
 
@@ -1033,16 +1107,21 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
     return [a.kitId, ...nestedKitIds];
 }
 
+/** Full Returned → Deployed for one kit (parent-line lookup + projLoc + core). Shared. */
+export async function unreturnKitFull(ctx: Ctx, a: KitOpArgs): Promise<{ kitId: string; affectedKitIds: string[] }> {
+  const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+  if (!kitLine) throw new ConvexError("Kit not found on this project");
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  const projLoc = project?.locationId ?? null;
+  const affectedKitIds = await unreturnKitCore(ctx, a, kitLine, projLoc);
+  return { kitId: a.kitId, affectedKitIds };
+}
+
 export const unreturnKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const projLoc = project?.locationId ?? null;
-    const affectedKitIds = await unreturnKitCore(ctx, a, kitLine, projLoc);
-    return { kitId: a.kitId, affectedKitIds };
+    return unreturnKitFull(ctx, a);
   },
 });
 
@@ -1056,23 +1135,28 @@ export const unreturnKit = mutation({
  * back (atomic) rather than leaving it half-applied. The client surfaces the error and
  * the operator retries. `projLoc` resolved once (all kits share the projectId).
  */
+/** Core batch Returned → Deployed (per-kit org/project re-check, projLoc once). Shared. */
+export async function unreturnKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise<KitBatchResult> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  const projLoc = project?.locationId ?? null;
+  const succeeded: string[] = [];
+  const errors: { kitId: string; message: string }[] = [];
+  const affected = new Set<string>();
+  for (const kitId of a.kitIds) {
+    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
+    if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
+    const aff = await unreturnKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, projLoc);
+    succeeded.push(kitId);
+    for (const k of aff) affected.add(k);
+  }
+  return { succeeded, errors, affectedKitIds: [...affected] };
+}
+
 export const unreturnKitsBatch = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const projLoc = project?.locationId ?? null;
-    const succeeded: string[] = [];
-    const errors: { kitId: string; message: string }[] = [];
-    const affected = new Set<string>();
-    for (const kitId of a.kitIds) {
-      const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, kitId);
-      if (!kitLine) { errors.push({ kitId, message: "Kit not found on this project" }); continue; }
-      const aff = await unreturnKitCore(ctx, { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now }, kitLine, projLoc);
-      succeeded.push(kitId);
-      for (const k of aff) affected.add(k);
-    }
-    return { succeeded, errors, affectedKitIds: [...affected] };
+    return unreturnKitsBatchCore(ctx, a);
   },
 });
 
@@ -1262,64 +1346,52 @@ export const quickAdd = mutation({
   },
 });
 
+export type EnsureContainerArgs = { organizationId: string; projectId: string; assetId: string; modelId: string; containerName: string; now: number };
+
+/** Core check-then-create of a container line item (idempotent via the existing
+ *  (asset, project, isContainerLineItem) uniqueness check). Shared. */
+export async function ensureContainerOnProjectCore(ctx: Ctx, a: EnsureContainerArgs): Promise<{ id: string; created: boolean }> {
+  const existing = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
+    .find((l) => l.projectId === a.projectId && l.organizationId === a.organizationId && l.isContainerLineItem);
+  if (existing) return { id: existing.id, created: false };
+  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+    .filter((l) => l.organizationId === a.organizationId);
+  const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+  const id = createId();
+  await ctx.db.insert("projectLineItems", {
+    id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
+    quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
+    isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+  });
+  return { id, created: true };
+}
+
 export const ensureContainerOnProject = mutation({
   args: { organizationId: v.string(), projectId: v.string(), assetId: v.string(), modelId: v.string(), containerName: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const existing = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
-      .find((l) => l.projectId === a.projectId && l.organizationId === a.organizationId && l.isContainerLineItem);
-    if (existing) return { id: existing.id, created: false };
-    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
-      .filter((l) => l.organizationId === a.organizationId);
-    const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
-    const id = createId();
-    await ctx.db.insert("projectLineItems", {
-      id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
-      quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
-      isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
-    });
-    return { id, created: true };
+    return ensureContainerOnProjectCore(ctx, a);
   },
 });
+
+export type ClearPrepContainerArgs = { organizationId: string; projectId: string; containerName: string; now: number };
+
+/** Core clear-prep-container (strip prepContainer off every line in the container). Shared. */
+export async function clearPrepContainerCore(ctx: Ctx, a: ClearPrepContainerArgs): Promise<{ success: true }> {
+  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+    .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
+  for (const l of lines) {
+    const { _id, _creationTime, prepContainer: _p, ...rest } = l;
+    await ctx.db.replace(_id, { ...rest, updatedAt: a.now });
+  }
+  return { success: true };
+}
 
 export const clearPrepContainer = mutation({
   args: { organizationId: v.string(), projectId: v.string(), containerName: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
-      .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
-    for (const l of lines) {
-      const { _id, _creationTime, prepContainer: _p, ...rest } = l;
-      await ctx.db.replace(_id, { ...rest, updatedAt: a.now });
-    }
-    return { success: true };
-  },
-});
-
-export const syncContainerStatus = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), containerName: v.string(), userId: v.string(), now: v.number() },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
-    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
-      .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
-    const containerLI = lines.find((l) => l.isContainerLineItem);
-    if (!containerLI) return { updated: false };
-    const contents = lines.filter((l) => !l.isContainerLineItem);
-    if (contents.length === 0) return { updated: false };
-    const allDeployed = contents.every((i) => i.status === "CHECKED_OUT");
-    const allReturned = contents.every((i) => i.status === "RETURNED");
-    const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
-    const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
-    if (!allDeployedFlag && !allReturnedFlag) return { updated: false };
-    if (allDeployedFlag) {
-      await ctx.db.patch(containerLI._id, { status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
-    } else {
-      await ctx.db.patch(containerLI._id, { status: "RETURNED", returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: "GOOD", updatedAt: a.now });
-    }
-    if (containerLI.assetId) {
-      await setAssetsStatus(ctx, [containerLI.assetId], allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE", null, false, a.now);
-    }
-    return { updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" };
+    return clearPrepContainerCore(ctx, a);
   },
 });
 
@@ -1334,14 +1406,15 @@ export const syncContainerStatus = mutation({
  * its asset when all contents are uniformly deployed/returned). Org scoping is
  * inherent (by_projectId scan filtered to organizationId).
  */
-export const syncContainersBatch = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), containerNames: v.array(v.string()), userId: v.string(), now: v.number() },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
-    const allLines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
-      .filter((l) => l.organizationId === a.organizationId);
-    const results: Array<{ containerName: string; updated: boolean; status?: string }> = [];
-    for (const containerName of a.containerNames) {
+export type SyncContainersBatchArgs = { organizationId: string; projectId: string; containerNames: string[]; userId: string; now: number };
+
+/** Core batch container roll-up (read lines once, bucket by prepContainer, flip each
+ *  container line + asset when contents are uniformly deployed/returned). Shared. */
+export async function syncContainersBatchCore(ctx: Ctx, a: SyncContainersBatchArgs): Promise<{ results: Array<{ containerName: string; updated: boolean; status?: string }> }> {
+  const allLines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+    .filter((l) => l.organizationId === a.organizationId);
+  const results: Array<{ containerName: string; updated: boolean; status?: string }> = [];
+  for (const containerName of a.containerNames) {
       const lines = allLines.filter((l) => l.prepContainer === containerName);
       const containerLI = lines.find((l) => l.isContainerLineItem);
       if (!containerLI) { results.push({ containerName, updated: false }); continue; }
@@ -1363,6 +1436,13 @@ export const syncContainersBatch = mutation({
       results.push({ containerName, updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
     }
     return { results };
+}
+
+export const syncContainersBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), containerNames: v.array(v.string()), userId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return syncContainersBatchCore(ctx, a);
   },
 });
 

@@ -101,9 +101,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         allowOverbook,
         forceSeparate,
         includeAccessories,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab/webhook tail off on the
+        // native path (below), so the mutation must emit them. The pre-fold app never
+        // passes this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
@@ -112,31 +115,10 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
     const result = (await readBackLine(res.id))!;
 
-    // Non-money tail (best-effort collab feed + supplier enrich). The money orchestration
-    // + CREATE/UPDATE audit + recalc already committed atomically in the mutation.
-    const [, supplier] = await Promise.all([
-      writeCollabActivityEvent(
-        { organizationId, userId, userName },
-        {
-          entityType: "project",
-          entityId: projectId,
-          action: "line_item_added",
-          summary: `added ${result.description || "a line item"}`,
-          targetType: "lineItem",
-          targetId: result.id,
-        },
-      ),
-      result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
-    ]);
-
-    void emitWebhookEvent(organizationId, "line_item.added", {
-      projectId,
-      lineItemId: result.id,
-      modelId: result.modelId ?? null,
-      quantity: result.quantity ?? null,
-      type: result.type ?? null,
-      description: result.description ?? null,
-    });
+    // Non-money tail (supplier enrich only). The money orchestration + CREATE/UPDATE
+    // audit + recalc + collab feed ("line_item_added") + webhook ("line_item.added")
+    // now all commit atomically inside addLineItemSmartNative.
+    const supplier = result.supplierId ? await getSupplierById(result.supplierId).catch(() => null) : null;
 
     if (res.merged) {
       return serialize({ ...result, supplier, _merged: true, _newQuantity: result.quantity });
@@ -395,7 +377,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
             clear: [],
             entityName: existing.description || "Line item",
             allowOverbook,
-            orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
             actor: { userId, userName },
             auditId: createId(),
             now: Date.now(),
@@ -520,7 +501,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         fields: lineFields,
         includeAccessories,
         allowOverbook,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
         now: Date.now(),
@@ -804,9 +784,12 @@ export async function updateLineItem(
         clear,
         entityName: parsed.description || "Line item",
         allowOverbook,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab tail off on the native
+        // path (below), so the mutation must emit it. The pre-fold app never passes
+        // this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
@@ -836,21 +819,25 @@ export async function updateLineItem(
       summary: `Updated line item on project`,
       projectId: result.projectId,
     }),
-    writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: result.projectId,
-        action: "line_item_updated",
-        summary: `updated ${result.description || "a line item"}`,
-        targetType: "lineItem",
-        targetId: result.id,
-        metadata: {
-          quantity: result.quantity,
-          lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
-        },
-      },
-    ),
+    // Native path folds the collab feed ("line_item_updated" + quantity/lineTotal
+    // metadata) into patchNative; only the legacy path emits it here.
+    nativeLineItemWrites()
+      ? Promise.resolve()
+      : writeCollabActivityEvent(
+          { organizationId, userId, userName },
+          {
+            entityType: "project",
+            entityId: result.projectId,
+            action: "line_item_updated",
+            summary: `updated ${result.description || "a line item"}`,
+            targetType: "lineItem",
+            targetId: result.id,
+            metadata: {
+              quantity: result.quantity,
+              lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
+            },
+          },
+        ),
     result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
   ]);
   return serialize({ ...result, supplier });
@@ -963,7 +950,9 @@ export async function addKitLineItem(
       await kitConvex.mutation(api.lineItemWrites.addKitNative, {
         ...kitLineArgs,
         kitLabel: `${kit.assetTag} - ${kit.name}`,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
+        // The mutation folds the "kit_added" collab event, gated on this flag (bulk
+        // callers pass emitActivity=false and log one grouped event instead).
+        emitActivity,
         actor: { userId, userName },
         auditId: createId(),
       });
@@ -981,8 +970,11 @@ export async function addKitLineItem(
   await Promise.all([
     // Native path recalcs in-mutation; only the legacy path needs the server recalc.
     nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
-    emitActivity
-      ? writeCollabActivityEvent(
+    // Native path folds the "kit_added" collab (gated on emitActivity) into
+    // addKitNative; only the legacy path emits it here.
+    nativeLineItemWrites() || !emitActivity
+      ? Promise.resolve()
+      : writeCollabActivityEvent(
           { organizationId, userId, userName },
           {
             entityType: "project",
@@ -992,8 +984,7 @@ export async function addKitLineItem(
             targetType: "lineItem",
             targetId: parentItem.id,
           },
-        )
-      : Promise.resolve(),
+        ),
   ]);
 
   return serialize(parentItem);
@@ -1049,9 +1040,12 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       organizationId,
       projectId,
       fields: customFields,
-      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
       actor: { userId, userName },
       auditId: createId(),
+      // This NEW app image conditionalizes its own collab tail off on the native
+      // path (below), so the mutation must emit it. The pre-fold app never passes
+      // this, so it doesn't double-emit during the deploy window. Expand-contract.
+      emitSideEffects: true,
       now: Date.now(),
     });
   } else {
@@ -1083,17 +1077,21 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       summary: `Added custom item "${parsed.description}" to project`,
       projectId,
     }),
-    writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: projectId,
-        action: "custom_item_added",
-        summary: `added custom item "${parsed.description}"`,
-        targetType: "lineItem",
-        targetId: result.id,
-      },
-    ),
+    // Native path folds the "custom_item_added" collab into addCustomNative; only the
+    // legacy path emits it here.
+    nativeLineItemWrites()
+      ? Promise.resolve()
+      : writeCollabActivityEvent(
+          { organizationId, userId, userName },
+          {
+            entityType: "project",
+            entityId: projectId,
+            action: "custom_item_added",
+            summary: `added custom item "${parsed.description}"`,
+            targetType: "lineItem",
+            targetId: result.id,
+          },
+        ),
   ]);
 
   return serialize(result);
@@ -1115,33 +1113,23 @@ export async function removeLineItem(id: string) {
 
   if (nativeLineItemWrites()) {
     // Native: the child-removal guard + cascade (children + units) + DELETE audit
-    // + project-totals recalc all run atomically in the mutation (one round-trip).
-    // Only the best-effort collab feed stays server-side.
+    // + project-totals recalc + collab feed ("line_item_removed") all run atomically
+    // in the mutation (one round-trip).
     try {
       await convex.mutation(api.lineItemWrites.removeNative, {
         id,
         orgId: organizationId,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab tail off on the native
+        // path (below), so the mutation must emit it. The pre-fold app never passes
+        // this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
       throw mapNativeWriteError(e);
     }
-    await Promise.all([
-      writeCollabActivityEvent(
-        { organizationId, userId, userName },
-        {
-          entityType: "project",
-          entityId: item.projectId,
-          action: "line_item_removed",
-          summary: `removed ${item.description || "a line item"}`,
-          targetType: "lineItem",
-          targetId: id,
-        },
-      ),
-    ]);
     return serialize({ success: true });
   }
 
@@ -1714,12 +1702,11 @@ export async function recalculateProjectTotals(projectId: string) {
   // recalc.ts port is parity-tested against this function (convex/recalc.test.ts).
   // org default tax lives in Postgres (no Convex mirror writer), passed in.
   if (nativeRecalc()) {
-    const orgDefaultTaxRate =
-      project.taxRate == null ? await orgDefaultTaxRateFor(orgId) : null;
+    // orgDefaultTaxRate is resolved inside the mutation from orgSettings (source of
+    // truth) — the client no longer supplies it (a spoofable money-affecting value).
     await convex.mutation(api.lineItemWrites.recalcNative, {
       projectId,
       orgId,
-      orgDefaultTaxRate,
       now: Date.now(),
     });
     return;

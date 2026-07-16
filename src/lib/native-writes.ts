@@ -1,5 +1,10 @@
 import { ConvexError } from "convex/values";
-import { UserFacingError } from "@/lib/errors";
+// Import from the concrete module, NOT the "@/lib/errors" barrel: the barrel also
+// re-exports `withAction` (a server-action wrapper) + the Prisma translator, and this
+// module is imported by client hooks (use-line-item-writes / use-native-project-writes).
+// Pulling the barrel into a small client chunk drags that server code in and trips
+// Turbopack's scope-hoist merge (`EcmascriptModuleContent::new_merged failed`).
+import { UserFacingError } from "@/lib/errors/user-facing-error";
 
 /**
  * Per-domain feature flags for the Phase 5 native-write cutover (writes routed

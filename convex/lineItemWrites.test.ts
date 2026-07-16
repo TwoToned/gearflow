@@ -22,7 +22,7 @@ const NOW = 1_700_000_000_000;
 const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
-const args = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+const args = { id: "li1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
 
 async function member(t: ReturnType<typeof convexTest>, role: string) {
   await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role }); });
@@ -36,7 +36,7 @@ describe("lineItemWrites.removeNative", () => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
       await ctx.db.insert("projectLineItemUnits", { id: "u1", organizationId: ORG, lineItemId: "li1", assetId: "a1", ordinal: 0 });
     });
-    const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.removeNative, args);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.removeNative, { ...args, emitSideEffects: true });
     expect(res.projectId).toBe("p1");
     await t.run(async (ctx) => {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
@@ -46,6 +46,12 @@ describe("lineItemWrites.removeNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("DELETE");
       expect(log?.entityType).toBe("lineItem");
+      // Collab feed folded into the mutation (was a server-tail writeCollabActivityEvent).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const removed = events.find((e) => e.action === "line_item_removed");
+      expect(removed?.summary).toBe("removed Light");
+      expect(removed?.targetType).toBe("lineItem");
+      expect(removed?.targetId).toBe("li1");
     });
   });
 
@@ -92,14 +98,14 @@ describe("lineItemWrites.removeNative", () => {
 });
 
 describe("lineItemWrites.patchNative", () => {
-  const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
+  const pargs = { id: "li1", orgId: ORG, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, unitPrice: 50, updatedAt: NOW }, clear: [] });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, unitPrice: 50, lineTotal: 150, updatedAt: NOW }, clear: [], emitSideEffects: true });
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
       expect(li?.quantity).toBe(3);
@@ -107,6 +113,12 @@ describe("lineItemWrites.patchNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("UPDATE");
       expect(log?.entityType).toBe("lineItem");
+      // Collab feed folded into the mutation, with POST-patch quantity + lineTotal metadata.
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const updated = events.find((e) => e.action === "line_item_updated");
+      expect(updated?.summary).toBe("updated Light");
+      expect(updated?.targetId).toBe("li1");
+      expect(updated?.metadata).toEqual({ quantity: 3, lineTotal: "150" });
     });
   });
   test("clear removes a field", async () => {
@@ -160,14 +172,14 @@ describe("lineItemWrites.patchNative", () => {
 });
 
 describe("lineItemWrites.addCustomNative", () => {
-  const cargs = { id: "cust1", organizationId: ORG, projectId: "p1", fields: { description: "Rigging labour", quantity: 1, unitPrice: 200 }, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+  const cargs = { id: "cust1", organizationId: ORG, projectId: "p1", fields: { description: "Rigging labour", quantity: 1, unitPrice: 200 }, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds a custom line (sortOrder computed) + CREATE audit", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "existing", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 4 });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, emitSideEffects: true });
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first();
       expect(li?.isCustomItem).toBe(true);
@@ -175,6 +187,11 @@ describe("lineItemWrites.addCustomNative", () => {
       expect(li?.description).toBe("Rigging labour");
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("CREATE");
+      // Collab feed folded into the mutation.
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "custom_item_added");
+      expect(added?.summary).toBe('added custom item "Rigging labour"');
+      expect(added?.targetId).toBe("cust1");
     });
   });
   test("viewer denied", async () => {
@@ -205,7 +222,7 @@ describe("lineItemWrites.addCustomNative", () => {
 });
 
 describe("lineItemWrites.addNative", () => {
-  const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, allowOverbook: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+  const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds an inventory line (sortOrder in-mutation) + CREATE audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -235,7 +252,7 @@ describe("lineItemWrites.addNative availability enforcement", () => {
   const enfArgs = (fields: { modelId?: string; assetId?: string; quantity: number }, over = false) => ({
     id: "nx", organizationId: ORG, projectId: "p1",
     fields: { type: "EQUIPMENT" as const, ...fields },
-    includeAccessories: false, allowOverbook: over, orgDefaultTaxRate: null,
+    includeAccessories: false, allowOverbook: over,
     actor: ACTOR, auditId: "log1", now: NOW,
   });
 
@@ -327,7 +344,7 @@ describe("lineItemWrites.addNative availability enforcement", () => {
 });
 
 describe("lineItemWrites.patchNative availability enforcement", () => {
-  const pargs = { id: "li1", orgId: ORG, orgDefaultTaxRate: null, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
+  const pargs = { id: "li1", orgId: ORG, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
   // Dateless project, SERIALIZED model with 3 active assets, one existing line (li1)
   // on the project booking `oldQty` of the model.
   async function seed(t: ReturnType<typeof makeT>, oldQty: number) {
@@ -421,7 +438,7 @@ describe("lineItemWrites availability org-isolation", () => {
       await ctx.db.insert("assets", { id: "theirs", organizationId: "org_other", modelId: "m1", assetTag: "X-0", status: "AVAILABLE", isActive: true });
     });
     // Adding qty 2 must fail — only 1 unit is ours, despite 2 assets sharing the modelId.
-    const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, modelId: "m1", description: "PAR", quantity: 2 }, includeAccessories: false, allowOverbook: false, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+    const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, modelId: "m1", description: "PAR", quantity: 2 }, includeAccessories: false, allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs),
     ).rejects.toThrow(/Only 1 of 2 requested are free/);
@@ -429,7 +446,7 @@ describe("lineItemWrites availability org-isolation", () => {
 });
 
 describe("lineItemWrites.addKitNative", () => {
-  const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+  const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", emitActivity: true, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds a kit (parent + member child lines) + CREATE audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -450,6 +467,26 @@ describe("lineItemWrites.addKitNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("CREATE");
       expect(log?.kitId).toBe("k1");
+      // Collab feed folded into the mutation — one member → "1 item".
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "kit_added");
+      expect(added?.summary).toBe('added kit "KIT-1 - Lighting" (1 item)');
+      expect(added?.targetId).toBe("kl1");
+    });
+  });
+  test("emitActivity:false suppresses the kit_added collab event", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, { ...kargs, emitActivity: false });
+    await t.run(async (ctx) => {
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      expect(events.find((e) => e.action === "kit_added")).toBeUndefined();
+      // The CREATE audit still fires (only the collab feed is gated).
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
     });
   });
   test("viewer denied", async () => {
@@ -526,9 +563,11 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     allowOverbook: opts?.over ?? false,
     forceSeparate: opts?.sep ?? false,
     includeAccessories: opts?.acc ?? false,
-    orgDefaultTaxRate: null,
     actor: ACTOR,
     auditId: "log1",
+    // The new app passes this so the mutation emits the folded collab/webhook side
+    // effects; the collab/webhook assertions below depend on it firing.
+    emitSideEffects: true,
     now: NOW,
   });
 
@@ -558,6 +597,11 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
       expect(li?.unitPrice).toBe(20);
       expect(li?.duration).toBe(3); // rentalQuantity
       expect(li?.lineTotal).toBe(120); // 20 × 2 × 3
+      // Collab feed folded into the mutation (insert path).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "line_item_added");
+      expect(added?.targetId).toBe("sm1");
+      expect(added?.summary).toBe("added a line item"); // no description → fallback
     });
   });
 
@@ -613,6 +657,45 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
       // No sm1 row was inserted.
       const sm = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
       expect(sm).toBeNull();
+      // Collab feed folded into the mutation — merge path emits line_item_added on the
+      // EXISTING line id (parity with the server, which read back existing.id).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "line_item_added");
+      expect(added?.targetId).toBe("ex");
+    });
+  });
+
+  test("webhook: line_item.added is enqueued to an active subscription (insert path)", async () => {
+    const t = makeT();
+    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await t.run(async (ctx) => {
+      // An active endpoint subscribed to line_item.added.
+      await ctx.db.insert("webhooks", { id: "wh1", organizationId: ORG, description: "Zapier", url: "https://example.test/hook", events: JSON.stringify(["line_item.added"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(
+      api.lineItemWrites.addLineItemSmartNative,
+      smartArgs({ modelId: "m1", quantity: 2, description: "PAR Can" }, { over: true }),
+    );
+    await t.run(async (ctx) => {
+      const deliveries = await ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect();
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0].event).toBe("line_item.added");
+      expect(deliveries[0].status).toBe("PENDING");
+      const payload = JSON.parse(deliveries[0].payload);
+      expect(payload).toMatchObject({ projectId: "p1", lineItemId: "sm1", modelId: "m1", quantity: 2, type: "EQUIPMENT", description: "PAR Can" });
+    });
+  });
+
+  test("webhook: nothing enqueued when no active subscription matches", async () => {
+    const t = makeT();
+    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await t.withIdentity(asUser(ORG)).mutation(
+      api.lineItemWrites.addLineItemSmartNative,
+      smartArgs({ modelId: "m1", quantity: 1 }, { over: true }),
+    );
+    await t.run(async (ctx) => {
+      const deliveries = await ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect();
+      expect(deliveries).toHaveLength(0);
     });
   });
 
@@ -750,7 +833,7 @@ describe("lineItemWrites.recalcNative", () => {
       await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, orgDefaultTaxRate: null, now: NOW + 5 });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, now: NOW + 5 });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
     expect(p?.subtotal).toBe(100);
     expect(p?.taxAmount).toBe(10); // 10% of 100
@@ -761,6 +844,6 @@ describe("lineItemWrites.recalcNative", () => {
   test("viewer denied", async () => {
     const t = makeT();
     await member(t, "viewer");
-    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, orgDefaultTaxRate: null, now: NOW })).rejects.toThrow(/insufficient permissions/i);
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });
 });

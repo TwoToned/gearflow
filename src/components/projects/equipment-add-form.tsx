@@ -25,6 +25,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
+import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -72,6 +73,7 @@ export function EquipmentAddForm({
 }: EquipmentAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const lineItemWrites = useLineItemWrites();
   const [mode, setMode] = useState<AddMode>("model");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [assetTagInput, setAssetTagInput] = useState("");
@@ -189,7 +191,7 @@ export function EquipmentAddForm({
   }, [assetLookup, form]);
 
   const mutation = useServerMutation({
-    mutationFn: (data: LineItemFormValues) => {
+    mutationFn: async (data: LineItemFormValues) => {
       let disc = data.discount;
       if (discountMode === "%" && disc && data.unitPrice) {
         const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
@@ -197,6 +199,32 @@ export function EquipmentAddForm({
       }
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
       const effectiveGroupId = groupId || selectedGroupId || undefined;
+      // Browser-direct native path (flag-gated, default OFF). The list is a reactive
+      // useQuery, so the new/merged row appears on its own; the return is used only for
+      // the merged-toast. When disabled, the unchanged server action runs.
+      if (lineItemWrites.enabled) {
+        const parsed = lineItemSchema.parse({
+          ...data,
+          discount: disc,
+          categoryId: effectiveCategoryId,
+          groupId: effectiveGroupId,
+        });
+        const res = await lineItemWrites.add(projectId, parsed, {
+          allowOverbook: overbookConfirmed,
+          forceSeparate: duplicateAction === "separate",
+          includeAccessories,
+        });
+        // Native returns { id, merged }; reshape to the server's _merged/_newQuantity so
+        // onSuccess is unchanged. Merged qty mirrors the "combine" radio's preview.
+        return res.merged
+          ? {
+              _merged: true,
+              _newQuantity: availability
+                ? availability.bookedOnThisProject + (Number(data.quantity) || 1)
+                : undefined,
+            }
+          : { _merged: false };
+      }
       return addLineItem(
         projectId,
         { ...data, discount: disc, categoryId: effectiveCategoryId, groupId: effectiveGroupId },

@@ -46,6 +46,12 @@ describe("lineItemWrites.removeNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("DELETE");
       expect(log?.entityType).toBe("lineItem");
+      // Collab feed folded into the mutation (was a server-tail writeCollabActivityEvent).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const removed = events.find((e) => e.action === "line_item_removed");
+      expect(removed?.summary).toBe("removed Light");
+      expect(removed?.targetType).toBe("lineItem");
+      expect(removed?.targetId).toBe("li1");
     });
   });
 
@@ -99,7 +105,7 @@ describe("lineItemWrites.patchNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, unitPrice: 50, updatedAt: NOW }, clear: [] });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 3, unitPrice: 50, lineTotal: 150, updatedAt: NOW }, clear: [] });
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
       expect(li?.quantity).toBe(3);
@@ -107,6 +113,12 @@ describe("lineItemWrites.patchNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("UPDATE");
       expect(log?.entityType).toBe("lineItem");
+      // Collab feed folded into the mutation, with POST-patch quantity + lineTotal metadata.
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const updated = events.find((e) => e.action === "line_item_updated");
+      expect(updated?.summary).toBe("updated Light");
+      expect(updated?.targetId).toBe("li1");
+      expect(updated?.metadata).toEqual({ quantity: 3, lineTotal: "150" });
     });
   });
   test("clear removes a field", async () => {
@@ -175,6 +187,11 @@ describe("lineItemWrites.addCustomNative", () => {
       expect(li?.description).toBe("Rigging labour");
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("CREATE");
+      // Collab feed folded into the mutation.
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "custom_item_added");
+      expect(added?.summary).toBe('added custom item "Rigging labour"');
+      expect(added?.targetId).toBe("cust1");
     });
   });
   test("viewer denied", async () => {
@@ -429,7 +446,7 @@ describe("lineItemWrites availability org-isolation", () => {
 });
 
 describe("lineItemWrites.addKitNative", () => {
-  const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
+  const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", emitActivity: true, orgDefaultTaxRate: null, actor: ACTOR, auditId: "log1", now: NOW };
   test("member adds a kit (parent + member child lines) + CREATE audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -450,6 +467,26 @@ describe("lineItemWrites.addKitNative", () => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.action).toBe("CREATE");
       expect(log?.kitId).toBe("k1");
+      // Collab feed folded into the mutation — one member → "1 item".
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "kit_added");
+      expect(added?.summary).toBe('added kit "KIT-1 - Lighting" (1 item)');
+      expect(added?.targetId).toBe("kl1");
+    });
+  });
+  test("emitActivity:false suppresses the kit_added collab event", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, { ...kargs, emitActivity: false });
+    await t.run(async (ctx) => {
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      expect(events.find((e) => e.action === "kit_added")).toBeUndefined();
+      // The CREATE audit still fires (only the collab feed is gated).
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.action).toBe("CREATE");
     });
   });
   test("viewer denied", async () => {
@@ -558,6 +595,11 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
       expect(li?.unitPrice).toBe(20);
       expect(li?.duration).toBe(3); // rentalQuantity
       expect(li?.lineTotal).toBe(120); // 20 × 2 × 3
+      // Collab feed folded into the mutation (insert path).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "line_item_added");
+      expect(added?.targetId).toBe("sm1");
+      expect(added?.summary).toBe("added a line item"); // no description → fallback
     });
   });
 
@@ -613,6 +655,45 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
       // No sm1 row was inserted.
       const sm = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
       expect(sm).toBeNull();
+      // Collab feed folded into the mutation — merge path emits line_item_added on the
+      // EXISTING line id (parity with the server, which read back existing.id).
+      const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
+      const added = events.find((e) => e.action === "line_item_added");
+      expect(added?.targetId).toBe("ex");
+    });
+  });
+
+  test("webhook: line_item.added is enqueued to an active subscription (insert path)", async () => {
+    const t = makeT();
+    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await t.run(async (ctx) => {
+      // An active endpoint subscribed to line_item.added.
+      await ctx.db.insert("webhooks", { id: "wh1", organizationId: ORG, description: "Zapier", url: "https://example.test/hook", events: JSON.stringify(["line_item.added"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(
+      api.lineItemWrites.addLineItemSmartNative,
+      smartArgs({ modelId: "m1", quantity: 2, description: "PAR Can" }, { over: true }),
+    );
+    await t.run(async (ctx) => {
+      const deliveries = await ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect();
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0].event).toBe("line_item.added");
+      expect(deliveries[0].status).toBe("PENDING");
+      const payload = JSON.parse(deliveries[0].payload);
+      expect(payload).toMatchObject({ projectId: "p1", lineItemId: "sm1", modelId: "m1", quantity: 2, type: "EQUIPMENT", description: "PAR Can" });
+    });
+  });
+
+  test("webhook: nothing enqueued when no active subscription matches", async () => {
+    const t = makeT();
+    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await t.withIdentity(asUser(ORG)).mutation(
+      api.lineItemWrites.addLineItemSmartNative,
+      smartArgs({ modelId: "m1", quantity: 1 }, { over: true }),
+    );
+    await t.run(async (ctx) => {
+      const deliveries = await ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect();
+      expect(deliveries).toHaveLength(0);
     });
   });
 

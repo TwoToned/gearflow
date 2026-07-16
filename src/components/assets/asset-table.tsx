@@ -14,7 +14,7 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAssets, useBulkAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
-import { bulkForceReturnAssets } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useLocations } from "@/hooks/use-locations";
 import { useCategories } from "@/hooks/use-categories";
@@ -373,6 +373,7 @@ export function AssetTable() {
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const warehouseWrites = useWarehouseWrites();
 
   // Reactive locations (Convex). Org-scoped list returns all rows; rebuild the
   // {id,name,type,parent} shape the columns need (parent name resolved from the
@@ -545,7 +546,7 @@ export function AssetTable() {
   };
 
   const forceReturnMutation = useServerMutation({
-    mutationFn: () => bulkForceReturnAssets(Array.from(selectedIds)),
+    mutationFn: () => warehouseWrites.bulkForceReturnAssets(Array.from(selectedIds)),
     onSuccess: (result) => {
       toast.success(`Force returned ${result.count} assets to available`);
       clearSelection();

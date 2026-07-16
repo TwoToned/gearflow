@@ -15,7 +15,7 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { useModelWrites } from "@/hooks/use-model-writes";
 import { useBulkAssetWrites } from "@/hooks/use-bulk-asset-writes";
-import { forceReturnAsset } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const warehouseWrites = useWarehouseWrites();
 
   const initialDate = useMemo(() => {
     const d = searchParams.get("date");
@@ -115,7 +116,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const forceReturnMutation = useServerMutation({
-    mutationFn: (assetId: string) => forceReturnAsset(assetId),
+    mutationFn: (assetId: string) => warehouseWrites.forceReturnAsset(assetId),
     onSuccess: () => {
       toast.success("Asset force returned to available");
       refetch();

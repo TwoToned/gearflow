@@ -333,3 +333,234 @@ describe("syncContainersBatch", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+// ─── reassignLineItemUnit (PR-B) ────────────────────────────────────────────────
+describe("reassignLineItemUnit", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t, ORG, "RESERVED"); // asset a1 assigned (prepped), not out
+    await t.run(async (ctx) => {
+      // Two same-model lines on p1; the unit sits on li1, we reassign it to li2.
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", quantity: 1, checkedOutQuantity: 0 }));
+      await ctx.db.insert("projectLineItems", baseLine("li2", { modelId: "m1", quantity: 1, checkedOutQuantity: 0 }));
+      await ctx.db.insert("projectLineItemUnits", { id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a1", quantity: 1, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+    });
+  }
+
+  test("moves a unit to another same-model line + audit (assetTag gathered in-mutation) + spoof override", async () => {
+    const t = makeT();
+    await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.reassignLineItemUnit, {
+      orgId: ORG, projectId: "p1", unitId: "u1", targetLineItemId: "li2", auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect(res.moved).toBe(true);
+    if (res.moved) expect(res.assetTag).toBe("A-1");
+    expect((await unitById(t, "u1"))?.lineItemId).toBe("li2");
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("UPDATE");
+    expect(log?.entityName).toBe("Asset A-1"); // from the asset doc, not a client arg
+    expect(log?.userId).toBe(USER); // spoofed actor overridden
+  });
+
+  test("cross-org target line rejected (boundary FK)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      // A line that exists but in another org / project — must be rejected at the boundary.
+      await ctx.db.insert("projectLineItems", { ...baseLine("liX", { modelId: "m1" }, OTHER), projectId: "pX" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.reassignLineItemUnit, {
+        orgId: ORG, projectId: "p1", unitId: "u1", targetLineItemId: "liX", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/not found in project/i);
+  });
+
+  test("cross-org unit rejected (boundary FK)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", { id: "uX", organizationId: OTHER, lineItemId: "li1", ordinal: 5, assetId: "a1", quantity: 1, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.reassignLineItemUnit, {
+        orgId: ORG, projectId: "p1", unitId: "uX", targetLineItemId: "li2", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Unit not found/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.reassignLineItemUnit, {
+        orgId: ORG, projectId: "p1", unitId: "u1", targetLineItemId: "li2", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── forceReturnAsset (PR-B) ─────────────────────────────────────────────────────
+describe("forceReturnAsset", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t); // a1 CHECKED_OUT
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CHECKED_OUT", checkedOutQuantity: 1 }));
+    });
+  }
+
+  test("asset → AVAILABLE + line → RETURNED + audit tag gathered in-mutation + spoof override", async () => {
+    const t = makeT();
+    await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnAsset, {
+      orgId: ORG, assetId: "a1", auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect(res.success).toBe(true);
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    expect((await lineById(t, "li1"))?.status).toBe("RETURNED");
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("FORCE_RETURN");
+    expect(log?.entityName).toBe("A-1"); // asset tag read from ctx.db, not client-passed
+    expect(log?.summary).toBe("Force returned asset A-1 to available");
+    expect(log?.userId).toBe(USER);
+  });
+
+  test("already-available asset rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t, ORG, "AVAILABLE");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnAsset, {
+        orgId: ORG, assetId: "a1", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/already available/i);
+  });
+
+  test("cross-org asset rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t, OTHER); // asset in another org
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnAsset, {
+        orgId: ORG, assetId: "a1", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Asset not found/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedModelAsset(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnAsset, {
+        orgId: ORG, assetId: "a1", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── forceReturnKits — batch partial-success (PR-B) ──────────────────────────────
+describe("forceReturnKits", () => {
+  async function seedKit(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t); // a1 CHECKED_OUT
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "CHECKED_OUT", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", baseLine("kl1", { kitId: "k1", isKitChild: false, status: "CHECKED_OUT", checkedOutQuantity: 1 }));
+      await ctx.db.insert("projectLineItems", baseLine("c1", { parentLineItemId: "kl1", isKitChild: true, modelId: "m1", assetId: "a1", status: "CHECKED_OUT", checkedOutQuantity: 1 }));
+    });
+  }
+
+  test("one valid + one ghost → partial-success; dedupe; audit name gathered in-mutation; spoof override", async () => {
+    const t = makeT();
+    await seedKit(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnKits, {
+      // "k1" duplicated → must be deduped (restore-per-occurrence would double-apply).
+      orgId: ORG, kitIds: ["k1", "k1", "ghost"], auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect(res.count).toBe(1);
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors.map((e) => e.kitId)).toEqual(["ghost"]);
+    expect((await kitById(t, "k1"))?.status).toBe("AVAILABLE");
+    expect((await lineById(t, "kl1"))?.status).toBe("RETURNED");
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("FORCE_RETURN");
+    expect(log?.entityName).toBe("KIT-1 - Lighting"); // kit name read from ctx.db
+    expect(log?.userId).toBe(USER);
+  });
+
+  test("empty-guard throws", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnKits, {
+        orgId: ORG, kitIds: [], auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/No kits selected/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.forceReturnKits, {
+        orgId: ORG, kitIds: ["k1"], auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── bulkForceReturnAssets — batch partial-success (PR-B) ────────────────────────
+describe("bulkForceReturnAssets", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t); // a1 CHECKED_OUT
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CHECKED_OUT", checkedOutQuantity: 1 }));
+    });
+  }
+
+  test("only CHECKED_OUT in-org assets succeed; dedupe; foreign/ghost skipped; audit tags in-mutation", async () => {
+    const t = makeT();
+    await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.bulkForceReturnAssets, {
+      orgId: ORG, assetIds: ["a1", "a1", "ghost"], auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect(res.count).toBe(1); // deduped, ghost skipped
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    expect((await lineById(t, "li1"))?.status).toBe("RETURNED");
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("FORCE_RETURN");
+    expect(log?.entityName).toBe("A-1"); // asset tag read from ctx.db
+    expect(log?.userId).toBe(USER);
+  });
+
+  test("empty-guard throws", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.bulkForceReturnAssets, {
+        orgId: ORG, assetIds: [], auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/No assets selected/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.bulkForceReturnAssets, {
+        orgId: ORG, assetIds: ["a1"], auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});

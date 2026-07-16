@@ -87,7 +87,7 @@ import {
   type OverbookedInfo,
 } from "./equipment-rows";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
-import { reassignLineItemUnit, reassignKitMemberSerial } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
 import { targetKey } from "@/lib/collaboration-targets";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -110,6 +110,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
+  const warehouseWrites = useWarehouseWrites();
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -335,14 +336,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const handleReassignUnit = useCallback(
     (unitId: string, targetLineItemId: string) => {
       setReassignPendingUnitId(unitId);
-      reassignLineItemUnit(projectId, unitId, targetLineItemId)
+      warehouseWrites.reassignLineItemUnit(projectId, unitId, targetLineItemId)
         .then((res) => {
           if (res.moved) toast.success(`Moved ${res.assetTag ?? "unit"} to a different line`);
         })
         .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Couldn't reassign that unit"))
         .finally(() => setReassignPendingUnitId(null));
     },
-    [projectId],
+    [projectId, warehouseWrites],
   );
 
   // Kit-member reassign (Phase 4): a member swaps its SERIAL (a same-model
@@ -385,14 +386,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const handleReassignKitMember = useCallback(
     (unitId: string, newAssetId: string) => {
       setReassignPendingUnitId(unitId);
-      reassignKitMemberSerial(projectId, unitId, newAssetId)
+      warehouseWrites.reassignKitMemberSerial(projectId, unitId, newAssetId)
         .then((res) => {
           if (res.moved) toast.success(`Swapped kit serial to ${res.toAssetTag ?? "the new asset"}`);
         })
         .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Couldn't swap that serial"))
         .finally(() => setReassignPendingUnitId(null));
     },
-    [projectId],
+    [projectId, warehouseWrites],
   );
 
   const reassignValue = React.useMemo(

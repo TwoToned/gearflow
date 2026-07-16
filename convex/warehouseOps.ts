@@ -311,7 +311,7 @@ export const checkoutItems = mutation({
   },
 });
 
-async function defaultLocationId(ctx: Ctx, organizationId: string): Promise<string | null> {
+export async function defaultLocationId(ctx: Ctx, organizationId: string): Promise<string | null> {
   const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect();
   return locs.find((l) => l.isDefault)?.id ?? null;
 }
@@ -1177,6 +1177,22 @@ async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: 
   }
 }
 
+/**
+ * Core force-return for ONE already-validated (existing, in-org, non-AVAILABLE) asset:
+ * return every CHECKED_OUT line for the asset across all projects, flip its
+ * CHECKED_OUT units → RETURNED, and reset the asset to AVAILABLE at `loc` (the default
+ * location, PASSED so a batch resolves it once). Guards live in the callers so the
+ * singular can throw while the batch skips + collects. Shared by the requireService
+ * mirror AND the browser-direct `warehouseWrites.forceReturnAsset`.
+ */
+export async function forceReturnAssetCore(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number, loc: string | null): Promise<void> {
+  for (const li of await linesByAsset(ctx, assetId, organizationId)) {
+    if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(now));
+  }
+  await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now);
+  await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, now);
+}
+
 export const forceReturnAsset = mutation({
   args: { organizationId: v.string(), assetId: v.string(), userId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
@@ -1185,32 +1201,35 @@ export const forceReturnAsset = mutation({
     if (!asset || asset.organizationId !== a.organizationId) throw new ConvexError("Asset not found");
     if (asset.status === "AVAILABLE") throw new ConvexError("Asset is already available");
     const loc = await defaultLocationId(ctx, a.organizationId);
-    for (const li of await linesByAsset(ctx, a.assetId, a.organizationId)) {
-      if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
-    }
-    await forceReturnAssetUnits(ctx, a.organizationId, a.assetId, a.userId, a.now);
-    await setAssetsStatus(ctx, [a.assetId], "AVAILABLE", loc, true, a.now);
+    await forceReturnAssetCore(ctx, a.organizationId, a.assetId, a.userId, a.now, loc);
     return { success: true };
   },
 });
+
+/**
+ * Batch force-return of serialised assets: skip any missing / cross-org / non-CHECKED_OUT
+ * asset (per-item, partial-success), return the rest. `loc` resolved once. Returns the
+ * ids actually reset so a caller can name them for an audit. Shared by the requireService
+ * mirror AND the browser-direct `warehouseWrites.bulkForceReturnAssets`.
+ */
+export async function bulkForceReturnAssetsCore(ctx: Ctx, organizationId: string, assetIds: string[], userId: string, now: number, loc: string | null): Promise<{ succeeded: string[] }> {
+  const succeeded: string[] = [];
+  for (const assetId of assetIds) {
+    const asset = await assetByCuid(ctx, assetId);
+    if (!asset || asset.organizationId !== organizationId || asset.status !== "CHECKED_OUT") continue;
+    await forceReturnAssetCore(ctx, organizationId, assetId, userId, now, loc);
+    succeeded.push(assetId);
+  }
+  return { succeeded };
+}
 
 export const bulkForceReturnAssets = mutation({
   args: { organizationId: v.string(), assetIds: v.array(v.string()), userId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const loc = await defaultLocationId(ctx, a.organizationId);
-    let count = 0;
-    for (const assetId of a.assetIds) {
-      const asset = await assetByCuid(ctx, assetId);
-      if (!asset || asset.organizationId !== a.organizationId || asset.status !== "CHECKED_OUT") continue;
-      for (const li of await linesByAsset(ctx, assetId, a.organizationId)) {
-        if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(a.now));
-      }
-      await forceReturnAssetUnits(ctx, a.organizationId, assetId, a.userId, a.now);
-      await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, a.now);
-      count++;
-    }
-    return { count };
+    const { succeeded } = await bulkForceReturnAssetsCore(ctx, a.organizationId, a.assetIds, a.userId, a.now, loc);
+    return { count: succeeded.length };
   },
 });
 
@@ -1251,7 +1270,7 @@ async function restoreKitParentLine(
  * restored (incl. nested kits). Guards live in the callers so the singular can throw
  * while the batch collects per-item errors.
  */
-async function forceReturnKitCore(
+export async function forceReturnKitCore(
   ctx: Ctx,
   organizationId: string,
   kit: NonNullable<Awaited<ReturnType<typeof kitByCuid>>>,
@@ -1301,23 +1320,33 @@ export const forceReturnKit = mutation({
  * re-check (`by_cuid` is a GLOBAL index → a cross-tenant id must be rejected). `loc`
  * is resolved once for the whole batch.
  */
+/**
+ * Batch force-return loop (partial-success): per-item `organizationId` re-check
+ * (`by_cuid` is a GLOBAL index) — a missing / cross-org / already-AVAILABLE kit is
+ * skipped with an error and can't abort the batch. `loc` resolved once by the caller.
+ * Shared by the requireService mirror AND the browser-direct `warehouseWrites.forceReturnKits`.
+ */
+export async function forceReturnKitsBatchCore(ctx: Ctx, organizationId: string, kitIds: string[], userId: string, now: number, loc: string | null): Promise<{ succeeded: string[]; errors: { kitId: string; error: string }[]; affectedKitIds: string[] }> {
+  const succeeded: string[] = [];
+  const errors: { kitId: string; error: string }[] = [];
+  const affected = new Set<string>();
+  for (const kitId of kitIds) {
+    const kit = await kitByCuid(ctx, kitId);
+    if (!kit || kit.organizationId !== organizationId) { errors.push({ kitId, error: "Kit not found" }); continue; }
+    if (kit.status === "AVAILABLE") { errors.push({ kitId, error: "Kit is already available" }); continue; }
+    const aff = await forceReturnKitCore(ctx, organizationId, kit, userId, now, loc);
+    succeeded.push(kitId);
+    for (const k of aff) affected.add(k);
+  }
+  return { succeeded, errors, affectedKitIds: [...affected] };
+}
+
 export const forceReturnKitsBatch = mutation({
   args: { organizationId: v.string(), kitIds: v.array(v.string()), userId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const loc = await defaultLocationId(ctx, a.organizationId);
-    const succeeded: string[] = [];
-    const errors: { kitId: string; error: string }[] = [];
-    const affected = new Set<string>();
-    for (const kitId of a.kitIds) {
-      const kit = await kitByCuid(ctx, kitId);
-      if (!kit || kit.organizationId !== a.organizationId) { errors.push({ kitId, error: "Kit not found" }); continue; }
-      if (kit.status === "AVAILABLE") { errors.push({ kitId, error: "Kit is already available" }); continue; }
-      const aff = await forceReturnKitCore(ctx, a.organizationId, kit, a.userId, a.now, loc);
-      succeeded.push(kitId);
-      for (const k of aff) affected.add(k);
-    }
-    return { succeeded, errors, affectedKitIds: [...affected] };
+    return forceReturnKitsBatchCore(ctx, a.organizationId, a.kitIds, a.userId, a.now, loc);
   },
 });
 
@@ -1564,6 +1593,60 @@ export const checkInBulkTotals = mutation({
  *  - the target line can't be over-assigned past its quantity.
  * Permission / activity-log stay in the server action (this is service-only).
  */
+/**
+ * Core serialised-unit reassign (move a unit to a different line on the same project +
+ * model). `now` is PASSED so the browser wrapper writes a deterministic timestamp
+ * shared with its audit row. All guards live here (thorough) — the browser wrapper
+ * still org-validates the client FKs at its boundary before calling. Shared by the
+ * requireService mirror AND browser-direct `warehouseWrites.reassignLineItemUnit`.
+ */
+export async function reassignSerialisedUnitCore(ctx: Ctx, organizationId: string, unitId: string, targetLineItemId: string, now: number) {
+  const unit = await unitByCuid(ctx, unitId);
+  if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
+  if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) units can be reassigned");
+  if (unit.status === "RETURNED" || unit.status === "CANCELLED") {
+    throw new ConvexError("Returned units are history and can't be reassigned");
+  }
+  const sourceLineId = unit.lineItemId;
+  if (sourceLineId === targetLineItemId) return { moved: false as const };
+
+  const [sourceLine, targetLine, asset] = await Promise.all([
+    lineByCuid(ctx, sourceLineId),
+    lineByCuid(ctx, targetLineItemId),
+    assetByCuid(ctx, unit.assetId),
+  ]);
+  if (!sourceLine) throw new ConvexError("Source line not found");
+  if (!targetLine || targetLine.organizationId !== organizationId) throw new ConvexError("Target line not found in this organization");
+  if (targetLine.projectId !== sourceLine.projectId) throw new ConvexError("Can only reassign within the same project");
+  if (!asset || asset.organizationId !== organizationId) throw new ConvexError("Asset not found in this organization");
+  if (!asset.modelId || targetLine.modelId !== asset.modelId) throw new ConvexError("That line is a different model");
+  if (targetLine.isKitChild) throw new ConvexError("Kit members are fulfilled by the kit; reassign the kit instead");
+
+  const clash = await ctx.db
+    .query("projectLineItemUnits")
+    .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", targetLineItemId).eq("assetId", unit.assetId!))
+    .unique();
+  if (clash) throw new ConvexError(`${asset.assetTag} is already on the target line`);
+
+  const targetSiblings = await lineUnits(ctx, targetLineItemId);
+  const assigned = targetSiblings.filter((u) => u.status !== "CANCELLED").length;
+  if (assigned >= (targetLine.quantity ?? 0)) throw new ConvexError("Target line is already fully assigned");
+
+  await ctx.db.patch(unit._id, {
+    lineItemId: targetLineItemId,
+    ordinal: nextOrdinal(targetSiblings),
+    updatedAt: now,
+  });
+  await syncLineItemRollup(ctx, sourceLineId);
+  await syncLineItemRollup(ctx, targetLineItemId);
+  return {
+    moved: true as const,
+    assetTag: asset.assetTag,
+    fromLineItemId: sourceLineId,
+    toLineItemId: targetLineItemId,
+  };
+}
+
 export const reassignSerialisedUnit = mutation({
   args: {
     organizationId: v.string(),
@@ -1572,51 +1655,7 @@ export const reassignSerialisedUnit = mutation({
   },
   handler: async (ctx, { organizationId, unitId, targetLineItemId }) => {
     await requireService(ctx);
-    const unit = await unitByCuid(ctx, unitId);
-    if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
-    if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) units can be reassigned");
-    if (unit.status === "RETURNED" || unit.status === "CANCELLED") {
-      throw new ConvexError("Returned units are history and can't be reassigned");
-    }
-    const sourceLineId = unit.lineItemId;
-    if (sourceLineId === targetLineItemId) return { moved: false as const };
-
-    const [sourceLine, targetLine, asset] = await Promise.all([
-      lineByCuid(ctx, sourceLineId),
-      lineByCuid(ctx, targetLineItemId),
-      assetByCuid(ctx, unit.assetId),
-    ]);
-    if (!sourceLine) throw new ConvexError("Source line not found");
-    if (!targetLine || targetLine.organizationId !== organizationId) throw new ConvexError("Target line not found in this organization");
-    if (targetLine.projectId !== sourceLine.projectId) throw new ConvexError("Can only reassign within the same project");
-    if (!asset || asset.organizationId !== organizationId) throw new ConvexError("Asset not found in this organization");
-    if (!asset.modelId || targetLine.modelId !== asset.modelId) throw new ConvexError("That line is a different model");
-    if (targetLine.isKitChild) throw new ConvexError("Kit members are fulfilled by the kit; reassign the kit instead");
-
-    const clash = await ctx.db
-      .query("projectLineItemUnits")
-      .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", targetLineItemId).eq("assetId", unit.assetId!))
-      .unique();
-    if (clash) throw new ConvexError(`${asset.assetTag} is already on the target line`);
-
-    const targetSiblings = await lineUnits(ctx, targetLineItemId);
-    const assigned = targetSiblings.filter((u) => u.status !== "CANCELLED").length;
-    if (assigned >= (targetLine.quantity ?? 0)) throw new ConvexError("Target line is already fully assigned");
-
-    const now = Date.now();
-    await ctx.db.patch(unit._id, {
-      lineItemId: targetLineItemId,
-      ordinal: nextOrdinal(targetSiblings),
-      updatedAt: now,
-    });
-    await syncLineItemRollup(ctx, sourceLineId);
-    await syncLineItemRollup(ctx, targetLineItemId);
-    return {
-      moved: true as const,
-      assetTag: asset.assetTag,
-      fromLineItemId: sourceLineId,
-      toLineItemId: targetLineItemId,
-    };
+    return reassignSerialisedUnitCore(ctx, organizationId, unitId, targetLineItemId, Date.now());
   },
 });
 
@@ -1634,44 +1673,54 @@ export const reassignSerialisedUnit = mutation({
  * kit first). Pre-deployment neither asset's status changes (both stay AVAILABLE
  * until checkout), so this is a pure pointer swap.
  */
+/**
+ * Core kit-member serial swap. `now` is PASSED so the browser wrapper writes a
+ * deterministic timestamp shared with its audit row. All guards live here (thorough) —
+ * the browser wrapper still org-validates the client FKs at its boundary before
+ * calling. Shared by the requireService mirror AND browser-direct
+ * `warehouseWrites.reassignKitMemberSerial`.
+ */
+export async function reassignKitMemberSerialCore(ctx: Ctx, organizationId: string, unitId: string, newAssetId: string, now: number) {
+  const unit = await unitByCuid(ctx, unitId);
+  if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
+  if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) members can be reassigned");
+  if (unit.status === "CHECKED_OUT") throw new ConvexError("This member is deployed — un-deploy the kit before swapping its serial");
+  if (unit.status === "RETURNED" || unit.status === "CANCELLED") throw new ConvexError("Returned units are history and can't be reassigned");
+  if (unit.assetId === newAssetId) return { moved: false as const };
+
+  const line = await lineByCuid(ctx, unit.lineItemId);
+  if (!line) throw new ConvexError("Line not found");
+  if (!line.isKitChild) throw new ConvexError("Loose gear reassigns by line — use reassignSerialisedUnit");
+
+  const [current, next] = await Promise.all([assetByCuid(ctx, unit.assetId), assetByCuid(ctx, newAssetId)]);
+  if (!current) throw new ConvexError("Current asset not found");
+  if (!next || next.organizationId !== organizationId) throw new ConvexError("Replacement asset not found in this organization");
+  if (!next.modelId || next.modelId !== current.modelId) throw new ConvexError("Replacement must be the same model");
+  if (next.status !== "AVAILABLE") throw new ConvexError(`${next.assetTag} is not available`);
+  if (next.isActive === false) throw new ConvexError(`${next.assetTag} is retired`);
+
+  // The replacement must not already fill another live member of THIS kit.
+  if (line.parentLineItemId) {
+    for (const sib of await childLines(ctx, line.parentLineItemId, organizationId)) {
+      const sibUnits = await lineUnits(ctx, sib.id);
+      if (sibUnits.some((u) => u.assetId === newAssetId && u.status !== "CANCELLED" && u.status !== "RETURNED")) {
+        throw new ConvexError(`${next.assetTag} is already assigned to this kit`);
+      }
+    }
+  }
+
+  // Swap the serial on both the unit and its snapshot child line. Pre-deployment
+  // neither asset's status changes (both AVAILABLE until checkout).
+  await ctx.db.patch(unit._id, { assetId: newAssetId, updatedAt: now });
+  await ctx.db.patch(line._id, { assetId: newAssetId, updatedAt: now });
+  await syncLineItemRollup(ctx, line.id);
+  return { moved: true as const, fromAssetTag: current.assetTag, toAssetTag: next.assetTag, lineItemId: line.id };
+}
+
 export const reassignKitMemberSerial = mutation({
   args: { organizationId: v.string(), unitId: v.string(), newAssetId: v.string() },
   handler: async (ctx, { organizationId, unitId, newAssetId }) => {
     await requireService(ctx);
-    const unit = await unitByCuid(ctx, unitId);
-    if (!unit || unit.organizationId !== organizationId) throw new ConvexError("Unit not found in this organization");
-    if (!unit.assetId) throw new ConvexError("Only serialised (asset-tagged) members can be reassigned");
-    if (unit.status === "CHECKED_OUT") throw new ConvexError("This member is deployed — un-deploy the kit before swapping its serial");
-    if (unit.status === "RETURNED" || unit.status === "CANCELLED") throw new ConvexError("Returned units are history and can't be reassigned");
-    if (unit.assetId === newAssetId) return { moved: false as const };
-
-    const line = await lineByCuid(ctx, unit.lineItemId);
-    if (!line) throw new ConvexError("Line not found");
-    if (!line.isKitChild) throw new ConvexError("Loose gear reassigns by line — use reassignSerialisedUnit");
-
-    const [current, next] = await Promise.all([assetByCuid(ctx, unit.assetId), assetByCuid(ctx, newAssetId)]);
-    if (!current) throw new ConvexError("Current asset not found");
-    if (!next || next.organizationId !== organizationId) throw new ConvexError("Replacement asset not found in this organization");
-    if (!next.modelId || next.modelId !== current.modelId) throw new ConvexError("Replacement must be the same model");
-    if (next.status !== "AVAILABLE") throw new ConvexError(`${next.assetTag} is not available`);
-    if (next.isActive === false) throw new ConvexError(`${next.assetTag} is retired`);
-
-    // The replacement must not already fill another live member of THIS kit.
-    if (line.parentLineItemId) {
-      for (const sib of await childLines(ctx, line.parentLineItemId, organizationId)) {
-        const sibUnits = await lineUnits(ctx, sib.id);
-        if (sibUnits.some((u) => u.assetId === newAssetId && u.status !== "CANCELLED" && u.status !== "RETURNED")) {
-          throw new ConvexError(`${next.assetTag} is already assigned to this kit`);
-        }
-      }
-    }
-
-    const now = Date.now();
-    // Swap the serial on both the unit and its snapshot child line. Pre-deployment
-    // neither asset's status changes (both AVAILABLE until checkout).
-    await ctx.db.patch(unit._id, { assetId: newAssetId, updatedAt: now });
-    await ctx.db.patch(line._id, { assetId: newAssetId, updatedAt: now });
-    await syncLineItemRollup(ctx, line.id);
-    return { moved: true as const, fromAssetTag: current.assetTag, toAssetTag: next.assetTag, lineItemId: line.id };
+    return reassignKitMemberSerialCore(ctx, organizationId, unitId, newAssetId, Date.now());
   },
 });

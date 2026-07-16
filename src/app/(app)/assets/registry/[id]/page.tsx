@@ -32,7 +32,7 @@ import { useAssetWrites } from "@/hooks/use-asset-writes";
 import type { NativeAssetDetail } from "@/lib/asset-detail-reconstruct";
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
-import { forceReturnAsset } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { useBulkAssetWrites } from "@/hooks/use-bulk-asset-writes";
@@ -97,6 +97,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const warehouseWrites = useWarehouseWrites();
 
   const initialDate = useMemo(() => {
     const d = searchParams.get("date");
@@ -155,7 +156,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const forceReturnMutation = useServerMutation({
-    mutationFn: () => forceReturnAsset(id),
+    mutationFn: () => warehouseWrites.forceReturnAsset(id),
     onSuccess: () => {
       toast.success("Asset force returned to available");
       refetchAsset();

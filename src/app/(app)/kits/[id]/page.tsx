@@ -16,7 +16,7 @@ import { Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package,
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
-import { forceReturnKit } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +98,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const [addBulkPosition, setAddBulkPosition] = useState("");
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const warehouseWrites = useWarehouseWrites();
 
   // Native kit-detail read (Phase 4 — the version-vector server-action path is
   // retired). ONE live `kitDetail.bundle` subscription reconstructs the getKit
@@ -160,7 +161,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const forceReturnMutation = useServerMutation({
-    mutationFn: () => forceReturnKit(id),
+    mutationFn: () => warehouseWrites.forceReturnKit(id),
     onSuccess: () => {
       toast.success("Kit force returned to available");
       refetchKit();

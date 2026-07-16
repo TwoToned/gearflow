@@ -16,7 +16,7 @@ import { useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 
-import { createSubHire } from "@/server/sub-hires";
+import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { useSupplier, useSupplierSearch } from "@/hooks/use-suppliers";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -80,9 +80,10 @@ export function SubHireAddForm({
   const selectedSupplier = useSupplier(supplierId || undefined);
   const supplierName = selectedSupplier?.name;
 
+  const subHireWrites = useSubHireWrites();
   const createMut = useServerMutation({
     mutationFn: () =>
-      createSubHire({
+      subHireWrites.create({
         supplierId,
         projectId,
         supplierReference: supplierReference || undefined,
@@ -91,9 +92,9 @@ export function SubHireAddForm({
         showOnDocs: false,
         notes: notes || undefined,
       }),
-    onSuccess: (result: Record<string, unknown>) => {
+    onSuccess: (result: { id: string }) => {
       toast.success("Sub-hire order created");
-      onCreated(result.id as string);
+      onCreated(result.id);
     },
     onError: (e) => toast.error((e as Error).message),
   });

@@ -10,13 +10,6 @@ import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, 
 import { toast } from "sonner";
 
 import {
-  createSubHire,
-  updateSubHire,
-  deleteSubHire,
-  updateSubHireStatus,
-  addSubHireItem,
-  updateSubHireItem,
-  removeSubHireItem,
   getSupplierModelRate,
   getSupplierRateHistory,
   createSubHireGroup,
@@ -25,10 +18,10 @@ import {
   setItemGroup,
   updateSubHireOrderPricing,
   updateSubHirePlacement,
-  updateSubHirePaymentStatus,
   addSubHireMedia,
   removeSubHireMedia,
 } from "@/server/sub-hires";
+import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -447,9 +440,10 @@ function SubHireCreateView({
     .filter((s) => s.isActive ?? true)
     .map((s) => ({ value: s.id, label: s.name }));
 
+  const subHireWrites = useSubHireWrites();
   const createMutation = useServerMutation({
     mutationFn: () =>
-      createSubHire({
+      subHireWrites.create({
         supplierId,
         projectId,
         supplierReference: supplierReference || undefined,
@@ -458,9 +452,9 @@ function SubHireCreateView({
         showOnDocs,
         notes: notes || undefined,
       }),
-    onSuccess: (result: Record<string, unknown>) => {
+    onSuccess: (result: { id: string }) => {
       toast.success("Sub-hire order created");
-      onCreated(result.id as string);
+      onCreated(result.id);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -561,8 +555,10 @@ function SubHireManageView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
 
+  const subHireWrites = useSubHireWrites();
+
   const statusMutation = useServerMutation({
-    mutationFn: (newStatus: SubHireStatus) => updateSubHireStatus(subHireId, newStatus),
+    mutationFn: (newStatus: SubHireStatus) => subHireWrites.setStatus(subHireId, newStatus),
     onSuccess: () => {
       toast.success("Status updated");
       invalidate();
@@ -571,7 +567,7 @@ function SubHireManageView({
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteSubHire(subHireId),
+    mutationFn: () => subHireWrites.remove(subHireId),
     onSuccess: () => {
       toast.success("Sub-hire deleted");
       onDeleted();
@@ -580,13 +576,14 @@ function SubHireManageView({
   });
 
   const updateMutation = useServerMutation({
-    mutationFn: (data: Record<string, unknown>) => updateSubHire(subHireId, data),
+    mutationFn: (data: { supplierId: string; supplierReference?: string; showOnDocs: boolean }) =>
+      subHireWrites.update(subHireId, data),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
   const paymentStatusMutation = useServerMutation({
-    mutationFn: (status: SubHirePaymentStatus) => updateSubHirePaymentStatus(subHireId, status),
+    mutationFn: (status: SubHirePaymentStatus) => subHireWrites.setPaymentStatus(subHireId, status),
     onSuccess: () => {
       toast.success("Payment status updated");
       invalidate();
@@ -595,7 +592,7 @@ function SubHireManageView({
   });
 
   const removeItemMutation = useServerMutation({
-    mutationFn: (itemId: string) => removeSubHireItem(itemId),
+    mutationFn: (itemId: string) => subHireWrites.removeItem(itemId),
     onSuccess: () => {
       toast.success("Item removed");
       invalidate();
@@ -1888,11 +1885,27 @@ function SubHireItemForm({
     }
   }, [open, editingItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const subHireWrites = useSubHireWrites();
   const addMutation = useServerMutation({
-    mutationFn: () =>
-      editingItem
-        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: editingItem.groupId || groupId || undefined })
-        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: groupId || undefined }),
+    mutationFn: async () => {
+      const item = {
+        modelId: modelId || undefined,
+        description,
+        quantity,
+        unitCost,
+        unitCharge,
+        pricingType: pricingType as "FLAT" | "PER_DAY" | "PER_WEEK" | "PER_HOUR",
+        duration,
+        discount,
+        showOnQuote,
+        showOnDocs,
+      };
+      if (editingItem) {
+        await subHireWrites.updateItem(editingItem.id, { ...item, groupId: editingItem.groupId || groupId || undefined });
+      } else {
+        await subHireWrites.addItem(subHireId, { ...item, groupId: groupId || undefined });
+      }
+    },
     onSuccess: () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       onSuccess();

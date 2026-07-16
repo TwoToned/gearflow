@@ -124,6 +124,7 @@ import type * as locations from "../locations.js";
 import type * as locationsWrites from "../locationsWrites.js";
 import type * as maintenanceRecordAssets from "../maintenanceRecordAssets.js";
 import type * as maintenanceRecords from "../maintenanceRecords.js";
+import type * as maintenanceWrites from "../maintenanceWrites.js";
 import type * as mediaWrites from "../mediaWrites.js";
 import type * as members from "../members.js";
 import type * as modelBulkAccessories from "../modelBulkAccessories.js";
@@ -330,6 +331,7 @@ declare const fullApi: ApiFromModules<{
   locationsWrites: typeof locationsWrites;
   maintenanceRecordAssets: typeof maintenanceRecordAssets;
   maintenanceRecords: typeof maintenanceRecords;
+  maintenanceWrites: typeof maintenanceWrites;
   mediaWrites: typeof mediaWrites;
   members: typeof members;
   modelBulkAccessories: typeof modelBulkAccessories;

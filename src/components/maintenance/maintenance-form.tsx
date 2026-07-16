@@ -6,6 +6,9 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useMaintenanceWrites } from "@/hooks/use-maintenance-writes";
+import { api } from "../../../convex/_generated/api";
 import { toast } from "sonner";
 import { Wrench, X } from "lucide-react";
 
@@ -13,11 +16,6 @@ import {
   maintenanceSchema,
   type MaintenanceFormValues,
 } from "@/lib/validations/maintenance";
-import {
-  createMaintenanceRecord,
-  updateMaintenanceRecord,
-  getAssetsForMaintenanceSelect,
-} from "@/server/maintenance";
 import { getMembers } from "@/server/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,10 +74,10 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: assets } = useServerQuery({
-    queryKey: ["maintenance-assets", orgId],
-    queryFn: getAssetsForMaintenanceSelect,
-  });
+  const assets = useAuthedQuery(
+    api.maintenanceRecords.assetsForSelect,
+    orgId ? { orgId } : "skip",
+  );
 
   const { data: members } = useServerQuery({
     queryKey: ["members", orgId],
@@ -118,11 +116,13 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
 
   const v = form.watch();
 
+  const writes = useMaintenanceWrites();
+
   const mutation = useServerMutation({
     mutationFn: (data: MaintenanceFormValues) =>
       isEdit
-        ? updateMaintenanceRecord(initialData!.id, data)
-        : createMaintenanceRecord(data),
+        ? writes.update(initialData!.id, data)
+        : writes.create(data),
     onSuccess: () => {
       toast.success(isEdit ? "Record updated" : "Record created");
       router.push("/maintenance");

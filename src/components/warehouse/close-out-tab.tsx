@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getCloseOutSummary } from "@/server/warehouse-close-read";
+import { useConvex, useConvexAuth } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
@@ -59,12 +60,17 @@ export function CloseOutTab({
   const orgId = activeOrg?.id;
   const canClose = useCanDo("warehouse", "close");
   const { closeOut } = useWarehouseCloseWrites();
+  const convex = useConvex();
+  const { isAuthenticated } = useConvexAuth();
 
   const [confirmStep, setConfirmStep] = useState(0); // 0 = none, 1 = first click, 2 = confirmed
 
+  // Browser-direct (Phase 3): the close-out summary is a one-shot Convex read
+  // (api.warehouseCloses.closeOutSummary) — RBAC warehouse:close is enforced in-query.
   const { data: summary, isLoading, refetch } = useServerQuery({
-    queryKey: ["close-out-summary", orgId, projectId],
-    queryFn: () => getCloseOutSummary(projectId),
+    queryKey: ["close-out-summary", orgId, projectId, isAuthenticated],
+    queryFn: () => convex.query(api.warehouseCloses.closeOutSummary, { orgId: orgId!, projectId }),
+    enabled: !!orgId && isAuthenticated,
   });
 
   // Cross-tab live sync: subscribe to the dual-written Convex warehouseCloses

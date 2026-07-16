@@ -10,6 +10,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { recalcSubHireTotals, upsertSupplierModelRate } from "./lib/subHireTotals";
 import { regenerateSubHireLines } from "./lib/subHireLineGen";
 import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
+import { createId } from "@paralleldrive/cuid2";
 import * as enums from "./lib/validators";
 
 /**
@@ -25,13 +26,15 @@ import * as enums from "./lib/validators";
  * cascade into the SAME transaction. The org default tax rate lives in Postgres (no
  * Convex mirror writer) — read inline from the orgSettings mirror.
  *
- * STAYS SERVER-SIDE (PR-2 or read-path): GROUP CRUD (createSubHireGroup /
- * updateSubHireGroup / deleteSubHireGroup / setItemGroup), placement
- * (updateSubHirePlacement), order pricing (updateSubHireOrderPricing),
- * changeSubHireProject, duplicateSubHire, and all media + supplier-rate reads.
+ * PR-2 (this file, appended below) adds the LAST writes of the domain: GROUP CRUD
+ * (createSubHireGroup / updateSubHireGroup / deleteSubHireGroup / setItemGroup),
+ * placement (updateSubHirePlacement), order pricing (updateSubHireOrderPricing), and
+ * orchestration (changeSubHireProject, duplicateSubHire). After PR-2, the server file
+ * retains ONLY the reads + the media trio (removeSubHireMedia's cross-table refCount
+ * union guard is not portable to a native mutation).
  *
  * The requireService mirrors in subHires.ts / subHireItems.ts / subHireGroups.ts are
- * intentionally UNTOUCHED (PR-2 group writes + backfill still route through them).
+ * intentionally UNTOUCHED (backfill still routes through them).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
@@ -137,6 +140,14 @@ async function syncSubHireToProject(ctx: MutationCtx, subHireId: string, orgId: 
     const taxRate = await orgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
   }
+}
+
+/** Recalc a project's totals when the sub-hire has one (no-op otherwise). Reads the
+ *  org default tax rate (Postgres-authoritative) from the orgSettings mirror. */
+async function recalcProjectIfAny(ctx: MutationCtx, projectId: string | null, orgId: string, now: number): Promise<void> {
+  if (!projectId) return;
+  const taxRate = await orgDefaultTaxRate(ctx, orgId);
+  await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
 }
 
 async function logSubHire(
@@ -678,5 +689,503 @@ export const reorderSubHireItemsNative = mutation({
       }
     }
     return { ok: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PR-2 — GROUP CRUD + placement + order-pricing + setItemGroup + orchestration
+// (changeSubHireProject + duplicate). Money cascade helpers (PR-0, byte-parity):
+// recalcSubHireTotals → regenerateSubHireLines → recalcProjectTotals. Which of the
+// three each write funnels through mirrors the server's syncSubHireToProject wiring.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Shared group-input args (create + update). cost/charge/targets accept explicit null
+// (the pickers send one-of-null); numeric fields validated before insert/patch.
+const groupInputArgs = {
+  title: v.string(),
+  quantity: v.optional(v.number()),
+  cost: v.optional(v.union(v.number(), v.null())),
+  charge: v.optional(v.union(v.number(), v.null())),
+  discount: v.optional(v.number()),
+  showOnQuote: v.optional(v.boolean()),
+  showOnDocs: v.optional(v.boolean()),
+  sortOrder: v.optional(v.number()),
+  targetCategoryId: v.optional(v.union(v.string(), v.null())),
+  targetGroupId: v.optional(v.union(v.string(), v.null())),
+};
+
+function assertGroupMoney(a: { title: string; quantity?: number; cost?: number | null; charge?: number | null; discount?: number }) {
+  if (!a.title) throw new ConvexError("Group title is required");
+  assertIntMin1(a.quantity ?? 1, "Quantity");
+  if (a.cost != null) assertFiniteMin0(a.cost, "Cost");
+  if (a.charge != null) assertFiniteMin0(a.charge, "Charge");
+  assertDiscount(a.discount ?? 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createSubHireGroupNative — insert group (nextSort over the sub-hire's groups) +
+// regenerate project lines + recalc project (NO subhire-totals recalc, matching the
+// server's syncSubHireToProject wiring). Parity: createSubHireGroup. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const createSubHireGroupNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { id: v.string(), orgId: v.string(), subHireId: v.string(), ...groupInputArgs, now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const head = await requireSubHireInOrg(ctx, a.subHireId, a.orgId);
+    assertGroupMoney(a);
+    const projectId = head.projectId ?? null;
+    if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
+    if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);
+
+    // Idempotent retry: same cuid + same parent → skip; a collision with an unrelated group is
+    // a hard error. COLLECT all matches (by_cuid is global + non-unique).
+    const dups = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", a.id)).collect();
+    for (const d of dups) if (d.subHireId !== a.subHireId) throw new ConvexError("Sub-hire group already exists");
+    if (dups.length > 0) return { id: a.id };
+
+    const existing = await ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", a.subHireId)).collect();
+    const nextSort = a.sortOrder ?? (existing.reduce((m, g) => Math.max(m, g.sortOrder ?? 0), -1) + 1);
+
+    await ctx.db.insert("subHireGroups", {
+      id: a.id,
+      subHireId: a.subHireId,
+      title: a.title,
+      quantity: a.quantity ?? 1,
+      ...(a.cost != null ? { cost: a.cost } : {}),
+      ...(a.charge != null ? { charge: a.charge } : {}),
+      discount: a.discount ?? 0,
+      showOnQuote: a.showOnQuote ?? true,
+      showOnDocs: a.showOnDocs ?? false,
+      sortOrder: nextSort,
+      ...(a.targetCategoryId ? { targetCategoryId: a.targetCategoryId } : {}),
+      ...(a.targetGroupId ? { targetGroupId: a.targetGroupId } : {}),
+    });
+
+    await regenerateSubHireLines(ctx, a.subHireId, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, projectId, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "CREATE", entityId: a.subHireId, entityName: head.orderNumber,
+      summary: `Created group "${a.title}" on ${head.orderNumber}`,
+    });
+
+    return { id: a.id };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updateSubHireGroupNative — patch group (set/clear per source) + recalc subhire
+// totals + regenerate lines + recalc project. Parity: updateSubHireGroup. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const updateSubHireGroupNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { groupId: v.string(), orgId: v.string(), ...groupInputArgs, now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const group = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", a.groupId)).first();
+    if (!group) throw new ConvexError("Sub-hire group not found");
+    // The group table carries no org — org-check via the parent sub-hire head.
+    const head = await requireSubHireInOrg(ctx, group.subHireId, a.orgId);
+    assertGroupMoney(a);
+    const projectId = head.projectId ?? null;
+    if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
+    if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);
+
+    // set/clear mirrors the server: title/quantity/discount/showOn* always set (zod-defaulted);
+    // cost/charge/sortOrder/targets set-or-clear only when the key is provided (undefined = keep).
+    const patch: Record<string, unknown> = {
+      title: a.title,
+      quantity: a.quantity ?? 1,
+      discount: a.discount ?? 0,
+      showOnQuote: a.showOnQuote ?? true,
+      showOnDocs: a.showOnDocs ?? false,
+    };
+    if (a.sortOrder !== undefined) patch.sortOrder = a.sortOrder;
+    if (a.cost !== undefined) patch.cost = a.cost === null ? undefined : a.cost;
+    if (a.charge !== undefined) patch.charge = a.charge === null ? undefined : a.charge;
+    if (a.targetCategoryId !== undefined) patch.targetCategoryId = a.targetCategoryId ? a.targetCategoryId : undefined;
+    if (a.targetGroupId !== undefined) patch.targetGroupId = a.targetGroupId ? a.targetGroupId : undefined;
+    await ctx.db.patch(group._id, patch);
+
+    await recalcSubHireTotals(ctx, head.id, a.orgId, a.now);
+    await regenerateSubHireLines(ctx, head.id, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, projectId, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "UPDATE", entityId: head.id, entityName: head.orderNumber,
+      summary: `Updated group "${a.title}" on ${head.orderNumber}`,
+    });
+
+    return { id: a.groupId };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteSubHireGroupNative — ungroup children (clear item.groupId) + delete group +
+// regenerate lines + recalc project. Parity: deleteSubHireGroup. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const deleteSubHireGroupNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { groupId: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const group = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", a.groupId)).first();
+    if (!group) throw new ConvexError("Sub-hire group not found");
+    const head = await requireSubHireInOrg(ctx, group.subHireId, a.orgId);
+    const projectId = head.projectId ?? null;
+
+    // Ungroup children (by_groupId is GLOBAL, but groupId is the group's unique cuid → all
+    // matches belong to this group; filter on the parent sub-hire defensively), then delete.
+    const children = (
+      await ctx.db.query("subHireItems").withIndex("by_groupId", (q) => q.eq("groupId", a.groupId)).collect()
+    ).filter((it) => it.subHireId === head.id);
+    for (const it of children) await ctx.db.patch(it._id, { groupId: undefined });
+    await ctx.db.delete(group._id);
+
+    await regenerateSubHireLines(ctx, head.id, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, projectId, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "DELETE", entityId: head.id, entityName: head.orderNumber,
+      summary: `Deleted group from ${head.orderNumber}`,
+    });
+
+    return { id: a.groupId };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setItemGroupNative — move an item into a group (validate the target is in the SAME
+// sub-hire) or ungroup (null) + regenerate lines + recalc project. NO audit (parity).
+// Parity: setItemGroup. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const setItemGroupNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: { itemId: v.string(), orgId: v.string(), groupId: v.union(v.string(), v.null()), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    await resolveActor(ctx, a.actor);
+
+    const item = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", a.itemId)).first();
+    if (!item) throw new ConvexError("Sub-hire item not found");
+    const head = await requireSubHireInOrg(ctx, item.subHireId, a.orgId);
+    const projectId = head.projectId ?? null;
+
+    // The target group must belong to the SAME sub-hire (or null to ungroup).
+    if (a.groupId) await assertSubHireGroupInParent(ctx, a.groupId, item.subHireId);
+    await ctx.db.patch(item._id, { groupId: a.groupId ? a.groupId : undefined });
+
+    await regenerateSubHireLines(ctx, head.id, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, projectId, a.orgId, a.now);
+
+    return { ok: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updateSubHireOrderPricingNative — patch pricingMode + orderTotalCost/Charge
+// (set-or-clear) + recalc subhire totals + recalc project. NO line regen (parity).
+// Parity: updateSubHireOrderPricing. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const updateSubHireOrderPricingNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    subHireId: v.string(),
+    orgId: v.string(),
+    pricingMode: enums.SubHirePricingMode,
+    orderTotalCost: v.optional(v.union(v.number(), v.null())),
+    orderTotalCharge: v.optional(v.union(v.number(), v.null())),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const head = await requireSubHireInOrg(ctx, a.subHireId, a.orgId);
+    if (a.orderTotalCost != null) assertFiniteMin0(a.orderTotalCost, "Order total cost");
+    if (a.orderTotalCharge != null) assertFiniteMin0(a.orderTotalCharge, "Order total charge");
+
+    // pricingMode always set; orderTotalCost/Charge set when present, else cleared.
+    const patch: Record<string, unknown> = { pricingMode: a.pricingMode, updatedAt: a.now };
+    patch.orderTotalCost = a.orderTotalCost != null ? a.orderTotalCost : undefined;
+    patch.orderTotalCharge = a.orderTotalCharge != null ? a.orderTotalCharge : undefined;
+    await ctx.db.patch(head._id, patch);
+
+    await recalcSubHireTotals(ctx, head.id, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, head.projectId ?? null, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "UPDATE", entityId: a.subHireId, entityName: head.orderNumber,
+      summary: `Changed pricing mode to ${a.pricingMode} on ${head.orderNumber}`,
+    });
+
+    return { id: a.subHireId };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updateSubHirePlacementNative — 3-way: patch the order defaults (on head), a group's
+// target*, or an item's target* (per entityType) + regenerate lines + recalc project.
+// Every provided target validated against the sub-hire's project. NO audit (parity).
+// Parity: updateSubHirePlacement. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const updateSubHirePlacementNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: {
+    entityType: v.union(v.literal("order"), v.literal("group"), v.literal("item")),
+    entityId: v.string(),
+    orgId: v.string(),
+    targetCategoryId: v.optional(v.union(v.string(), v.null())),
+    targetGroupId: v.optional(v.union(v.string(), v.null())),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    await resolveActor(ctx, a.actor);
+
+    let subHireId: string;
+    let projectId: string | null;
+
+    if (a.entityType === "order") {
+      const head = await requireSubHireInOrg(ctx, a.entityId, a.orgId);
+      subHireId = head.id;
+      projectId = head.projectId ?? null;
+      if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
+      if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);
+      await ctx.db.patch(head._id, {
+        defaultTargetCategoryId: a.targetCategoryId ? a.targetCategoryId : undefined,
+        defaultTargetGroupId: a.targetGroupId ? a.targetGroupId : undefined,
+        updatedAt: a.now,
+      });
+    } else if (a.entityType === "group") {
+      const group = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", a.entityId)).first();
+      if (!group) throw new ConvexError("Sub-hire group not found");
+      const head = await requireSubHireInOrg(ctx, group.subHireId, a.orgId);
+      subHireId = head.id;
+      projectId = head.projectId ?? null;
+      if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
+      if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);
+      await ctx.db.patch(group._id, {
+        targetCategoryId: a.targetCategoryId ? a.targetCategoryId : undefined,
+        targetGroupId: a.targetGroupId ? a.targetGroupId : undefined,
+      });
+    } else {
+      const item = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", a.entityId)).first();
+      if (!item) throw new ConvexError("Sub-hire item not found");
+      const head = await requireSubHireInOrg(ctx, item.subHireId, a.orgId);
+      subHireId = head.id;
+      projectId = head.projectId ?? null;
+      if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
+      if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);
+      await ctx.db.patch(item._id, {
+        targetCategoryId: a.targetCategoryId ? a.targetCategoryId : undefined,
+        targetGroupId: a.targetGroupId ? a.targetGroupId : undefined,
+      });
+    }
+
+    await regenerateSubHireLines(ctx, subHireId, a.orgId, a.now);
+    await recalcProjectIfAny(ctx, projectId, a.orgId, a.now);
+
+    return { ok: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// changeSubHireProjectNative — validate the new project is in org; delete the OLD
+// project's linked sub-hire lines (inline cascade); move the projectId FK; on
+// CONFIRMED/ON_HIRE regenerate the NEW project's lines; recalc BOTH projects.
+// Parity: changeSubHireProject. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const changeSubHireProjectNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { subHireId: v.string(), orgId: v.string(), newProjectId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const subHire = await requireSubHireInOrg(ctx, a.subHireId, a.orgId);
+    const oldProjectId = subHire.projectId ?? null;
+    const newProject = await requireProjectInOrg(ctx, a.newProjectId, a.orgId);
+    const label = await supplierLabel(ctx, subHire.supplierId, a.orgId);
+    const previousStatus = subHire.status ?? "DRAFT";
+
+    // Delete the OLD project's lines for this sub-hire. Iterate TOP-LEVEL (!isKitChild)
+    // only so each child is deleted once via its parent (sub-hire lines have no units).
+    if (oldProjectId) {
+      const oldLines = (
+        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", oldProjectId)).collect()
+      ).filter((l) => l.organizationId === a.orgId && l.subHireId === a.subHireId);
+      for (const line of oldLines) {
+        if (line.isKitChild) continue;
+        const kids = (
+          await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
+        ).filter((c) => c.organizationId === a.orgId);
+        for (const c of kids) await ctx.db.delete(c._id);
+        await ctx.db.delete(line._id);
+      }
+    }
+
+    // Move the FK + CLEAR every placement target: the head defaults, each group's, and each
+    // item's targetGroupId/targetCategoryId were validated against the OLD project. Carrying
+    // them into the new project would place regenerated lines in another project's groups (a
+    // cross-project dangling reference). Clearing them lands the moved sub-hire uncategorized
+    // in the new project — the user re-places it there. (The deleted server action left the
+    // stale targets, a latent bug; changeSubHireProject has no UI consumer, so this is safe.)
+    await ctx.db.patch(subHire._id, {
+      projectId: a.newProjectId,
+      defaultTargetGroupId: undefined,
+      defaultTargetCategoryId: undefined,
+      updatedAt: a.now,
+    });
+    for (const g of await ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", a.subHireId)).collect()) {
+      if (g.targetGroupId != null || g.targetCategoryId != null) {
+        await ctx.db.patch(g._id, { targetGroupId: undefined, targetCategoryId: undefined });
+      }
+    }
+    for (const it of await ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.subHireId)).collect()) {
+      if (it.targetGroupId != null || it.targetCategoryId != null) {
+        await ctx.db.patch(it._id, { targetGroupId: undefined, targetCategoryId: undefined });
+      }
+    }
+
+    if (previousStatus === "CONFIRMED" || previousStatus === "ON_HIRE") {
+      await regenerateSubHireLines(ctx, a.subHireId, a.orgId, a.now);
+    }
+
+    const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
+    if (oldProjectId) await recalcProjectTotals(ctx, oldProjectId, a.orgId, taxRate, a.now);
+    await recalcProjectTotals(ctx, a.newProjectId, a.orgId, taxRate, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "UPDATE", entityId: a.subHireId, entityName: `${subHire.orderNumber} (${label})`,
+      summary: `Moved sub-hire ${subHire.orderNumber} to project ${newProject.projectNumber}`,
+    });
+
+    return { id: a.subHireId };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// duplicateSubHireNative — reserve a fresh order number (atomic counter) + insert a
+// new DRAFT head (createdById = actor.userId, NO project) + copy groups + items with
+// fresh cuids (group ids minted inline, mapped so item.groupId re-points). Placement
+// targets NOT copied. NO recalc (no project). Parity: duplicateSubHire. subHire:create.
+// ─────────────────────────────────────────────────────────────────────────────
+export const duplicateSubHireNative = mutation({
+  returns: v.object({ id: v.string(), orderNumber: v.string() }),
+  args: { id: v.string(), orgId: v.string(), sourceId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "create");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const source = await requireSubHireInOrg(ctx, a.sourceId, a.orgId);
+
+    // Idempotent retry: same new-head cuid + same org → return; a foreign-org collision is a
+    // hard error. COLLECT all matches (by_cuid is global + non-unique).
+    const dups = await ctx.db.query("subHires").withIndex("by_cuid", (q) => q.eq("id", a.id)).collect();
+    for (const d of dups) if (d.organizationId !== a.orgId) throw new ConvexError("Sub-hire already exists");
+    if (dups.length > 0) return { id: a.id, orderNumber: dups[0].orderNumber };
+
+    const [srcGroups, srcItems] = await Promise.all([
+      ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", a.sourceId)).collect(),
+      ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.sourceId)).collect(),
+    ]);
+
+    const { orderNumber } = await reserveSubHireOrderNumberCounter(ctx, a.orgId, a.now);
+
+    await ctx.db.insert("subHires", {
+      id: a.id,
+      organizationId: a.orgId,
+      supplierId: source.supplierId,
+      createdById: actor.userId,
+      orderNumber,
+      status: "DRAFT",
+      ...(source.pricingMode ? { pricingMode: source.pricingMode } : {}),
+      ...(source.orderTotalCost != null ? { orderTotalCost: source.orderTotalCost } : {}),
+      ...(source.orderTotalCharge != null ? { orderTotalCharge: source.orderTotalCharge } : {}),
+      showOnDocs: source.showOnDocs ?? false,
+      ...(source.notes ? { notes: source.notes } : {}),
+      ...(source.totalCost != null ? { totalCost: source.totalCost } : {}),
+      ...(source.totalCharge != null ? { totalCharge: source.totalCharge } : {}),
+      createdAt: a.now,
+      updatedAt: a.now,
+    });
+
+    // Copy groups with fresh cuids (mapped old→new so item.groupId re-points). Placement
+    // targets are NOT copied (a fresh DRAFT starts uncategorized — parity).
+    const groupIdMap = new Map<string, string>();
+    for (const g of srcGroups) groupIdMap.set(g.id, createId());
+    for (const g of srcGroups) {
+      await ctx.db.insert("subHireGroups", {
+        id: groupIdMap.get(g.id)!,
+        subHireId: a.id,
+        title: g.title,
+        ...(g.quantity != null ? { quantity: g.quantity } : {}),
+        ...(g.cost != null ? { cost: g.cost } : {}),
+        ...(g.charge != null ? { charge: g.charge } : {}),
+        ...(g.showOnQuote != null ? { showOnQuote: g.showOnQuote } : {}),
+        ...(g.showOnDocs != null ? { showOnDocs: g.showOnDocs } : {}),
+        ...(g.sortOrder != null ? { sortOrder: g.sortOrder } : {}),
+      });
+    }
+    for (const it of srcItems) {
+      const newGroupId = it.groupId ? groupIdMap.get(it.groupId) : undefined;
+      await ctx.db.insert("subHireItems", {
+        id: createId(),
+        subHireId: a.id,
+        ...(newGroupId ? { groupId: newGroupId } : {}),
+        ...(it.modelId ? { modelId: it.modelId } : {}),
+        description: it.description,
+        ...(it.quantity != null ? { quantity: it.quantity } : {}),
+        ...(it.unitCost != null ? { unitCost: it.unitCost } : {}),
+        ...(it.unitCharge != null ? { unitCharge: it.unitCharge } : {}),
+        ...(it.pricingType ? { pricingType: it.pricingType } : {}),
+        ...(it.duration != null ? { duration: it.duration } : {}),
+        ...(it.discount != null ? { discount: it.discount } : {}),
+        ...(it.showOnQuote != null ? { showOnQuote: it.showOnQuote } : {}),
+        ...(it.showOnDocs != null ? { showOnDocs: it.showOnDocs } : {}),
+        ...(it.sortOrder != null ? { sortOrder: it.sortOrder } : {}),
+      });
+    }
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "CREATE", entityId: a.id, entityName: orderNumber,
+      summary: `Duplicated sub-hire from ${source.orderNumber} to ${orderNumber}`,
+      details: { sourceId: a.sourceId },
+    });
+
+    return { id: a.id, orderNumber };
   },
 });

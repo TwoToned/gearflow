@@ -58,12 +58,23 @@ async function seedSubHire(t: T, id = "sh1", orgId = ORG, extra: Record<string, 
   });
 }
 
+async function seedProjectGroup(t: T, id: string, projectId: string, orgId = ORG, extra: Record<string, unknown> = {}) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("projectGroups", { id, organizationId: orgId, projectId, title: "PG", ...extra });
+  });
+}
+
 const shById = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("subHires").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const itemById = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", id)).first());
+const groupById = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const logById = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const projById = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const linesForSubHire = (t: T, subHireId: string) =>
   t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_subHireId", (q) => q.eq("subHireId", subHireId)).collect());
+const groupsForSubHire = (t: T, subHireId: string) =>
+  t.run(async (ctx) => ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", subHireId)).collect());
+const itemsForSubHire = (t: T, subHireId: string) =>
+  t.run(async (ctx) => ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", subHireId)).collect());
 
 const itemInput = {
   description: "Rigging", quantity: 1, unitCost: 40, unitCharge: 100,
@@ -503,6 +514,309 @@ describe("reorderSubHireItemsNative", () => {
     await member(t, "viewer");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.reorderSubHireItemsNative, { orgId: ORG, subHireId: "sh1", itemIds: ["a"], now: NOW, actor: ACTOR }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── createSubHireGroupNative ─────────────────────────────────────────────────
+describe("createSubHireGroupNative", () => {
+  test("inserts group (nextSort) + regenerates project lines + recalc project + audit; NO subhire-totals recalc", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t); // DRAFT + projectId p1
+    // An existing ungrouped item so the regenerate cascade produces a project line.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 0, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+      await ctx.db.insert("subHireGroups", { id: "g0", subHireId: "sh1", title: "Existing", sortOrder: 2 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, {
+      id: "g1", orgId: ORG, subHireId: "sh1", title: "Kit", now: NOW + 1, actor: ACTOR, auditId: "logg",
+    });
+    const g = await groupById(t, "g1");
+    expect(g?.title).toBe("Kit");
+    expect(g?.sortOrder).toBe(3); // nextSort over existing sortOrder 2
+    // Regenerate ran → the ungrouped item's standalone line exists; project total 110.
+    const lines = await linesForSubHire(t, "sh1");
+    expect(lines.some((l) => l.subHireItemId === "it1" && l.lineTotal === 100)).toBe(true);
+    expect((await projById(t, "p1"))?.total).toBe(110);
+    expect((await logById(t, "logg"))?.summary).toBe('Created group "Kit" on SH-9999');
+  });
+
+  test("dup-guard: retried create (same cuid, same subHire) is idempotent — no second audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    const args = { id: "g1", orgId: ORG, subHireId: "sh1", title: "Kit", now: NOW, actor: ACTOR, auditId: "logg" };
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, args);
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, { ...args, auditId: "logg2" });
+    expect(await groupsForSubHire(t, "sh1")).toHaveLength(1);
+    expect(await logById(t, "logg2")).toBeNull();
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, { id: "g1", orgId: ORG, subHireId: "sh1", title: "Kit", now: NOW, actor: ACTOR, auditId: "logg" }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── updateSubHireGroupNative ─────────────────────────────────────────────────
+describe("updateSubHireGroupNative", () => {
+  test("patches group flat charge → recalc subhire totals + regen + recalc project + audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t); // DRAFT + projectId p1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Kit", quantity: 1, sortOrder: 0, showOnQuote: true });
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", groupId: "g1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 40, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+    });
+    // Set a flat group charge of 300 → group total charge overrides item charges.
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireGroupNative, {
+      groupId: "g1", orgId: ORG, title: "Kit", quantity: 1, charge: 300, cost: null, discount: 0, showOnQuote: true, showOnDocs: false, now: NOW + 1, actor: ACTOR, auditId: "logug",
+    });
+    expect((await groupById(t, "g1"))?.charge).toBe(300);
+    // recalcSubHireTotals: group charge 300 (flat) → totalCharge 300; item cost 40 → totalCost 40.
+    const sh = await shById(t, "sh1");
+    expect(sh?.totalCharge).toBe(300);
+    expect(sh?.totalCost).toBe(40);
+    // Regenerated parent line uses KIT_PRICE with lineTotal 300; project total 300 + 10% = 330.
+    expect((await projById(t, "p1"))?.total).toBe(330);
+    expect((await logById(t, "logug"))?.summary).toBe('Updated group "Kit" on SH-9999');
+  });
+
+  test("cross-org group rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", OTHER, { projectId: undefined });
+    await t.run(async (ctx) => { await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Kit", sortOrder: 0 }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireGroupNative, {
+        groupId: "g1", orgId: ORG, title: "Kit", now: NOW, actor: ACTOR, auditId: "logug",
+      }),
+    ).rejects.toThrow(/Sub-hire not found/i);
+  });
+});
+
+// ─── deleteSubHireGroupNative ─────────────────────────────────────────────────
+describe("deleteSubHireGroupNative", () => {
+  test("ungroups children (clears groupId) + deletes group + regenerates + audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Kit", quantity: 1, sortOrder: 0, showOnQuote: true });
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", groupId: "g1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 0, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.deleteSubHireGroupNative, {
+      groupId: "g1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logdg",
+    });
+    expect(await groupById(t, "g1")).toBeNull();
+    // The child was ungrouped (groupId cleared), NOT deleted.
+    expect((await itemById(t, "it1"))?.groupId).toBeUndefined();
+    // Regenerate now emits the (ungrouped) item as a standalone line; project total 110.
+    const lines = await linesForSubHire(t, "sh1");
+    expect(lines.some((l) => l.subHireItemId === "it1" && l.lineTotal === 100)).toBe(true);
+    expect((await projById(t, "p1"))?.total).toBe(110);
+    expect((await logById(t, "logdg"))?.summary).toBe("Deleted group from SH-9999");
+  });
+});
+
+// ─── setItemGroupNative ───────────────────────────────────────────────────────
+describe("setItemGroupNative", () => {
+  test("moves an item into a group in the SAME sub-hire", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Kit", sortOrder: 0, showOnQuote: true });
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 0, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.setItemGroupNative, {
+      itemId: "it1", orgId: ORG, groupId: "g1", now: NOW, actor: ACTOR,
+    });
+    expect((await itemById(t, "it1"))?.groupId).toBe("g1");
+  });
+
+  test("cross-subHire group rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", ORG);
+    await seedSubHire(t, "sh2", ORG, { orderNumber: "SH-8888" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireGroups", { id: "g2", subHireId: "sh2", title: "Other", sortOrder: 0 });
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", sortOrder: 0 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.setItemGroupNative, { itemId: "it1", orgId: ORG, groupId: "g2", now: NOW, actor: ACTOR }),
+    ).rejects.toThrow(/Sub-hire group not found/i);
+  });
+});
+
+// ─── updateSubHireOrderPricingNative ──────────────────────────────────────────
+describe("updateSubHireOrderPricingNative", () => {
+  test("ORDER_TOTAL mode: patches flat totals → recalc subhire totals + recalc project + audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t); // DRAFT + projectId p1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 40, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireOrderPricingNative, {
+      subHireId: "sh1", orgId: ORG, pricingMode: "ORDER_TOTAL", orderTotalCost: 500, orderTotalCharge: 800, now: NOW + 1, actor: ACTOR, auditId: "logop",
+    });
+    const sh = await shById(t, "sh1");
+    expect(sh?.pricingMode).toBe("ORDER_TOTAL");
+    // ORDER_TOTAL: totalCost = orderTotalCost 500; totalCharge = orderTotalCharge 800.
+    expect(sh?.totalCost).toBe(500);
+    expect(sh?.totalCharge).toBe(800);
+    expect((await logById(t, "logop"))?.summary).toBe("Changed pricing mode to ORDER_TOTAL on SH-9999");
+  });
+});
+
+// ─── updateSubHirePlacementNative ─────────────────────────────────────────────
+describe("updateSubHirePlacementNative", () => {
+  test("order-level default placement patched onto the head + regenerate", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await seedProjectGroup(t, "pg1", "p1");
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHirePlacementNative, {
+      entityType: "order", entityId: "sh1", orgId: ORG, targetGroupId: "pg1", targetCategoryId: null, now: NOW, actor: ACTOR,
+    });
+    expect((await shById(t, "sh1"))?.defaultTargetGroupId).toBe("pg1");
+  });
+
+  test("item-level placement patched onto the item", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await seedProjectGroup(t, "pg1", "p1");
+    await t.run(async (ctx) => { await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", sortOrder: 0, showOnQuote: true }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHirePlacementNative, {
+      entityType: "item", entityId: "it1", orgId: ORG, targetGroupId: "pg1", targetCategoryId: null, now: NOW, actor: ACTOR,
+    });
+    expect((await itemById(t, "it1"))?.targetGroupId).toBe("pg1");
+  });
+
+  test("cross-project target group rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, "p1");
+    await seedProject(t, "p2");
+    await seedSupplier(t);
+    await seedSubHire(t); // projectId p1
+    await seedProjectGroup(t, "pg2", "p2"); // belongs to a DIFFERENT project
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHirePlacementNative, {
+        entityType: "order", entityId: "sh1", orgId: ORG, targetGroupId: "pg2", targetCategoryId: null, now: NOW, actor: ACTOR,
+      }),
+    ).rejects.toThrow(/Target group not found/i);
+  });
+});
+
+// ─── changeSubHireProjectNative ───────────────────────────────────────────────
+describe("changeSubHireProjectNative", () => {
+  test("deletes OLD project lines + generates NEW project lines (CONFIRMED) + recalcs BOTH + audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, "p1", ORG, { total: 110, projectNumber: "P-1" });
+    await seedProject(t, "p2", ORG, { total: 0, projectNumber: "P-2" });
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", ORG, { status: "CONFIRMED" }); // projectId p1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 0, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
+      // An existing generated line on the OLD project.
+      await ctx.db.insert("projectLineItems", { id: "li_old", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Rig", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, subHireId: "sh1", subHireItemId: "it1", status: "QUOTED" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.changeSubHireProjectNative, {
+      subHireId: "sh1", orgId: ORG, newProjectId: "p2", now: NOW + 1, actor: ACTOR, auditId: "logcp",
+    });
+    expect((await shById(t, "sh1"))?.projectId).toBe("p2");
+    // Old line deleted, new line generated on p2.
+    const lines = await linesForSubHire(t, "sh1");
+    expect(lines).toHaveLength(1);
+    expect(lines[0].projectId).toBe("p2");
+    // BOTH projects recalced: p1 has no more billable lines (0), p2 = 100 + 10% = 110.
+    expect((await projById(t, "p1"))?.total).toBe(0);
+    expect((await projById(t, "p2"))?.total).toBe(110);
+    expect((await logById(t, "logcp"))?.summary).toBe("Moved sub-hire SH-9999 to project P-2");
+  });
+
+  test("cross-org new project rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, "p1");
+    await seedProject(t, "p2", OTHER);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.changeSubHireProjectNative, { subHireId: "sh1", orgId: ORG, newProjectId: "p2", now: NOW, actor: ACTOR, auditId: "logcp" }),
+    ).rejects.toThrow(/Project not found/i);
+  });
+});
+
+// ─── duplicateSubHireNative ───────────────────────────────────────────────────
+describe("duplicateSubHireNative", () => {
+  test("copies groups + items with fresh ids, fresh order number, NO project + audit", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, pricingMode: "ITEMIZED", notes: "src notes" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Kit", quantity: 2, cost: 50, charge: 120, showOnQuote: true, showOnDocs: false, sortOrder: 0 });
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", groupId: "g1", modelId: "mdl1", description: "Rig", quantity: 1, unitCost: 40, unitCharge: 100, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, showOnDocs: false, sortOrder: 0 });
+      await ctx.db.insert("subHireItems", { id: "it2", subHireId: "sh1", description: "Loose", quantity: 3, unitCost: 10, unitCharge: 25, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, showOnDocs: false, sortOrder: 1 });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.duplicateSubHireNative, {
+      id: "sh2", orgId: ORG, sourceId: "sh1", now: NOW, actor: ACTOR, auditId: "logdup",
+    });
+    expect(res.orderNumber).toBe("SH-0001"); // fresh counter
+    const dup = await shById(t, "sh2");
+    expect(dup?.projectId).toBeUndefined(); // no project on the duplicate
+    expect(dup?.notes).toBe("src notes");
+    expect(dup?.createdById).toBe(USER);
+    // Groups copied with FRESH ids (not "g1"); item re-points to the new group id.
+    const dupGroups = await groupsForSubHire(t, "sh2");
+    expect(dupGroups).toHaveLength(1);
+    expect(dupGroups[0].id).not.toBe("g1");
+    expect(dupGroups[0].title).toBe("Kit");
+    const dupItems = await itemsForSubHire(t, "sh2");
+    expect(dupItems).toHaveLength(2);
+    const grouped = dupItems.find((i) => i.description === "Rig");
+    expect(grouped?.groupId).toBe(dupGroups[0].id); // remapped, not "g1"
+    expect(grouped?.id).not.toBe("it1"); // fresh cuid
+    expect(dupItems.find((i) => i.description === "Loose")?.groupId).toBeUndefined();
+    expect((await logById(t, "logdup"))?.summary).toBe("Duplicated sub-hire from SH-9999 to SH-0001");
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.duplicateSubHireNative, { id: "sh2", orgId: ORG, sourceId: "sh1", now: NOW, actor: ACTOR, auditId: "logdup" }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });

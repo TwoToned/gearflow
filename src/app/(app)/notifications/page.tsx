@@ -19,15 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import {
-  type AppNotification,
-  dismissNotification,
-  dismissNotifications,
-  getDismissedKeys,
-  pruneStaleDismissals,
-} from "@/server/notifications";
+import { useNotificationDismissals } from "@/hooks/use-notification-dismissals";
+import { type AppNotification } from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow, isToday, isYesterday, isThisWeek } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -129,14 +123,15 @@ export default function NotificationsPage() {
   // + the app-shell bell). See use-notifications-feed.
   const { data: notifications, isLoading } = useNotificationsFeed(orgId);
 
-  // DB-backed dismissals — the source of truth (survives browser/device changes),
-  // matching the app-shell bell. Union with the local optimistic set so a
-  // just-clicked item hides instantly even before its mutation resolves.
-  const { data: serverDismissed, refetch: refetchDismissed } = useServerQuery({
-    queryKey: ["notification-dismissals", orgId],
-    queryFn: getDismissedKeys,
-    refetchInterval: 60_000,
-  });
+  // DB-backed dismissals (Convex, reactive) — the source of truth (survives
+  // browser/device changes), matching the app-shell bell. Union with the local
+  // optimistic set so a just-clicked item hides instantly before the write resolves.
+  const {
+    dismissedKeys: serverDismissed,
+    dismiss: dismissNative,
+    dismissMany: dismissManyNative,
+    prune,
+  } = useNotificationDismissals();
 
   const dismissed = useMemo(() => {
     const merged = new Set<string>(serverDismissed ?? []);
@@ -148,8 +143,8 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!notifications || notifications.length === 0) return;
     const activeKeys = notifications.map((n) => n.id);
-    // Fire-and-forget server GC; the next refetch picks up the trimmed list.
-    void pruneStaleDismissals(activeKeys).catch(() => {});
+    // Fire-and-forget server GC; the reactive `mine` query picks up the trimmed list.
+    void prune(activeKeys).catch(() => {});
     const active = new Set(activeKeys);
     setLocalDismissed((prev) => {
       const next = new Set([...prev].filter((id) => active.has(id)));
@@ -157,7 +152,7 @@ export default function NotificationsPage() {
       saveDismissedIds(next);
       return next;
     });
-  }, [notifications]);
+  }, [notifications, prune]);
 
   // Roll the optimistic hide back out of the local set if the write fails, so a
   // failed dismissal reappears instead of staying hidden forever (the visible
@@ -172,14 +167,12 @@ export default function NotificationsPage() {
   }, []);
 
   const dismissMutation = useServerMutation({
-    mutationFn: (id: string) => dismissNotification(id),
+    mutationFn: (id: string) => dismissNative(id),
     onError: (_e, id) => rollbackLocal([id]),
-    onSettled: () => refetchDismissed(),
   });
   const dismissAllMutation = useServerMutation({
-    mutationFn: (ids: string[]) => dismissNotifications(ids),
+    mutationFn: (ids: string[]) => dismissManyNative(ids),
     onError: (_e, ids) => rollbackLocal(ids),
-    onSettled: () => refetchDismissed(),
   });
 
   const dismiss = useCallback(

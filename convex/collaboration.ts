@@ -2,14 +2,24 @@ import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgPermission, requireService, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { getUserColor } from "./lib/collaborationColors";
 
 /**
  * Convex collaboration substrate — presence, edit locks, comment threads,
  * review markers, and activity events.
  *
- * AUTH: all mutations require the trusted backend SERVICE token (writes flow
- * browser → Next.js server action → Convex, same as the rest of the app).
+ * AUTH: the comment/review-marker WRITES are browser-direct (Phase 3): they run
+ * the 4-guard bar — assertWritesEnabled + enforceBrowserWriteLimit +
+ * requireOrgRead / requireOrgPermission(project, manage_line_items) + resolveActor
+ * (audit identity pinned to the verified token; a client can't spoof the author or
+ * the avatar colour, which is recomputed from the pinned userId). All four guards
+ * no-op / bypass for the SERVICE token, so the in-flight deployed image (which
+ * still calls these via the server action until Coolify ships) is unaffected —
+ * backward-compatible expand-contract (colour args relaxed to optional, nothing
+ * removed). Presence/lock mutations remain SERVICE-gated for now (server action).
  * Queries use org-scoped user reads: requireOrgRead(ctx, orgId).
  *
  * Presence TTL: 45 s from lastSeenAt. Heartbeat every 15 s.
@@ -352,18 +362,39 @@ export const createThread = mutation({
     firstComment: v.string(),
     createdBy: v.string(),
     createdByName: v.string(),
-    authorColor: v.string(),
+    // Relaxed required → optional (expand-contract): the deployed image still sends
+    // it; browser-direct callers omit it — the colour is recomputed from the pinned
+    // actor below, never trusted from the client.
+    authorColor: v.optional(v.string()),
     isBlocking: v.optional(v.boolean()),
     projectId: v.optional(v.string()),
     mentionUserIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    // A blocking comment feeds the project blocking gate → gate it on
+    // manage_line_items (owner/admin/manager/member); a plain discussion is open to
+    // any org member. Service token bypasses both.
+    if (args.isBlocking) {
+      if (args.entityType !== "project") {
+        throw new ConvexError("Blocking comments are only supported on projects.");
+      }
+      await requireOrgPermission(ctx, args.orgId, "project", "manage_line_items");
+    } else {
+      // A plain discussion is open to any org member — project:read is held by every
+      // built-in role, so this is the membership-aware "any member" bar (unlike
+      // requireOrgRead, it re-checks the members row, not just the token's orgId claim).
+      await requireOrgPermission(ctx, args.orgId, "project", "read");
+    }
+    const actor = await resolveActor(ctx, { userId: args.createdBy, userName: args.createdByName });
+    const color = getUserColor(actor.userId);
     const now = Date.now();
-    // For "project" entities the entityId already IS the project id; fall back to
-    // it so blocking summaries always have a project to group by.
+    // For a "project" entity the entityId IS the project id — derive projectId from
+    // it and IGNORE any client-supplied projectId, so a blocking thread can't be
+    // indexed against (and thus gate) a DIFFERENT project than the one it's on.
     const projectId =
-      args.projectId ?? (args.entityType === "project" ? args.entityId : undefined);
+      args.entityType === "project" ? args.entityId : args.projectId;
     const mentions = args.mentionUserIds?.length ? args.mentionUserIds : undefined;
     const threadId = await ctx.db.insert("commentThreads", {
       orgId: args.orgId,
@@ -375,8 +406,8 @@ export const createThread = mutation({
       isBlocking: args.isBlocking ?? false,
       projectId,
       mentionUserIds: mentions,
-      createdBy: args.createdBy,
-      createdByName: args.createdByName,
+      createdBy: actor.userId,
+      createdByName: actor.userName,
       createdAt: now,
       updatedAt: now,
     });
@@ -385,9 +416,9 @@ export const createThread = mutation({
       orgId: args.orgId,
       threadId: threadId as unknown as string,
       body: args.firstComment,
-      authorId: args.createdBy,
-      authorName: args.createdByName,
-      authorColor: args.authorColor,
+      authorId: actor.userId,
+      authorName: actor.userName,
+      authorColor: color,
       mentionUserIds: mentions,
       createdAt: now,
     });
@@ -395,9 +426,9 @@ export const createThread = mutation({
     const where = targetLabel(args.targetType);
     await recordActivity(ctx, {
       orgId: args.orgId,
-      actorUserId: args.createdBy,
-      actorName: args.createdByName,
-      actorColor: args.authorColor,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: color,
       entityType: args.entityType,
       entityId: args.entityId,
       targetType: args.targetType,
@@ -419,11 +450,17 @@ export const addComment = mutation({
     body: v.string(),
     authorId: v.string(),
     authorName: v.string(),
-    authorColor: v.string(),
+    // Relaxed required → optional (expand-contract); colour recomputed from the pinned actor.
+    authorColor: v.optional(v.string()),
     mentionUserIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    // Any org member may reply (membership-aware; project:read is universal).
+    await requireOrgPermission(ctx, args.orgId, "project", "read");
+    const actor = await resolveActor(ctx, { userId: args.authorId, userName: args.authorName });
+    const color = getUserColor(actor.userId);
     const now = Date.now();
 
     const thread = await ctx.db.get(args.threadId as unknown as Id<"commentThreads">);
@@ -454,18 +491,18 @@ export const addComment = mutation({
       orgId: args.orgId,
       threadId: args.threadId,
       body: args.body,
-      authorId: args.authorId,
-      authorName: args.authorName,
-      authorColor: args.authorColor,
+      authorId: actor.userId,
+      authorName: actor.userName,
+      authorColor: color,
       mentionUserIds: newMentions.length ? newMentions : undefined,
       createdAt: now,
     });
 
     await recordActivity(ctx, {
       orgId: args.orgId,
-      actorUserId: args.authorId,
-      actorName: args.authorName,
-      actorColor: args.authorColor,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: color,
       entityType: thread.entityType,
       entityId: thread.entityId,
       targetType: thread.targetType,
@@ -488,28 +525,30 @@ export const setThreadBlocking = mutation({
     actorName: v.optional(v.string()),
     actorColor: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, threadId, isBlocking, actorUserId, actorName, actorColor }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, threadId, isBlocking, actorUserId, actorName }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    // Toggling the blocking flag moves the project gate → manage_line_items.
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, { userId: actorUserId ?? "", userName: actorName ?? "" });
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     await ctx.db.patch(thread._id, { isBlocking, updatedAt: Date.now() });
-    if (actorUserId && actorName && actorColor) {
-      await recordActivity(ctx, {
-        orgId,
-        actorUserId,
-        actorName,
-        actorColor,
-        entityType: thread.entityType,
-        entityId: thread.entityId,
-        targetType: thread.targetType,
-        targetId: thread.targetId,
-        action: isBlocking ? "thread_blocked" : "thread_unblocked",
-        summary: isBlocking
-          ? `marked a comment as blocking${targetLabel(thread.targetType)}`
-          : `cleared the blocking flag${targetLabel(thread.targetType)}`,
-        metadata: { threadId },
-      });
-    }
+    await recordActivity(ctx, {
+      orgId,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: getUserColor(actor.userId),
+      entityType: thread.entityType,
+      entityId: thread.entityId,
+      targetType: thread.targetType,
+      targetId: thread.targetId,
+      action: isBlocking ? "thread_blocked" : "thread_unblocked",
+      summary: isBlocking
+        ? `marked a comment as blocking${targetLabel(thread.targetType)}`
+        : `cleared the blocking flag${targetLabel(thread.targetType)}`,
+      metadata: { threadId },
+    });
   },
 });
 
@@ -521,32 +560,33 @@ export const resolveThread = mutation({
     actorName: v.optional(v.string()),
     actorColor: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, threadId, resolvedBy, actorName, actorColor }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, threadId, resolvedBy, actorName }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, { userId: resolvedBy, userName: actorName ?? "" });
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     const now = Date.now();
     await ctx.db.patch(thread._id, {
       status: "resolved",
-      resolvedBy,
+      resolvedBy: actor.userId,
       resolvedAt: now,
       updatedAt: now,
     });
-    if (actorName && actorColor) {
-      await recordActivity(ctx, {
-        orgId,
-        actorUserId: resolvedBy,
-        actorName,
-        actorColor,
-        entityType: thread.entityType,
-        entityId: thread.entityId,
-        targetType: thread.targetType,
-        targetId: thread.targetId,
-        action: "thread_resolved",
-        summary: `resolved a discussion${targetLabel(thread.targetType)}`,
-        metadata: { threadId },
-      });
-    }
+    await recordActivity(ctx, {
+      orgId,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: getUserColor(actor.userId),
+      entityType: thread.entityType,
+      entityId: thread.entityId,
+      targetType: thread.targetType,
+      targetId: thread.targetId,
+      action: "thread_resolved",
+      summary: `resolved a discussion${targetLabel(thread.targetType)}`,
+      metadata: { threadId },
+    });
   },
 });
 
@@ -558,8 +598,11 @@ export const reopenThread = mutation({
     actorName: v.optional(v.string()),
     actorColor: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, threadId, actorUserId, actorName, actorColor }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, threadId, actorUserId, actorName }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, { userId: actorUserId ?? "", userName: actorName ?? "" });
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     await ctx.db.patch(thread._id, {
@@ -568,21 +611,19 @@ export const reopenThread = mutation({
       resolvedAt: undefined,
       updatedAt: Date.now(),
     });
-    if (actorUserId && actorName && actorColor) {
-      await recordActivity(ctx, {
-        orgId,
-        actorUserId,
-        actorName,
-        actorColor,
-        entityType: thread.entityType,
-        entityId: thread.entityId,
-        targetType: thread.targetType,
-        targetId: thread.targetId,
-        action: "thread_reopened",
-        summary: `reopened a discussion${targetLabel(thread.targetType)}`,
-        metadata: { threadId },
-      });
-    }
+    await recordActivity(ctx, {
+      orgId,
+      actorUserId: actor.userId,
+      actorName: actor.userName,
+      actorColor: getUserColor(actor.userId),
+      entityType: thread.entityType,
+      entityId: thread.entityId,
+      targetType: thread.targetType,
+      targetId: thread.targetId,
+      action: "thread_reopened",
+      summary: `reopened a discussion${targetLabel(thread.targetType)}`,
+      metadata: { threadId },
+    });
   },
 });
 
@@ -641,7 +682,13 @@ export const setReviewMarker = mutation({
     actorColor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    // A review marker is a lightweight annotation — any org member (no RBAC in the
+    // old action; project:read is universal, membership-aware). Service token bypasses.
+    await requireOrgPermission(ctx, args.orgId, "project", "read");
+    const actor = await resolveActor(ctx, { userId: args.createdBy, userName: args.createdByName });
+    const color = getUserColor(actor.userId);
     const now = Date.now();
 
     const existing = await ctx.db
@@ -653,12 +700,11 @@ export const setReviewMarker = mutation({
       .first();
 
     const logMarker = async () => {
-      if (!args.actorColor) return;
       await recordActivity(ctx, {
         orgId: args.orgId,
-        actorUserId: args.createdBy,
-        actorName: args.createdByName,
-        actorColor: args.actorColor,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        actorColor: color,
         entityType: args.entityType,
         entityId: args.entityId,
         targetType: args.targetType,
@@ -675,7 +721,7 @@ export const setReviewMarker = mutation({
         reason: args.reason,
         note: args.note,
         updatedAt: now,
-        resolvedBy: args.status === "resolved" ? args.createdBy : undefined,
+        resolvedBy: args.status === "resolved" ? actor.userId : undefined,
         resolvedAt: args.status === "resolved" ? now : undefined,
       });
       await logMarker();
@@ -691,8 +737,8 @@ export const setReviewMarker = mutation({
       status: args.status,
       reason: args.reason,
       note: args.note,
-      createdBy: args.createdBy,
-      createdByName: args.createdByName,
+      createdBy: actor.userId,
+      createdByName: actor.userName,
       createdAt: now,
       updatedAt: now,
     })) as string;

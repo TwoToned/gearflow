@@ -88,6 +88,7 @@ import type * as lib_availabilityBookings from "../lib/availabilityBookings.js";
 import type * as lib_availabilityCore from "../lib/availabilityCore.js";
 import type * as lib_blockingCommentsGate from "../lib/blockingCommentsGate.js";
 import type * as lib_bulkCheckin from "../lib/bulkCheckin.js";
+import type * as lib_collaborationColors from "../lib/collaborationColors.js";
 import type * as lib_counters from "../lib/counters.js";
 import type * as lib_crewRate from "../lib/crewRate.js";
 import type * as lib_crewTimeHours from "../lib/crewTimeHours.js";
@@ -292,6 +293,7 @@ declare const fullApi: ApiFromModules<{
   "lib/availabilityCore": typeof lib_availabilityCore;
   "lib/blockingCommentsGate": typeof lib_blockingCommentsGate;
   "lib/bulkCheckin": typeof lib_bulkCheckin;
+  "lib/collaborationColors": typeof lib_collaborationColors;
   "lib/counters": typeof lib_counters;
   "lib/crewRate": typeof lib_crewRate;
   "lib/crewTimeHours": typeof lib_crewTimeHours;

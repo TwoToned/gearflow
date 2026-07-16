@@ -19,7 +19,10 @@ import { getUserColor } from "./lib/collaborationColors";
  * no-op / bypass for the SERVICE token, so the in-flight deployed image (which
  * still calls these via the server action until Coolify ships) is unaffected —
  * backward-compatible expand-contract (colour args relaxed to optional, nothing
- * removed). Presence/lock mutations remain SERVICE-gated for now (server action).
+ * removed). The presence/lock mutations are likewise browser-direct: same guard bar,
+ * with the presence userId / lock ownerUserId PINNED to the verified token (a client
+ * can't broadcast presence or hold a lock AS another user). Only the internal
+ * logActivityEvent helper (called by other server mutations) stays SERVICE-gated.
  * Queries use org-scoped user reads: requireOrgRead(ctx, orgId).
  *
  * Presence TTL: 45 s from lastSeenAt. Heartbeat every 15 s.
@@ -43,14 +46,20 @@ export const heartbeatPresence = mutation({
     activeTargetId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, args.orgId, "project", "read");
+    // Pin the presence identity to the verified token (a client can't broadcast
+    // presence AS another user); the name/colour/avatar are cosmetic self-display.
+    const actor = await resolveActor(ctx, { userId: args.userId, userName: args.userName });
+    const userId = actor.userId;
     const now = Date.now();
     const expiresAt = now + 45_000;
 
     const existing = await ctx.db
       .query("collaborationPresence")
       .withIndex("by_orgId_userId_entityType_entityId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId).eq("entityType", args.entityType).eq("entityId", args.entityId)
+        q.eq("orgId", args.orgId).eq("userId", userId).eq("entityType", args.entityType).eq("entityId", args.entityId)
       )
       .first();
 
@@ -69,6 +78,7 @@ export const heartbeatPresence = mutation({
     } else {
       await ctx.db.insert("collaborationPresence", {
         ...args,
+        userId,
         lastSeenAt: now,
         expiresAt,
       });
@@ -78,8 +88,13 @@ export const heartbeatPresence = mutation({
 
 export const clearPresence = mutation({
   args: { orgId: v.string(), userId: v.string(), entityType: v.string(), entityId: v.string() },
-  handler: async (ctx, { orgId, userId, entityType, entityId }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, userId: suppliedUserId, entityType, entityId }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "read");
+    // Pin to the verified token — a caller can only clear THEIR OWN presence.
+    const actor = await resolveActor(ctx, { userId: suppliedUserId, userName: "" });
+    const userId = actor.userId;
     const existing = await ctx.db
       .query("collaborationPresence")
       .withIndex("by_orgId_userId_entityType_entityId", (q) =>
@@ -122,7 +137,13 @@ export const acquireLock = mutation({
     clientSessionId: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, args.orgId, "project", "read");
+    // Pin lock ownership to the verified token — a client can't acquire a lock AS
+    // another user; the name/colour are cosmetic self-display.
+    const actor = await resolveActor(ctx, { userId: args.ownerUserId, userName: args.ownerName });
+    const ownerUserId = actor.userId;
     const now = Date.now();
 
     const existing = await ctx.db
@@ -134,12 +155,12 @@ export const acquireLock = mutation({
       .first();
 
     if (existing) {
-      const isOwner = existing.ownerUserId === args.ownerUserId && existing.clientSessionId === args.clientSessionId;
+      const isOwner = existing.ownerUserId === ownerUserId && existing.clientSessionId === args.clientSessionId;
       const isStale = existing.expiresAt < now;
 
       if (isStale || isOwner) {
         await ctx.db.patch(existing._id, {
-          ownerUserId: args.ownerUserId,
+          ownerUserId,
           ownerName: args.ownerName,
           ownerColor: args.ownerColor,
           clientSessionId: args.clientSessionId,
@@ -167,7 +188,7 @@ export const acquireLock = mutation({
       entityId: args.entityId,
       targetType: args.targetType,
       targetId: args.targetId,
-      ownerUserId: args.ownerUserId,
+      ownerUserId,
       ownerName: args.ownerName,
       ownerColor: args.ownerColor,
       acquiredAt: now,
@@ -187,8 +208,12 @@ export const heartbeatLock = mutation({
     ownerUserId: v.string(),
     clientSessionId: v.string(),
   },
-  handler: async (ctx, { orgId, lockId, ownerUserId, clientSessionId }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, lockId, ownerUserId: suppliedOwnerUserId, clientSessionId }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "read");
+    const actor = await resolveActor(ctx, { userId: suppliedOwnerUserId, userName: "" });
+    const ownerUserId = actor.userId;
     // Cast string arg to Id for ctx.db.get (Convex Id IS a string at runtime)
     const doc = await ctx.db.get(lockId as unknown as Id<"collaborationLocks">);
     if (!doc || doc.orgId !== orgId || doc.ownerUserId !== ownerUserId || doc.clientSessionId !== clientSessionId || doc.status !== "active") return false;
@@ -200,8 +225,12 @@ export const heartbeatLock = mutation({
 
 export const releaseLock = mutation({
   args: { orgId: v.string(), lockId: v.string(), ownerUserId: v.string(), clientSessionId: v.string() },
-  handler: async (ctx, { orgId, lockId, ownerUserId, clientSessionId }) => {
-    await requireService(ctx);
+  handler: async (ctx, { orgId, lockId, ownerUserId: suppliedOwnerUserId, clientSessionId }) => {
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "read");
+    const actor = await resolveActor(ctx, { userId: suppliedOwnerUserId, userName: "" });
+    const ownerUserId = actor.userId;
     const doc = await ctx.db.get(lockId as unknown as Id<"collaborationLocks">);
     if (!doc || doc.orgId !== orgId || doc.ownerUserId !== ownerUserId || doc.clientSessionId !== clientSessionId) return false;
     await ctx.db.patch(doc._id, { status: "released", releasedAt: Date.now() });
@@ -222,7 +251,11 @@ export const takeoverLock = mutation({
     clientSessionId: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireService(ctx);
+    await assertWritesEnabled(ctx, "collaboration");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, args.orgId, "project", "read");
+    const actor = await resolveActor(ctx, { userId: args.ownerUserId, userName: args.ownerName });
+    const ownerUserId = actor.userId;
     const now = Date.now();
     const existing = await ctx.db
       .query("collaborationLocks")
@@ -233,12 +266,12 @@ export const takeoverLock = mutation({
       .first();
 
     if (!existing) return { acquired: false as const, reason: "no_lock" };
-    if (existing.expiresAt >= now && existing.ownerUserId !== args.ownerUserId) {
+    if (existing.expiresAt >= now && existing.ownerUserId !== ownerUserId) {
       return { acquired: false as const, reason: "not_stale", ownerName: existing.ownerName };
     }
 
     await ctx.db.patch(existing._id, {
-      ownerUserId: args.ownerUserId,
+      ownerUserId,
       ownerName: args.ownerName,
       ownerColor: args.ownerColor,
       clientSessionId: args.clientSessionId,

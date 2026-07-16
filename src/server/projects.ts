@@ -27,11 +27,9 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
-import { getKitSerializedItemsByOrg } from "@/lib/kits-read";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
-import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
 import { type FilterValue } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
@@ -1397,7 +1395,7 @@ export async function getTemplates() {
 }
 
 export async function deleteTemplate(id: string) {
-  const { organizationId } = await requirePermission("project", "delete");
+  const { organizationId, userId, userName } = await requirePermission("project", "delete");
 
   // project is Convex-only — read the template scalars from Convex.
   const template = await getProjectByIdMapped(id, organizationId);
@@ -1416,31 +1414,16 @@ export async function deleteTemplate(id: string) {
     });
   }
 
-  // Delete the Convex-only sub-table rows (PM/tasks/services), then the project doc.
-  // (No Prisma FK cascade remains — they're all explicit Convex cascades now.)
+  // The full delete cascade (PM/tasks/services → grouping → line items →
+  // projectModelRevenues → the project row) runs atomically INSIDE Convex — one
+  // round-trip, no orphan window. RBAC + the isTemplate guard are re-checked there.
   const convexForDelete = await getConvexClient();
-  const [pmRows, taskRows, serviceRows] = await Promise.all([
-    convexForDelete.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
-    convexForDelete.query(api.projectTasks.listByProject, { projectId: id, orgId: organizationId }),
-    convexForDelete.query(api.projectServices.listByProject, { projectId: id, orgId: organizationId }),
-  ]);
-  await Promise.all([
-    ...pmRows.map((pm) => convexForDelete.mutation(api.projectManagers.remove, { id: pm.id })),
-    ...taskRows.map((t) => convexForDelete.mutation(api.projectTasks.remove, { id: t.id })),
-    ...serviceRows.map((s) => convexForDelete.mutation(api.projectServices.remove, { id: s.id })),
-  ]);
-  // Grouping (category/group/slot) + any template line items live in Convex only.
-  await convexForDelete.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
-  const templateLineItems = await convexForDelete.query(api.projectLineItems.listByProject, {
-    projectId: id,
+  await convexForDelete.mutation(api.projectWrites.deleteTemplateNative, {
+    id,
     orgId: organizationId,
+    actor: { userId, userName },
+    now: Date.now(),
   });
-  await Promise.all(
-    templateLineItems
-      .filter((li) => li.parentLineItemId == null)
-      .map((li) => convexForDelete.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id })),
-  );
-  await convexForDelete.mutation(api.projects.remove, { id });
   return { success: true };
 }
 
@@ -1469,136 +1452,22 @@ export async function deleteProject(id: string) {
 
   const convex = await getConvexClient();
 
-  // Line items are Convex-only — read them to collect assets/kits to free and
-  // to drive the explicit cascade removal (the dropped FK no longer cascades).
-  const lineItems = await convex.query(api.projectLineItems.listByProject, {
-    projectId: id,
-    orgId: organizationId,
-  });
-
-  // Collect IDs to reset
-  const checkedOutAssetIds: string[] = [];
-  const checkedOutKitIds: string[] = [];
-
-  for (const li of lineItems) {
-    if (li.assetId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
-      checkedOutAssetIds.push(li.assetId);
-    }
-    if (li.kitId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
-      checkedOutKitIds.push(li.kitId);
-    }
-  }
-
-  // Get org default location from Convex.
+  // The full delete cascade runs atomically INSIDE Convex (deleteNative): it frees
+  // checked-out assets/kits (+ kit-serialized members) through the counter-safe
+  // path, cascades every line item + its units, deletes crew assignments (→ shifts
+  // + time entries), managers/tasks/services, grouping, the projectModelRevenues
+  // rollup, then the project row + DELETE audit — in ONE round-trip, no orphan
+  // window. The CANCELLED + non-template guards are re-checked there. We only
+  // resolve the org default location to pass through (mirrors getDefaultLocation).
   const defaultLocation = await getDefaultLocation(organizationId);
-  const now = Date.now();
-
-  // The project's crew assignments (Convex-only) — captured so their cascade
-  // (assignment → shifts + linked time-entries) can be deleted from Convex after
-  // the project row goes (no Prisma FK cascade remains — dropped in #254).
-  const crewAssignmentIds = (await getAssignmentsByProject(id, organizationId)).map((a) => a.id);
-
-  // Reset checked-out assets to AVAILABLE (Convex). Clear locationId when there
-  // is no default location.
-  if (checkedOutAssetIds.length > 0) {
-    await convex.mutation(api.assets.bulkUpdate, {
-      organizationId,
-      ids: checkedOutAssetIds,
-      set: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
-      ...(defaultLocation?.id ? {} : { clear: ["locationId"] }),
-    });
-  }
-
-  // Reset checked-out kits and their contents to AVAILABLE (Convex). Kits are
-  // patched per-id (status AVAILABLE + location — NOT archived). Kit serialized
-  // assets are reset via assets.bulkUpdate.
-  const kitAssetIds: string[] = [];
-  if (checkedOutKitIds.length > 0) {
-    const allKitSerialized = await getKitSerializedItemsByOrg(organizationId);
-    const checkedOutKitIdSet = new Set(checkedOutKitIds);
-    await Promise.all(
-      checkedOutKitIds.map((kitId) =>
-        convex.mutation(api.kits.update, {
-          id: kitId,
-          patch: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
-        }),
-      ),
-    );
-    for (const ks of allKitSerialized) {
-      if (checkedOutKitIdSet.has(ks.kitId)) kitAssetIds.push(ks.assetId);
-    }
-  }
-  if (kitAssetIds.length > 0) {
-    await convex.mutation(api.assets.bulkUpdate, {
-      organizationId,
-      ids: kitAssetIds,
-      set: { status: "AVAILABLE", ...(defaultLocation?.id ? { locationId: defaultLocation.id } : {}), updatedAt: now },
-      ...(defaultLocation?.id ? {} : { clear: ["locationId"] }),
-    });
-  }
-
-  // Remove the project's line items from Convex. The project↔line-item FK is
-  // dropped, so prisma.project.delete no longer cascades — explicitly cascade
-  // each top-level line (removeLineItemCascade handles its children + units).
-  // Fire concurrently (each top-level line is independent) — was one sequential
-  // Convex round-trip per line, so a 200-line project took 200 sequential calls.
-  await Promise.all(
-    lineItems
-      .filter((li) => li.parentLineItemId == null)
-      .map((li) => convex.mutation(api.projectLineItems.removeLineItemCascade, { id: li.id })),
-  );
-
-  // Tidy the remaining Convex sub-tables / crew cascade, then delete the project
-  // doc. The project + all its sub-tables are Convex-only now (no Prisma FK
-  // cascade remains — dropped in Phase C #254), so each is removed explicitly.
-  await Promise.all(
-    crewAssignmentIds.map((aid) => convex.mutation(api.crewAssignments.deleteCascade, { id: aid })),
-  );
-  // Delete Convex-only sub-table rows (PM/tasks/services).
-  const [pmRows, taskRows, serviceRows] = await Promise.all([
-    convex.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
-    convex.query(api.projectTasks.listByProject, { projectId: id, orgId: organizationId }),
-    convex.query(api.projectServices.listByProject, { projectId: id, orgId: organizationId }),
-  ]);
-  await Promise.all([
-    ...pmRows.map((pm) => convex.mutation(api.projectManagers.remove, { id: pm.id })),
-    ...taskRows.map((t) => convex.mutation(api.projectTasks.remove, { id: t.id })),
-    ...serviceRows.map((s) => convex.mutation(api.projectServices.remove, { id: s.id })),
-  ]);
-  // Grouping (category/group/slot) lives in Convex only; the Prisma FK cascade
-  // that used to clean these up was dropped in Phase C #254, so purge them here.
-  await convex.mutation(api.projectCategories.deleteAllForProject, { projectId: id });
-  // Finally delete the project doc itself (Convex-only).
-  if (nativeProjectWrites()) {
-    // Native: final project-row delete + DELETE audit atomic (the cascade above ran
-    // server-side; recalc N/A for a delete).
-    await convex.mutation(api.projectWrites.deleteNative, {
-      id,
-      orgId: organizationId,
-      freedAssets: checkedOutAssetIds.length,
-      freedKits: checkedOutKitIds.length,
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
-  } else {
-    await convex.mutation(api.projects.remove, { id });
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "DELETE",
-      entityType: "project",
-      entityId: id,
-      entityName: project.projectNumber,
-      summary: `Deleted project ${project.projectNumber} - ${project.name}`,
-      details: {
-        deleted: { projectNumber: project.projectNumber, name: project.name },
-        freedAssets: checkedOutAssetIds.length,
-        freedKits: checkedOutKitIds.length,
-      },
-    });
-  }
+  await convex.mutation(api.projectWrites.deleteNative, {
+    id,
+    orgId: organizationId,
+    defaultLocationId: defaultLocation?.id ?? null,
+    actor: { userId, userName },
+    auditId: createId(),
+    now: Date.now(),
+  });
 }
 
 /** Get project milestone dates for call sheet dialog */

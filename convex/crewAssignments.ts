@@ -1,5 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -417,6 +419,23 @@ export const patchAssignment = mutation({
   },
 });
 
+/**
+ * Delete an assignment + its shifts + its (linked) time entries — atomic. Extracted
+ * as a plain function so mutations that can't call another mutation (Convex forbids
+ * mutation→mutation) — e.g. projectWrites.deleteNative — reuse the EXACT shift +
+ * time-entry purge AND the pendingCrewOffers counter bump. Caller org-scopes `doc`
+ * before invoking. Standalone time entries (no assignmentId) are kept.
+ */
+export async function deleteCrewAssignmentCascadeCore(ctx: MutationCtx, doc: Doc<"crewAssignments">): Promise<void> {
+  const id = doc.id;
+  const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+  for (const s of shifts) await ctx.db.delete(s._id);
+  const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
+  for (const e of entries) await ctx.db.delete(e._id);
+  await ctx.db.delete(doc._id);
+  await bumpCountersForTable(ctx, "crewAssignments", doc, null);
+}
+
 /** Delete an assignment + its shifts + its (linked) time entries — atomic. Replaces
  *  the dropped Prisma FK cascade. Standalone time entries (no assignmentId) are kept. */
 export const deleteCascade = mutation({
@@ -425,12 +444,7 @@ export const deleteCascade = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("crewAssignments not found: " + id);
-    const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
-    for (const s of shifts) await ctx.db.delete(s._id);
-    const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect();
-    for (const e of entries) await ctx.db.delete(e._id);
-    await ctx.db.delete(doc._id);
-    await bumpCountersForTable(ctx, "crewAssignments", doc, null);
+    await deleteCrewAssignmentCascadeCore(ctx, doc);
   },
 });
 

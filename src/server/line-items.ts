@@ -65,6 +65,85 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items", actor);
   const parsed = lineItemSchema.parse(data);
 
+  // NATIVE PATH: the FULL add orchestration — availability, merge-dedup, auto-pricing,
+  // insert, accessory expansion, group-suggested-price, and recalc — runs atomically in
+  // one Convex mutation (addLineItemSmartNative). The server keeps only the parse + actor
+  // + org-tax resolution above, and the non-money tail (collab feed + supplier enrich +
+  // webhook) below. lineTotal is recomputed in-mutation; the client is never trusted.
+  if (nativeLineItemWrites()) {
+    const convex = await getConvexClient();
+    let res: { id: string; merged: boolean };
+    try {
+      res = await convex.mutation(api.lineItemWrites.addLineItemSmartNative, {
+        id: createId(),
+        organizationId,
+        projectId,
+        fields: {
+          type: parsed.type,
+          modelId: parsed.modelId || undefined,
+          assetId: parsed.assetId || undefined,
+          bulkAssetId: parsed.bulkAssetId || undefined,
+          description: parsed.description || undefined,
+          quantity: parsed.quantity,
+          unitPrice: parsed.unitPrice ?? undefined,
+          pricingType: parsed.pricingType,
+          duration: parsed.duration ?? undefined,
+          discount: parsed.discount ?? undefined,
+          groupName: parsed.groupName || undefined,
+          notes: parsed.notes || undefined,
+          isOptional: parsed.isOptional,
+          showSubhireOnDocs: parsed.showSubhireOnDocs,
+          supplierId: parsed.supplierId || undefined,
+          subhireOrderNumber: parsed.subhireOrderNumber || undefined,
+          categoryId: parsed.categoryId || undefined,
+          groupId: parsed.groupId || undefined,
+        },
+        allowOverbook,
+        forceSeparate,
+        includeAccessories,
+        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
+        actor: { userId, userName },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+
+    const result = (await readBackLine(res.id))!;
+
+    // Non-money tail (best-effort collab feed + supplier enrich). The money orchestration
+    // + CREATE/UPDATE audit + recalc already committed atomically in the mutation.
+    const [, supplier] = await Promise.all([
+      writeCollabActivityEvent(
+        { organizationId, userId, userName },
+        {
+          entityType: "project",
+          entityId: projectId,
+          action: "line_item_added",
+          summary: `added ${result.description || "a line item"}`,
+          targetType: "lineItem",
+          targetId: result.id,
+        },
+      ),
+      result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
+    ]);
+
+    void emitWebhookEvent(organizationId, "line_item.added", {
+      projectId,
+      lineItemId: result.id,
+      modelId: result.modelId ?? null,
+      quantity: result.quantity ?? null,
+      type: result.type ?? null,
+      description: result.description ?? null,
+    });
+
+    if (res.merged) {
+      return serialize({ ...result, supplier, _merged: true, _newQuantity: result.quantity });
+    }
+    return serialize({ ...result, supplier });
+  }
+
   // Server-side availability enforcement for equipment.
   // Sub-hire items represent third-party stock and never consume our inventory.
   // Detection moved from `isSubhire` boolean to `subHireId != null` (Wave 2).

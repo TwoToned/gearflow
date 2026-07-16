@@ -18,6 +18,7 @@ import {
   findAssetConflict,
   findKitConflict,
 } from "./lib/availabilityCore";
+import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -265,6 +266,77 @@ async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId:
     .order("desc")
     .first();
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
+}
+
+// ─── addLineItemSmartNative helpers (money-math ports) ────────────────────────
+
+/** roundCurrency port (src/lib/formatters.ts:27) — bankers-free half-up on cents. */
+const roundCurrencyNative = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Byte-parity port of src/server/line-items.ts:1595 `calculateLineTotal`:
+ * unitPrice==null → null; gross=round(unitPrice·qty·duration); result=max(0, round(gross−disc)).
+ */
+function calcLineTotalNative(
+  unitPrice: number | undefined,
+  quantity: number,
+  duration: number,
+  discount: number | undefined,
+): number | null {
+  if (unitPrice == null) return null;
+  const gross = roundCurrencyNative(unitPrice * quantity * duration);
+  const disc = discount ?? 0;
+  return Math.max(0, roundCurrencyNative(gross - disc));
+}
+
+/**
+ * Org-validate a client-supplied FK id against `by_cuid` (a GLOBAL index — the row could
+ * belong to another org). Throws if the referenced row is missing or cross-org. All five
+ * tables carry `id` (by_cuid) + `organizationId`.
+ */
+async function assertRefInOrg(
+  ctx: MutationCtx,
+  table: "models" | "assets" | "bulkAssets" | "projectGroups" | "projectCategories",
+  id: string,
+  orgId: string,
+): Promise<void> {
+  const doc = await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!doc || doc.organizationId !== orgId) {
+    throw new ConvexError({ code: "FORBIDDEN", message: `Referenced ${table} not found in your organization.` });
+  }
+}
+
+/**
+ * Recompute + persist a project group's suggested price (mirrors the server
+ * calculateSuggestedPrice + projectGroupsWrites.recomputeGroupSuggestedById). No-op if
+ * the group is gone / cross-org. Uses the shared computeGroupSuggestedPrice port.
+ */
+async function recomputeGroupSuggestedNative(
+  ctx: MutationCtx,
+  groupId: string,
+  orgId: string,
+  now: number,
+): Promise<void> {
+  const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", groupId)).first();
+  if (!group || group.organizationId !== orgId) return;
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", group.projectId)).first();
+  const suggested = await computeGroupSuggestedPrice(ctx, {
+    projectId: group.projectId,
+    groupId,
+    orgId,
+    defaultRentalPeriod: project?.defaultRentalPeriod ?? undefined,
+    defaultRentalQuantity: project?.defaultRentalQuantity ?? undefined,
+    groupRentalPeriod: group.rentalPeriod ?? undefined,
+    groupRentalQuantity: group.rentalQuantity ?? undefined,
+  });
+  await ctx.db.patch(group._id, { suggestedPrice: suggested, updatedAt: now });
+}
+
+/** Drop keys whose value is undefined (parity with the Convex client stripping undefined
+ *  args over the wire — the server merge/insert relied on that to mean "leave unset"). */
+function dropUndefined<T extends Record<string, unknown>>(obj: T): T {
+  for (const k of Object.keys(obj)) if (obj[k] === undefined) delete obj[k];
+  return obj;
 }
 
 /**
@@ -679,5 +751,309 @@ export const recalcNative = mutation({
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     await recalcProjectTotals(ctx, projectId, orgId, orgDefaultTaxRate, now);
     return { ok: true as const };
+  },
+});
+
+/**
+ * addLineItemSmartNative — the FULL browser-direct port of src/server/line-items.ts
+ * `addLineItem` (the money-adjacent add orchestration), all in one atomic mutation:
+ *
+ *   guards → FK org-validation → availability/double-booking → merge-dedup
+ *   → auto-pricing → build fields → insert → accessory expansion → group-suggested-price
+ *   → recalc.
+ *
+ * The availability block is copied verbatim from `addNative`; the three still-server-only
+ * pieces are ported here for byte-parity:
+ *   • auto-pricing  (src/server/line-items.ts:361-401) — PER_DAY, no manual price → fill
+ *     from the model's daily/weekly rate × the project's default rental quantity.
+ *   • merge-dedup   (src/server/line-items.ts:266-358) — a model-backed, asset-less,
+ *     same-group/category add merges into the existing line (quantity summed, lineTotal
+ *     recomputed, notes joined) instead of inserting a duplicate row.
+ *   • group-suggested-price (computeGroupSuggestedPrice) — persisted onto the group.
+ *
+ * lineTotal is ALWAYS recomputed in-mutation (calcLineTotalNative) — never trusted from
+ * the client. `fields.lineTotal` is intentionally absent from the args.
+ */
+export const addLineItemSmartNative = mutation({
+  returns: v.object({ id: v.string(), merged: v.boolean() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    fields: v.object({
+      categoryId: v.optional(v.string()),
+      groupId: v.optional(v.string()),
+      type: v.optional(enums.LineItemType),
+      modelId: v.optional(v.string()),
+      assetId: v.optional(v.string()),
+      bulkAssetId: v.optional(v.string()),
+      description: v.optional(v.string()),
+      quantity: v.number(),
+      unitPrice: v.optional(v.number()),
+      pricingType: v.optional(enums.PricingType),
+      duration: v.optional(v.number()),
+      discount: v.optional(v.number()),
+      groupName: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      isOptional: v.optional(v.boolean()),
+      showSubhireOnDocs: v.optional(v.boolean()),
+      supplierId: v.optional(v.string()),
+      subhireOrderNumber: v.optional(v.string()),
+    }),
+    allowOverbook: v.boolean(),
+    forceSeparate: v.boolean(),
+    includeAccessories: v.boolean(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, {
+    id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories,
+    orgDefaultTaxRate, actor: suppliedActor, auditId, now,
+  }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
+    // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
+    await assertProjectInOrg(ctx, projectId, organizationId);
+    assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+
+    // Org-validate every referenced FK (by_cuid is global — the row could be another org's).
+    if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
+    if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
+    if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);
+    if (fields.categoryId) await assertRefInOrg(ctx, "projectCategories", fields.categoryId, organizationId);
+
+    // ── Availability / double-booking (copied verbatim from addNative) ─────────
+    if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+      const rentalStart = project?.rentalStartDate ?? null;
+      const rentalEnd = project?.rentalEndDate ?? null;
+      const hasDates = rentalStart != null && rentalEnd != null;
+
+      if (fields.assetId) {
+        const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.assetId!)).unique();
+        if (asset && asset.organizationId === organizationId && asset.kitId) {
+          const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).unique();
+          const kitTag = kit && kit.organizationId === organizationId ? kit.assetTag : asset.kitId;
+          throw new ConvexError({
+            code: "ASSET_IN_KIT",
+            title: "Asset is in a kit",
+            message: `This asset belongs to Kit ${kitTag}.`,
+            hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
+          });
+        }
+        if (hasDates) {
+          const conflict = await findAssetConflict(ctx, {
+            assetId: fields.assetId,
+            orgId: organizationId,
+            excludeProjectId: projectId,
+            rentalStart,
+            rentalEnd,
+          });
+          if (conflict) {
+            throw new ConvexError({
+              code: "ASSET_DOUBLE_BOOKED",
+              message: `This asset is booked on ${conflict.projectNumber} — ${conflict.name} during those dates.`,
+            });
+          }
+        }
+        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST")) {
+          throw new ConvexError({
+            code: "ASSET_UNAVAILABLE",
+            message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,
+            hint: asset.status === "LOST"
+              ? "Find the asset and mark it Available, or pick a different one."
+              : "Retired assets cannot be booked. Pick a different asset.",
+          });
+        }
+      } else {
+        const bundle = await loadModelAvailabilityBundle(ctx, fields.modelId, organizationId);
+        if (bundle.model) {
+          const { available, booked, unavailable, totalStock } = computeModelAvailability(bundle, {
+            rentalStart,
+            rentalEnd,
+            excludeProjectId: projectId,
+          });
+          if (fields.quantity > available) {
+            const detail = unavailable > 0
+              ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
+              : `${booked} already booked out of ${totalStock} total`;
+            throw new ConvexError({
+              code: "INSUFFICIENT_STOCK",
+              message: `Only ${available} of ${fields.quantity} requested are free during those dates.`,
+              hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
+            });
+          }
+        }
+      }
+    }
+
+    // ── Merge-dedup (src/server/line-items.ts:266-358) ─────────────────────────
+    // A model-backed, asset-less, same-group/category, non-sub-hire, non-child add merges
+    // into the existing matching line (quantity summed, lineTotal recomputed) instead of
+    // inserting a duplicate row. Never when forceSeparate.
+    if (fields.type === "EQUIPMENT" && fields.modelId && !fields.assetId && !forceSeparate) {
+      const projectLines = (
+        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+      ).filter((li) => li.organizationId === organizationId);
+      const existing = projectLines.find(
+        (li) =>
+          li.modelId === fields.modelId &&
+          li.assetId == null &&
+          (li.groupId ?? null) === (fields.groupId ?? null) &&
+          (li.categoryId ?? null) === (fields.categoryId ?? null) &&
+          !li.isKitChild &&
+          li.subHireId == null &&
+          li.status !== "CANCELLED",
+      );
+
+      if (existing) {
+        const newQuantity = (existing.quantity ?? 0) + fields.quantity;
+        // lineTotal recomputed server-side (never trusts the client). Mirrors the server
+        // merge exactly: parsed value first, else the existing row's value.
+        const mergedUnitPrice = fields.unitPrice ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
+        const mergedDuration = fields.duration || existing.duration || 1;
+        const mergedDiscount = fields.discount ?? (existing.discount != null ? Number(existing.discount) : undefined);
+        const newLineTotal = calcLineTotalNative(mergedUnitPrice, newQuantity, mergedDuration, mergedDiscount);
+        const mergedNotes = fields.notes
+          ? existing.notes ? `${existing.notes}; ${fields.notes}` : fields.notes
+          : existing.notes;
+
+        // Only defined keys are patched (the server passed these through the Convex client,
+        // which strips undefined — so `?? undefined` meant "leave the field untouched").
+        const mergeSet = dropUndefined({
+          quantity: newQuantity,
+          unitPrice: fields.unitPrice ?? existing.unitPrice ?? undefined,
+          pricingType: fields.pricingType || existing.pricingType,
+          duration: fields.duration || existing.duration || undefined,
+          discount: fields.discount ?? existing.discount ?? undefined,
+          lineTotal: newLineTotal ?? undefined,
+          groupName: fields.groupName || existing.groupName || undefined,
+          notes: mergedNotes || undefined,
+          updatedAt: now,
+        } as Record<string, unknown>);
+        await ctx.db.patch(existing._id, mergeSet);
+
+        await writeActivityLog(ctx, {
+          id: auditId,
+          organizationId,
+          action: "UPDATE",
+          entityType: "lineItem",
+          entityId: existing.id,
+          entityName: existing.description || "Line item",
+          userId: actor.userId,
+          userName: actor.userName,
+          summary: `Merged line item into existing on project (qty ${existing.quantity ?? 0} -> ${newQuantity})`,
+          projectId,
+          createdAt: now,
+        });
+
+        if (existing.groupId) await recomputeGroupSuggestedNative(ctx, existing.groupId, organizationId, now);
+        await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+        return { id: existing.id, merged: true };
+      }
+    }
+
+    // ── Auto-pricing (src/server/line-items.ts:361-401) ────────────────────────
+    // PER_DAY model-backed line, no manual price → fill from the model's rate using the
+    // project's default rental period/quantity. Manual prices are kept.
+    let autoUnitPrice = fields.unitPrice;
+    let autoDuration = fields.duration;
+    // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
+    // choice and must be kept, not overwritten by the model rate. (The server addLineItem
+    // has the `!parsed.unitPrice` truthiness bug; this fixes it in the native port.)
+    if (fields.modelId && fields.pricingType === "PER_DAY" && fields.unitPrice == null) {
+      const [model, proj] = await Promise.all([
+        ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first(),
+        ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
+      ]);
+      if (model && model.organizationId === organizationId) {
+        const rentalPeriod = proj?.defaultRentalPeriod ?? "DAILY";
+        const rentalQuantity = proj?.defaultRentalQuantity ?? 1;
+        const rate =
+          rentalPeriod === "WEEKLY"
+            ? (model.weeklyRate ?? model.dailyRate ?? null)
+            : (model.dailyRate ?? null);
+        if (rate != null) {
+          autoUnitPrice = Number(rate);
+          autoDuration = rentalQuantity;
+        }
+      }
+    }
+
+    const lineTotal = calcLineTotalNative(autoUnitPrice, fields.quantity, autoDuration ?? 1, fields.discount);
+
+    // ── Insert (mirrors createLineItem / addNative) ────────────────────────────
+    const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dupLine) throw new ConvexError("Line item already exists");
+
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    await ctx.db.insert("projectLineItems", {
+      id,
+      organizationId,
+      projectId,
+      type: fields.type,
+      modelId: fields.modelId || undefined,
+      assetId: fields.assetId || undefined,
+      bulkAssetId: fields.bulkAssetId || undefined,
+      description: fields.description || undefined,
+      quantity: fields.quantity,
+      unitPrice: autoUnitPrice ?? undefined,
+      pricingType: fields.pricingType,
+      duration: autoDuration ?? undefined,
+      discount: fields.discount ?? undefined,
+      lineTotal: lineTotal ?? undefined,
+      groupName: fields.groupName || undefined,
+      notes: fields.notes || undefined,
+      isOptional: fields.isOptional,
+      showSubhireOnDocs: fields.showSubhireOnDocs,
+      supplierId: fields.supplierId || undefined,
+      subhireOrderNumber: fields.subhireOrderNumber || undefined,
+      categoryId: fields.categoryId || undefined,
+      groupId: fields.groupId || undefined,
+      status: "CONFIRMED",
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (includeAccessories && fields.type === "EQUIPMENT" && (fields.assetId || fields.modelId)) {
+      await expandAccessoryChildLines(ctx, {
+        id,
+        assetId: fields.assetId,
+        modelId: fields.modelId,
+        quantity: fields.quantity,
+        categoryId: fields.categoryId,
+        groupId: fields.groupId,
+        duration: autoDuration,
+        pricingType: fields.pricingType,
+        organizationId,
+        projectId,
+      });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "CREATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: fields.description || "Line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Added line item to project",
+      projectId,
+      createdAt: now,
+    });
+
+    if (fields.groupId) await recomputeGroupSuggestedNative(ctx, fields.groupId, organizationId, now);
+    await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+    return { id, merged: false };
   },
 });

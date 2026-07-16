@@ -553,90 +553,8 @@ export async function unreturnItems(
   return serialize(await attachModelToResults(organizationId, rows));
 }
 
-/** De-prepped → Returned. Re-pack a returned line (prepStatus back to PACKED). */
-export async function undeprepLine(projectId: string, lineItemId: string) {
-  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
-  const convex = await getConvexClient();
-  await convex.mutation(api.warehouseOps.undeprepLine, {
-    organizationId,
-    projectId,
-    lineItemId,
-    now: Date.now(),
-  });
-  await logActivity({
-    organizationId, userId, userName, action: "UPDATE", entityType: "asset",
-    entityId: lineItemId, entityName: `Line item ${lineItemId}`,
-    summary: "Re-packed returned item (un-deprep)", projectId,
-  });
-  const row = await convex.query(api.projectLineItems.getById, { id: lineItemId });
-  return serialize(await attachModelToResults(organizationId, [row]));
-}
-
-/** Deployed → Prepped for a whole kit. Reverse of checkOutKit. */
-export async function undeployKit(projectId: string, kitId: string) {
-  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.undeployKit, {
-    organizationId, projectId, userId, kitId, now: Date.now(),
-  });
-  await logActivity({
-    organizationId, userId, userName, action: "UPDATE", entityType: "kit",
-    entityId: kitId, entityName: `Kit ${kitId}`, summary: "Moved kit back to Prepped (un-deploy)", projectId, kitId,
-  });
-  return serialize({ success: true, ...res });
-}
-
-/** Returned → Deployed for a whole kit. Reverse of checkInKit. */
-export async function unreturnKit(projectId: string, kitId: string) {
-  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.unreturnKit, {
-    organizationId, projectId, userId, kitId, now: Date.now(),
-  });
-  await logActivity({
-    organizationId, userId, userName, action: "UPDATE", entityType: "kit",
-    entityId: kitId, entityName: `Kit ${kitId}`, summary: "Moved kit back to Deployed (un-return)", projectId, kitId,
-  });
-  return serialize({ success: true, ...res });
-}
-
-/** Bulk single-call un-deploy: move N kits Deployed→Prepped in ONE array mutation +
- *  one server round-trip (was one `undeployKit` per selected kit). Partial-success. */
-export async function undeployKitsBatch(projectId: string, kitIds: string[]) {
-  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
-  if (kitIds.length === 0) throw new Error("No kits selected");
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.undeployKitsBatch, {
-    organizationId, projectId, userId, kitIds, now: Date.now(),
-  });
-  if (res.succeeded.length > 0) {
-    await logActivity({
-      organizationId, userId, userName, action: "UPDATE", entityType: "kit",
-      entityId: res.succeeded[0], entityName: `${res.succeeded.length} kits`,
-      summary: `Moved ${res.succeeded.length} kit(s) back to Prepped (un-deploy)`, projectId,
-    });
-  }
-  return serialize({ success: true, ...res });
-}
-
-/** Bulk single-call un-return: move N kits Returned→Deployed in ONE array mutation +
- *  one server round-trip (was one `unreturnKit` per selected kit). Partial-success. */
-export async function unreturnKitsBatch(projectId: string, kitIds: string[]) {
-  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
-  if (kitIds.length === 0) throw new Error("No kits selected");
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.unreturnKitsBatch, {
-    organizationId, projectId, userId, kitIds, now: Date.now(),
-  });
-  if (res.succeeded.length > 0) {
-    await logActivity({
-      organizationId, userId, userName, action: "UPDATE", entityType: "kit",
-      entityId: res.succeeded[0], entityName: `${res.succeeded.length} kits`,
-      summary: `Moved ${res.succeeded.length} kit(s) back to Deployed (un-return)`, projectId,
-    });
-  }
-  return serialize({ success: true, ...res });
-}
+// undeprepLine / undeployKit / unreturnKit / undeployKitsBatch / unreturnKitsBatch
+// moved browser-direct (PR-A) — see convex/warehouseWrites.ts + src/hooks/use-warehouse-writes.ts.
 
 export async function checkOutKit(projectId: string, kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
@@ -905,87 +823,9 @@ export async function quickAddAndCheckOut(
   return serialize({ ...lineItem, model: modelWithCount });
 }
 
-export async function clearPrepContainer(projectId: string, containerName: string) {
-  const { organizationId } = await requirePermission("warehouse", "check_out");
-
-  const convex = await getConvexClient();
-  await convex.mutation(api.warehouseOps.clearPrepContainer, {
-    organizationId,
-    projectId,
-    containerName,
-    now: Date.now(),
-  });
-
-  return serialize({ success: true });
-}
-
-export async function ensureContainerOnProject(
-  projectId: string,
-  assetId: string,
-  modelId: string,
-  containerName: string
-) {
-  const { organizationId } = await requirePermission("warehouse", "check_out");
-
-  // Atomic check-then-create inside one Convex mutation to prevent duplicates.
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.ensureContainerOnProject, {
-    organizationId,
-    projectId,
-    assetId,
-    modelId,
-    containerName,
-    now: Date.now(),
-  });
-
-  const lineItem = await convex.query(api.projectLineItems.getById, { id: res.id });
-
-  // Graft the Convex model doc onto the line item (replaces the `model: true` join).
-  const modelMap = await getModelMap(organizationId);
-  const model = lineItem?.modelId ? modelMap.get(lineItem.modelId) ?? null : null;
-  return serialize({ ...lineItem, model });
-}
-
-export async function syncContainerStatus(projectId: string, containerName: string) {
-  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
-
-  // The container roll-up (read contents, flip the container line + its asset)
-  // runs in one Convex mutation.
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.syncContainerStatus, {
-    organizationId,
-    projectId,
-    containerName,
-    userId,
-    now: Date.now(),
-  });
-
-  return serialize(res);
-}
-
-/**
- * Bulk single-call container sync (Phase 3 bulk invariant): roll up N containers in
- * ONE Convex array mutation + ONE server round-trip — replaces the client's
- * `for (const c of containers) await syncContainerStatus(...)` loop that fired one
- * round-trip per affected container after a bulk checkout/check-in. Container names
- * are deduped; the mutation reports each container's rollup result.
- */
-export async function syncContainersBatch(projectId: string, containerNames: string[]) {
-  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
-  const unique = [...new Set(containerNames)];
-  if (unique.length === 0) return serialize({ results: [] as Array<{ containerName: string; updated: boolean; status?: string }> });
-
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.syncContainersBatch, {
-    organizationId,
-    projectId,
-    containerNames: unique,
-    userId,
-    now: Date.now(),
-  });
-
-  return serialize(res);
-}
+// clearPrepContainer / ensureContainerOnProject / syncContainersBatch moved
+// browser-direct (PR-A) — see convex/warehouseWrites.ts + src/hooks/use-warehouse-writes.ts.
+// The dead singular syncContainerStatus was dropped (no live caller).
 
 type AvailableAssetRow = {
   id: string;

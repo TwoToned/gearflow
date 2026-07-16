@@ -263,6 +263,30 @@ describe("assetWrites.createNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("rejects a duplicate cuid (DUPLICATE_ASSET) — replay can't insert a 2nd by_cuid row", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
+    // Same id, different tag (so it's the id guard firing, not the tag guard).
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, assetTag: "NEW-2", auditId: "log2" }),
+    ).rejects.toThrow(/already exists/i);
+    const rows = await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "new1")).collect());
+    expect(rows).toHaveLength(1); // still exactly one row
+  });
+
+  test("rejects a non-finite purchasePrice", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, purchasePrice: Number.POSITIVE_INFINITY }),
+    ).rejects.toThrow(/finite/i);
+  });
 });
 
 describe("assetWrites.updateNative", () => {

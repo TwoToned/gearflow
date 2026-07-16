@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
+import { assertFinite } from "./lib/moneyGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import * as enums from "./lib/validators";
@@ -320,6 +321,13 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, fields.organizationId, "asset", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
+    // dup-id guard (by_cuid is GLOBAL + non-unique) — a replayed/duplicate client cuid
+    // inserts a 2nd `assets` row that later crashes every `by_cuid(...).unique()` reader
+    // (kit add, checkout, detail). Mirrors bulkAssetsWrites/kitWrites createNative.
+    const dupId = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dupId) throw new ConvexError({ code: "DUPLICATE_ASSET", message: "Asset already exists." });
+    assertFinite(fields.purchasePrice, "purchasePrice");
+
     const dup = await ctx.db
       .query("assets")
       .withIndex("by_organizationId_assetTag", (q) =>
@@ -388,6 +396,7 @@ export const updateNative = mutation({
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    assertFinite((set as { purchasePrice?: number }).purchasePrice, "purchasePrice");
 
     // DUP GUARD only when the tag changed (mirrors updateAsset).
     if (set.assetTag && set.assetTag !== doc.assetTag) {
@@ -503,6 +512,9 @@ export const createManyNative = mutation({
 
     const ids: string[] = [];
     for (const a of assets) {
+      const dupId = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+      if (dupId) throw new ConvexError({ code: "DUPLICATE_ASSET", message: `Asset already exists: ${a.id}` });
+      assertFinite(a.purchasePrice, "purchasePrice");
       const dup = await ctx.db.query("assets")
         .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", a.assetTag)).first();
       if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag, message: `Asset tag "${a.assetTag}" already exists.` });

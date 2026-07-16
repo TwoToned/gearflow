@@ -11,7 +11,7 @@ import { useKitCounts } from "@/hooks/use-kit-counts";
 import { useKits } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
-import { forceReturnKits } from "@/server/warehouse";
+import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -168,12 +168,13 @@ export default function KitsPage() {
   const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const warehouseWrites = useWarehouseWrites();
 
   const forceReturnMutation = useServerMutation({
     mutationFn: async () => {
       // Bulk single-call: ONE array mutation (partial-success) instead of a
       // per-kit server round-trip. Returns the count actually force-returned.
-      const res = await forceReturnKits(Array.from(selectedIds));
+      const res = await warehouseWrites.forceReturnKits(Array.from(selectedIds));
       return res.count;
     },
     onSuccess: (count) => {

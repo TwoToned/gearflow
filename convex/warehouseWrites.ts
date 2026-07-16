@@ -19,6 +19,13 @@ import {
   clearPrepContainerCore,
   ensureContainerOnProjectCore,
   syncContainersBatchCore,
+  reassignSerialisedUnitCore,
+  reassignKitMemberSerialCore,
+  forceReturnAssetCore,
+  bulkForceReturnAssetsCore,
+  forceReturnKitCore,
+  forceReturnKitsBatchCore,
+  defaultLocationId,
 } from "./warehouseOps";
 
 /**
@@ -78,6 +85,26 @@ async function assertAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string
 async function assertModelInOrg(ctx: MutationCtx, modelId: string, orgId: string): Promise<void> {
   const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
   if (!m || m.organizationId !== orgId) throw new ConvexError("Model not found");
+}
+
+// The force-return family builds its audit `entityName` from the row's own TAG / NAME.
+// These loaders org-validate the client FK AND hand back the doc so the tag/name is
+// gathered IN-mutation from ctx.db — never trusted from a client arg.
+async function loadAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string) {
+  const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", assetId)).first();
+  if (!asset || asset.organizationId !== orgId) throw new ConvexError("Asset not found");
+  return asset;
+}
+
+async function loadKitInOrg(ctx: MutationCtx, kitId: string, orgId: string) {
+  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+  if (!kit || kit.organizationId !== orgId) throw new ConvexError("Kit not found");
+  return kit;
+}
+
+async function assertUnitInOrg(ctx: MutationCtx, unitId: string, orgId: string): Promise<void> {
+  const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).first();
+  if (!u || u.organizationId !== orgId) throw new ConvexError("Unit not found in this organization");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -593,5 +620,250 @@ export const syncContainersBatch = mutation({
     return syncContainersBatchCore(ctx, {
       organizationId: a.orgId, projectId: a.projectId, containerNames: unique, userId: actor.userId, now: a.now,
     });
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PR-B — reassign + force-return writes. Same bar: kill-switch + rate limit + RBAC +
+// boundary FK/org validation + the SAME warehouseOps `*Core` + in-mutation audit.
+// reassign* = warehouse:check_out; forceReturn* = warehouse:check_in (per the server
+// actions). Force-return audit `entityName` is gathered IN-mutation from ctx.db (tags
+// / kit names) — never a client arg. Batches DEDUPE + preserve partial-success (a
+// missing / foreign id lands in `errors`; only an empty selection throws up front).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── reassignLineItemUnit — move a serialised unit to a different line (same project
+// + model). Parity: reassignLineItemUnit server action. warehouse:check_out. ────────
+export const reassignLineItemUnit = mutation({
+  args: { orgId: v.string(), projectId: v.string(), unitId: v.string(), targetLineItemId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    // Boundary FK/org validation before the (already-thorough) core: the target line
+    // must be in this org + project, and the unit must be in this org (by_cuid is GLOBAL).
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await requireLineInProject(ctx, a.targetLineItemId, a.orgId, a.projectId);
+    await assertUnitInOrg(ctx, a.unitId, a.orgId);
+
+    const res = await reassignSerialisedUnitCore(ctx, a.orgId, a.unitId, a.targetLineItemId, a.now);
+
+    if (res.moved) {
+      // `assetTag` is gathered by the core from the asset doc — not a client arg.
+      await writeActivityLog(ctx, {
+        id: a.auditId,
+        organizationId: a.orgId,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: res.assetTag ?? a.unitId,
+        entityName: res.assetTag ? `Asset ${res.assetTag}` : `Unit ${a.unitId}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Reassigned ${res.assetTag ?? "unit"} to a different line`,
+        projectId: a.projectId,
+        createdAt: a.now,
+      });
+    }
+
+    return res; // { moved } | { moved, assetTag, fromLineItemId, toLineItemId }
+  },
+});
+
+// ─── reassignKitMemberSerial — swap which serial fills a kit member's slot (Phase 4).
+// Parity: reassignKitMemberSerial server action. warehouse:check_out. ───────────────
+export const reassignKitMemberSerial = mutation({
+  args: { orgId: v.string(), projectId: v.string(), unitId: v.string(), newAssetId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await assertUnitInOrg(ctx, a.unitId, a.orgId);
+    await assertAssetInOrg(ctx, a.newAssetId, a.orgId);
+
+    const res = await reassignKitMemberSerialCore(ctx, a.orgId, a.unitId, a.newAssetId, a.now);
+
+    if (res.moved) {
+      // `fromAssetTag` / `toAssetTag` are gathered by the core from the asset docs.
+      await writeActivityLog(ctx, {
+        id: a.auditId,
+        organizationId: a.orgId,
+        action: "UPDATE",
+        entityType: "asset",
+        entityId: res.toAssetTag ?? a.newAssetId,
+        entityName: res.toAssetTag ? `Asset ${res.toAssetTag}` : `Asset ${a.newAssetId}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Swapped kit member ${res.fromAssetTag ?? "serial"} → ${res.toAssetTag ?? a.newAssetId}`,
+        projectId: a.projectId,
+        createdAt: a.now,
+      });
+    }
+
+    return res; // { moved } | { moved, fromAssetTag, toAssetTag, lineItemId }
+  },
+});
+
+// ─── forceReturnAsset — return every CHECKED_OUT line for an asset + reset it to
+// AVAILABLE. Parity: forceReturnAsset server action. warehouse:check_in. ────────────
+export const forceReturnAsset = mutation({
+  args: { orgId: v.string(), assetId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_in");
+    const actor = await resolveActor(ctx, a.actor);
+
+    // Load the asset in-org (gathers its TAG for the audit) + guard, mirroring the server.
+    const asset = await loadAssetInOrg(ctx, a.assetId, a.orgId);
+    if (asset.status === "AVAILABLE") throw new ConvexError("Asset is already available");
+
+    const loc = await defaultLocationId(ctx, a.orgId);
+    await forceReturnAssetCore(ctx, a.orgId, a.assetId, actor.userId, a.now, loc);
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "FORCE_RETURN",
+      entityType: "asset",
+      entityId: a.assetId,
+      entityName: asset.assetTag,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Force returned asset ${asset.assetTag} to available`,
+      createdAt: a.now,
+    });
+
+    return { success: true as const };
+  },
+});
+
+// ─── forceReturnKit — restore a whole kit + contents to AVAILABLE. Parity:
+// forceReturnKit server action. warehouse:check_in. ────────────────────────────────
+export const forceReturnKit = mutation({
+  args: { orgId: v.string(), kitId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_in");
+    const actor = await resolveActor(ctx, a.actor);
+
+    // Load the kit in-org (gathers its NAME for the audit) + guard, mirroring the server.
+    const kit = await loadKitInOrg(ctx, a.kitId, a.orgId);
+    if (kit.status === "AVAILABLE") throw new ConvexError("Kit is already available");
+
+    const loc = await defaultLocationId(ctx, a.orgId);
+    const affectedKitIds = await forceReturnKitCore(ctx, a.orgId, kit, actor.userId, a.now, loc);
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "FORCE_RETURN",
+      entityType: "kit",
+      entityId: a.kitId,
+      entityName: `${kit.assetTag} - ${kit.name}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Force returned kit ${kit.assetTag} and all contents to available`,
+      kitId: a.kitId,
+      createdAt: a.now,
+    });
+
+    return { success: true as const, affectedKitIds };
+  },
+});
+
+// ─── forceReturnKits — bulk force-return of kits (partial-success). Parity:
+// forceReturnKits server action (empty → throw; dedupe; { count, succeeded, errors }).
+// warehouse:check_in. ──────────────────────────────────────────────────────────────
+export const forceReturnKits = mutation({
+  args: { orgId: v.string(), kitIds: v.array(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_in");
+    const actor = await resolveActor(ctx, a.actor);
+    if (a.kitIds.length === 0) throw new ConvexError("No kits selected");
+
+    // Dedupe (the core restores a kit's contents per occurrence). Cross-tenant / ghost
+    // safety is the core's per-item org re-check (→ per-item error, never a cross-org write).
+    const unique = [...new Set(a.kitIds)];
+    const loc = await defaultLocationId(ctx, a.orgId);
+
+    // Gather kit NAMES for the audit IN-mutation (org-checked; a missing / foreign id
+    // simply has no name) BEFORE the batch — names are unchanged by the force-return.
+    const nameById = new Map<string, string>();
+    for (const kitId of unique) {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+      if (k && k.organizationId === a.orgId) nameById.set(k.id, `${k.assetTag} - ${k.name}`);
+    }
+
+    const res = await forceReturnKitsBatchCore(ctx, a.orgId, unique, actor.userId, a.now, loc);
+
+    if (res.succeeded.length > 0) {
+      await writeActivityLog(ctx, {
+        id: a.auditId,
+        organizationId: a.orgId,
+        action: "FORCE_RETURN",
+        entityType: "kit",
+        entityId: res.succeeded[0],
+        entityName: res.succeeded.map((id) => nameById.get(id) ?? id).join(", "),
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Bulk force returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"} and contents to available`,
+        createdAt: a.now,
+      });
+    }
+
+    return { count: res.succeeded.length, succeeded: res.succeeded, errors: res.errors };
+  },
+});
+
+// ─── bulkForceReturnAssets — bulk force-return of serialised assets (partial-success).
+// Parity: bulkForceReturnAssets server action (empty → throw; only CHECKED_OUT succeed).
+// warehouse:check_in. ──────────────────────────────────────────────────────────────
+export const bulkForceReturnAssets = mutation({
+  args: { orgId: v.string(), assetIds: v.array(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_in");
+    const actor = await resolveActor(ctx, a.actor);
+    if (a.assetIds.length === 0) throw new ConvexError("No assets selected");
+
+    // Dedupe. Only CHECKED_OUT in-org assets succeed (the core skips the rest) — no
+    // up-front throw on a foreign / non-checked-out id (partial-success).
+    const unique = [...new Set(a.assetIds)];
+    const loc = await defaultLocationId(ctx, a.orgId);
+
+    // Gather asset TAGS for the audit IN-mutation (org-checked) BEFORE the batch.
+    const tagById = new Map<string, string>();
+    for (const assetId of unique) {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", assetId)).first();
+      if (asset && asset.organizationId === a.orgId) tagById.set(asset.id, asset.assetTag);
+    }
+
+    const res = await bulkForceReturnAssetsCore(ctx, a.orgId, unique, actor.userId, a.now, loc);
+
+    if (res.succeeded.length > 0) {
+      await writeActivityLog(ctx, {
+        id: a.auditId,
+        organizationId: a.orgId,
+        action: "FORCE_RETURN",
+        entityType: "asset",
+        entityId: res.succeeded[0],
+        entityName: res.succeeded.map((id) => tagById.get(id) ?? id).join(", "),
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Bulk force returned ${res.succeeded.length} assets to available`,
+        createdAt: a.now,
+      });
+    }
+
+    return { count: res.succeeded.length };
   },
 });

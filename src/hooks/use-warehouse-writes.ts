@@ -35,6 +35,12 @@ export function useWarehouseWrites() {
   const clearPrepContainerM = useMutation(api.warehouseWrites.clearPrepContainer);
   const ensureContainerOnProjectM = useMutation(api.warehouseWrites.ensureContainerOnProject);
   const syncContainersBatchM = useMutation(api.warehouseWrites.syncContainersBatch);
+  const reassignLineItemUnitM = useMutation(api.warehouseWrites.reassignLineItemUnit);
+  const reassignKitMemberSerialM = useMutation(api.warehouseWrites.reassignKitMemberSerial);
+  const forceReturnAssetM = useMutation(api.warehouseWrites.forceReturnAsset);
+  const forceReturnKitM = useMutation(api.warehouseWrites.forceReturnKit);
+  const forceReturnKitsM = useMutation(api.warehouseWrites.forceReturnKits);
+  const bulkForceReturnAssetsM = useMutation(api.warehouseWrites.bulkForceReturnAssets);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -147,6 +153,49 @@ export function useWarehouseWrites() {
       containerNames: string[],
     ): Promise<{ results: Array<{ containerName: string; updated: boolean; status?: string }> }> => {
       return syncContainersBatchM({ orgId: requireOrg(), projectId, containerNames, now: Date.now(), actor: actor() });
+    },
+
+    // ── PR-B: reassign + force-return ───────────────────────────────────────────
+    reassignLineItemUnit: async (
+      projectId: string,
+      unitId: string,
+      targetLineItemId: string,
+    ): Promise<
+      | { moved: false }
+      | { moved: true; assetTag?: string; fromLineItemId: string; toLineItemId: string }
+    > => {
+      return reassignLineItemUnitM({ orgId: requireOrg(), projectId, unitId, targetLineItemId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    reassignKitMemberSerial: async (
+      projectId: string,
+      unitId: string,
+      newAssetId: string,
+    ): Promise<
+      | { moved: false }
+      | { moved: true; fromAssetTag?: string; toAssetTag?: string; lineItemId: string }
+    > => {
+      return reassignKitMemberSerialM({ orgId: requireOrg(), projectId, unitId, newAssetId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    forceReturnAsset: async (assetId: string): Promise<{ success: true }> => {
+      return forceReturnAssetM({ orgId: requireOrg(), assetId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    forceReturnKit: async (kitId: string): Promise<{ success: true; affectedKitIds: string[] }> => {
+      return forceReturnKitM({ orgId: requireOrg(), kitId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    forceReturnKits: async (
+      kitIds: string[],
+    ): Promise<{ count: number; succeeded: string[]; errors: { kitId: string; error: string }[] }> => {
+      if (kitIds.length === 0) throw new Error("No kits selected");
+      return forceReturnKitsM({ orgId: requireOrg(), kitIds, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    bulkForceReturnAssets: async (assetIds: string[]): Promise<{ count: number }> => {
+      if (assetIds.length === 0) throw new Error("No assets selected");
+      return bulkForceReturnAssetsM({ orgId: requireOrg(), assetIds, auditId: createId(), now: Date.now(), actor: actor() });
     },
   };
 }

@@ -15,6 +15,8 @@ import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { toast } from "sonner";
 
 import { addCustomLineItem } from "@/server/line-items";
+import { useLineItemWrites } from "@/hooks/use-line-item-writes";
+import { customLineItemSchema } from "@/lib/validations/line-item";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,9 +70,31 @@ export function CustomItemAddForm({
   const [notes, setNotes] = useState("");
   const [categoryId, setCategoryId] = useState(defaultCategoryId ?? "");
   const [groupId, setGroupId] = useState(defaultGroupId ?? "");
+  const lineItemWrites = useLineItemWrites();
+
+  // Resolve a groupId → its title, from the categories the form already holds — the
+  // browser-direct twin of the server's Convex getById lookup (no round-trip needed).
+  const resolveGroupName = (gid: string | undefined): string | undefined => {
+    if (!gid) return undefined;
+    for (const c of categories) {
+      const g = c.groups.find((grp) => grp.id === gid);
+      if (g) return g.title ?? undefined;
+    }
+    return undefined;
+  };
 
   const addMut = useServerMutation({
-    mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => addCustomLineItem(projectId, data),
+    mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => {
+      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
+      // the new row; when disabled the unchanged server action runs.
+      if (lineItemWrites.enabled) {
+        const parsed = customLineItemSchema.parse(data);
+        return lineItemWrites.addCustom(projectId, parsed, {
+          groupName: resolveGroupName(parsed.groupId),
+        });
+      }
+      return addCustomLineItem(projectId, data);
+    },
     onSuccess: () => {
       onInvalidate();
       refreshProjectDetail(projectId);

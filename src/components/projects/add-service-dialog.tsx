@@ -11,6 +11,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { addLineItem } from "@/server/line-items";
+import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,8 @@ export function AddServiceDialog({
   onOpenChange,
 }: AddServiceDialogProps) {
 
+  const lineItemWrites = useLineItemWrites();
+
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
     defaultValues: {
@@ -72,7 +75,22 @@ export function AddServiceDialog({
   });
 
   const mutation = useServerMutation({
-    mutationFn: (data: LineItemFormValues) => addLineItem(projectId, data),
+    mutationFn: async (data: LineItemFormValues) => {
+      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
+      // the new row; when disabled the unchanged server action runs. Server defaults:
+      // allowOverbook=false, forceSeparate=false, includeAccessories=true. The result is
+      // unused (onSuccess keys off `variables.groupName`), so both paths resolve void.
+      if (lineItemWrites.enabled) {
+        const parsed = lineItemSchema.parse(data);
+        await lineItemWrites.add(projectId, parsed, {
+          allowOverbook: false,
+          forceSeparate: false,
+          includeAccessories: true,
+        });
+        return;
+      }
+      await addLineItem(projectId, data);
+    },
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {
         onGroupCreated(variables.groupName);

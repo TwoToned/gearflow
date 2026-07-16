@@ -35,6 +35,11 @@ import {
   updateLineItemsBatch,
   type BulkLineItemPatch,
 } from "@/server/line-items";
+import {
+  useLineItemWrites,
+  buildLineItemSetClear,
+} from "@/hooks/use-line-item-writes";
+import { lineItemSchema } from "@/lib/validations/line-item";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
@@ -437,6 +442,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // api.categorySlotsWrites.* mutations, each folding recalc + audit atomically.
   const categorySlotWrites = useCategorySlotWrites();
 
+  // Browser-direct line-item writes (update / remove / reorder) — flag-gated (default
+  // OFF via NATIVE_LINEITEM_BROWSER). Each guarded api.lineItemWrites.* mutation folds
+  // the availability re-check + recalcProjectTotals + audit + collab feed into one
+  // transaction. When `enabled` is false every call below keeps the server-action path.
+  const lineItemWrites = useLineItemWrites();
+
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
   // rolled back on error (row reappears) and pruned once the refetch confirms the
@@ -492,8 +503,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const updateLineItemMut = useServerMutation({
-    mutationFn: ({ id, data, allowOverbook, baseUpdatedAt }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) =>
-      updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false, baseUpdatedAt),
+    mutationFn: ({ id, data, allowOverbook, baseUpdatedAt }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
+      // Browser-direct native path (flag-gated, default OFF). patchNative re-checks
+      // availability + recalcs + audits + emits the collab feed atomically. NOTE: it has
+      // no baseUpdatedAt stale-revision guard (the server action's optimistic-concurrency
+      // check) — edit locks remain the first line of defence. Reactive useQuery renders
+      // the updated row; when disabled the unchanged server action runs.
+      if (lineItemWrites.enabled) {
+        const parsed = lineItemSchema.parse(data);
+        const { set, clear } = buildLineItemSetClear(parsed);
+        return lineItemWrites.update(id, set, clear, {
+          entityName: parsed.description || "Line item",
+          allowOverbook: allowOverbook ?? false,
+        });
+      }
+      return updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false, baseUpdatedAt);
+    },
     onSuccess: (_r: unknown, { id }: { id: string }) => {
       invalidate();
       // Drop the optimistic overlay — the reactive bundle now carries the server value.
@@ -509,7 +534,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const removeMut = useServerMutation({
-    mutationFn: (id: string) => removeLineItem(id),
+    mutationFn: async (id: string) => {
+      // Browser-direct native path (flag-gated, default OFF); else the server action.
+      // Result unused (onSuccess just invalidates), so both paths resolve void.
+      if (lineItemWrites.enabled) {
+        await lineItemWrites.remove(id);
+        return;
+      }
+      await removeLineItem(id);
+    },
     onSuccess: () => {
       invalidate();
       toast.success("Item removed");
@@ -720,7 +753,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     const reordered = [...items];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
-    reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
+    const reorderedIds = reordered.map((i) => i.id);
+    // Browser-direct native path (flag-gated, default OFF); else the server action.
+    (lineItemWrites.enabled
+      ? lineItemWrites.reorder(projectId, reorderedIds)
+      : reorderLineItems(projectId, reorderedIds)
+    ).catch(() => {
       toast.error("Failed to reorder items");
     });
     invalidate();

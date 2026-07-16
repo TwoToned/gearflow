@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { cn, focusRing } from "@/lib/utils";
 import { addKitLineItem, checkKitAvailability } from "@/server/line-items";
+import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ export function KitAddForm({
 }: KitAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const lineItemWrites = useLineItemWrites();
 
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
@@ -105,16 +107,39 @@ export function KitAddForm({
   });
 
   const addKitMut = useServerMutation({
-    mutationFn: () =>
-      addKitLineItem(
+    mutationFn: () => {
+      const unitPrice =
+        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
+      const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
+      const effectiveGroupId = (groupId || selectedGroupId) || undefined;
+      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
+      // the new parent + member rows; when disabled the unchanged server action runs.
+      if (lineItemWrites.enabled) {
+        // kitLabel = "<assetTag> - <name>" (what the server derives from the fetched
+        // kit). Prefer the resolved selected-kit label; fall back to the search option.
+        const kitLabel =
+          selectedKitLabel ??
+          kitOptions.find((o) => o.value === selectedKitId)?.label ??
+          "";
+        return lineItemWrites.addKit(projectId, selectedKitId, {
+          pricingMode: kitPricingMode,
+          unitPrice,
+          groupName: undefined,
+          categoryId: effectiveCategoryId,
+          groupId: effectiveGroupId,
+          kitLabel,
+        });
+      }
+      return addKitLineItem(
         projectId,
         selectedKitId,
         kitPricingMode,
-        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
+        unitPrice,
         undefined, // groupName
-        (categoryId || selectedCategoryId) || undefined,
-        (groupId || selectedGroupId) || undefined,
-      ),
+        effectiveCategoryId,
+        effectiveGroupId,
+      );
+    },
     onSuccess: () => {
       onInvalidate();
       refreshProjectDetail(projectId);

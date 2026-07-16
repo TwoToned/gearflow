@@ -145,6 +145,7 @@ import type * as projectManagersWrites from "../projectManagersWrites.js";
 import type * as projectMedia from "../projectMedia.js";
 import type * as projectNumberSequences from "../projectNumberSequences.js";
 import type * as projectServices from "../projectServices.js";
+import type * as projectServicesWrites from "../projectServicesWrites.js";
 import type * as projectTasks from "../projectTasks.js";
 import type * as projectTasksWrites from "../projectTasksWrites.js";
 import type * as projectWrites from "../projectWrites.js";
@@ -338,6 +339,7 @@ declare const fullApi: ApiFromModules<{
   projectMedia: typeof projectMedia;
   projectNumberSequences: typeof projectNumberSequences;
   projectServices: typeof projectServices;
+  projectServicesWrites: typeof projectServicesWrites;
   projectTasks: typeof projectTasks;
   projectTasksWrites: typeof projectTasksWrites;
   projectWrites: typeof projectWrites;

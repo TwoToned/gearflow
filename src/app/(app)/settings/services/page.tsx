@@ -19,11 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  createServiceTemplate,
-  updateServiceTemplate,
-  deleteServiceTemplate,
-} from "@/server/project-services";
+import { useServiceTemplateWrites } from "@/hooks/use-service-template-writes";
 import {
   serviceTemplateSchema,
   type ServiceTemplateFormValues,
@@ -101,8 +97,10 @@ export default function ServiceTemplatesPage() {
 
   const { data: templates = [], isLoading } = useServiceTemplates(orgId);
 
+  const templateWrites = useServiceTemplateWrites();
+
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteServiceTemplate(id),
+    mutationFn: (id: string) => templateWrites.remove(id),
     onSuccess: () => {
       toast.success("Template deleted");
       refreshServiceTemplates(orgId);
@@ -409,6 +407,7 @@ function TemplateDialog({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!editing;
+  const templateWrites = useServiceTemplateWrites();
 
   const defaultValues: ServiceTemplateFormValues = editing
     ? {
@@ -440,7 +439,7 @@ function TemplateDialog({
   });
 
   const createMutation = useServerMutation({
-    mutationFn: (data: ServiceTemplateFormValues) => createServiceTemplate(data),
+    mutationFn: (data: ServiceTemplateFormValues) => templateWrites.create(data),
     onSuccess: () => {
       toast.success("Template created");
       refreshServiceTemplates(orgId);
@@ -451,7 +450,7 @@ function TemplateDialog({
 
   const updateMutation = useServerMutation({
     mutationFn: (data: ServiceTemplateFormValues) =>
-      updateServiceTemplate(editing!.id as string, data),
+      templateWrites.update(editing!.id as string, data),
     onSuccess: () => {
       toast.success("Template updated");
       refreshServiceTemplates(orgId);

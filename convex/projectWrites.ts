@@ -15,6 +15,10 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { projectWriteFields } from "./projects";
+import { setAssetsStatus } from "./warehouseOps";
+import { removeLineItemCascadeCore } from "./projectLineItems";
+import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
+import { deleteAllForProjectCore } from "./projectCategories";
 
 /**
  * Native PROJECT write mutations (Phase 5) — the MONEY-FREE project writes only:
@@ -330,35 +334,165 @@ export const createNative = mutation({
 });
 
 /**
- * deleteNative — remove the project row + DELETE audit, atomic. RBAC(project, delete).
- * Option A: the server action runs the multi-table cascade (line items, crew
- * assignments, managers/tasks/services, freeing checked-out assets/kits) via the
- * existing mutations first; this does the final project-row delete + audit. `freed*`
- * counts are computed server-side and passed for the audit detail.
+ * deleteNative — the FULL, atomic project-delete cascade + DELETE audit.
+ * RBAC(project, delete). Parity with the (former) server `deleteProject`: only a
+ * CANCELLED, non-template project may be deleted; every dependent Convex row is
+ * purged in ONE transaction (no more N server→Convex round-trips, no orphan window):
+ *
+ *   1. Free loose checked-out/confirmed assets → setAssetsStatus (dashboard counters!)
+ *   2. Free checked-out/confirmed kits inline (kits carry no counter)
+ *   3. Free those kits' serialized member assets → setAssetsStatus
+ *   4. Cascade every top-level line item (children + units) → removeLineItemCascadeCore
+ *   5. Crew assignments (→ shifts + linked time entries) → deleteCrewAssignmentCascadeCore
+ *   6. Project managers / tasks / services (inline)
+ *   7. Grouping (categories / groups / slots) → deleteAllForProjectCore
+ *   8. projectModelRevenues rollup (Convex-only cache — MUST purge or it orphans)
+ *   then bumpProjectCounters + delete the project row + DELETE audit.
+ *
+ * `freedAssets`/`freedKits` are computed IN-mutation (never trusted from the client)
+ * and returned + audited. `defaultLocationId` is the org's default location (resolved
+ * by the caller, mirrors getDefaultLocation) applied to every freed asset/kit.
+ * Convex forbids mutation→mutation, so the cascade reuses extracted `*Core` fns.
  */
+/** Free a set of assets to AVAILABLE, but ONLY the ones that belong to `orgId` — a
+ *  forged line/kit-member could otherwise point at a foreign asset, and setAssetsStatus
+ *  resolves by the GLOBAL by_cuid index. Routes through setAssetsStatus so the sharded
+ *  asset counters stay in sync. Returns the count actually freed. */
+async function freeOrgAssets(
+  ctx: Parameters<typeof setAssetsStatus>[0],
+  assetIds: string[],
+  orgId: string,
+  locationId: string | null,
+  now: number,
+): Promise<number> {
+  const owned: string[] = [];
+  for (const aid of [...new Set(assetIds)]) {
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", aid)).first();
+    if (asset && asset.organizationId === orgId) owned.push(aid);
+  }
+  if (owned.length > 0) await setAssetsStatus(ctx, owned, "AVAILABLE", locationId, true, now);
+  return owned.length;
+}
+
 export const deleteNative = mutation({
-  returns: v.object({ id: v.string() }),
+  returns: v.object({ id: v.string(), freedAssets: v.number(), freedKits: v.number() }),
   args: {
     id: v.string(),
     orgId: v.string(),
-    freedAssets: v.number(),
-    freedKits: v.number(),
+    defaultLocationId: v.union(v.string(), v.null()),
+    // Legacy args — retained for wire-compat but IGNORED: the freed counts are now
+    // computed in-mutation (a client must not be able to forge the audit detail).
+    freedAssets: v.optional(v.number()),
+    freedKits: v.optional(v.number()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, freedAssets, freedKits, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, defaultLocationId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
+
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (project.status !== "CANCELLED") {
+      throw new ConvexError({ code: "DELETE_GUARD", message: "Only cancelled projects can be deleted." });
+    }
+    if (project.isTemplate) {
+      throw new ConvexError({ code: "DELETE_GUARD", message: "Templates must be deleted via deleteTemplateNative." });
+    }
 
-    await ctx.db.delete(project._id);
+    // Validate the client-supplied default location belongs to this org (by_cuid is global)
+    // before it's written onto freed assets/kits — else use null (clear the location).
+    let safeLocationId: string | null = null;
+    if (defaultLocationId != null) {
+      const loc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", defaultLocationId)).first();
+      if (loc && loc.organizationId === orgId) safeLocationId = defaultLocationId;
+    }
+
+    // ── Step 0: scan the project's line items (org-filtered) → collect the assets
+    // and kits to free. by_projectId is a project-scoped index; the org re-check is
+    // defensive (a project's lines always share its org).
+    const lineItems = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((li) => li.organizationId === orgId);
+
+    const checkedOutAssetIds: string[] = [];
+    const checkedOutKitIds: string[] = [];
+    for (const li of lineItems) {
+      if (li.assetId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) checkedOutAssetIds.push(li.assetId);
+      if (li.kitId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) checkedOutKitIds.push(li.kitId);
+    }
+
+    // Step 1 — free loose checked-out assets (org-scoped; routes through setAssetsStatus so
+    // the sharded dashboard counters stay in sync; clear location when there's no default).
+    await freeOrgAssets(ctx, checkedOutAssetIds, orgId, safeLocationId, now);
+
+    // Step 2 — free checked-out kits inline (status AVAILABLE + location; kits have
+    // no counter). Leave the kit's location untouched when there's no default.
+    for (const kitId of checkedOutKitIds) {
+      const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+      if (!kit || kit.organizationId !== orgId) continue;
+      await ctx.db.patch(kit._id, {
+        status: "AVAILABLE",
+        ...(safeLocationId != null ? { locationId: safeLocationId } : {}),
+        updatedAt: now,
+      });
+    }
+
+    // Step 3 — free those kits' serialized member assets (org-scoped, counter-safe path).
+    const kitAssetIds: string[] = [];
+    for (const kitId of checkedOutKitIds) {
+      const members = await ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
+      for (const m of members) if (m.organizationId === orgId) kitAssetIds.push(m.assetId);
+    }
+    await freeOrgAssets(ctx, kitAssetIds, orgId, safeLocationId, now);
+
+    // Step 4 — cascade every top-level line (its children + all units go with it).
+    for (const li of lineItems) {
+      if (li.parentLineItemId == null) await removeLineItemCascadeCore(ctx, li.id);
+    }
+
+    // Step 5 — crew assignments (→ shifts + linked time entries + offer counter).
+    const assignments = (
+      await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((a) => a.organizationId === orgId);
+    for (const a of assignments) await deleteCrewAssignmentCascadeCore(ctx, a);
+
+    // Step 6 — project managers / tasks / services (org-filtered inline deletes).
+    // NOT projectServices.removeManyCascade — that would re-cascade lines/crew we
+    // already handled above.
+    const pms = (
+      await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of pms) await ctx.db.delete(r._id);
+    const tasks = (
+      await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of tasks) await ctx.db.delete(r._id);
+    const services = (
+      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of services) await ctx.db.delete(r._id);
+
+    // Step 7 — grouping (categories / groups / slots).
+    await deleteAllForProjectCore(ctx, id);
+
+    // Step 8 — projectModelRevenues rollup (Convex-only cache; no FK to cascade —
+    // the (former) native stub missed this, orphaning one row per model per delete).
+    const rollups = (
+      await ctx.db.query("projectModelRevenues").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of rollups) await ctx.db.delete(r._id);
+
+    // Finally — project row + active-project counter + DELETE audit.
     await bumpProjectCounters(ctx, orgId, project, null);
+    await ctx.db.delete(project._id);
 
+    const freedAssets = checkedOutAssetIds.length;
+    const freedKits = checkedOutKitIds.length;
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
@@ -374,6 +508,74 @@ export const deleteNative = mutation({
       createdAt: now,
     });
 
-    return { id };
+    return { id, freedAssets, freedKits };
+  },
+});
+
+/**
+ * deleteTemplateNative — the atomic template-delete cascade. RBAC(project, delete).
+ * Parity with the (former) server `deleteTemplate`: a template has NO CANCELLED
+ * precondition, frees NO assets/kits (a template holds none checked out), has NO
+ * crew cascade and writes NO audit. Cascade: PM/tasks/services → grouping → line
+ * items → projectModelRevenues → the project row (+ counter).
+ */
+export const deleteTemplateNative = mutation({
+  returns: v.object({ success: v.boolean() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    actor: actorValidator,
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, actor: suppliedActor, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "delete");
+    await resolveActor(ctx, suppliedActor);
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Template not found." });
+    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (!project.isTemplate) {
+      throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
+    }
+
+    // Project managers / tasks / services (org-filtered inline deletes).
+    const pms = (
+      await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of pms) await ctx.db.delete(r._id);
+    const tasks = (
+      await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of tasks) await ctx.db.delete(r._id);
+    const services = (
+      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of services) await ctx.db.delete(r._id);
+
+    // Grouping (categories / groups / slots).
+    await deleteAllForProjectCore(ctx, id);
+
+    // Template line items (top-level cascade → children + units).
+    const lineItems = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((li) => li.organizationId === orgId);
+    for (const li of lineItems) {
+      if (li.parentLineItemId == null) await removeLineItemCascadeCore(ctx, li.id);
+    }
+
+    // projectModelRevenues rollup (Convex-only cache).
+    const rollups = (
+      await ctx.db.query("projectModelRevenues").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const r of rollups) await ctx.db.delete(r._id);
+
+    // Delete the template row (+ active-project counter — templates never count as
+    // active, so the delta is 0, but keep the call uniform with deleteNative).
+    await bumpProjectCounters(ctx, orgId, project, null);
+    await ctx.db.delete(project._id);
+
+    return { success: true };
   },
 });

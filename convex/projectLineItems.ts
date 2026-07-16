@@ -700,19 +700,29 @@ export const patchLineItem = mutation({
   },
 });
 
+/**
+ * Cascade-delete a line: its children (+ all units), then the line (+ its units).
+ * Extracted as a plain function so mutations that can't call another mutation
+ * (Convex forbids mutation→mutation) — e.g. projectWrites.deleteNative — reuse the
+ * EXACT child-scan + unit-purge. Callers org-scope the line before invoking.
+ */
+export async function removeLineItemCascadeCore(ctx: MutationCtx, id: string): Promise<void> {
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+  if (!line) throw new ConvexError("projectLineItems not found: " + id);
+  const children = await ctx.db
+    .query("projectLineItems")
+    .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
+    .collect();
+  for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
+  await deleteLineWithUnits(ctx, line._id, line.id);
+}
+
 /** Cascade delete a line: its children (+ all units), then the line (+ its units). */
 export const removeLineItemCascade = mutation({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     await requireService(ctx);
-    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!line) throw new ConvexError("projectLineItems not found: " + id);
-    const children = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
-      .collect();
-    for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
-    await deleteLineWithUnits(ctx, line._id, line.id);
+    await removeLineItemCascadeCore(ctx, id);
   },
 });
 

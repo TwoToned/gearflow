@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 
 /**
@@ -213,34 +214,47 @@ export const deleteCascade = mutation({
  * Used on project delete now that the Prisma FK cascade is gone (Phase C #254).
  * Read-your-writes within the mutation makes the overlapping slot deletes safe.
  */
+/**
+ * Body of deleteAllForProject as a plain function so mutations that can't call
+ * another mutation (Convex forbids mutation→mutation) — e.g.
+ * projectWrites.deleteNative — reuse the EXACT category/group/slot purge. Pure
+ * ctx.db (no auth); callers org-scope the project first.
+ */
+export async function deleteAllForProjectCore(
+  ctx: MutationCtx,
+  projectId: string,
+): Promise<{ categories: number; groups: number }> {
+  const cats = await ctx.db
+    .query("projectCategories")
+    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+    .collect();
+  for (const c of cats) {
+    const catSlots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id))
+      .collect();
+    for (const s of catSlots) await ctx.db.delete(s._id);
+  }
+  const groups = await ctx.db
+    .query("projectGroups")
+    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+    .collect();
+  for (const g of groups) {
+    const gslots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
+      .collect();
+    for (const s of gslots) await ctx.db.delete(s._id);
+    await ctx.db.delete(g._id);
+  }
+  for (const c of cats) await ctx.db.delete(c._id);
+  return { categories: cats.length, groups: groups.length };
+}
+
 export const deleteAllForProject = mutation({
   args: { projectId: v.string() },
   handler: async (ctx, { projectId }) => {
     await requireService(ctx);
-    const cats = await ctx.db
-      .query("projectCategories")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
-    for (const c of cats) {
-      const catSlots = await ctx.db
-        .query("categorySlots")
-        .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id))
-        .collect();
-      for (const s of catSlots) await ctx.db.delete(s._id);
-    }
-    const groups = await ctx.db
-      .query("projectGroups")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
-    for (const g of groups) {
-      const gslots = await ctx.db
-        .query("categorySlots")
-        .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
-        .collect();
-      for (const s of gslots) await ctx.db.delete(s._id);
-      await ctx.db.delete(g._id);
-    }
-    for (const c of cats) await ctx.db.delete(c._id);
-    return { categories: cats.length, groups: groups.length };
+    return await deleteAllForProjectCore(ctx, projectId);
   },
 });

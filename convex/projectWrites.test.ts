@@ -45,6 +45,41 @@ describe("projectWrites.updateStatusNative", () => {
     });
   });
 
+  test("an open BLOCKING comment blocks a forward move to PREPPING", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("commentThreads", { orgId: ORG, entityType: "project", entityId: "p1", projectId: "p1", status: "open", isBlocking: true, createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, args),
+    ).rejects.toThrow();
+    // Status unchanged.
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("CONFIRMED");
+  });
+
+  test("a RESOLVED blocking comment does NOT block; a non-forward status is ungated", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("commentThreads", { orgId: ORG, entityType: "project", entityId: "p1", projectId: "p1", status: "resolved", isBlocking: true, createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW });
+    });
+    // resolved comment → forward move allowed
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, args);
+    expect((await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first()))?.status).toBe("PREPPING");
+  });
+
+  test("an open blocking comment does NOT block a BACKWARD/neutral move (e.g. CANCELLED)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("commentThreads", { orgId: ORG, entityType: "project", entityId: "p1", projectId: "p1", status: "open", isBlocking: true, createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...args, status: "CANCELLED" as const });
+    expect((await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first()))?.status).toBe("CANCELLED");
+  });
+
   test("rejects a template (TEMPLATE_STATUS)", async () => {
     const t = makeT();
     await seedProject(t, undefined, true);

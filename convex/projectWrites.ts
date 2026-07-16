@@ -3,6 +3,13 @@ import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
+
+/** Forward status transitions that a project's open BLOCKING comments must gate
+ *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
+const BLOCKED_FORWARD_STATUSES = new Set(["PREPPING", "CHECKED_OUT", "ON_SITE"]);
+const blockedForwardLabel = (status: string): string =>
+  `move this project to ${status.toLowerCase().replaceAll("_", " ")}`;
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpProjectCounters } from "./lib/counters";
@@ -51,6 +58,11 @@ export const updateStatusNative = mutation({
     }
 
     const from = project.status ?? "";
+    // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
+    // with the deleted server action). Only on an actual status change (template excluded above).
+    if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
+      await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
+    }
     await ctx.db.patch(project._id, { status, updatedAt: now });
     await bumpProjectCounters(ctx, orgId, project, { ...project, status });
 
@@ -208,6 +220,13 @@ export const updateNative = mutation({
     // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors
     // and isTemplate (no client-forged totals / in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
+
+    // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
+    // must clear the blocking-comment gate too (parity with the server updateProject path).
+    const nextStatus = typeof setObj.status === "string" ? setObj.status : undefined;
+    if (nextStatus && nextStatus !== project.status && BLOCKED_FORWARD_STATUSES.has(nextStatus) && !project.isTemplate) {
+      await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(nextStatus) });
+    }
     if (clear.length === 0) {
       await ctx.db.patch(project._id, setObj);
       await bumpProjectCounters(ctx, orgId, project, { ...project, ...setObj });

@@ -78,6 +78,20 @@ describe("createServiceNative", () => {
     expect((await projById(t, "p1"))?.total).toBe(110);
   });
 
+  test("rejects non-finite money (NaN unitPrice would poison recalc → project.total NaN)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, unitPrice: Number.NaN, now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/finite/i);
+    // No row, no audit, project.total unchanged (rejected before any write).
+    expect(await svcById(t, "s1")).toBeNull();
+    expect((await projById(t, "p1"))?.total).toBe(999);
+  });
+
   test("crew assignment inserted (PENDING, phase, role) + counter bump", async () => {
     const t = makeT();
     await member(t, "member");

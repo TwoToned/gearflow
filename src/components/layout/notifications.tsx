@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useEffect } from "react";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
+import { useNotificationDismissals } from "@/hooks/use-notification-dismissals";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -22,11 +22,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  dismissNotification,
-  getDismissedKeys,
-  pruneStaleDismissals,
-} from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -71,11 +66,10 @@ export function Notifications() {
   // + the /notifications page; pauses in background tabs). See use-notifications-feed.
   const { data: notifications } = useNotificationsFeed(orgId);
 
-  const { data: serverDismissed, refetch: refetchDismissed } = useServerQuery({
-    queryKey: ["notification-dismissals", orgId],
-    queryFn: getDismissedKeys,
-    refetchInterval: 60_000,
-  });
+  // DB-backed dismissals (Convex, reactive) — the source of truth (survives
+  // browser/device changes). A dismiss/prune write updates this live.
+  const { dismissedKeys: serverDismissed, dismiss: dismissNative, prune } =
+    useNotificationDismissals();
 
   // Union of server-side dismissals and the local optimistic set so newly
   // clicked items disappear immediately, even before the mutation resolves.
@@ -86,11 +80,11 @@ export function Notifications() {
   }, [serverDismissed]);
 
   // Prune stale rows on the server when the active notification list changes.
-  // Fire-and-forget; the next refetch picks up the updated dismissal list.
+  // Fire-and-forget; the reactive `mine` query picks up the trimmed list.
   useEffect(() => {
     if (!notifications || notifications.length === 0) return;
     const activeKeys = notifications.map((n) => n.id);
-    void pruneStaleDismissals(activeKeys).catch(() => {});
+    void prune(activeKeys).catch(() => {});
 
     // Also tidy localStorage so it doesn't grow unbounded.
     const stored = readLocalDismissed();
@@ -103,13 +97,10 @@ export function Notifications() {
       }
     }
     if (changed) writeLocalDismissed(stored);
-  }, [notifications]);
+  }, [notifications, prune]);
 
   const dismissMutation = useServerMutation({
-    mutationFn: (id: string) => dismissNotification(id),
-    onSettled: () => {
-      refetchDismissed();
-    },
+    mutationFn: (id: string) => dismissNative(id),
   });
 
   const dismiss = useCallback(

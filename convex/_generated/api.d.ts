@@ -132,6 +132,7 @@ import type * as modelMedia from "../modelMedia.js";
 import type * as modelWrites from "../modelWrites.js";
 import type * as models from "../models.js";
 import type * as notificationDismissals from "../notificationDismissals.js";
+import type * as notificationDismissalsWrites from "../notificationDismissalsWrites.js";
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as orgExport from "../orgExport.js";
 import type * as orgSettings from "../orgSettings.js";
@@ -335,6 +336,7 @@ declare const fullApi: ApiFromModules<{
   modelWrites: typeof modelWrites;
   models: typeof models;
   notificationDismissals: typeof notificationDismissals;
+  notificationDismissalsWrites: typeof notificationDismissalsWrites;
   notificationEmailLogs: typeof notificationEmailLogs;
   orgExport: typeof orgExport;
   orgSettings: typeof orgSettings;

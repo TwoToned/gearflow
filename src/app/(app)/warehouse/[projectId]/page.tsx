@@ -30,11 +30,7 @@ import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/wa
 
 import {
   lookupAssetForScan,
-  checkOutItems,
-  checkOutKit,
-  checkOutKitsBatch,
   getAvailableAssetsForModels,
-  quickAddAndCheckOut,
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { Badge } from "@/components/ui/badge";
@@ -680,7 +676,7 @@ function WarehouseProjectPage({
 
   const checkOutMutation = useServerMutation({
     mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
-      const result = await checkOutItems(projectId, params.items, params.includeAccessories);
+      const result = await warehouseWrites.checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers — ONE batch call (was one
       // round-trip per container).
       const containers = new Set(
@@ -715,7 +711,7 @@ function WarehouseProjectPage({
   const quickAddMutation = useServerMutation({
     mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
       await ensureContainerIfNeeded();
-      return quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
+      return warehouseWrites.quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
     },
     onSuccess: (result) => {
       const assetName = addPromptData?.assetName || "Asset";
@@ -757,7 +753,7 @@ function WarehouseProjectPage({
   });
 
   const kitCheckOutMutation = useServerMutation({
-    mutationFn: (kitId: string) => checkOutKit(projectId, kitId),
+    mutationFn: (kitId: string) => warehouseWrites.checkOutKit(projectId, kitId),
     onSuccess: () => invalidate(),
     onError: (e) => showError(e),
   });
@@ -773,7 +769,7 @@ function WarehouseProjectPage({
   // checkOutKit/checkInKit per kit). Per-kit errors come back from the server.
   type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string }[] };
   const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
-    mutationFn: (kitIds: string[]) => checkOutKitsBatch(projectId, kitIds),
+    mutationFn: (kitIds: string[]) => warehouseWrites.checkOutKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
       if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);

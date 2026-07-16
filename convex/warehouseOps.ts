@@ -249,17 +249,20 @@ const checkoutItemArg = v.object({
   notes: v.optional(v.string()),
 });
 
-export const checkoutItems = mutation({
-  args: {
-    organizationId: v.string(),
-    projectId: v.string(),
-    userId: v.string(),
-    items: v.array(checkoutItemArg),
-    includeAccessories: v.boolean(),
-    now: v.number(),
-  },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
+export type CheckoutItemsArgs = {
+  organizationId: string;
+  projectId: string;
+  userId: string;
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>;
+  includeAccessories: boolean;
+  now: number;
+};
+
+/** Core atomic checkout: T&T preflight, prep-unit expansion, serialised/bulk/generic
+ *  status flips, accessory cascade, scan logs. Shared by the requireService mirror
+ *  AND the browser-direct `warehouseWrites.checkOutItems`. Org-validates the project +
+ *  each line (by_cuid is GLOBAL) exactly as before. */
+export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise<{ updatedLineIds: string[] }> {
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
     if (!project || project.organizationId !== a.organizationId) throw new ConvexError("Project not found");
     const projectLocationId = project.locationId ?? null;
@@ -308,6 +311,20 @@ export const checkoutItems = mutation({
       updated.add(lineItem.id);
     }
     return { updatedLineIds: [...updated] };
+}
+
+export const checkoutItems = mutation({
+  args: {
+    organizationId: v.string(),
+    projectId: v.string(),
+    userId: v.string(),
+    items: v.array(checkoutItemArg),
+    includeAccessories: v.boolean(),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return checkoutItemsCore(ctx, a);
   },
 });
 
@@ -584,17 +601,24 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     return [a.kitId, ...nestedKitIds];
 }
 
+/** Full singular kit checkout: parent-line lookup (org+project scoped) + project loc
+ *  + preflight (composition parity + T&T) + write core. Shared by the requireService
+ *  mirror AND the browser-direct `warehouseWrites.checkOutKit`. */
+export async function checkoutKitFull(ctx: Ctx, a: KitOpArgs): Promise<{ kitId: string; affectedKitIds: string[] }> {
+  const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
+  if (!kitLine) throw new ConvexError("Kit not found on this project");
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  const loc = project?.locationId ?? null;
+  await checkoutKitPreflight(ctx, a, kitLine);
+  const affectedKitIds = await checkoutKitCore(ctx, a, kitLine, loc);
+  return { kitId: a.kitId, affectedKitIds };
+}
+
 export const checkoutKit = mutation({
   args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
-    if (!kitLine) throw new ConvexError("Kit not found on this project");
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
-    const loc = project?.locationId ?? null;
-    await checkoutKitPreflight(ctx, a, kitLine);
-    const affectedKitIds = await checkoutKitCore(ctx, a, kitLine, loc);
-    return { kitId: a.kitId, affectedKitIds };
+    return checkoutKitFull(ctx, a);
   },
 });
 
@@ -612,10 +636,10 @@ export const checkoutKit = mutation({
  * and because a Convex mutation is ONE transaction that rolls the whole batch back
  * (atomic) — the client surfaces the error and the operator retries.
  */
-export const checkoutKitsBatch = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
+/** Core batch kit checkout (partial-success): per-item org+project re-check via
+ *  kitParentLine + preflight-then-write, collecting per-kit errors. Shared by the
+ *  requireService mirror AND the browser-direct `warehouseWrites.checkOutKitsBatch`. */
+export async function checkoutKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise<KitBatchResult> {
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
     const loc = project?.locationId ?? null;
     const succeeded: string[] = [];
@@ -638,6 +662,13 @@ export const checkoutKitsBatch = mutation({
       for (const k of aff) affected.add(k);
     }
     return { succeeded, errors, affectedKitIds: [...affected] };
+}
+
+export const checkoutKitsBatch = mutation({
+  args: { organizationId: v.string(), projectId: v.string(), userId: v.string(), kitIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return checkoutKitsBatchCore(ctx, a);
   },
 });
 
@@ -1350,14 +1381,17 @@ export const forceReturnKitsBatch = mutation({
   },
 });
 
-export const quickAdd = mutation({
-  args: {
-    organizationId: v.string(), projectId: v.string(), modelId: v.string(),
-    assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()),
-    quantity: v.optional(v.number()), prepContainer: v.optional(v.string()), userId: v.string(), now: v.number(),
-  },
-  handler: async (ctx, a) => {
-    await requireService(ctx);
+export type QuickAddArgs = {
+  organizationId: string; projectId: string; modelId: string;
+  assetId?: string; bulkAssetId?: string; quantity?: number; prepContainer?: string; userId: string; now: number;
+};
+
+/** Core quick-add: T&T preflight, EQUIPMENT line-item create (prepped), scan log.
+ *  NO logActivity (scanLog only) — matches the server. Shared by the requireService
+ *  mirror AND the browser-direct `warehouseWrites.quickAddAndCheckOut`. The browser
+ *  write org-validates the client modelId/assetId/bulkAssetId BEFORE calling this
+ *  (this core inserts them verbatim, as the trusted server always did). */
+export async function quickAddCore(ctx: Ctx, a: QuickAddArgs): Promise<{ id: string }> {
     await assertTestTagAllowsCheckout(ctx, a.organizationId, {
       assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
     });
@@ -1372,6 +1406,17 @@ export const quickAdd = mutation({
     });
     await scanLog(ctx, { organizationId: a.organizationId, ...(a.assetId ? { assetId: a.assetId } : {}), ...(a.bulkAssetId ? { bulkAssetId: a.bulkAssetId } : {}), projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Added to project and prepped via warehouse scan" });
     return { id };
+}
+
+export const quickAdd = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), modelId: v.string(),
+    assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()), prepContainer: v.optional(v.string()), userId: v.string(), now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return quickAddCore(ctx, a);
   },
 });
 

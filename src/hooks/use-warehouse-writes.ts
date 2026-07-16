@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useConvex } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
@@ -23,7 +23,12 @@ export function useWarehouseWrites() {
   const { data: session } = useSession();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const convex = useConvex();
 
+  const checkOutItemsM = useMutation(api.warehouseWrites.checkOutItems);
+  const checkOutKitM = useMutation(api.warehouseWrites.checkOutKit);
+  const checkOutKitsBatchM = useMutation(api.warehouseWrites.checkOutKitsBatch);
+  const quickAddAndCheckOutM = useMutation(api.warehouseWrites.quickAddAndCheckOut);
   const checkInItemsM = useMutation(api.warehouseWrites.checkInItems);
   const undeployItemsM = useMutation(api.warehouseWrites.undeployItems);
   const unreturnItemsM = useMutation(api.warehouseWrites.unreturnItems);
@@ -52,6 +57,82 @@ export function useWarehouseWrites() {
   };
 
   return {
+    // ── PR-C: checkout keystone ──────────────────────────────────────────────────
+    checkOutItems: async (
+      projectId: string,
+      items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
+      includeAccessories = true,
+    ): Promise<{ updatedLineIds: string[] }> => {
+      return checkOutItemsM({
+        orgId: requireOrg(),
+        projectId,
+        items,
+        includeAccessories,
+        auditIds: items.map(() => createId()),
+        now: Date.now(),
+        actor: actor(),
+      });
+    },
+
+    checkOutKit: async (
+      projectId: string,
+      kitId: string,
+    ): Promise<{ kitId: string; affectedKitIds: string[] }> => {
+      return checkOutKitM({ orgId: requireOrg(), projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    checkOutKitsBatch: async (
+      projectId: string,
+      kitIds: string[],
+    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[] }> => {
+      return checkOutKitsBatchM({
+        orgId: requireOrg(),
+        projectId,
+        kitIds,
+        // One audit id per input kit — the mutation dedupes and only consumes as many
+        // as succeed (succeeded ⊆ deduped ⊆ input), so this always covers them.
+        auditIds: kitIds.map(() => createId()),
+        now: Date.now(),
+        actor: actor(),
+      });
+    },
+
+    quickAddAndCheckOut: async (
+      projectId: string,
+      data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number; prepContainer?: string | null },
+    ): Promise<{
+      id: string;
+      modelId: string;
+      assetId?: string;
+      bulkAssetId?: string;
+      model: { _count: { modelCheckItems: number } };
+    }> => {
+      const org = requireOrg();
+      const { id } = await quickAddAndCheckOutM({
+        orgId: org,
+        projectId,
+        modelId: data.modelId,
+        assetId: data.assetId ?? undefined,
+        bulkAssetId: data.bulkAssetId ?? undefined,
+        quantity: data.quantity ?? undefined,
+        prepContainer: data.prepContainer ?? undefined,
+        now: Date.now(),
+        actor: actor(),
+      });
+      // The mutation returns { id } only (the page reads a live subscription). The
+      // page's onSuccess still needs the model's check-item count to decide check-queue
+      // routing (the server action grafted `model._count.modelCheckItems`) — re-derive
+      // it here with one org-scoped query. Everything else the caller already knows.
+      const checkItems = await convex.query(api.modelCheckItems.listByModel, { orgId: org, modelId: data.modelId });
+      return {
+        id,
+        modelId: data.modelId,
+        assetId: data.assetId,
+        bulkAssetId: data.bulkAssetId,
+        model: { _count: { modelCheckItems: checkItems.length } },
+      };
+    },
+
     checkInItems: async (
       projectId: string,
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: ReturnCondition; quantity?: number; notes?: string }>,

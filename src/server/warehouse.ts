@@ -12,7 +12,6 @@ import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
-import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
@@ -708,54 +707,17 @@ export async function getScanLog(params?: {
   });
 }
 
-export async function quickAddAndCheckOut(
-  projectId: string,
-  data: {
-    modelId: string;
-    assetId?: string;
-    bulkAssetId?: string;
-    quantity?: number;
-    prepContainer?: string | null;
-  }
-) {
-  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
-
-  // Block send-out while any blocking comment on the project is unresolved.
-  await assertNoBlockingComments(organizationId, projectId, {
-    actionLabel: "check out items",
-  });
-
-  // The atomic add (T&T preflight, line-item create, scan log) runs in one
-  // Convex mutation; it returns the new line id which we re-read for the return.
-  const convex = await getConvexClient();
-  const res = await convex.mutation(api.warehouseOps.quickAdd, {
-    organizationId,
-    projectId,
-    modelId: data.modelId,
-    assetId: data.assetId ?? undefined,
-    bulkAssetId: data.bulkAssetId ?? undefined,
-    quantity: data.quantity ?? undefined,
-    prepContainer: data.prepContainer ?? undefined,
-    userId,
-    now: Date.now(),
-  });
-
-  const lineItem = await convex.query(api.projectLineItems.getById, { id: res.id });
-
-  // Attach `model` + `_count.modelCheckItems` from the Convex mirror, matching
-  // the old `model: { include: { _count: { modelCheckItems } } }` include shape
-  // (model scalars + the check-item count — no category/supplier). The client
-  // routes the line through the check queue when the count is non-zero.
-  const [model, modelCheckCounts] = await Promise.all([
-    lineItem?.modelId ? getModelById(lineItem.modelId) : Promise.resolve(null),
-    getModelCheckItemCountMap(organizationId),
-  ]);
-  const modelWithCount = model
-    ? { ...model, _count: { modelCheckItems: modelCheckCounts.get(model.id) ?? 0 } }
-    : null;
-
-  return serialize({ ...lineItem, model: modelWithCount });
-}
+// quickAddAndCheckOut moved browser-direct (PR-C) — see convex/warehouseWrites.ts
+// (quickAddAndCheckOut, with FK hardening: the requireService `quickAdd` core trusted
+// the server's model/asset/bulk ids, so the browser write org-validates each) +
+// src/hooks/use-warehouse-writes.ts. checkOutItems / checkOutKit / checkOutKitsBatch
+// ALSO moved browser-direct (blocking-gate + webhook enqueue folded into the mutation),
+// but their server actions are RETAINED below purely as int-test entrypoints
+// (warehouse-checkout / -checkin / -move-back / -kit-batch / -prep / -tenant-tt-safety
+// exercise the full state machine through them against real Postgres + Convex); the
+// live warehouse page calls the browser mutations. checkoutItems / checkoutKit /
+// checkoutKitsBatch / quickAdd requireService mirrors stay (kitPerUnit tests + these
+// server actions call them).
 
 // clearPrepContainer / ensureContainerOnProject / syncContainersBatch moved
 // browser-direct (PR-A) — see convex/warehouseWrites.ts + src/hooks/use-warehouse-writes.ts.

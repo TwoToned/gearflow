@@ -7,6 +7,10 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import {
   checkinItemsCore,
+  checkoutItemsCore,
+  checkoutKitFull,
+  checkoutKitsBatchCore,
+  quickAddCore,
   undeployItemsCore,
   unreturnItemsCore,
   undeprepLineCore,
@@ -27,6 +31,8 @@ import {
   forceReturnKitsBatchCore,
   defaultLocationId,
 } from "./warehouseOps";
+import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
+import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 
 /**
  * Browser-direct WAREHOUSE writes (Phase 3 PR-A — the return/undeploy/container write
@@ -85,6 +91,11 @@ async function assertAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string
 async function assertModelInOrg(ctx: MutationCtx, modelId: string, orgId: string): Promise<void> {
   const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
   if (!m || m.organizationId !== orgId) throw new ConvexError("Model not found");
+}
+
+async function assertBulkAssetInOrg(ctx: MutationCtx, bulkAssetId: string, orgId: string): Promise<void> {
+  const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", bulkAssetId)).first();
+  if (!b || b.organizationId !== orgId) throw new ConvexError("Bulk asset not found");
 }
 
 // The force-return family builds its audit `entityName` from the row's own TAG / NAME.
@@ -865,5 +876,234 @@ export const bulkForceReturnAssets = mutation({
     }
 
     return { count: res.succeeded.length };
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PR-C — the CHECKOUT keystone. Same bar (kill-switch + rate limit + RBAC
+// warehouse:check_out + boundary FK/org validation + the SAME warehouseOps `*Core`
+// + in-mutation audit), PLUS two carve-outs the server actions ran around the write:
+//   1. the blocking-comment SEND-OUT gate (all 4) — now IN the same transaction via
+//      `assertNoBlockingCommentsInMutation` (throws ConvexError with the user message);
+//   2. the `warehouse.checked_out` webhook ENQUEUE (checkOutItems only) — now IN the
+//      mutation via `enqueueWebhookEvent`; delivery stays a cron concern (best-effort,
+//      swallowed, never rolls back the gear movement).
+// quickAdd adds FK HARDENING: the requireService core inserted client model/asset/bulk
+// ids with NO org check (it trusted the server), so the browser write org-validates
+// each BEFORE the core. Audit parity matches the server EXACTLY: checkOutItems =
+// per-item CHECK_OUT rows; checkOutKit = one; checkOutKitsBatch = one per succeeded
+// kit; quickAdd = NO logActivity (scanLog only, written by the core).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const checkoutItemArg = v.object({
+  lineItemId: v.string(),
+  assetId: v.optional(v.string()),
+  quantity: v.optional(v.number()),
+  notes: v.optional(v.string()),
+});
+
+// ─── checkOutItems — the loose-gear / line deploy. Parity: checkOutItems server
+// action. warehouse:check_out. Blocking gate + webhook enqueue + per-item audit. ───
+export const checkOutItems = mutation({
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    items: v.array(checkoutItemArg),
+    includeAccessories: v.boolean(),
+    auditIds: v.array(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    // Carve-out 1: block send-out while any blocking comment on the project is open.
+    // Project-wide gate (no line/group scope) — matches the server call exactly.
+    await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out items" });
+
+    // Boundary FK/org validation (by_cuid is GLOBAL). The optional client assetId is
+    // validated too — the core's serialised path can setAssetStatus on it.
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    for (const it of a.items) {
+      await requireLineInProject(ctx, it.lineItemId, a.orgId, a.projectId);
+      if (it.assetId) await assertAssetInOrg(ctx, it.assetId, a.orgId);
+    }
+
+    const res = await checkoutItemsCore(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId,
+      items: a.items, includeAccessories: a.includeAccessories, now: a.now,
+    });
+
+    for (let i = 0; i < a.items.length; i++) {
+      const item = a.items[i];
+      const auditId = a.auditIds[i];
+      if (!auditId) continue;
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: a.orgId,
+        action: "CHECK_OUT",
+        entityType: "asset",
+        entityId: item.assetId || item.lineItemId,
+        entityName: `Line item ${item.lineItemId}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: "Checked out item on project",
+        projectId: a.projectId,
+        ...(item.assetId ? { assetId: item.assetId } : {}),
+        createdAt: a.now,
+      });
+    }
+
+    // Carve-out 2: fire the webhook AFTER the gear physically moved. ENQUEUE only —
+    // delivery is the cron worker's job. Best-effort: a webhook failure must never
+    // roll back the checkout, so it's swallowed (mirrors emitWebhookEvent).
+    try {
+      await enqueueWebhookEvent(ctx, a.orgId, "warehouse.checked_out", {
+        projectId: a.projectId,
+        lineItemIds: res.updatedLineIds,
+        assetIds: a.items.map((i) => i.assetId).filter((x): x is string => Boolean(x)),
+        count: res.updatedLineIds.length,
+      }, a.now);
+    } catch {
+      // Never let an event break the write that produced it.
+    }
+
+    return res; // { updatedLineIds }
+  },
+});
+
+// ─── checkOutKit — whole-kit deploy (singular). Parity: checkOutKit server action.
+// warehouse:check_out. Blocking gate + single audit. ────────────────────────────────
+export const checkOutKit = mutation({
+  args: { orgId: v.string(), projectId: v.string(), kitId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out this kit" });
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await requireKitInOrg(ctx, a.kitId, a.orgId);
+
+    const res = await checkoutKitFull(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId, kitId: a.kitId, now: a.now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "CHECK_OUT",
+      entityType: "kit",
+      entityId: a.kitId,
+      entityName: `Kit ${a.kitId}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Checked out kit with all contents",
+      projectId: a.projectId,
+      kitId: a.kitId,
+      createdAt: a.now,
+    });
+
+    return res; // { kitId, affectedKitIds }
+  },
+});
+
+// ─── checkOutKitsBatch — bulk whole-kit deploy. Parity: checkOutKitsBatch server
+// action (dedupe [...new Set()], empty → {succeeded:[],errors:[]}, blocking gate once,
+// one audit per succeeded kit, partial-success). warehouse:check_out. ────────────────
+export const checkOutKitsBatch = mutation({
+  args: { orgId: v.string(), projectId: v.string(), kitIds: v.array(v.string()), auditIds: v.array(v.string()), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const unique = [...new Set(a.kitIds)];
+    if (unique.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] };
+
+    // Project-wide blocker gate (kit checkout has no line scope) — checked once.
+    await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out this kit" });
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    // Cross-tenant / ghost safety is the core's per-kit kitParentLine (a foreign / ghost
+    // kit has no parent line on this org's project → per-item error, never a cross-org
+    // write) — matching undeployKitsBatch. No up-front throw on a ghost id.
+
+    const res = await checkoutKitsBatchCore(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId, kitIds: unique, now: a.now,
+    });
+
+    for (let i = 0; i < res.succeeded.length; i++) {
+      const kitId = res.succeeded[i];
+      const auditId = a.auditIds[i];
+      if (!auditId) continue;
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: a.orgId,
+        action: "CHECK_OUT",
+        entityType: "kit",
+        entityId: kitId,
+        entityName: `Kit ${kitId}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: "Checked out kit with all contents",
+        projectId: a.projectId,
+        kitId,
+        createdAt: a.now,
+      });
+    }
+
+    return { succeeded: res.succeeded, errors: res.errors };
+  },
+});
+
+// ─── quickAddAndCheckOut — add a scanned model/asset to the project + prep it in one
+// step. Parity: quickAddAndCheckOut server action (blocking gate; NO logActivity —
+// scanLog only, written by the core). warehouse:check_out. ★ FK HARDENING: the core
+// inserts client model/asset/bulk ids verbatim (it trusted the server), so this write
+// org-validates EACH (by_cuid is GLOBAL) BEFORE the core. Returns { id } only. ────────
+export const quickAddAndCheckOut = mutation({
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    modelId: v.string(),
+    assetId: v.optional(v.string()),
+    bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    prepContainer: v.optional(v.union(v.string(), v.null())),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out items" });
+
+    // ★ FK hardening — every client id org-validated before the trusting core runs.
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await assertModelInOrg(ctx, a.modelId, a.orgId);
+    if (a.assetId) await assertAssetInOrg(ctx, a.assetId, a.orgId);
+    if (a.bulkAssetId) await assertBulkAssetInOrg(ctx, a.bulkAssetId, a.orgId);
+
+    return quickAddCore(ctx, {
+      organizationId: a.orgId,
+      projectId: a.projectId,
+      modelId: a.modelId,
+      assetId: a.assetId ?? undefined,
+      bulkAssetId: a.bulkAssetId ?? undefined,
+      quantity: a.quantity ?? undefined,
+      prepContainer: a.prepContainer ?? undefined,
+      userId: actor.userId,
+      now: a.now,
+    }); // { id }
   },
 });

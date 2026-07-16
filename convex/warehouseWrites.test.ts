@@ -12,6 +12,8 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { evaluateBlockingGate as convexGate } from "./lib/blockingCommentsGate";
+import { evaluateBlockingGate as srcGate } from "@/lib/blocking-comments-gate";
 
 const modules = import.meta.glob("./**/*.ts");
 const ORG = "org_1";
@@ -19,6 +21,9 @@ const OTHER = "org_other";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
 const asUser = (orgId: string) => ({ subject: USER, orgId });
+// SERVICE identity to drive the createKitLineItem fixture (requireService) in the
+// checkOutKitsBatch partial-success test.
+const SERVICE = { subject: "gearflow-service", svc: true };
 // A deliberately-wrong actor — resolveActor must pin attribution to the token subject.
 const SPOOF = { userId: "attacker_id", userName: "Mallory" };
 
@@ -562,5 +567,310 @@ describe("bulkForceReturnAssets", () => {
         orgId: ORG, assetIds: ["a1"], auditId: "log1", now: NOW, actor: SPOOF,
       }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PR-C — checkout keystone. Verifies the blocking-comment gate + webhook enqueue
+// carve-outs run IN the mutation, the FK hardening on quickAdd, and audit parity.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Open, project-level blocking comment on p1 → the send-out gate must fire. */
+async function seedBlockingComment(t: T, orgId = ORG, projectId = "p1") {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("commentThreads", {
+      orgId, entityType: "project", entityId: projectId, projectId,
+      status: "open", isBlocking: true,
+      createdBy: USER, createdByName: "Boss", createdAt: NOW, updatedAt: NOW,
+    });
+  });
+}
+
+const scanLogsForProject = (t: T, projectId = "p1") =>
+  t.run(async (ctx) => ctx.db.query("assetScanLogs").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect());
+const deliveriesForOrg = (t: T, orgId = ORG) =>
+  t.run(async (ctx) => ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect());
+const logsForOrg = (t: T, orgId = ORG) =>
+  t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect());
+
+// ─── checkOutItems ──────────────────────────────────────────────────────────────
+describe("checkOutItems", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t, ORG, "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CONFIRMED" }));
+    });
+  }
+
+  test("deploys a serialised line (asset → CHECKED_OUT), enqueues the webhook, per-item audit", async () => {
+    const t = makeT();
+    await seed(t);
+    // An active endpoint subscribed to the event.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("webhooks", {
+        id: "wh1", organizationId: ORG, description: "e2e", url: "https://x.test/hook",
+        events: JSON.stringify(["warehouse.checked_out"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW,
+      });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+      orgId: ORG, projectId: "p1",
+      items: [{ lineItemId: "li1", assetId: "a1" }],
+      includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("CHECKED_OUT");
+    // Per-item audit, attributed to the token subject (not the spoofed actor).
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("CHECK_OUT");
+    expect(log?.entityId).toBe("a1");
+    expect(log?.summary).toBe("Checked out item on project");
+    expect(log?.userId).toBe(USER);
+    // Webhook enqueue carve-out — one PENDING delivery row, due now.
+    const deliveries = await deliveriesForOrg(t);
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].event).toBe("warehouse.checked_out");
+    expect(deliveries[0].status).toBe("PENDING");
+    expect(deliveries[0].webhookId).toBe("wh1");
+    const payload = JSON.parse(deliveries[0].payload);
+    expect(payload.projectId).toBe("p1");
+    expect(payload.lineItemIds).toEqual(["li1"]);
+    expect(payload.assetIds).toEqual(["a1"]);
+  });
+
+  test("no active subscription → no delivery rows (but checkout still succeeds)", async () => {
+    const t = makeT();
+    await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect(await deliveriesForOrg(t)).toHaveLength(0);
+  });
+
+  test("blocking comment present → ConvexError, no write", async () => {
+    const t = makeT();
+    await seed(t);
+    await seedBlockingComment(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/unresolved blocking comment/i);
+    // Gate fires BEFORE the core — the asset never moved.
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+  });
+
+  test("cross-org line item rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { ...baseLine("liX", { modelId: "m1", status: "CONFIRMED" }, OTHER), projectId: "pX" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "liX" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/not found in project/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── checkOutKit ────────────────────────────────────────────────────────────────
+describe("checkOutKit", () => {
+  test("blocking comment present → ConvexError (gate runs before the core)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedBlockingComment(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKit, {
+        orgId: ORG, projectId: "p1", kitId: "k1", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/unresolved blocking comment/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKit, {
+        orgId: ORG, projectId: "p1", kitId: "k1", auditId: "log1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── checkOutKitsBatch ──────────────────────────────────────────────────────────
+describe("checkOutKitsBatch", () => {
+  // Build a real deployable kit (k1) via the createKitLineItem path so preflight
+  // (composition parity + T&T) passes — mirrors the kitPerUnit fixture.
+  async function seedDeployableKit(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+    });
+    await t.withIdentity(SERVICE).mutation(api.projectLineItems.createKitLineItem, { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE", now: NOW });
+  }
+
+  test("blocking comment gates the whole batch (checked once) → ConvexError", async () => {
+    const t = makeT();
+    await seedDeployableKit(t);
+    await seedBlockingComment(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
+        orgId: ORG, projectId: "p1", kitIds: ["k1"], auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/unresolved blocking comment/i);
+    expect((await kitById(t, "k1"))?.status).toBe("AVAILABLE");
+  });
+
+  test("partial-success: deploys k1, reports a ghost kit as a per-item error; audit per succeeded", async () => {
+    const t = makeT();
+    await seedDeployableKit(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
+      orgId: ORG, projectId: "p1", kitIds: ["k1", "ghost"], auditIds: ["log1", "log2"], now: NOW, actor: SPOOF,
+    });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors.map((e) => e.kitId)).toEqual(["ghost"]);
+    expect((await kitById(t, "k1"))?.status).toBe("CHECKED_OUT");
+    // One audit row (for the one succeeded kit), token-attributed.
+    const log = await logById(t, "log1");
+    expect(log?.action).toBe("CHECK_OUT");
+    expect(log?.entityId).toBe("k1");
+    expect(log?.userId).toBe(USER);
+    expect(await logById(t, "log2")).toBeNull();
+  });
+
+  test("empty selection → no-op, no gate read", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
+      orgId: ORG, projectId: "p1", kitIds: [], auditIds: [], now: NOW, actor: SPOOF,
+    });
+    expect(res).toEqual({ succeeded: [], errors: [] });
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
+        orgId: ORG, projectId: "p1", kitIds: ["k1"], auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── quickAddAndCheckOut ────────────────────────────────────────────────────────
+describe("quickAddAndCheckOut", () => {
+  async function seed(t: T, modelOrg = ORG, assetOrg = ORG) {
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: modelOrg, name: "PAR", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: assetOrg, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+  }
+
+  test("creates a prepped EQUIPMENT line + writes a scan log + NO audit", async () => {
+    const t = makeT();
+    await seed(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.quickAddAndCheckOut, {
+      orgId: ORG, projectId: "p1", modelId: "m1", assetId: "a1", prepContainer: "C1", now: NOW, actor: SPOOF,
+    });
+    const line = await lineById(t, res.id);
+    expect(line?.modelId).toBe("m1");
+    expect(line?.assetId).toBe("a1");
+    expect(line?.status).toBe("CONFIRMED");
+    expect(line?.prepStatus).toBe("PENDING");
+    expect(line?.prepContainer).toBe("C1");
+    // scanLog written (scannedBy = token subject), by the core.
+    const scans = await scanLogsForProject(t);
+    expect(scans).toHaveLength(1);
+    expect(scans[0].assetId).toBe("a1");
+    expect(scans[0].scannedById).toBe(USER);
+    // NO activity log for quick-add (scanLog only) — matches the server.
+    expect(await logsForOrg(t)).toHaveLength(0);
+  });
+
+  test("★ FK hardening: cross-org modelId rejected", async () => {
+    const t = makeT();
+    await seed(t, OTHER, ORG); // model in another org
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.quickAddAndCheckOut, {
+        orgId: ORG, projectId: "p1", modelId: "m1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Model not found/i);
+  });
+
+  test("★ FK hardening: cross-org assetId rejected", async () => {
+    const t = makeT();
+    await seed(t, ORG, OTHER); // asset in another org
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.quickAddAndCheckOut, {
+        orgId: ORG, projectId: "p1", modelId: "m1", assetId: "a1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Asset not found/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.quickAddAndCheckOut, {
+        orgId: ORG, projectId: "p1", modelId: "m1", now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─── blocking-gate parity: convex-local evaluateBlockingGate == src/lib original ──
+describe("evaluateBlockingGate — convex-local == src/lib (behaviour pin)", () => {
+  const summaries = [
+    { count: 0, lineItemTargetIds: [], groupTargetIds: [], hasProjectLevel: false },
+    { count: 2, lineItemTargetIds: [], groupTargetIds: [], hasProjectLevel: false },
+    { count: 1, lineItemTargetIds: ["li1"], groupTargetIds: [], hasProjectLevel: false },
+    { count: 1, lineItemTargetIds: [], groupTargetIds: ["g1"], hasProjectLevel: false },
+    { count: 1, lineItemTargetIds: [], groupTargetIds: [], hasProjectLevel: true },
+    { count: 3, lineItemTargetIds: ["li9"], groupTargetIds: ["g9"], hasProjectLevel: true },
+  ];
+  const optsList = [
+    {},
+    { actionLabel: "check out items" },
+    { lineItemId: "li1", actionLabel: "prep this item" },
+    { groupId: "g1", actionLabel: "prep this item" },
+    { lineItemId: "zzz", groupId: "zzz", actionLabel: "prep this item" },
+  ];
+  test("identical result for every (summary × opts) combination", () => {
+    for (const s of summaries) {
+      for (const o of optsList) {
+        expect(convexGate(s, o)).toEqual(srcGate(s, o));
+      }
+    }
   });
 });

@@ -12,16 +12,10 @@ import { toast } from "sonner";
 import {
   getSupplierModelRate,
   getSupplierRateHistory,
-  createSubHireGroup,
-  updateSubHireGroup,
-  deleteSubHireGroup,
-  setItemGroup,
-  updateSubHireOrderPricing,
-  updateSubHirePlacement,
   addSubHireMedia,
   removeSubHireMedia,
 } from "@/server/sub-hires";
-import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
+import { useSubHireWrites, type SubHireGroupInput } from "@/hooks/use-sub-hire-writes";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -601,7 +595,7 @@ function SubHireManageView({
   });
 
   const createGroupMutation = useServerMutation({
-    mutationFn: (title: string) => createSubHireGroup(subHireId, { title }),
+    mutationFn: (title: string) => subHireWrites.createGroup(subHireId, { title }),
     onSuccess: (result: Record<string, unknown>) => {
       toast.success("Group created");
       setShowNewGroupInput(false);
@@ -613,7 +607,7 @@ function SubHireManageView({
   });
 
   const deleteGroupMutation = useServerMutation({
-    mutationFn: (groupId: string) => deleteSubHireGroup(groupId),
+    mutationFn: (groupId: string) => subHireWrites.deleteGroup(groupId),
     onSuccess: () => {
       toast.success("Group deleted");
       invalidate();
@@ -622,8 +616,8 @@ function SubHireManageView({
   });
 
   const updateGroupMutation = useServerMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Record<string, unknown> }) =>
-      updateSubHireGroup(groupId, data),
+    mutationFn: ({ groupId, data }: { groupId: string; data: SubHireGroupInput }) =>
+      subHireWrites.updateGroup(groupId, data),
     onSuccess: () => {
       toast.success("Group updated");
       setEditingGroup(null);
@@ -634,14 +628,14 @@ function SubHireManageView({
 
   const moveItemMutation = useServerMutation({
     mutationFn: ({ itemId, groupId }: { itemId: string; groupId: string | null }) =>
-      setItemGroup(itemId, groupId),
+      subHireWrites.setItemGroup(itemId, groupId),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
   const placementMutation = useServerMutation({
     mutationFn: (args: { entityType: "order" | "group" | "item"; entityId: string; targetGroupId: string | null; targetCategoryId: string | null }) =>
-      updateSubHirePlacement(args.entityType, args.entityId, {
+      subHireWrites.updatePlacement(args.entityType, args.entityId, {
         targetGroupId: args.targetGroupId,
         targetCategoryId: args.targetCategoryId,
       }),
@@ -650,8 +644,8 @@ function SubHireManageView({
   });
 
   const pricingMutation = useServerMutation({
-    mutationFn: (data: { pricingMode: string; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
-      updateSubHireOrderPricing(subHireId, data),
+    mutationFn: (data: { pricingMode: "ITEMIZED" | "ORDER_TOTAL"; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
+      subHireWrites.updateOrderPricing(subHireId, data),
     onSuccess: () => {
       toast.success("Pricing updated");
       invalidate();
@@ -850,7 +844,7 @@ function SubHireManageView({
                 value={subHire.pricingMode}
                 onValueChange={(v) => {
                   if (v) pricingMutation.mutate({
-                    pricingMode: v,
+                    pricingMode: v as "ITEMIZED" | "ORDER_TOTAL",
                     orderTotalCost: v === "ORDER_TOTAL" ? Number(subHire.orderTotalCost ?? 0) : null,
                     orderTotalCharge: v === "ORDER_TOTAL" ? (subHire.orderTotalCharge != null ? Number(subHire.orderTotalCharge) : null) : null,
                   });
@@ -1425,7 +1419,7 @@ function SubHireGroupEditDialog({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   group: Record<string, any> | null;
   onClose: () => void;
-  onSave: (data: Record<string, unknown>) => void;
+  onSave: (data: SubHireGroupInput) => void;
   isPending: boolean;
 }) {
   const [title, setTitle] = useState("");

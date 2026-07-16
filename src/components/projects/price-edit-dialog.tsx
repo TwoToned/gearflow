@@ -8,8 +8,8 @@
  *
  * Project group → single "Price" input, calls updateGroupPrice.
  * Sub-hire group → charge + cost inputs (charge first per 8H semantic
- *                  prominence), calls updateSubHireGroup with the
- *                  group's existing title preserved.
+ *                  prominence), calls useSubHireWrites().updateGroup with
+ *                  the group's existing title preserved.
  *
  * The dialog is wrapper + body so the body can be keyed by groupId —
  * picking a different group remounts the body and resets every input
@@ -22,7 +22,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
-import { updateSubHireGroup } from "@/server/sub-hires";
+import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import {
   Dialog,
   DialogContent,
@@ -97,6 +97,7 @@ function PriceEditDialogBody({
   );
 
   const groupWrites = useProjectGroupWrites();
+  const subHireWrites = useSubHireWrites();
 
   const projectMut = useServerMutation({
     mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
@@ -112,9 +113,8 @@ function PriceEditDialogBody({
   const subHireMut = useServerMutation({
     mutationFn: () => {
       if (target.kind !== "subHire") throw new Error("Invalid target");
-      // updateSubHireGroup requires the full schema, so re-send title +
-      // quantity untouched alongside the new cost / charge.
-      return updateSubHireGroup(target.groupId, {
+      // updateGroup re-sends title + quantity untouched alongside the new cost / charge.
+      return subHireWrites.updateGroup(target.groupId, {
         title: target.title,
         quantity: target.quantity,
         charge: chargeInput !== "" ? parseFloat(chargeInput) : null,

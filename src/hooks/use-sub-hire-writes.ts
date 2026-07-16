@@ -14,8 +14,9 @@ import { api } from "../../convex/_generated/api";
  *
  * Reads STAY on the server-action store (getSubHire / getSubHires via
  * createSharedResource), so call-sites keep their `invalidate()` refresh in onSuccess.
- * GROUP CRUD / placement / order-pricing / duplicate / changeProject / media remain on
- * the server action (PR-2).
+ * PR-2 adds the rest of the write surface: GROUP CRUD (createGroup / updateGroup /
+ * deleteGroup / setItemGroup), placement, order-pricing, changeProject, duplicate.
+ * Only media add/remove + supplier-rate reads remain on the server action.
  */
 
 /** Date-input "YYYY-MM-DD" → epoch ms (mirrors subHireSchema's coerce.date). */
@@ -53,6 +54,21 @@ export interface SubHireItemInput {
   targetGroupId?: string | null;
 }
 
+export interface SubHireGroupInput {
+  title: string;
+  quantity?: number;
+  cost?: number | null;
+  charge?: number | null;
+  discount?: number;
+  showOnQuote?: boolean;
+  showOnDocs?: boolean;
+  sortOrder?: number;
+  targetCategoryId?: string | null;
+  targetGroupId?: string | null;
+}
+
+export type SubHirePlacementEntity = "order" | "group" | "item";
+
 export function useSubHireWrites() {
   const { data: session } = useSession();
   const { data: activeOrg } = useActiveOrganization();
@@ -67,6 +83,14 @@ export function useSubHireWrites() {
   const updateItemM = useMutation(api.subHiresWrites.updateSubHireItemNative);
   const removeItemM = useMutation(api.subHiresWrites.removeSubHireItemNative);
   const reorderItemsM = useMutation(api.subHiresWrites.reorderSubHireItemsNative);
+  const createGroupM = useMutation(api.subHiresWrites.createSubHireGroupNative);
+  const updateGroupM = useMutation(api.subHiresWrites.updateSubHireGroupNative);
+  const deleteGroupM = useMutation(api.subHiresWrites.deleteSubHireGroupNative);
+  const setItemGroupM = useMutation(api.subHiresWrites.setItemGroupNative);
+  const orderPricingM = useMutation(api.subHiresWrites.updateSubHireOrderPricingNative);
+  const placementM = useMutation(api.subHiresWrites.updateSubHirePlacementNative);
+  const changeProjectM = useMutation(api.subHiresWrites.changeSubHireProjectNative);
+  const duplicateM = useMutation(api.subHiresWrites.duplicateSubHireNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -181,6 +205,99 @@ export function useSubHireWrites() {
 
     reorderItems: async (subHireId: string, itemIds: string[]): Promise<void> => {
       await reorderItemsM({ orgId: requireOrg(), subHireId, itemIds, now: Date.now(), actor: actor() });
+    },
+
+    // ─── Group CRUD ─────────────────────────────────────────────────────────
+    createGroup: async (subHireId: string, input: SubHireGroupInput): Promise<{ id: string }> => {
+      return createGroupM({
+        id: createId(),
+        orgId: requireOrg(),
+        subHireId,
+        title: input.title,
+        quantity: input.quantity,
+        cost: input.cost ?? undefined,
+        charge: input.charge ?? undefined,
+        discount: input.discount,
+        showOnQuote: input.showOnQuote,
+        showOnDocs: input.showOnDocs,
+        sortOrder: input.sortOrder,
+        targetCategoryId: input.targetCategoryId ?? undefined,
+        targetGroupId: input.targetGroupId ?? undefined,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+
+    updateGroup: async (groupId: string, input: SubHireGroupInput): Promise<void> => {
+      await updateGroupM({
+        groupId,
+        orgId: requireOrg(),
+        title: input.title,
+        quantity: input.quantity,
+        // Pass null through explicitly (clear); undefined = leave untouched.
+        cost: input.cost === undefined ? undefined : input.cost,
+        charge: input.charge === undefined ? undefined : input.charge,
+        discount: input.discount,
+        showOnQuote: input.showOnQuote,
+        showOnDocs: input.showOnDocs,
+        sortOrder: input.sortOrder,
+        targetCategoryId: input.targetCategoryId === undefined ? undefined : input.targetCategoryId,
+        targetGroupId: input.targetGroupId === undefined ? undefined : input.targetGroupId,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+
+    deleteGroup: async (groupId: string): Promise<void> => {
+      await deleteGroupM({ groupId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    setItemGroup: async (itemId: string, groupId: string | null): Promise<void> => {
+      await setItemGroupM({ itemId, orgId: requireOrg(), groupId, now: Date.now(), actor: actor() });
+    },
+
+    // ─── Order pricing / placement ──────────────────────────────────────────
+    updateOrderPricing: async (
+      subHireId: string,
+      input: { pricingMode: "ITEMIZED" | "ORDER_TOTAL"; orderTotalCost?: number | null; orderTotalCharge?: number | null },
+    ): Promise<void> => {
+      await orderPricingM({
+        subHireId,
+        orgId: requireOrg(),
+        pricingMode: input.pricingMode,
+        orderTotalCost: input.orderTotalCost ?? undefined,
+        orderTotalCharge: input.orderTotalCharge ?? undefined,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+
+    updatePlacement: async (
+      entityType: SubHirePlacementEntity,
+      entityId: string,
+      input: { targetGroupId: string | null; targetCategoryId: string | null },
+    ): Promise<void> => {
+      await placementM({
+        entityType,
+        entityId,
+        orgId: requireOrg(),
+        targetCategoryId: input.targetCategoryId,
+        targetGroupId: input.targetGroupId,
+        now: Date.now(),
+        actor: actor(),
+      });
+    },
+
+    // ─── Orchestration ──────────────────────────────────────────────────────
+    changeProject: async (subHireId: string, newProjectId: string): Promise<void> => {
+      await changeProjectM({ subHireId, orgId: requireOrg(), newProjectId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    duplicate: async (sourceId: string): Promise<{ id: string; orderNumber: string }> => {
+      return duplicateM({ id: createId(), orgId: requireOrg(), sourceId, now: Date.now(), actor: actor(), auditId: createId() });
     },
   };
 }

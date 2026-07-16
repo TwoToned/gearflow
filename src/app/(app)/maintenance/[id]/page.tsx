@@ -3,8 +3,10 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useMaintenanceWrites } from "@/hooks/use-maintenance-writes";
+import { api } from "../../../../../convex/_generated/api";
 import {
   ChevronRight,
   Pencil,
@@ -17,7 +19,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getMaintenanceRecord, deleteMaintenanceRecord } from "@/server/maintenance";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -61,15 +62,17 @@ function MaintenanceDetailContent({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: record, isLoading } = useServerQuery({
-    queryKey: ["maintenance", orgId, id],
-    queryFn: () => getMaintenanceRecord(id),
-  });
+  const record = useAuthedQuery(
+    api.maintenanceRecords.recordDetail,
+    orgId ? { orgId, id } : "skip",
+  );
+  const isLoading = record === undefined;
 
-  // Navigates to the list on success; the list reader (useServerQuery) remounts
-  // fresh, so no cross-route invalidation is needed.
+  // Navigates to the list on success; the list reader (reactive) remounts fresh,
+  // so no cross-route invalidation is needed.
+  const writes = useMaintenanceWrites();
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteMaintenanceRecord(id),
+    mutationFn: () => writes.remove(id),
     onSuccess: () => {
       toast.success("Record deleted");
       router.push("/maintenance");

@@ -23,13 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import {
-  createThread,
-  addComment,
-  resolveThread,
-  reopenThread,
-  setThreadBlocking,
-} from "@/server/collaboration";
+import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { getMentionableMembers } from "@/server/org-members";
 import { getForegroundColor, getUserInitials, timeAgo } from "@/lib/collaboration-colors";
 import { cn } from "@/lib/utils";
@@ -170,6 +164,7 @@ interface ThreadViewProps {
 function ThreadView({ orgId, thread, members, allowBlocking }: ThreadViewProps) {
   const [reply, setReply] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
+  const { addComment, resolveThread, reopenThread, setThreadBlocking } = useCollaborationWrites();
   const comments = useAuthedQuery(api.collaboration.listComments, {
     orgId,
     threadId: thread._id,
@@ -336,6 +331,7 @@ export function CommentThreadPanel({
   const [newComment, setNewComment] = useState("");
   const [blocking, setBlocking] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
+  const { createThread } = useCollaborationWrites();
 
   // Blocking comments gate project prep / send-out. They are meaningless on
   // other entities (assets, clients, …), so the toggle is project-only.

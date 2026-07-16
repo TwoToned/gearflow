@@ -238,6 +238,21 @@ describe("projectGroupsWrites.updateGroupPriceNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, { id: "g1", orgId: ORG, price: 10, now: NOW, actor: ACTOR, auditId: "log1" }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("rejects a non-finite price (NaN/Infinity would poison recalc → project.total NaN)", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+        id: "g1", orgId: ORG, price: Number.NaN, now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/finite/i);
+    // The group price + project.total are untouched by the rejected write.
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.price ?? null).toBeNull();
+    });
+  });
 });
 
 // ─── deleteGroupNative ────────────────────────────────────────────────────────

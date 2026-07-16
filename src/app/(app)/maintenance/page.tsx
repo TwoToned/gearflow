@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import Link from "next/link";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useMaintenanceRecords, fingerprintMaintenanceRecords } from "@/hooks/use-maintenance";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useMaintenanceWrites } from "@/hooks/use-maintenance-writes";
+import { api } from "../../../../convex/_generated/api";
+import { useMaintenanceRecords } from "@/hooks/use-maintenance";
 import {
   Plus,
   Trash2,
@@ -16,10 +18,6 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-import {
-  getMaintenanceRecords,
-  deleteMaintenanceRecord,
-} from "@/server/maintenance";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -298,40 +296,33 @@ export default function MaintenancePage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading, refetch } = useServerQuery({
-    queryKey: ["maintenance", orgId, search, filters, page, pageSize, sortBy, sortOrder],
-    queryFn: () =>
-      getMaintenanceRecords({
-        search: search || undefined,
-        status: Array.isArray(filters.status) ? filters.status[0] : undefined,
-        type: Array.isArray(filters.type) ? filters.type[0] : undefined,
-        page,
-        pageSize,
-        sortBy: sortBy || undefined,
-        sortOrder: sortBy ? sortOrder : undefined,
-      }),
-  });
+  // Browser-direct reactive list read (re-home of getMaintenanceRecords). The
+  // subscription auto-updates on any create/update/delete/kanban move in any tab,
+  // so no manual refetch/fingerprint machinery is needed.
+  const data = useAuthedQuery(
+    api.maintenanceRecords.recordsPage,
+    orgId
+      ? {
+          orgId,
+          search: search || undefined,
+          status: Array.isArray(filters.status) ? filters.status[0] : undefined,
+          type: Array.isArray(filters.type) ? filters.type[0] : undefined,
+          page,
+          pageSize,
+          sortBy: sortBy || undefined,
+          sortOrder: sortBy ? sortOrder : undefined,
+        }
+      : "skip",
+  );
+  const isLoading = data === undefined;
 
-  // Cross-tab live sync: subscribe to the dual-written Convex maintenanceRecords
-  // table; a fingerprint change (new repair, kanban move, field edit, deletion in
-  // another tab) triggers the existing server-action refetch.
+  // Org-wide subscription still powers the dashboard stat tiles below.
   const maintenanceDocs = useMaintenanceRecords(orgId);
-  const maintenanceFp = fingerprintMaintenanceRecords(maintenanceDocs);
-  const prevMaintenanceFp = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (maintenanceFp !== undefined && prevMaintenanceFp.current !== undefined && maintenanceFp !== prevMaintenanceFp.current) {
-      refetch();
-    }
-    if (maintenanceFp !== undefined) prevMaintenanceFp.current = maintenanceFp;
-  }, [maintenanceFp, refetch]);
 
-  // Same-view read+write island: the delete invalidated ["maintenance"] (this
-  // reader's own key) — replaced by refetch(). Not in the SSE map, so no
-  // cross-user liveness is lost (data-identical).
+  const writes = useMaintenanceWrites();
   const deleteMutation = useServerMutation({
-    mutationFn: deleteMaintenanceRecord,
+    mutationFn: (id: string) => writes.remove(id),
     onSuccess: () => {
-      refetch();
       toast.success("Record deleted");
     },
     onError: (e) => toast.error(e.message),

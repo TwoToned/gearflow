@@ -26,6 +26,34 @@ async function assetByCuid(ctx: Ctx, id: string) {
   return await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
 }
 
+/**
+ * Core prep (pick-and-pack) of a unit — extracted so both the requireService
+ * `prepItem` mutation AND the browser-direct `checkRecordWrites.completeCheckAndPack`
+ * fold run byte-identical logic. Validates the line (org + project), then wraps the
+ * fulfillment `prepUnit` helper. Bulk asset is ALWAYS derived from the line unless a
+ * serialised asset is supplied (a crafted request can't prep against an arbitrary
+ * bulk asset).
+ */
+export async function prepItemCore(
+  ctx: Ctx,
+  a: {
+    organizationId: string; projectId: string; lineItemId: string;
+    assetId?: string; bulkAssetId?: string;
+    quantity?: number; prepContainer?: string | null;
+    includeAccessoryIds?: string[];
+  },
+): Promise<{ id: string }> {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+  await prepUnit(ctx, {
+    organizationId: a.organizationId, lineItemId: a.lineItemId,
+    assetId: a.assetId ?? null, bulkAssetId: a.assetId ? null : (a.bulkAssetId ?? line.bulkAssetId ?? null),
+    quantity: a.quantity, prepContainer: a.prepContainer ?? undefined,
+    includeAccessoryIds: a.includeAccessoryIds ? new Set(a.includeAccessoryIds) : null,
+  });
+  return { id: a.lineItemId };
+}
+
 /** Prep (pick-and-pack) a unit. Wraps the fulfillment prepUnit helper. */
 export const prepItem = mutation({
   args: {
@@ -36,15 +64,12 @@ export const prepItem = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const line = await lineByCuid(ctx, a.lineItemId);
-    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
-    await prepUnit(ctx, {
-      organizationId: a.organizationId, lineItemId: a.lineItemId,
-      assetId: a.assetId ?? null, bulkAssetId: a.assetId ? null : (a.bulkAssetId ?? line.bulkAssetId ?? null),
+    return prepItemCore(ctx, {
+      organizationId: a.organizationId, projectId: a.projectId, lineItemId: a.lineItemId,
+      assetId: a.assetId, bulkAssetId: a.bulkAssetId,
       quantity: a.quantity, prepContainer: a.prepContainer ?? undefined,
-      includeAccessoryIds: a.includeAccessoryIds ? new Set(a.includeAccessoryIds) : null,
+      includeAccessoryIds: a.includeAccessoryIds,
     });
-    return { id: a.lineItemId };
   },
 });
 
@@ -164,40 +189,50 @@ export const deprepItem = mutation({
 /** Return-check deprep: reset line prepStatus PENDING (+ clear assetId) and the
  *  scoped accessory child lines + units back to PENDING. Status/returnStatus are
  *  left alone (the return-tab flow already set them). */
+/** Core return-check deprep — extracted so both the requireService
+ *  `completeCheckAndDeprepLine` mutation AND the browser-direct
+ *  `checkRecordWrites.completeCheckAndDeprep` fold run byte-identical logic. */
+export async function completeCheckAndDeprepLineCore(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; lineItemId: string; resolvedAssetId?: string; now: number },
+): Promise<{ id: string }> {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+  if (line.status !== "RETURNED") throw new ConvexError(`Deprep return check requires RETURNED status (got ${line.status})`);
+  if (line.prepStatus !== "PACKED" && line.prepStatus !== "PENDING") throw new ConvexError(`Deprep return check expected prepStatus=PACKED or PENDING (got ${line.prepStatus ?? "null"})`);
+
+  const resolvedAssetId = a.resolvedAssetId || line.assetId || "";
+  if (!line.isKitChild && line.assetId) {
+    const { _id, _creationTime, assetId: _a, ...rest } = line;
+    await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: a.now });
+  } else {
+    await ctx.db.patch(line._id, { prepStatus: "PENDING", updatedAt: a.now });
+  }
+
+  const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+  for (const child of accChildren) {
+    let include = true;
+    if (resolvedAssetId) {
+      if (child.assetId) {
+        const ca = await assetByCuid(ctx, child.assetId);
+        include = ca?.parentAssetId === resolvedAssetId;
+      } else {
+        include = true; // shared bulk accessory line
+      }
+    }
+    if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: a.now });
+    const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
+      .filter((u) => !resolvedAssetId || u.parentUnitAssetId === resolvedAssetId);
+    for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+  }
+  return { id: a.lineItemId };
+}
+
 export const completeCheckAndDeprepLine = mutation({
   args: { organizationId: v.string(), projectId: v.string(), lineItemId: v.string(), resolvedAssetId: v.optional(v.string()), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const line = await lineByCuid(ctx, a.lineItemId);
-    if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
-    if (line.status !== "RETURNED") throw new ConvexError(`Deprep return check requires RETURNED status (got ${line.status})`);
-    if (line.prepStatus !== "PACKED" && line.prepStatus !== "PENDING") throw new ConvexError(`Deprep return check expected prepStatus=PACKED or PENDING (got ${line.prepStatus ?? "null"})`);
-
-    const resolvedAssetId = a.resolvedAssetId || line.assetId || "";
-    if (!line.isKitChild && line.assetId) {
-      const { _id, _creationTime, assetId: _a, ...rest } = line;
-      await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: a.now });
-    } else {
-      await ctx.db.patch(line._id, { prepStatus: "PENDING", updatedAt: a.now });
-    }
-
-    const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
-    for (const child of accChildren) {
-      let include = true;
-      if (resolvedAssetId) {
-        if (child.assetId) {
-          const ca = await assetByCuid(ctx, child.assetId);
-          include = ca?.parentAssetId === resolvedAssetId;
-        } else {
-          include = true; // shared bulk accessory line
-        }
-      }
-      if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: a.now });
-      const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
-        .filter((u) => !resolvedAssetId || u.parentUnitAssetId === resolvedAssetId);
-      for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
-    }
-    return { id: a.lineItemId };
+    return completeCheckAndDeprepLineCore(ctx, a);
   },
 });
 

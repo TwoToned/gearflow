@@ -1,6 +1,5 @@
 "use server";
 
-import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -11,10 +10,6 @@ import { getProjectsByOrg } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
 import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
 import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
-import {
-  getDismissedKeysForUser,
-  getDismissalsForUser,
-} from "@/lib/notification-dismissals-read";
 import {
   getCrewAssignmentsByOrg,
   countAssignmentsByStatus,
@@ -32,92 +27,15 @@ export interface AppNotification {
   timestamp: string;
 }
 
-/**
- * Return the set of notification keys (i.e. AppNotification.id values) the
- * current user has dismissed. Used by the client to filter out dismissed
- * items. Source of truth is the database — not localStorage — so dismissals
- * survive browser changes / cache clears.
- */
-export async function getDismissedKeys(): Promise<string[]> {
-  let ctx;
-  try {
-    ctx = await getOrgContext();
-  } catch {
-    return [];
-  }
-  const { organizationId, userId } = ctx;
-
-  // notificationDismissal is CONVEX-ONLY (bucket-2 Phase B write inversion):
-  // read the dismissed keys from Convex (no Prisma fallback on a miss).
-  return await getDismissedKeysForUser(organizationId, userId);
-}
-
-/**
- * Persist a notification dismissal for the current user. Idempotent — calling
- * twice for the same key is a no-op.
- */
-export async function dismissNotification(notificationKey: string): Promise<void> {
-  if (!notificationKey) return;
-  // Delegate to the bulk path with a single item. The @@unique([userId,
-  // notificationKey]) guard (Convex has no unique index) is enforced ATOMICALLY
-  // inside createManyIfMissing via the by_userId_notificationKey index — no
-  // read-then-create TOCTOU (which could otherwise double-insert on a retry).
-  await dismissNotifications([notificationKey]);
-}
-
-/**
- * Bulk-persist N notification dismissals for the current user in ONE call
- * (Appendix A bulk single-call invariant — powers the /notifications "Dismiss
- * All"). Idempotent: already-dismissed keys are skipped Convex-side by
- * (userId, notificationKey). Replaces the page's former localStorage-only
- * "Dismiss All".
- */
-export async function dismissNotifications(notificationKeys: string[]): Promise<void> {
-  if (!notificationKeys || notificationKeys.length === 0) return;
-  const { organizationId, userId } = await getOrgContext();
-
-  const unique = [...new Set(notificationKeys.filter(Boolean))];
-  if (unique.length === 0) return;
-
-  await (await getConvexClient()).mutation(api.notificationDismissals.createManyIfMissing, {
-    organizationId,
-    userId,
-    items: unique.map((notificationKey) => ({
-      id: createId(),
-      notificationKey,
-      dismissedAt: Date.now(),
-    })),
-  });
-}
-
-/**
- * Garbage-collect dismissal rows whose underlying notification key is no
- * longer in the active set. Keeps the table small and prevents stale keys
- * from accumulating forever. Safe to call frequently; runs as a single
- * deleteMany.
- */
-export async function pruneStaleDismissals(activeKeys: string[]): Promise<number> {
-  let ctx;
-  try {
-    ctx = await getOrgContext();
-  } catch {
-    return 0;
-  }
-  const { organizationId, userId } = ctx;
-
-  // Convex-only: replicate the Prisma deleteMany(where userId, notificationKey
-  // notIn activeKeys) by reading the user's dismissals and removing those whose
-  // key is no longer active. Empty activeKeys → prune everything (matches the old
-  // `notIn: [""]` sentinel, since no real key is the empty string).
-  const activeSet = new Set(activeKeys);
-  const rows = await getDismissalsForUser(organizationId, userId);
-  const stale = rows.filter((r) => !activeSet.has(r.notificationKey));
-  if (stale.length === 0) return 0;
-
-  const convex = await getConvexClient();
-  await Promise.all(stale.map((row) => convex.mutation(api.notificationDismissals.remove, { id: row.id })));
-  return stale.length;
-}
+// The dismissal read + writes (getDismissedKeys / dismissNotification /
+// dismissNotifications / pruneStaleDismissals) moved BROWSER-DIRECT in Phase 3 —
+// see convex/notificationDismissalsWrites.ts + src/hooks/use-notification-dismissals.ts.
+//
+// getNotifications stays server-side: it is a PARTIAL-KEEP because its
+// `pending_invitation` branch reads Better-Auth `invitation` + `user.email` from
+// Postgres (the Convex `invitations` table is an unpopulated mirror with no
+// writer, so the invite notifications can't be sourced natively). Every other
+// branch already reads Convex via the read helpers.
 
 export async function getNotifications(): Promise<AppNotification[]> {
   let ctx;

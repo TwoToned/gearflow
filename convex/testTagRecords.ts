@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import type { QueryCtx } from "./_generated/server";
+import { requireService, requireOrgRead } from "./lib/auth";
 import * as enums from "./lib/validators";
 
 /**
@@ -79,6 +80,101 @@ export const listByOrgAndAsset = query({
       .collect();
   },
 });
+/**
+ * Attach the record-history relations the Prisma `include` used to resolve — the
+ * record's OWN test profile ({id,name}, org-scoped), the tester name (from the
+ * `users` mirror: name → email → id, NOT Prisma), and its sub-tests (sorted by
+ * sortOrder asc). Browser-direct re-home of `attachRecordRelations`
+ * (src/server/test-tag-records.ts) + `getUserNameMap` (Prisma) into Convex.
+ */
+async function attachRelations(
+  ctx: QueryCtx,
+  orgId: string,
+  rec: Record<string, unknown>,
+): Promise<
+  Record<string, unknown> & {
+    testedBy: { id: string; name: string | null };
+    testProfile: { id: string; name: string } | null;
+    subTestRecords: Record<string, unknown>[];
+  }
+> {
+  const testedById = rec.testedById as string;
+  const testProfileId = rec.testProfileId as string | undefined;
+  const recordId = rec.id as string;
+
+  let testProfile: { id: string; name: string } | null = null;
+  if (testProfileId) {
+    const p = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", testProfileId)).first();
+    if (p && p.organizationId === orgId) testProfile = { id: p.id, name: p.name };
+  }
+
+  // Parity with the deleted attachRecordRelations: the name is the mirrored user's
+  // name or null (never the raw id/email) — consumers rendered null when unresolved.
+  const user = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", testedById)).first();
+  const testerName: string | null = user?.name || null;
+
+  const subTestRecords = (
+    await ctx.db.query("subTestRecords").withIndex("by_testTagRecordId", (q) => q.eq("testTagRecordId", recordId)).collect()
+  ).sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
+
+  return { ...rec, testedBy: { id: testedById, name: testerName }, testProfile, subTestRecords };
+}
+
+/**
+ * Paginated test history for one asset (browser-direct re-home of the server
+ * `getTestTagRecords`). Org-scoped read + per-row org re-check; sort testDate desc,
+ * slice the page, attach relations. Returns `{ records, total, page, pageSize,
+ * totalPages }` — the same shape the record-history consumer expects.
+ */
+export const recordsPage = query({
+  args: {
+    orgId: v.string(),
+    testTagAssetId: v.string(),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { orgId, testTagAssetId, page, pageSize }) => {
+    await requireOrgRead(ctx, orgId);
+    const p = page ?? 1;
+    const ps = pageSize ?? 20;
+    const all = (
+      await ctx.db
+        .query("testTagRecords")
+        .withIndex("by_organizationId_testTagAssetId", (q) =>
+          q.eq("organizationId", orgId).eq("testTagAssetId", testTagAssetId),
+        )
+        .collect()
+    ).sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0));
+    const total = all.length;
+    const slice = all.slice((p - 1) * ps, (p - 1) * ps + ps);
+    const records = [];
+    for (const r of slice) records.push(await attachRelations(ctx, orgId, r));
+    return { records, total, page: p, pageSize: ps, totalPages: Math.ceil(total / ps) };
+  },
+});
+
+/**
+ * Latest test record for one asset (browser-direct re-home of the server
+ * `getLatestTestRecord`; backs the Quick Pass pre-fill). Null if none. Org-scoped.
+ */
+export const latestForAsset = query({
+  args: { orgId: v.string(), testTagAssetId: v.string() },
+  handler: async (ctx, { orgId, testTagAssetId }) => {
+    await requireOrgRead(ctx, orgId);
+    const all = (
+      await ctx.db
+        .query("testTagRecords")
+        .withIndex("by_organizationId_testTagAssetId", (q) =>
+          q.eq("organizationId", orgId).eq("testTagAssetId", testTagAssetId),
+        )
+        .collect()
+    ).sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0));
+    const latest = all[0];
+    if (!latest) return null;
+    return await attachRelations(ctx, orgId, latest);
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

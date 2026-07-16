@@ -1,19 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useMutation } from "convex/react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { getUserColor, getUserInitials } from "@/lib/collaboration-colors";
 import { useServerMutation } from "./use-server-mutation";
-import {
-  heartbeatPresence,
-  clearPresence,
-  acquireLock,
-  heartbeatLock,
-  releaseLock,
-  takeoverLock,
-} from "@/server/collaboration";
 
 /**
  * Stable client session id — differentiates same-user in two tabs.
@@ -66,14 +59,35 @@ export function usePresence(options: UsePresenceOptions) {
   const beatFnRef = useRef<() => void>(() => {});
   const clearFnRef = useRef<() => void>(() => {});
 
+  const heartbeatPresenceM = useMutation(api.collaboration.heartbeatPresence);
+  const clearPresenceM = useMutation(api.collaboration.clearPresence);
+  const myId = session?.user?.id ?? "";
+  const myName = session?.user?.name ?? "";
+  const myAvatar = (session?.user as { image?: string } | undefined)?.image ?? undefined;
+
+  // userId is pinned to the verified token inside the mutation; the values passed
+  // here are the (cosmetic) name/colour/avatar + the required-arg fallback.
   const heartbeatMut = useServerMutation({
     mutationFn: () =>
-      heartbeatPresence(entityType, entityId, "viewing", section),
+      orgId
+        ? heartbeatPresenceM({
+            orgId,
+            userId: myId,
+            userName: myName,
+            userColor: getUserColor(myId),
+            avatarUrl: myAvatar,
+            entityType,
+            entityId,
+            section,
+            mode: "viewing",
+          })
+        : Promise.resolve(),
     onError: (e) => console.warn("[presence] heartbeat failed", e),
   });
 
   const clearMut = useServerMutation({
-    mutationFn: () => clearPresence(entityType, entityId),
+    mutationFn: () =>
+      orgId ? clearPresenceM({ orgId, userId: myId, entityType, entityId }) : Promise.resolve(),
     onError: () => {},
   });
 
@@ -171,26 +185,44 @@ export function useEditLock(options: UseEditLockOptions) {
   const releaseFnRef = useRef<(lockId: string) => Promise<unknown>>(() => Promise.resolve(null));
   const takeoverFnRef = useRef<(sid: string) => Promise<unknown>>(() => Promise.resolve(null));
 
+  const acquireLockM = useMutation(api.collaboration.acquireLock);
+  const heartbeatLockM = useMutation(api.collaboration.heartbeatLock);
+  const releaseLockM = useMutation(api.collaboration.releaseLock);
+  const takeoverLockM = useMutation(api.collaboration.takeoverLock);
+  const myName = session?.user?.name ?? "";
+  // ownerUserId is pinned to the verified token inside the mutation; the name/colour
+  // are cosmetic self-display, and myUserId is the required-arg fallback.
+  const ownerFields = () => ({
+    ownerUserId: myUserId ?? "",
+    ownerName: myName,
+    ownerColor: getUserColor(myUserId ?? ""),
+  });
+
   const acquireMut = useServerMutation({
     mutationFn: (sid: string) =>
-      acquireLock(entityType, entityId, targetType, targetId, sid),
+      orgId
+        ? acquireLockM({ orgId, entityType, entityId, targetType, targetId, ...ownerFields(), clientSessionId: sid })
+        : Promise.resolve(null),
     onError: (e) => console.warn("[lock] acquire failed", e),
   });
 
   const heartbeatMut = useServerMutation({
     mutationFn: ({ lockId, sid }: { lockId: string; sid: string }) =>
-      heartbeatLock(lockId, sid),
+      orgId ? heartbeatLockM({ orgId, lockId, ownerUserId: myUserId ?? "", clientSessionId: sid }) : Promise.resolve(false),
     onError: () => {},
   });
 
   const releaseMut = useServerMutation({
-    mutationFn: (lockId: string) => releaseLock(lockId, clientSessionId),
+    mutationFn: (lockId: string) =>
+      orgId ? releaseLockM({ orgId, lockId, ownerUserId: myUserId ?? "", clientSessionId }) : Promise.resolve(false),
     onError: () => {},
   });
 
   const takeoverMut = useServerMutation({
     mutationFn: (sid: string) =>
-      takeoverLock(entityId, targetId, entityType, targetType, sid),
+      orgId
+        ? takeoverLockM({ orgId, entityType, entityId, targetType, targetId, ...ownerFields(), clientSessionId: sid })
+        : Promise.resolve(null),
     onError: (e) => console.warn("[lock] takeover failed", e),
   });
 

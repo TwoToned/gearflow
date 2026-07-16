@@ -58,7 +58,9 @@ function assertValidRentalQuantity(rentalQuantity: number) {
   }
 }
 function assertValidPrice(price: number) {
-  if (price < 0) throw new ConvexError("Price must be at least 0");
+  // Number.isFinite first — NaN/Infinity both pass `< 0` and then poison recalcProjectTotals
+  // (groupRevenue += num(price) * qty → project.total = NaN). Browser-direct bypasses Zod.
+  if (!Number.isFinite(price) || price < 0) throw new ConvexError("Price must be a finite number ≥ 0");
 }
 
 // ─── Collaboration colour (deterministic from userId) ────────────────────────

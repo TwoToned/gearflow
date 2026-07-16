@@ -6,6 +6,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { assertFinite } from "./lib/moneyGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { bumpCountersForTable } from "./lib/counters";
@@ -154,6 +155,12 @@ type ServiceInput = {
 /** Port of buildServiceData — clamps endDate by type, computes lineTotal, and returns
  *  the normalized `fields` (null = cleared) plus the clamped serviceDate/serviceEndDate. */
 function buildServiceFields(a: ServiceInput) {
+  // Reject non-finite money before it reaches calculateServiceLineTotal / recalcProjectTotals
+  // (serviceRevenue += num(lineTotal), serviceCostTotal += num(costTotal) → project.total/
+  // margin = NaN). Browser-direct bypasses the server Zod that used to catch this.
+  assertFinite(a.unitPrice, "unitPrice");
+  assertFinite(a.discount, "discount");
+  assertFinite(a.costTotal, "costTotal");
   const serviceDate = a.date ?? null;
   let serviceEndDate = a.endDate ?? serviceDate;
   if (!MULTI_DAY_TYPES.has(a.type)) serviceEndDate = serviceDate;
@@ -1190,6 +1197,7 @@ export const createServiceTemplateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "orgSettings", "update");
     const actor = await resolveActor(ctx, a.actor);
+    assertFinite(a.defaultUnitPrice, "defaultUnitPrice"); // generateServicesNative copies it into unitPrice → recalc
 
     if (!a.title) throw new ConvexError("Title is required");
 
@@ -1240,6 +1248,7 @@ export const updateServiceTemplateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "orgSettings", "update");
     const actor = await resolveActor(ctx, a.actor);
+    assertFinite(a.defaultUnitPrice, "defaultUnitPrice"); // generateServicesNative copies it into unitPrice → recalc
 
     if (!a.title) throw new ConvexError("Title is required");
     const doc = await ctx.db.query("serviceTemplates").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();

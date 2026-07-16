@@ -48,7 +48,7 @@ import { useRowShortcuts } from "./use-row-shortcuts";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
-import { setReviewMarker } from "@/server/collaboration";
+import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1135,6 +1135,7 @@ export function LineItemRow({
   // Captures the shift key on checkbox click so the row-level handler can extend
   // a range — Radix's onCheckedChange doesn't forward the originating event.
   const shiftKeyRef = useRef(false);
+  const { setReviewMarker } = useCollaborationWrites();
 
   // Collaboration: reactive lock and review marker for this row
   const liveLock = useAuthedQuery(

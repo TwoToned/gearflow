@@ -36,18 +36,10 @@ import {
 import { toast } from "sonner";
 
 import {
-  createProjectService,
-  updateProjectService,
-  deleteProjectService,
-  updateServiceStatus,
   updateServiceCrewStatus,
-  generateProjectServices,
-  cloneServicesFromProject,
-  convertLineItemToService,
   generateCrewMessage,
-  bulkDeleteProjectServices,
-  bulkUpdateServiceStatus,
 } from "@/server/project-services";
+import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { useSelection } from "./use-selection";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
@@ -207,6 +199,8 @@ export function ServicesPanel({
 
   const { data: templates = [] } = useServiceTemplates(orgId);
 
+  const svcWrites = useProjectServiceWrites();
+
   const invalidateAll = () => {
     refreshProjectServices(projectId);
     refreshProjectServicesSummary(projectId);
@@ -215,7 +209,7 @@ export function ServicesPanel({
   };
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => deleteProjectService(id),
+    mutationFn: (id: string) => svcWrites.remove(id),
     onSuccess: () => {
       toast.success("Service deleted");
       setDeleteTarget(null);
@@ -226,7 +220,7 @@ export function ServicesPanel({
 
   const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
-      updateServiceStatus(id, status),
+      svcWrites.setStatus(id, status),
     onSuccess: () => {
       toast.success("Status updated");
       invalidateAll();
@@ -243,7 +237,7 @@ export function ServicesPanel({
     allServiceIds.length > 0 && selectedServiceIds.length === allServiceIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => bulkDeleteProjectServices(ids),
+    mutationFn: (ids: string[]) => svcWrites.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Deleted ${r.deleted} service${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -255,7 +249,7 @@ export function ServicesPanel({
 
   const bulkStatusMut = useServerMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: ServiceStatus }) =>
-      bulkUpdateServiceStatus(ids, status),
+      svcWrites.bulkSetStatus(ids, status),
     onSuccess: (_r, { ids }) => {
       toast.success(`Updated ${ids.length} service${ids.length === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -265,7 +259,7 @@ export function ServicesPanel({
   });
 
   const generateMutation = useServerMutation({
-    mutationFn: () => generateProjectServices(projectId),
+    mutationFn: () => svcWrites.generate(projectId),
     onSuccess: (result) => {
       const r = result as { created: number; lineItemsCreated: number };
       if (r.created === 0) {
@@ -915,6 +909,7 @@ function CloneServicesDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const svcWrites = useProjectServiceWrites();
   const [sourceProjectId, setSourceProjectId] = useState("");
 
   // Fetch recent projects to pick from
@@ -935,7 +930,7 @@ function CloneServicesDialog({
     }));
 
   const cloneMutation = useServerMutation({
-    mutationFn: () => cloneServicesFromProject(targetProjectId, sourceProjectId),
+    mutationFn: () => svcWrites.clone(targetProjectId, sourceProjectId),
     onSuccess: (result) => {
       const r = result as { cloned: number };
       toast.success(`Cloned ${r.cloned} services`);
@@ -1145,6 +1140,7 @@ function ServiceDialog({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!editingService;
+  const svcWrites = useProjectServiceWrites();
 
   const matchingTemplate = preselectedType
     ? templates.find((t) => t.type === preselectedType && t.isActive)
@@ -1290,7 +1286,7 @@ function ServiceDialog({
 
   const createMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
-      createProjectService(projectId, data),
+      svcWrites.create(projectId, data),
     onSuccess: () => {
       toast.success("Service added");
       invalidateAll();
@@ -1301,7 +1297,7 @@ function ServiceDialog({
 
   const updateMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
-      updateProjectService(editingService!.id as string, data),
+      svcWrites.update(editingService!.id as string, data),
     onSuccess: () => {
       toast.success("Service updated");
       invalidateAll();

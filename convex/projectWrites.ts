@@ -8,6 +8,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
+import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -62,9 +63,15 @@ export const updateStatusNative = mutation({
     status: enums.ProjectStatus,
     actor: actorValidator,
     auditId: v.string(),
+    // Gate for the folded `project.status_changed` webhook. OPTIONAL + only honored
+    // when `=== true`, so the pre-fold app image (never passes it) does NOT double-emit
+    // — its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
+    // Expand-contract (mirrors convex/lineItemWrites.ts).
+    emitSideEffects: v.optional(v.boolean()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -100,6 +107,23 @@ export const updateStatusNative = mutation({
       projectId: id,
       createdAt: now,
     });
+
+    // Fired only on an actual status change (folded from the server tail's
+    // `emitWebhookEvent("project.status_changed")`, now in the same transaction).
+    // Best-effort: a webhook read/insert failure must never roll back the status write.
+    if (emitSideEffects === true && from !== status) {
+      try {
+        await enqueueWebhookEvent(ctx, orgId, "project.status_changed", {
+          projectId: id,
+          projectNumber: project.projectNumber,
+          name: project.name,
+          from,
+          to: status,
+        }, now);
+      } catch {
+        // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
+      }
+    }
 
     return { id };
   },

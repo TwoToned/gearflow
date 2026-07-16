@@ -95,6 +95,49 @@ describe("projectWrites.updateStatusNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, args),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // The `project.status_changed` webhook was folded from the server tail into the
+  // mutation, gated behind the optional `emitSideEffects` signal (expand-contract).
+  async function seedStatusWebhook(t: ReturnType<typeof makeT>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("webhooks", { id: "wh1", organizationId: ORG, description: "Zapier", url: "https://example.test/hook", events: JSON.stringify(["project.status_changed"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW, updatedAt: NOW });
+    });
+  }
+  const deliveries = (t: ReturnType<typeof makeT>) =>
+    t.run(async (ctx) => ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());
+
+  test("webhook: project.status_changed enqueued to an active subscription on a real change (emitSideEffects:true)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await seedStatusWebhook(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...args, emitSideEffects: true });
+    const rows = await deliveries(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event).toBe("project.status_changed");
+    expect(rows[0].status).toBe("PENDING");
+    expect(rows[0].nextAttemptAt).toBe(NOW);
+    const payload = JSON.parse(rows[0].payload);
+    expect(payload).toEqual({ projectId: "p1", projectNumber: "P1", name: "Gig", from: "CONFIRMED", to: "PREPPING" });
+  });
+
+  test("webhook: NOT enqueued when the status is unchanged (from === to)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await seedStatusWebhook(t);
+    // Seed status is CONFIRMED — re-asserting it is a no-op change, so no webhook.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...args, status: "CONFIRMED" as const, emitSideEffects: true });
+    expect(await deliveries(t)).toHaveLength(0);
+  });
+
+  test("webhook: NOT enqueued when emitSideEffects is omitted (old-image single-emit parity)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await seedStatusWebhook(t);
+    // No emitSideEffects signal (the pre-fold app image): the mutation must NOT emit —
+    // the old image's ungated server tail single-emits instead.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, args);
+    expect(await deliveries(t)).toHaveLength(0);
+  });
 });
 
 describe("projectWrites.updateNotesNative", () => {

@@ -890,6 +890,11 @@ export async function updateProjectStatus(
       // A status change always carries a concrete status (the field is optional only
       // in the shared form type).
       status: status as NonNullable<typeof status>,
+      // The native mutation now emits the `project.status_changed` webhook itself
+      // (in-transaction). The server tail below is gated off on the native path so it
+      // does NOT double-fire. The OLD deployed image (no emitSideEffects, ungated tail)
+      // still single-emits from its tail; the mutation skips (no signal).
+      emitSideEffects: true,
       actor: { userId, userName },
       auditId: createId(),
       now: Date.now(),
@@ -920,7 +925,9 @@ export async function updateProjectStatus(
   }
 
   // Fired only after the status change committed. Best-effort: never blocks the write.
-  if (project.status !== status) {
+  // Gated off on the native path — the mutation (updateStatusNative, emitSideEffects:true)
+  // now enqueues this webhook in-transaction, so emitting here too would double-fire.
+  if (project.status !== status && !nativeProjectWrites()) {
     void emitWebhookEvent(organizationId, "project.status_changed", {
       projectId: updated.id,
       projectNumber: updated.projectNumber,

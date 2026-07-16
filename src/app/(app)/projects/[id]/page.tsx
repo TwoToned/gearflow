@@ -74,7 +74,7 @@ import { useMediaWrites } from "@/hooks/use-media-writes";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
-import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
+import { useOptimisticProjectNotes, useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -171,12 +171,21 @@ export default function ProjectDetailPage({
     queryFn: () => getPublishedTemplatesForDropdown(),
   });
 
+  // Phase 3 browser-direct: status write (flag-gated, default OFF → falls back to the
+  // updateProjectStatus server action). The detail view is reactive, so it re-renders
+  // on its own once the native mutation commits.
+  const statusBrowser = useNativeProjectStatus(orgId);
   const statusMutation = useServerMutation({
-    mutationFn: (nextStatus: string) =>
-      updateProjectStatus(
-        id,
-        nextStatus as Parameters<typeof updateProjectStatus>[1]
-      ),
+    mutationFn: async (nextStatus: string) => {
+      if (statusBrowser.enabled) {
+        await statusBrowser.updateStatus(id, nextStatus);
+      } else {
+        await updateProjectStatus(
+          id,
+          nextStatus as Parameters<typeof updateProjectStatus>[1]
+        );
+      }
+    },
     onSuccess: () => {
       toast.success("Status updated");
       refreshProjectDetail(id);

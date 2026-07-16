@@ -248,3 +248,64 @@ describe("warehouseCloseWrites.batchCloseOutNative", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("warehouseCloses.closeOutSummary (browser-direct read)", () => {
+  test("categorizes stored/damaged/lost/pending + exceptions + canClose", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, {
+      projectId: "p1",
+      lines: [
+        { status: "RETURNED", returnCondition: "GOOD" }, // stored
+        { status: "RETURNED", returnCondition: "GOOD" }, // stored
+        { status: "RETURNED", returnCondition: "DAMAGED" }, // damaged + exc
+        { status: "RETURNED", returnCondition: "MISSING" }, // lost + exc
+        { status: "CHECKED_OUT" }, // not returned → pending + exc
+        { status: "RETURNED", isKitChild: true, returnCondition: "DAMAGED" }, // kit child excluded
+      ],
+    });
+    const s = await t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "p1" });
+    expect(s.totalItems).toBe(5); // kit child excluded
+    expect(s.storedCount).toBe(2);
+    expect(s.damagedCount).toBe(1);
+    expect(s.lostCount).toBe(1);
+    expect(s.pendingCount).toBe(1);
+    expect(s.canClose).toBe(false); // 1 pending
+    expect(s.alreadyClosed).toBe(false);
+    expect(s.closedBy).toBeNull();
+    expect(s.exceptions).toHaveLength(3); // damaged + lost + pending
+  });
+
+  test("alreadyClosed + closedBy resolves from the users mirror (name or null)", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, { projectId: "p1", lines: [{ status: "RETURNED", returnCondition: "GOOD" }] });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.co" });
+      await ctx.db.insert("warehouseCloses", { id: "wc1", organizationId: ORG, projectId: "p1", closedById: USER, closedAt: NOW });
+    });
+    const s = await t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "p1" });
+    expect(s.alreadyClosed).toBe(true);
+    expect(s.closedBy).toBe("Alice");
+    expect(typeof s.closedAt).toBe("string"); // ISO string, not raw ms
+    expect(s.canClose).toBe(true); // all stored
+  });
+
+  test("RBAC: warehouse:close required — a member (no close) is rejected", async () => {
+    const t = makeT();
+    await member(t, "member"); // member role lacks warehouse:close
+    await seedProject(t, { projectId: "p1", lines: [] });
+    await expect(
+      t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "p1" }),
+    ).rejects.toThrow();
+  });
+
+  test("a project in another org → not found", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t, { projectId: "pOther", orgId: "org_other", lines: [] });
+    await expect(
+      t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "pOther" }),
+    ).rejects.toThrow();
+  });
+});

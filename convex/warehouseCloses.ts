@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgPermission, requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for WarehouseClose (Convex table "warehouseCloses"). GENERATED — Phase 2/5.
@@ -154,5 +154,131 @@ export const closeOutIfNotClosed = mutation({
     if (existing) return { alreadyClosed: true as const, id: existing.id };
     await ctx.db.insert("warehouseCloses", args);
     return { alreadyClosed: false as const, id: args.id };
+  },
+});
+
+/**
+ * Browser-direct close-out summary (Phase 3 — replaces the getCloseOutSummary server
+ * action in src/server/warehouse-close-read.ts). Composes the project's top-level
+ * EQUIPMENT line items with model names + asset tags, categorises stored/damaged/lost/
+ * pending, and reports the existing close (if any). The closer's display name comes
+ * from the Convex `users` mirror (name or null — the last Prisma seam removed). RBAC =
+ * warehouse:close (parity with the deleted requirePermission("warehouse","close")).
+ */
+export const closeOutSummary = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireOrgPermission(ctx, orgId, "warehouse", "close");
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+    if (!project || project.organizationId !== orgId || project.isTemplate) {
+      throw new ConvexError("Project not found");
+    }
+
+    const allLines = await ctx.db
+      .query("projectLineItems")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect();
+    // by_projectId is GLOBAL — org-re-check every row (the project is already org-checked,
+    // so this is defence-in-depth against a cross-tenant line under the same projectId).
+    const lineItems = allLines.filter(
+      (li) => li.organizationId === orgId && li.type === "EQUIPMENT" && li.isKitChild !== true,
+    );
+
+    const modelMap = new Map(
+      (await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+        .map((m) => [m.id, m.name]),
+    );
+    const assetTagMap = new Map(
+      (await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+        .map((a) => [a.id, a.assetTag]),
+    );
+    const bulkAssetTagMap = new Map(
+      (await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+        .map((b) => [b.id, b.assetTag]),
+    );
+
+    let storedCount = 0;
+    let damagedCount = 0;
+    let lostCount = 0;
+    let pendingCount = 0;
+    const exceptions: Array<{
+      lineItemId: string;
+      modelName: string;
+      assetTag: string | null;
+      status: string;
+      returnCondition: string | null;
+      returnStatus: string | null;
+    }> = [];
+
+    for (const item of lineItems) {
+      const isReturned = item.status === "RETURNED";
+      const modelName = (item.modelId ? modelMap.get(item.modelId) : null) || "Unknown";
+      const assetTag =
+        (item.assetId ? assetTagMap.get(item.assetId) : null) ||
+        (item.bulkAssetId ? bulkAssetTagMap.get(item.bulkAssetId) : null) ||
+        null;
+      const status = item.status ?? "PENDING";
+      const returnCondition = item.returnCondition ?? null;
+      const returnStatus = item.returnStatus ?? null;
+      const ex = { lineItemId: item.id, modelName, assetTag, status, returnCondition, returnStatus };
+
+      if (!isReturned) {
+        pendingCount++;
+        exceptions.push(ex);
+        continue;
+      }
+
+      switch (item.returnStatus) {
+        case "DAMAGED":
+          damagedCount++;
+          exceptions.push(ex);
+          break;
+        case "LOST":
+          lostCount++;
+          exceptions.push(ex);
+          break;
+        case "STORED":
+          storedCount++;
+          break;
+        default:
+          if (item.returnCondition === "GOOD") {
+            storedCount++;
+          } else if (item.returnCondition === "DAMAGED") {
+            damagedCount++;
+            exceptions.push(ex);
+          } else if (item.returnCondition === "MISSING") {
+            lostCount++;
+            exceptions.push(ex);
+          } else {
+            pendingCount++;
+            exceptions.push(ex);
+          }
+          break;
+      }
+    }
+
+    const existingClose = await ctx.db
+      .query("warehouseCloses")
+      .withIndex("by_projectId_organizationId", (q) => q.eq("projectId", projectId).eq("organizationId", orgId))
+      .first();
+    let closedBy: string | null = null;
+    if (existingClose) {
+      const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", existingClose.closedById)).unique();
+      closedBy = u?.name || null;
+    }
+
+    return {
+      totalItems: lineItems.length,
+      storedCount,
+      damagedCount,
+      lostCount,
+      pendingCount,
+      exceptions,
+      canClose: pendingCount === 0,
+      alreadyClosed: !!existingClose,
+      closedAt: existingClose?.closedAt != null ? new Date(existingClose.closedAt).toISOString() : null,
+      closedBy,
+    };
   },
 });

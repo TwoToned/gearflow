@@ -416,3 +416,243 @@ describe("projectWrites.deleteTemplateNative", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+describe("projectWrites.createNative auto-number", () => {
+  // "%YY%MM%INC" + parts {2026-07-15} + padding 2 → "260701", "260702", … ;
+  // MONTHLY reset → scopeKey "2026-07".
+  const autoArgs = (id: string, auditId: string) => ({
+    id,
+    organizationId: ORG,
+    name: "Auto Gig",
+    isTemplate: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+    autoNumber: { format: "%YY%MM%INC", reset: "MONTHLY" as const, padding: 2, parts: { year: 2026, month: 7, day: 15 } },
+    actor: ACTOR,
+    auditId,
+  });
+
+  test("renders the format + increments the sequence across creates", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    expect(await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, autoArgs("a1", "log1"))).toEqual({ created: true, id: "a1" });
+    expect(await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, autoArgs("a2", "log2"))).toEqual({ created: true, id: "a2" });
+    await t.run(async (ctx) => {
+      const p1 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      const p2 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "a2")).first();
+      expect(p1?.projectNumber).toBe("260701");
+      expect(p2?.projectNumber).toBe("260702");
+      const seq = await ctx.db
+        .query("projectNumberSequences")
+        .withIndex("by_organizationId_scopeKey", (q) => q.eq("organizationId", ORG).eq("scopeKey", "2026-07"))
+        .unique();
+      expect(seq?.value).toBe(2);
+    });
+  });
+
+  test("skips a rendered code that's already taken (clash retry advances the counter)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
+      // 260701 already exists (e.g. entered manually) — the auto loop must skip past it.
+      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "260701", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
+    expect(await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, autoArgs("a1", "log1"))).toEqual({ created: true, id: "a1" });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(p?.projectNumber).toBe("260702"); // skipped the taken 260701
+    });
+  });
+
+  test("throws when neither projectNumber nor autoNumber is supplied", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, {
+        id: "a1", organizationId: ORG, name: "X", isTemplate: false, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/projectNumber or autoNumber/i);
+  });
+});
+
+describe("projectWrites.duplicateNative", () => {
+  const dupArgs = { sourceId: "src", newId: "dup1", newProjectNumber: "P-DUP", newName: "Copy", orgId: ORG, orgDefaultTaxRate: 10 as number | null, now: NOW, actor: ACTOR, auditId: "dlog1" };
+
+  // Source project loaded with grouping + line items + PMs (must copy) PLUS
+  // services/tasks/crew/slots (must NOT copy).
+  async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
+      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, taxRate: 5, discountPercent: 0, tags: ["a"], createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 100, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      // Grouped parent + kit child.
+      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", childKind: "KIT", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      // Ungrouped standalone line (bills its own lineTotal).
+      await ctx.db.insert("projectLineItems", { id: "lp2", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 30, lineTotal: 30, isKitChild: false, status: "CONFIRMED", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
+      // NOT copied:
+      await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "src", type: "LABOUR", title: "Labour", costTotal: 20, lineTotal: 40, showOnDocuments: true, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "src", title: "Load in", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("crewAssignments", { id: "ca1", organizationId: ORG, projectId: "src", crewMemberId: "cm1", status: "CONFIRMED", estimatedCost: 200, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categorySlots", { id: "slot1", projectCategoryId: "cat1", sortOrder: 0 });
+    });
+  }
+
+  test("deep-copies categories/groups/lines (remapped ids, children under new parents) + PMs + recalc; NOT services/tasks/crew/slots", async () => {
+    const t = makeT();
+    await seedSource(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs);
+    expect(res).toEqual({ id: "dup1" });
+
+    await t.run(async (ctx) => {
+      const proj = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "dup1")).first();
+      expect(proj?.status).toBe("ENQUIRY");
+      expect(proj?.isTemplate).toBe(false);
+      expect(proj?.projectNumber).toBe("P-DUP");
+      expect(proj?.name).toBe("Copy");
+      expect(proj?.taxRate).toBe(5); // scalar copied
+
+      // Categories — new id, same name.
+      const cats = (await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      expect(cats.length).toBe(1);
+      expect(cats[0].id).not.toBe("cat1");
+      expect(cats[0].name).toBe("Audio");
+      const newCatId = cats[0].id;
+
+      // Groups — new id, categoryId remapped to the NEW category.
+      const groups = (await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      expect(groups.length).toBe(1);
+      expect(groups[0].id).not.toBe("grp1");
+      expect(groups[0].categoryId).toBe(newCatId);
+      const newGroupId = groups[0].id;
+
+      // Line items — parents + children, remapped, status QUOTED.
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      expect(lines.length).toBe(3);
+      const parents = lines.filter((l) => !l.isKitChild);
+      const children = lines.filter((l) => l.isKitChild);
+      expect(parents.length).toBe(2);
+      expect(children.length).toBe(1);
+      for (const l of lines) expect(l.status).toBe("QUOTED");
+      // Grouped parent: remapped category/group.
+      const gp = parents.find((l) => l.groupId != null)!;
+      expect(gp.categoryId).toBe(newCatId);
+      expect(gp.groupId).toBe(newGroupId);
+      expect(gp.id).not.toBe("lp1");
+      // Child hangs off the NEW parent + inherits its category/group.
+      expect(children[0].parentLineItemId).toBe(gp.id);
+      expect(children[0].categoryId).toBe(newCatId);
+      expect(children[0].groupId).toBe(newGroupId);
+      expect(children[0].childKind).toBe("KIT");
+
+      // PMs copied (new id).
+      const pms = (await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      expect(pms.length).toBe(1);
+      expect(pms[0].id).not.toBe("pm1");
+      expect(pms[0].userId).toBe(USER);
+
+      // NOT copied.
+      expect((await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
+
+      // Recalc ran: equipmentRevenue = grouped bundle (100) + standalone (30) = 130.
+      expect(proj?.equipmentRevenue).toBe(130);
+      // Services NOT copied → no service revenue in the copy's totals.
+      expect(proj?.serviceCostTotal).toBe(0);
+    });
+  });
+
+  test("rejects a cross-org source (NOT_FOUND)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
+      await ctx.db.insert("projects", { id: "src", organizationId: "other_org", projectNumber: "SRC-1", name: "Foreign", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/not found/i);
+  });
+
+  test("rejects a project-number clash (DUPLICATE_PROJECT_CODE)", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "P-DUP", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/already exists/i);
+  });
+
+  test("a viewer is denied (project:create)", async () => {
+    const t = makeT();
+    await seedSource(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+describe("projectWrites.saveAsTemplateNative", () => {
+  const tplArgs = { sourceId: "src", newId: "tpl1", templateNumber: "TPL-0001", templateName: "My Template", orgId: ORG, orgDefaultTaxRate: 10 as number | null, now: NOW, actor: ACTOR };
+
+  async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
+      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 0, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      // A grouped parent + child — the template must copy the LINES but drop category/group.
+      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 40, lineTotal: 40, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
+    });
+  }
+
+  test("creates a template + copies lines WITHOUT category/group; no categories/groups/PMs; recalc", async () => {
+    const t = makeT();
+    await seedSource(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs);
+    expect(res).toEqual({ id: "tpl1" });
+
+    await t.run(async (ctx) => {
+      const tpl = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "tpl1")).first();
+      expect(tpl?.isTemplate).toBe(true);
+      expect(tpl?.status).toBe("ENQUIRY");
+      expect(tpl?.projectNumber).toBe("TPL-0001");
+
+      // Lines copied — parent + child — but category/group OMITTED.
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect());
+      expect(lines.length).toBe(2);
+      for (const l of lines) {
+        expect(l.status).toBe("QUOTED");
+        expect(l.categoryId).toBeUndefined();
+        expect(l.groupId).toBeUndefined();
+      }
+      const child = lines.find((l) => l.isKitChild)!;
+      const parent = lines.find((l) => !l.isKitChild)!;
+      expect(child.parentLineItemId).toBe(parent.id);
+
+      // No categories / groups / PMs copied.
+      expect((await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
+
+      // Recalc ran: no groups on the copy → equipmentRevenue = the ungrouped parent's
+      // lineTotal (40).
+      expect(tpl?.equipmentRevenue).toBe(40);
+    });
+  });
+
+  test("rejects a template-number clash", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/already exists/i);
+  });
+
+  test("a viewer is denied (project:create)", async () => {
+    const t = makeT();
+    await seedSource(t, "viewer");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/insufficient permissions/i);
+  });
+});

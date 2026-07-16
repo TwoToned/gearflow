@@ -35,6 +35,8 @@ import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
 import { nativeProjectWrites } from "@/lib/native-writes";
+import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
+import { ConvexError } from "convex/values";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
   renderProjectNumber,
@@ -614,31 +616,56 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   // One audit id for the whole allocation loop — only the winning insert writes it.
   const projectAuditId = createId();
   let created: { created: boolean; id: string } | null = null;
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const projectNumber = useAutoNumber
-      ? await generateProjectNumber(organizationId, autoConfig!, now)
-      : (templateNumber ?? parsed.projectNumber!);
-    created = nativeProjectWrites()
-      ? await convex.mutation(api.projectWrites.createNative, {
-          ...baseArgs,
-          projectNumber,
-          actor: { userId, userName },
-          auditId: projectAuditId,
-        })
-      : await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
-    if (created.created) break;
-    // Number taken. A manual / template number is a hard duplicate; an auto number
-    // lost a race — loop to allocate the next one.
-    if (!useAutoNumber) {
+
+  if (nativeProjectWrites()) {
+    // Native: the auto-number allocation loop is folded INTO createNative (scopeKey →
+    // reserve sequence → render → clash-guard → retry, all in one transaction), so a
+    // single call suffices. Auto numbering passes the resolved config + date parts
+    // (computed here in the org timezone); manual/template pass the code directly.
+    created = await convex.mutation(api.projectWrites.createNative, {
+      ...baseArgs,
+      ...(useAutoNumber
+        ? {
+            autoNumber: {
+              format: autoConfig!.format,
+              reset: autoConfig!.reset,
+              padding: autoConfig!.padding,
+              parts: datePartsInTimezone(now, autoConfig!.timezone),
+            },
+          }
+        : { projectNumber: templateNumber ?? parsed.projectNumber! }),
+      actor: { userId, userName },
+      auditId: projectAuditId,
+    });
+    // A manual/template number clash is a hard duplicate (auto retries in-mutation).
+    if (!created.created) {
       throw new UserFacingError({
         code: "DUPLICATE_PROJECT_CODE",
         title: "Project code already in use",
-        message: `A ${isTemplate ? "template" : "project"} with code "${projectNumber}" already exists.`,
+        message: `A ${isTemplate ? "template" : "project"} with code "${templateNumber ?? parsed.projectNumber}" already exists.`,
         field: "projectNumber",
       });
     }
+  } else {
+    // Legacy (server-side allocation): generate the number then createWithUniqueNumber,
+    // retrying on an auto-number race.
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const projectNumber = useAutoNumber
+        ? await generateProjectNumber(organizationId, autoConfig!, now)
+        : (templateNumber ?? parsed.projectNumber!);
+      created = await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
+      if (created.created) break;
+      if (!useAutoNumber) {
+        throw new UserFacingError({
+          code: "DUPLICATE_PROJECT_CODE",
+          title: "Project code already in use",
+          message: `A ${isTemplate ? "template" : "project"} with code "${projectNumber}" already exists.`,
+          field: "projectNumber",
+        });
+      }
+    }
+    if (!created?.created) throw new Error("Could not allocate a unique project number");
   }
-  if (!created?.created) throw new Error("Could not allocate a unique project number");
 
   const result = await getProjectByIdMapped(id, organizationId);
   if (!result) throw new Error("Project create failed");
@@ -959,10 +986,73 @@ export async function archiveProject(id: string) {
   return serialize(updated);
 }
 
+/**
+ * Map a ConvexError thrown by duplicateNative / saveAsTemplateNative back to the
+ * rich UserFacingError the legacy server path threw, so the toast UX is identical.
+ * Handles the NOT_FOUND (source gone) + DUPLICATE_PROJECT_CODE (number clash) codes.
+ */
+function mapProjectCopyError(e: unknown, isTemplate: boolean): unknown {
+  if (
+    e instanceof ConvexError &&
+    e.data &&
+    typeof e.data === "object" &&
+    "code" in e.data &&
+    typeof (e.data as { code: unknown }).code === "string"
+  ) {
+    const code = (e.data as { code: string }).code;
+    const message =
+      typeof (e.data as { message?: unknown }).message === "string"
+        ? (e.data as { message: string }).message
+        : undefined;
+    if (code === "NOT_FOUND") {
+      return new UserFacingError({
+        code: "NOT_FOUND",
+        title: "Project not found",
+        message: "This project was deleted or moved. Refresh the page to see the latest state.",
+      });
+    }
+    if (code === "DUPLICATE_PROJECT_CODE") {
+      return new UserFacingError({
+        code,
+        title: isTemplate ? "Template code already in use" : "Project code already in use",
+        message: message ?? `A ${isTemplate ? "template" : "project"} with that code already exists.`,
+        field: "projectNumber",
+      });
+    }
+  }
+  return e;
+}
+
 export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
-  const { organizationId } = await requirePermission("project", "create");
+  const { organizationId, userId, userName } = await requirePermission("project", "create");
 
   const client = await getConvexClient();
+
+  // Native: the entire deep-copy (categories → groups → line items → PMs → recalc)
+  // runs in ONE atomic mutation instead of N sequential server→Convex round-trips.
+  if (nativeProjectWrites()) {
+    const newProjectId = createId();
+    const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
+    try {
+      await client.mutation(api.projectWrites.duplicateNative, {
+        sourceId,
+        newId: newProjectId,
+        newProjectNumber,
+        newName,
+        orgId: organizationId,
+        orgDefaultTaxRate,
+        now: Date.now(),
+        actor: { userId, userName },
+        auditId: createId(),
+      });
+    } catch (e) {
+      throw mapProjectCopyError(e, false);
+    }
+    const nativeResult = await getProjectByIdMapped(newProjectId, organizationId);
+    if (!nativeResult) throw new Error("Project duplicate failed");
+    return serialize(nativeResult);
+  }
+
   // project is Convex-only — read the source scalars + its project managers from Convex.
   const source = await getProjectByIdMapped(sourceId, organizationId);
   if (!source) {
@@ -1245,7 +1335,33 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 }
 
 export async function saveAsTemplate(projectId: string, templateName: string) {
-  const { organizationId } = await requirePermission("project", "create");
+  const { organizationId, userId, userName } = await requirePermission("project", "create");
+
+  // Native: create the template + copy its line items (grouping OMITTED) + recalc in
+  // ONE atomic mutation. generateTemplateCode stays server-side (Convex-mirror count).
+  if (nativeProjectWrites()) {
+    const templateId = createId();
+    const templateNumber = await generateTemplateCode(organizationId);
+    const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
+    const client = await getConvexClient();
+    try {
+      await client.mutation(api.projectWrites.saveAsTemplateNative, {
+        sourceId: projectId,
+        newId: templateId,
+        templateNumber,
+        templateName,
+        orgId: organizationId,
+        orgDefaultTaxRate,
+        now: Date.now(),
+        actor: { userId, userName },
+      });
+    } catch (e) {
+      throw mapProjectCopyError(e, true);
+    }
+    const nativeResult = await getProjectByIdMapped(templateId, organizationId);
+    if (!nativeResult) throw new Error("Template create failed");
+    return serialize(nativeResult);
+  }
 
   // project is Convex-only — read the source scalars from Convex.
   const source = await getProjectByIdMapped(projectId, organizationId);

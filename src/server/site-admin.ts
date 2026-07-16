@@ -298,11 +298,11 @@ export async function adminGetOrganizationDetails(orgId: string) {
         orderBy: { createdAt: "asc" },
       },
       _count: {
+        // Domain relations (assets/bulkAssets/projects/kits) live in Convex now;
+        // only KEPT auth relations remain countable here.
         select: {
-          assets: true,
-          bulkAssets: true,
-          projects: true,
-          kits: true,
+          members: true,
+          invitations: true,
         },
       },
     },
@@ -558,11 +558,7 @@ export async function adminDeleteUser(userId: string) {
     // projectManagerId / reportedById / assignedToId FK scrubs run post-commit
     // (api.projects.patchProject + api.maintenanceRecords.scrubUserRefs below).
 
-    // Delete records with non-nullable User FKs (KEPT tables only).
-    await tx.assetScanLog.deleteMany({ where: { scannedById: userId } });
-    await tx.fileUpload.deleteMany({ where: { uploadedById: userId } });
-    await tx.testTagRecord.deleteMany({ where: { testedById: userId } });
-
+    // domain data lives in Convex; user-deletion no longer cascades Prisma domain rows
     await tx.user.delete({ where: { id: userId } });
   });
 

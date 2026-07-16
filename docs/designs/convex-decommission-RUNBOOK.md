@@ -66,9 +66,27 @@
       cascade deletes that must be redesigned as Convex single-document-atomic mutations
       (idempotency/ordering deliberate). This is where the ~19 `src/lib/*-mirror.ts`
       get deleted. Keep auth/RBAC/activityLog on Prisma.
-- [ ] **Phase C — drop Prisma domain tables:** NOT STARTED. Remove domain models
-      from `prisma/schema.prisma` (keep Better Auth + `customRole` + `activityLog`),
-      delete backfills/parity/mirrors, migrate the DB to drop the tables.
+- [x] **Phase C — drop Prisma domain tables:** DONE (2026-07-17, PR
+      `integration/convex-decommission-drop`). Removed **65 Convex-native domain models**
+      from `prisma/schema.prisma` (27 models kept: Better Auth + org/SSO + dormant API +
+      webhooks + `activity_log` + the config/token/PDF set `site_settings`/
+      `notification_email_log`/`woocommerce_integration`/`document_template`/`section_preset`/
+      `warehouse_dashboard_token`/`test_tag_auditor_token`). Migration
+      `20260717000000_drop_convex_native_domain_tables` DROPs 66 tables (65 + the implicit
+      `_CrewMemberToCrewSkill` m2m join) with CASCADE. Deleted 51 backfill/parity/roundtrip
+      scripts + 29 obsolete Prisma-domain int-tests. **Two domain tables deliberately
+      RETAINED for a follow-up** (unresolved parity gaps): `category_slot` (Convex represents
+      slots differently after the #558 project-group unification — 8 live-parent PG slots not
+      in the Convex `categorySlots` table) and `line_item_merge_map` (5 historic 2026-05-30
+      split rows, `*Repointed`=0, never backfilled to the existing empty Convex
+      `lineItemMergeMaps` table). **Pre-cutover safety:** full `pg_dump`
+      (`~/gearflow-pg-backups/gearflow-predrop-*.dump`, 94 tables, off-box) + Convex snapshot
+      (`--include-file-storage`); parity re-verified (Convex >= Postgres every table; the 2
+      Postgres-ahead rows were confirmed deleted-in-Convex ghosts); the migration was
+      **rehearsed against a scratch DB restored from the real dump** (94→28 tables clean,
+      `ON_ERROR_STOP=1`, Better Auth data intact). `prisma validate`+`tsc`+`npm test`
+      (3675)+`next build` all green; schema.prisma end-state matches the migration history (no
+      drift).
 - [ ] **Final prod backfill + cutover + reopen** (see below).
 
 ## Bucket-1 progress

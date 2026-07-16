@@ -54,6 +54,17 @@ function getUserColor(userId: string): string {
   return COLLAB_COLORS[hash % COLLAB_COLORS.length];
 }
 
+/** Org default tax rate from the Convex orgSettings mirror (source of truth; the
+ *  Postgres column is deprecated). null when unset. Resolved IN-mutation so browser
+ *  callers can't spoof a money-affecting tax rate. */
+async function resolveOrgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promise<number | null> {
+  const row = await ctx.db
+    .query("orgSettings")
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+    .first();
+  return row?.defaultTaxRate ?? null;
+}
+
 /** Delete a line + its fulfillment units (replica of deleteLineWithUnits). The unit
  *  cascade org-filters: by_lineItemId is a GLOBAL index, so without the org guard a
  *  cuid-colliding line in another org could have its units swept. */
@@ -71,12 +82,21 @@ export const removeNative = mutation({
   args: {
     id: v.string(),
     orgId: v.string(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // Gate for the folded collab/webhook side-effects. OPTIONAL + only honored when
+    // `=== true`, so the pre-fold app image (never passes it) does NOT double-emit —
+    // its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
+    emitSideEffects: v.optional(v.boolean()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -120,24 +140,28 @@ export const removeNative = mutation({
     });
 
     // Recalc project totals in the SAME transaction (Option A — collapses the write
-    // to one round-trip; org default tax passed from Postgres, the source of truth).
+    // to one round-trip; org default tax resolved in-mutation from orgSettings, the
+    // source of truth, so a browser caller can't spoof it).
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, line.projectId, orgId, orgDefaultTaxRate, now);
 
     // Collab feed — folded from the server tail (writeCollabActivityEvent
     // "line_item_removed"), now transactional. entityId=project, target=the line.
-    await ctx.db.insert("activityEvents", {
-      orgId,
-      actorUserId: actor.userId,
-      actorName: actor.userName,
-      actorColor: getUserColor(actor.userId),
-      entityType: "project",
-      entityId: line.projectId,
-      targetType: "lineItem",
-      targetId: id,
-      action: "line_item_removed",
-      summary: `removed ${line.description || "a line item"}`,
-      createdAt: now,
-    });
+    if (emitSideEffects === true) {
+      await ctx.db.insert("activityEvents", {
+        orgId,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        actorColor: getUserColor(actor.userId),
+        entityType: "project",
+        entityId: line.projectId,
+        targetType: "lineItem",
+        targetId: id,
+        action: "line_item_removed",
+        summary: `removed ${line.description || "a line item"}`,
+        createdAt: now,
+      });
+    }
 
     return { projectId: line.projectId };
   },
@@ -180,16 +204,25 @@ export const patchNative = mutation({
   args: {
     id: v.string(),
     orgId: v.string(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
     set: v.any(),
     clear: v.array(v.string()),
     entityName: v.string(),
     allowOverbook: v.boolean(),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // Gate for the folded collab/webhook side-effects. OPTIONAL + only honored when
+    // `=== true`, so the pre-fold app image (never passes it) does NOT double-emit —
+    // its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
+    emitSideEffects: v.optional(v.boolean()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, orgDefaultTaxRate, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -283,6 +316,7 @@ export const patchNative = mutation({
       createdAt: now,
     });
 
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, doc.projectId, orgId, orgDefaultTaxRate, now);
 
     // Collab feed — folded from updateLineItem's server tail (writeCollabActivityEvent
@@ -290,24 +324,26 @@ export const patchNative = mutation({
     // line (parity with the server, which built these from readBackLine(id) after the
     // write). metadata drops an undefined quantity to match the Convex client stripping
     // it over the wire on the server path.
-    const updated = await ctx.db.get(doc._id);
-    await ctx.db.insert("activityEvents", {
-      orgId,
-      actorUserId: actor.userId,
-      actorName: actor.userName,
-      actorColor: getUserColor(actor.userId),
-      entityType: "project",
-      entityId: doc.projectId,
-      targetType: "lineItem",
-      targetId: id,
-      action: "line_item_updated",
-      summary: `updated ${updated?.description || "a line item"}`,
-      metadata: dropUndefined({
-        quantity: updated?.quantity,
-        lineTotal: updated?.lineTotal != null ? String(updated.lineTotal) : null,
-      }),
-      createdAt: now,
-    });
+    if (emitSideEffects === true) {
+      const updated = await ctx.db.get(doc._id);
+      await ctx.db.insert("activityEvents", {
+        orgId,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        actorColor: getUserColor(actor.userId),
+        entityType: "project",
+        entityId: doc.projectId,
+        targetType: "lineItem",
+        targetId: id,
+        action: "line_item_updated",
+        summary: `updated ${updated?.description || "a line item"}`,
+        metadata: dropUndefined({
+          quantity: updated?.quantity,
+          lineTotal: updated?.lineTotal != null ? String(updated.lineTotal) : null,
+        }),
+        createdAt: now,
+      });
+    }
 
     return { projectId: doc.projectId };
   },
@@ -467,12 +503,21 @@ export const addCustomNative = mutation({
       groupName: v.optional(v.string()),
       lineTotal: v.optional(v.number()),
     }),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // Gate for the folded collab/webhook side-effects. OPTIONAL + only honored when
+    // `=== true`, so the pre-fold app image (never passes it) does NOT double-emit —
+    // its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
+    emitSideEffects: v.optional(v.boolean()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -513,23 +558,26 @@ export const addCustomNative = mutation({
       createdAt: now,
     });
 
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
 
     // Collab feed — folded from addCustomLineItem's server tail
     // (writeCollabActivityEvent "custom_item_added"), now transactional.
-    await ctx.db.insert("activityEvents", {
-      orgId: organizationId,
-      actorUserId: actor.userId,
-      actorName: actor.userName,
-      actorColor: getUserColor(actor.userId),
-      entityType: "project",
-      entityId: projectId,
-      targetType: "lineItem",
-      targetId: id,
-      action: "custom_item_added",
-      summary: `added custom item "${fields.description ?? ""}"`,
-      createdAt: now,
-    });
+    if (emitSideEffects === true) {
+      await ctx.db.insert("activityEvents", {
+        orgId: organizationId,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        actorColor: getUserColor(actor.userId),
+        entityType: "project",
+        entityId: projectId,
+        targetType: "lineItem",
+        targetId: id,
+        action: "custom_item_added",
+        summary: `added custom item "${fields.description ?? ""}"`,
+        createdAt: now,
+      });
+    }
 
     return { id };
   },
@@ -574,12 +622,16 @@ export const addNative = mutation({
     }),
     includeAccessories: v.boolean(),
     allowOverbook: v.boolean(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, allowOverbook, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, allowOverbook, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -712,6 +764,7 @@ export const addNative = mutation({
       createdAt: now,
     });
 
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
     return { id, sortOrder };
   },
@@ -737,14 +790,22 @@ export const addKitNative = mutation({
     groupId: v.optional(v.string()),
     kitLabel: v.string(),
     // Bulk callers (e.g. applyGroupTemplate) pass false + log one grouped collab event
-    // instead — parity with addKitLineItem's emitActivity param.
-    emitActivity: v.boolean(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    // instead — parity with addKitLineItem's emitActivity param. OPTIONAL + gated on
+    // `=== true` (below) so the pre-fold app image (which never passes it) does NOT
+    // double-emit kit_added: the old app's own tail still emits it during the deploy
+    // window, and only the new app/browser passes emitActivity:true once its tail is
+    // conditionalized off. Expand-contract.
+    emitActivity: v.optional(v.boolean()),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, orgDefaultTaxRate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -814,6 +875,7 @@ export const addKitNative = mutation({
       createdAt: now,
     });
 
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
 
     // Collab feed — folded from addKitLineItem's server tail (writeCollabActivityEvent
@@ -822,7 +884,7 @@ export const addKitNative = mutation({
     // serialized + bulk members), matching the server's kit.serializedItems.length +
     // kit.bulkItems.length. parentItem.description === kitLabel (the parent line's
     // description is `${assetTag} - ${name}`), so the summary reads it from kitLabel.
-    if (emitActivity) {
+    if (emitActivity === true) {
       const memberChildren = await ctx.db
         .query("projectLineItems")
         .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
@@ -883,7 +945,8 @@ export const reorderNative = mutation({
  * across the app (line-items, groups, services, sub-hires, project edits) funnels
  * through recalculateProjectTotals, so this single collapse speeds up ALL of them.
  *
- * orgDefaultTaxRate is passed by the caller (Postgres — no Convex mirror writer).
+ * orgDefaultTaxRate is resolved in-mutation from orgSettings (the source of truth), so
+ * a browser caller can't spoof a money-affecting tax rate.
  * Gated behind NATIVE_RECALC; parity with the server-side math is proven by
  * convex/recalc.test.ts (recalcProjectTotals, the shared core).
  */
@@ -892,13 +955,18 @@ export const recalcNative = mutation({
   args: {
     projectId: v.string(),
     orgId: v.string(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
   },
-  handler: async (ctx, { projectId, orgId, orgDefaultTaxRate, now }) => {
+  handler: async (ctx, { projectId, orgId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, projectId, orgId, orgDefaultTaxRate, now);
     return { ok: true as const };
   },
@@ -953,14 +1021,23 @@ export const addLineItemSmartNative = mutation({
     allowOverbook: v.boolean(),
     forceSeparate: v.boolean(),
     includeAccessories: v.boolean(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
     actor: actorValidator,
     auditId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
+    // (which still passes it while NATIVE_LINEITEM_WRITES is on in prod). The rate is
+    // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
+    // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // Gate for the folded collab/webhook side-effects. OPTIONAL + only honored when
+    // `=== true`, so the pre-fold app image (never passes it) does NOT double-emit —
+    // its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
+    emitSideEffects: v.optional(v.boolean()),
     now: v.number(),
   },
   handler: async (ctx, {
     id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories,
-    orgDefaultTaxRate, actor: suppliedActor, auditId, now,
+    actor: suppliedActor, auditId, emitSideEffects, now,
   }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
@@ -971,6 +1048,10 @@ export const addLineItemSmartNative = mutation({
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+
+    // Org default tax rate resolved in-mutation from orgSettings (source of truth) so a
+    // browser caller can't spoof it. Used by recalc on both the merge and insert paths.
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another org's).
     if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
@@ -1110,19 +1191,21 @@ export const addLineItemSmartNative = mutation({
         // Collab feed + webhook — folded from addLineItem's server tail. On a merge the
         // resulting line is `existing` with the summed quantity (parity with the server,
         // which read back existing.id after the merge).
-        await emitLineItemAdded(ctx, {
-          orgId: organizationId,
-          actor,
-          projectId,
-          line: {
-            id: existing.id,
-            modelId: existing.modelId ?? null,
-            quantity: newQuantity,
-            type: existing.type ?? null,
-            description: existing.description ?? null,
-          },
-          now,
-        });
+        if (emitSideEffects === true) {
+          await emitLineItemAdded(ctx, {
+            orgId: organizationId,
+            actor,
+            projectId,
+            line: {
+              id: existing.id,
+              modelId: existing.modelId ?? null,
+              quantity: newQuantity,
+              type: existing.type ?? null,
+              description: existing.description ?? null,
+            },
+            now,
+          });
+        }
 
         return { id: existing.id, merged: true };
       }
@@ -1226,19 +1309,21 @@ export const addLineItemSmartNative = mutation({
     // Collab feed + webhook — folded from addLineItem's server tail. On an insert the
     // resulting line is the freshly-created row (parity with the server, which read back
     // the new id). modelId/type/description mirror the stored `|| undefined` normalisation.
-    await emitLineItemAdded(ctx, {
-      orgId: organizationId,
-      actor,
-      projectId,
-      line: {
-        id,
-        modelId: fields.modelId ?? null,
-        quantity: fields.quantity,
-        type: fields.type ?? null,
-        description: fields.description ?? null,
-      },
-      now,
-    });
+    if (emitSideEffects === true) {
+      await emitLineItemAdded(ctx, {
+        orgId: organizationId,
+        actor,
+        projectId,
+        line: {
+          id,
+          modelId: fields.modelId ?? null,
+          quantity: fields.quantity,
+          type: fields.type ?? null,
+          description: fields.description ?? null,
+        },
+        now,
+      });
+    }
 
     return { id, merged: false };
   },

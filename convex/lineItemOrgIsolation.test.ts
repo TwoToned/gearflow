@@ -59,7 +59,7 @@ describe("line-item cross-tenant isolation", () => {
       t.withIdentity(asUser).mutation(api.lineItemWrites.addCustomNative, {
         id: "new1", organizationId: ORG, projectId: "projB",
         fields: { quantity: 1, lineTotal: 9_999_999 },
-        orgDefaultTaxRate: 0, actor, auditId: "a1", now: NOW,
+        actor, auditId: "a1", now: NOW,
       }),
     ).rejects.toThrow(/forbidden|another organization/i);
     // No phantom row was written into the foreign project.
@@ -75,7 +75,7 @@ describe("line-item cross-tenant isolation", () => {
     await t.withIdentity(asUser).mutation(api.lineItemWrites.addCustomNative, {
       id: "new2", organizationId: ORG, projectId: "projA",
       fields: { quantity: 1, lineTotal: 100 },
-      orgDefaultTaxRate: 0, actor, auditId: "a2", now: NOW,
+      actor, auditId: "a2", now: NOW,
     });
     const row = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new2")).unique());
     expect(row?.organizationId).toBe(ORG);

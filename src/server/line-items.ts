@@ -101,9 +101,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         allowOverbook,
         forceSeparate,
         includeAccessories,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab/webhook tail off on the
+        // native path (below), so the mutation must emit them. The pre-fold app never
+        // passes this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
@@ -374,7 +377,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
             clear: [],
             entityName: existing.description || "Line item",
             allowOverbook,
-            orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
             actor: { userId, userName },
             auditId: createId(),
             now: Date.now(),
@@ -499,7 +501,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         fields: lineFields,
         includeAccessories,
         allowOverbook,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
         now: Date.now(),
@@ -783,9 +784,12 @@ export async function updateLineItem(
         clear,
         entityName: parsed.description || "Line item",
         allowOverbook,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab tail off on the native
+        // path (below), so the mutation must emit it. The pre-fold app never passes
+        // this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
@@ -949,7 +953,6 @@ export async function addKitLineItem(
         // The mutation folds the "kit_added" collab event, gated on this flag (bulk
         // callers pass emitActivity=false and log one grouped event instead).
         emitActivity,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
       });
@@ -1037,9 +1040,12 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       organizationId,
       projectId,
       fields: customFields,
-      orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
       actor: { userId, userName },
       auditId: createId(),
+      // This NEW app image conditionalizes its own collab tail off on the native
+      // path (below), so the mutation must emit it. The pre-fold app never passes
+      // this, so it doesn't double-emit during the deploy window. Expand-contract.
+      emitSideEffects: true,
       now: Date.now(),
     });
   } else {
@@ -1113,9 +1119,12 @@ export async function removeLineItem(id: string) {
       await convex.mutation(api.lineItemWrites.removeNative, {
         id,
         orgId: organizationId,
-        orgDefaultTaxRate: await orgDefaultTaxRateFor(organizationId),
         actor: { userId, userName },
         auditId: createId(),
+        // This NEW app image conditionalizes its own collab tail off on the native
+        // path (below), so the mutation must emit it. The pre-fold app never passes
+        // this, so it doesn't double-emit during the deploy window. Expand-contract.
+        emitSideEffects: true,
         now: Date.now(),
       });
     } catch (e) {
@@ -1693,12 +1702,11 @@ export async function recalculateProjectTotals(projectId: string) {
   // recalc.ts port is parity-tested against this function (convex/recalc.test.ts).
   // org default tax lives in Postgres (no Convex mirror writer), passed in.
   if (nativeRecalc()) {
-    const orgDefaultTaxRate =
-      project.taxRate == null ? await orgDefaultTaxRateFor(orgId) : null;
+    // orgDefaultTaxRate is resolved inside the mutation from orgSettings (source of
+    // truth) — the client no longer supplies it (a spoofable money-affecting value).
     await convex.mutation(api.lineItemWrites.recalcNative, {
       projectId,
       orgId,
-      orgDefaultTaxRate,
       now: Date.now(),
     });
     return;

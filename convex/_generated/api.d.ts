@@ -171,6 +171,7 @@ import type * as subHireGroups from "../subHireGroups.js";
 import type * as subHireItems from "../subHireItems.js";
 import type * as subHireMedia from "../subHireMedia.js";
 import type * as subHires from "../subHires.js";
+import type * as subHiresWrites from "../subHiresWrites.js";
 import type * as subTestRecords from "../subTestRecords.js";
 import type * as supplierModelRates from "../supplierModelRates.js";
 import type * as supplierOrderItems from "../supplierOrderItems.js";
@@ -371,6 +372,7 @@ declare const fullApi: ApiFromModules<{
   subHireItems: typeof subHireItems;
   subHireMedia: typeof subHireMedia;
   subHires: typeof subHires;
+  subHiresWrites: typeof subHiresWrites;
   subTestRecords: typeof subTestRecords;
   supplierModelRates: typeof supplierModelRates;
   supplierOrderItems: typeof supplierOrderItems;

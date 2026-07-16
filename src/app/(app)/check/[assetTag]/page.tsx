@@ -13,7 +13,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
-import { lookupAssetForAdHocCheck, saveAdHocCheck } from "@/server/check-records";
+import { lookupAssetForAdHocCheck } from "@/server/check-records";
+import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { focusRing } from "@/lib/utils";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -36,6 +37,7 @@ export default function AdHocCheckPage({
   const router = useRouter();
 
   const [completed, setCompleted] = useState(false);
+  const checkRecordWrites = useCheckRecordWrites();
 
   const { data: result, isLoading } = useServerQuery({
     queryKey: ["ad-hoc-lookup", orgId, decodedTag],
@@ -62,9 +64,8 @@ export default function AdHocCheckPage({
       notes?: string;
       photos?: string[];
     }>) =>
-      saveAdHocCheck({
+      checkRecordWrites.saveAdHocCheck({
         assetId: lookup!.asset!.id,
-        context: "AD_HOC",
         checks,
       }),
     onSuccess: () => {

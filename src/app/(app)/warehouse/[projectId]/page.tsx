@@ -104,17 +104,12 @@ import {
   deprepItemsBatch,
   prepKitChildren,
   prepKitsBatch,
-  completeCheckAndPack,
-  completeCheckAndFlag,
   unpackItem,
-  completeCheckAndStore,
-  completeCheckAndDeprep,
-  saveKitLevelChecks,
-  saveChildItemChecks,
 } from "@/server/check-records";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
+import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -654,6 +649,8 @@ function WarehouseProjectPage({
 
   // Browser-direct warehouse writes (PR-A: return / undeploy / container family).
   const warehouseWrites = useWarehouseWrites();
+  // Browser-direct check-record writes (deprep/pack/flag/store + kit/child/adhoc).
+  const checkRecordWrites = useCheckRecordWrites();
 
   // Post-write refresh is now a no-op: the native subscription pushes every
   // warehouseOps change live over the WebSocket, so an explicit refetch is
@@ -3059,7 +3056,7 @@ function WarehouseProjectPage({
                   } else if (item.fromDeprep) {
                     // completeCheckAndDeprep tolerates an empty checks[] (it
                     // does not re-parse against a .min(1) schema).
-                    await completeCheckAndDeprep({
+                    await checkRecordWrites.completeCheckAndDeprep({
                       projectId,
                       lineItemId: item.lineItemId,
                       assetId: item.assetId,
@@ -3084,13 +3081,13 @@ function WarehouseProjectPage({
 
                 if (isKitLevelItem) {
                   // Kit-level: save records only, deploy happens in finishCheckQueue
-                  await saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);
+                  await checkRecordWrites.saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);
                 } else if (isKitQueueChild) {
                   // PER_ITEM child: save records only, deploy happens in finishCheckQueue
-                  await saveChildItemChecks(projectId, item.lineItemId, item.assetId || undefined, item.bulkAssetId, item.context, checks);
+                  await checkRecordWrites.saveChildItemChecks(projectId, item.lineItemId, item.assetId || undefined, item.bulkAssetId, item.context, checks);
                 } else if (item.context === "PREP") {
                   await pullItem(projectId, item.lineItemId).catch(() => {});
-                  await completeCheckAndPack({
+                  await checkRecordWrites.completeCheckAndPack({
                     projectId,
                     lineItemId: item.lineItemId,
                     assetId: item.assetId,
@@ -3100,7 +3097,7 @@ function WarehouseProjectPage({
                     includeAccessoryIds: item.includeAccessoryIds,
                   });
                 } else if (item.fromDeprep) {
-                  await completeCheckAndDeprep({
+                  await checkRecordWrites.completeCheckAndDeprep({
                     projectId,
                     lineItemId: item.lineItemId,
                     assetId: item.assetId,
@@ -3109,7 +3106,7 @@ function WarehouseProjectPage({
                   });
                 } else {
                   await unpackItem(projectId, item.lineItemId).catch(() => {});
-                  await completeCheckAndStore({
+                  await checkRecordWrites.completeCheckAndStore({
                     projectId,
                     lineItemId: item.lineItemId,
                     assetId: item.assetId,
@@ -3137,11 +3134,11 @@ function WarehouseProjectPage({
 
               if (isKitLevelItem) {
                 // Kit-level check: save records, then deploy/return in finishCheckQueue
-                await saveKitLevelChecks(projectId, checkFormData.kitId!, checkFormData.lineItemId, checkFormData.context, checks);
+                await checkRecordWrites.saveKitLevelChecks(projectId, checkFormData.kitId!, checkFormData.lineItemId, checkFormData.context, checks);
                 toast.success(hasFails ? "Kit check completed with issues" : "Kit check passed");
               } else if (isKitQueueChild) {
                 // PER_ITEM child: save records only, deploy/return happens in finishCheckQueue
-                await saveChildItemChecks(
+                await checkRecordWrites.saveChildItemChecks(
                   projectId,
                   checkFormData.lineItemId,
                   checkFormData.assetId || undefined,
@@ -3152,7 +3149,7 @@ function WarehouseProjectPage({
                 toast.success(hasFails ? "Item check completed with issues" : "Item check passed");
               } else if (checkFormData.context === "PREP") {
                 if (hasFails) {
-                  await completeCheckAndFlag({
+                  await checkRecordWrites.completeCheckAndFlag({
                     projectId,
                     lineItemId: checkFormData.lineItemId,
                     assetId: checkFormData.assetId,
@@ -3162,7 +3159,7 @@ function WarehouseProjectPage({
                   });
                   toast.success("Item flagged as faulty");
                 } else {
-                  await completeCheckAndPack({
+                  await checkRecordWrites.completeCheckAndPack({
                     projectId,
                     lineItemId: checkFormData.lineItemId,
                     assetId: checkFormData.assetId,
@@ -3175,7 +3172,7 @@ function WarehouseProjectPage({
                 }
               } else if (checkFormData.fromDeprep) {
                 // RETURN deprep — item is already returned, just record checks and reset prepStatus
-                await completeCheckAndDeprep({
+                await checkRecordWrites.completeCheckAndDeprep({
                   projectId,
                   lineItemId: checkFormData.lineItemId,
                   assetId: checkFormData.assetId,
@@ -3186,7 +3183,7 @@ function WarehouseProjectPage({
               } else {
                 // RETURN — condition comes from the check form
                 const condition = returnInfo?.condition || "GOOD";
-                await completeCheckAndStore({
+                await checkRecordWrites.completeCheckAndStore({
                   projectId,
                   lineItemId: checkFormData.lineItemId,
                   assetId: checkFormData.assetId,

@@ -18,8 +18,11 @@ vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => true }));
 // comment-counts). Stub the hook so the card renders without a Convex client.
 vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => undefined }));
 
-// setReviewMarker is a server action pulled in at module load — stub it.
-vi.mock("@/server/collaboration", () => ({ setReviewMarker: vi.fn(async () => {}) }));
+// setReviewMarker is now a browser-direct Convex write behind useCollaborationWrites
+// (uses useMutation) — stub the hook so the card renders without a Convex client.
+vi.mock("@/hooks/use-collaboration-writes", () => ({
+  useCollaborationWrites: () => ({ setReviewMarker: vi.fn(async () => {}) }),
+}));
 
 // LineAssetsIndicator's history popover imports a warehouse server action.
 vi.mock("@/server/warehouse", () => ({ getScanLog: vi.fn(async () => ({ logs: [] })) }));

@@ -2,7 +2,7 @@
 
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getOrgContext } from "@/lib/org-context";
 import { getUserColor } from "@/lib/collaboration-colors";
 import { serialize } from "@/lib/serialize";
 
@@ -133,135 +133,14 @@ export async function takeoverLock(
   return serialize(result);
 }
 
-// ─── Comments ─────────────────────────────────────────────────────────────────
-
-export async function createThread(
-  entityType: string,
-  entityId: string,
-  firstComment: string,
-  targetType?: string,
-  targetId?: string,
-  options?: { isBlocking?: boolean; mentionUserIds?: string[]; projectId?: string }
-) {
-  const ctx = await getOrgContext();
-  if (options?.isBlocking) {
-    // Blocking comments only gate project prep / send-out — they're meaningless
-    // on other records, so reject them server-side (the UI hides the toggle too).
-    if (entityType !== "project") {
-      throw new Error("Blocking comments are only supported on projects.");
-    }
-    await requirePermission("project", "manage_line_items");
-  }
-  const userColor = getUserColor(ctx.userId);
-  const convex = await getConvexClient();
-  const threadId = await convex.mutation(api.collaboration.createThread, {
-    orgId: ctx.organizationId,
-    entityType,
-    entityId,
-    targetType,
-    targetId,
-    firstComment,
-    createdBy: ctx.userId,
-    createdByName: ctx.userName,
-    authorColor: userColor,
-    isBlocking: options?.isBlocking ?? false,
-    projectId: options?.projectId,
-    mentionUserIds: options?.mentionUserIds,
-  });
-  return serialize({ threadId: threadId as unknown as string });
-}
-
-export async function addComment(
-  threadId: string,
-  body: string,
-  options?: { mentionUserIds?: string[] }
-) {
-  const ctx = await getOrgContext();
-  const userColor = getUserColor(ctx.userId);
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.addComment, {
-    orgId: ctx.organizationId,
-    threadId,
-    body,
-    authorId: ctx.userId,
-    authorName: ctx.userName,
-    authorColor: userColor,
-    mentionUserIds: options?.mentionUserIds,
-  });
-  return serialize({ ok: true });
-}
-
-export async function setThreadBlocking(threadId: string, isBlocking: boolean) {
-  const ctx = await getOrgContext();
-  await requirePermission("project", "manage_line_items");
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.setThreadBlocking, {
-    orgId: ctx.organizationId,
-    threadId,
-    isBlocking,
-    actorUserId: ctx.userId,
-    actorName: ctx.userName,
-    actorColor: getUserColor(ctx.userId),
-  });
-  return serialize({ ok: true });
-}
-
-export async function resolveThread(threadId: string) {
-  const ctx = await getOrgContext();
-  await requirePermission("project", "manage_line_items");
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.resolveThread, {
-    orgId: ctx.organizationId,
-    threadId,
-    resolvedBy: ctx.userId,
-    actorName: ctx.userName,
-    actorColor: getUserColor(ctx.userId),
-  });
-  return serialize({ ok: true });
-}
-
-export async function reopenThread(threadId: string) {
-  const ctx = await getOrgContext();
-  await requirePermission("project", "manage_line_items");
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.reopenThread, {
-    orgId: ctx.organizationId,
-    threadId,
-    actorUserId: ctx.userId,
-    actorName: ctx.userName,
-    actorColor: getUserColor(ctx.userId),
-  });
-  return serialize({ ok: true });
-}
-
-// ─── Review Markers ──────────────────────────────────────────────────────────
-
-export async function setReviewMarker(
-  entityType: string,
-  entityId: string,
-  targetType: string,
-  targetId: string,
-  status: "needs_review" | "follow_up" | "resolved",
-  reason?: string,
-  note?: string
-) {
-  const ctx = await getOrgContext();
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.setReviewMarker, {
-    orgId: ctx.organizationId,
-    entityType,
-    entityId,
-    targetType,
-    targetId,
-    status,
-    reason,
-    note,
-    createdBy: ctx.userId,
-    createdByName: ctx.userName,
-    actorColor: getUserColor(ctx.userId),
-  });
-  return serialize({ ok: true });
-}
+// ─── Comments + Review Markers ────────────────────────────────────────────────
+//
+// createThread / addComment / setThreadBlocking / resolveThread / reopenThread /
+// setReviewMarker moved BROWSER-DIRECT in Phase 3 — the Convex mutations now run
+// the 4-guard bar (RBAC on the blocking/resolve/reopen paths, actor pinned to the
+// verified token). See convex/collaboration.ts + src/hooks/use-collaboration-writes.ts.
+// The presence/lock actions above remain server-mediated (service token) until the
+// presence/lock browser-direct slice lands.
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
 //

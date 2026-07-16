@@ -98,6 +98,8 @@ import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_moneyGuards from "../lib/moneyGuards.js";
 import type * as lib_notificationPreferences from "../lib/notificationPreferences.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
+import type * as lib_projectNumber from "../lib/projectNumber.js";
+import type * as lib_projectNumberCounter from "../lib/projectNumberCounter.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_recalc from "../lib/recalc.js";
 import type * as lib_reservationConflicts from "../lib/reservationConflicts.js";
@@ -299,6 +301,8 @@ declare const fullApi: ApiFromModules<{
   "lib/moneyGuards": typeof lib_moneyGuards;
   "lib/notificationPreferences": typeof lib_notificationPreferences;
   "lib/permissionsCore": typeof lib_permissionsCore;
+  "lib/projectNumber": typeof lib_projectNumber;
+  "lib/projectNumberCounter": typeof lib_projectNumberCounter;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/recalc": typeof lib_recalc;
   "lib/reservationConflicts": typeof lib_reservationConflicts;

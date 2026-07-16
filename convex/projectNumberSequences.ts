@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 
 /**
  * Thin CRUD for ProjectNumberSequence (Convex table "projectNumberSequences"). GENERATED — Phase 2/5.
@@ -120,16 +121,8 @@ export const reserveNextNumber = mutation({
   args: { organizationId: v.string(), scopeKey: v.string(), newId: v.string(), now: v.number() },
   handler: async (ctx, { organizationId, scopeKey, newId, now }) => {
     await requireService(ctx);
-    const existing = await ctx.db
-      .query("projectNumberSequences")
-      .withIndex("by_organizationId_scopeKey", (q) => q.eq("organizationId", organizationId).eq("scopeKey", scopeKey))
-      .unique();
-    if (existing) {
-      const value = (existing.value ?? 0) + 1;
-      await ctx.db.patch(existing._id, { value, updatedAt: now });
-      return value;
-    }
-    await ctx.db.insert("projectNumberSequences", { id: newId, organizationId, scopeKey, value: 1, updatedAt: now });
-    return 1;
+    // Delegate to the extracted RMW helper (byte-identical). createNative's
+    // auto-number loop reserves via the same helper inside its own transaction.
+    return await reserveProjectNumberCounter(ctx, organizationId, scopeKey, newId, now);
   },
 });

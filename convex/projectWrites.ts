@@ -1,6 +1,10 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
+import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
+import { recalcProjectTotals } from "./lib/recalc";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
@@ -32,6 +36,18 @@ import { deleteAllForProjectCore } from "./projectCategories";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/** Resolved auto project-number config, passed by the caller (the format/reset/
+ *  padding originate in Postgres `organization.metadata`, which has no Convex
+ *  mirror, and `parts` are computed in the org timezone server-side). When
+ *  present + `projectNumber` is omitted, createNative allocates the number
+ *  in-mutation (scopeKey → reserve sequence → render → clash-guard → retry). */
+const autoNumberValidator = v.object({
+  format: v.string(),
+  reset: v.union(v.literal("NONE"), v.literal("YEARLY"), v.literal("MONTHLY"), v.literal("DAILY")),
+  padding: v.number(),
+  parts: v.object({ year: v.number(), month: v.number(), day: v.number() }),
+});
 const NOTES_FIELD = v.union(
   v.literal("crewNotes"),
   v.literal("internalNotes"),
@@ -266,54 +282,102 @@ export const updateNative = mutation({
 
 /**
  * createNative — insert a project with the unique-project-number check + CREATE
- * audit, atomic. RBAC(project, create). Mirrors createWithUniqueNumber: returns
- * {created:false} without inserting/auditing when the number clashes (the server
- * action's allocation retry loop handles that), {created:true} + audit on success.
- * generateProjectNumber (the auto-number allocator) stays server-side.
+ * audit, atomic. RBAC(project, create).
+ *
+ * Two number paths (mutually exclusive per call):
+ *  - MANUAL/TEMPLATE: caller passes `projectNumber` — mirrors createWithUniqueNumber,
+ *    returns {created:false} without inserting/auditing when the number clashes
+ *    (the caller surfaces DUPLICATE_PROJECT_CODE), {created:true} + audit on success.
+ *  - AUTO: caller omits `projectNumber` and passes `autoNumber` config — the number
+ *    is allocated IN-mutation (fold of the former server generateProjectNumber loop):
+ *    scopeKey → reserveProjectNumberCounter → renderProjectNumber → the org-scoped
+ *    clash-guard; on a rendered-code clash the counter advances and we retry
+ *    (bounded), so a lagging counter skips past manually-entered codes. Atomic — the
+ *    sequence bump and the create commit (or roll back) together.
  */
 export const createNative = mutation({
   returns: v.object({ created: v.boolean(), id: v.string() }),
   args: {
     id: v.string(),
     organizationId: v.string(),
-    projectNumber: v.string(),
+    projectNumber: v.optional(v.string()),
+    autoNumber: v.optional(autoNumberValidator),
     name: v.string(),
     ...projectWriteFields,
     actor: actorValidator,
     auditId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { actor: suppliedActor, auditId, ...fields } = args;
+    const { actor: suppliedActor, auditId, autoNumber, projectNumber: suppliedNumber, ...fields } = args;
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "project", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
-    const clash = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId_projectNumber", (q) =>
-        q.eq("organizationId", fields.organizationId).eq("projectNumber", fields.projectNumber),
-      )
-      .unique();
-    if (clash) return { created: false as const, id: clash.id };
-
-    // The projectNumber clash-guard is org-scoped and doesn't catch a cross-org cuid
-    // collision — dup-guard the client-minted id too. THROW (not the `{created:false}`
-    // number-clash signal, which callers retry with the SAME id): a cuid collision is a
-    // hard error, else another org's by_cuid reads get muddied.
+    // Dup-guard the client-minted cuid first (applies to both number paths). The
+    // projectNumber clash-guard below is org-scoped and doesn't catch a cross-org
+    // cuid collision. THROW (not the `{created:false}` number-clash signal, which
+    // manual callers retry with a NEW number): a cuid collision is a hard error,
+    // else another org's by_cuid reads get muddied.
     const dupId = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dupId) throw new ConvexError("Project already exists");
+
+    // The counter row's updatedAt / render `now` — the server used one `now` for
+    // both the create timestamps and the counter (byte-identical here).
+    const now = typeof fields.createdAt === "number" ? fields.createdAt : Date.now();
+
+    let projectNumber: string;
+    if (suppliedNumber != null) {
+      // Manual / template code — single org-scoped clash check; retry is the caller's.
+      const clash = await ctx.db
+        .query("projects")
+        .withIndex("by_organizationId_projectNumber", (q) =>
+          q.eq("organizationId", fields.organizationId).eq("projectNumber", suppliedNumber),
+        )
+        .unique();
+      if (clash) return { created: false as const, id: clash.id };
+      projectNumber = suppliedNumber;
+    } else if (autoNumber) {
+      // Auto-number — allocate in-mutation (fold of generateProjectNumber). Reserve a
+      // sequence each attempt (matches the server: a rendered-code clash consumes the
+      // value and bumps again), render, and re-check the org-scoped clash-guard.
+      const scopeKey = scopeKeyFor(autoNumber.reset, autoNumber.parts);
+      let resolved: string | null = null;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const sequence = await reserveProjectNumberCounter(ctx, fields.organizationId, scopeKey, createId(), now);
+        if (!Number.isFinite(sequence)) throw new ConvexError("Invalid project-number sequence");
+        const candidate = renderProjectNumber(autoNumber.format, {
+          parts: autoNumber.parts,
+          sequence,
+          padding: autoNumber.padding,
+        });
+        const clash = await ctx.db
+          .query("projects")
+          .withIndex("by_organizationId_projectNumber", (q) =>
+            q.eq("organizationId", fields.organizationId).eq("projectNumber", candidate),
+          )
+          .unique();
+        if (!clash) {
+          resolved = candidate;
+          break;
+        }
+      }
+      if (resolved == null) throw new ConvexError("Could not generate a unique project number");
+      projectNumber = resolved;
+    } else {
+      throw new ConvexError("createNative requires either projectNumber or autoNumber config");
+    }
 
     // Strip the recalc-owned money totals: a new project starts with none, and
     // recalcProjectTotals is the only writer. A browser-direct caller could otherwise
     // mint a project with forged financials (projectWriteFields exposes them as args).
     // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
     // status/isTemplate, not money, so it's unaffected by the strip.)
-    const insertFields = { ...fields };
+    const insertFields = { ...fields, projectNumber };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
 
     await ctx.db.insert("projects", insertFields);
-    await bumpProjectCounters(ctx, fields.organizationId, null, fields);
+    await bumpProjectCounters(ctx, fields.organizationId, null, insertFields);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -321,10 +385,10 @@ export const createNative = mutation({
       action: "CREATE",
       entityType: "project",
       entityId: fields.id,
-      entityName: fields.projectNumber,
+      entityName: projectNumber,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Created ${fields.isTemplate ? "template" : "project"} ${fields.projectNumber} - ${fields.name}`,
+      summary: `Created ${fields.isTemplate ? "template" : "project"} ${projectNumber} - ${fields.name}`,
       projectId: fields.id,
       createdAt: typeof fields.createdAt === "number" ? fields.createdAt : 0,
     });
@@ -577,5 +641,435 @@ export const deleteTemplateNative = mutation({
     await ctx.db.delete(project._id);
 
     return { success: true };
+  },
+});
+
+/** Sanitize a numeric that will feed recalc — a non-finite client value falls
+ *  back to null (the org-default path). */
+const finiteOrNull = (n: number | null): number | null => (n != null && Number.isFinite(n) ? n : null);
+
+/** Copy the project SCALARS a duplicate carries forward (parity with the server
+ *  createWithUniqueNumber call in duplicateProject). Dates / depositPaid /
+ *  invoicedTotal / notes-money are deliberately NOT copied. */
+function duplicateProjectScalars(source: {
+  type?: string; clientId?: string; description?: string; locationId?: string;
+  siteContactName?: string; siteContactPhone?: string; siteContactEmail?: string;
+  crewNotes?: string; internalNotes?: string; clientNotes?: string;
+  discountPercent?: number; depositPercent?: number;
+  defaultRentalPeriod?: string; defaultRentalQuantity?: number; taxRate?: number;
+  tags?: string[];
+}): Record<string, unknown> {
+  return {
+    ...(source.type ? { type: source.type } : {}),
+    ...(source.clientId ? { clientId: source.clientId } : {}),
+    ...(source.description ? { description: source.description } : {}),
+    ...(source.locationId ? { locationId: source.locationId } : {}),
+    ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
+    ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
+    ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
+    ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
+    ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
+    ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
+    ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
+    ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
+    ...(source.defaultRentalPeriod ? { defaultRentalPeriod: source.defaultRentalPeriod } : {}),
+    ...(source.defaultRentalQuantity != null ? { defaultRentalQuantity: source.defaultRentalQuantity } : {}),
+    ...(source.taxRate != null ? { taxRate: source.taxRate } : {}),
+    tags: source.tags ?? [],
+  };
+}
+
+type SrcLine = {
+  id: string; organizationId: string; type?: string; modelId?: string; bulkAssetId?: string;
+  kitId?: string; supplierId?: string; description?: string; quantity?: number; unitPrice?: number;
+  pricingType?: string; duration?: number; discount?: number; lineTotal?: number; sortOrder?: number;
+  groupName?: string; notes?: string; isOptional?: boolean; showSubhireOnDocs?: boolean;
+  pricingMode?: string; childKind?: string; isKitChild?: boolean; parentLineItemId?: string;
+  categoryId?: string; groupId?: string;
+};
+
+/**
+ * duplicateNative — deep-copy a source project into a fresh project (status
+ * ENQUIRY, isTemplate false), atomic. RBAC(project, create). Parity with the
+ * (former) server duplicateProject: copies categories → groups (remapped
+ * categoryId) → line items parent-then-children (remapped categoryId/groupId,
+ * status QUOTED) → project managers, then recalcProjectTotals. Deliberately does
+ * NOT copy categorySlots / services / tasks / crew. Secondary-row cuids are minted
+ * inline (Convex tolerates createId()); the project's `newId` is client-passed +
+ * dup-guarded. A number clash on `newProjectNumber` throws (the caller supplies a
+ * user-chosen code, not a retry loop).
+ */
+export const duplicateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    sourceId: v.string(),
+    newId: v.string(),
+    newProjectNumber: v.string(),
+    newName: v.string(),
+    orgId: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, orgDefaultTaxRate, now, actor: suppliedActor, auditId }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    // Source project — org-checked (by_cuid is global).
+    const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
+    if (!source || source.organizationId !== orgId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    }
+
+    // Dup-guard the client-minted project cuid (COLLECT all — a foreign-org
+    // collision must throw, not silently reuse another org's row).
+    const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
+    if (cuidMatches.length > 0) throw new ConvexError("Project already exists");
+
+    // Number clash (org-scoped @@unique guard) — a user-chosen code, so a hard error.
+    const clash = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", newProjectNumber))
+      .unique();
+    if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
+
+    // 1. New project row (children below reference its id).
+    await ctx.db.insert("projects", {
+      id: newId,
+      organizationId: orgId,
+      projectNumber: newProjectNumber,
+      name: newName,
+      status: "ENQUIRY",
+      isTemplate: false,
+      ...duplicateProjectScalars(source),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 2. Categories (sorted) → catIdMap.
+    const sourceCategories = (
+      await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
+    )
+      .filter((c) => c.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const catIdMap = new Map<string, string>();
+    for (const cat of sourceCategories) {
+      const nid = createId();
+      catIdMap.set(cat.id, nid);
+      await ctx.db.insert("projectCategories", {
+        id: nid,
+        organizationId: orgId,
+        projectId: newId,
+        name: cat.name,
+        sortOrder: cat.sortOrder ?? 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // 3. Groups → groupIdMap (categoryId remapped).
+    const sourceGroups = (
+      await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
+    ).filter((g) => g.organizationId === orgId);
+    const groupIdMap = new Map<string, string>();
+    const groupById = new Map<string, (typeof sourceGroups)[number]>();
+    for (const g of sourceGroups) groupById.set(g.id, g);
+    for (const group of sourceGroups) {
+      const nid = createId();
+      groupIdMap.set(group.id, nid);
+      await ctx.db.insert("projectGroups", {
+        id: nid,
+        organizationId: orgId,
+        projectId: newId,
+        ...(group.categoryId ? { categoryId: catIdMap.get(group.categoryId) } : {}),
+        title: group.title,
+        ...(group.description != null ? { description: group.description } : {}),
+        ...(group.quantity != null ? { quantity: group.quantity } : {}),
+        ...(group.price != null ? { price: group.price } : {}),
+        ...(group.suggestedPrice != null ? { suggestedPrice: group.suggestedPrice } : {}),
+        ...(group.rentalPeriod != null ? { rentalPeriod: group.rentalPeriod } : {}),
+        ...(group.rentalQuantity != null ? { rentalQuantity: group.rentalQuantity } : {}),
+        sortOrder: group.sortOrder ?? 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // 4. Line items — parents then their children. A parent's remapped
+    //    category/group is inherited by its children (parity with the server's
+    //    copyLineItem, which passes newCategoryId/newGroupId down to children).
+    const allLines = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
+    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    const childrenByParent = new Map<string, SrcLine[]>();
+    for (const li of allLines) {
+      if (li.isKitChild && li.parentLineItemId) {
+        const arr = childrenByParent.get(li.parentLineItemId) ?? [];
+        arr.push(li);
+        childrenByParent.set(li.parentLineItemId, arr);
+      }
+    }
+    const parents = allLines
+      .filter((li) => !li.isKitChild)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+    for (const li of parents) {
+      // Resolve the new category/group this parent (and its children) land under.
+      let newGroupId: string | null = null;
+      let newCatId: string | null = null;
+      if (li.groupId) {
+        newGroupId = groupIdMap.get(li.groupId) ?? null;
+        const srcGroup = groupById.get(li.groupId);
+        newCatId = srcGroup?.categoryId ? catIdMap.get(srcGroup.categoryId) ?? null : null;
+      } else if (li.categoryId) {
+        newCatId = catIdMap.get(li.categoryId) ?? null;
+      }
+
+      const newParentId = createId();
+      await ctx.db.insert("projectLineItems", {
+        id: newParentId,
+        organizationId: orgId,
+        projectId: newId,
+        ...(newCatId ? { categoryId: newCatId } : {}),
+        ...(newGroupId ? { groupId: newGroupId } : {}),
+        ...(li.type ? { type: li.type } : {}),
+        ...(li.modelId ? { modelId: li.modelId } : {}),
+        ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
+        ...(li.kitId ? { kitId: li.kitId } : {}),
+        ...(li.supplierId ? { supplierId: li.supplierId } : {}),
+        ...(li.description != null ? { description: li.description } : {}),
+        ...(li.quantity != null ? { quantity: li.quantity } : {}),
+        ...(li.unitPrice != null ? { unitPrice: Number(li.unitPrice) } : {}),
+        ...(li.pricingType ? { pricingType: li.pricingType } : {}),
+        ...(li.duration != null ? { duration: Number(li.duration) } : {}),
+        ...(li.discount != null ? { discount: Number(li.discount) } : {}),
+        ...(li.lineTotal != null ? { lineTotal: Number(li.lineTotal) } : {}),
+        ...(li.sortOrder != null ? { sortOrder: li.sortOrder } : {}),
+        ...(li.groupName != null ? { groupName: li.groupName } : {}),
+        ...(li.notes != null ? { notes: li.notes } : {}),
+        ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
+        ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
+        ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
+        isKitChild: false,
+        status: "QUOTED",
+        createdAt: now,
+        updatedAt: now,
+      } as Record<string, unknown> as never);
+
+      for (const child of childrenByParent.get(li.id) ?? []) {
+        await ctx.db.insert("projectLineItems", {
+          id: createId(),
+          organizationId: orgId,
+          projectId: newId,
+          ...(newCatId ? { categoryId: newCatId } : {}),
+          ...(newGroupId ? { groupId: newGroupId } : {}),
+          ...(child.type ? { type: child.type } : {}),
+          ...(child.modelId ? { modelId: child.modelId } : {}),
+          ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
+          ...(child.description != null ? { description: child.description } : {}),
+          ...(child.quantity != null ? { quantity: child.quantity } : {}),
+          ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
+          ...(child.pricingType ? { pricingType: child.pricingType } : {}),
+          ...(child.duration != null ? { duration: Number(child.duration) } : {}),
+          ...(child.discount != null ? { discount: Number(child.discount) } : {}),
+          ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+          ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
+          ...(child.groupName != null ? { groupName: child.groupName } : {}),
+          ...(child.notes != null ? { notes: child.notes } : {}),
+          ...(child.childKind ? { childKind: child.childKind } : {}),
+          isKitChild: true,
+          parentLineItemId: newParentId,
+          status: "QUOTED",
+          createdAt: now,
+          updatedAt: now,
+        } as Record<string, unknown> as never);
+      }
+    }
+
+    // 5. Project managers.
+    const sourcePMs = (
+      await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
+    ).filter((r) => r.organizationId === orgId);
+    for (const pm of sourcePMs) {
+      await ctx.db.insert("projectManagers", {
+        id: createId(),
+        organizationId: orgId,
+        projectId: newId,
+        userId: pm.userId,
+        addedAt: now,
+      });
+    }
+
+    // 6. Recalc totals from the copied lines (never trust client money).
+    await recalcProjectTotals(ctx, newId, orgId, finiteOrNull(orgDefaultTaxRate), now);
+
+    // CREATE audit for the new project (native path logs it atomically).
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "CREATE",
+      entityType: "project",
+      entityId: newId,
+      entityName: newProjectNumber,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Duplicated project ${source.projectNumber} to ${newProjectNumber} - ${newName}`,
+      projectId: newId,
+      createdAt: now,
+    });
+
+    return { id: newId };
+  },
+});
+
+/**
+ * saveAsTemplateNative — snapshot a source project as a TEMPLATE (isTemplate true,
+ * status ENQUIRY), atomic. RBAC(project, create). Parity with the (former) server
+ * saveAsTemplate: copies ONLY the line items (parents + children, status QUOTED)
+ * and — critically — OMITS categoryId/groupId on every copied line (a template
+ * carries no grouping structure). Copies NO categories / groups / project managers,
+ * writes NO audit. `templateNumber` is resolved by the caller (generateTemplateCode,
+ * a Convex-mirror template count). recalcProjectTotals recomputes totals.
+ */
+export const saveAsTemplateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    sourceId: v.string(),
+    newId: v.string(),
+    templateNumber: v.string(),
+    templateName: v.string(),
+    orgId: v.string(),
+    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, { sourceId, newId, templateNumber, templateName, orgId, orgDefaultTaxRate, now, actor: suppliedActor }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "create");
+    await resolveActor(ctx, suppliedActor);
+
+    const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
+    if (!source || source.organizationId !== orgId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    }
+
+    // Dup-guard the client-minted template cuid (COLLECT all).
+    const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
+    if (cuidMatches.length > 0) throw new ConvexError("Template already exists");
+
+    // Number clash (org-scoped @@unique guard).
+    const clash = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", templateNumber))
+      .unique();
+    if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A template with code "${templateNumber}" already exists.` });
+
+    // 1. Template project row. Parity: saveAsTemplate copies FEWER scalars than
+    //    duplicate — no taxRate, no defaultRentalPeriod/Quantity.
+    await ctx.db.insert("projects", {
+      id: newId,
+      organizationId: orgId,
+      projectNumber: templateNumber,
+      name: templateName,
+      status: "ENQUIRY",
+      isTemplate: true,
+      ...(source.type ? { type: source.type } : {}),
+      ...(source.clientId ? { clientId: source.clientId } : {}),
+      ...(source.description ? { description: source.description } : {}),
+      ...(source.locationId ? { locationId: source.locationId } : {}),
+      ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
+      ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
+      ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
+      ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
+      ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
+      ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
+      ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
+      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
+      tags: source.tags ?? [],
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 2. Line items — parents then children. ★ categoryId/groupId OMITTED (parity).
+    const allLines = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
+    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    const childrenByParent = new Map<string, SrcLine[]>();
+    for (const li of allLines) {
+      if (li.isKitChild && li.parentLineItemId) {
+        const arr = childrenByParent.get(li.parentLineItemId) ?? [];
+        arr.push(li);
+        childrenByParent.set(li.parentLineItemId, arr);
+      }
+    }
+    const parents = allLines
+      .filter((li) => !li.isKitChild)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+    for (const li of parents) {
+      const newParentId = createId();
+      await ctx.db.insert("projectLineItems", {
+        id: newParentId,
+        organizationId: orgId,
+        projectId: newId,
+        ...(li.type ? { type: li.type } : {}),
+        ...(li.modelId ? { modelId: li.modelId } : {}),
+        ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
+        ...(li.kitId ? { kitId: li.kitId } : {}),
+        ...(li.supplierId ? { supplierId: li.supplierId } : {}),
+        ...(li.description != null ? { description: li.description } : {}),
+        ...(li.quantity != null ? { quantity: li.quantity } : {}),
+        ...(li.unitPrice != null ? { unitPrice: Number(li.unitPrice) } : {}),
+        ...(li.pricingType ? { pricingType: li.pricingType } : {}),
+        ...(li.duration != null ? { duration: Number(li.duration) } : {}),
+        ...(li.discount != null ? { discount: Number(li.discount) } : {}),
+        ...(li.lineTotal != null ? { lineTotal: Number(li.lineTotal) } : {}),
+        ...(li.sortOrder != null ? { sortOrder: li.sortOrder } : {}),
+        ...(li.groupName != null ? { groupName: li.groupName } : {}),
+        ...(li.notes != null ? { notes: li.notes } : {}),
+        ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
+        ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
+        ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
+        isKitChild: false,
+        status: "QUOTED",
+        createdAt: now,
+        updatedAt: now,
+      } as Record<string, unknown> as never);
+
+      for (const child of childrenByParent.get(li.id) ?? []) {
+        await ctx.db.insert("projectLineItems", {
+          id: createId(),
+          organizationId: orgId,
+          projectId: newId,
+          ...(child.type ? { type: child.type } : {}),
+          ...(child.modelId ? { modelId: child.modelId } : {}),
+          ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
+          ...(child.description != null ? { description: child.description } : {}),
+          ...(child.quantity != null ? { quantity: child.quantity } : {}),
+          ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
+          ...(child.pricingType ? { pricingType: child.pricingType } : {}),
+          ...(child.duration != null ? { duration: Number(child.duration) } : {}),
+          ...(child.discount != null ? { discount: Number(child.discount) } : {}),
+          ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+          ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
+          ...(child.groupName != null ? { groupName: child.groupName } : {}),
+          ...(child.notes != null ? { notes: child.notes } : {}),
+          isKitChild: true,
+          parentLineItemId: newParentId,
+          status: "QUOTED",
+          createdAt: now,
+          updatedAt: now,
+        } as Record<string, unknown> as never);
+      }
+    }
+
+    // 3. Recalc totals from the copied lines.
+    await recalcProjectTotals(ctx, newId, orgId, finiteOrNull(orgDefaultTaxRate), now);
+
+    return { id: newId };
   },
 });

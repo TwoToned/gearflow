@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
+import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
@@ -119,19 +120,8 @@ export const reserveSubHireOrderNumber = mutation({
   args: { organizationId: v.string(), now: v.number(), floor: v.optional(v.number()) },
   handler: async (ctx, { organizationId, now, floor }) => {
     await requireService(ctx);
-    const existing = await loadByOrg(ctx, organizationId);
-    const blob = existing?.settings ? safeParse(existing.settings) : {};
-    const stored = (blob.subHireOrderCounter as number) || 0;
-    const current = Math.max(stored, floor ?? 0);
-    const next = current + 1;
-    blob.subHireOrderCounter = next;
-    const settings = JSON.stringify(blob);
-    if (existing) {
-      await ctx.db.patch(existing._id, { settings, updatedAt: now });
-    } else {
-      await ctx.db.insert("orgSettings", { organizationId, settings, createdAt: now, updatedAt: now });
-    }
-    return { orderNumber: `SH-${String(next).padStart(4, "0")}` };
+    // Shared RMW (keystone) — also called INSIDE browser-direct sub-hire create mutations.
+    return await reserveSubHireOrderNumberCounter(ctx, organizationId, now, floor);
   },
 });
 

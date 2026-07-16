@@ -80,7 +80,20 @@ mints cuids inline — Convex mutations tolerate `createId()`) is shared by mode
 > + MF-2/3/4 hardening before browser-direct. The other 8 domains have ONLY `requireService`
 > CRUD mirrors → each needs a `*Writes.ts` authored to the `projectManagersWrites.ts` bar.
 > **PR #551 (MERGED)** = slice 1a defensive hardening (finite guards + patch structural-strip
-> + project money-anchor strip; `convex/lib/moneyGuards.ts`). NEXT: line-items keystone MF-1.
+> + project money-anchor strip; `convex/lib/moneyGuards.ts`).
+> **★ 2026-07-16b — MONEY-KEYSTONE FINISH (PR #570, task #14).** line-items + projects are
+> now browser-direct behind default-OFF flags (`NEXT_PUBLIC_NATIVE_LINEITEM_BROWSER` /
+> `NEXT_PUBLIC_NATIVE_PROJECT_STATUS_BROWSER`). Slices: (A) fold collab+webhook tail into the
+> native line-item mutations (transactional, `emitSideEffects`/`emitActivity`-gated for
+> deploy-safety); (B-pre) internalize `orgDefaultTaxRate` from `orgSettings` in-mutation
+> (closes the client tax-spoof hole; kept `v.optional` + ignored for expand-contract);
+> (B) `useLineItemWrites()` hook + 5 consumers; (C) fold `project.status_changed` into
+> `updateStatusNative` + status consumers. `line-items.ts`/`projects.ts` stay PARTIAL-KEEPS
+> (reads + `recalculateProjectTotals` for woocommerce + legacy fallback). Batch line-item ops
+> + heavier project forms (wizard/duplicate/template) not yet flipped. ⚠️ Convex changes are
+> expand-contract backward-compatible with the deployed `NATIVE_*=true` app image (an
+> intermediate breaking push briefly rejected prod line-item/kit writes — see [[convex-prod-push-expand-contract]]).
+> CONTRACT follow-up (post-deploy): drop the vestigial optional `orgDefaultTaxRate` arg.
 - Foundation: native `recalculateProjectTotals` (keystone #1) FIRST — **DONE** (`convex/lib/recalc.ts` + `lineItemWrites.recalcNative`, prod flag `NATIVE_RECALC=true`)
 - ~~`project-managers.ts`~~ **DONE (#520)** — deleted; getProjectManagers was DEAD (panel reads managers from the project-detail composite); 3 writes → `convex/projectManagersWrites.ts` add/remove/setNative. ★ The Better Auth seam is ELIMINATED — member validation (`members` by_org_user) + user-label audit (`users` mirror name||email||id) run inside the mutation via the existing Convex mirrors, no Prisma. RBAC project:manage = owner-only via the shared permissionsCore wildcard (exact parity). / ~~`project-tasks.ts`~~ **DONE (#522)** — deleted; getMyOpenTasks/reorder dead; 2 composite reads (assignees + listByProjectWithRelations, users/crew mirrors, assigneeUser membership-gated) + 5 writes (create/update/delete/bulkUpdate/bulkDelete, project:update), `project-media.ts` (ownership guard), `project-costs` done W1
 - `project-groups.ts`, `project-categories.ts` (cascade null-out + suggested-price math → mutations), `group-templates.ts` (applyGroupTemplate orchestration)

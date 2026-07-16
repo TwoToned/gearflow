@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { ArrowLeft, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react";
 
-import { createTestTagRecord } from "@/server/test-tag-records";
+import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,7 @@ function QuickTestContent() {
   const { data: session } = useSession();
   const orgId = activeOrg?.id;
   const convex = useConvex();
+  const ttWrites = useTestTagWrites();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [sessionLogExpanded, setSessionLogExpanded] = useState(false);
 
@@ -168,7 +169,7 @@ function QuickTestContent() {
         notes: st.notes || undefined,
       }));
 
-      return createTestTagRecord({
+      return ttWrites.recordTest({
         testTagAssetId: state.asset.id,
         testProfileId: state.profile?.id,
         testDate: new Date(),

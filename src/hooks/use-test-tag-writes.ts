@@ -28,6 +28,39 @@ type UpdateInput = {
   testProfileId?: string | null; outletCount?: number | null; notes?: string;
   assetId?: string | null; bulkAssetId?: string | null;
 };
+type SubTestInput = {
+  label: string; sortOrder: number; result: "PASS" | "FAIL";
+  earthContinuityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; earthContinuityReading?: number | null;
+  insulationResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; insulationReading?: number | null;
+  leakageCurrentResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; leakageCurrentReading?: number | null;
+  polarityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; notes?: string;
+};
+type RecordTestInput = {
+  testTagAssetId: string;
+  testProfileId?: string;
+  testDate: Date | string;
+  testedById?: string;
+  testerName: string;
+  result: "PASS" | "FAIL";
+  visualInspectionResult?: "PASS" | "FAIL";
+  visualCordCondition?: boolean; visualPlugCondition?: boolean; visualHousingCondition?: boolean;
+  visualSwitchCondition?: boolean; visualVentsUnobstructed?: boolean; visualCordGrip?: boolean;
+  visualEarthPin?: boolean; visualMarkingsLegible?: boolean; visualNoModifications?: boolean;
+  visualNotes?: string;
+  equipmentClassTested?: "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY";
+  testMethod?: "INSULATION_RESISTANCE" | "LEAKAGE_CURRENT" | "BOTH";
+  earthContinuityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; earthContinuityReading?: number;
+  insulationResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; insulationReading?: number; insulationTestVoltage?: number;
+  leakageCurrentResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; leakageCurrentReading?: number;
+  polarityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  rcdTripTimeResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; rcdTripTimeReading?: number;
+  functionalTestResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; functionalTestNotes?: string;
+  failureAction?: "NONE" | "REPAIRED" | "REMOVED_FROM_SERVICE" | "DISPOSED" | "REFERRED_TO_ELECTRICIAN";
+  failureNotes?: string;
+  nextDueDate: Date | string;
+  subTests?: SubTestInput[];
+  outletCount?: number;
+};
 
 export function useTestTagWrites() {
   const { data: session } = useSession();
@@ -41,6 +74,7 @@ export function useTestTagWrites() {
   const deleteM = useMutation(api.testTagAssetsWrites.deleteNative);
   const reactivateM = useMutation(api.testTagAssetsWrites.reactivateNative);
   const backfillM = useMutation(api.testTagAssetsWrites.backfillNative);
+  const recordTestM = useMutation(api.testTagRecordsWrites.createNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -76,6 +110,28 @@ export function useTestTagWrites() {
     backfill: async (): Promise<{ created: number; retired: number }> => {
       const org = requireOrg();
       return await backfillM({ orgId: org, now: Date.now() });
+    },
+    /**
+     * Record a test — the whole T&T state machine (record + sub-tests + asset
+     * scalars + failure actions + maintenance referral + status recalc + audit)
+     * in ONE atomic native mutation. Mints every id client-side; dates → epoch ms.
+     */
+    recordTest: async (data: RecordTestInput): Promise<{ id: string }> => {
+      const org = requireOrg();
+      const { testDate, nextDueDate, subTests, ...rest } = data;
+      return await recordTestM({
+        orgId: org,
+        recordId: createId(),
+        ...rest,
+        testDate: new Date(testDate).getTime(),
+        nextDueDate: new Date(nextDueDate).getTime(),
+        subTests: subTests?.map((st) => ({ id: createId(), ...st })),
+        maintenanceId: createId(),
+        maintenanceLinkId: createId(),
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      } as Parameters<typeof recordTestM>[0]);
     },
   };
 }

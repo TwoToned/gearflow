@@ -9,7 +9,6 @@ import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getLatestTestRecord } from "@/server/test-tag-records";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getStatusColor } from "@/lib/status-colors";
@@ -78,9 +77,9 @@ export function ScanStep({
   };
 
   const handleQuickPass = async () => {
-    if (!state.asset) return;
+    if (!state.asset || !orgId) return;
     try {
-      const latest = await getLatestTestRecord(state.asset.id);
+      const latest = await convex.query(api.testTagRecords.latestForAsset, { orgId, testTagAssetId: state.asset.id });
       if (latest) {
         dispatch({ type: "QUICK_PASS", previousRecord: latest as Record<string, unknown> });
       } else {

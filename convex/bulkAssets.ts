@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -36,19 +37,6 @@ export const getById = query({
 });
 
 const BULK_STATUS_RANK: Record<string, number> = { ACTIVE: 0, LOW_STOCK: 1, OUT_OF_STOCK: 2, RETIRED: 3 };
-function bulkMatchesSearch(haystacks: (string | null | undefined)[], search: string): boolean {
-  const needle = search.toLowerCase();
-  return haystacks.some((h) => (h ?? "").toLowerCase().includes(needle));
-}
-function bulkCompare(av: unknown, bv: unknown, dir: 1 | -1): number {
-  const aNull = av == null, bNull = bv == null;
-  if (aNull && bNull) return 0;
-  if (aNull) return dir === 1 ? 1 : -1;
-  if (bNull) return dir === 1 ? -1 : 1;
-  if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-  if (typeof av === "boolean" && typeof bv === "boolean") return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
-  return String(av).localeCompare(String(bv)) * dir;
-}
 
 /**
  * Paginated BULK-ASSET list — browser-native replacement for the getBulkAssets
@@ -98,18 +86,17 @@ export const listPage = query({
       if (a.locationId && (b.locationId ?? null) !== a.locationId) return false;
       if (a.modelId && b.modelId !== a.modelId) return false;
       if (a.categoryId && categoryFor(b.modelId) !== a.categoryId) return false;
-      if (a.search && !bulkMatchesSearch([b.assetTag, modelNameFor(b.modelId)], a.search)) return false;
+      if (a.search && !matchesSearch([b.assetTag, modelNameFor(b.modelId)], a.search)) return false;
       return true;
     });
-    const total = filtered.length;
     const keyFn = (b: typeof rows[number]): unknown => {
       if (sortBy === "model") return modelNameFor(b.modelId);
       if (sortBy === "location") return locationNameFor(b.locationId ?? null);
       if (sortBy === "status") return BULK_STATUS_RANK[b.status ?? "ACTIVE"];
       return (b as unknown as Record<string, unknown>)[sortBy];
     };
-    const sorted = [...filtered].sort((x, y) => bulkCompare(keyFn(x), keyFn(y), dir));
-    const pageRows = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const sorted = [...filtered].sort((x, y) => compareValues(keyFn(x), keyFn(y), dir));
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
     const bulkAssets = pageRows.map((b) => {
       const model = modelMap.get(b.modelId) ?? null;
@@ -131,7 +118,7 @@ export const listPage = query({
       };
     });
 
-    return { bulkAssets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    return { bulkAssets, total, page, pageSize, totalPages };
   },
 });
 

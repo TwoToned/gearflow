@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -31,19 +32,6 @@ export const list = query({
 
 const A_STATUS_RANK: Record<string, number> = { AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5 };
 const A_CONDITION_RANK: Record<string, number> = { NEW: 0, GOOD: 1, FAIR: 2, POOR: 3, DAMAGED: 4 };
-function aMatchesSearch(hs: (string | null | undefined)[], search: string): boolean {
-  const n = search.toLowerCase();
-  return hs.some((h) => (h ?? "").toLowerCase().includes(n));
-}
-function aCompare(av: unknown, bv: unknown, dir: 1 | -1): number {
-  const aN = av == null, bN = bv == null;
-  if (aN && bN) return 0;
-  if (aN) return dir === 1 ? 1 : -1;
-  if (bN) return dir === 1 ? -1 : 1;
-  if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-  if (typeof av === "boolean" && typeof bv === "boolean") return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
-  return String(av).localeCompare(String(bv)) * dir;
-}
 
 /**
  * Paginated ASSET list — browser-native replacement for the getAssets server action.
@@ -106,10 +94,9 @@ export const listPage = query({
       if (a.locationIdIn && a.locationIdIn.length > 0 && !(r.locationId != null && a.locationIdIn.includes(r.locationId))) return false;
       if (a.categoryIdIn && a.categoryIdIn.length > 0) { const cat = categoryFor(r.modelId); if (!(cat != null && a.categoryIdIn.includes(cat))) return false; }
       if (a.tagsHasSome && a.tagsHasSome.length > 0 && !(r.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
-      if (a.search && !aMatchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
+      if (a.search && !matchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
       return true;
     });
-    const total = filtered.length;
     const keyFn = (r: typeof rows[number]): unknown => {
       if (sortBy === "model") return modelNameFor(r.modelId);
       if (sortBy === "location") return locationNameFor(r.locationId ?? null);
@@ -117,8 +104,8 @@ export const listPage = query({
       if (sortBy === "condition") return A_CONDITION_RANK[r.condition ?? "GOOD"];
       return (r as unknown as Record<string, unknown>)[sortBy];
     };
-    const sorted = [...filtered].sort((x, y) => aCompare(keyFn(x), keyFn(y), dir));
-    const pageRows = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const sorted = [...filtered].sort((x, y) => compareValues(keyFn(x), keyFn(y), dir));
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
     const assets = pageRows.map((r) => {
       const model = modelMap.get(r.modelId) ?? null;
@@ -128,7 +115,7 @@ export const listPage = query({
         location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
       };
     });
-    return { assets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    return { assets, total, page, pageSize, totalPages };
   },
 });
 
@@ -161,7 +148,7 @@ export const listGallery = query({
 
     const filtered = rows.filter((r) => {
       if ((r.isActive ?? true) !== true) return false;
-      if (search && !aMatchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], search)) return false;
+      if (search && !matchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], search)) return false;
       return true;
     });
 

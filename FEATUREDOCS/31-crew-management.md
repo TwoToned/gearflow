@@ -142,6 +142,16 @@ Assignment rate is resolved in this order:
 | `/crew/timesheets` | TimesheetsPage | All time entries with DataTable, filtering, search, edit/delete, export |
 | `/crew/settings` | CrewSettingsPage | Manage roles and skills |
 
+**CrewTable data source (2026-07, perf fix):** server-side paginated —
+`crewMembers.listPage` (filter/sort/crewRole join done in Convex) via
+`useAuthedQuery`, replacing whole-org `useCrewMembers`/`useCrewRoles` live
+subscriptions that filtered/joined/sorted client-side. See
+`docs/designs/perf-convex-efficiency-2026-06.md` Finding #1. The linked platform
+user (Better Auth, cross-domain) stays a separate merge applied after the paginated
+fetch — search no longer matches the linked user's display name, only this table's
+own fields (a narrow, disclosed tradeoff since Convex can't join Better Auth data).
+`icalToken` redaction for non-service callers carries over unchanged.
+
 ## Profile Pictures
 - Upload/remove via hover overlay on avatar in crew detail page header (only for unlinked crew members)
 - API route: `POST/DELETE /api/crew/avatar` — validates org ownership, resizes to 256x256 JPEG via sharp

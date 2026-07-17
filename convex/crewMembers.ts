@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -24,6 +25,78 @@ export const list = query({
       .collect();
     const auth = await getAuthContext(ctx);
     return auth?.kind === "service" ? docs : docs.map((d) => redactFields(d, ["icalToken"]));
+  },
+});
+
+/**
+ * Paginated CREW list — browser-native replacement for CrewTable's
+ * useCrewMembers/useCrewRoles whole-org live subscriptions + client-side
+ * filter/sort/paginate (Finding #1, docs/designs/perf-convex-efficiency-2026-06.md).
+ * crewRole (name/color) is resolved server-side. The linked platform user's
+ * name/image (Better Auth, cross-domain — Convex can't join it) stays a
+ * separate merge the caller applies AFTER this query, same as before; search
+ * here only covers this table's own fields (firstName/lastName/email/phone/
+ * department/tags) — NOT the linked user's display name, a narrow, disclosed
+ * behavior change from the old client-side search (see ProjectTable's git
+ * history for the equivalent tradeoff notes elsewhere in this rollout).
+ * icalToken is redacted for non-service callers, matching `list`.
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    type: v.optional(v.string()),
+    department: v.optional(v.string()),
+    status: v.optional(v.string()),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    // Allowlisted, not a passthrough: sort runs on the RAW doc (below, before
+    // redaction), so an unvalidated client-supplied sortBy could be used to sort by
+    // icalToken (a bearer secret for the unauthenticated crew-calendar route) —
+    // the token value is stripped from the response, but its relative ordering
+    // across rows would still leak. Only the columns CrewTable actually exposes as
+    // sortable are allowed; anything else falls back to the default.
+    const SORTABLE_FIELDS = new Set(["lastName", "type", "department", "email", "status"]);
+    const sortBy = a.sortBy && SORTABLE_FIELDS.has(a.sortBy) ? a.sortBy : "lastName";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const [rows, roles] = await Promise.all([
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const roleMap = new Map(roles.map((r) => [r.id, r]));
+
+    const filtered = rows.filter((m) => {
+      if (a.type && m.type !== a.type) return false;
+      if (a.department && m.department !== a.department) return false;
+      if (a.status && m.status !== a.status) return false;
+      if (a.search && !matchesSearch([m.firstName, m.lastName, m.email, m.phone, m.department, ...(m.tags ?? [])], a.search)) return false;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((x, y) =>
+      compareValues((x as unknown as Record<string, unknown>)[sortBy], (y as unknown as Record<string, unknown>)[sortBy], dir),
+    );
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
+
+    const auth = await getAuthContext(ctx);
+    const items = pageRows.map((m) => {
+      const role = m.crewRoleId ? roleMap.get(m.crewRoleId) ?? null : null;
+      const redacted = auth?.kind === "service" ? m : redactFields(m, ["icalToken"]);
+      return {
+        ...redacted,
+        crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,
+      };
+    });
+
+    return { items, total, page, pageSize, totalPages };
   },
 });
 

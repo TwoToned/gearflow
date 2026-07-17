@@ -25,10 +25,6 @@ export type CrewMemberDoc = Doc<"crewMembers">;
 export type CrewRoleDoc = Doc<"crewRoles">;
 export type CrewSkillDoc = Doc<"crewSkills">;
 
-export function useCrewMembers(orgId: string | undefined): CrewMemberDoc[] | undefined {
-  return useAuthedQuery(api.crewMembers.list, orgId ? { orgId } : "skip");
-}
-
 export function useCrewMember(id: string | undefined): CrewMemberDoc | null | undefined {
   return useAuthedQuery(api.crewMembers.getById, id ? { id } : "skip");
 }

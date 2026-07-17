@@ -1,5 +1,12 @@
 # Kit System
 
+## Kits List Page (`src/app/(app)/kits/page.tsx`)
+Server-side paginated: `kits.listPage` (filter/sort/category+location joins done in
+Convex, one query per page) via `useAuthedQuery`, not a whole-org live subscription
+(perf fix, 2026-07 — see `docs/designs/perf-convex-efficiency-2026-06.md` Finding #1).
+Member-item counts + primary photo are a separate, cross-domain, non-reactive merge
+(`useKitCounts`) applied after the paginated fetch.
+
 ## Data Model
 - `Kit` has own `assetTag`, `status`, `condition`
 - `Kit.checkMode`: `KIT_LEVEL` (default) or `PER_ITEM` — controls whether kit-level check items are used or each child uses its model's checks

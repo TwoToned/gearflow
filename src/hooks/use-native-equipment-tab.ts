@@ -87,7 +87,13 @@ export function useNativeEquipmentTab(
   const overbooking = useAuthedQuery(
     api.overbooking.bundle,
     enabled && orgId && modelIds && modelIds.length > 0
-      ? { orgId: orgId!, modelIds }
+      ? {
+          orgId: orgId!,
+          modelIds,
+          thisProjectId: projectId!,
+          rentalStartDate: project?.rentalStartDate ?? undefined,
+          rentalEndDate: project?.rentalEndDate ?? undefined,
+        }
       : "skip",
   );
 

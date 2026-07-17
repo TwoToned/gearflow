@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -31,25 +32,13 @@ export const list = query({
 
 const A_STATUS_RANK: Record<string, number> = { AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5 };
 const A_CONDITION_RANK: Record<string, number> = { NEW: 0, GOOD: 1, FAIR: 2, POOR: 3, DAMAGED: 4 };
-function aMatchesSearch(hs: (string | null | undefined)[], search: string): boolean {
-  const n = search.toLowerCase();
-  return hs.some((h) => (h ?? "").toLowerCase().includes(n));
-}
-function aCompare(av: unknown, bv: unknown, dir: 1 | -1): number {
-  const aN = av == null, bN = bv == null;
-  if (aN && bN) return 0;
-  if (aN) return dir === 1 ? 1 : -1;
-  if (bN) return dir === 1 ? -1 : 1;
-  if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-  if (typeof av === "boolean" && typeof bv === "boolean") return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
-  return String(av).localeCompare(String(bv)) * dir;
-}
 
 /**
  * Paginated ASSET list — browser-native replacement for the getAssets server action.
  * Fetches the org's assets + model(with category)/location maps, then filters/sorts/
- * paginates in JS (parity with filterAssets/sortAssets/paginate). One-shot (the only
- * consumer — the T&T-new picker — reads it non-reactively).
+ * paginates in JS (parity with filterAssets/sortAssets/paginate). Two consumers: the
+ * T&T-new picker (one-shot, non-reactive) and AssetTable (live, via useAuthedQuery —
+ * see docs/designs/perf-convex-efficiency-2026-06.md Finding #1).
  */
 export const listPage = query({
   args: {
@@ -106,10 +95,9 @@ export const listPage = query({
       if (a.locationIdIn && a.locationIdIn.length > 0 && !(r.locationId != null && a.locationIdIn.includes(r.locationId))) return false;
       if (a.categoryIdIn && a.categoryIdIn.length > 0) { const cat = categoryFor(r.modelId); if (!(cat != null && a.categoryIdIn.includes(cat))) return false; }
       if (a.tagsHasSome && a.tagsHasSome.length > 0 && !(r.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
-      if (a.search && !aMatchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
+      if (a.search && !matchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
       return true;
     });
-    const total = filtered.length;
     const keyFn = (r: typeof rows[number]): unknown => {
       if (sortBy === "model") return modelNameFor(r.modelId);
       if (sortBy === "location") return locationNameFor(r.locationId ?? null);
@@ -117,8 +105,8 @@ export const listPage = query({
       if (sortBy === "condition") return A_CONDITION_RANK[r.condition ?? "GOOD"];
       return (r as unknown as Record<string, unknown>)[sortBy];
     };
-    const sorted = [...filtered].sort((x, y) => aCompare(keyFn(x), keyFn(y), dir));
-    const pageRows = sorted.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const sorted = [...filtered].sort((x, y) => compareValues(keyFn(x), keyFn(y), dir));
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
     const assets = pageRows.map((r) => {
       const model = modelMap.get(r.modelId) ?? null;
@@ -128,7 +116,55 @@ export const listPage = query({
         location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
       };
     });
-    return { assets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    return { assets, total, page, pageSize, totalPages };
+  },
+});
+
+/**
+ * ALL of an org's active serialized assets (NOT paginated), sorted by model
+ * name — browser-native backend for the asset gallery's "browse the whole
+ * catalogue" view (`asset-gallery.tsx`). Unlike `listPage`, this returns every
+ * matching row in one shot: the gallery groups everything by category on one
+ * scroll, which doesn't fit a paginated contract (see docs/designs/
+ * perf-convex-efficiency-2026-06.md Finding #1 — "Option A" decision). Read
+ * shape is still O(org's active assets), since "show everything" is the
+ * feature, but it's now ONE query with joins + search done server-side,
+ * replacing the 4 whole-org live subscriptions (assets/models/categories/
+ * locations) the gallery used to mount and filter/join client-side.
+ */
+export const listGallery = query({
+  args: { orgId: v.string(), search: v.optional(v.string()) },
+  handler: async (ctx, { orgId, search }) => {
+    await requireOrgRead(ctx, orgId);
+    const [rows, models, categories, locations] = await Promise.all([
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const modelNameFor = (id: string) => modelMap.get(id)?.name;
+
+    const filtered = rows.filter((r) => {
+      if ((r.isActive ?? true) !== true) return false;
+      if (search && !matchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], search)) return false;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((x, y) =>
+      String(modelNameFor(x.modelId) ?? "").localeCompare(String(modelNameFor(y.modelId) ?? ""), undefined, { sensitivity: "base" }),
+    );
+
+    return sorted.map((r) => {
+      const model = modelMap.get(r.modelId) ?? null;
+      return {
+        ...r,
+        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
+      };
+    });
   },
 });
 

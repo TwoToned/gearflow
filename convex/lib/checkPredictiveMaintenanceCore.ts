@@ -51,7 +51,7 @@ export async function runPredictiveMaintenance(
 
   for (const entry of plan) {
     // Last 3 records for this asset + check item (org-scoped composite index),
-    // newest-first — mirrors checkRecords.listRecentByAssetAndCheckItem.
+    // newest-first.
     const recent = (
       await ctx.db
         .query("checkRecords")

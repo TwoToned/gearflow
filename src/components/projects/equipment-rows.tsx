@@ -45,6 +45,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
 import { useRowShortcuts } from "./use-row-shortcuts";
+import { targetKey, lineItemTarget } from "@/lib/collaboration-targets";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
@@ -1085,6 +1086,8 @@ export function LineItemRow({
   showCostColumn,
   orgId,
   projectId,
+  lockByTarget,
+  markerByTarget,
   onToggle,
   onEdit,
   onMoveToCategory,
@@ -1115,6 +1118,10 @@ export function LineItemRow({
   /** Collaboration: org and project identifiers for live status badges. */
   orgId?: string;
   projectId?: string;
+  /** Project-wide lock/marker maps (one subscription each, built by the caller)
+   *  looked up by target key instead of this row mounting its own subscription. */
+  lockByTarget?: Map<string, { ownerName: string; ownerColor: string; isStale: boolean }>;
+  markerByTarget?: Map<string, { status: string; reason?: string }>;
   onToggle?: () => void;
   onEdit: () => void;
   /** Opens the "Move to category" dialog. The item lands under a
@@ -1137,15 +1144,13 @@ export function LineItemRow({
   const shiftKeyRef = useRef(false);
   const { setReviewMarker } = useCollaborationWrites();
 
-  // Collaboration: reactive lock and review marker for this row
-  const liveLock = useAuthedQuery(
-    api.collaboration.getLock,
-    orgId && projectId ? { orgId, entityType: "project", entityId: projectId, targetType: "lineItem", targetId: item.id } : "skip"
-  );
-  const liveMarker = useAuthedQuery(
-    api.collaboration.getReviewMarker,
-    orgId && projectId ? { orgId, entityId: projectId, targetId: item.id } : "skip"
-  );
+  // Collaboration: reactive lock and review marker for this row, looked up from
+  // the project-wide maps the caller (equipment-tab.tsx) already subscribes to
+  // ONCE — NOT a per-row subscription (targetId differs per row, so Convex can't
+  // dedupe a per-row getLock/getReviewMarker query the way it dedupes the
+  // identical-args listThreadCommentCounts call below).
+  const liveLock = lockByTarget?.get(targetKey(lineItemTarget(item.id)));
+  const liveMarker = markerByTarget?.get(item.id);
   // Comment counts for all line items on the project — Convex dedupes this
   // identical subscription across every row, so it's a single live query.
   const commentCounts = useAuthedQuery(
@@ -1155,7 +1160,9 @@ export function LineItemRow({
   const myCounts = commentCounts?.[item.id];
   const openComments = myCounts?.open ?? 0;
   const blockingComments = myCounts?.blockingOpen ?? 0;
-  const hasActiveLock = liveLock && !liveLock.isStale && liveLock.status === "active";
+  // listLocksForEntity already filters to status "active" server-side, so
+  // presence in the map implies active — only isStale needs re-checking here.
+  const hasActiveLock = !!liveLock && !liveLock.isStale;
 
   // Phase 4 live-build feedback: briefly highlight the row whenever its data
   // changes — on the editor's own save and on a realtime update pushed by

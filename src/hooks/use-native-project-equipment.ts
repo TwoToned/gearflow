@@ -84,7 +84,13 @@ export function useNativeProjectDetail(
   const overbooking = useAuthedQuery(
     api.overbooking.bundle,
     enabled && orgId && modelIds && modelIds.length > 0
-      ? { orgId: orgId!, modelIds }
+      ? {
+          orgId: orgId!,
+          modelIds,
+          thisProjectId: projectId!,
+          rentalStartDate: base?.rentalStartDate?.getTime(),
+          rentalEndDate: base?.rentalEndDate?.getTime(),
+        }
       : "skip",
   );
 

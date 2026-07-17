@@ -131,11 +131,23 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   }, []);
   const native = useNativeEquipmentTab(projectId, orgId, pendingEdits);
 
-  // Passive section/group collaboration state: one lock subscription and one
-  // comment-count subscription for the project, then row lookups by target key.
-  // This avoids mounting active edit-lock hooks for every group row.
+  // Passive section/group/line-item collaboration state: one lock subscription,
+  // one review-marker subscription, and one comment-count subscription for the
+  // whole project, then row lookups by target key. This avoids mounting a
+  // getLock/getReviewMarker hook PER ROW — LineItemRow used to do exactly that
+  // (2 extra live subscriptions per line item, un-dedupeable since each row's
+  // targetId differs), which is why collaboration.getLock/getReviewMarker were
+  // 9-10K calls/month on a 2-user org (Phase 0 baseline,
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #4). Both
+  // listLocksForEntity/listReviewMarkersForEntity already return every target
+  // under this project (no targetType filter), so the same maps cover section/
+  // group/category rows AND line-item rows.
   const sectionLocks = useAuthedQuery(
     api.collaboration.listLocksForEntity,
+    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
+  );
+  const reviewMarkers = useAuthedQuery(
+    api.collaboration.listReviewMarkersForEntity,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   );
   const commentCounts = useAuthedQuery(
@@ -147,10 +159,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       new Map(
         (sectionLocks ?? []).map((lock) => [
           targetKey({ targetType: lock.targetType, targetId: lock.targetId }),
-          { name: lock.ownerName, color: lock.ownerColor },
+          // `name`/`color` for the existing category/group `lockedBy` prop;
+          // `ownerName`/`ownerColor`/`isStale` for LineItemRow's badge (listLocksForEntity
+          // already filters to status "active" server-side, so presence in this map
+          // implies active — only `isStale` needs re-checking client-side).
+          { name: lock.ownerName, color: lock.ownerColor, ownerName: lock.ownerName, ownerColor: lock.ownerColor, isStale: lock.isStale },
         ])
       ),
     [sectionLocks]
+  );
+  const markerByTarget = React.useMemo(
+    () => new Map((reviewMarkers ?? []).map((m) => [m.targetId, m])),
+    [reviewMarkers]
   );
 
   // Multi-select state (row highlight via cmd/shift-click).
@@ -1060,6 +1080,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   key={item.id}
                                   item={item}
                                   indent="ml-12"
+                                  lockByTarget={lockByTarget}
+                                  markerByTarget={markerByTarget}
                                   overbookedInfo={undefined}
                                   isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
                                   showCostColumn={showCostColumn}
@@ -1154,6 +1176,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 indent="ml-12"
                                 orgId={orgId}
                                 projectId={projectId}
+                                lockByTarget={lockByTarget}
+                                markerByTarget={markerByTarget}
                                 onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
                                 onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
                                 canMoveUp={itemIndex > 0}
@@ -1192,6 +1216,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           indent="ml-3"
                           orgId={orgId}
                           projectId={projectId}
+                          lockByTarget={lockByTarget}
+                          markerByTarget={markerByTarget}
                           onMoveUp={() => moveLineItemInList(standaloneItems, itemIndex, -1)}
                           onMoveDown={() => moveLineItemInList(standaloneItems, itemIndex, 1)}
                           canMoveUp={itemIndex > 0}
@@ -1245,6 +1271,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     indent=""
                     orgId={orgId}
                     projectId={projectId}
+                    lockByTarget={lockByTarget}
+                    markerByTarget={markerByTarget}
                     onMoveUp={() => moveLineItemInList(uncatVisible, itemIndex, -1)}
                     onMoveDown={() => moveLineItemInList(uncatVisible, itemIndex, 1)}
                     canMoveUp={itemIndex > 0}
@@ -1338,6 +1366,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           indent="ml-12"
                           orgId={orgId}
                           projectId={projectId}
+                          lockByTarget={lockByTarget}
+                          markerByTarget={markerByTarget}
                           onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
                           onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
                           canMoveUp={itemIndex > 0}
@@ -1409,6 +1439,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           key={item.id}
                           item={item}
                           indent="ml-8"
+                          lockByTarget={lockByTarget}
+                          markerByTarget={markerByTarget}
                           overbookedInfo={undefined}
                           isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
                           showCostColumn={showCostColumn}

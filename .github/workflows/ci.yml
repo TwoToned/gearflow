@@ -188,3 +188,10 @@ jobs:
           BETTER_AUTH_SECRET: ci-dummy-secret
           BETTER_AUTH_URL: http://localhost:3000
           NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+      # Advisory bundle-size budget (POLICY.md R-8.1.5 / T-8). Non-blocking until
+      # the current baseline is measured and a real per-route budget registered;
+      # flip to blocking (remove continue-on-error) once green.
+      - name: Bundle size budget (advisory)
+        run: pnpm run size
+        continue-on-error: true

@@ -71,7 +71,7 @@ Actions per resource: `create, read, update, delete` (varies by resource)
 - **manager**: All CRUD except orgSettings.delete, orgMembers.delete
 - **member**: Read + create + update on operational resources, no org settings
 - **viewer**: Read-only on all resources
-- **Custom roles**: JSON-stored permissions override defaults, managed via `src/server/custom-roles.ts`. Each custom role has an optional `ssoGroupClaim` field for automatic SSO group-to-role matching.
+- **Custom roles**: removed — `CustomRole`/`customRoles` and `src/server/custom-roles.ts` no longer exist anywhere in the codebase (Prisma or Convex). Only the fixed owner/admin/manager/member/viewer roles above exist today.
 
 ## Client-Side Permission Checking
 - `useCurrentRole()` hook from `src/lib/use-permissions.ts` — returns `{ permissions, isLoading }`

@@ -243,7 +243,7 @@ instead.
 - QR generation (`qrcode`, `react-qr-code`) and `AssetScanLog` logging are
   unaffected and retained.
 
-### Scan Lookup (`src/server/scan-lookup.ts`)
+### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:
 1. Check `Asset` by `assetTag` → `/assets/registry/{id}`
 2. Check `Kit` by `assetTag` → `/kits/{id}`

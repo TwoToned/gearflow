@@ -25,6 +25,28 @@ const nextConfig: NextConfig = {
     "pg",
   ],
   async headers() {
+    // Content-Security-Policy — POLICY.md R-8.11.2. Shipped in REPORT-ONLY first
+    // (the policy's "report-only then enforce" rollout): browsers report violations
+    // but never block, so this cannot break the app. This is the *target* policy for
+    // the known stack (Next, Sentry, Google Maps, Convex, PWA worker); observe reports
+    // in prod, tighten the two `'unsafe-inline'` allowances (Next inline bootstrap +
+    // Tailwind styles) toward nonces, then promote the key to `Content-Security-Policy`.
+    // `frame-ancestors 'none'` mirrors the enforced `X-Frame-Options: DENY` above.
+    const cspReportOnly = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline' https://maps.googleapis.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https://*.convex.cloud https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
+      "font-src 'self' data:",
+      "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io https://*.ingest.sentry.io https://maps.googleapis.com",
+      "frame-src 'self'",
+      "worker-src 'self' blob:",
+      "manifest-src 'self'",
+    ].join("; ");
     return [
       {
         source: "/:path*",
@@ -33,6 +55,10 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-DNS-Prefetch-Control", value: "off" },
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value: cspReportOnly,
+          },
           // HSTS (POLICY.md R-8.11.2). 1-year max-age, scoped to this host only —
           // deliberately NO includeSubDomains / preload until every rvlt.app
           // subdomain is confirmed HTTPS-only. Browsers ignore this over plain

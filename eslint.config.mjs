@@ -32,6 +32,8 @@ const eslintConfig = [
       ".claude/skills/gstack/**",
       // Claude worktree artifacts (can contain massive build output)
       ".claude/worktrees/**",
+      // Generated code — excluded from length/naming rules per POLICY.md R-0.5
+      "src/generated/**",
     ],
   },
   {
@@ -60,6 +62,39 @@ const eslintConfig = [
       "react-hooks/refs": "warn",
       "react-hooks/use-memo": "warn",
       "react-hooks/preserve-manual-memoization": "warn",
+    },
+  },
+  {
+    // POLICY.md hygiene gates, wired at WARN as a burn-down baseline (the repo's
+    // lint entrypoint is bare `eslint`, so warnings stay visible in CI/editors
+    // without failing the build). These are the registered threshold values:
+    //   complexity  ≤10  (R-3.6 / T-1, NIST SP 500-235)
+    //   file length ≤400 / function length ≤60  (R-3.7 / T-4)
+    //   no explicit `any`  (R-8.2.2)
+    //   naming: types are PascalCase  (R-3.9; full conventions in CONTRIBUTING.md)
+    // Do NOT add new violations. Excludes generated code + tests per R-0.5.
+    files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
+    ignores: [
+      "**/*.test.{ts,tsx}",
+      "**/*.spec.{ts,tsx}",
+      "**/__tests__/**",
+      "src/generated/**",
+    ],
+    rules: {
+      complexity: ["warn", 10],
+      "max-lines": [
+        "warn",
+        { max: 400, skipBlankLines: true, skipComments: true },
+      ],
+      "max-lines-per-function": [
+        "warn",
+        { max: 60, skipBlankLines: true, skipComments: true, IIFEs: true },
+      ],
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/naming-convention": [
+        "warn",
+        { selector: "typeLike", format: ["PascalCase"] },
+      ],
     },
   },
 ];

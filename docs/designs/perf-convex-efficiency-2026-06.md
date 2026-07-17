@@ -887,17 +887,21 @@ option lists, not per-row data, so not the anti-pattern). Search is debounced 20
 (`useDebouncedValue`) since each keystroke is now a real round-trip, not a free client-side
 filter. Added `asset-table.smoke.test.tsx` (zero prior coverage on this component).
 
-**Not fixed — `asset-gallery.tsx` (documented gap, needs a product decision, not a perf
-call).** It still mounts `useAssets`/`useModels` as whole-org subscriptions
-(`asset-gallery.tsx:45-46`), same shape as the original finding. Unlike the table, the
-gallery is an **unpaginated, category-grouped "browse the whole catalogue" view** — it
-shows every active asset, grouped and sorted, on one scroll. `listPage`'s paginated
-contract doesn't fit that UX as-is; forcing it on would mean either (a) adding real
-pagination/infinite-scroll to the gallery (a UX change) or (b) requesting a huge `pageSize`
-to fake "show everything" (defeats the point of pagination, and still whole-org shaped).
-Punting rather than silently leaving this unrecorded — whoever picks it up next needs a
-product answer on whether the gallery should paginate/infinite-scroll before touching the
-query.
+**`asset-gallery.tsx` — SHIPPED (Option A, this session).** User chose to keep the gallery's
+"show everything, grouped by category" UX rather than add infinite-scroll (that was the other
+option — bounds the read for real, but breaks category counts mid-scroll and is a bigger
+change to a live feature). Added `assets.listGallery` — same read shape as before (every
+active asset; that's the feature, not a bug), but ONE server-side query doing the model/
+category/location joins and search filtering, replacing the 4 whole-org subscriptions
+(`useAssets`/`useModels`/`useLocations`/`useCategories`) the gallery used to mount and join
+client-side. Search debounced 200ms. `convex/assets.test.ts` added (zero prior coverage on
+this file — covers `listGallery`'s filter/sort/join + cross-org isolation).
+
+Residual, deliberately accepted: `listGallery` still reads every active asset in the org in
+one `.collect()` server-side — this is the feature ("browse everything"), not a leftover bug,
+but it means this query still carries the same Convex `.collect()` size-ceiling risk the
+design doc flags generally for large orgs (see "Convex limits & risks"). If the org's active
+asset count grows large enough to matter, infinite-scroll becomes the real fix — revisit then.
 
 ## Not re-checked this pass (lower priority / unaffected by the above)
 

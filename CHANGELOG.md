@@ -4,6 +4,26 @@ All notable changes to RVLT Flow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Adopted the Codebase Management & Hygiene Policy (`POLICY.md`, WEB profile) as the
+  governing standard; wired it into `CLAUDE.md`.
+- Baseline compliance audit at `docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`.
+- Required root files: `.editorconfig`, `SECURITY.md`, `CONTRIBUTING.md` (declares naming
+  conventions). Exception register at `docs/exceptions.md`.
+- README governance section: policy profile, docs map, and budget registry (R-0.4).
+- ESLint gates (warn-level) for complexity, file/function length, `no-explicit-any`, and
+  naming conventions.
+- Dependabot configuration for npm + GitHub Actions.
+
+### Fixed
+
+- Corrected `npm`/`npx` commands to `pnpm`/`pnpm exec` across README and `CLAUDE.md`
+  (repo is pnpm-only).
+
 ## [0.24.17.0] - 2026-07-17
 
 ### Changed

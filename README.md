@@ -260,6 +260,41 @@ src/
 
 ---
 
+## Governance & Documentation
+
+This repository is governed by [`POLICY.md`](./POLICY.md) — the Codebase Management &
+Hygiene Policy (RFC-2119 rules, threshold registry, audit procedure).
+
+- **Policy profile: `WEB`** (R-0.1) — production web/app service. No payment provider,
+  so §8.5 Billing is N/A.
+- **Contributing:** see [`CONTRIBUTING.md`](./CONTRIBUTING.md) — toolchain, branching,
+  commit rules, and the declared naming conventions (R-3.9).
+- **Exceptions:** temporary, expiring deviations are recorded in
+  [`docs/exceptions.md`](./docs/exceptions.md) (§15).
+- **Audits:** compliance audits live in [`docs/audits/`](./docs/audits/) (R-14.2). The
+  current baseline is `docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`.
+
+**Where further docs live:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) (overview + links),
+[`FEATUREDOCS/`](./FEATUREDOCS/) (per-feature docs), [`CLAUDE.md`](./CLAUDE.md) (agent/dev
+conventions), [`DESIGN.md`](./DESIGN.md) (design system), and [`docs/`](./docs/) (designs,
+roadmap, runbooks, audits).
+
+### Budget registry (R-0.4)
+
+This repo **accepts the POLICY.md §13 threshold defaults**, with the following registered
+overrides and project-specific (§13B) values:
+
+| Threshold | Value | Rationale |
+|---|---|---|
+| T-5 Coverage | **70%** (default 80%) | Current baseline over `src/lib/**`; ratcheting toward 80% — not yet CI-gated. |
+| T-P3 Backup retention | **90 days** | Daily Convex export retained 90 days (`.github/workflows/convex-backup.yml`). |
+
+Other §13B project thresholds (T-P1 audit-log retention, T-P2 PII retention, T-P4 cost
+budgets, T-P6 endpoint SLOs, T-P7 queue lag) are **not yet registered** — tracked as
+findings in the baseline audit.
+
+---
+
 ## License
 
 RVLT Flow is source-available under the [Business Source License 1.1](./LICENSE).

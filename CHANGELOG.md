@@ -4,6 +4,25 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.16.0] - 2026-07-17
+
+### Changed
+
+- Docs: repo-wide documentation tidy-up ahead of a planned audit. FEATUREDOCS,
+  CLAUDE.md, ARCHITECTURE.md, README.md, and PROMPT.md corrected to match the
+  post-Convex-migration architecture — stale `src/server/*.ts` paths updated to
+  their current `convex/*.ts`/`*Writes.ts` locations, wrong facts fixed (Prisma
+  version, PDF engine, dead React Query/Leaflet claims, a never-built PR-preview
+  section), and 13 fully-shipped design docs archived to `docs/designs/archive/`.
+  No behavior change — one stale code comment corrected
+  (`src/components/projects/equipment-tab.tsx`), everything else is docs/config.
+
+### Removed
+
+- Dead pre-Coolify pm2 deploy config (`ecosystem.config.js`/`.cjs`), an unused
+  `nixpacks.toml`, a superseded scratch spec (`KITEXPANSION.MD`), and 3 abandoned
+  design docs that were never built and are superseded by later decisions.
+
 ## [0.24.15.0] - 2026-07-12
 
 ### Changed

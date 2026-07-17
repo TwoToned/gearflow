@@ -467,15 +467,19 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 **Estimate:** human ~4-6 weeks initial / ongoing maintenance
 **Priority:** P2
 
-### Dev / Internal Documentation Overhaul
-**What:** Pass through every FEATUREDOCS file plus CLAUDE.md and ARCHITECTURE.md. Verify accuracy against current code, prune stale sections, fill gaps (new features added without doc updates), and re-link cross-references. Improve the index in ARCHITECTURE.md.
-**Why:** Docs drift. FEATUREDOCS has 30+ files but coverage is uneven — some features have extensive docs, others are stubs. A periodic audit keeps the docs trustworthy for both humans and the agent.
-**Pros:** Faster onboarding for new contributors, better agent context, surfaces dead code / orphaned features.
-**Cons:** Time investment with no user-visible output. Easy to defer indefinitely.
-**Context:** User flagged this in their Gearflow TODO. Run after a release cluster, not mid-feature.
-**Depends on:** Nothing.
-**Estimate:** human ~1 week / CC ~3-4 hours
-**Priority:** P3
+### ~~Dev / Internal Documentation Overhaul~~ ✅ SHIPPED
+Shipped v0.24.16.0. Full pass through every FEATUREDOCS file, CLAUDE.md,
+ARCHITECTURE.md, README.md, and PROMPT.md against the current Convex-native
+architecture — stale `src/server/*.ts` paths corrected to their
+`convex/*.ts`/`*Writes.ts` equivalents (verified file-by-file via grep, not
+guessed), factual errors fixed (Prisma version, PDF engine, dead React Query/
+Leaflet claims), and 13 fully-shipped design docs archived to
+`docs/designs/archive/`. Also swept and deleted dead deploy config
+(`ecosystem.config.{js,cjs}`, `nixpacks.toml`), a scratch spec, and 3 abandoned
+design docs. Follow-ups intentionally left open (not silently resolved): a
+fresh look at `docs/designs/{app-cleanup-unification,perf-convex-efficiency-2026-06,
+perf-convex-measurement-baseline}.md`, and a component audit for the
+`AccessoryChildRows` gap flagged in `FEATUREDOCS/48`.
 
 ## UI / UX
 

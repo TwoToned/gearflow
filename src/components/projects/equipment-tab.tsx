@@ -27,13 +27,9 @@ import { useProjectServices } from "@/hooks/use-project-services";
 import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
-  removeLineItemsBatch,
-  updateLineItemsBatch,
-  type BulkLineItemPatch,
-} from "@/server/line-items";
-import {
   useLineItemWrites,
   buildLineItemSetClear,
+  type BulkLineItemPatch,
 } from "@/hooks/use-line-item-writes";
 import { lineItemSchema } from "@/lib/validations/line-item";
 import { Button } from "@/components/ui/button";
@@ -561,7 +557,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // ─── Bulk mutations (operate on the current multi-selection) ───────────────
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => removeLineItemsBatch(ids),
+    mutationFn: (ids: string[]) => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.removeMany(ids);
+    },
     onSuccess: (r: { removed: number; skipped: number }) => {
       invalidate();
       selection.clearSelection();
@@ -575,8 +574,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const bulkEditMut = useServerMutation({
-    mutationFn: ({ ids, patch }: { ids: string[]; patch: BulkLineItemPatch }) =>
-      updateLineItemsBatch(ids, patch),
+    mutationFn: ({ ids, patch }: { ids: string[]; patch: BulkLineItemPatch }) => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.updateMany(ids, patch);
+    },
     onSuccess: (r: { updated: number; skipped: number }) => {
       invalidate();
       selection.clearSelection();

@@ -19,6 +19,20 @@ type ParsedLineItem = z.output<typeof lineItemSchema>;
 type ParsedCustomLineItem = z.output<typeof customLineItemSchema>;
 
 /**
+ * A shared value to apply to every selected line item in a bulk edit. Mirrors the shape
+ * of the deleted `updateLineItemsBatch` server-action interface (src/server/line-items.ts)
+ * — moved here so the browser-direct bulk edit and its consumers share one source of truth.
+ */
+export interface BulkLineItemPatch {
+  pricingType?: "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR" | "OPTIMIZED";
+  /** `null` or a non-positive value clears the discount. `%` is resolved per-item. */
+  discount?: { mode: "$" | "%"; value: number } | null;
+  /** `null`/empty clears the note. */
+  notes?: string | null;
+  isOptional?: boolean;
+}
+
+/**
  * Browser-direct LINE-ITEM writes (Phase 3 — the flag-gated, default-OFF twin of the
  * add/update/remove/reorder line-item server actions in src/server/line-items.ts).
  *
@@ -128,6 +142,8 @@ export function useLineItemWrites() {
   const addKitM = useMutation(api.lineItemWrites.addKitNative);
   const patchM = useMutation(api.lineItemWrites.patchNative);
   const removeM = useMutation(api.lineItemWrites.removeNative);
+  const removeManyM = useMutation(api.lineItemWrites.removeManyNative);
+  const patchManyM = useMutation(api.lineItemWrites.patchManyNative);
   const reorderM = useMutation(api.lineItemWrites.reorderNative);
 
   const actor = () => ({
@@ -291,6 +307,46 @@ export function useLineItemWrites() {
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Bulk remove — one atomic backend-local pass: child-guard + cascade (children +
+     *  units) per row + ONE aggregate DELETE audit + recalc-per-project. Returns
+     *  `{ removed, skipped }` (children/cross-org rows counted as skipped). */
+    removeMany: async (ids: string[]): Promise<{ removed: number; skipped: number }> => {
+      if (!enabled) throw new Error("Not ready — try again in a moment.");
+      try {
+        return await removeManyM({
+          ids,
+          orgId: requireOrg(),
+          actor: actor(),
+          auditId: createId(),
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Bulk edit shared fields (pricing type / discount / notes / optional) across the
+     *  selection, one atomic pass. The %/lineTotal recompute runs in-mutation off each
+     *  row's OWN money fields. Returns `{ updated, skipped }`. */
+    updateMany: async (
+      ids: string[],
+      patch: BulkLineItemPatch,
+    ): Promise<{ updated: number; skipped: number }> => {
+      if (!enabled) throw new Error("Not ready — try again in a moment.");
+      try {
+        return await patchManyM({
+          ids,
+          orgId: requireOrg(),
+          patch,
+          actor: actor(),
+          auditId: createId(),
           now: Date.now(),
         });
       } catch (e) {

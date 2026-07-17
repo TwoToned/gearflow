@@ -136,6 +136,17 @@ Order matters. What breaks the moment the repo transfers:
 
 ---
 
+## Prod verification (2026-07-17, read-only SSH to ttp-gearflow-prod)
+
+Inspected the running container `ghcr.io/twotoned/gearflow:latest`:
+- **`PLATFORM_NAME` is UNSET** → prod uses the code default `"RVLT Flow"`. The "already migrated" premise is **confirmed**; prod is not secretly rendering "GearFlow".
+- **`EMAIL_FROM=GearFlow <noreply@twotoned.com.au>`** — the display name "GearFlow" is **live in every email's From field**, and the verified sending domain is **`twotoned.com.au`**, NOT `gearflow.app` (the plan's earlier assumption was wrong). `RESEND_API_KEY` is set.
+- Only other `gearflow` in prod env: `S3_BUCKET=gearflow-uploads` and the DB name inside `DATABASE_URL` — both on the intentional keep-list.
+
+**Action (Coolify env var, user):** the code default we set (`flow@rvlt.app`) is never used because prod overrides `EMAIL_FROM`. Fix the live leak by updating the Coolify `EMAIL_FROM`:
+- **Interim, zero-DNS:** `RVLT Flow <noreply@twotoned.com.au>` — kills the visible "GearFlow" immediately using the already-verified domain.
+- **End state:** `RVLT Flow <flow@rvlt.app>` after verifying `rvlt.app` in Resend (SPF/DKIM/DMARC). Note `twotoned.com.au` is the old company domain — you'll want off it eventually anyway.
+
 ## Explicitly NOT in scope (recommend keeping the name)
 
 - S3 bucket `gearflow-uploads` object data (internal; renaming orphans files).

@@ -10,7 +10,6 @@ import {
   lineItemSchema,
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
-import { addLineItem } from "@/server/line-items";
 import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import {
   Dialog,
@@ -76,20 +75,17 @@ export function AddServiceDialog({
 
   const mutation = useServerMutation({
     mutationFn: async (data: LineItemFormValues) => {
-      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
-      // the new row; when disabled the unchanged server action runs. Server defaults:
+      // Browser-direct native path. The guarded addLineItemSmartNative mutation folds
+      // availability + merge-dedup + auto-pricing + accessory expansion + recalc + audit +
+      // collab into one transaction. Reactive useQuery renders the new row. Defaults:
       // allowOverbook=false, forceSeparate=false, includeAccessories=true. The result is
-      // unused (onSuccess keys off `variables.groupName`), so both paths resolve void.
-      if (lineItemWrites.enabled) {
-        const parsed = lineItemSchema.parse(data);
-        await lineItemWrites.add(projectId, parsed, {
-          allowOverbook: false,
-          forceSeparate: false,
-          includeAccessories: true,
-        });
-        return;
-      }
-      await addLineItem(projectId, data);
+      // unused (onSuccess keys off `variables.groupName`), so it resolves void.
+      const parsed = lineItemSchema.parse(data);
+      await lineItemWrites.add(projectId, parsed, {
+        allowOverbook: false,
+        forceSeparate: false,
+        includeAccessories: true,
+      });
     },
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {
@@ -117,7 +113,10 @@ export function AddServiceDialog({
           <DialogTitle>Add service or other</DialogTitle>
         </DialogHeader>
         <form
-          onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
+          onSubmit={form.handleSubmit((d) => {
+            if (!lineItemWrites.enabled) return;
+            mutation.mutate(d);
+          })}
           className="space-y-4 py-2"
         >
           <div className="space-y-2">
@@ -259,7 +258,7 @@ export function AddServiceDialog({
             <Button type="button" variant="line" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" loading={mutation.isPending}>
+            <Button type="submit" loading={mutation.isPending} disabled={!lineItemWrites.enabled}>
               Add
             </Button>
           </DialogFooter>

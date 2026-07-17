@@ -24,7 +24,7 @@ import {
   lineItemSchema,
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
-import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
+import { checkAvailability, lookupAssetByTag } from "@/server/line-items";
 import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -199,44 +199,39 @@ export function EquipmentAddForm({
       }
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
       const effectiveGroupId = groupId || selectedGroupId || undefined;
-      // Browser-direct native path (flag-gated, default OFF). The list is a reactive
-      // useQuery, so the new/merged row appears on its own; the return is used only for
-      // the merged-toast. When disabled, the unchanged server action runs.
-      if (lineItemWrites.enabled) {
-        const parsed = lineItemSchema.parse({
-          ...data,
-          discount: disc,
-          categoryId: effectiveCategoryId,
-          groupId: effectiveGroupId,
-        });
-        const res = await lineItemWrites.add(projectId, parsed, {
-          allowOverbook: overbookConfirmed,
-          forceSeparate: duplicateAction === "separate",
-          includeAccessories,
-        });
-        // Native returns { id, merged }; reshape to the server's _merged/_newQuantity so
-        // onSuccess is unchanged. Merged qty mirrors the "combine" radio's preview.
-        return res.merged
-          ? {
-              _merged: true,
-              _newQuantity: availability
-                ? availability.bookedOnThisProject + (Number(data.quantity) || 1)
-                : undefined,
-            }
-          : { _merged: false };
-      }
-      return addLineItem(
-        projectId,
-        { ...data, discount: disc, categoryId: effectiveCategoryId, groupId: effectiveGroupId },
-        overbookConfirmed,
-        duplicateAction === "separate",
-        includeAccessories
-      );
+      // Browser-direct native path. addLineItemSmartNative folds availability +
+      // merge-dedup + auto-pricing + accessory expansion + recalc + audit + collab into one
+      // transaction. The list is a reactive useQuery, so the new/merged row appears on its
+      // own; the return is used only for the merged-toast.
+      const parsed = lineItemSchema.parse({
+        ...data,
+        discount: disc,
+        categoryId: effectiveCategoryId,
+        groupId: effectiveGroupId,
+      });
+      const res = await lineItemWrites.add(projectId, parsed, {
+        allowOverbook: overbookConfirmed,
+        forceSeparate: duplicateAction === "separate",
+        includeAccessories,
+      });
+      // Native returns { id, merged }; reshape to the _merged/_newQuantity onSuccess
+      // expects. Merged qty mirrors the "combine" radio's preview.
+      return res.merged
+        ? {
+            _merged: true,
+            _newQuantity: availability
+              ? availability.bookedOnThisProject + (Number(data.quantity) || 1)
+              : undefined,
+          }
+        : { _merged: false };
     },
     onSuccess: (result) => {
       const data = result as Record<string, unknown> | null;
       if (data?._merged) {
-        toast.success(`Combined with existing — quantity updated to ${data._newQuantity}`);
+        // The native merge targets the matching category/group line; the client can't
+        // know the exact resulting quantity (a model may span several lines), so don't
+        // assert a number the reactive list will show accurately anyway.
+        toast.success("Combined with an existing line");
       } else {
         toast.success("Equipment added");
       }
@@ -653,6 +648,7 @@ export function EquipmentAddForm({
             type="submit"
             loading={mutation.isPending}
             disabled={
+              !lineItemWrites.enabled ||
               (mode === "model" && !canSubmitModel) ||
               (mode === "asset-tag" && !canSubmitAsset)
             }

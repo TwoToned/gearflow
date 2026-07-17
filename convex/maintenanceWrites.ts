@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -220,6 +221,11 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
     const actor = await resolveActor(ctx, a.actor);
 
+    // Client-supplied reporter/assignee user FKs — validate org membership (the Better-Auth
+    // user table has no org column; a foreign user id would leak that user's name on reads).
+    if (a.reportedById) await assertMemberInOrg(ctx, a.orgId, a.reportedById);
+    if (a.assignedToId) await assertMemberInOrg(ctx, a.orgId, a.assignedToId);
+
     const assetIds = Array.from(new Set(a.assetLinks.map((l) => l.assetId)));
     if (assetIds.length === 0) throw new ConvexError("At least one asset is required");
 
@@ -351,6 +357,11 @@ export const updateNative = mutation({
     if (!record || record.organizationId !== a.orgId) {
       throw new ConvexError("Maintenance record not found");
     }
+
+    // Validate reporter/assignee membership only when CHANGED, so a record whose original
+    // reporter/assignee has since left the org can still be edited/re-saved.
+    if (a.reportedById && a.reportedById !== record.reportedById) await assertMemberInOrg(ctx, a.orgId, a.reportedById);
+    if (a.assignedToId && a.assignedToId !== record.assignedToId) await assertMemberInOrg(ctx, a.orgId, a.assignedToId);
 
     const links = await existingLinks(ctx, a.id);
     const existingAssetIds = links.map((l) => l.assetId);

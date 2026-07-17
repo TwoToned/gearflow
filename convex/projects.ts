@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -31,6 +32,68 @@ export const getById = query({
     const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDoc(ctx, doc);
     return doc;
+  },
+});
+
+/**
+ * Paginated PROJECT list — browser-native replacement for ProjectTable's
+ * useProjects/useClients/useLocations whole-org live subscriptions +
+ * client-side filter/sort/paginate (Finding #1, docs/designs/
+ * perf-convex-efficiency-2026-06.md). Templates are always excluded (matches
+ * the old `.filter(p => !p.isTemplate)`). `client` is resolved server-side
+ * (name only, matching the row shape ProjectTable's columns read); location
+ * is only used to widen the search match (no location column exists), so it
+ * isn't attached to the row.
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    statusIn: v.optional(v.array(v.string())),
+    typeIn: v.optional(v.array(v.string())),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "rentalStartDate";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const [rows, clients, locations] = await Promise.all([
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);
+    const locationNameFor = (id: string | null | undefined) => (id ? locationMap.get(id)?.name : undefined);
+
+    const filtered = rows.filter((p) => {
+      if (p.isTemplate) return false;
+      if (a.statusIn && a.statusIn.length > 0 && !(p.status && a.statusIn.includes(p.status))) return false;
+      if (a.typeIn && a.typeIn.length > 0 && !(p.type && a.typeIn.includes(p.type))) return false;
+      if (a.search && !matchesSearch([p.name, p.projectNumber, locationNameFor(p.locationId)], a.search)) return false;
+      return true;
+    });
+
+    const keyFn = (p: typeof rows[number]): unknown => {
+      if (sortBy === "client") return clientNameFor(p.clientId);
+      return (p as unknown as Record<string, unknown>)[sortBy];
+    };
+    const sorted = [...filtered].sort((x, y) => compareValues(keyFn(x), keyFn(y), dir));
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
+
+    const items = pageRows.map((p) => ({
+      ...p,
+      client: p.clientId ? { name: clientNameFor(p.clientId) ?? null } : null,
+    }));
+
+    return { items, total, page, pageSize, totalPages };
   },
 });
 

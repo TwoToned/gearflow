@@ -3,15 +3,14 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { api } from "../../../convex/_generated/api";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, AlertTriangle, ShieldAlert } from "lucide-react";
 
 import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useProjects } from "@/hooks/use-projects";
-import { useClients } from "@/hooks/use-clients";
-import { useLocations } from "@/hooks/use-locations";
 import {
   Tooltip,
   TooltipTrigger,
@@ -267,85 +266,33 @@ export function ProjectTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Convex reactive subscriptions — any update in any tab fires immediately
-  const allProjects = useProjects(orgId);
-  const clients = useClients(orgId);
-  const locations = useLocations(orgId);
-
-  const clientMap = useMemo(
-    () => new Map((clients ?? []).map((c) => [c.id, c.name])),
-    [clients],
+  // ONE server-side query (filter + sort + client/location joins all done in
+  // Convex) instead of the 3 whole-org live subscriptions this used to mount
+  // (projects/clients/locations) and join/filter/sort client-side. See
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #1. Search is
+  // debounced since each keystroke is now a real round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const statusFilter = filters?.status;
+  const typeFilter = filters?.type;
+  const projectsPage = useAuthedQuery(
+    api.projects.listPage,
+    orgId
+      ? {
+          orgId,
+          search: debouncedSearch.trim() || undefined,
+          statusIn: Array.isArray(statusFilter) && statusFilter.length > 0 ? (statusFilter as string[]) : undefined,
+          typeIn: Array.isArray(typeFilter) && typeFilter.length > 0 ? (typeFilter as string[]) : undefined,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
   );
-  const locationMap = useMemo(
-    () => new Map((locations ?? []).map((l) => [l.id, l.name])),
-    [locations],
-  );
-
-  // Attach client + location name to each project doc
-  const withMeta = useMemo(() => {
-    if (!allProjects) return undefined;
-    return allProjects
-      .filter((p) => !p.isTemplate)
-      .map((p) => ({
-        ...p,
-        client: p.clientId ? { name: clientMap.get(p.clientId) ?? null } : null,
-        _locationName: p.locationId ? (locationMap.get(p.locationId) ?? null) : null,
-      }));
-  }, [allProjects, clientMap, locationMap]);
-
-  // Client-side search + filter
-  const filtered = useMemo(() => {
-    if (!withMeta) return undefined;
-    return withMeta.filter((p) => {
-      if (search) {
-        const q = search.toLowerCase();
-        const hit =
-          p.name.toLowerCase().includes(q) ||
-          p.projectNumber.toLowerCase().includes(q) ||
-          (p._locationName?.toLowerCase().includes(q) ?? false);
-        if (!hit) return false;
-      }
-      // Enum filters are string[] (selected values); filter passes if project value is in the set
-      const statusFilter = filters?.status;
-      if (Array.isArray(statusFilter) && statusFilter.length > 0 && p.status && !statusFilter.includes(p.status as string)) return false;
-      const typeFilter = filters?.type;
-      if (Array.isArray(typeFilter) && typeFilter.length > 0 && p.type && !typeFilter.includes(p.type as string)) return false;
-      return true;
-    });
-  }, [withMeta, search, filters]);
-
-  // Client-side sort
-  const sorted = useMemo(() => {
-    if (!filtered) return undefined;
-    return [...filtered].sort((a, b) => {
-      let aVal: unknown;
-      let bVal: unknown;
-      if (sortBy === "client") {
-        aVal = a.client?.name ?? "";
-        bVal = b.client?.name ?? "";
-      } else {
-        aVal = (a as Record<string, unknown>)[sortBy];
-        bVal = (b as Record<string, unknown>)[sortBy];
-      }
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      return sortOrder === "asc" ? cmp : -cmp;
-    });
-  }, [filtered, sortBy, sortOrder]);
-
-  // Client-side pagination
-  const total = sorted?.length ?? 0;
-  const paged = useMemo(
-    () => sorted?.slice((page - 1) * pageSize, page * pageSize),
-    [sorted, page, pageSize],
-  );
-
-  const isLoading = allProjects === undefined;
+  const { data: paged, total, isLoading } = usePaginatedTableResult(projectsPage);
 
   // Issue flags stay server-side (overbooking calculation)
-  const projectIds = useMemo(() => (paged ?? []).map((p) => p.id), [paged]);
+  const projectIds = useMemo(() => paged.map((p) => p.id), [paged]);
   const { data: issueFlags } = useServerQuery({
     queryKey: ["project-issues", projectIds],
     queryFn: () => getProjectIssueFlags(projectIds),
@@ -361,7 +308,7 @@ export function ProjectTable() {
 
   const enrichedProjects = useMemo(
     () =>
-      (paged ?? []).map((p) => ({
+      paged.map((p) => ({
         ...p,
         _issueFlags: issueFlags?.[p.id] ?? null,
         _blockingCount: blockingCounts?.[p.id] ?? 0,

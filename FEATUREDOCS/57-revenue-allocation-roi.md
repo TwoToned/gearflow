@@ -159,7 +159,8 @@ Summing `allocatedRevenue` across every line item of every project does not fit 
 query. `projectModelRevenues` (one row per model per project, rebuilt inside the same allocation
 pass) reduces the fleet query to distinct-models-per-project. Fleet reporting is then split across
 **two** queries — `fleetRevenue` and `fleetInventory` — so each gets its own read budget rather
-than sharing one, joined in `src/server/roi.ts`.
+than sharing one, joined client-side in `src/hooks/use-roi.ts` (browser-direct `useConvex().query()`
+calls — no server action in between; `src/server/roi.ts` doesn't exist).
 
 Both cap their scans and return `truncated`, which the UI surfaces as a banner. A capped scan that
 silently under-reports looks exactly like a fleet that isn't earning. When the caps start biting,
@@ -178,8 +179,8 @@ time by re-running the backfill.
 | `convex/kitAllocations.ts` | Kit split: composition view, replace-all, clear. |
 | `convex/roi.ts` | `getModelRoi`, `fleetRevenue`, `fleetInventory`. |
 | `src/lib/roi.ts` | `computeRoi`, status scopes, window, formatting. |
-| `src/server/roi.ts` | Joins the two fleet queries. |
-| `src/server/kit-allocations.ts` | RBAC + validation + audit for the kit split. |
+| `src/hooks/use-roi.ts` | Browser-direct: joins the two fleet queries client-side (one-shot, not reactive — a ROI report has no liveness need). |
+| `convex/kitAllocationsWrites.ts` | Browser-direct RBAC + validation + audit for the kit split. |
 | `src/lib/validations/kit-allocation.ts` | Zod schema + the `KitAllocationView` type. |
 | `src/components/kits/kit-allocation-panel.tsx` | Kit detail panel. |
 | `src/components/assets/model-roi-tab.tsx` | Model detail ROI tab. |
@@ -218,7 +219,8 @@ half-worked must not be mistaken for one that worked.
 - **`by_cuid` and `by_modelId` are global indexes.** `requireOrgRead` validates the *caller's* org,
   not the *row's*. Any doc fetched by cuid or by modelId must be checked against `organizationId`,
   or a tenant can read another tenant's model costs by guessing an id.
-- **Status gating lives in the Convex query, not only in `src/server/roi.ts`.** A browser holds a
+- **Status gating lives in the Convex query itself, not in a server-action wrapper** (there isn't
+  one — see Files above). A browser holds a
   user token and can call an org-scoped query directly.
 - **Pools are scaled by `1 − discountPercent/100`.** Group and line prices are pre-discount;
   `recalcProjectTotals` discounts the subtotal. Allocating raw prices credits revenue that was

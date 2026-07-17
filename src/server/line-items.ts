@@ -1,13 +1,11 @@
 "use server";
 
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getOrgContext } from "@/lib/org-context";
 import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
 import { serialize } from "@/lib/serialize";
-import { logActivity } from "@/lib/activity-log";
 import type { ActorContext } from "@/lib/actor-context";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { roundCurrency } from "@/lib/formatters";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
 import { getModelWithCategoryMap } from "@/lib/models-read";
@@ -27,156 +25,6 @@ import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
 async function orgDefaultTaxRateFor(orgId: string): Promise<number | null> {
   // Org default tax lives in the Convex org-settings row (Phase 1 inversion).
   return readOrgDefaultTaxRate(orgId);
-}
-
-/**
- * Bulk-remove line items in a single server round-trip.
- *
- * Collapses the old N-client-round-trips loop (one `removeLineItem` call per
- * selected row) into one action: loops the legacy cascade-delete Convex mutation
- * server-side, then recalcs each affected project ONCE and writes ONE bulk audit.
- * Child items (kit members, accessory children, sub-hire group children) are
- * skipped — they are removed via their parent, never individually (same guard as
- * `removeLineItem`) — and reported back in `skipped`.
- */
-export async function removeLineItemsBatch(ids: string[]) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
-  if (ids.length === 0) return serialize({ removed: 0, skipped: 0 });
-
-  const convex = await getConvexClient();
-  // ONE backend-local pass: the org-scope + child-guard + cascade loop runs inside
-  // a single Convex mutation, not one server→Convex round-trip per item.
-  const { removed, skipped, projectIds } = await convex.mutation(
-    api.projectLineItems.removeManyCascade,
-    { ids, orgId: organizationId },
-  );
-
-  await Promise.all([
-    ...projectIds.map((pid: string) => recalculateProjectTotals(pid)),
-    removed > 0
-      ? logActivity({
-          organizationId,
-          userId,
-          userName,
-          action: "DELETE",
-          entityType: "lineItem",
-          entityId: ids[0],
-          entityName: `${removed} line item${removed === 1 ? "" : "s"}`,
-          summary: `Removed ${removed} line item${removed === 1 ? "" : "s"} from project`,
-          projectId: projectIds[0],
-        })
-      : Promise.resolve(),
-  ]);
-
-  return serialize({ removed, skipped });
-}
-
-/** A shared value to apply to every selected line item in a bulk edit. */
-export interface BulkLineItemPatch {
-  pricingType?: "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR" | "OPTIMIZED";
-  /** `null` or a non-positive value clears the discount. `%` is resolved per-item. */
-  discount?: { mode: "$" | "%"; value: number } | null;
-  /** `null`/empty clears the note. */
-  notes?: string | null;
-  isOptional?: boolean;
-}
-
-/**
- * Bulk-edit shared fields across selected line items in one server round-trip.
- *
- * Only the fields that legitimately apply to many rows are settable (pricing
- * type, discount, notes, optional flag) — quantity/unit-price/description are
- * per-item and stay out. A `%` discount is resolved against each item's own base
- * (unitPrice × quantity × duration). `lineTotal` is recomputed per item whenever
- * the discount changes. Child items are skipped. Recalc + audit run once at the end.
- */
-export async function updateLineItemsBatch(ids: string[], patch: BulkLineItemPatch) {
-  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
-  if (ids.length === 0) return serialize({ updated: 0, skipped: 0 });
-
-  const convex = await getConvexClient();
-  // ONE read for all selected rows — the per-item discount/lineTotal maths needs
-  // each row's own price/qty/duration, but that's a single round-trip, not N.
-  const docs = await convex.query(api.projectLineItems.listByIdsForOrg, {
-    ids,
-    orgId: organizationId,
-  });
-
-  const now = Date.now();
-  const items: { id: string; set: Record<string, unknown>; clear: string[] }[] = [];
-  // Rows dropped by the org-scoped read (missing / wrong org) count as skipped.
-  let skipped = ids.length - docs.length;
-
-  for (const doc of docs) {
-    if (doc.isKitChild) {
-      skipped++;
-      continue;
-    }
-
-    const set: Record<string, unknown> = { updatedAt: now };
-    const clear: string[] = [];
-
-    if (patch.pricingType !== undefined) set.pricingType = patch.pricingType;
-    if (patch.isOptional !== undefined) set.isOptional = patch.isOptional;
-    if (patch.notes !== undefined) {
-      if (patch.notes == null || patch.notes === "") clear.push("notes");
-      else set.notes = patch.notes;
-    }
-
-    if (patch.discount !== undefined) {
-      let discountApplied: number | undefined;
-      if (patch.discount == null || patch.discount.value <= 0) {
-        clear.push("discount");
-        discountApplied = undefined;
-      } else if (patch.discount.mode === "%") {
-        const base = (doc.unitPrice ?? 0) * (doc.quantity ?? 0) * (doc.duration ?? 1);
-        discountApplied = roundCurrency((base * patch.discount.value) / 100);
-        set.discount = discountApplied;
-      } else {
-        discountApplied = patch.discount.value;
-        set.discount = discountApplied;
-      }
-      // Discount feeds the stored line total — recompute it from the item's own
-      // price/quantity/duration (unchanged) and the new discount.
-      const lineTotal = calculateLineTotal(
-        doc.unitPrice ?? undefined,
-        doc.quantity ?? 0,
-        doc.duration ?? 1,
-        discountApplied,
-      );
-      if (lineTotal == null) clear.push("lineTotal");
-      else set.lineTotal = lineTotal;
-    }
-
-    items.push({ id: doc.id, set, clear });
-  }
-
-  if (items.length === 0) return serialize({ updated: 0, skipped });
-
-  // ONE backend-local write pass for every row.
-  const { updated, projectIds } = await convex.mutation(api.projectLineItems.patchMany, {
-    orgId: organizationId,
-    items,
-  });
-
-  await Promise.all([
-    ...projectIds.map((pid: string) => recalculateProjectTotals(pid)),
-    updated > 0
-      ? logActivity({
-          organizationId,
-          userId,
-          userName,
-          action: "UPDATE",
-          entityType: "lineItem",
-          entityId: ids[0],
-          entityName: `${updated} line item${updated === 1 ? "" : "s"}`,
-          summary: `Bulk edited ${updated} line item${updated === 1 ? "" : "s"}`,
-          projectId: projectIds[0],
-        })
-      : Promise.resolve(),
-  ]);
-
-  return serialize({ updated, skipped });
 }
 
 export async function checkAvailability(
@@ -459,18 +307,6 @@ export async function checkKitAvailability(
 }
 
 // --- Internal helpers ---
-
-function calculateLineTotal(
-  unitPrice: number | undefined,
-  quantity: number,
-  duration: number,
-  discount: number | undefined
-): number | null {
-  if (unitPrice == null) return null;
-  const gross = roundCurrency(unitPrice * quantity * duration);
-  const disc = discount ?? 0;
-  return Math.max(0, roundCurrency(gross - disc));
-}
 
 /**
  * Recalculate all project financial totals from source data.

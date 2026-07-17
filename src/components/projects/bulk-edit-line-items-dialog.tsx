@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import type { BulkLineItemPatch } from "@/server/line-items";
+import type { BulkLineItemPatch } from "@/hooks/use-line-item-writes";
 
 const PRICING_LABELS: Record<string, string> = {
   PER_DAY: "Per day",

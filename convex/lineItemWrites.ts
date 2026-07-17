@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertLineMoneyFields } from "./lib/moneyGuards";
+import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import * as enums from "./lib/validators";
@@ -164,6 +165,80 @@ export const removeNative = mutation({
     }
 
     return { projectId: line.projectId };
+  },
+});
+
+/**
+ * removeManyNative — browser-direct bulk line-item remove. RBAC(project, manage_line_items).
+ *
+ * Byte-parity port of the deleted `removeLineItemsBatch` server action (+ its Convex
+ * `removeManyCascade`): one backend-local pass loops the ids, org-scopes + child-guards
+ * each row (a kit/accessory/sub-hire child is removed via its parent, never individually
+ * — so it's SKIPPED here, matching the server), cascade-deletes each removable line's
+ * children + units via the same `deleteLineWithUnits` removeNative uses, then writes ONE
+ * aggregate DELETE audit and recalcs each affected project ONCE. All atomic. The org
+ * default tax rate is resolved in-mutation from orgSettings (a browser caller can't spoof it).
+ */
+export const removeManyNative = mutation({
+  returns: v.object({ removed: v.number(), skipped: v.number() }),
+  args: {
+    ids: v.array(v.string()),
+    orgId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    let removed = 0;
+    let skipped = 0;
+    // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
+    const affected: string[] = [];
+    const affectedSet = new Set<string>();
+
+    for (const id of ids) {
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      // Missing / cross-org (by_cuid is GLOBAL) / a child item → skipped, never removed.
+      if (!line || line.organizationId !== orgId || line.isKitChild) {
+        skipped++;
+        continue;
+      }
+      const children = (await ctx.db
+        .query("projectLineItems")
+        .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
+        .collect()).filter((c) => c.organizationId === orgId);
+      for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, orgId);
+      await deleteLineWithUnits(ctx, line._id, line.id, orgId);
+      if (!affectedSet.has(line.projectId)) {
+        affectedSet.add(line.projectId);
+        affected.push(line.projectId);
+      }
+      removed++;
+    }
+
+    if (removed > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "DELETE",
+        entityType: "lineItem",
+        entityId: ids[0],
+        entityName: `${removed} line item${removed === 1 ? "" : "s"}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Removed ${removed} line item${removed === 1 ? "" : "s"} from project`,
+        projectId: affected[0],
+        createdAt: now,
+      });
+      const rate = await resolveOrgDefaultTaxRate(ctx, orgId);
+      for (const pid of affected) await recalcProjectTotals(ctx, pid, orgId, rate, now);
+    }
+
+    return { removed, skipped };
   },
 });
 
@@ -346,6 +421,137 @@ export const patchNative = mutation({
     }
 
     return { projectId: doc.projectId };
+  },
+});
+
+/**
+ * patchManyNative — browser-direct bulk line-item EDIT (shared fields). RBAC(project,
+ * manage_line_items). Byte-parity port of the deleted `updateLineItemsBatch` server
+ * action (+ its Convex `patchMany`): loops the ids, org-scopes + child-guards each row
+ * (kit/accessory/sub-hire children are SKIPPED), builds the set/clear IN-mutation from the
+ * shared `patch`, then writes ONE aggregate UPDATE audit + recalcs each affected project once.
+ *
+ * MONEY — the discount %/lineTotal recompute reads the DOC's OWN unitPrice/quantity/duration
+ * (never a client-supplied base), so a browser caller can't inflate a line total by lying
+ * about the base. Only `patch.discount.{mode,value}` (the intended input) is client-supplied,
+ * and `assertLineMoneyFields` bound-checks the resulting discount/lineTotal before it lands.
+ */
+export const patchManyNative = mutation({
+  returns: v.object({ updated: v.number(), skipped: v.number() }),
+  args: {
+    ids: v.array(v.string()),
+    orgId: v.string(),
+    patch: v.object({
+      pricingType: v.optional(v.string()),
+      discount: v.optional(v.union(v.object({ mode: v.string(), value: v.number() }), v.null())),
+      notes: v.optional(v.union(v.string(), v.null())),
+      isOptional: v.optional(v.boolean()),
+    }),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    let updated = 0;
+    let skipped = 0;
+    // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
+    const affected: string[] = [];
+    const affectedSet = new Set<string>();
+
+    for (const id of ids) {
+      const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      // Missing / cross-org (by_cuid is GLOBAL) / a child item → skipped, never edited.
+      if (!doc || doc.organizationId !== orgId || doc.isKitChild) {
+        skipped++;
+        continue;
+      }
+
+      // Build set/clear IN-mutation — byte-parity with updateLineItemsBatch, reading the
+      // doc's OWN money fields (never the client's) for the % discount + lineTotal recompute.
+      const set: Record<string, unknown> = { updatedAt: now };
+      const clear: string[] = [];
+
+      if (patch.pricingType !== undefined) set.pricingType = patch.pricingType;
+      if (patch.isOptional !== undefined) set.isOptional = patch.isOptional;
+      if (patch.notes !== undefined) {
+        if (patch.notes == null || patch.notes === "") clear.push("notes");
+        else set.notes = patch.notes;
+      }
+
+      if (patch.discount !== undefined) {
+        let discountApplied: number | undefined;
+        if (patch.discount == null || patch.discount.value <= 0) {
+          clear.push("discount");
+          discountApplied = undefined;
+        } else if (patch.discount.mode === "%") {
+          const base = (doc.unitPrice ?? 0) * (doc.quantity ?? 0) * (doc.duration ?? 1);
+          discountApplied = roundCurrency((base * patch.discount.value) / 100);
+          set.discount = discountApplied;
+        } else {
+          discountApplied = patch.discount.value;
+          set.discount = discountApplied;
+        }
+        // Discount feeds the stored line total — recompute from the item's own
+        // price/quantity/duration (unchanged) + the new discount.
+        const lineTotal = computeLineTotal(
+          doc.unitPrice ?? undefined,
+          doc.quantity ?? 0,
+          doc.duration ?? 1,
+          discountApplied,
+        );
+        if (lineTotal == null) clear.push("lineTotal");
+        else set.lineTotal = lineTotal;
+      }
+
+      // Belt-and-braces bound-check on the money fields this bulk edit can touch (a
+      // browser-direct caller bypasses the server-side Zod).
+      assertLineMoneyFields(set as {
+        quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
+      });
+
+      if (clear.length === 0) {
+        await ctx.db.patch(doc._id, set);
+      } else {
+        const { _id, _creationTime, ...rest } = doc;
+        const merged: Record<string, unknown> = { ...rest, ...set };
+        for (const k of clear) {
+          if (LINE_NEVER_CLEAR.has(k)) continue;
+          delete merged[k];
+        }
+        await ctx.db.replace(doc._id, merged as typeof rest);
+      }
+
+      if (!affectedSet.has(doc.projectId)) {
+        affectedSet.add(doc.projectId);
+        affected.push(doc.projectId);
+      }
+      updated++;
+    }
+
+    if (updated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "UPDATE",
+        entityType: "lineItem",
+        entityId: ids[0],
+        entityName: `${updated} line item${updated === 1 ? "" : "s"}`,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Bulk edited ${updated} line item${updated === 1 ? "" : "s"}`,
+        projectId: affected[0],
+        createdAt: now,
+      });
+      const rate = await resolveOrgDefaultTaxRate(ctx, orgId);
+      for (const pid of affected) await recalcProjectTotals(ctx, pid, orgId, rate, now);
+    }
+
+    return { updated, skipped };
   },
 });
 

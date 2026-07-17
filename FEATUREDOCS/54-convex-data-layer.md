@@ -3872,6 +3872,96 @@ browser-direct native surface (following the just-merged `projectCategoriesWrite
   `WarehouseCloseFormValues` in `validations/check-item.ts` are now unused by app code
   (only their own unit test references them); left in place.
 
+## Phase 3 — browser-direct, `projects` domain Slice B (create/update/duplicate/saveAsTemplate/delete)
+
+Following Slice A (PR #586: status/notes/archive/deleteTemplate), converted the
+remaining project WRITE server actions — `createProject`, `updateProject`,
+`duplicateProject`, `saveAsTemplate`, `deleteProject` — to browser-direct calls
+into the already-prod-hardened `createNative`/`updateNative`/`duplicateNative`/
+`saveAsTemplateNative`/`deleteNative` mutations in `convex/projectWrites.ts` (no
+mutation logic changed — this slice only moves the *caller* off the service-token
+server action onto a user-token `useMutation` hook). All 5 methods live on the
+existing `useProjectWrites(orgId)` hook in `src/hooks/use-native-project-writes.ts`
+alongside Slice A's `archive`/`deleteTemplate`.
+
+- **`create`** — Zod-validates client-side (mirrors the deleted server's
+  `projectSchema.parse`), resolves the org's auto-number config via a new kept
+  READ-ONLY action `getProjectNumberConfig()` (byte-identical `organization.metadata`
+  source to the old inline read), and either passes an `autoNumber` config (number
+  ALLOCATED atomically inside `createNative` — reserve → render → clash-retry, no
+  client loop needed) or a manual/template number directly. A manual/template clash
+  returns `{created:false}` (no retry, matches prior behavior) → thrown as
+  `DUPLICATE_PROJECT_CODE`.
+- **`update`** — Zod-validates, then re-checks the (possibly edited) project code
+  via the pre-existing kept read `checkProjectNumberAvailable` — this backstop had
+  to move client-side because `updateNative` does NOT itself re-check projectNumber
+  uniqueness (only `createNative` does). The blocked-forward-status × open-blocking-
+  comments gate needs no client replication — `updateNative` already runs it
+  in-mutation. Tax-rate-changed recalc now calls `api.lineItemWrites.recalcNative`
+  directly (browser-direct, RBAC'd) instead of the server-only
+  `recalculateProjectTotals`, same best-effort try/catch as before.
+- **`duplicate` / `saveAsTemplate`** — the hook sends no `orgDefaultTaxRate` at all.
+  **Hardened as part of this slice** (not deferred): the implementing subagent's
+  first pass had these two mutations still trusting a client-supplied
+  `orgDefaultTaxRate` directly for the recalc (a pre-existing gap in
+  `duplicateNative`/`saveAsTemplateNative` that was harmless while only the
+  service-token server action could call them, but became a real spoofable
+  money-input the moment they went browser-direct). Fixed by extracting the
+  existing `resolveOrgDefaultTaxRate` helper (previously private to
+  `lineItemWrites.ts`) into a shared `convex/lib/orgSettings.ts`, and having both
+  `duplicateNative` and `saveAsTemplateNative` resolve it IN-MUTATION from the
+  `orgSettings` mirror — same pattern as `recalcNative` and every other
+  `lineItemWrites.ts` mutation. `orgDefaultTaxRate` stays in the arg validator as
+  `v.optional(...)`, accepted-but-ignored, purely for expand-contract back-compat
+  with the pre-slice app image; the client no longer reads/sends it, so
+  `useProjectWrites` no longer depends on `useOrganization(orgId)` at all.
+  `saveAsTemplate`'s template number comes from a new kept read
+  `peekNextTemplateCode()` (wraps the existing private `generateTemplateCode`).
+- **`remove`** — the full 8-step delete cascade (free checked-out assets/kits,
+  cascade lines/crew/managers/tasks/services/grouping, purge the
+  `projectModelRevenues` rollup, then the row) is unchanged, still entirely inside
+  `deleteNative`. `defaultLocationId` now comes from the already-client-subscribed
+  `useLocations(orgId)` reactive list (`.find(l => l.isDefault)`) instead of the
+  server-only `getDefaultLocation`. The mutation's `{freedAssets, freedKits}` return
+  (computed in-mutation, never trusted from the client) is now surfaced in the
+  delete toast on `projects/[id]/page.tsx` (previously silently discarded).
+- **Error mapping** — a new `mapProjectWriteError` in `use-native-project-writes.ts`
+  replicates the deleted server-side `mapProjectCopyError` (NOT_FOUND /
+  DUPLICATE_PROJECT_CODE) plus a DELETE_GUARD case, falling back to the shared
+  `mapNativeWriteError` for anything else — so the toast/inline-field UX is
+  unchanged whether the write ran server-side or browser-direct.
+- **Callers rewired:** `project-wizard.tsx` (create/update),
+  `duplicate-project-dialog.tsx` (duplicate/saveAsTemplate),
+  `projects/templates/page.tsx` (duplicate, "create from template"),
+  `projects/[id]/page.tsx` (remove). `getProjects`/`getProject`/`getTemplates`/
+  `getProjectIssueFlags`/`peekNextProjectNumber`/`checkProjectNumberAvailable`/
+  `getCallSheetDates` all stay as kept reads in `src/server/projects.ts`
+  (990 → ~600 lines; also dropped dead code: the unused `generateProjectNumber`
+  loop and `isBlockedForwardProjectStatus`/`BLOCKED_FORWARD_PROJECT_STATUSES`,
+  both orphaned once the fold-into-`createNative`/`updateNative` refactor that
+  predates this slice made them unreachable).
+- **Codex review round (also this slice, before shipping)** caught one more
+  pre-existing gap the same browser-direct exposure creates: `updateNative`'s
+  `set` arg is `v.any()` and `createNative` spreads `projectWriteFields`
+  (`v.optional(v.number())`, no bounds) for `taxRate`/`discountPercent`/
+  `depositPercent`/`depositPaid`/`invoicedTotal` — recalc INPUTS the client Zod
+  schema (`src/lib/validations/project.ts`) bounds to 0-100 / >=0, but Convex's
+  `v.number()` accepts `NaN`/`Infinity`/negatives, and a browser caller bypasses
+  Zod entirely. Fixed with a new `assertProjectMoneyFields` guard in
+  `convex/lib/moneyGuards.ts` (mirrors the existing `assertLineMoneyFields`
+  pattern for line items), called from both `updateNative` and `createNative`
+  with the same bounds Zod enforces. Covered by new `projectWrites.test.ts`
+  cases (out-of-bounds `taxRate`/`discountPercent`/`depositPaid` on update,
+  negative `invoicedTotal` on create) plus two org-default-tax-rate hardening
+  tests proving a forged client `orgDefaultTaxRate` is ignored on
+  duplicate/saveAsTemplate. Codex's second finding (a client can pick the
+  manual-number path on `createNative` by simply supplying `projectNumber`,
+  even when the org is configured for auto-numbering) was investigated and is
+  **not a regression** — the deleted server `createProject` had the identical
+  `!parsed.projectNumber` gate, so a client-supplied form value already
+  overrode auto-numbering pre-slice; left as-is (byte-for-byte parity), noted
+  here for anyone re-auditing this later.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

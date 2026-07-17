@@ -5,6 +5,8 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
+import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
+import { assertProjectMoneyFields } from "./lib/moneyGuards";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
@@ -265,6 +267,18 @@ export const updateNative = mutation({
     // and isTemplate (no client-forged totals / in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
 
+    // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
+    // enforces "is a number", not range/finiteness), and a browser-direct caller
+    // bypasses the client Zod schema entirely. Without this, a forged
+    // `taxRate: -1e9` or `discountPercent: NaN` would poison recalcProjectTotals.
+    assertProjectMoneyFields({
+      taxRate: typeof setObj.taxRate === "number" ? setObj.taxRate : undefined,
+      discountPercent: typeof setObj.discountPercent === "number" ? setObj.discountPercent : undefined,
+      depositPercent: typeof setObj.depositPercent === "number" ? setObj.depositPercent : undefined,
+      depositPaid: typeof setObj.depositPaid === "number" ? setObj.depositPaid : undefined,
+      invoicedTotal: typeof setObj.invoicedTotal === "number" ? setObj.invoicedTotal : undefined,
+    });
+
     // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
     // must clear the blocking-comment gate too (parity with the server updateProject path).
     const nextStatus = typeof setObj.status === "string" ? setObj.status : undefined;
@@ -337,6 +351,15 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "project", "create");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    // Bound-check the recalc-INPUT money fields — same rationale as updateNative:
+    // projectWriteFields only declares `v.number()` (no range/finiteness), and a
+    // browser-direct caller bypasses the client Zod schema.
+    assertProjectMoneyFields({
+      taxRate: fields.taxRate, discountPercent: fields.discountPercent,
+      depositPercent: fields.depositPercent, depositPaid: fields.depositPaid,
+      invoicedTotal: fields.invoicedTotal,
+    });
 
     // Dup-guard the client-minted cuid first (applies to both number paths). The
     // projectNumber clash-guard below is org-scoped and doesn't catch a cross-org
@@ -731,12 +754,16 @@ export const duplicateNative = mutation({
     newProjectNumber: v.string(),
     newName: v.string(),
     orgId: v.string(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image.
+    // The rate is ALWAYS resolved in-mutation from orgSettings — a client value is
+    // never trusted (a browser caller could otherwise spoof a money-affecting tax
+    // rate on the duplicated project's recalculated totals).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
   },
-  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, orgDefaultTaxRate, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "create");
@@ -927,8 +954,10 @@ export const duplicateNative = mutation({
       });
     }
 
-    // 6. Recalc totals from the copied lines (never trust client money).
-    await recalcProjectTotals(ctx, newId, orgId, finiteOrNull(orgDefaultTaxRate), now);
+    // 6. Recalc totals from the copied lines (never trust client money — org default
+    // tax rate resolved in-mutation from orgSettings, not the client arg above).
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
+    await recalcProjectTotals(ctx, newId, orgId, orgDefaultTaxRate, now);
 
     // CREATE audit for the new project (native path logs it atomically).
     await writeActivityLog(ctx, {
@@ -966,11 +995,13 @@ export const saveAsTemplateNative = mutation({
     templateNumber: v.string(),
     templateName: v.string(),
     orgId: v.string(),
-    orgDefaultTaxRate: v.union(v.number(), v.null()),
+    // Accepted-but-IGNORED for backward-compat — see duplicateNative's comment.
+    // Always resolved in-mutation from orgSettings, never trusted from the client.
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
     actor: actorValidator,
   },
-  handler: async (ctx, { sourceId, newId, templateNumber, templateName, orgId, orgDefaultTaxRate, now, actor: suppliedActor }) => {
+  handler: async (ctx, { sourceId, newId, templateNumber, templateName, orgId, now, actor: suppliedActor }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "create");
@@ -1091,7 +1122,9 @@ export const saveAsTemplateNative = mutation({
       }
     }
 
-    // 3. Recalc totals from the copied lines.
+    // 3. Recalc totals from the copied lines (org default tax rate resolved
+    // in-mutation from orgSettings, never trusted from the client).
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, newId, orgId, finiteOrNull(orgDefaultTaxRate), now);
 
     return { id: newId };

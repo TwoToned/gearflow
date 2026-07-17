@@ -8,7 +8,7 @@ One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` jo
 - Statuses: `SCHEDULED, AWAITING_PARTS, IN_PROGRESS, QA, COMPLETED, CANCELLED`
 - Results: `PASS, FAIL, CONDITIONAL`
 
-`AWAITING_PARTS` and `QA` were added for the workshop kanban (see [41-workshop-kanban.md](./41-workshop-kanban.md)). All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
+`AWAITING_PARTS` and `QA` were added for the workshop kanban board, which has since been removed (`chore: remove Workshop kanban tab`) — the two statuses were kept dormant on the enum (no migration to drop them) and are still offered in the maintenance form. All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
 
 ## Maintenance Form (`MaintenanceForm`)
 `src/components/maintenance/maintenance-form.tsx` — the create/edit form
@@ -31,13 +31,17 @@ clean page, "More details" accordion.
 - **Photo-upload guard preserved** — `photosUploading` disables submit and shows
   the "wait for the photos to finish uploading" hint; the submit label flips to
   "Uploading photos…".
-- **Preserved:** same `maintenanceSchema`, `createMaintenanceRecord` /
-  `updateMaintenanceRecord` actions, `assetIds` merge-on-submit, all fields, and
+- **Preserved:** same `maintenanceSchema`, `assetIds` merge-on-submit, all fields, and
   permission gates. The native multi-select chips and the COMPLETED-only outcome
-  fields were relocated into shell sections, not rewritten.
+  fields were relocated into shell sections, not rewritten. Submit is browser-direct
+  via `useMaintenanceWrites()` (`src/hooks/use-maintenance-writes.ts`), calling
+  `convex/maintenanceWrites.ts`'s `createNative` / `updateNative` / `deleteNative`
+  mutations (the old `createMaintenanceRecord` / `updateMaintenanceRecord` /
+  `deleteMaintenanceRecord` actions in `src/server/maintenance.ts` are gone — that
+  file no longer exists).
 
 ## Photos
-`MaintenanceRecord.photos` (`String[]`, default `[]`) holds before/after repair photos — URLs from `/api/uploads`, same shape as `DamageEvent.photos`. The maintenance form uses the reusable `PhotoGridInput` component (`src/components/ui/photo-grid-input.tsx`), now inside the form's "More details" accordion. Workshop kanban cards render up to 4 thumbnails.
+`MaintenanceRecord.photos` (`String[]`, default `[]`) holds before/after repair photos — URLs from `/api/uploads` (the `DamageEvent` model this used to share a shape with was removed along with the Damage Capture feature — `chore: remove Damage Capture feature`). The maintenance form uses the reusable `PhotoGridInput` component (`src/components/ui/photo-grid-input.tsx`), now inside the form's "More details" accordion.
 
 ## Notifications
 Overdue maintenance generates notifications. Shows first asset name + count for multi-asset records.
@@ -46,5 +50,7 @@ Overdue maintenance generates notifications. Shows first asset name + count for 
 Deleting a maintenance record releases any held assets and removes the record atomically (single transaction).
 
 ## Related
-- [41. Workshop Kanban](./41-workshop-kanban.md) — kanban board view over the repair queue
-- [40. Damage Capture](./40-damage-capture.md) — major/total damage auto-creates a REPAIR record
+- Workshop Kanban (formerly `FEATUREDOCS/41-workshop-kanban.md`) and Damage Capture
+  (formerly `FEATUREDOCS/40-damage-capture.md`) were both removed as features; their
+  docs were deleted along with the code (`chore: remove Workshop kanban tab`,
+  `chore: remove Damage Capture feature`). No replacement docs exist.

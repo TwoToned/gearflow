@@ -210,12 +210,16 @@ export async function buildDocumentData(
   // The line-item tree + categories come from Convex via buildDocumentLineItemData
   // (model/supplier/kit/asset/bulkAsset + per-line category/group selects, units in
   // the SELECT shape). client / location / subHire supplier are also Convex.
-  const [docData, locationMap, supplierMap, client] = await Promise.all([
+  const [docData, locationMap, supplierMap, clientRaw] = await Promise.all([
     buildDocumentLineItemData(projectId, organizationId),
     getLocationMap(organizationId),
     getSupplierMap(organizationId),
     projectRow.clientId ? getClientById(projectRow.clientId) : Promise.resolve(null),
   ]);
+  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
+  // src/server/projects.ts getProject for the full rationale). A forged/stale
+  // cross-org clientId must not leak another org's billing details onto a PDF.
+  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
   const project = {
     ...projectRow,
     client,

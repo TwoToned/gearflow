@@ -4,13 +4,14 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertLineMoneyFields } from "./lib/moneyGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
 import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
@@ -181,6 +182,7 @@ export const removeManyNative = mutation({
   handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
+    assertBulkSizeOk(ids.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -304,6 +306,43 @@ export const patchNative = mutation({
     assertLineMoneyFields(setObj as {
       quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
     });
+
+    // lineTotal is a DERIVED value — assertLineMoneyFields only bounds it, it never
+    // verifies it matches unitPrice×quantity×duration−discount. The legit client
+    // (buildLineItemSetClear) already computes it this exact way on every call, so this
+    // is a no-op for real traffic; it closes the gap where a browser-direct caller sends
+    // `set: {lineTotal: 999999}` with no matching price inputs. Effective values merge
+    // this patch's set/clear over the doc's current values (same pattern the quantity-
+    // increase availability check above uses).
+    {
+      const clearSetForMoney = new Set(clear.filter((k) => !LINE_NEVER_CLEAR.has(k)));
+      const effUnitPrice = clearSetForMoney.has("unitPrice")
+        ? undefined
+        : ((setObj.unitPrice as number | undefined) ?? (doc.unitPrice != null ? Number(doc.unitPrice) : undefined));
+      const effQuantity = clearSetForMoney.has("quantity")
+        ? (doc.quantity ?? 0)
+        : ((setObj.quantity as number | undefined) ?? (doc.quantity ?? 0));
+      const effDuration = clearSetForMoney.has("duration")
+        ? 1
+        : ((setObj.duration as number | undefined) ?? doc.duration ?? 1);
+      const effDiscount = clearSetForMoney.has("discount")
+        ? undefined
+        : ((setObj.discount as number | undefined) ?? (doc.discount != null ? Number(doc.discount) : undefined));
+      const recomputed = calcLineTotalNative(effUnitPrice, effQuantity, effDuration, effDiscount);
+      // Reconcile BOTH directions against a client-supplied `clear` — if the client
+      // separately sent `clear: ["lineTotal"]` (e.g. a stale/inconsistent payload)
+      // alongside inputs that DO price the line, leaving "lineTotal" in `clear` would
+      // let the merge-and-delete pass below wipe out the value just set here, silently
+      // zeroing a priced line's contribution to recalcProjectTotals.
+      const clearIdx = clear.indexOf("lineTotal");
+      if (recomputed == null) {
+        delete setObj.lineTotal;
+        if (clearIdx === -1) clear.push("lineTotal");
+      } else {
+        setObj.lineTotal = recomputed;
+        if (clearIdx !== -1) clear.splice(clearIdx, 1);
+      }
+    }
 
     // Availability re-check on a quantity INCREASE (parity with updateLineItem's
     // server-side re-check). Only EQUIPMENT, model-backed, non-sub-hire lines that grow
@@ -444,6 +483,7 @@ export const patchManyNative = mutation({
   handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
+    assertBulkSizeOk(ids.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -579,23 +619,6 @@ function calcLineTotalNative(
 }
 
 /**
- * Org-validate a client-supplied FK id against `by_cuid` (a GLOBAL index — the row could
- * belong to another org). Throws if the referenced row is missing or cross-org. All five
- * tables carry `id` (by_cuid) + `organizationId`.
- */
-async function assertRefInOrg(
-  ctx: MutationCtx,
-  table: "models" | "assets" | "bulkAssets" | "projectGroups" | "projectCategories",
-  id: string,
-  orgId: string,
-): Promise<void> {
-  const doc = await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first();
-  if (!doc || doc.organizationId !== orgId) {
-    throw new ConvexError({ code: "FORBIDDEN", message: `Referenced ${table} not found in your organization.` });
-  }
-}
-
-/**
  * Recompute + persist a project group's suggested price (mirrors the server
  * calculateSuggestedPrice + projectGroupsWrites.recomputeGroupSuggestedById). No-op if
  * the group is gone / cross-org. Uses the shared computeGroupSuggestedPrice port.
@@ -722,6 +745,11 @@ export const addCustomNative = mutation({
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
 
+    // lineTotal is a DERIVED value — see addNative's comment for the full rationale.
+    // The legit client already computes it this exact way (use-line-item-writes.ts
+    // addCustom), so this is a no-op for real traffic and only closes the forgery gap.
+    const computedLineTotal = calcLineTotalNative(fields.unitPrice, fields.quantity, fields.duration ?? 1, fields.discount);
+
     // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
     // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
     const dup = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -735,6 +763,7 @@ export const addCustomNative = mutation({
       type: "EQUIPMENT",
       isCustomItem: true,
       ...fields,
+      lineTotal: computedLineTotal ?? undefined,
       sortOrder,
       createdAt: now,
       updatedAt: now,
@@ -840,6 +869,14 @@ export const addNative = mutation({
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
 
+    // lineTotal is a DERIVED value (unitPrice × quantity × duration − discount) —
+    // assertLineMoneyFields only bounds it, it doesn't verify it matches its inputs. A
+    // browser-direct caller could otherwise send `unitPrice: 1` (passes the bound check)
+    // with a wildly larger `lineTotal`, forging the line's — and the project's — totals.
+    // Recompute it server-side (byte-parity with calculateLineTotal), same as
+    // addLineItemSmartNative/patchMany already do; ignore whatever the client sent.
+    const computedLineTotal = calcLineTotalNative(fields.unitPrice, fields.quantity, fields.duration ?? 1, fields.discount);
+
     // Dup-guard the client-minted id (by_cuid is global + non-unique) — a reused id
     // both breaks .unique() reads AND (with the unit cascade) enables a cross-org delete.
     const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -926,6 +963,7 @@ export const addNative = mutation({
       organizationId,
       projectId,
       ...fields,
+      lineTotal: computedLineTotal ?? undefined,
       status: "CONFIRMED",
       sortOrder,
       createdAt: now,
@@ -1010,6 +1048,12 @@ export const addKitNative = mutation({
     // The client supplies projectId; verify it's the caller's org before reading it or
     // sweeping its lines (by_cuid is global) — same guard addNative applies.
     await assertProjectInOrg(ctx, projectId, organizationId);
+
+    // Every other add* mutation in this file bounds unitPrice/lineTotal before insert
+    // (assertLineMoneyFields) — this one didn't, so a browser caller sending
+    // `unitPrice: NaN` (or Infinity/negative) flowed straight into the line and then
+    // poisoned recalcProjectTotals' project.total/subtotal/margin to NaN.
+    assertLineMoneyFields({ unitPrice });
 
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1126,6 +1170,7 @@ export const reorderNative = mutation({
   handler: async (ctx, { orgId, items, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
+    assertBulkSizeOk(items.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();

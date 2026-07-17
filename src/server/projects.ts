@@ -411,7 +411,7 @@ export async function getProject(id: string) {
   // pmRows → media → location → equipment tree → client). At this app's data scale
   // the cost is round-trip COUNT × RTT, not payload, so collapsing the sequential
   // waterfall is the win.
-  const [pmRows, media0, locationMap, equipmentTree, client] = await Promise.all([
+  const [pmRows, media0, locationMap, equipmentTree, clientRaw] = await Promise.all([
     convexForProject.query(api.projectManagers.listByProject, { projectId: id, orgId: organizationId }),
     getProjectMediaFromConvex(id),
     projectScalars.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
@@ -421,6 +421,11 @@ export async function getProject(id: string) {
     projectScalars.clientId ? getClientById(projectScalars.clientId) : Promise.resolve(null),
   ]);
   const media = withResolvedFile(media0);
+  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership here
+  // (defense in depth; the mutation-side FK is now org-validated too, but a project's
+  // clientId could still be stale/foreign from before that fix, or from a future write
+  // path that forgets the check). A foreign client must render as absent, not leaked.
+  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
   const { categories, lineItems: topLineItems } = equipmentTree;
 
   // WAVE 2 — pmUsers (needs pmRows' ids) + overbooking (needs the line-item tree),

@@ -1,6 +1,12 @@
 # Mobile Data Framework — Tables & Data-Heavy Info on Small Screens
 
-**Status:** Proposed framework (research-backed)
+> **SHIPPED.** The density modes, frozen-column tables, and rich-cards-default
+> decisions here map onto the CHANGELOG v0.24.0.0–v0.24.15.0 mobile sweep,
+> which converted every operator-facing list table to cards on a phone.
+> Archived here as design rationale, alongside its companion doc
+> `mobile-first-redesign.md`.
+
+**Status:** ~~Proposed framework (research-backed)~~ Shipped
 **Date:** 2026-07-12
 **Purpose:** A reusable decision system for rendering tables and dense data on mobile,
 so every surface in RVLT Flow makes the *same* good choice instead of each one

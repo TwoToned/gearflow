@@ -1,5 +1,10 @@
 # Feature Removal Plan — June 2026
 
+> **SHIPPED — fully executed.** All 13 clusters confirmed removed (stocktake,
+> utilization, reorder, workshop kanban, reports, social login, Discord,
+> crew roles/skills/certs, and others below) — no matching code, routes, or
+> schema fields remain. Archived here as a historical record.
+
 Remove 13 feature clusters that are either unneeded right now or don't work.
 Each cluster is an **independent, atomic PR** so they can be reviewed and reverted
 separately. Convex tables/Prisma models are dropped only where the feature owns

@@ -1,6 +1,11 @@
 # Mobile-First Redesign — RVLT Flow
 
-**Status:** Proposed
+> **SHIPPED.** This initiative's own worked example (Warehouse) and its
+> broader proposal both landed in the CHANGELOG v0.24.x mobile sweep block.
+> Archived here as design rationale, alongside its companion doc
+> `mobile-data-table-framework.md`.
+
+**Status:** ~~Proposed~~ Shipped
 **Author:** Planning session (Claude), 2026-07-12
 **Goal:** Make the web app feel as if it were designed mobile-first, so crew on the
 floor can run a job from a phone as fluidly as an ops manager runs it from a desktop.

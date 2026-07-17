@@ -7,7 +7,7 @@ import {
 import { hasPermission as hasPermissionReExport } from "@/lib/permissions";
 
 /**
- * RBAC parity gate (docs/designs/convex-native-read-layer.md §3.3.3, §8).
+ * RBAC parity gate.
  *
  * The Convex `requireOrgPermission` guard delegates its decision to
  * `decideOrgPermission` → `hasPermission`, the SAME isomorphic functions the

@@ -10,7 +10,7 @@
  *
  *   pnpm tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-org-settings.ts
  *
- * See FEATUREDOCS/54 and docs/convex-native-migration-plan.md (WS1).
+ * See FEATUREDOCS/54.
  */
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";

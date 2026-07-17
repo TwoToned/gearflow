@@ -12,7 +12,7 @@ import { api } from "./_generated/api";
 
 /**
  * Integration coverage for the native read-layer RBAC guard + mirror, exercising
- * the real ctx/db inside convex-test (docs/designs/convex-native-read-layer.md §8).
+ * the real ctx/db inside convex-test.
  * Complements the pure decideOrgPermission unit tests (#298) by validating the
  * ctx-level paths: identity resolution, the (org,user) member lookup, and
  * service-only mutation gating — through the public `browserBundle` query and

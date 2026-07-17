@@ -16,7 +16,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * These helpers read the Convex copy as flat `{ id, maintenanceRecordId, assetId }`
  * rows. The asset/model + Auth-User joins the maintenance reads attach stay
  * separate (asset scalars come from Convex `assets`, model from Convex, users from
- * Prisma). See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
+ * Prisma). See FEATUREDOCS/54.
  */
 
 type RawLink = Doc<"maintenanceRecordAssets">;

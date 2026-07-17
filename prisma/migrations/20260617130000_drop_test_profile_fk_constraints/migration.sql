@@ -10,8 +10,7 @@
 -- would therefore reject any net-new Convex-only profile (the referencing row has
 -- no Prisma `test_profile` to point at). Each *Id column becomes a plain external
 -- id holding the Convex cuid — matching how Convex itself stores FKs (v.string()).
--- The columns + indexes stay; only the constraints are dropped. See FEATUREDOCS/54
--- and docs/designs/convex-decommission-RUNBOOK.md.
+-- The columns + indexes stay; only the constraints are dropped. See FEATUREDOCS/54.
 --
 -- IF EXISTS guards keep this idempotent across environments where the constraint
 -- may already be absent.

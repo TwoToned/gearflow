@@ -10,7 +10,7 @@ import { requireOrgPermission } from "./lib/auth";
  * (extracted from src/lib/project-line-item-read + the getProject body) rebuilds
  * the same shape. The equipment subtree and overbooking are separate composites
  * (projectEquipment.browserBundle, overbooking) the client subscribes to alongside
- * this. See docs/designs/convex-native-read-layer.md §3.5.
+ * this.
  *
  * Gated on `requireOrgPermission(orgId, "project", "read")` — the SAME permission
  * the getProject server action enforces. Org-scoped by the indexed reads + an

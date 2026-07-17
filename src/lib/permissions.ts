@@ -7,7 +7,7 @@
  * The pure RBAC logic (RESOURCES, rolePermissions, hasPermission, …) now lives in
  * `convex/lib/permissionsCore.ts` so it can be imported by BOTH this Next.js
  * server module and Convex functions — one source of truth for permission checks
- * (Phase 0 of the native read layer; see docs/designs/convex-native-read-layer.md).
+ * (Phase 0 of the native read layer).
  * This file re-exports that core and adds the UI-only pieces (the matrix registry
  * and display labels) that Convex never needs.
  */

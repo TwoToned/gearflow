@@ -1,8 +1,8 @@
 # Convex observability + kill-switch runbook
 
-Hard gate (§4.2 of `convex-native-migration-plan.md`): **observability + kill
-switches for the public mutation surface — before any domain goes browser-direct.**
-This is the operator's reference for both.
+**Observability + kill switches for the public mutation surface** — every domain is
+now browser-direct, so these are load-bearing. This is the operator's reference for
+both.
 
 ## Kill-switches (built)
 

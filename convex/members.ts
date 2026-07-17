@@ -6,8 +6,7 @@ import { requireService } from "./lib/auth";
  * Convex mirror of the Better-Auth `member` table (source of truth stays in
  * Prisma — Better Auth's organization plugin owns it). Stands up the table's
  * write surface so the native read layer's `requireOrgPermission` guard can
- * resolve a user's role by (org, user) inside Convex instead of a Prisma join
- * (docs/designs/convex-native-read-layer.md §3.3).
+ * resolve a user's role by (org, user) inside Convex instead of a Prisma join.
  *
  * AUTH: SERVICE-only — only the trusted backend mirrors membership. The mirror
  * write ORDERING is security-critical (restrictive changes write Convex FIRST,

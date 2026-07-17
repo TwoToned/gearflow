@@ -4,7 +4,8 @@ Self-hosted Convex is GearFlow's reactive data layer. This directory holds the
 Convex schema, queries, and mutations. **Business logic stays in Next.js server
 actions** (`src/server/`) — Convex functions are thin CRUD stubs.
 
-> Full plan: `docs/designs/convex-hybrid-migration.md`. Read it before working here.
+> See [`FEATUREDOCS/54-convex-data-layer.md`](../FEATUREDOCS/54-convex-data-layer.md)
+> + CLAUDE.md's Convex rules before working here.
 
 ## The split
 
@@ -31,8 +32,7 @@ browser — they require the service token.
   `getById` call `requireOrgRead`/`requireOrgReadDoc` (service OR a user token
   scoped to the same org). Do **not** put fine-grained permission checks here —
   Convex is never the authZ source of truth. The CRUD generator injects these
-  guards; hand-written functions call the same helpers. See
-  `docs/designs/convex-phase5-auth-bridge.md`.
+  guards; hand-written functions call the same helpers.
 - **Every list query takes `orgId` as its first arg** and scopes by it via an
   index. Multi-tenant isolation is enforced by always filtering on `orgId`.
 - **Index everything you filter on**: every foreign key + every common filter

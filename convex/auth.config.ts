@@ -4,8 +4,7 @@
  * Both the USER token (Better Auth /api/auth/token) and the SERVICE token
  * (auth.api.signJWT, in-process) are ES256 JWTs signed by Better Auth's single
  * JWKS, with the same issuer + audience. One customJwt provider validates both;
- * convex/lib/auth.ts then distinguishes them by claim and enforces access. See
- * docs/designs/convex-phase5-auth-bridge.md.
+ * convex/lib/auth.ts then distinguishes them by claim and enforces access.
  *
  * customJwt requires RS256/ES256 (not Better Auth's default EdDSA) — the jwt()
  * plugin is configured with keyPairConfig.alg = "ES256".

@@ -6,7 +6,7 @@ import { api } from "../../convex/_generated/api";
  * Mirror of the Better-Auth `member` rows (source of truth
  * stays in Prisma) into their Convex mirror tables, so the native read layer's
  * `requireOrgPermission` guard can resolve a user's role + custom-role permissions
- * inside Convex (docs/designs/convex-native-read-layer.md §3.3).
+ * inside Convex.
  *
  * WRITE-ORDERING CONTRACT (§3.3.4) — Prisma and Convex can't share a transaction,
  * so the ORDER of the two writes decides the failure mode:

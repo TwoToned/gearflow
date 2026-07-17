@@ -16,8 +16,7 @@ import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
  * Better Auth (GET /api/auth/token), forwarded to Convex via
  * ConvexProviderWithAuth. Convex validates it (convex/auth.config.ts) and scopes
  * reads to the user's org. Writes still flow browser → server action → Convex
- * (service token); the browser cannot call Convex mutations directly. See
- * docs/designs/convex-phase5-auth-bridge.md.
+ * (service token); the browser cannot call Convex mutations directly.
  *
  * Inert if NEXT_PUBLIC_CONVEX_URL is unset (a deploy without the backend).
  *
@@ -26,7 +25,7 @@ import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
  * back-navigation reloads instantly instead of paying a cold round trip. This is
  * additive: it only affects call sites that opt in by importing the cached hooks
  * from "convex-helpers/react/cache"; the default `useQuery` from "convex/react"
- * is unchanged. See docs/designs/convex-native-read-layer.md (Phase 0).
+ * is unchanged.
  */
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 

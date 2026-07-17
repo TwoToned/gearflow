@@ -1,6 +1,6 @@
 # Convex Backup & Restore Runbook
 
-**Why this exists:** the full-native migration ([`convex-native-migration-plan.md`](./convex-native-migration-plan.md)) makes Convex the **sole copy** of all domain data *and* file bytes, and drops the Postgres domain tables at cutover (Decision 20). There is **no other recovery path**. A scheduled backup **and a rehearsed restore drill** are the hard gate before `DROP TABLE` (plan §4 gate 8, §6). No drilled restore → no drop.
+**Why this exists:** the full-native migration made Convex the **sole copy** of all domain data *and* file bytes, and dropped the Postgres domain tables at cutover. There is **no other recovery path**. A scheduled backup **and a rehearsed restore drill** are the hard operational gate. See [`FEATUREDOCS/54-convex-data-layer.md`](../FEATUREDOCS/54-convex-data-layer.md) for the current data-layer overview.
 
 Prod Convex Cloud deployment: `useful-cuttlefish-334`.
 

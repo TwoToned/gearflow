@@ -8,7 +8,7 @@
  *
  *   pnpm tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-members.ts
  *
- * (or `pnpm convex:backfill:members`). See docs/designs/convex-native-read-layer.md §3.3.
+ * (or `pnpm convex:backfill:members`).
  */
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";

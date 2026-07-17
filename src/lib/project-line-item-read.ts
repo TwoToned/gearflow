@@ -38,7 +38,7 @@ import { reconstructProjectEquipmentTree } from "@/lib/project-equipment-reconst
  * (`getProjectForWarehouse` / `getProjectPullSheet` / `build-document-data`
  * follow in their own PRs, reusing these fetchers + mappers.)
  *
- * **Shape fidelity (load-bearing — see docs/designs/convex-domain-only-decommission.md):**
+ * **Shape fidelity (load-bearing):**
  * - The line-item ROW is mapped full-fidelity: every Prisma scalar present, date
  *   fields epoch-ms → `Date`, nullable fields absent → `null`, Convex `_id` /
  *   `_creationTime` stripped. `Decimal` columns are stored as `number` in Convex

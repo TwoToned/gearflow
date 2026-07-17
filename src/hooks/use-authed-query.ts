@@ -47,7 +47,7 @@ import type { FunctionReference } from "convex/server";
  * than relying on each query's arg happening to be session-gated. The server
  * guards stay strict (a genuine anonymous direct call is still rejected — the
  * Phase-5 invariant), this just stops the browser from ever sending a read before
- * it has a token. See docs/designs/convex-phase5-auth-bridge.md.
+ * it has a token.
  *
  * Signature is identical to `useQuery`, so it is a literal drop-in.
  */

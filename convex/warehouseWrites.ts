@@ -45,7 +45,7 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
  * `requireService` mirror the server action called. NO recalc — warehouse is
  * fulfillment/status, not money.
  *
- * Security baseline (docs/designs/convex-phase5-auth-bridge.md + the Phase 3 browser
+ * Security baseline (the Phase 3 browser
  * bar): `actor` is CLIENT-SUPPLIED but pinned to the verified token identity by
  * `resolveActor` — the cores' trusted `userId` writes (checkedOutById / returnedById /
  * scan-log + audit attribution) use `actor.userId`, NEVER a client arg. Every client

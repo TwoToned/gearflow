@@ -10,8 +10,7 @@
  * Why it lives under convex/lib: the Phase 1 `requireOrgPermission` guard
  * (convex/lib/auth.ts) imports it with a plain relative path, while `src/` reaches
  * it the same way the codebase already imports `convex/_generated` (relative).
- * One source of truth for "role Z can do action A on resource R" — see
- * docs/designs/convex-native-read-layer.md §3.3.1.
+ * One source of truth for "role Z can do action A on resource R".
  *
  * The UI-only registry (PERMISSION_REGISTRY) and display labels (roleLabels) stay
  * in src/lib/permissions.ts — Convex never needs them.
@@ -232,8 +231,7 @@ export function isBuiltInRole(role: string): boolean {
 // The PURE decision behind the Convex `requireOrgPermission` guard. Keeping it
 // here (isomorphic, import-free) means the Convex guard and the server-action
 // path (`requirePermission`) share the SAME logic — so a unit test on this
-// function IS the RBAC parity test between native reads and server actions
-// (docs/designs/convex-native-read-layer.md §3.3.3, §8 implementation gate).
+// function IS the RBAC parity test between native reads and server actions.
 //
 // The ctx/db plumbing (resolve identity, look up the member row by (org,user)
 // with .first(), look up + org-scope the custom role, JSON.parse its permissions)

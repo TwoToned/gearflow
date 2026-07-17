@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Mirror-coverage gate (docs/designs/convex-native-read-layer.md §3.3.4, §8).
+ * Mirror-coverage gate.
  *
  * Membership writes are scattered across many files. If a NEW write
  * site is added without routing through the mirror helper, the Convex RBAC mirror

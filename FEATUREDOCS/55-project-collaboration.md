@@ -3,10 +3,21 @@
 Convex-backed collaboration substrate for projects: presence, edit locks, comment
 threads, review markers, blocking gates, and a realtime activity feed. Every piece
 of collaboration state persists to **Convex** (not Prisma) so it is shared and
-reactive across all viewers of a project. The Next.js server-action layer is the
-trusted bridge (service token); the browser subscribes reactively via `useQuery`.
+reactive across all viewers of a project. Reads and most writes are now
+Convex-native browser-direct (see the note under Targets, below) — the browser
+subscribes reactively via `useQuery` and calls mutations directly via `useMutation`,
+authorized inline by each Convex function rather than through a Next.js
+server-action bridge.
 
 ## Targets
+
+> **Note (Convex-native browser-direct):** most of `convex/collaboration.ts` is now
+> called directly from the browser (`src/hooks/use-collaboration.ts` uses
+> `useMutation`/`useQuery` against it), with authorization (`requireOrgRead` /
+> `requireOrgPermission`) enforced inside each Convex function rather than in a
+> `src/server/collaboration.ts` bridge (that file no longer exists). Only
+> `logActivityEvent` remains `requireService`-gated — see the "Convex tables"
+> section below for the current, corrected picture.
 
 Collaboration attaches to a `(entityType, entityId)` container plus an optional
 `(targetType, targetId)` for granularity. For projects the container is
@@ -40,9 +51,14 @@ to look rows up against a single project-wide subscription.
   `resolved`). Mutation `setReviewMarker`; read `getReviewMarker`.
 - **`activityEvents`** — the realtime feed (see below).
 
-All Convex mutations require the **service token** (`requireService`); browser
-writes are rejected. Authorization (`requirePermission` / `getOrgContext`) happens
-in the server action *before* the Convex call. Reads use `requireOrgRead`.
+⚠️ **Stale as of the Convex-native browser-direct migration.** Almost all mutations
+above are now called directly from the browser and gate themselves with
+`requireOrgPermission(ctx, orgId, "project", ...)` / `requireOrgRead` inline — there
+is no more server-action bridge holding a service token. The one holdout is
+`logActivityEvent`, which is still `requireService`-gated (and, per the note in
+"Operational data mirroring" below, has no live caller left — `writeCollabActivityEvent`,
+the helper that used to call it from server actions, is now dead code). Reads use
+`requireOrgRead`/`requireOrgPermission`.
 
 ## Edit locks (section-level) — point 2
 
@@ -111,9 +127,9 @@ supplier, and asset-registry detail pages now carry:
 ## Resolved-thread reply behavior — point 5
 
 `addComment` **rejects** replies to a `resolved` thread (throws). Replying no longer
-silently reopens it — the reviewer must explicitly `reopenThread` first (which goes
-through the server action's `requirePermission`). This keeps the resolved state
-authoritative.
+silently reopens it — the reviewer must explicitly `reopenThread` first (which is
+gated by its own `requireOrgPermission` check in `convex/collaboration.ts`). This
+keeps the resolved state authoritative.
 
 ## Activity feed — point 3
 
@@ -132,26 +148,29 @@ Events are written two ways:
    `review_resolved`. Actor identity (`actorUserId` / `actorName` / `actorColor`)
    is threaded from the server action into the mutation args.
 
-2. **From other server mutations** — quote / line-item and group / category edits
-   log feed events via the plain library helper
-   `src/lib/collaboration-activity.ts` (`writeCollabActivityEvent`), called from
-   already-authorized actions:
-   - `addLineItem` → `line_item_added`, `updateLineItem` → `line_item_updated`,
-     `removeLineItem` → `line_item_removed`
+2. **From other Convex mutations** — ⚠️ **stale, updated 2026-07-17.** This used to
+   describe a `src/lib/collaboration-activity.ts` helper (`writeCollabActivityEvent`)
+   called from already-authorized `src/server/*.ts` actions after a quote/line-item or
+   group/category edit. That helper still exists but is now **dead code — nothing
+   imports it** (confirmed by repo-wide grep). The Convex-native browser-direct
+   migration folded the same feed writes directly into the mutations that replaced
+   those server actions, atomic with the state change (via the shared `recordActivity`
+   pattern, same as point 1 above):
+   - `addLineItem`/`updateLineItem`/`removeLineItem` → `line_item_added`/
+     `line_item_updated`/`line_item_removed`, now in
+     [`convex/lineItemWrites.ts`](../convex/lineItemWrites.ts)
    - `addKitLineItem` → `kit_added` (one grouped event with member count; an
-     `emitActivity` flag lets bulk callers suppress it)
-   - `addCustomLineItem` → `custom_item_added`
+     `emitActivity` flag lets bulk callers suppress it) — also `convex/lineItemWrites.ts`
+   - `addCustomLineItem` → `custom_item_added` — also `convex/lineItemWrites.ts`
    - `applyGroupTemplate` → `template_applied` (one grouped "imported N items"
      event; passes `emitActivity: false` to the per-kit adds so a bulk import
-     never spams the feed with one event per row)
-   - `updateProjectGroup` → `group_updated` (skips pure drag-reorders)
-   - `updateProjectCategory` → `category_updated` (rename only)
-
-   `writeCollabActivityEvent` is deliberately **not** a server action — exporting it
-   from a `"use server"` module would register a public, permission-less endpoint
-   that any org member could call to inject arbitrary activity events. It takes the
-   caller's already-resolved actor context (no second `getOrgContext`) and calls the
-   `logActivityEvent` Convex mutation (service-token gated).
+     never spams the feed with one event per row) — now
+     [`convex/groupTemplatesWrites.ts`](../convex/groupTemplatesWrites.ts)
+     (formerly `src/server/group-templates.ts`, now deleted)
+   - `updateProjectGroup` → `group_updated` (skips pure drag-reorders) — now
+     [`convex/projectGroupsWrites.ts`](../convex/projectGroupsWrites.ts)
+   - `updateProjectCategory` → `category_updated` (rename only) — now
+     [`convex/projectCategoriesWrites.ts`](../convex/projectCategoriesWrites.ts)
 
 ## Operational data mirroring
 
@@ -168,15 +187,15 @@ not replace those mirrors.
 - `src/lib/collaboration-targets.ts` (+ test) — target descriptors / keys.
 - `src/lib/blocking-comments-gate.ts` (+ test) — pure gate decision logic.
 - `src/lib/blocking-comments-read.ts` — server-only summary fetch + `assertNoBlockingComments`.
-- `src/lib/collaboration-activity.ts` — `writeCollabActivityEvent` helper.
+- `src/lib/collaboration-activity.ts` — `writeCollabActivityEvent` helper. Now dead
+  code (no importers) — see point 2 under "Activity feed" above.
 - `src/lib/collaboration-colors.ts` — deterministic per-user colours.
 - `src/components/collaboration/entity-comments-button.tsx` — generic record comments button.
 - `src/components/collaboration/edit-lock-gate.tsx` — record edit-lock wrapper (Phase 6).
-- `src/server/group-templates.ts` — grouped `template_applied` import event.
+- `convex/groupTemplatesWrites.ts` — grouped `template_applied` import event (formerly `src/server/group-templates.ts`, deleted).
 - `src/app/(app)/{clients,suppliers,assets/registry}/[id]/{page,edit/page}.tsx` — record collaboration wiring.
-- `src/server/collaboration.ts` — server actions (presence, locks, threads, markers).
 - `src/server/check-records.ts` — prep/pull gates pass `groupId`.
-- `src/server/line-items.ts`, `src/server/project-groups.ts`, `src/server/project-categories.ts` — feed writes on edits.
+- `convex/lineItemWrites.ts`, `convex/projectGroupsWrites.ts`, `convex/projectCategoriesWrites.ts` — feed writes on edits (formerly `src/server/line-items.ts`, `src/server/project-groups.ts`, `src/server/project-categories.ts`, all deleted).
 - `src/hooks/use-collaboration.ts` — `useEditLock` and friends.
 - `src/components/collaboration/*` — comment panel, activity feed, locked-editor overlay.
 - `src/components/projects/equipment-tab.tsx`, `equipment-rows.tsx`, `edit-group-dialog.tsx`, `rename-category-dialog.tsx` — UI wiring.

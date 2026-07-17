@@ -19,22 +19,32 @@ external tools (Asana, Slack threads). Each project gets a **Tasks** tab.
 Indexes: `(organizationId, projectId)`, `(projectId, status)`, `(assigneeUserId, status)`.
 Migration: `20260606000000_project_tasks`.
 
-## Server actions (`src/server/project-tasks.ts`)
-All writes use `requirePermission("project", "update")`; reads use `("project", "read")`.
-- `getProjectTasks(projectId)` — ordered by `sortOrder`, then `createdAt`; includes assignee + creator.
-- `getTaskAssignees()` — org members (users) + active crew, for the assignee picker (gated on
-  project read so no separate `orgMembers` permission is needed).
-- `createProjectTask(...)` — validates project ∈ org and assignee ∈ org (`assertAssigneeInOrg`),
-  appends to the end (`max(sortOrder)+1`), sets `completedAt` if created as `DONE`.
-- `updateProjectTask(id, ...)` — partial update; manages the `completedAt` transition both directions.
-- `deleteProjectTask(id)`.
-- `reorderProjectTasks(projectId, orderedIds)` — writes each row's `sortOrder` to its index,
-  scoped to org + project (a foreign id can't be reordered in).
-- `getMyOpenTasks(limit)` — cross-project: non-`DONE` tasks assigned to the current user, ordered
-  by due date (nulls last), then priority, then age. Powers the user-centric home screen.
+## Convex functions (formerly `src/server/project-tasks.ts`, now deleted)
 
-All queries are scoped to `organizationId` (and `userId` for `getMyOpenTasks`). Every mutation
-calls `logActivity` with `entityType: "ProjectTask"` and the `projectId`.
+Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct writes in
+[`convex/projectTasksWrites.ts`](../convex/projectTasksWrites.ts) (`requireOrgPermission("project",
+"update")`, called via `src/hooks/use-project-tasks-writes.ts`). Reads use `requireOrgRead`/
+`requireOrgPermission("project", "read")`.
+- `listByProjectWithRelations(projectId, orgId)` — ordered by `sortOrder`, then `createdAt`;
+  includes assignee + creator. (`getProjectTasks`)
+- `assignees(orgId)` — org members (users) + active crew, for the assignee picker. (`getTaskAssignees`)
+- `createNative(...)` — validates project ∈ org and assignee ∈ org, appends to the end
+  (`max(sortOrder)+1`), sets `completedAt` if created as `DONE`. (`createProjectTask`)
+- `updateNative(id, ...)` — partial update; manages the `completedAt` transition both directions.
+  (`updateProjectTask`)
+- `deleteNative(id)`. (`deleteProjectTask`)
+- `bulkUpdateNative` / `bulkDeleteNative` — batched Phase 4 bulk ops, see
+  [FEATUREDOCS/59](./59-bulk-operations.md).
+- `reorderMany(orgId, orderedIds)` in `convex/projectTasks.ts` — writes each row's `sortOrder` to
+  its index, scoped to org (a foreign id can't be reordered in). Still `requireService`-gated
+  (not yet browser-direct) and has no production caller — matches the "Drag-and-drop reordering"
+  follow-up below; only exercised by `convex/review2Bulk.test.ts`.
+- ⚠️ `getMyOpenTasks(limit)` (cross-project "my tasks" read for a user-centric home screen) could
+  not be found anywhere in current code — it appears to have never shipped, or was removed.
+  Treat that line as aspirational/stale.
+
+Every mutation writes its own audit row via `writeActivityLog` (Convex's `logActivity` counterpart)
+with `entityType: "ProjectTask"` and the `projectId`.
 
 ## UI (`src/components/projects/tasks-panel.tsx`)
 Rendered in the project detail page's **Tasks** tab. Quick-add input (Enter to add a TODO),

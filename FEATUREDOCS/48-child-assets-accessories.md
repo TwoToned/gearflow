@@ -54,14 +54,17 @@ what every existing query keys off.
 
 ## Flow
 
-1. **Attach** (asset-level — `src/server/asset-accessories.ts`) —
-   `addSerializedChildToAsset`, `addBulkChildToAsset`, plus detach. Guards:
+1. **Attach** (asset-level — browser-direct [`convex/assetAccessoriesWrites.ts`](../convex/assetAccessoriesWrites.ts),
+   formerly `src/server/asset-accessories.ts`) — `addSerializedNative`,
+   `addBulkNative` (was `addSerializedChildToAsset`/`addBulkChildToAsset`), plus
+   `removeSerializedNative`/`removeBulkNative` (detach). Guards:
    self/nesting/already-attached, kit↔accessory dual membership (symmetric
    check in `kits.ts`), one-level-deep, cross-org. UI:
    `AssetAccessoriesManager` on the asset detail page.
 
-   **Attach (model-level — `src/server/model-accessories.ts`)** —
-   `addModelBulkAccessory` / `removeModelBulkAccessory`. The unique
+   **Attach (model-level — browser-direct [`convex/modelBulkAccessoriesWrites.ts`](../convex/modelBulkAccessoriesWrites.ts),
+   formerly `src/server/model-accessories.ts`)** —
+   `addNative` / `removeNative` (was `addModelBulkAccessory` / `removeModelBulkAccessory`). The unique
    `(modelId, bulkAssetId)` constraint surfaces as `ACCESSORY_DUPLICATE`. UI:
    `ModelAccessoriesManager` on the Model detail page. Removing a model
    accessory after a project has already expanded it does NOT retroactively
@@ -72,8 +75,9 @@ what every existing query keys off.
    `bulkAccessories`, deduped by `bulkAssetId` so asset-level overrides win
    on conflict:
    - Office, **specific asset**: adding a specific serialised asset
-     (`expandAccessoryChildren`, `line-items.ts`) auto-expands its serialised +
-     bulk children, atomic with the parent line.
+     (`expandAccessoryChildLines`, ported to [`convex/lib/fulfillment.ts`](../convex/lib/fulfillment.ts) —
+     formerly `expandAccessoryChildren` in `src/server/line-items.ts`) auto-expands
+     its serialised + bulk children, atomic with the parent line.
    - Office, **by model** (the common quoting flow): adding a line *by model*
      (no specific asset) expands the **model's** default bulk accessories
      (`ModelBulkAccessory`), quantity scaled by the line quantity (`2x IMX6A` →
@@ -81,8 +85,10 @@ what every existing query keys off.
      documents immediately. Serialised asset-level accessories can't expand here
      (no specific asset is picked) — they materialise at warehouse prep.
    - Warehouse: assigning a specific unit to a *model-level* line at prep or
-     deploy (`expandAccessoriesForAsset`, `line-item-fulfillment.ts`, hooked
-     into `prepUnit` + `checkOutItems`). Idempotent — dedups serialised by
+     deploy (`expandAccessoriesForAsset`, [`convex/lib/fulfillment.ts`](../convex/lib/fulfillment.ts) —
+     formerly `src/lib/line-item-fulfillment.ts` — hooked
+     into `prepUnit` (same file, called from `convex/checkRecordOps.ts`) +
+     `checkOutItems`). Idempotent — dedups serialised by
      assetId, bulk by bulkAssetId (the `(parentLineItemId, bulkAssetId)` unique
      index backstops it), and **reconciles** the office-created model-accessory
      row's quantity to the units actually assigned. So re-scans don't duplicate.
@@ -97,9 +103,11 @@ what every existing query keys off.
    `checkOutItems`/`checkInItems` cascade the parent's deploy/return to accessory
    child lines through the same unit path (`ensureSerialisedUnit` /
    `ensureBulkUnit` / `returnLineUnits`) inside the parent's transaction. The
-   return cascade lives in `line-item-fulfillment.ts:checkinAccessoryChildren`
-   (shared, not warehouse-private) so the **check-and-store** return flow
-   (`check-records.ts:completeCheckAndStore`) cascades too — any code path that
+   return cascade lives in `convex/lib/fulfillment.ts:checkinAccessoryChildren`
+   (formerly `line-item-fulfillment.ts`; shared, not warehouse-private) so the
+   **check-and-store** return flow (browser-direct
+   `convex/checkRecordWrites.ts:completeCheckAndStore`, formerly
+   `check-records.ts:completeCheckAndStore`) cascades too — any code path that
    returns a parent must call it, or accessories stick at `CHECKED_OUT`.
    `completeCheckAndDeprep` resets accessory children `prepStatus` so they don't
    linger on the deploy-staging board.
@@ -118,15 +126,19 @@ what every existing query keys off.
    each badged "Accessory". Accessory children are hidden from the flat list by
    `isHiddenFromList` (they're `isKitChild:true`).
 
-   **Deploy/return tabs** — the scan-driven deploy/return tabs render accessory
-   children as read-only indented rows under their parent via
-   `accessory-child-rows.tsx` (`AccessoryChildRows` / `getAccessoryChildren`),
-   wired into both the `single` and `serialized-group` entry branches in
-   `deploy-tab.tsx` and `return-tab.tsx`. They're informational (no separate
-   verify/select — accessories cascade atomically with the parent); mode filter
-   mirrors `KitChildRows` (deploy shows not-yet-out, return shows checked-out).
-   Accessory parents are plain serialised lines, so `groupItems` routes them to
-   `single`/`serialized-group`, never `kit-group`.
+   **Deploy/return tabs** — ⚠️ **stale, needs a follow-up audit.** This section
+   previously described a dedicated `accessory-child-rows.tsx`
+   (`AccessoryChildRows` / `getAccessoryChildren`) component wired into
+   `deploy-tab.tsx`/`return-tab.tsx`; that file no longer exists in current code
+   and no `AccessoryChildRows` component could be found anywhere in the repo.
+   `getAccessoryChildren` now lives in
+   [`src/components/warehouse/pick-list-progress.ts`](../src/components/warehouse/pick-list-progress.ts),
+   but it's used for pick-progress counting (consumed by `online-pick-list.tsx`),
+   not for rendering rows in the deploy/return tabs. Whether the deploy/return
+   tabs still render accessory children distinctly (vs. folded into the generic
+   `KitChildRows` path, which does not check `childKind`) is unverified — treat
+   this paragraph as unconfirmed until someone re-audits `deploy-tab.tsx` /
+   `return-tab.tsx` against current behaviour.
 
    **Known gap (not yet wired):** the pick/prep tab (`pick-prep-tab.tsx`) does
    not yet show accessories nested; expansion still happens at prep server-side.
@@ -154,6 +166,16 @@ what every existing query keys off.
    `section-renderer.ts` reserves their height.
 
 ## Tests
+
+> The `src/server/*.int.test.ts` Prisma integration tests below were removed
+> along with the server actions they covered. Equivalent coverage now lives in
+> `convex/assetAccessoriesWrites.test.ts` (attach/detach, both allocation modes,
+> guards) and `convex/modelBulkAccessoriesWrites.test.ts` (model inheritance).
+> Project-expansion and checkout/checkin-cascade coverage is folded into the
+> broader `convex/lineItemWrites.test.ts` / `convex/warehouseWrites.test.ts` /
+> `convex/checkRecordWrites.test.ts` suites rather than dedicated accessory files.
+> `src/components/warehouse/accessory-child-rows.test.ts` could not be located in
+> current code — see the "Deploy/return tabs" caveat above.
 
 - `src/server/asset-accessories.int.test.ts` — attach/detach, both allocation
   modes, rollback, all guards (10).
@@ -225,9 +247,11 @@ set per assigned parent unit. These are handled per-unit:
   and falls back to an update. Prisma's DSL can't express partial indexes, so they
   are raw-SQL only and not in `schema.prisma` (see the migration's note on
   `migrate dev` drift).
-- **`bulk-group` tab rendering.** `AccessoryChildRows` is wired into the
+- **`bulk-group` tab rendering.** `AccessoryChildRows` was wired into the
   `bulk-group` branch of the deploy/return tabs too, so a multi-qty serialised
-  model line (which `groupItems` classifies `bulk-group`) shows its accessories.
+  model line (which `groupItems` classifies `bulk-group`) shows its accessories
+  — see the "Deploy/return tabs" caveat above; this component no longer exists
+  under that name and current behaviour is unverified.
 
 `resolveAssetAccessories` is the shared per-asset profile (serialised children +
 bulk accessories, asset-level unioned with model-level) used by both expansion and
@@ -236,15 +260,20 @@ the per-unit return scoping. Tests: the multi-quantity isolation block in
 isolation, mixed-condition batch, whole-line return, bulk scale + per-unit return,
 double-check-in no over-return, idempotent re-scan, savepoint recovery).
 
-**Concurrency & idempotency.**
-- Accessory child creation is backstopped by the partial unique indexes;
-  `createAccessoryChildIfAbsent` wraps each create in a SAVEPOINT so a conflict
-  rolls back only that statement instead of poisoning the Prisma interactive
-  transaction (a 23505 otherwise aborts the whole tx — verified by the
-  savepoint-recovery integration test).
-- `expandAccessoriesForAsset` takes a `FOR UPDATE` row lock on the parent line, so
-  two stations expanding different units of the same line serialize and bulk
-  demand sees every committed sibling (no concurrent undercount). Demand excludes
+**Concurrency & idempotency.** This domain now lives in Convex
+([`convex/lib/fulfillment.ts`](../convex/lib/fulfillment.ts), ported from
+`src/lib/line-item-fulfillment.ts`); the two Postgres-specific tricks below no
+longer apply as described — the file's header comment notes both collapse for
+free under Convex's per-document serializable mutations:
+- Accessory child creation is backstopped by the partial unique indexes (below);
+  `createAccessoryChildIfAbsent` is now a plain check-then-insert — a concurrent
+  racer serializes and the loser re-reads, no SAVEPOINT needed (Postgres
+  previously wrapped each create in a SAVEPOINT so a 23505 conflict didn't
+  poison the whole interactive transaction).
+- `expandAccessoriesForAsset` no longer needs the Postgres `FOR UPDATE` row lock
+  on the parent line — a Convex mutation is serialised for free, so two stations
+  expanding different units of the same line still serialize and bulk demand
+  sees every committed sibling (no concurrent undercount). Demand excludes
   RETURNED / CANCELLED units.
 - The return cascade only fires when the parent return actually flipped a unit
   (`unitsFlipped > 0`), so a retry / double-scan can't re-return the shared bulk

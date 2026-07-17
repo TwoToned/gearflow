@@ -44,10 +44,13 @@ concurrent project creation. After rendering, the number is checked against exis
 the counter again (capped at 50 attempts).
 
 ## Integration points
-- `createProject` (`src/server/projects.ts`): when not a template, no manual code was entered,
-  AND a format is configured → allocate inside the txn (`generateProjectNumber`). If no format
-  is configured and the code is blank → the existing `MISSING_PROJECT_CODE` error still fires.
-  Manually-entered codes always win. Templates keep their own `generateTemplateCode` path.
+- Project create is now browser-direct: `createNative` in
+  [`convex/projectWrites.ts`](../convex/projectWrites.ts) (formerly the `createProject` server
+  action in `src/server/projects.ts`, now deleted). When not a template, no manual code was
+  entered, AND a format is configured → the number is allocated IN-mutation (fold of the former
+  server-side `generateProjectNumber` loop). If no format is configured and the code is blank →
+  the existing `MISSING_PROJECT_CODE` error still fires. Manually-entered codes always win.
+  Templates keep their own `generateTemplateCode` path.
 - `peekNextProjectNumber(override?)` — previews the next code WITHOUT incrementing (reads the
   current counter, then probes counter+1, +2, … skipping any rendered code that's already a
   project, so the preview matches what `generateProjectNumber` will actually allocate). The skip
@@ -69,18 +72,23 @@ result into a `DUPLICATE_PROJECT_CODE` `UserFacingError` with `field: "projectNu
 "An error occurred in the Server Components render" string — its `message`/`field`
 never reach the client — so relying on the throw gave no usable inline error. Two-part fix:
 - `checkProjectNumberAvailable(projectNumber, excludeProjectId?)` — a RETURN-value
-  action (`{ available }`) the create/edit wizard calls before submit. Return values
-  serialize across the boundary intact, so the wizard raises a client-side
+  action (`{ available }`, still in `src/server/projects.ts`) the create/edit wizard calls before
+  submit. Return values serialize across the boundary intact, so the wizard raises a client-side
   `field`-tagged error and `form.setError("projectNumber", …)` (jumping to step 0). The
-  create/update throws remain the authoritative integrity backstop and feed the API
-  error envelope (`toApiError` in `src/lib/api/dispatch.ts` handles `UserFacingError`).
-- `updateProject` gained the same duplicate guard (it previously patched
-  `projectNumber` blindly — editing a code to one a sibling already used silently
+  create/update throws remain the authoritative integrity backstop. **Dangling reference:** this
+  used to feed the API error envelope via `toApiError` in `src/lib/api/dispatch.ts` — that whole
+  agent-API surface was removed 2026-07-14 (see [FEATUREDOCS/56](./56-api-mcp.md)) and
+  `src/lib/api/dispatch.ts` no longer exists; there is no current replacement path to point at.
+- `updateNative` in [`convex/projectWrites.ts`](../convex/projectWrites.ts) (formerly the
+  `updateProject` server action, now deleted) carries the same duplicate guard (it previously
+  patched `projectNumber` blindly — editing a code to one a sibling already used silently
   produced two projects sharing a number). Checked only when the number actually
   changes, excluding the project's own row.
 
 ## Tests
-- `project-number.test.ts` — 12 pure-engine tests (render, scopeKey, validation, tz).
-- `project-numbering.int.test.ts` — 7 integration tests (sequential allocation, padding/literal,
-  manual override wins, blank rejected when off, preview doesn't consume, preview skips taken
-  numbers when the counter lags, override preview).
+- `src/lib/project-number.test.ts` — 12 pure-engine tests (render, scopeKey, validation, tz);
+  `convex/projectNumber.test.ts` mirrors this on the Convex side.
+- `project-numbering.int.test.ts` no longer exists (it covered the deleted `src/server/projects.ts`
+  `createProject`/`updateProject` actions). Equivalent coverage — sequential allocation,
+  padding/literal, manual override wins, preview skips taken numbers when the counter lags — now
+  lives in `convex/projectWrites.test.ts` (see the `createNative auto-number` `describe` block).

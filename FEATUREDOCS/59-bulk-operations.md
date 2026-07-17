@@ -10,13 +10,17 @@ project surfaces** — Equipment (Phase 1), then Services, Crew, and Tasks
 Each surface reuses `useSelection` (plain row ids), renders per-row/-card
 selection checkboxes (hover-reveal + a select-all), and a `BulkActionBar`.
 
-| Surface | Bulk actions | Server actions |
-|---|---|---|
-| **Services** (`services-panel.tsx`) | Set status · Delete | `bulkUpdateServiceStatus` (existed), `bulkDeleteProjectServices` (new — unlink+cascade line item, remove service, cascade crew assignments) |
-| **Crew** (`crew-panel.tsx`) | Set status · Remove | `bulkUpdateAssignmentStatus`, `bulkDeleteAssignments` (new, `crew` update/delete gated; leading checkbox column threaded through `PhaseGroup`) |
-| **Tasks** (`tasks-panel.tsx`) | Move to status · Priority · Delete | `bulkUpdateProjectTasks`, `bulkDeleteProjectTasks` (new) |
+> **⚠️ Superseded (Phase 3 browser-direct), same as Phase 1 above.** The names in
+> the "Server actions" column below no longer exist as `src/server/*.ts` actions —
+> they're browser-direct Convex mutations now, ported at parity.
 
-All new batch actions follow the same shape: one bulk Convex mutation that loops
+| Surface | Bulk actions | Server actions (historical name → current Convex mutation) |
+|---|---|---|
+| **Services** (`services-panel.tsx`) | Set status · Delete | `bulkUpdateServiceStatus` → `projectServicesWrites.bulkUpdateServiceStatusNative`; `bulkDeleteProjectServices` → `projectServicesWrites.bulkDeleteServicesNative` (unlink+cascade line item, remove service, cascade crew assignments) |
+| **Crew** (`crew-panel.tsx`) | Set status · Remove | `bulkUpdateAssignmentStatus` → `crewAssignmentsWrites.bulkStatusNative`; `bulkDeleteAssignments` → `crewAssignmentsWrites.bulkDeleteNative` (`crew` update/delete gated; leading checkbox column threaded through `PhaseGroup`) |
+| **Tasks** (`tasks-panel.tsx`) | Move to status · Priority · Delete | `bulkUpdateProjectTasks` → `projectTasksWrites.bulkUpdateNative`; `bulkDeleteProjectTasks` → `projectTasksWrites.bulkDeleteNative` |
+
+All batch actions follow the same shape: one bulk Convex mutation that loops
 inside a single transaction, then one recalc per affected project (where totals
 apply) + one bulk audit; missing/foreign ids are skipped and reported.
 
@@ -147,5 +151,5 @@ New Convex mutations: `activityLogWrites.recordMany`, `checkRecords.createManyIf
 - Extend the pattern to non-project surfaces as needed (the primitives are
   surface-agnostic).
 
-Related: [bulk-operations batching design](../docs/designs/bulk-operations-batching.md),
+Related: [bulk-operations batching design](../docs/designs/archive/bulk-operations-batching.md),
 [47 Cross-Type Equipment Unification](./47-cross-type-equipment-unification.md).

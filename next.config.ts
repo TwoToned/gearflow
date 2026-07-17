@@ -33,6 +33,14 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-DNS-Prefetch-Control", value: "off" },
+          // HSTS (POLICY.md R-8.11.2). 1-year max-age, scoped to this host only —
+          // deliberately NO includeSubDomains / preload until every rvlt.app
+          // subdomain is confirmed HTTPS-only. Browsers ignore this over plain
+          // HTTP (local dev), so it's inert outside production.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000",
+          },
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(), geolocation=()",

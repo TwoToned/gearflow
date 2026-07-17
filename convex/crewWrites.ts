@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertRefInOrg, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
@@ -68,6 +69,11 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, fields.organizationId, "crew", "create");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    // Org-validate the client-supplied FKs written onto the crew member row (both are
+    // resolved via GLOBAL by_cuid/by_org_user elsewhere without re-checking org).
+    if (fields.crewRoleId) await assertRefInOrg(ctx, "crewRoles", fields.crewRoleId, fields.organizationId);
+    if (fields.userId) await assertMemberInOrg(ctx, fields.organizationId, fields.userId);
 
     // Server-side boundary parity with crewMemberSchema (the form's zodResolver + the
     // hook's .parse cover the UI path; this guards any direct mutation caller).
@@ -141,6 +147,10 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchMember pattern.
     const NEVER_CLEAR = new Set(["id", "organizationId"]);
     const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
+    // Org-validate reassigned FKs; the linked user is validated only when CHANGED so a
+    // former member on an existing row can still be re-saved.
+    if (typeof setObj.crewRoleId === "string") await assertRefInOrg(ctx, "crewRoles", setObj.crewRoleId, orgId);
+    if (typeof setObj.userId === "string" && setObj.userId !== doc.userId) await assertMemberInOrg(ctx, orgId, setObj.userId);
     const { _id, _creationTime, ...beforeRest } = doc;
     const afterRest: Record<string, unknown> = { ...beforeRest, ...setObj };
     for (const k of clear) { if (!NEVER_CLEAR.has(k)) delete afterRest[k]; }

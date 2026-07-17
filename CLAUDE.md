@@ -67,16 +67,20 @@ Every feature change **must** update the relevant `FEATUREDOCS/` file. If the fe
 
 ## Commands
 
+**This repo is pnpm-only** (single committed `pnpm-lock.yaml`; CI installs `--frozen-lockfile`).
+Use `pnpm` / `pnpm exec` — never `npm`/`npx` (npm would drift the lockfile). See also the Convex
+note below: **always `pnpm exec convex`, never `npx convex`.**
+
 ```bash
-npm run dev          # Dev server (Turbopack, Next.js 16 default)
-npm run build        # Production build + type check
-npm start            # Start production server
-npm run lint         # ESLint
-npm test             # Run all unit tests
-npm run test:watch   # Run tests in watch mode
-npm run test:coverage # Run tests with coverage report
-npx prisma generate  # Regenerate Prisma client (after schema changes)
-npx prisma migrate dev --name <name>  # Create + apply migration
+pnpm dev             # Dev server (Turbopack, Next.js 16 default)
+pnpm build           # Production build + type check
+pnpm start           # Start production server
+pnpm lint            # ESLint
+pnpm test            # Run all unit tests
+pnpm test:watch      # Run tests in watch mode
+pnpm test:coverage   # Run tests with coverage report
+pnpm exec prisma generate  # Regenerate Prisma client (after schema changes)
+pnpm exec prisma migrate dev --name <name>  # Create + apply migration
 ```
 
 ### Worktree Setup
@@ -88,13 +92,13 @@ Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this
 cp /path/to/gearflow/.env .
 
 # Install dependencies
-npm install --legacy-peer-deps
+pnpm install
 
 # Generate Prisma client
-npx prisma generate
+pnpm exec prisma generate
 ```
 
-After this, `npm run dev`, `npm test`, and `npm run build` will all work.
+After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
 ### Convex Dev in Worktrees
 
@@ -120,7 +124,7 @@ pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
 
 This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
 which the dev server picks up automatically. Run it in a separate terminal alongside
-`npm run dev`. The preview deployment name must not contain `/` — for worktree branches
+`pnpm dev`. The preview deployment name must not contain `/` — for worktree branches
 like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
 
 `CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
@@ -129,7 +133,7 @@ Cloud project deploy key.
 ### DB Setup (first time)
 ```bash
 # Ensure DATABASE_URL is set in .env, then:
-npx prisma migrate dev   # Apply all migrations + generate client
+pnpm exec prisma migrate dev   # Apply all migrations + generate client
 ```
 
 ## Environment Variables
@@ -231,7 +235,7 @@ be checked against `organizationId`, or you have a cross-tenant read.
 
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
-- After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev
+- After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev
 - **Bulk-data migrations MUST end with `ANALYZE "<table>";`.** A large
   `INSERT`/`UPDATE`/`DELETE` leaves the planner on stale row-count statistics
   until autovacuum eventually catches up; until then it can pick pathological
@@ -408,6 +412,6 @@ how to correctly use Convex APIs and patterns. The file contains rules that
 override what you may have learned about Convex from training data.
 
 Convex agent skills for common tasks can be installed by running
-`npx convex ai-files install`.
+`pnpm exec convex ai-files install`.
 
 <!-- convex-ai-end -->

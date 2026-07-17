@@ -92,6 +92,7 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ### Prerequisites
 
 - **Node.js 20+**
+- **pnpm** (this repo is pnpm-only — a committed `pnpm-lock.yaml` is the single lockfile)
 - **Docker** (recommended — for PostgreSQL) or bring your own Postgres
 
 ### 1. Clone & install
@@ -99,7 +100,7 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ```bash
 git clone https://github.com/RVLT-Labs/rvlt-flow.git
 cd rvlt-flow
-npm install
+pnpm install
 ```
 
 ### 2. Start the database & file storage
@@ -158,20 +159,20 @@ domain data (assets, projects, warehouse, etc.) — Postgres only holds Better
 Auth and the audit log. Create a Convex project, then push the schema/functions:
 
 ```bash
-npx convex dev --once
+pnpm exec convex dev --once
 ```
 
 ### 5. Set up Postgres (Better Auth + activity log)
 
 ```bash
-npx prisma migrate deploy
-npx prisma generate
+pnpm exec prisma migrate deploy
+pnpm exec prisma generate
 ```
 
 ### 6. Launch
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open [localhost:3000](http://localhost:3000) and register your first account.
@@ -215,13 +216,16 @@ http://localhost:3000/register/admin?token=pick-a-secret-token
 ## Development Commands
 
 ```bash
-npm run dev                              # Dev server with Turbopack
-npm run build                            # Production build + type check
-npm run lint                             # ESLint
+pnpm dev                                  # Dev server with Turbopack
+pnpm build                                # Production build + type check
+pnpm lint                                 # ESLint
+pnpm test                                 # Run unit tests (Vitest)
+pnpm test:coverage                        # Unit tests with coverage report
+pnpm test:integration                     # Integration tests
 
-npx prisma migrate dev --name <name>     # Create + apply a migration
-npx prisma generate                      # Regenerate Prisma client
-npx prisma studio                        # Browse your data in the browser
+pnpm exec prisma migrate dev --name <name> # Create + apply a migration
+pnpm exec prisma generate                 # Regenerate Prisma client
+pnpm exec prisma studio                   # Browse your data in the browser
 ```
 
 ### Project Structure

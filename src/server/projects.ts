@@ -5,7 +5,6 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
-import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -26,15 +25,13 @@ import type { ProjectStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { logActivity } from "@/lib/activity-log";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { type FilterValue } from "@/lib/table-utils";
-import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { UserFacingError } from "@/lib/errors";
 import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
-import { nativeProjectWrites } from "@/lib/native-writes";
 import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
 import { ConvexError } from "convex/values";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
@@ -617,73 +614,39 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   const projectAuditId = createId();
   let created: { created: boolean; id: string } | null = null;
 
-  if (nativeProjectWrites()) {
-    // Native: the auto-number allocation loop is folded INTO createNative (scopeKey →
-    // reserve sequence → render → clash-guard → retry, all in one transaction), so a
-    // single call suffices. Auto numbering passes the resolved config + date parts
-    // (computed here in the org timezone); manual/template pass the code directly.
-    created = await convex.mutation(api.projectWrites.createNative, {
-      ...baseArgs,
-      ...(useAutoNumber
-        ? {
-            autoNumber: {
-              format: autoConfig!.format,
-              reset: autoConfig!.reset,
-              padding: autoConfig!.padding,
-              parts: datePartsInTimezone(now, autoConfig!.timezone),
-            },
-          }
-        : { projectNumber: templateNumber ?? parsed.projectNumber! }),
-      actor: { userId, userName },
-      auditId: projectAuditId,
+  // The auto-number allocation loop is folded INTO createNative (scopeKey →
+  // reserve sequence → render → clash-guard → retry, all in one transaction), so a
+  // single call suffices. Auto numbering passes the resolved config + date parts
+  // (computed here in the org timezone); manual/template pass the code directly.
+  created = await convex.mutation(api.projectWrites.createNative, {
+    ...baseArgs,
+    ...(useAutoNumber
+      ? {
+          autoNumber: {
+            format: autoConfig!.format,
+            reset: autoConfig!.reset,
+            padding: autoConfig!.padding,
+            parts: datePartsInTimezone(now, autoConfig!.timezone),
+          },
+        }
+      : { projectNumber: templateNumber ?? parsed.projectNumber! }),
+    actor: { userId, userName },
+    auditId: projectAuditId,
+  });
+  // A manual/template number clash is a hard duplicate (auto retries in-mutation).
+  if (!created.created) {
+    throw new UserFacingError({
+      code: "DUPLICATE_PROJECT_CODE",
+      title: "Project code already in use",
+      message: `A ${isTemplate ? "template" : "project"} with code "${templateNumber ?? parsed.projectNumber}" already exists.`,
+      field: "projectNumber",
     });
-    // A manual/template number clash is a hard duplicate (auto retries in-mutation).
-    if (!created.created) {
-      throw new UserFacingError({
-        code: "DUPLICATE_PROJECT_CODE",
-        title: "Project code already in use",
-        message: `A ${isTemplate ? "template" : "project"} with code "${templateNumber ?? parsed.projectNumber}" already exists.`,
-        field: "projectNumber",
-      });
-    }
-  } else {
-    // Legacy (server-side allocation): generate the number then createWithUniqueNumber,
-    // retrying on an auto-number race.
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const projectNumber = useAutoNumber
-        ? await generateProjectNumber(organizationId, autoConfig!, now)
-        : (templateNumber ?? parsed.projectNumber!);
-      created = await convex.mutation(api.projects.createWithUniqueNumber, { ...baseArgs, projectNumber });
-      if (created.created) break;
-      if (!useAutoNumber) {
-        throw new UserFacingError({
-          code: "DUPLICATE_PROJECT_CODE",
-          title: "Project code already in use",
-          message: `A ${isTemplate ? "template" : "project"} with code "${projectNumber}" already exists.`,
-          field: "projectNumber",
-        });
-      }
-    }
-    if (!created?.created) throw new Error("Could not allocate a unique project number");
   }
 
   const result = await getProjectByIdMapped(id, organizationId);
   if (!result) throw new Error("Project create failed");
 
-  if (!nativeProjectWrites()) {
-    // Native path already wrote the CREATE audit atomically in the mutation.
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "project",
-      entityId: result.id,
-      entityName: result.projectNumber,
-      summary: `Created ${isTemplate ? "template" : "project"} ${result.projectNumber} - ${result.name}`,
-      projectId: result.id,
-    });
-  }
+  // The CREATE audit was written atomically in the mutation.
 
   return serialize(result);
 }
@@ -801,25 +764,17 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   setOrClear("invoicedTotal", parsed.invoicedTotal ?? null);
 
   const convex = await getConvexClient();
-  if (nativeProjectWrites()) {
-    // Native: RBAC + patch/clear + UPDATE audit atomic. Zod validation stays above;
-    // recalc stays below (server-side, unchanged → totals identical).
-    await convex.mutation(api.projectWrites.updateNative, {
-      id,
-      orgId: organizationId,
-      set,
-      clear,
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
-  } else {
-    await convex.mutation(api.projects.patchProject, {
-      id,
-      set,
-      ...(clear.length > 0 ? { clear } : {}),
-    });
-  }
+  // RBAC + patch/clear + UPDATE audit atomic. Zod validation stays above;
+  // recalc stays below (server-side, unchanged → totals identical).
+  await convex.mutation(api.projectWrites.updateNative, {
+    id,
+    orgId: organizationId,
+    set,
+    clear,
+    actor: { userId, userName },
+    auditId: createId(),
+    now: Date.now(),
+  });
 
   // Recalculate totals if tax rate changed. Best-effort: the project patch already
   // committed, so a transient recalc failure must not reject an otherwise-successful
@@ -835,20 +790,6 @@ export async function updateProject(id: string, data: ProjectFormValues) {
 
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project update failed");
-
-  if (!nativeProjectWrites()) {
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "UPDATE",
-      entityType: "project",
-      entityId: updated.id,
-      entityName: updated.projectNumber,
-      summary: `Updated project ${updated.projectNumber} - ${updated.name}`,
-      projectId: updated.id,
-    });
-  }
 
   return serialize(updated);
 }
@@ -882,60 +823,22 @@ export async function updateProjectStatus(
 
   // project is Convex-only — patch the status directly.
   const convex = await getConvexClient();
-  if (nativeProjectWrites()) {
-    // Native: template guard + patch + STATUS_CHANGE audit atomic in the mutation.
-    await convex.mutation(api.projectWrites.updateStatusNative, {
-      id,
-      orgId: organizationId,
-      // A status change always carries a concrete status (the field is optional only
-      // in the shared form type).
-      status: status as NonNullable<typeof status>,
-      // The native mutation now emits the `project.status_changed` webhook itself
-      // (in-transaction). The server tail below is gated off on the native path so it
-      // does NOT double-fire. The OLD deployed image (no emitSideEffects, ungated tail)
-      // still single-emits from its tail; the mutation skips (no signal).
-      emitSideEffects: true,
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
-  } else {
-    await convex.mutation(api.projects.patchProject, {
-      id,
-      set: { status, updatedAt: Date.now() },
-    });
-  }
+  // Template guard + patch + STATUS_CHANGE audit atomic in the mutation.
+  await convex.mutation(api.projectWrites.updateStatusNative, {
+    id,
+    orgId: organizationId,
+    // A status change always carries a concrete status (the field is optional only
+    // in the shared form type).
+    status: status as NonNullable<typeof status>,
+    // The mutation emits the `project.status_changed` webhook itself (in-transaction).
+    emitSideEffects: true,
+    actor: { userId, userName },
+    auditId: createId(),
+    now: Date.now(),
+  });
 
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project status update failed");
-
-  if (!nativeProjectWrites()) {
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "STATUS_CHANGE",
-      entityType: "project",
-      entityId: updated.id,
-      entityName: updated.projectNumber,
-      summary: `Changed project ${updated.projectNumber} status from ${project.status} to ${status}`,
-      details: { changes: [{ field: "status", from: project.status, to: status }] },
-      projectId: updated.id,
-    });
-  }
-
-  // Fired only after the status change committed. Best-effort: never blocks the write.
-  // Gated off on the native path — the mutation (updateStatusNative, emitSideEffects:true)
-  // now enqueues this webhook in-transaction, so emitting here too would double-fire.
-  if (project.status !== status && !nativeProjectWrites()) {
-    void emitWebhookEvent(organizationId, "project.status_changed", {
-      projectId: updated.id,
-      projectNumber: updated.projectNumber,
-      name: updated.name,
-      from: project.status,
-      to: status,
-    });
-  }
 
   return serialize(updated);
 }
@@ -949,22 +852,15 @@ export async function updateProjectNotes(
   // project is Convex-only — patch the single whitelisted notes field (clear when
   // emptied, mirroring the old `notes || null`).
   const convex = await getConvexClient();
-  if (nativeProjectWrites()) {
-    await convex.mutation(api.projectWrites.updateNotesNative, {
-      id,
-      orgId: organizationId,
-      field,
-      notes: notes || null,
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
-  } else {
-    await convex.mutation(api.projects.patchProject, {
-      id,
-      ...(notes ? { set: { [field]: notes, updatedAt: Date.now() } } : { set: { updatedAt: Date.now() }, clear: [field] }),
-    });
-  }
+  await convex.mutation(api.projectWrites.updateNotesNative, {
+    id,
+    orgId: organizationId,
+    field,
+    notes: notes || null,
+    actor: { userId, userName },
+    auditId: createId(),
+    now: Date.now(),
+  });
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project notes update failed");
   return serialize(updated);
@@ -974,20 +870,13 @@ export async function archiveProject(id: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   // project is Convex-only — set status to CANCELLED.
   const convex = await getConvexClient();
-  if (nativeProjectWrites()) {
-    await convex.mutation(api.projectWrites.archiveNative, {
-      id,
-      orgId: organizationId,
-      actor: { userId, userName },
-      auditId: createId(),
-      now: Date.now(),
-    });
-  } else {
-    await convex.mutation(api.projects.patchProject, {
-      id,
-      set: { status: "CANCELLED", updatedAt: Date.now() },
-    });
-  }
+  await convex.mutation(api.projectWrites.archiveNative, {
+    id,
+    orgId: organizationId,
+    actor: { userId, userName },
+    auditId: createId(),
+    now: Date.now(),
+  });
   const updated = await getProjectByIdMapped(id, organizationId);
   if (!updated) throw new Error("Project archive failed");
   return serialize(updated);
@@ -1035,449 +924,56 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
   const client = await getConvexClient();
 
-  // Native: the entire deep-copy (categories → groups → line items → PMs → recalc)
+  // The entire deep-copy (categories → groups → line items → PMs → recalc)
   // runs in ONE atomic mutation instead of N sequential server→Convex round-trips.
-  if (nativeProjectWrites()) {
-    const newProjectId = createId();
-    const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
-    try {
-      await client.mutation(api.projectWrites.duplicateNative, {
-        sourceId,
-        newId: newProjectId,
-        newProjectNumber,
-        newName,
-        orgId: organizationId,
-        orgDefaultTaxRate,
-        now: Date.now(),
-        actor: { userId, userName },
-        auditId: createId(),
-      });
-    } catch (e) {
-      throw mapProjectCopyError(e, false);
-    }
-    const nativeResult = await getProjectByIdMapped(newProjectId, organizationId);
-    if (!nativeResult) throw new Error("Project duplicate failed");
-    return serialize(nativeResult);
-  }
-
-  // project is Convex-only — read the source scalars + its project managers from Convex.
-  const source = await getProjectByIdMapped(sourceId, organizationId);
-  if (!source) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Project not found",
-      message: "This project was deleted or moved. Refresh the page to see the latest state.",
-    });
-  }
-  const sourceProjectManagers = await client.query(api.projectManagers.listByProject, {
-    projectId: sourceId,
-    orgId: organizationId,
-  });
-
-  // Read source categories/groups from Convex (Convex-only after write inversion).
-  const [sourceCategories, sourceGroups] = await Promise.all([
-    client.query(api.projectCategories.listByProject, { projectId: sourceId, orgId: organizationId }),
-    client.query(api.projectGroups.listByProject, { projectId: sourceId, orgId: organizationId }),
-  ]);
-  const sortedSourceCategories = [...sourceCategories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-
-  // Read all source line items from Convex (line items are Convex-only, Phase C).
-  // Reconstruct the parent → childLineItems shape the copy loop expects.
-  const allConvexLineItems = await client.query(api.projectLineItems.listByProject, {
-    projectId: sourceId,
-    orgId: organizationId,
-  });
-  type ConvexLineItem = (typeof allConvexLineItems)[number];
-  type SourceLineItem = ConvexLineItem & { childLineItems: ConvexLineItem[] };
-  const childrenByParentId = new Map<string, ConvexLineItem[]>();
-  for (const li of allConvexLineItems) {
-    if (li.isKitChild && li.parentLineItemId) {
-      const arr = childrenByParentId.get(li.parentLineItemId) ?? [];
-      arr.push(li);
-      childrenByParentId.set(li.parentLineItemId, arr);
-    }
-  }
-  const allSourceLineItems: SourceLineItem[] = allConvexLineItems
-    .filter((li) => !li.isKitChild)
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-    .map((li) => ({
-      ...li,
-      childLineItems: (childrenByParentId.get(li.id) ?? []).sort(
-        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
-      ),
-    }));
-
-  const lineItemsByGroupId = new Map<string, SourceLineItem[]>();
-  const lineItemsByCatId = new Map<string, SourceLineItem[]>();
-  for (const li of allSourceLineItems) {
-    if (li.groupId) {
-      const arr = lineItemsByGroupId.get(li.groupId) ?? [];
-      arr.push(li);
-      lineItemsByGroupId.set(li.groupId, arr);
-    } else if (li.categoryId) {
-      const arr = lineItemsByCatId.get(li.categoryId) ?? [];
-      arr.push(li);
-      lineItemsByCatId.set(li.categoryId, arr);
-    }
-  }
-
-  // Pre-generate IDs for new categories and groups so line items can reference them
-  // inside the Prisma transaction before Convex rows are written.
-  const catIdMap = new Map(sourceCategories.map((c) => [c.id, createId()]));
-  const groupIdMap = new Map(sourceGroups.map((g) => [g.id, createId()]));
-  const groupsByCatId = new Map<string, typeof sourceGroups[number][]>();
-  for (const g of sourceGroups) {
-    if (g.categoryId) {
-      const arr = groupsByCatId.get(g.categoryId) ?? [];
-      arr.push(g);
-      groupsByCatId.set(g.categoryId, arr);
-    }
-  }
-
+  const newProjectId = createId();
+  const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
   try {
-    // project is Convex-only — create the new project row FIRST (children below
-    // reference its id). createWithUniqueNumber enforces the org+number unique
-    // guard; a clash means the requested duplicate code is taken.
-    const newProjectId = createId();
-    const dupCreatedAt = Date.now();
-    const created = await client.mutation(api.projects.createWithUniqueNumber, {
-      id: newProjectId,
-      organizationId,
-      projectNumber: newProjectNumber,
-      name: newName,
-      status: "ENQUIRY",
-      type: source.type,
-      ...(source.clientId ? { clientId: source.clientId } : {}),
-      ...(source.description ? { description: source.description } : {}),
-      ...(source.locationId ? { locationId: source.locationId } : {}),
-      ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
-      ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
-      ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
-      ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
-      ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
-      ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
-      ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
-      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
-      ...(source.defaultRentalPeriod ? { defaultRentalPeriod: source.defaultRentalPeriod } : {}),
-      ...(source.defaultRentalQuantity != null ? { defaultRentalQuantity: source.defaultRentalQuantity } : {}),
-      ...(source.taxRate != null ? { taxRate: source.taxRate } : {}),
-      tags: source.tags,
-      isTemplate: false,
-      createdAt: dupCreatedAt,
-      updatedAt: dupCreatedAt,
+    await client.mutation(api.projectWrites.duplicateNative, {
+      sourceId,
+      newId: newProjectId,
+      newProjectNumber,
+      newName,
+      orgId: organizationId,
+      orgDefaultTaxRate,
+      now: Date.now(),
+      actor: { userId, userName },
+      auditId: createId(),
     });
-    if (!created.created) {
-      throw new UserFacingError({
-        code: "DUPLICATE_PROJECT_CODE",
-        title: "Project code already in use",
-        message: `A project with code "${newProjectNumber}" already exists.`,
-        field: "projectNumber",
-      });
-    }
-    const result = await getProjectByIdMapped(newProjectId, organizationId);
-    if (!result) throw new Error("Project duplicate failed");
-
-    // Create duplicated categories + groups + line items in Convex. Line items
-    // are Convex-only (Phase C), so they're written here (outside the Prisma tx)
-    // via the generated full-field create — parent first, then each child with
-    // parentLineItemId set to the new parent's id. Dates→ms, Decimals→number.
-    const dupNow = Date.now();
-
-    // Helper to copy a line item and its children into Convex.
-    async function copyLineItem(
-      li: SourceLineItem,
-      newProjectId: string,
-      newCategoryId: string | null,
-      newGroupId: string | null,
-    ) {
-      const parentId = createId();
-      await client.mutation(api.projectLineItems.create, {
-        id: parentId,
-        organizationId,
-        projectId: newProjectId,
-        ...(newCategoryId ? { categoryId: newCategoryId } : {}),
-        ...(newGroupId ? { groupId: newGroupId } : {}),
-        ...(li.type ? { type: li.type } : {}),
-        ...(li.modelId ? { modelId: li.modelId } : {}),
-        ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
-        ...(li.kitId ? { kitId: li.kitId } : {}),
-        ...(li.supplierId ? { supplierId: li.supplierId } : {}),
-        ...(li.description != null ? { description: li.description } : {}),
-        ...(li.quantity != null ? { quantity: li.quantity } : {}),
-        ...(li.unitPrice != null ? { unitPrice: Number(li.unitPrice) } : {}),
-        ...(li.pricingType ? { pricingType: li.pricingType } : {}),
-        ...(li.duration != null ? { duration: Number(li.duration) } : {}),
-        ...(li.discount != null ? { discount: Number(li.discount) } : {}),
-        ...(li.lineTotal != null ? { lineTotal: Number(li.lineTotal) } : {}),
-        ...(li.sortOrder != null ? { sortOrder: li.sortOrder } : {}),
-        ...(li.groupName != null ? { groupName: li.groupName } : {}),
-        ...(li.notes != null ? { notes: li.notes } : {}),
-        ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
-        ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
-        ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
-        isKitChild: false,
-        status: "QUOTED",
-        createdAt: dupNow,
-        updatedAt: dupNow,
-      });
-
-      // Children reference the parent's pre-generated id (Convex has no FK), so
-      // they can all be created concurrently after the parent insert.
-      await Promise.all(
-        (li.childLineItems ?? []).map((child) =>
-          client.mutation(api.projectLineItems.create, {
-            id: createId(),
-            organizationId,
-            projectId: newProjectId,
-            ...(newCategoryId ? { categoryId: newCategoryId } : {}),
-            ...(newGroupId ? { groupId: newGroupId } : {}),
-            ...(child.type ? { type: child.type } : {}),
-            ...(child.modelId ? { modelId: child.modelId } : {}),
-            ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),
-            ...(child.description != null ? { description: child.description } : {}),
-            ...(child.quantity != null ? { quantity: child.quantity } : {}),
-            ...(child.unitPrice != null ? { unitPrice: Number(child.unitPrice) } : {}),
-            ...(child.pricingType ? { pricingType: child.pricingType } : {}),
-            ...(child.duration != null ? { duration: Number(child.duration) } : {}),
-            ...(child.discount != null ? { discount: Number(child.discount) } : {}),
-            ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
-            ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
-            ...(child.groupName != null ? { groupName: child.groupName } : {}),
-            ...(child.notes != null ? { notes: child.notes } : {}),
-            ...(child.childKind ? { childKind: child.childKind } : {}),
-            isKitChild: true,
-            parentLineItemId: parentId,
-            status: "QUOTED",
-            createdAt: dupNow,
-            updatedAt: dupNow,
-          }),
-        ),
-      );
-    }
-    // All ids are pre-generated (catIdMap/groupIdMap) and Convex has no FK, so
-    // each level's inserts are independent — create them concurrently. Was a
-    // sequential mutation per category / group / line item / manager (a 50–500
-    // line project = that many sequential Convex round-trips).
-    await Promise.all(
-      sortedSourceCategories.map((cat) =>
-        client.mutation(api.projectCategories.createIfMissing, {
-          id: catIdMap.get(cat.id)!,
-          organizationId,
-          projectId: result.id,
-          name: cat.name,
-          sortOrder: cat.sortOrder ?? 0,
-          createdAt: dupNow,
-          updatedAt: dupNow,
-        }),
-      ),
-    );
-    await Promise.all(
-      sourceGroups.map((group) =>
-        client.mutation(api.projectGroups.createIfMissing, {
-          id: groupIdMap.get(group.id)!,
-          organizationId,
-          projectId: result.id,
-          categoryId: group.categoryId ? catIdMap.get(group.categoryId) : undefined,
-          title: group.title,
-          description: group.description,
-          quantity: group.quantity,
-          price: group.price ?? undefined,
-          suggestedPrice: group.suggestedPrice ?? undefined,
-          rentalPeriod: group.rentalPeriod ?? undefined,
-          rentalQuantity: group.rentalQuantity ?? undefined,
-          sortOrder: group.sortOrder ?? 0,
-          createdAt: dupNow,
-          updatedAt: dupNow,
-        }),
-      ),
-    );
-
-    // Copy line items (Convex-only) using the pre-generated category/group IDs.
-    // copyLineItem keeps parent-before-children internally; the top-level copies
-    // run concurrently across groups/categories/uncategorized.
-    const lineItemTasks: Promise<void>[] = [];
-    for (const cat of sortedSourceCategories) {
-      const newCatId = catIdMap.get(cat.id)!;
-      const catGroups = (groupsByCatId.get(cat.id) ?? [])
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-      for (const group of catGroups) {
-        const newGroupId = groupIdMap.get(group.id)!;
-        for (const li of lineItemsByGroupId.get(group.id) ?? []) {
-          lineItemTasks.push(copyLineItem(li, result.id, newCatId, newGroupId));
-        }
-      }
-      // Standalone line items in category (groupId=null)
-      for (const li of lineItemsByCatId.get(cat.id) ?? []) {
-        lineItemTasks.push(copyLineItem(li, result.id, newCatId, null));
-      }
-    }
-    // Uncategorized line items
-    for (const li of allSourceLineItems.filter((li) => !li.categoryId && !li.groupId)) {
-      lineItemTasks.push(copyLineItem(li, result.id, null, null));
-    }
-    await Promise.all(lineItemTasks);
-
-    // Copy project managers directly to Convex (Convex-only after Phase B).
-    await Promise.all(
-      sourceProjectManagers.map((pm) =>
-        client.mutation(api.projectManagers.createIfMissing, {
-          id: createId(),
-          organizationId,
-          projectId: result.id,
-          userId: pm.userId,
-          addedAt: dupNow,
-        }),
-      ),
-    );
-
-    // Recalculate totals after transaction commits
-    await recalculateProjectTotals(result.id);
-
-    return serialize(result);
-  } catch (e: unknown) {
-    const translated = translatePrismaError(e);
-    if (translated) throw translated;
-    throw e;
+  } catch (e) {
+    throw mapProjectCopyError(e, false);
   }
+  const nativeResult = await getProjectByIdMapped(newProjectId, organizationId);
+  if (!nativeResult) throw new Error("Project duplicate failed");
+  return serialize(nativeResult);
 }
 
 export async function saveAsTemplate(projectId: string, templateName: string) {
   const { organizationId, userId, userName } = await requirePermission("project", "create");
 
-  // Native: create the template + copy its line items (grouping OMITTED) + recalc in
+  // Create the template + copy its line items (grouping OMITTED) + recalc in
   // ONE atomic mutation. generateTemplateCode stays server-side (Convex-mirror count).
-  if (nativeProjectWrites()) {
-    const templateId = createId();
-    const templateNumber = await generateTemplateCode(organizationId);
-    const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
-    const client = await getConvexClient();
-    try {
-      await client.mutation(api.projectWrites.saveAsTemplateNative, {
-        sourceId: projectId,
-        newId: templateId,
-        templateNumber,
-        templateName,
-        orgId: organizationId,
-        orgDefaultTaxRate,
-        now: Date.now(),
-        actor: { userId, userName },
-      });
-    } catch (e) {
-      throw mapProjectCopyError(e, true);
-    }
-    const nativeResult = await getProjectByIdMapped(templateId, organizationId);
-    if (!nativeResult) throw new Error("Template create failed");
-    return serialize(nativeResult);
-  }
-
-  // project is Convex-only — read the source scalars from Convex.
-  const source = await getProjectByIdMapped(projectId, organizationId);
-
-  if (!source) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Project not found",
-      message: "This project was deleted or moved. Refresh the page to see the latest state.",
-    });
-  }
-
-  // Line items are Convex-only — read flat + reconstruct the parent/children shape.
-  const convexForTemplate = await getConvexClient();
-  const flatSourceLines = await convexForTemplate.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId });
-  const sourceLineItems = flatSourceLines
-    .filter((l) => !l.isKitChild)
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-    .map((parent) => ({
-      ...parent,
-      childLineItems: flatSourceLines
-        .filter((c) => c.parentLineItemId === parent.id)
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
-    }));
-
+  const templateId = createId();
   const templateNumber = await generateTemplateCode(organizationId);
-
+  const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
+  const client = await getConvexClient();
   try {
-    // project is Convex-only — create the template project row FIRST (lines below
-    // reference its id). createWithUniqueNumber enforces the org+number guard.
-    const templateId = createId();
-    const templateCreatedAt = Date.now();
-    const created = await convexForTemplate.mutation(api.projects.createWithUniqueNumber, {
-      id: templateId,
-      organizationId,
-      projectNumber: templateNumber,
-      name: templateName,
-      status: "ENQUIRY",
-      type: source.type,
-      isTemplate: true,
-      ...(source.clientId ? { clientId: source.clientId } : {}),
-      ...(source.description ? { description: source.description } : {}),
-      ...(source.locationId ? { locationId: source.locationId } : {}),
-      ...(source.siteContactName ? { siteContactName: source.siteContactName } : {}),
-      ...(source.siteContactPhone ? { siteContactPhone: source.siteContactPhone } : {}),
-      ...(source.siteContactEmail ? { siteContactEmail: source.siteContactEmail } : {}),
-      ...(source.crewNotes ? { crewNotes: source.crewNotes } : {}),
-      ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
-      ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
-      ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
-      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
-      tags: source.tags,
-      createdAt: templateCreatedAt,
-      updatedAt: templateCreatedAt,
+    await client.mutation(api.projectWrites.saveAsTemplateNative, {
+      sourceId: projectId,
+      newId: templateId,
+      templateNumber,
+      templateName,
+      orgId: organizationId,
+      orgDefaultTaxRate,
+      now: Date.now(),
+      actor: { userId, userName },
     });
-    if (!created.created) {
-      throw new UserFacingError({
-        code: "DUPLICATE_PROJECT_CODE",
-        title: "Template code already in use",
-        message: `A template with code "${templateNumber}" already exists.`,
-        field: "projectNumber",
-      });
-    }
-    const result = await getProjectByIdMapped(templateId, organizationId);
-    if (!result) throw new Error("Template create failed");
-
-    // Create the copied line items in Convex (project row is Prisma; lines Convex).
-    // Each top-level line creates its parent then (concurrently) its children;
-    // the top-level lines run concurrently too — was one sequential Convex
-    // round-trip per parent AND per child.
-    const tNow = Date.now();
-    await Promise.all(
-      sourceLineItems.map(async (li) => {
-        const parentId = createId();
-        await convexForTemplate.mutation(api.projectLineItems.create, {
-          id: parentId, organizationId, projectId: result.id, type: li.type,
-          modelId: li.modelId || undefined, bulkAssetId: li.bulkAssetId || undefined, kitId: li.kitId || undefined,
-          supplierId: li.supplierId || undefined, description: li.description || undefined, quantity: li.quantity,
-          unitPrice: li.unitPrice ?? undefined, pricingType: li.pricingType, duration: li.duration,
-          discount: li.discount ?? undefined, lineTotal: li.lineTotal ?? undefined, sortOrder: li.sortOrder,
-          groupName: li.groupName || undefined, notes: li.notes || undefined, isOptional: li.isOptional,
-          showSubhireOnDocs: li.showSubhireOnDocs, isKitChild: false, pricingMode: li.pricingMode || undefined,
-          status: "QUOTED", createdAt: tNow, updatedAt: tNow,
-        });
-        await Promise.all(
-          (li.childLineItems ?? []).map((child) =>
-            convexForTemplate.mutation(api.projectLineItems.create, {
-              id: createId(), organizationId, projectId: result.id, type: child.type,
-              modelId: child.modelId || undefined, bulkAssetId: child.bulkAssetId || undefined,
-              description: child.description || undefined, quantity: child.quantity, unitPrice: child.unitPrice ?? undefined,
-              pricingType: child.pricingType, duration: child.duration, discount: child.discount ?? undefined,
-              lineTotal: child.lineTotal ?? undefined, sortOrder: child.sortOrder, groupName: child.groupName || undefined,
-              notes: child.notes || undefined, isKitChild: true, parentLineItemId: parentId, status: "QUOTED",
-              createdAt: tNow, updatedAt: tNow,
-            }),
-          ),
-        );
-      }),
-    );
-
-    // Recalculate totals after transaction commits
-    await recalculateProjectTotals(result.id);
-
-    return serialize(result);
-  } catch (e: unknown) {
-    const translated = translatePrismaError(e);
-    if (translated) throw translated;
-    throw e;
+  } catch (e) {
+    throw mapProjectCopyError(e, true);
   }
+  const nativeResult = await getProjectByIdMapped(templateId, organizationId);
+  if (!nativeResult) throw new Error("Template create failed");
+  return serialize(nativeResult);
 }
 
 export async function getTemplates() {

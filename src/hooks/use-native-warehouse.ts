@@ -36,15 +36,6 @@ export function useNativeWarehouseList(orgId: string | undefined): {
 }
 
 /**
- * Feature flag (default OFF) for the native warehouse-detail read cutover (Phase
- * 2). Until "true" in the build env, the warehouse page keeps the version-vector
- * doorbell → getProjectForWarehouse refetch. Inlined at build time — flipping it
- * needs the Dockerfile/build-image build-arg + repo var.
- */
-export const NATIVE_WAREHOUSE_ENABLED =
-  process.env.NEXT_PUBLIC_NATIVE_WAREHOUSE === "true";
-
-/**
  * Native warehouse detail: ONE `warehouseDetail.bundle` subscription reconstructs
  * the full getProjectForWarehouse shape (`{ ...project, lineItems, client,
  * location }`) client-side — reactive over the WebSocket (the warehouseOps
@@ -58,7 +49,7 @@ export function useNativeWarehouseProject(
   projectId: string | undefined,
   orgId: string | undefined,
 ): { data: NativeWarehouseProject | undefined; isLoading: boolean; notFound: boolean } {
-  const enabled = NATIVE_WAREHOUSE_ENABLED && !!projectId && !!orgId;
+  const enabled = !!projectId && !!orgId;
   const bundle = useAuthedQuery(
     api.warehouseDetail.bundle,
     enabled ? { projectId: projectId!, orgId: orgId! } : "skip",

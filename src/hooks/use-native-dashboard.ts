@@ -5,14 +5,6 @@ import { useConvexAuth, useMutation } from "convex/react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 
-/**
- * Feature flag (default OFF) for the native dashboard-stats read cutover (Phase 3).
- * Inlined at build time — flipping it needs the Dockerfile/build-image build-arg +
- * repo var. Requires the `dashboardCounters` to be backfilled first
- * (`pnpm convex:backfill:dashboard-counters`).
- */
-export const NATIVE_DASHBOARD_ENABLED = process.env.NEXT_PUBLIC_NATIVE_DASHBOARD === "true";
-
 const MINUTE = 60_000;
 // Counters are maintained per-write in-transaction (convex/lib/counters.ts), so the
 // on-view reconcile is now only a DRIFT BACKSTOP — throttle it to a long window
@@ -45,7 +37,7 @@ export interface NativeDashboardStats {
 export function useNativeDashboardStats(
   orgId: string | undefined,
 ): { data: NativeDashboardStats | undefined; isLoading: boolean } {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   // Minute-bucketed so the subscription arg is stable within a minute (it refreshes
   // the date-derived metrics each minute) — queries can't read the clock themselves.
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
@@ -91,26 +83,26 @@ export function useNativeDashboardStats(
  * The remaining bounded dashboard reads, native (Phase 3): upcoming projects, my
  * home, my blocking comments, recent activity. Each is a reactive useQuery over a
  * Convex composite; the consumers parse dates with `new Date()`, so the queries
- * return epoch-ms. All gated on the same NEXT_PUBLIC_NATIVE_DASHBOARD flag.
+ * return epoch-ms.
  */
 export function useNativeUpcoming(orgId: string | undefined) {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
   return useAuthedQuery(api.dashboardLists.upcoming, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
 }
 
 export function useNativeHome(orgId: string | undefined) {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   return useAuthedQuery(api.dashboardLists.home, enabled ? { orgId: orgId! } : "skip");
 }
 
 export function useNativeBlocking(orgId: string | undefined) {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId! } : "skip");
 }
 
 export function useNativeActivity(orgId: string | undefined) {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   return useAuthedQuery(api.dashboardActivity.bundle, enabled ? { orgId: orgId! } : "skip");
 }
 
@@ -128,7 +120,7 @@ export interface NativeSubHireStats {
 export function useNativeSubHireStats(
   orgId: string | undefined,
 ): NativeSubHireStats | undefined {
-  const enabled = NATIVE_DASHBOARD_ENABLED && !!orgId;
+  const enabled = !!orgId;
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
   const monthStart = enabled ? new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() : 0;
   return useAuthedQuery(

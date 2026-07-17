@@ -6,13 +6,6 @@ import { api } from "../../convex/_generated/api";
 import { reconstructKit, type NativeKitDetail } from "@/lib/kit-detail-reconstruct";
 
 /**
- * Feature flag (default OFF) for the native kit-detail read cutover (Phase 2).
- * Inlined at build time — flipping it needs the Dockerfile/build-image build-arg +
- * repo var.
- */
-export const NATIVE_KIT_ENABLED = process.env.NEXT_PUBLIC_NATIVE_KIT === "true";
-
-/**
  * Native kit detail: ONE `kitDetail.bundle` subscription reconstructs the getKit
  * shape (kit + members + usage + scan logs + media + location/category) client-side
  * — reactive over the WebSocket. Skips unless the flag is on and ids are present.
@@ -21,7 +14,7 @@ export function useNativeKit(
   kitId: string | undefined,
   orgId: string | undefined,
 ): { data: NativeKitDetail | undefined; isLoading: boolean; notFound: boolean } {
-  const enabled = NATIVE_KIT_ENABLED && !!kitId && !!orgId;
+  const enabled = !!kitId && !!orgId;
   const bundle = useAuthedQuery(
     api.kitDetail.bundle,
     enabled ? { kitId: kitId!, orgId: orgId! } : "skip",

@@ -2,6 +2,35 @@
 
 Deferred work items tracked from engineering reviews and planning sessions.
 
+## Performance
+
+### Convex-Native Cross-Domain Merge Hooks Still Whole-Org
+**What:** `useKitCounts`, `useClientProjectCounts`, `useSupplierCounts`, `crew.memberExtras`,
+and `assets.registryPhotos` — the cross-domain data merged onto each paginated list page
+after the fact (member-item counts, project counts, asset/order counts, linked Better-Auth
+user info, primary photos) — still read the whole org rather than being scoped to the
+current page's rows.
+**Why:** Adversarial review flagged this during the Finding #1 rollout (see
+`docs/designs/perf-convex-efficiency-2026-06.md`): the primary list queries (assets/
+projects/kits/crew/clients/suppliers `listPage`) are now server-paginated, but these merge
+hooks are the same whole-org reads they always were — for a large roster/registry, they
+become the dominant remaining read cost on a 25-row page view.
+**Context:** Not introduced by the Finding #1 rollout (pre-existing), just now the most
+visible remaining gap since the primary queries got fixed. Each would need its own scoped
+(by page-of-ids) redesign — 5 separate small efforts, not one.
+**Priority:** P2
+
+### ClientsDashboard Aggregate Stats — Not Yet Converted
+**What:** `ClientsDashboard`'s `useProjects(orgId)` call computes aggregate revenue/project
+counts for one client by pulling the whole org's projects into the browser and reducing
+client-side.
+**Why:** Different problem shape from the Finding #1 rollout (aggregate stat, not a row
+list) — the right fix is a server-side sum/count query scoped to one client
+(`projects.by_clientId` index already exists), not a paginated list.
+**Context:** Explicitly deferred during the Finding #1 rollout. See
+`docs/designs/perf-convex-efficiency-2026-06.md` and `FEATUREDOCS/22-suppliers.md`.
+**Priority:** P2
+
 ## Pricing System
 
 ### Margin-Aware Quoting

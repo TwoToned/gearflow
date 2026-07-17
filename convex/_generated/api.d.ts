@@ -101,6 +101,7 @@ import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_lineTotal from "../lib/lineTotal.js";
 import type * as lib_moneyGuards from "../lib/moneyGuards.js";
 import type * as lib_notificationPreferences from "../lib/notificationPreferences.js";
+import type * as lib_orgSettings from "../lib/orgSettings.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_projectNumber from "../lib/projectNumber.js";
 import type * as lib_projectNumberCounter from "../lib/projectNumberCounter.js";
@@ -311,6 +312,7 @@ declare const fullApi: ApiFromModules<{
   "lib/lineTotal": typeof lib_lineTotal;
   "lib/moneyGuards": typeof lib_moneyGuards;
   "lib/notificationPreferences": typeof lib_notificationPreferences;
+  "lib/orgSettings": typeof lib_orgSettings;
   "lib/permissionsCore": typeof lib_permissionsCore;
   "lib/projectNumber": typeof lib_projectNumber;
   "lib/projectNumberCounter": typeof lib_projectNumberCounter;

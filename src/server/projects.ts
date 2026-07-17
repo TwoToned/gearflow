@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getOrgContext } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
@@ -17,24 +17,15 @@ import {
   groupActiveLineItemsByProject,
   countTopLevelLineItemsByProject,
 } from "@/lib/line-item-count-read";
-import {
-  projectSchema,
-  type ProjectFormValues,
-} from "@/lib/validations/project";
 import type { ProjectStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
-import { recalculateProjectTotals } from "@/server/line-items";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { type FilterValue } from "@/lib/table-utils";
 import { UserFacingError } from "@/lib/errors";
-import { getDefaultLocation, getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
-import { createId } from "@paralleldrive/cuid2";
-import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
-import { ConvexError } from "convex/values";
-import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
+import { getLocationMap, getMappedLocationsByOrg, mapLocation } from "@/lib/locations-read";
 import {
   renderProjectNumber,
   scopeKeyFor,
@@ -52,16 +43,6 @@ type ProjectNumberConfig = {
   padding: number;
   timezone?: string;
 };
-
-const BLOCKED_FORWARD_PROJECT_STATUSES: ProjectStatus[] = [
-  "PREPPING",
-  "CHECKED_OUT",
-  "ON_SITE",
-];
-
-function isBlockedForwardProjectStatus(status: ProjectStatus | ProjectFormValues["status"] | null | undefined) {
-  return status ? BLOCKED_FORWARD_PROJECT_STATUSES.includes(status as ProjectStatus) : false;
-}
 
 /** Parse the org's auto project-number config from its settings metadata JSON. */
 function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig | null {
@@ -84,37 +65,6 @@ function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig |
   } catch {
     return null;
   }
-}
-
-/**
- * Atomically allocate the next auto project number inside a transaction. The
- * sequence counter is bumped with INSERT ... ON CONFLICT (race-free across
- * concurrent project creation); if the rendered number collides with an
- * existing (e.g. manually-entered) one, we bump again. Returns the number.
- */
-async function generateProjectNumber(
-  organizationId: string,
-  config: ProjectNumberConfig,
-  now: Date,
-): Promise<string> {
-  const parts = datePartsInTimezone(now, config.timezone);
-  const scopeKey = scopeKeyFor(config.reset, parts);
-  const convex = await getConvexClient();
-
-  for (let attempt = 0; attempt < 50; attempt++) {
-    // Atomic counter bump (Convex serializable mutation = race-free across concurrent
-    // creates — the ON CONFLICT … value+1 equivalent). cuid used only on first insert.
-    const sequence = await convex.mutation(api.projectNumberSequences.reserveNextNumber, {
-      organizationId,
-      scopeKey,
-      newId: createId(),
-      now: now.getTime(),
-    });
-    const number = renderProjectNumber(config.format, { parts, sequence, padding: config.padding });
-    const clash = await convex.query(api.projects.getByOrgAndNumber, { organizationId, projectNumber: number });
-    if (!clash) return number;
-  }
-  throw new Error("Could not generate a unique project number");
 }
 
 /**
@@ -160,12 +110,13 @@ export async function peekNextProjectNumber(override?: {
   const startSeq = (seqRow?.value ?? 0) + 1;
 
   // Skip past any rendered code that's already taken so the preview matches what
-  // `generateProjectNumber` will actually allocate. The counter can lag behind
-  // the real projects (codes entered manually, imported, or created before
-  // auto-numbering was switched on), in which case `startSeq` would render an
-  // already-used number — e.g. counter 0 → "260601" when 260601-260603 exist.
-  // Probe forward only; never persist (this is a preview, must not consume a number).
-  // Keep this skip loop in sync with `generateProjectNumber` above.
+  // `createNative`'s in-mutation auto-number allocation loop will actually allocate.
+  // The counter can lag behind the real projects (codes entered manually, imported,
+  // or created before auto-numbering was switched on), in which case `startSeq`
+  // would render an already-used number — e.g. counter 0 → "260601" when
+  // 260601-260603 exist. Probe forward only; never persist (this is a preview,
+  // must not consume a number). Keep this skip loop in sync with createNative
+  // (convex/projectWrites.ts).
   const takenNumbers = new Set(
     (await getProjectsByOrgMapped(organizationId)).map((p) => p.projectNumber),
   );
@@ -180,6 +131,24 @@ export async function peekNextProjectNumber(override?: {
   // Pathological: 50 consecutive codes taken. Fall back to the unskipped render
   // rather than hard-erroring the preview query.
   return renderProjectNumber(config.format, { parts, sequence: startSeq, padding: config.padding });
+}
+
+/**
+ * Read-only helper for the browser-direct create flow (Projects Slice B): resolves
+ * the org's auto project-number config the exact same way `createProject` used to
+ * (byte-for-byte — same `organization.metadata` Postgres source via
+ * `readProjectNumberConfig`), so `useProjectWrites().create()` can build the
+ * `autoNumber` arg for `createNative` client-side. The actual number ALLOCATION
+ * (reserve → render → clash-retry) still happens atomically inside `createNative` —
+ * this only supplies the config, never a resolved number.
+ */
+export async function getProjectNumberConfig(): Promise<ProjectNumberConfig | null> {
+  const { organizationId } = await getOrgContext();
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { metadata: true },
+  });
+  return readProjectNumberConfig(org?.metadata ?? null);
 }
 
 /**
@@ -212,6 +181,17 @@ async function generateTemplateCode(organizationId: string): Promise<string> {
     code = `TPL-${String(count + 2).padStart(4, "0")}`;
   }
   return code;
+}
+
+/**
+ * Read-only helper for the browser-direct saveAsTemplate flow (Projects Slice B):
+ * resolves the next template code (mirrors the server's former inline call before
+ * `saveAsTemplateNative`). No reservation — a rare clash on submit surfaces as
+ * DUPLICATE_PROJECT_CODE from the mutation itself, same as before.
+ */
+export async function peekNextTemplateCode(): Promise<string> {
+  const { organizationId } = await getOrgContext();
+  return generateTemplateCode(organizationId);
 }
 
 export async function getProjects(params?: {
@@ -538,119 +518,6 @@ export async function getProject(id: string) {
   });
 }
 
-export async function createProject(data: ProjectFormValues & { isTemplate?: boolean }) {
-  const { organizationId, userId, userName } = await requirePermission("project", "create");
-  const parsed = projectSchema.parse(data);
-
-  const isTemplate = data.isTemplate ?? false;
-
-  // Auto project-number config (null when the org hasn't enabled it).
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { metadata: true },
-  });
-  const autoConfig = readProjectNumberConfig(org?.metadata ?? null);
-  const useAutoNumber = !isTemplate && !parsed.projectNumber && !!autoConfig;
-
-  if (!isTemplate && !parsed.projectNumber && !useAutoNumber) {
-    throw new UserFacingError({
-      code: "MISSING_PROJECT_CODE",
-      title: "Project code is required",
-      message: "Enter a project code (e.g. P-2024-001) before saving.",
-      field: "projectNumber",
-    });
-  }
-
-  // Templates without an explicit code get a template code (pre-txn is fine —
-  // no shared counter). Auto project numbers are allocated INSIDE the txn so
-  // the sequence bump and the create commit (or roll back) together.
-  const templateNumber =
-    isTemplate && !parsed.projectNumber ? await generateTemplateCode(organizationId) : null;
-
-  // project is Convex-only now. Build the create args (dates → epoch-ms, nulls
-  // omitted); the project number is allocated + the row created together below.
-  const id = createId();
-  const now = new Date();
-  const baseArgs = {
-    id,
-    organizationId,
-    isTemplate,
-    name: parsed.name,
-    clientId: parsed.clientId || undefined,
-    status: parsed.status,
-    type: parsed.type,
-    description: parsed.description || undefined,
-    locationId: parsed.locationId || undefined,
-    siteContactName: parsed.siteContactName || undefined,
-    siteContactPhone: parsed.siteContactPhone || undefined,
-    siteContactEmail: parsed.siteContactEmail || undefined,
-    loadInDate: parsed.loadInDate?.getTime(),
-    loadInTime: parsed.loadInTime || undefined,
-    eventStartDate: parsed.eventStartDate?.getTime(),
-    eventStartTime: parsed.eventStartTime || undefined,
-    eventEndDate: parsed.eventEndDate?.getTime(),
-    eventEndTime: parsed.eventEndTime || undefined,
-    loadOutDate: parsed.loadOutDate?.getTime(),
-    loadOutTime: parsed.loadOutTime || undefined,
-    rentalStartDate: parsed.rentalStartDate?.getTime(),
-    rentalEndDate: parsed.rentalEndDate?.getTime(),
-    crewNotes: parsed.crewNotes || undefined,
-    internalNotes: parsed.internalNotes || undefined,
-    clientNotes: parsed.clientNotes || undefined,
-    defaultRentalPeriod: parsed.defaultRentalPeriod || undefined,
-    defaultRentalQuantity: parsed.defaultRentalQuantity || undefined,
-    taxRate: parsed.taxRate ?? undefined,
-    discountPercent: parsed.discountPercent ?? undefined,
-    depositPercent: parsed.depositPercent ?? undefined,
-    depositPaid: parsed.depositPaid ?? undefined,
-    invoicedTotal: parsed.invoicedTotal ?? undefined,
-    tags: parsed.tags,
-    createdAt: now.getTime(),
-    updatedAt: now.getTime(),
-  };
-
-  const convex = await getConvexClient();
-  // One audit id for the whole allocation loop — only the winning insert writes it.
-  const projectAuditId = createId();
-  let created: { created: boolean; id: string } | null = null;
-
-  // The auto-number allocation loop is folded INTO createNative (scopeKey →
-  // reserve sequence → render → clash-guard → retry, all in one transaction), so a
-  // single call suffices. Auto numbering passes the resolved config + date parts
-  // (computed here in the org timezone); manual/template pass the code directly.
-  created = await convex.mutation(api.projectWrites.createNative, {
-    ...baseArgs,
-    ...(useAutoNumber
-      ? {
-          autoNumber: {
-            format: autoConfig!.format,
-            reset: autoConfig!.reset,
-            padding: autoConfig!.padding,
-            parts: datePartsInTimezone(now, autoConfig!.timezone),
-          },
-        }
-      : { projectNumber: templateNumber ?? parsed.projectNumber! }),
-    actor: { userId, userName },
-    auditId: projectAuditId,
-  });
-  // A manual/template number clash is a hard duplicate (auto retries in-mutation).
-  if (!created.created) {
-    throw new UserFacingError({
-      code: "DUPLICATE_PROJECT_CODE",
-      title: "Project code already in use",
-      message: `A ${isTemplate ? "template" : "project"} with code "${templateNumber ?? parsed.projectNumber}" already exists.`,
-      field: "projectNumber",
-    });
-  }
-
-  const result = await getProjectByIdMapped(id, organizationId);
-  if (!result) throw new Error("Project create failed");
-
-  // The CREATE audit was written atomically in the mutation.
-
-  return serialize(result);
-}
-
 /**
  * Return-value availability check for a project code (the
  * `@@unique([organizationId, projectNumber])` guard). The create/edit wizard calls
@@ -674,218 +541,6 @@ export async function checkProjectNumberAvailable(
     convex.query(api.projects.getByOrgAndNumber, { organizationId, projectNumber: trimmed }),
   );
   return { available: !clash || clash.id === excludeProjectId };
-}
-
-export async function updateProject(id: string, data: ProjectFormValues) {
-  const { organizationId, userId, userName } = await requirePermission("project", "update");
-  const parsed = projectSchema.parse(data);
-
-  // Read the prior status so a project-form save that flips status into a
-  // blocked-forward state can be gated on blocking comments. (project is
-  // Convex-only — read the mapped row instead of Prisma.)
-  const before = await getProjectByIdMapped(id, organizationId);
-
-  if (
-    before &&
-    !before.isTemplate &&
-    before.status !== parsed.status &&
-    isBlockedForwardProjectStatus(parsed.status)
-  ) {
-    await assertNoBlockingComments(organizationId, id, {
-      actionLabel: `move this project to ${String(parsed.status).toLowerCase().replaceAll("_", " ")}`,
-    });
-  }
-
-  // Duplicate-code integrity guard. createProject enforces the
-  // @@unique([organizationId, projectNumber]) invariant at insert, but the edit
-  // path patched projectNumber blindly — editing a code to one a sibling already
-  // uses silently produced two projects sharing a number. Only check when the
-  // number actually changes. (The wizard also checks availability up-front via
-  // checkProjectNumberAvailable for an inline field error; this catches the edit
-  // race and any non-wizard caller, and feeds the API error envelope.)
-  if (parsed.projectNumber && before && parsed.projectNumber !== before.projectNumber) {
-    const dupCheck = await getConvexClient();
-    const clash = await withConvexReadRetry(() =>
-      dupCheck.query(api.projects.getByOrgAndNumber, {
-        organizationId,
-        projectNumber: parsed.projectNumber!,
-      }),
-    );
-    if (clash && clash.id !== id) {
-      throw new UserFacingError({
-        code: "DUPLICATE_PROJECT_CODE",
-        title: "Project code already in use",
-        message: `A ${before.isTemplate ? "template" : "project"} with code "${parsed.projectNumber}" already exists.`,
-        field: "projectNumber",
-      });
-    }
-  }
-
-  // project is Convex-only — patch via api.projects.patchProject. Value→set,
-  // empty/null→clear (mirrors the old `|| null` / `?? null` clear-to-null logic).
-  const set: Record<string, unknown> = {
-    projectNumber: parsed.projectNumber,
-    name: parsed.name,
-    status: parsed.status,
-    type: parsed.type,
-    tags: parsed.tags,
-    updatedAt: Date.now(),
-  };
-  const clear: string[] = [];
-  const setOrClear = (key: string, value: unknown) => {
-    if (value === null || value === undefined || value === "") clear.push(key);
-    else set[key] = value;
-  };
-  setOrClear("clientId", parsed.clientId || null);
-  setOrClear("description", parsed.description || null);
-  setOrClear("locationId", parsed.locationId || null);
-  setOrClear("siteContactName", parsed.siteContactName || null);
-  setOrClear("siteContactPhone", parsed.siteContactPhone || null);
-  setOrClear("siteContactEmail", parsed.siteContactEmail || null);
-  setOrClear("loadInDate", parsed.loadInDate?.getTime() ?? null);
-  setOrClear("loadInTime", parsed.loadInTime || null);
-  setOrClear("eventStartDate", parsed.eventStartDate?.getTime() ?? null);
-  setOrClear("eventStartTime", parsed.eventStartTime || null);
-  setOrClear("eventEndDate", parsed.eventEndDate?.getTime() ?? null);
-  setOrClear("eventEndTime", parsed.eventEndTime || null);
-  setOrClear("loadOutDate", parsed.loadOutDate?.getTime() ?? null);
-  setOrClear("loadOutTime", parsed.loadOutTime || null);
-  setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
-  setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
-  setOrClear("defaultRentalPeriod", parsed.defaultRentalPeriod || null);
-  setOrClear("defaultRentalQuantity", parsed.defaultRentalQuantity || null);
-  setOrClear("taxRate", parsed.taxRate ?? null);
-  setOrClear("crewNotes", parsed.crewNotes || null);
-  setOrClear("internalNotes", parsed.internalNotes || null);
-  setOrClear("clientNotes", parsed.clientNotes || null);
-  setOrClear("discountPercent", parsed.discountPercent ?? null);
-  setOrClear("depositPercent", parsed.depositPercent ?? null);
-  setOrClear("depositPaid", parsed.depositPaid ?? null);
-  setOrClear("invoicedTotal", parsed.invoicedTotal ?? null);
-
-  const convex = await getConvexClient();
-  // RBAC + patch/clear + UPDATE audit atomic. Zod validation stays above;
-  // recalc stays below (server-side, unchanged → totals identical).
-  await convex.mutation(api.projectWrites.updateNative, {
-    id,
-    orgId: organizationId,
-    set,
-    clear,
-    actor: { userId, userName },
-    auditId: createId(),
-    now: Date.now(),
-  });
-
-  // Recalculate totals if tax rate changed. Best-effort: the project patch already
-  // committed, so a transient recalc failure must not reject an otherwise-successful
-  // update (that surfaced as the spurious "Server Components render" error). Totals
-  // are derived and self-heal on the next line-item write / recalc.
-  if (parsed.taxRate !== undefined) {
-    try {
-      await recalculateProjectTotals(id);
-    } catch (e) {
-      console.error("post-update recalc failed (non-fatal):", e);
-    }
-  }
-
-  const updated = await getProjectByIdMapped(id, organizationId);
-  if (!updated) throw new Error("Project update failed");
-
-  return serialize(updated);
-}
-
-/**
- * Map a ConvexError thrown by duplicateNative / saveAsTemplateNative back to the
- * rich UserFacingError the legacy server path threw, so the toast UX is identical.
- * Handles the NOT_FOUND (source gone) + DUPLICATE_PROJECT_CODE (number clash) codes.
- */
-function mapProjectCopyError(e: unknown, isTemplate: boolean): unknown {
-  if (
-    e instanceof ConvexError &&
-    e.data &&
-    typeof e.data === "object" &&
-    "code" in e.data &&
-    typeof (e.data as { code: unknown }).code === "string"
-  ) {
-    const code = (e.data as { code: string }).code;
-    const message =
-      typeof (e.data as { message?: unknown }).message === "string"
-        ? (e.data as { message: string }).message
-        : undefined;
-    if (code === "NOT_FOUND") {
-      return new UserFacingError({
-        code: "NOT_FOUND",
-        title: "Project not found",
-        message: "This project was deleted or moved. Refresh the page to see the latest state.",
-      });
-    }
-    if (code === "DUPLICATE_PROJECT_CODE") {
-      return new UserFacingError({
-        code,
-        title: isTemplate ? "Template code already in use" : "Project code already in use",
-        message: message ?? `A ${isTemplate ? "template" : "project"} with that code already exists.`,
-        field: "projectNumber",
-      });
-    }
-  }
-  return e;
-}
-
-export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "create");
-
-  const client = await getConvexClient();
-
-  // The entire deep-copy (categories → groups → line items → PMs → recalc)
-  // runs in ONE atomic mutation instead of N sequential server→Convex round-trips.
-  const newProjectId = createId();
-  const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
-  try {
-    await client.mutation(api.projectWrites.duplicateNative, {
-      sourceId,
-      newId: newProjectId,
-      newProjectNumber,
-      newName,
-      orgId: organizationId,
-      orgDefaultTaxRate,
-      now: Date.now(),
-      actor: { userId, userName },
-      auditId: createId(),
-    });
-  } catch (e) {
-    throw mapProjectCopyError(e, false);
-  }
-  const nativeResult = await getProjectByIdMapped(newProjectId, organizationId);
-  if (!nativeResult) throw new Error("Project duplicate failed");
-  return serialize(nativeResult);
-}
-
-export async function saveAsTemplate(projectId: string, templateName: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "create");
-
-  // Create the template + copy its line items (grouping OMITTED) + recalc in
-  // ONE atomic mutation. generateTemplateCode stays server-side (Convex-mirror count).
-  const templateId = createId();
-  const templateNumber = await generateTemplateCode(organizationId);
-  const orgDefaultTaxRate = await readOrgDefaultTaxRate(organizationId);
-  const client = await getConvexClient();
-  try {
-    await client.mutation(api.projectWrites.saveAsTemplateNative, {
-      sourceId: projectId,
-      newId: templateId,
-      templateNumber,
-      templateName,
-      orgId: organizationId,
-      orgDefaultTaxRate,
-      now: Date.now(),
-      actor: { userId, userName },
-    });
-  } catch (e) {
-    throw mapProjectCopyError(e, true);
-  }
-  const nativeResult = await getProjectByIdMapped(templateId, organizationId);
-  if (!nativeResult) throw new Error("Template create failed");
-  return serialize(nativeResult);
 }
 
 export async function getTemplates() {
@@ -923,49 +578,6 @@ export async function getTemplates() {
 
   // Clients live in Convex — attach instead of a Prisma join.
   return serialize(await attachClient(organizationId, withCounts));
-}
-
-export async function deleteProject(id: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "delete");
-
-  // Only allow deleting cancelled projects. Project + line items are Convex-only
-  // (Phase C) — read the project scalars from Convex.
-  const project = await getProjectByIdMapped(id, organizationId);
-
-  if (!project) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Project not found",
-      message: "This project was deleted or moved. Refresh the page to see the latest state.",
-    });
-  }
-  if (project.status !== "CANCELLED") {
-    throw new UserFacingError({
-      code: "DELETE_GUARD",
-      title: "Cannot delete this project",
-      message: "Only cancelled projects can be deleted.",
-      hint: "Set the project status to Cancelled first, then try again.",
-    });
-  }
-
-  const convex = await getConvexClient();
-
-  // The full delete cascade runs atomically INSIDE Convex (deleteNative): it frees
-  // checked-out assets/kits (+ kit-serialized members) through the counter-safe
-  // path, cascades every line item + its units, deletes crew assignments (→ shifts
-  // + time entries), managers/tasks/services, grouping, the projectModelRevenues
-  // rollup, then the project row + DELETE audit — in ONE round-trip, no orphan
-  // window. The CANCELLED + non-template guards are re-checked there. We only
-  // resolve the org default location to pass through (mirrors getDefaultLocation).
-  const defaultLocation = await getDefaultLocation(organizationId);
-  await convex.mutation(api.projectWrites.deleteNative, {
-    id,
-    orgId: organizationId,
-    defaultLocationId: defaultLocation?.id ?? null,
-    actor: { userId, userName },
-    auditId: createId(),
-    now: Date.now(),
-  });
 }
 
 /** Get project milestone dates for call sheet dialog */

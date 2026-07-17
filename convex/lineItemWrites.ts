@@ -10,6 +10,7 @@ import { assertLineMoneyFields } from "./lib/moneyGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
+import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import * as enums from "./lib/validators";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
 import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
@@ -53,17 +54,6 @@ function getUserColor(userId: string): string {
   let hash = 0;
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
   return COLLAB_COLORS[hash % COLLAB_COLORS.length];
-}
-
-/** Org default tax rate from the Convex orgSettings mirror (source of truth; the
- *  Postgres column is deprecated). null when unset. Resolved IN-mutation so browser
- *  callers can't spoof a money-affecting tax rate. */
-async function resolveOrgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promise<number | null> {
-  const row = await ctx.db
-    .query("orgSettings")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-    .first();
-  return row?.defaultTaxRate ?? null;
 }
 
 /** Delete a line + its fulfillment units (replica of deleteLineWithUnits). The unit

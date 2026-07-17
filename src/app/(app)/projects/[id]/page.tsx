@@ -41,7 +41,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
-import { deleteProject } from "@/server/projects";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -189,9 +188,18 @@ export default function ProjectDetailPage({
   });
 
   const deleteMutation = useServerMutation({
-    mutationFn: () => deleteProject(id),
-    onSuccess: () => {
-      toast.success("Project deleted");
+    mutationFn: () => projectWrites.remove(id),
+    onSuccess: (result) => {
+      const freedBits: string[] = [];
+      if (result.freedAssets > 0) {
+        freedBits.push(`${result.freedAssets} asset${result.freedAssets === 1 ? "" : "s"}`);
+      }
+      if (result.freedKits > 0) {
+        freedBits.push(`${result.freedKits} kit${result.freedKits === 1 ? "" : "s"}`);
+      }
+      toast.success(
+        freedBits.length > 0 ? `Project deleted — freed ${freedBits.join(" and ")}` : "Project deleted",
+      );
       router.push("/projects");
     },
     onError: (e) => toast.error(e.message),

@@ -17,7 +17,8 @@ import {
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
-import { createProject, updateProject, peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
+import { peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
+import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
 import { useClientSearch, useClient } from "@/hooks/use-clients";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -114,6 +115,7 @@ export function ProjectWizard({
   const { data: activeOrg } = useActiveOrganization();
   const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
+  const projectWrites = useProjectWrites(orgId);
 
   const isEditing = !!project;
   const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
@@ -221,8 +223,8 @@ export function ProjectWizard({
       }
 
       const result = project
-        ? await updateProject(project.id, data)
-        : await createProject({ ...data, isTemplate });
+        ? await projectWrites.update(project.id, data, isTemplate)
+        : await projectWrites.create({ ...data, isTemplate });
 
       // Reconcile managers to the full selected set in one call — the server
       // diffs against the current rows (create mode = add all; edit mode = add

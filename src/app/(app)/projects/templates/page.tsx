@@ -8,7 +8,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { BookTemplate, Plus, Trash2, Copy } from "lucide-react";
-import { getTemplates, duplicateProject } from "@/server/projects";
+import { getTemplates } from "@/server/projects";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -80,7 +80,7 @@ export default function TemplatesPage() {
 
   const createMut = useServerMutation({
     mutationFn: () =>
-      duplicateProject(createFrom.id, projectNumber, projectName),
+      projectWrites.duplicate(createFrom.id, projectNumber, projectName),
     onSuccess: (result) => {
       toast.success("Project created from template");
       setCreateFrom(null);

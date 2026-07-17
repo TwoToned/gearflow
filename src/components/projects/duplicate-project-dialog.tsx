@@ -16,7 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { duplicateProject, saveAsTemplate } from "@/server/projects";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useProjectWrites } from "@/hooks/use-native-project-writes";
 
 interface DuplicateProjectDialogProps {
   open: boolean;
@@ -37,6 +38,8 @@ export function DuplicateProjectDialog({
 }: DuplicateProjectDialogProps) {
   const router = useRouter();
   const isTemplate = mode === "template";
+  const { data: activeOrg } = useActiveOrganization();
+  const projectWrites = useProjectWrites(activeOrg?.id);
 
   const [projectNumber, setProjectNumber] = useState(
     `${sourceProject.projectNumber}-COPY`
@@ -48,8 +51,8 @@ export function DuplicateProjectDialog({
   const mutation = useServerMutation({
     mutationFn: () =>
       isTemplate
-        ? saveAsTemplate(sourceProject.id, name)
-        : duplicateProject(sourceProject.id, projectNumber, name),
+        ? projectWrites.saveAsTemplate(sourceProject.id, name)
+        : projectWrites.duplicate(sourceProject.id, projectNumber, name),
     onSuccess: (result) => {
       toast.success(isTemplate ? "Template created" : "Project duplicated");
       onOpenChange(false);

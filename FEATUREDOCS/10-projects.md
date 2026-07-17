@@ -75,7 +75,9 @@ retired). Routes:
 ## Project Managers
 - Multi-PM support via `ProjectManager` join table (replaces old single `projectManagerId`)
 - Managed on the project detail page sidebar via `ProjectManagersPanel`
-- Add/remove PMs via `addProjectManager()` / `removeProjectManager()` in `src/server/project-managers.ts`
+- Add/remove PMs via browser-direct mutations `addNative` / `removeNative` in
+  `convex/projectManagersWrites.ts`, called via `src/hooks/use-project-managers-writes.ts`
+  (the old `src/server/project-managers.ts` server actions are gone)
 - PMs shown as avatar row in project header
 
 ## Financial Calculations (`recalculateProjectTotals()`)
@@ -122,7 +124,9 @@ marginPercent = margin / total × 100
   group FK switched from CASCADE to SET NULL in v0.10.0.0 so deleting
   a category no longer destroys its groups along with every contained
   line item)
-- Server actions: `src/server/project-categories.ts`
+- Browser-direct mutations: `convex/projectCategoriesWrites.ts` (`createCategoryNative`,
+  `updateCategoryNative`, `deleteCategoryNative`, `reorderCategoriesNative`) — the old
+  `src/server/project-categories.ts` server actions are gone
 
 ## Groups (`ProjectGroup`) — The Billable Unit
 - Groups are the billable units on quotes/invoices
@@ -154,7 +158,10 @@ marginPercent = margin / total × 100
 - Save a group configuration as a reusable template (`GroupTemplate` + `GroupTemplateItem`)
 - Apply a template when creating a new group (pre-fills line items from template)
 - Template picker integrated in the inline "Add Group" form
-- Server actions: `src/server/group-templates.ts`
+- Reads: `convex/groupTemplates.ts`; browser-direct mutations:
+  `convex/groupTemplatesWrites.ts` (`saveGroupAsTemplateNative`, `updateTemplateNative`,
+  `deleteTemplateNative`, `applyNative`) — the old `src/server/group-templates.ts`
+  server actions are gone
 - Standalone management page at `/settings/group-templates` (linked from
   the Settings sidebar and reachable via `@grouptemplates` in cmd+K)
 - Full integration-checklist coverage: `requirePermission(project, ...)` on
@@ -196,7 +203,10 @@ when it's added (`addLineItem`) — `unitPrice = rate`, `duration = rentalQuanti
 Custom items are ad-hoc line items for gear not in the system — borrowed equipment, client-supplied items, one-off rentals tracked informally. They live as regular `ProjectLineItem` records with `isCustomItem: true` and no `modelId`/`assetId`/`bulkAssetId` link.
 
 **Behavior:**
-- Created via `addCustomLineItem()` in `src/server/line-items.ts`
+- Created via the browser-direct `addCustomNative` mutation in `convex/lineItemWrites.ts`
+  (the old `addCustomLineItem()` server action in `src/server/line-items.ts` is gone —
+  that file now only holds reads: `checkAvailability`, `lookupAssetByTag`,
+  `checkKitAvailability`, `recalculateProjectTotals`, `checkAvailabilityBatch`)
 - Validated by `customLineItemSchema` in `src/lib/validations/line-item.ts`
 - Display name: `description` field (already used as fallback across all rendering paths)
 - `computeOverbookedStatus` skips custom items (filters on `li.modelId !== null`)
@@ -259,8 +269,10 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 - Inline "Add Group" button in toolbar with template picker
 - Uncategorized zone at the bottom holds orphan line items, orphan
   sub-hire groups, **and orphan project groups** (since v0.10.0.0) —
-  fetched via `getUncategorizedProjectGroups` from
-  [`src/server/category-slots.ts`](../src/server/category-slots.ts)
+  fetched as `uncategorizedProjectGroups` from the composite
+  `bundle` query in [`convex/equipmentTab.ts`](../convex/equipmentTab.ts)
+  (the old `getUncategorizedProjectGroups` server action in
+  `src/server/category-slots.ts` is gone)
 - Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
@@ -337,50 +349,47 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Date auto-fills based on service type
 
 ### Service Auto-Generation
-- `generateProjectServices(projectId)` creates services from project dates + service templates
-- Idempotent: checks existing services by type+date key to avoid duplicates on re-run
+- `generateServicesNative` (`convex/projectServicesWrites.ts`) creates services from project dates + service templates
+- Idempotent: checks existing services by type+date key to avoid duplicates on re-run (intra-batch dedup too, to avoid inflated totals)
 - Uses `isAutoAdded` templates; falls back to all active templates if none marked
 - Default set if no templates: DELIVERY, BUMP_IN, BUMP_OUT, PICKUP (+ LABOUR show days if event dates)
 - Multi-day events create one LABOUR service per day
-- All wrapped in `prisma.$transaction()` for atomicity
 
 ### Service Cloning
-- `cloneServicesFromProject(targetProjectId, sourceProjectId)` copies services between projects
+- `cloneServicesNative` (`convex/projectServicesWrites.ts`) copies services between projects
 - Calculates date offset from first service date difference
-- Resets status to PLANNED, preserves crew preferences but not assignments
-
-### Crew Auto-Suggest
-- `getCrewSuggestionsForProject(projectId)` matches crew roles to equipment categories
-- Uses `Category.suggestedCrewRoles` (string array of role IDs) for tag-based matching
-- Returns matched crew roles + their members for assignment UI
+- Resets status to PLANNED, preserves crew preferences but not assignments; drops stale/foreign crew member+role FKs
 
 ### Crew Notifications
-- `generateCrewMessage(projectId, crewMemberId)` builds copy-to-clipboard schedule message
+- `generateCrewMessage(projectId, crewMemberId)` (`src/server/project-services.ts`, retained as a live-read carve-out) builds copy-to-clipboard schedule message
 - Includes venue, site contact, per-assignment schedule with dates/times/roles
-
-### Service Cost History
-- `getServiceCostHistory(organizationId, serviceType, limit)` returns historical pricing data
 
 ### Service Templates
 - Managed in Settings → Services (`/settings/services`)
 - `isAutoAdded` flag for templates that should be added to every new project
+- CRUD via `createServiceTemplateNative` / `updateServiceTemplateNative` / `deleteServiceTemplateNative` in `convex/projectServicesWrites.ts`
 
 ### Architecture
-- All service mutations wrapped in `prisma.$transaction()` (atomicity)
-- `buildServiceData()` DRY helper extracts ~20 shared fields between create and update
-- `syncServiceLineItem()` auto-syncs line items with kit child guard + deleted item guard
+- Service CRUD/status/bulk/generation/template mutations are browser-direct in
+  `convex/projectServicesWrites.ts` (12 mutations); money math (equivalent to the old
+  `buildServiceData()` DRY helper) and `recalcProjectTotals` are ported server-authoritative
+  inline in that file, run at every recalc site
+- Line-item sync (equivalent to `syncServiceLineItem()`) has a kit child guard + deleted item guard
 - Cascade delete: always unlink line items, never delete them
 - Shared constants in `src/lib/constants/services.ts`
 - Partial unique index on `CrewAssignment(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL`
 
-### Server Actions
-- File: `src/server/project-services.ts`
-- CRUD: `createProjectService`, `updateProjectService`, `deleteProjectService`, `getProjectServices`
-- Status: `updateServiceStatus`, `bulkUpdateServiceStatus`
-- Generation: `generateProjectServices`, `cloneServicesFromProject`, `convertLineItemToService`
-- Crew: `getCrewSuggestionsForProject`, `generateCrewMessage`
-- Templates: `createServiceTemplate`, `updateServiceTemplate`, `deleteServiceTemplate`, `getServiceTemplates`
-- Financial: `getProjectServicesSummary`, `getServiceCostHistory`
+### Server Actions vs Convex
+`src/server/project-services.ts` was trimmed to a carve-out (reads + one live-effect action):
+- Retained: `getProjectServices`, `getProjectServicesSummary`, `getServiceTemplates`,
+  `updateServiceCrewStatus` (sendCrewOffer — crypto + email + Prisma), `generateCrewMessage`
+- Moved browser-direct, all in `convex/projectServicesWrites.ts`: `createServiceNative`,
+  `updateServiceNative`, `deleteServiceNative`, `updateServiceStatusNative`,
+  `bulkDeleteServicesNative`, `bulkUpdateServiceStatusNative`, `generateServicesNative`,
+  `cloneServicesNative`, `convertLineItemToServiceNative`, `createServiceTemplateNative`,
+  `updateServiceTemplateNative`, `deleteServiceTemplateNative`
+- **Removed as dead code** (unused, never wired to any UI): the old `getCrewSuggestionsForProject`
+  (matched `Category.suggestedCrewRoles` to equipment categories) and `getServiceCostHistory`
 
 ### Day-of Runsheet
 - Dedicated route: `/projects/[id]/runsheet`
@@ -411,23 +420,33 @@ Sub-hire items (`isSubhire: true`) always create separate line items and never m
 - Duplication preserves full hierarchy: categories, groups, line items, services
 
 ## Project Deletion
-Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.ts`).
+Only cancelled projects can be deleted (`deleteNative` in `convex/projectWrites.ts`, browser-direct — the old `deleteProject` server action in `src/server/projects.ts` is gone; that file now only holds reads).
 
 ### Cleanup on Delete
-1. **Reset checked-out assets**: All `CHECKED_OUT` serialized assets linked to project line items → `AVAILABLE`, restore default location
-2. **Reset checked-out kits**: All `CHECKED_OUT` kits + their serialized assets → `AVAILABLE`, restore locations
-3. **Delete prep-kits**: All `Kit` records with `isPrep: true` linked to this project are fully deleted
-4. **Cascade**: `Project.delete()` cascades to all `ProjectLineItem`, `ProjectMedia`, etc.
+`deleteNative` (`convex/projectWrites.ts`) performs these steps explicitly in one
+mutation — there is no more Postgres FK cascade to rely on (domain tables were
+dropped from Postgres in the Convex decommission):
+1. **Reset checked-out assets**: All `CHECKED_OUT`/`CONFIRMED` serialized assets linked to project line items → `AVAILABLE`, restore default location
+2. **Reset checked-out kits**: All `CHECKED_OUT`/`CONFIRMED` kits + their serialized assets → `AVAILABLE`, restore locations
+3. **Cascade line items**: every top-level line item (+ children + units) is deleted via `removeLineItemCascadeCore`
+4. **Cascade crew, PMs, tasks, services, grouping (categories/groups/slots), and the `projectModelRevenues` rollup**, then the project row itself + counters + audit log
 
-## Server Action Files
-- `src/server/projects.ts` — Project CRUD, duplication, status management
-- `src/server/project-categories.ts` — Category CRUD, reorder
-- `src/server/project-groups.ts` — Group CRUD, pricing, reorder, move items
-- `src/server/project-managers.ts` — PM add/remove
-- `src/server/group-templates.ts` — Template CRUD, save/apply
-- `src/server/line-items.ts` — Line item CRUD, `recalculateProjectTotals()`
-- `src/server/project-services.ts` — Service CRUD, templates
-- `src/server/crew-assignments.ts` — Crew assignment management
+## Server Action Files vs Convex
+Writes moved browser-direct during the Convex-native migration (see [54. Convex Data Layer](./54-convex-data-layer.md)); `src/server/*.ts` now holds reads-only carve-outs where a file remains at all.
+- `src/server/projects.ts` — Project **reads only** (`getProjects`, `getProject`,
+  `peekNextProjectNumber`, etc.); CRUD/duplication/status live in `convex/projectWrites.ts`
+  (`createNative`, `updateNative`, `deleteNative`, `duplicateNative`,
+  `updateStatusNative`, `archiveNative`, `saveAsTemplateNative`, …)
+- Category CRUD/reorder: `convex/projectCategoriesWrites.ts` (`src/server/project-categories.ts` is gone)
+- Group CRUD/pricing/reorder/move items: `convex/projectGroupsWrites.ts` (`src/server/project-groups.ts` is gone)
+- PM add/remove: `convex/projectManagersWrites.ts` (`src/server/project-managers.ts` is gone)
+- Template CRUD/save/apply: `convex/groupTemplatesWrites.ts` (`src/server/group-templates.ts` is gone)
+- `src/server/line-items.ts` — Line item **reads only** (`checkAvailability`,
+  `lookupAssetByTag`, `checkKitAvailability`, `recalculateProjectTotals`,
+  `checkAvailabilityBatch`); add/update/remove/reorder live in `convex/lineItemWrites.ts`
+- `src/server/project-services.ts` — trimmed carve-out (reads + `updateServiceCrewStatus` +
+  `generateCrewMessage`); CRUD/status/generation/templates live in `convex/projectServicesWrites.ts`
+- Crew assignment management: `convex/crewAssignmentsWrites.ts` (`src/server/crew-assignments.ts` is gone)
 
 ## Validation Schemas
 - `src/lib/validations/project.ts` — Project form (includes billingWeeks, billingDays, defaultRentalPeriod, defaultRentalQuantity, taxRate)
@@ -441,7 +460,7 @@ Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.
 The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
 
 ## Reservation Conflict Resolution
-When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`) re-checks free-in-window and reassigns inside one transaction, so a stale candidate can't push through a fresh double-booking. See `src/lib/reservation-conflicts.ts`.
+When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone.
 
 ## Future-Proofing
 - **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)

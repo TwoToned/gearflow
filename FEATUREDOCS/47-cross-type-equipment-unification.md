@@ -46,7 +46,14 @@ contained line item.
 
 ## Server actions
 
-All in [`src/server/category-slots.ts`](../src/server/category-slots.ts).
+> **Superseded (Convex-native browser-direct).** `src/server/category-slots.ts` no
+> longer exists. The mutations below are now browser-direct in
+> [`convex/categorySlotsWrites.ts`](../convex/categorySlotsWrites.ts) (called via
+> `src/hooks/use-category-slots-writes.ts`); the two `getUncategorized*` reads are
+> folded into the bundled [`convex/equipmentTab.ts`](../convex/equipmentTab.ts)
+> `bundle` query, reconstructed client-side by `src/lib/equipment-tab-reconstruct.ts`.
+> Names/behaviour below are unchanged (ported at parity), only the file/transport moved.
+
 Validations in [`src/lib/validations/category-slot.ts`](../src/lib/validations/category-slot.ts).
 
 | Action | Purpose | Permission |
@@ -68,8 +75,10 @@ same project.
 
 ## Query shape
 
-`getProjectCategories(projectId)` in
-[`src/server/project-categories.ts`](../src/server/project-categories.ts)
+`getProjectCategories(projectId)` — formerly a Prisma read in
+`src/server/project-categories.ts` (now deleted), now reconstructed client-side by
+[`src/lib/equipment-tab-reconstruct.ts`](../src/lib/equipment-tab-reconstruct.ts)
+from the [`convex/equipmentTab.ts`](../convex/equipmentTab.ts) `bundle` query —
 includes:
 
 ```ts
@@ -281,7 +290,10 @@ because they never read or write sub-hire rows. See
 
 ## Test coverage
 
-Integration tests under `src/server/`:
+> The `src/server/` integration tests below were removed along with the server
+> actions they covered. Equivalent coverage now lives in Convex:
+> `convex/categorySlotsWrites.test.ts` (move/reorder/create + the perm seam) and
+> `convex/equipmentTab.test.ts` (bundle query shape, including `mixedGroups`).
 
 - `category-slot.int.test.ts` — schema invariants (S1, S2)
 - `category-slots.int.test.ts` — move/reorder/create (S8, S10, S11, S15) plus the `moveProjectGroupToCategory` happy path and the `createCategoryAndPlaceGroup` project-group line-item sync (Fix A regression)

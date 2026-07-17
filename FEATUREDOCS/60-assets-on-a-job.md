@@ -5,7 +5,7 @@ prepped / deployed / returned on a job, down to the individual unit, and lets
 you correct which line an auto-picked asset landed on. The record survives
 check-in and close-out, so a finished job still answers "what physically went
 out." Builds on the fulfillment model in
-[docs/designs/line-item-fulfillment-model.md](../docs/designs/line-item-fulfillment-model.md)
+[docs/designs/archive/line-item-fulfillment-model.md](../docs/designs/archive/line-item-fulfillment-model.md)
 and the equipment tree in [47](./47-cross-type-equipment-unification.md).
 
 ## Where a serial actually lives (three cases)
@@ -21,7 +21,7 @@ on the container — see also [48](./48-child-assets-accessories.md):
 | Accessory child | `projectLineItemUnit` (`parentUnitAssetId` link) | tag on the child row |
 
 > Physical kit members were migrated onto per-unit `projectLineItemUnit` rows (the
-> kit per-unit fulfillment migration — `docs/designs/kit-per-unit-fulfillment.md`).
+> kit per-unit fulfillment migration — `docs/designs/archive/kit-per-unit-fulfillment.md`).
 > They still keep `line.assetId` for now, but fulfillment (deploy/return status,
 > history) is driven by the unit. A kit member binds to its slot, so instead of the
 > loose "Move to another line" it offers **"Swap"** — pick a same-model available

@@ -450,10 +450,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // api.categorySlotsWrites.* mutations, each folding recalc + audit atomically.
   const categorySlotWrites = useCategorySlotWrites();
 
-  // Browser-direct line-item writes (update / remove / reorder) — flag-gated (default
-  // OFF via NATIVE_LINEITEM_BROWSER). Each guarded api.lineItemWrites.* mutation folds
-  // the availability re-check + recalcProjectTotals + audit + collab feed into one
-  // transaction. When `enabled` is false every call below keeps the server-action path.
+  // Browser-direct line-item writes (update / remove / reorder). Each guarded
+  // api.lineItemWrites.* mutation folds the availability re-check +
+  // recalcProjectTotals + audit + collab feed into one transaction.
   const lineItemWrites = useLineItemWrites();
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of

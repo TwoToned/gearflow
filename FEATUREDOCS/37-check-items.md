@@ -32,7 +32,7 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 - `Kit.checkMode` field defaults to `KIT_LEVEL`
 - `KitCheckItem` join table links check items to kits (like `ModelCheckItem` for models)
 - `CheckRecord.kitId` — optional FK for kit-level check results
-- Kit check item CRUD: `getKitCheckItems`, `addCheckItemToKit`, `removeCheckItemFromKit`, `reorderKitCheckItems` in `src/server/check-items.ts`
+- Kit check item CRUD: `kitCheckItems.assignmentsForKit` (read) in `convex/kitCheckItems.ts`; `addCheckItemToKitNative`, `removeCheckItemFromKitNative`, `reorderKitCheckItemsNative` (writes) in `convex/checkItemsWrites.ts`
 
 ### Modified Models
 
@@ -40,22 +40,28 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 
 ## Server Actions
 
-### Check Item Library (`src/server/check-items.ts`)
+### Check Item Library (`convex/checkItems.ts` reads + `convex/checkItemsWrites.ts` browser-direct mutations; model assignment reads in `convex/modelCheckItems.ts`)
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
-| `getCheckItems()` | read | List all org check items |
-| `getCheckItem(id)` | read | Single item with usage count |
-| `createCheckItem(data)` | checkItem.create | Create library item |
-| `updateCheckItem(id, data)` | checkItem.update | Update library item |
-| `deleteCheckItem(id)` | checkItem.delete | Delete (blocked if in use) |
-| `getModelCheckItems(modelId)` | read | Items assigned to a model |
-| `addCheckItemToModel(modelId, checkItemId)` | checkItem.update | Assign to model |
-| `removeCheckItemFromModel(modelId, checkItemId)` | checkItem.update | Unassign |
-| `reorderModelCheckItems(modelId, orderedIds)` | checkItem.update | Reorder |
-| `bulkAddCheckItemsToModels(modelIds[], checkItemIds[])` | checkItem.update | Bulk assign checks to multiple models |
+| `checkItems.list` | read | List all org check items |
+| `checkItems.getById` | read | Single item with usage count |
+| `checkItemsWrites.createCheckItemNative` | checkItem.create | Create library item |
+| `checkItemsWrites.updateCheckItemNative` | checkItem.update | Update library item |
+| `checkItemsWrites.deleteCheckItemNative` | checkItem.delete | Delete (blocked if in use) |
+| `modelCheckItems.assignmentsForModel` | read | Items assigned to a model |
+| `checkItemsWrites.addCheckItemToModelNative` | checkItem.update | Assign to model |
+| `checkItemsWrites.removeCheckItemFromModelNative` | checkItem.update | Unassign |
+| `checkItemsWrites.reorderModelCheckItemsNative` | checkItem.update | Reorder |
+| `checkItemsWrites.bulkAddCheckItemsToModelsNative` | checkItem.update | Bulk assign checks to multiple models |
 
-### Check Records (`src/server/check-records.ts`)
+### Check Records
+
+`pullItem`, `prepItemDirect`, `prepItemsBatch`, `deprepItem`, `deprepKit`, `deprepItemsBatch`,
+`unpackItem`, `lookupAssetForAdHocCheck`, `getCheckHistory`, `getModelFailureAnalytics` are
+still server actions in `src/server/check-records.ts`. The five `completeCheckAnd*` /
+`saveAdHocCheck` mutations below moved browser-direct to Convex — called via
+`src/hooks/use-check-record-writes.ts`:
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
@@ -63,22 +69,22 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 | `prepItemDirect(projectId, lineItemId, assetId?, qty?)` | warehouse.check_out | Prep without checks (PACKED) |
 | `deprepItem(projectId, lineItemId, qty?)` | warehouse.check_out | Reverse prep (back to PENDING) |
 | `unpackItem(projectId, lineItemId)` | warehouse.scan | Set returnStatus=UNPACKED |
-| `completeCheckAndPack(data)` | warehouse.scan | Save records + checkout + PACKED |
-| `completeCheckAndFlag(data)` | warehouse.scan | Save records + flag (FAULTY/TT_OVERDUE) |
-| `completeCheckAndStore(data)` | warehouse.scan | Save records + checkin + condition |
-| `completeCheckAndDeprep(data)` | warehouse.check_out | Save RETURN records + reset prepStatus (deprep-gate check) |
-| `saveAdHocCheck(data)` | warehouse.scan | Standalone check (AD_HOC context) |
+| `checkRecordWrites.completeCheckAndPack` | warehouse.scan | Save records + checkout + PACKED |
+| `checkRecordWrites.completeCheckAndFlag` | warehouse.scan | Save records + flag (FAULTY/TT_OVERDUE) |
+| `checkRecordWrites.completeCheckAndStore` | warehouse.scan | Save records + checkin + condition |
+| `checkRecordWrites.completeCheckAndDeprep` | warehouse.check_out | Save RETURN records + reset prepStatus (deprep-gate check) |
+| `checkRecordWrites.saveAdHocCheck` | warehouse.scan | Standalone check (AD_HOC context) |
 | `lookupAssetForAdHocCheck(tag)` | read | Asset lookup for ad-hoc page |
 | `getCheckHistory(assetId, context?)` | read | All records for an asset |
 | `getModelFailureAnalytics(modelId)` | read | Per-check-item failure rates |
 
-### Warehouse Close (`src/server/warehouse-close.ts`)
+### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
-| `getCloseOutSummary(projectId)` | warehouse.close | Summary stats + exceptions |
-| `closeOutProject(data)` | warehouse.close | Create WarehouseClose record |
-| `batchCloseOut(projectIds[])` | warehouse.close | Close up to 25 projects |
+| `warehouseCloses.closeOutSummary` | warehouse.close | Summary stats + exceptions |
+| `warehouseCloseWrites.closeOutNative` | warehouse.close | Create WarehouseClose record |
+| `warehouseCloseWrites.batchCloseOutNative` | warehouse.close | Close up to 25 projects |
 
 ## UI Components
 

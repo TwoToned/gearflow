@@ -121,14 +121,17 @@ test-first to avoid confusing "new test" with "register equipment":
 - **Overview** (`/test-and-tag`): primary "Quick test" (→ `quick-test`), secondary `line`
   "Add equipment" (→ `new`), `line` "Registry" (→ `registry`).
 - **Registry** (`/test-and-tag/registry`): primary "New test" (→ `quick-test`), secondary
-  `line` "Add equipment" (→ `new`); "Sync from assets" (the `backfillTestTagAssets` action)
+  `line` "Add equipment" (→ `new`); "Sync from assets" (backed by `backfillTestTagAssetsCore`,
+  `convex/lib/` — a Convex-side helper, not a standalone server action)
   lives in a `⋯` overflow `DropdownMenu`. ("Add item"/"Sync" were the old prominent labels —
   the bare "Add item" primary made registration look like the main task.)
 
-## Server Actions
-- `src/server/test-tag-assets.ts` — CRUD, batch create, sync, reactivate
-- `src/server/test-tag-records.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation
-- `src/server/test-tag-profiles.ts` — Profile CRUD, seed defaults, resolve profile cascade, duplicate
+## Convex Functions (formerly server actions, all deleted from `src/server/`)
+- `convex/testTagAssets.ts` (reads) + `convex/testTagAssetsWrites.ts` (browser-direct mutations) — CRUD, batch create, sync, reactivate
+- `convex/testTagRecords.ts` + `convex/testTagRecordsWrites.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation
+- `convex/testProfiles.ts` + `convex/testProfilesWrites.ts` — Profile CRUD, seed defaults, resolve profile cascade, duplicate
+
+## Server Action (genuine carve-out — CSV/Node)
 - `src/server/test-tag-reports.ts` — Report data + CSV exports (includes sub-test data)
 
 ## Auto-Registration

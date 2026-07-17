@@ -855,6 +855,27 @@ tolerate a bound before assuming it needs the fix from the original finding. The
 `presence-facepile` demo's `list` query (`by_room_updated` index + `.order("desc").take(20)`)
 is the exact template if a bound turns out to be correct here.
 
+## Findings resolved this session (2026-07-17, continued)
+
+- **#7.** `checkRecords.listRecentByAssetAndCheckItem` deleted — confirmed zero live callers,
+  `checkPredictiveMaintenanceCore.ts` reimplements the same lookup inline.
+- **#4.** `LineItemRow` no longer mounts its own `getLock`/`getReviewMarker` subscription per
+  row (2N un-dedupeable subscriptions for N line items — the actual mechanism behind
+  `collaboration.getLock`/`getReviewMarker`'s disproportionate call counts, 9.6K/9.1K this
+  month on a 2-user org). `equipment-tab.tsx` now fetches both project-wide, once, via the
+  already-existing `listLocksForEntity`/`listReviewMarkersForEntity` queries (the
+  `by target key` lookup pattern `src/lib/collaboration-targets.ts` documents was already
+  half-applied to section/group locks — this finishes it for line items and extends it to
+  review markers).
+- **#6(b) — REASSESSED, no longer applicable.** Read the current `checkoutKitCore` /
+  `checkinKitCore` / `forceReturnKitCore` (`convex/warehouseOps.ts`) in full: each calls
+  `setAssetsStatus` exactly once for a kit's direct members' assets, plus once per nested kit
+  for that nested kit's members' assets — disjoint sets (a `projectLineItem.assetId` can only
+  belong to one line), not the "~6× over overlapping sets, last-write-wins" pattern the
+  original finding described. That pattern must have been refactored away by other work
+  independent of this perf effort (consistent with #2/#3/#5/#6a/#8/#9 all having shifted).
+  No consolidation needed — nothing unsafe or wasteful left here.
+
 ## Not re-checked this pass (lower priority / unaffected by the above)
 
 Tier 3 items (`useCrewRoles` double-subscribe — confirmed still present,

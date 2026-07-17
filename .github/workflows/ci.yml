@@ -9,6 +9,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  brand-guard:
+    name: Brand Guard (no legacy brand)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for legacy brand mentions
+        run: ./scripts/check-no-gearflow.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

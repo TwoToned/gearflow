@@ -16,12 +16,8 @@ import { api } from "../../convex/_generated/api";
  * Security at the Convex boundary (the mutation is called with the USER token):
  * `assertWritesEnabled` (kill-switch) + `enforceBrowserWriteLimit` (per-user budget) +
  * `requireOrgPermission(kit, update)` + `resolveActor` (audit identity pinned to the
- * verified token). Flag-gated + default OFF (NEXT_PUBLIC, build-inlined) — when off,
- * the page keeps the server-action path.
+ * verified token).
  */
-export const NATIVE_KIT_NOTES_OPTIMISTIC =
-  process.env.NEXT_PUBLIC_NATIVE_KIT_NOTES_OPTIMISTIC === "true";
-
 export function useOptimisticKitNotes(kitId: string, orgId: string | undefined) {
   const { data: session } = useSession();
 
@@ -39,7 +35,7 @@ export function useOptimisticKitNotes(kitId: string, orgId: string | undefined) 
     },
   );
 
-  const enabled = NATIVE_KIT_NOTES_OPTIMISTIC && !!orgId && !!session?.user;
+  const enabled = !!orgId && !!session?.user;
 
   /** Optimistic notes save. Resolves once the server confirms; rolls back on failure. */
   const save = async (notes: string): Promise<void> => {

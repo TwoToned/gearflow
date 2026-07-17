@@ -7,44 +7,6 @@ import { ConvexError } from "convex/values";
 import { UserFacingError } from "@/lib/errors/user-facing-error";
 
 /**
- * Per-domain feature flags for the Phase 5 native-write cutover (writes routed
- * through the RBAC + invariants + atomic-audit mutations in convex/*Writes.ts
- * instead of the inline-guard + service-mutation + Postgres-logActivity path).
- *
- * These gate SERVER-SIDE code (the server actions), so a plain runtime env var is
- * enough — no NEXT_PUBLIC build-inlining, and it flips via the Coolify env without a
- * rebuild. Default OFF (unset). Each domain flips independently once its write-parity
- * is verified.
- */
-export const nativeAssetWrites = (): boolean =>
-  process.env.NATIVE_ASSET_WRITES === "true";
-
-export const nativeKitWrites = (): boolean =>
-  process.env.NATIVE_KIT_WRITES === "true";
-
-export const nativeCrewWrites = (): boolean =>
-  process.env.NATIVE_CREW_WRITES === "true";
-
-export const nativeProjectWrites = (): boolean =>
-  process.env.NATIVE_PROJECT_WRITES === "true";
-
-export const nativeLineItemWrites = (): boolean =>
-  process.env.NATIVE_LINEITEM_WRITES === "true";
-
-/**
- * Collapse the project-totals recalc (recalculateProjectTotals) from ~3 sequential
- * server→Convex-Cloud round-trips into ONE backend-local `recalcNative` mutation.
- * Every write across the app funnels through recalculateProjectTotals, so this one
- * flag speeds up ALL user-facing writes (line-items, groups, services, sub-hires,
- * project edits) — the fix for the 6–12s edit/delete tail. Default OFF.
- */
-export const nativeRecalc = (): boolean =>
-  process.env.NATIVE_RECALC === "true";
-
-// Audit log is now Convex-only (write + read); the NATIVE_ACTIVITY_WRITES/READS
-// cutover flags were removed once the Postgres activity_log table was frozen.
-
-/**
  * Phase 6b — route post-write email side-effects through the Convex durable,
  * idempotent scheduler (`api.emails.enqueue` → `internal.emailActions.deliver`)
  * instead of an inline `sendEmail()` on the request path. Server-side runtime env

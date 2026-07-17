@@ -16,14 +16,8 @@
  * as the tab's existing optimistic DELETE (`pendingRemovalIds`), just a patch instead
  * of a hide. The real write still lands via the server action; the overlay is cleared
  * once it settles, at which point the reactive bundle already carries the server value.
- *
- * Flag-gated + default OFF (NEXT_PUBLIC, build-inlined). Only affects the native
- * equipment-tab read path; when off, the edit dialog uses the server-action mutation
- * exactly as before.
+ * Only affects the native equipment-tab read path.
  */
-
-export const NATIVE_LINEITEM_OPTIMISTIC =
-  process.env.NEXT_PUBLIC_NATIVE_LINEITEM_OPTIMISTIC === "true";
 
 const roundCurrency = (v: number): number => Math.round(v * 100) / 100;
 

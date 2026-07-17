@@ -11,7 +11,6 @@ import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
 import { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import {
-  NATIVE_LINEITEM_OPTIMISTIC,
   computeLineTotal,
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
@@ -137,11 +136,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       return next;
     });
   }, []);
-  const native = useNativeEquipmentTab(
-    projectId,
-    orgId,
-    NATIVE_LINEITEM_OPTIMISTIC ? pendingEdits : undefined,
-  );
+  const native = useNativeEquipmentTab(projectId, orgId, pendingEdits);
 
   // Passive section/group collaboration state: one lock subscription and one
   // comment-count subscription for the project, then row lookups by target key.
@@ -1685,27 +1680,25 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         isPending={updateLineItemMut.isPending}
         onClose={() => setEditLineItem(null)}
         onSubmit={(id, data, allowOverbook, baseUpdatedAt) => {
-          // Optimistically overlay the edited fields onto the row (flag-gated) so it
-          // updates instantly; the server action below is still the authoritative write.
-          if (NATIVE_LINEITEM_OPTIMISTIC) {
-            setPendingEdits((prev) => {
-              const next = new Map(prev);
-              next.set(id, {
-                quantity: data.quantity,
-                unitPrice: data.unitPrice,
-                discount: data.discount,
-                description: data.description,
-                notes: data.notes,
-                lineTotal: computeLineTotal(
-                  data.unitPrice,
-                  data.quantity,
-                  data.duration,
-                  data.discount,
-                ),
-              });
-              return next;
+          // Optimistically overlay the edited fields onto the row so it updates
+          // instantly; the server action below is still the authoritative write.
+          setPendingEdits((prev) => {
+            const next = new Map(prev);
+            next.set(id, {
+              quantity: data.quantity,
+              unitPrice: data.unitPrice,
+              discount: data.discount,
+              description: data.description,
+              notes: data.notes,
+              lineTotal: computeLineTotal(
+                data.unitPrice,
+                data.quantity,
+                data.duration,
+                data.discount,
+              ),
             });
-          }
+            return next;
+          });
           updateLineItemMut.mutate({
             id,
             data: data as unknown as Record<string, unknown>,

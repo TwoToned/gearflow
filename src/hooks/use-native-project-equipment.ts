@@ -15,15 +15,6 @@ import {
 import { relevantOverbookModelIds } from "@/lib/overbooking-core";
 
 /**
- * Feature flag (default OFF) for the native read-layer project-detail cutover
- * (Phase 1d). Until this is "true" in the environment, every consumer keeps the
- * existing server-action path — so merging the cutover changes nothing for users.
- * Flip it (after `pnpm convex:backfill:members`) to verify the native path live.
- */
-export const NATIVE_PROJECT_DETAIL_ENABLED =
-  process.env.NEXT_PUBLIC_NATIVE_PROJECT_DETAIL === "true";
-
-/**
  * Native equipment tree for the project detail page: subscribes to
  * `projectEquipment.browserBundle` (RBAC-gated `requireOrgPermission(project,
  * read)`) over the Convex WebSocket and reconstructs the
@@ -34,7 +25,7 @@ export const NATIVE_PROJECT_DETAIL_ENABLED =
  *
  * Stage B building block: the full native `useProjectDetail` will combine this
  * with `projectDetail.bundle` + `overbooking.bundle` (managers/media/location/
- * client/overbooking) behind {@link NATIVE_PROJECT_DETAIL_ENABLED}. Importing the
+ * client/overbooking). Importing the
  * pure reconstruction into this CLIENT module is also what makes CI's `next build`
  * verify the reconstruction is genuinely client-safe (no server import leaks).
  */
@@ -44,9 +35,7 @@ export function useNativeProjectEquipmentTree(
 ): ProjectEquipmentTree | undefined {
   const data = useAuthedQuery(
     api.projectEquipment.browserBundle,
-    NATIVE_PROJECT_DETAIL_ENABLED && projectId && orgId
-      ? { projectId, orgId }
-      : "skip",
+    projectId && orgId ? { projectId, orgId } : "skip",
   );
   return useMemo(
     () => (data ? reconstructProjectEquipmentTree(data) : undefined),
@@ -75,7 +64,7 @@ export function useNativeProjectDetail(
   projectId: string | undefined,
   orgId: string | undefined,
 ): { data: NativeProjectDetail | undefined; isLoading: boolean; notFound: boolean } {
-  const enabled = NATIVE_PROJECT_DETAIL_ENABLED && !!projectId && !!orgId;
+  const enabled = !!projectId && !!orgId;
   const args = enabled ? { projectId: projectId!, orgId: orgId! } : "skip";
   const detail = useAuthedQuery(api.projectDetail.bundle, args);
   const equipment = useAuthedQuery(api.projectEquipment.browserBundle, args);

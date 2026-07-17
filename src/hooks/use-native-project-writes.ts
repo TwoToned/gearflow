@@ -21,12 +21,8 @@ import { api } from "../../convex/_generated/api";
  *
  * Security at the Convex boundary (mutation called with the USER token):
  * `assertWritesEnabled(project)` + `enforceBrowserWriteLimit` + `requireOrgPermission`
- * + `resolveActor` (audit identity pinned to the verified token). Flag-gated + default
- * OFF (NEXT_PUBLIC, build-inlined) — when off the page keeps the server-action path.
+ * + `resolveActor` (audit identity pinned to the verified token).
  */
-export const NATIVE_PROJECT_NOTES_OPTIMISTIC =
-  process.env.NEXT_PUBLIC_NATIVE_PROJECT_NOTES_OPTIMISTIC === "true";
-
 type NotesField = "crewNotes" | "internalNotes" | "clientNotes";
 
 export function useOptimisticProjectNotes(projectId: string, orgId: string | undefined) {
@@ -49,7 +45,7 @@ export function useOptimisticProjectNotes(projectId: string, orgId: string | und
     },
   );
 
-  const enabled = NATIVE_PROJECT_NOTES_OPTIMISTIC && !!orgId && !!session?.user;
+  const enabled = !!orgId && !!session?.user;
 
   /** Optimistic notes save for one field. Resolves once the server confirms; rolls back on failure. */
   const save = async (field: NotesField, notes: string): Promise<void> => {
@@ -72,8 +68,7 @@ export function useOptimisticProjectNotes(projectId: string, orgId: string | und
  * Native browser-direct project STATUS write — Phase 3, flag-gated + default OFF.
  * Swaps the `updateProjectStatus` server action for a direct
  * `useMutation(api.projectWrites.updateStatusNative)`, passing `emitSideEffects: true`
- * so the mutation folds the `project.status_changed` webhook in-transaction (the
- * server tail is gated off by `!nativeProjectWrites()`).
+ * so the mutation folds the `project.status_changed` webhook in-transaction.
  *
  * The board/detail views read status via reactive `useQuery`, so the transition
  * re-renders on its own — no optimistic patch needed here. ConvexError codes map back

@@ -15,15 +15,11 @@ import { api } from "../../convex/_generated/api";
  * mutation is called with the USER token, so `requireOrgPermission` enforces RBAC at
  * the Convex boundary (5a) — this is exactly what 5a–5c made safe to call directly.
  *
- * Flag-gated + default OFF (NEXT_PUBLIC, build-inlined). When off, the page keeps the
- * server-action path. `actor` is the current session user; `auditId`/`now` are
- * client-generated (throwaway — the mutation records them, the server is authoritative).
+ * `actor` is the current session user; `auditId`/`now` are client-generated
+ * (throwaway — the mutation records them, the server is authoritative).
  *
  * Rolling this pattern to the other writes is mechanical (same three ingredients).
  */
-export const NATIVE_ASSET_NOTES_OPTIMISTIC =
-  process.env.NEXT_PUBLIC_NATIVE_ASSET_NOTES_OPTIMISTIC === "true";
-
 export function useOptimisticAssetNotes(assetId: string, orgId: string | undefined) {
   const { data: session } = useSession();
 
@@ -41,7 +37,7 @@ export function useOptimisticAssetNotes(assetId: string, orgId: string | undefin
     },
   );
 
-  const enabled = NATIVE_ASSET_NOTES_OPTIMISTIC && !!orgId && !!session?.user;
+  const enabled = !!orgId && !!session?.user;
 
   /** Optimistic notes save. Returns a promise that resolves once the server confirms. */
   const save = async (notes: string): Promise<void> => {

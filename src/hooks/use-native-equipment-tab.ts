@@ -22,15 +22,6 @@ import type {
 import type { OverbookedInfo } from "@/lib/overbooking-core";
 import { applyOptimisticEdits, type OptimisticLineEdit } from "@/hooks/use-native-line-item-writes";
 
-/**
- * Feature flag (default OFF) for the native equipment-tab read cutover (Phase 2).
- * Until "true" in the build env, equipment-tab keeps its six server-action shared
- * resources — so merging the cutover changes nothing for users. Inlined at build
- * time, so flipping it needs the Dockerfile/build-image build-arg + repo var.
- */
-export const NATIVE_EQUIPMENT_ENABLED =
-  process.env.NEXT_PUBLIC_NATIVE_EQUIPMENT === "true";
-
 export interface NativeEquipmentTab {
   categories: CategoryData[];
   uncategorizedItems: LineItemData[];
@@ -60,7 +51,7 @@ export function useNativeEquipmentTab(
   orgId: string | undefined,
   optimisticEdits?: ReadonlyMap<string, OptimisticLineEdit>,
 ): NativeEquipmentTab {
-  const enabled = NATIVE_EQUIPMENT_ENABLED && !!projectId && !!orgId;
+  const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
     api.equipmentTab.bundle,
     enabled ? { projectId: projectId!, orgId: orgId! } : "skip",

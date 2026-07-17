@@ -14,15 +14,12 @@ import { logActivity } from "@/lib/activity-log";
 import type { ActorContext } from "@/lib/actor-context";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { nativeLineItemWrites, nativeRecalc, mapNativeWriteError } from "@/lib/native-writes";
+import { mapNativeWriteError } from "@/lib/native-writes";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
-import { calculateSuggestedPrice } from "@/lib/project-groups-pricing";
 import { UserFacingError } from "@/lib/errors";
-import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
-import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { getModelById, getModelWithCategoryMap } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getBulkAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
@@ -65,518 +62,63 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items", actor);
   const parsed = lineItemSchema.parse(data);
 
-  // NATIVE PATH: the FULL add orchestration — availability, merge-dedup, auto-pricing,
-  // insert, accessory expansion, group-suggested-price, and recalc — runs atomically in
-  // one Convex mutation (addLineItemSmartNative). The server keeps only the parse + actor
-  // + org-tax resolution above, and the non-money tail (collab feed + supplier enrich +
-  // webhook) below. lineTotal is recomputed in-mutation; the client is never trusted.
-  if (nativeLineItemWrites()) {
-    const convex = await getConvexClient();
-    let res: { id: string; merged: boolean };
-    try {
-      res = await convex.mutation(api.lineItemWrites.addLineItemSmartNative, {
-        id: createId(),
-        organizationId,
-        projectId,
-        fields: {
-          type: parsed.type,
-          modelId: parsed.modelId || undefined,
-          assetId: parsed.assetId || undefined,
-          bulkAssetId: parsed.bulkAssetId || undefined,
-          description: parsed.description || undefined,
-          quantity: parsed.quantity,
-          unitPrice: parsed.unitPrice ?? undefined,
-          pricingType: parsed.pricingType,
-          duration: parsed.duration ?? undefined,
-          discount: parsed.discount ?? undefined,
-          groupName: parsed.groupName || undefined,
-          notes: parsed.notes || undefined,
-          isOptional: parsed.isOptional,
-          showSubhireOnDocs: parsed.showSubhireOnDocs,
-          supplierId: parsed.supplierId || undefined,
-          subhireOrderNumber: parsed.subhireOrderNumber || undefined,
-          categoryId: parsed.categoryId || undefined,
-          groupId: parsed.groupId || undefined,
-        },
-        allowOverbook,
-        forceSeparate,
-        includeAccessories,
-        actor: { userId, userName },
-        auditId: createId(),
-        // This NEW app image conditionalizes its own collab/webhook tail off on the
-        // native path (below), so the mutation must emit them. The pre-fold app never
-        // passes this, so it doesn't double-emit during the deploy window. Expand-contract.
-        emitSideEffects: true,
-        now: Date.now(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-
-    const result = (await readBackLine(res.id))!;
-
-    // Non-money tail (supplier enrich only). The money orchestration + CREATE/UPDATE
-    // audit + recalc + collab feed ("line_item_added") + webhook ("line_item.added")
-    // now all commit atomically inside addLineItemSmartNative.
-    const supplier = result.supplierId ? await getSupplierById(result.supplierId).catch(() => null) : null;
-
-    if (res.merged) {
-      return serialize({ ...result, supplier, _merged: true, _newQuantity: result.quantity });
-    }
-    return serialize({ ...result, supplier });
-  }
-
-  // Server-side availability enforcement for equipment.
-  // Sub-hire items represent third-party stock and never consume our inventory.
-  // Detection moved from `isSubhire` boolean to `subHireId != null` (Wave 2).
-  // WHY: Prevent double-booking of owned equipment. Sub-hire items are third-party
-  // stock (rented in to cover gaps) and don't consume our warehouse inventory.
-  if (parsed.type === "EQUIPMENT" && parsed.modelId && !allowOverbook) {
-    const convexProject = await getProjectById(projectId);
-    if (!convexProject || convexProject.organizationId !== organizationId) {
-      return serialize({ success: false });
-    }
-
-    const hasDates = convexProject.rentalStartDate != null && convexProject.rentalEndDate != null;
-
-    // Two-mode availability check: without dates (project still being quoted),
-    // we only check conflicts within this project (the user is iterating on
-    // their quote). With dates, we check across all overlapping projects to
-    // prevent genuine double-booking across the calendar.
-    // WHY: Kit assets must be booked through the kit workflow to keep the kit
-    // complete. Booking a kit asset directly would leave the kit missing a piece.
-    if (parsed.assetId) {
-      // Check if asset is in a kit
-      const assetCheck = await getAssetById(parsed.assetId);
-      if (assetCheck?.kitId) {
-        const assetKit = await getKitById(assetCheck.kitId);
-        throw new UserFacingError({
-          code: "ASSET_IN_KIT",
-          title: "Asset is in a kit",
-          message: `This asset belongs to Kit ${assetKit?.assetTag ?? assetCheck.kitId}.`,
-          hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
-        });
-      }
-
-      // Specific asset — check if it's booked in an overlapping project
-      // (only when dates exist). The asset may be assigned via a legacy
-      // line.assetId row OR via a ProjectLineItemUnit (the fulfillment
-      // model) — both tables must be checked.
-      // WHY: When rental dates are confirmed, the asset must be free across all
-      // overlapping projects. Without dates (quoting phase), only check within
-      // this project since the user is iterating on a draft quote.
-      if (hasDates) {
-        const projStartMs = convexProject.rentalStartDate as number;
-        const projEndMs = convexProject.rentalEndDate as number;
-        const allProjects = await getProjectsByOrg(organizationId);
-        const conflictProjectIds = allProjects
-          .filter(
-            (p) =>
-              !p.isTemplate &&
-              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-              p.rentalStartDate != null &&
-              p.rentalEndDate != null &&
-              (p.rentalStartDate as number) <= projEndMs &&
-              (p.rentalEndDate as number) >= projStartMs &&
-              p.id !== projectId,
-          )
-          .map((p) => p.id);
-        const projectMap = new Map(allProjects.map((p) => [p.id, p]));
-        const conflictSet = new Set(conflictProjectIds);
-        const convex = await getConvexClient();
-        // Asset may be booked via a legacy line.assetId row OR via a unit — check
-        // both in Convex (the flipped tables). Both reads are now scoped to THIS
-        // asset (was: collect every unit in the org, then JS-filter to the asset,
-        // then one getById per unit — a whole-table read + an N+1 that produced
-        // hundreds of Convex calls per add).
-        const [assetLines, assetUnits] = await Promise.all([
-          convex.query(api.projectLineItems.listByAssetId, { assetId: parsed.assetId, orgId: organizationId }),
-          convex.query(api.projectLineItemUnits.listByOrgAndAsset, { orgId: organizationId, assetId: parsed.assetId }),
-        ]);
-        const lineConflict = assetLines.find(
-          (li) => li.status !== "CANCELLED" && conflictSet.has(li.projectId),
-        );
-        // Batch-fetch the line items for the asset's live units in one round-trip
-        // (was one getById per unit).
-        const unitLineIds = [
-          ...new Set(assetUnits.filter((u) => u.status !== "RETURNED").map((u) => u.lineItemId)),
-        ];
-        const unitLines = unitLineIds.length
-          ? await convex.query(api.projectLineItems.listByIds, { ids: unitLineIds, orgId: organizationId })
-          : [];
-        const unitConflictProjId = unitLines.find(
-          (ul) => ul.status !== "CANCELLED" && conflictSet.has(ul.projectId),
-        )?.projectId;
-        const conflictProjId = lineConflict?.projectId ?? unitConflictProjId;
-        const conflictProject = conflictProjId ? projectMap.get(conflictProjId) : null;
-        if (conflictProject) {
-          throw new UserFacingError({
-            code: "ASSET_DOUBLE_BOOKED",
-            title: "Asset already booked",
-            message: `This asset is booked on ${conflictProject.projectNumber} — ${conflictProject.name} during those dates.`,
-            hint: "Pick a different asset, adjust the rental dates, or remove it from the other project.",
-          });
-        }
-      }
-
-      // Block truly unavailable assets (retired, lost) but allow checked-out ones
-      // WHY: Retired and lost assets are permanently unavailable — booking them
-      // would create unfulfillable commitments. Checked-out assets return before
-      // the project starts, so they're still bookable.
-      const asset = await getAssetById(parsed.assetId);
-      if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
-        throw new UserFacingError({
-          code: "ASSET_UNAVAILABLE",
-          title: "Asset cannot be added",
-          message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,
-          hint: asset.status === "LOST"
-            ? "Find the asset and mark it Available, or pick a different one."
-            : "Retired assets cannot be booked. Pick a different asset.",
-        });
-      }
-    } else {
-      // Model-level — check quantity against available stock.
-      // ONE parallel wave for all enforcement reads (was 3 sequential round-trips:
-      // model/assets/bulks → modelLines → projects). projects only when dated.
-      const convexEnf = await getConvexClient();
-      const [model, activeAssets, activeBulkAssets, modelLines, modelAllProjects] = await Promise.all([
-        getModelById(parsed.modelId),
-        getActiveAssetsByModel(parsed.modelId, organizationId),
-        getActiveBulkAssetsByModel(parsed.modelId, organizationId),
-        convexEnf.query(api.projectLineItems.listByModelId, { modelId: parsed.modelId, orgId: organizationId }),
-        hasDates ? getProjectsByOrg(organizationId) : Promise.resolve(null),
-      ]);
-
-      // WHY: For model-level (non-specific) adds, enforce against effective
-      // stock. With dates, check across all overlapping projects; without dates,
-      // only check this project's existing bookings since other quotes are drafts.
-      if (model) {
-        const modelForBreakdown = {
-          assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0),
-          assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
-          bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
-        };
-        // When dates exist, check overlapping bookings across projects
-        // When no dates, check only this project's existing bookings against stock
-        // Sub-hire items don't consume our stock so they're excluded from the count.
-        let overlapping;
-        if (hasDates) {
-          const projStartMs = convexProject.rentalStartDate as number;
-          const projEndMs = convexProject.rentalEndDate as number;
-          const modelConflictProjectIds = new Set(
-            modelAllProjects!
-              .filter(
-                (p) =>
-                  !p.isTemplate &&
-                  !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-                  p.rentalStartDate != null &&
-                  p.rentalEndDate != null &&
-                  (p.rentalStartDate as number) <= projEndMs &&
-                  (p.rentalEndDate as number) >= projStartMs,
-              )
-              .map((p) => p.id),
-          );
-          overlapping = modelLines.filter(
-            (li) =>
-              li.status !== "CANCELLED" &&
-              li.subHireId == null &&
-              modelConflictProjectIds.has(li.projectId),
-          );
-        } else {
-          overlapping = modelLines.filter(
-            (li) =>
-              li.status !== "CANCELLED" &&
-              li.subHireId == null &&
-              li.projectId === projectId,
-          );
-        }
-
-        const booked = overlapping.reduce((sum, li) => sum + (li.quantity ?? 0), 0);
-        // Enforce against effectiveStock — in-maintenance/lost/retired assets
-        // cannot be booked even though they still exist in the model.
-        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
-        const available = Math.max(0, effectiveStock - booked);
-
-        // WHY: Compare against effective stock (total minus unavailable), not
-        // raw count. Assets in maintenance or retired still exist on paper but
-        // can't be booked — using total stock would overstate availability.
-        if (parsed.quantity > available) {
-          const detail = unavailable > 0
-            ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
-            : `${booked} already booked out of ${totalStock} total`;
-          throw new UserFacingError({
-            code: "INSUFFICIENT_STOCK",
-            title: "Not enough available",
-            message: `Only ${available} of ${parsed.quantity} requested are free during those dates.`,
-            hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
-          });
-        }
-      }
-    }
-  }
-
-  // If adding by model (no specific asset), merge into existing line item
-  // within the same group/category to keep the quote clean. Merging prevents
-  // duplicate rows when a user adds the same model twice (e.g. "2x lights"
-  // then "3x lights"), rolling them into one consolidated line.
-  // Never merge across sub-hire boundaries (own stock vs third-party stock).
-  // When forceSeparate is true, always create a new line item.
-  // WHY: Consolidating same-model adds prevents duplicate rows that would confuse
-  // the customer and complicate warehouse picking. Sub-hire items must never merge
-  // with owned stock because they have different costs and availability rules.
-  if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId && !forceSeparate) {
-    const convex = await getConvexClient();
-    const projectLines = await convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId });
-    const existing = projectLines.find(
-      (li) =>
-        li.modelId === parsed.modelId &&
-        li.assetId == null &&
-        (li.groupId ?? null) === (parsed.groupId ?? null) &&
-        (li.categoryId ?? null) === (parsed.categoryId ?? null) &&
-        !li.isKitChild &&
-        // Merge only among non-sub-hire items. Sub-hire items always live in
-        // their own SubHire-managed rows and shouldn't merge with manual adds.
-        li.subHireId == null &&
-        li.status !== "CANCELLED",
-    );
-
-    if (existing) {
-      const oldQuantity = existing.quantity ?? 0;
-      const newQuantity = (existing.quantity ?? 0) + parsed.quantity;
-      const newLineTotal = calculateLineTotal(
-        parsed.unitPrice ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined),
-        newQuantity,
-        parsed.duration || existing.duration || 1,
-        parsed.discount ?? (existing.discount != null ? Number(existing.discount) : undefined),
-      );
-
-      const mergedNotes = parsed.notes
-        ? existing.notes
-          ? `${existing.notes}; ${parsed.notes}`
-          : parsed.notes
-        : existing.notes;
-
-      const mergeSet = {
-        quantity: newQuantity,
-        unitPrice: parsed.unitPrice ?? existing.unitPrice ?? undefined,
-        pricingType: parsed.pricingType || existing.pricingType,
-        duration: parsed.duration || existing.duration || undefined,
-        discount: parsed.discount ?? existing.discount ?? undefined,
-        lineTotal: newLineTotal ?? undefined,
-        groupName: parsed.groupName || existing.groupName || undefined,
-        notes: mergedNotes || undefined,
-        updatedAt: Date.now(),
-      };
-      if (nativeLineItemWrites()) {
-        // Native: patch + UPDATE audit + in-mutation recalc, one round-trip.
-        try {
-          await convex.mutation(api.lineItemWrites.patchNative, {
-            id: existing.id,
-            orgId: organizationId,
-            set: mergeSet,
-            clear: [],
-            entityName: existing.description || "Line item",
-            allowOverbook,
-            actor: { userId, userName },
-            auditId: createId(),
-            now: Date.now(),
-          });
-        } catch (e) {
-          throw mapNativeWriteError(e);
-        }
-      } else {
-        await convex.mutation(api.projectLineItems.patchLineItem, {
-          id: existing.id,
-          set: mergeSet,
-          clear: [],
-        });
-      }
-
-      const result = await readBackLine(existing.id);
-
-      // Post-write tail in parallel (recalc + model enrich + best-effort audit).
-      // Native path already recalced + audited in-mutation.
-      const [, mergedModel] = await Promise.all([
-        nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
-        result?.modelId ? getModelById(result.modelId).catch(() => null) : Promise.resolve(null),
-        nativeLineItemWrites()
-          ? Promise.resolve()
-          : logActivity({
-          organizationId,
-          userId,
-          userName,
-          action: "UPDATE",
-          entityType: "lineItem",
-          entityId: existing.id,
-          entityName: result?.description || `Line item`,
-          summary: `Merged line item into existing on project (qty ${oldQuantity} -> ${newQuantity})`,
-          projectId,
-        }),
-      ]);
-
-      return serialize({ ...result, model: mergedModel, _merged: true, _newQuantity: newQuantity });
-    }
-  }
-
-  // Simple auto-pricing: when adding a model-backed line with no manual price,
-  // auto-fill the unit price from the model's rate using the project's default
-  // rental period/quantity (the legacy `rate × period × qty` model). The unit
-  // price is the per-period rate; `duration` carries the rental quantity so the
-  // line total is `rate × quantity × rentalQuantity`. Mirrors the legacy branch
-  // in calculateSuggestedPrice. Manual prices (parsed.unitPrice set) are kept.
-  let autoUnitPrice = parsed.unitPrice;
-  let autoDuration = parsed.duration;
-  const autoPricingType = parsed.pricingType;
-  const priceBreakdown: string | null = null;
-  const priceOverridden = false;
-
-  if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
-    // WHY: Adding a line should fill a sensible price from the model's rate so
-    // the quote isn't blank. Falls through to no price if rates are missing.
-    const [model, proj] = await Promise.all([
-      getModelById(parsed.modelId),
-      getProjectById(projectId),
-    ]);
-
-    if (model) {
-      const rentalPeriod = proj?.defaultRentalPeriod ?? "DAILY";
-      const rentalQuantity = proj?.defaultRentalQuantity ?? 1;
-      const rate =
-        rentalPeriod === "WEEKLY"
-          ? (model.weeklyRate ?? model.dailyRate ?? null)
-          : (model.dailyRate ?? null);
-
-      if (rate != null) {
-        autoUnitPrice = Number(rate);
-        autoDuration = rentalQuantity;
-      }
-    }
-  }
-
-  const lineTotal = calculateLineTotal(
-    autoUnitPrice,
-    parsed.quantity,
-    autoDuration,
-    parsed.discount
-  );
-
-  void priceBreakdown;
-  void priceOverridden;
-
-  // Create the line in Convex. The mutation computes sortOrder in-mutation (no
-  // TOCTOU) and expands permanent accessories as child lines atomically.
-  const newLineId = createId();
+  // The FULL add orchestration — availability, merge-dedup, auto-pricing, insert,
+  // accessory expansion, group-suggested-price, recalc, collab feed, and webhook —
+  // runs atomically in one Convex mutation (addLineItemSmartNative). The server keeps
+  // only the parse + actor resolution above and the supplier enrich below. lineTotal
+  // is recomputed in-mutation; the client is never trusted.
   const convex = await getConvexClient();
-  const lineFields = {
-    type: parsed.type,
-    modelId: parsed.modelId || undefined,
-    assetId: parsed.assetId || undefined,
-    bulkAssetId: parsed.bulkAssetId || undefined,
-    description: parsed.description || undefined,
-    quantity: parsed.quantity,
-    unitPrice: autoUnitPrice ?? undefined,
-    pricingType: autoPricingType,
-    duration: autoDuration ?? undefined,
-    discount: parsed.discount ?? undefined,
-    lineTotal: lineTotal ?? undefined,
-    groupName: parsed.groupName || undefined,
-    notes: parsed.notes || undefined,
-    isOptional: parsed.isOptional,
-    showSubhireOnDocs: parsed.showSubhireOnDocs,
-    supplierId: parsed.supplierId || undefined,
-    subhireOrderNumber: parsed.subhireOrderNumber || undefined,
-    categoryId: parsed.categoryId || undefined,
-    groupId: parsed.groupId || undefined,
-  };
-  if (nativeLineItemWrites()) {
-    // Native: atomic insert + accessory expansion (the shared expandAccessoryChildLines
-    // helper, same as createLineItem) + CREATE audit. The server pre-check above already
-    // gated availability identically; the mutation re-checks belt-and-braces, so map any
-    // ConvexError back to the rich UserFacingError toast if it ever fires.
-    try {
-      await convex.mutation(api.lineItemWrites.addNative, {
-        id: newLineId,
-        organizationId,
-        projectId,
-        fields: lineFields,
-        includeAccessories,
-        allowOverbook,
-        actor: { userId, userName },
-        auditId: createId(),
-        now: Date.now(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-  } else {
-    await convex.mutation(api.projectLineItems.createLineItem, {
-      id: newLineId,
+  let res: { id: string; merged: boolean };
+  try {
+    res = await convex.mutation(api.lineItemWrites.addLineItemSmartNative, {
+      id: createId(),
       organizationId,
       projectId,
-      fields: lineFields,
+      fields: {
+        type: parsed.type,
+        modelId: parsed.modelId || undefined,
+        assetId: parsed.assetId || undefined,
+        bulkAssetId: parsed.bulkAssetId || undefined,
+        description: parsed.description || undefined,
+        quantity: parsed.quantity,
+        unitPrice: parsed.unitPrice ?? undefined,
+        pricingType: parsed.pricingType,
+        duration: parsed.duration ?? undefined,
+        discount: parsed.discount ?? undefined,
+        groupName: parsed.groupName || undefined,
+        notes: parsed.notes || undefined,
+        isOptional: parsed.isOptional,
+        showSubhireOnDocs: parsed.showSubhireOnDocs,
+        supplierId: parsed.supplierId || undefined,
+        subhireOrderNumber: parsed.subhireOrderNumber || undefined,
+        categoryId: parsed.categoryId || undefined,
+        groupId: parsed.groupId || undefined,
+      },
+      allowOverbook,
+      forceSeparate,
       includeAccessories,
+      actor: { userId, userName },
+      auditId: createId(),
+      // This NEW app image conditionalizes its own collab/webhook tail off on the
+      // native path (below), so the mutation must emit them. The pre-fold app never
+      // passes this, so it doesn't double-emit during the deploy window. Expand-contract.
+      emitSideEffects: true,
       now: Date.now(),
     });
+  } catch (e) {
+    throw mapNativeWriteError(e);
   }
 
-  const result = (await readBackLine(newLineId))!;
+  const result = (await readBackLine(res.id))!;
 
-  // Recalculate group suggested price if item was added to a group
-  if (result.groupId) {
-    const suggested = await calculateSuggestedPrice(result.groupId);
-    const convex = await getConvexClient();
-    await convex.mutation(api.projectGroups.update, {
-      id: result.groupId,
-      patch: { suggestedPrice: suggested, updatedAt: Date.now() },
-    });
+  // Non-money tail (supplier enrich only). The money orchestration + CREATE/UPDATE
+  // audit + recalc + collab feed ("line_item_added") + webhook ("line_item.added")
+  // now all commit atomically inside addLineItemSmartNative.
+  const supplier = result.supplierId ? await getSupplierById(result.supplierId).catch(() => null) : null;
+
+  if (res.merged) {
+    return serialize({ ...result, supplier, _merged: true, _newQuantity: result.quantity });
   }
-
-  // Post-write tail in parallel (recalc + best-effort audit + collab + supplier
-  // enrich). Group suggested-price above already settled before recalc.
-  const [, , , supplier] = await Promise.all([
-    // Native path recalcs in-mutation (one round-trip); only the legacy path
-    // needs the separate server-side recalc.
-    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
-    nativeLineItemWrites()
-      ? Promise.resolve()
-      : logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "lineItem",
-      entityId: result.id,
-      entityName: result.description || `Line item`,
-      summary: `Added line item to project`,
-      projectId,
-    }),
-    writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: projectId,
-        action: "line_item_added",
-        summary: `added ${result.description || "a line item"}`,
-        targetType: "lineItem",
-        targetId: result.id,
-      },
-    ),
-    // Best-effort enrich: a decorative supplier-read failure must not abort an
-    // already-committed write (would risk a duplicate add on retry) — recalc is
-    // the only rejection path in this wave.
-    result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
-  ]);
-
-  // Fired only after the line item committed. Best-effort: never blocks the write.
-  void emitWebhookEvent(organizationId, "line_item.added", {
-    projectId,
-    lineItemId: result.id,
-    modelId: result.modelId ?? null,
-    quantity: result.quantity ?? null,
-    type: result.type ?? null,
-    description: result.description ?? null,
-  });
-
   return serialize({ ...result, supplier });
 }
 
@@ -773,73 +315,31 @@ export async function updateLineItem(
   if (parsed.supplierId !== undefined) setStr("supplierId", parsed.supplierId);
 
   const patchConvex = await getConvexClient();
-  if (nativeLineItemWrites()) {
-    // Native: RBAC + patch/clear + UPDATE audit atomic. The availability re-check +
-    // stale guard above stay server-side; recalc + collab stay below (unchanged).
-    try {
-      await patchConvex.mutation(api.lineItemWrites.patchNative, {
-        id,
-        orgId: organizationId,
-        set,
-        clear,
-        entityName: parsed.description || "Line item",
-        allowOverbook,
-        actor: { userId, userName },
-        auditId: createId(),
-        // This NEW app image conditionalizes its own collab tail off on the native
-        // path (below), so the mutation must emit it. The pre-fold app never passes
-        // this, so it doesn't double-emit during the deploy window. Expand-contract.
-        emitSideEffects: true,
-        now: Date.now(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-  } else {
-    await patchConvex.mutation(api.projectLineItems.patchLineItem, { id, set, clear });
+  // RBAC + patch/clear + UPDATE audit atomic. The availability re-check + stale guard
+  // above stay server-side; recalc + collab feed fold into the mutation.
+  try {
+    await patchConvex.mutation(api.lineItemWrites.patchNative, {
+      id,
+      orgId: organizationId,
+      set,
+      clear,
+      entityName: parsed.description || "Line item",
+      allowOverbook,
+      actor: { userId, userName },
+      auditId: createId(),
+      emitSideEffects: true,
+      now: Date.now(),
+    });
+  } catch (e) {
+    throw mapNativeWriteError(e);
   }
 
   const result = (await readBackLine(id))!;
 
-  // Post-write tail in parallel (recalc + best-effort audit + collab + supplier enrich).
-  const [, , , supplier] = await Promise.all([
-    // Native path recalcs in-mutation (one round-trip); only the legacy path
-    // needs the separate server-side recalc.
-    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(result.projectId),
-    nativeLineItemWrites()
-      ? Promise.resolve()
-      : logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "UPDATE",
-      entityType: "lineItem",
-      entityId: result.id,
-      entityName: result.description || `Line item`,
-      summary: `Updated line item on project`,
-      projectId: result.projectId,
-    }),
-    // Native path folds the collab feed ("line_item_updated" + quantity/lineTotal
-    // metadata) into patchNative; only the legacy path emits it here.
-    nativeLineItemWrites()
-      ? Promise.resolve()
-      : writeCollabActivityEvent(
-          { organizationId, userId, userName },
-          {
-            entityType: "project",
-            entityId: result.projectId,
-            action: "line_item_updated",
-            summary: `updated ${result.description || "a line item"}`,
-            targetType: "lineItem",
-            targetId: result.id,
-            metadata: {
-              quantity: result.quantity,
-              lineTotal: result.lineTotal != null ? String(result.lineTotal) : null,
-            },
-          },
-        ),
-    result.supplierId ? getSupplierById(result.supplierId).catch(() => null) : Promise.resolve(null),
-  ]);
+  // Supplier enrich (recalc + audit + collab feed all fold into patchNative).
+  const supplier = result.supplierId
+    ? await getSupplierById(result.supplierId).catch(() => null)
+    : null;
   return serialize({ ...result, supplier });
 }
 
@@ -942,51 +442,25 @@ export async function addKitLineItem(
     groupId: groupId || undefined,
     now: Date.now(),
   };
-  if (nativeLineItemWrites()) {
-    // Native: parent + expanded member children (shared core) + CREATE audit atomic.
-    // The server pre-check above already gated kit availability identically; the mutation
-    // re-checks belt-and-braces, so map any ConvexError back to the rich toast.
-    try {
-      await kitConvex.mutation(api.lineItemWrites.addKitNative, {
-        ...kitLineArgs,
-        kitLabel: `${kit.assetTag} - ${kit.name}`,
-        // The mutation folds the "kit_added" collab event, gated on this flag (bulk
-        // callers pass emitActivity=false and log one grouped event instead).
-        emitActivity,
-        actor: { userId, userName },
-        auditId: createId(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-  } else {
-    await kitConvex.mutation(api.projectLineItems.createKitLineItem, kitLineArgs);
+  // Parent + expanded member children (shared core) + CREATE audit atomic. The
+  // server pre-check above already gated kit availability identically; the mutation
+  // re-checks belt-and-braces, so map any ConvexError back to the rich toast. The
+  // "kit_added" collab event (gated on emitActivity) folds into addKitNative too.
+  try {
+    await kitConvex.mutation(api.lineItemWrites.addKitNative, {
+      ...kitLineArgs,
+      kitLabel: `${kit.assetTag} - ${kit.name}`,
+      emitActivity,
+      actor: { userId, userName },
+      auditId: createId(),
+    });
+  } catch (e) {
+    throw mapNativeWriteError(e);
   }
 
   const parentItem = (await readBackLine(parentId))!;
 
-  // Post-write tail in parallel (recalc + best-effort collab feed).
-  const memberCount = kit.serializedItems.length + kit.bulkItems.length;
-  await Promise.all([
-    // Native path recalcs in-mutation; only the legacy path needs the server recalc.
-    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
-    // Native path folds the "kit_added" collab (gated on emitActivity) into
-    // addKitNative; only the legacy path emits it here.
-    nativeLineItemWrites() || !emitActivity
-      ? Promise.resolve()
-      : writeCollabActivityEvent(
-          { organizationId, userId, userName },
-          {
-            entityType: "project",
-            entityId: projectId,
-            action: "kit_added",
-            summary: `added kit "${parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
-            targetType: "lineItem",
-            targetId: parentItem.id,
-          },
-        ),
-  ]);
-
+  // Recalc + collab feed fold into addKitNative.
   return serialize(parentItem);
 }
 
@@ -1033,66 +507,20 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     lineTotal: lineTotal ?? undefined,
   };
   const customConvex = await getConvexClient();
-  if (nativeLineItemWrites()) {
-    // Custom items consume no inventory → fully native (RBAC + insert + audit).
-    await customConvex.mutation(api.lineItemWrites.addCustomNative, {
-      id: customId,
-      organizationId,
-      projectId,
-      fields: customFields,
-      actor: { userId, userName },
-      auditId: createId(),
-      // This NEW app image conditionalizes its own collab tail off on the native
-      // path (below), so the mutation must emit it. The pre-fold app never passes
-      // this, so it doesn't double-emit during the deploy window. Expand-contract.
-      emitSideEffects: true,
-      now: Date.now(),
-    });
-  } else {
-    await customConvex.mutation(api.projectLineItems.createCustomLineItem, {
-      id: customId,
-      organizationId,
-      projectId,
-      fields: customFields,
-      now: Date.now(),
-    });
-  }
+  // Custom items consume no inventory → fully native (RBAC + insert + audit +
+  // recalc + "custom_item_added" collab feed, all atomic in the mutation).
+  await customConvex.mutation(api.lineItemWrites.addCustomNative, {
+    id: customId,
+    organizationId,
+    projectId,
+    fields: customFields,
+    actor: { userId, userName },
+    auditId: createId(),
+    emitSideEffects: true,
+    now: Date.now(),
+  });
 
   const result = (await readBackLine(customId))!;
-
-  // Post-write tail in parallel (recalc + best-effort audit + collab feed).
-  await Promise.all([
-    // Native path recalcs in-mutation; only the legacy path needs the server recalc.
-    nativeLineItemWrites() ? Promise.resolve() : recalculateProjectTotals(projectId),
-    nativeLineItemWrites()
-      ? Promise.resolve()
-      : logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "lineItem",
-      entityId: result.id,
-      entityName: parsed.description,
-      summary: `Added custom item "${parsed.description}" to project`,
-      projectId,
-    }),
-    // Native path folds the "custom_item_added" collab into addCustomNative; only the
-    // legacy path emits it here.
-    nativeLineItemWrites()
-      ? Promise.resolve()
-      : writeCollabActivityEvent(
-          { organizationId, userId, userName },
-          {
-            entityType: "project",
-            entityId: projectId,
-            action: "custom_item_added",
-            summary: `added custom item "${parsed.description}"`,
-            targetType: "lineItem",
-            targetId: result.id,
-          },
-        ),
-  ]);
 
   return serialize(result);
 }
@@ -1111,78 +539,24 @@ export async function removeLineItem(id: string) {
     });
   }
 
-  if (nativeLineItemWrites()) {
-    // Native: the child-removal guard + cascade (children + units) + DELETE audit
-    // + project-totals recalc + collab feed ("line_item_removed") all run atomically
-    // in the mutation (one round-trip).
-    try {
-      await convex.mutation(api.lineItemWrites.removeNative, {
-        id,
-        orgId: organizationId,
-        actor: { userId, userName },
-        auditId: createId(),
-        // This NEW app image conditionalizes its own collab tail off on the native
-        // path (below), so the mutation must emit it. The pre-fold app never passes
-        // this, so it doesn't double-emit during the deploy window. Expand-contract.
-        emitSideEffects: true,
-        now: Date.now(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-    return serialize({ success: true });
-  }
-
-  // Block direct removal of child items (kit members, sub-hire group children,
-  // and accessory children). `childKind` distinguishes the message; all are
-  // removed via their parent, never individually.
-  if (item.isKitChild) {
-    const isAccessory = item.childKind === "ACCESSORY";
-    throw new UserFacingError({
-      code: isAccessory ? "ACCESSORY_CHILD" : "KIT_CHILD",
-      title: "Cannot remove this item",
-      message: isAccessory
-        ? "This item is an accessory of another asset."
-        : "This item is part of a Kit.",
-      hint: isAccessory
-        ? "Remove the parent asset's line to remove it, or detach the accessory from the asset in the catalog."
-        : "Remove the Kit from the project instead — that will remove all its members at once.",
+  // Native: the child-removal guard + cascade (children + units) + DELETE audit
+  // + project-totals recalc + collab feed ("line_item_removed") all run atomically
+  // in the mutation (one round-trip).
+  try {
+    await convex.mutation(api.lineItemWrites.removeNative, {
+      id,
+      orgId: organizationId,
+      actor: { userId, userName },
+      auditId: createId(),
+      // This NEW app image conditionalizes its own collab tail off on the native
+      // path (below), so the mutation must emit it. The pre-fold app never passes
+      // this, so it doesn't double-emit during the deploy window. Expand-contract.
+      emitSideEffects: true,
+      now: Date.now(),
     });
+  } catch (e) {
+    throw mapNativeWriteError(e);
   }
-
-  // Parent line (kit parent OR accessory parent): cascade-delete its children
-  // (+ their units) and the parent (+ its units) atomically in one Convex
-  // mutation.
-  await convex.mutation(api.projectLineItems.removeLineItemCascade, { id });
-
-  // Post-delete tail in parallel — recalc + audit log + collab feed are independent
-  // (logActivity/writeCollabActivityEvent are best-effort and never throw).
-  await Promise.all([
-    recalculateProjectTotals(item.projectId),
-    logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "DELETE",
-      entityType: "lineItem",
-      entityId: id,
-      entityName: item.description || `Line item`,
-      summary: `Removed line item from project`,
-      projectId: item.projectId,
-    }),
-    writeCollabActivityEvent(
-      { organizationId, userId, userName },
-      {
-        entityType: "project",
-        entityId: item.projectId,
-        action: "line_item_removed",
-        summary: `removed ${item.description || "a line item"}`,
-        targetType: "lineItem",
-        targetId: id,
-      },
-    ),
-  ]);
-
   return serialize({ success: true });
 }
 
@@ -1361,19 +735,11 @@ export async function reorderLineItems(
   }
 
   const reorderConvex = await getConvexClient();
-  if (nativeLineItemWrites()) {
-    await reorderConvex.mutation(api.lineItemWrites.reorderNative, {
-      orgId: reorderOrgId,
-      items,
-      now: Date.now(),
-    });
-  } else {
-    await reorderConvex.mutation(api.projectLineItems.reorderLineItems, {
-      orgId: reorderOrgId,
-      items,
-      now: Date.now(),
-    });
-  }
+  await reorderConvex.mutation(api.lineItemWrites.reorderNative, {
+    orgId: reorderOrgId,
+    items,
+    now: Date.now(),
+  });
 
   return serialize({ success: true });
 }
@@ -1697,172 +1063,11 @@ export async function recalculateProjectTotals(projectId: string) {
   const orgId = project.organizationId;
   const convex = await getConvexClient();
 
-  // Fast path: one backend-local recalc mutation instead of the 3 sequential
-  // server→Convex-Cloud waves below (the 6–12s write tail). Same math — the
-  // recalc.ts port is parity-tested against this function (convex/recalc.test.ts).
-  // org default tax lives in Postgres (no Convex mirror writer), passed in.
-  if (nativeRecalc()) {
-    // orgDefaultTaxRate is resolved inside the mutation from orgSettings (source of
-    // truth) — the client no longer supplies it (a spoofable money-affecting value).
-    await convex.mutation(api.lineItemWrites.recalcNative, {
-      projectId,
-      orgId,
-      now: Date.now(),
-    });
-    return;
-  }
-  // EVERY add/edit/delete runs this. All six reads are independent → ONE parallel
-  // wave (was ~5 SEQUENTIAL round-trips: groups/lines → services → assignments →
-  // subHires → a conditional org-tax read). This is the common write-latency tail.
-  const needsOrgTax = project.taxRate == null;
-  const [groups, projectLines, allOrgServices, assignments, allSubHires, orgDefaultTaxRate] = await Promise.all([
-    convex.query(api.projectGroups.listByProject, { projectId, orgId }),
-    convex.query(api.projectLineItems.listByProject, { projectId, orgId }),
-    getProjectServicesByOrg(orgId),
-    getAssignmentsByProject(projectId, orgId),
-    getSubHiresByProject(projectId, orgId),
-    needsOrgTax ? orgDefaultTaxRateFor(orgId) : Promise.resolve(null),
-  ]);
-
-  // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
-  // custom items placed inside the group. Custom items live outside the
-  // model-rate optimizer, so their lineTotal doesn't roll into the bundle
-  // price — they're "extras on top." Without this addition, a custom item
-  // added to a group is invisible to the project total.
-  const groupRevenue = groups.reduce((sum, g) => {
-    const bundlePrice = g.price != null ? Number(g.price) : 0;
-    // A priced group's flat price covers everything inside it, custom items
-    // included — so they're not added on top. Only an UNPRICED group bills its
-    // custom items on their own (otherwise they'd vanish from the invoice). Kept
-    // byte-for-byte in sync with convex/lib/recalc.ts.
-    const customExtras =
-      bundlePrice > 0
-        ? 0
-        : projectLines
-            .filter(
-              (li) =>
-                li.groupId === g.id &&
-                li.isCustomItem === true &&
-                !li.isOptional &&
-                !li.isKitChild &&
-                li.status !== "CANCELLED",
-            )
-            .reduce((s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
-    return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
-  }, 0);
-
-  // 2. Equipment revenue from standalone (ungrouped) line items —
-  // this naturally includes ungrouped custom items via their lineTotal.
-  const standaloneRevenue = projectLines
-    .filter(
-      (li) =>
-        li.groupId == null &&
-        !li.isOptional &&
-        !li.isKitChild &&
-        li.status !== "CANCELLED",
-    )
-    .reduce((sum, li) => sum + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
-
-  // 2b. Sub-hire line items placed INTO a project group. A sub-hire carries its
-  // OWN client charge, independent of the host group's bundle price — but the
-  // group revenue in (1) only counts isCustomItem extras (and a priced group
-  // zeroes them entirely), so a grouped sub-hire's charge would silently vanish.
-  // Count each grouped sub-hire line's charge individually, mirroring how the
-  // SAME line bills when ungrouped in (2). Kit-style children (isKitChild) are
-  // excluded to avoid double-counting against their group parent's charge — the
-  // identical exclusion (2) applies to ungrouped sub-hire groups. Kept
-  // byte-for-byte in sync with convex/lib/recalc.ts.
-  const subHireGroupedRevenue = projectLines
-    .filter(
-      (li) =>
-        li.groupId != null &&
-        li.subHireId != null &&
-        !li.isOptional &&
-        !li.isKitChild &&
-        li.status !== "CANCELLED",
-    )
-    .reduce((sum, li) => sum + (li.lineTotal != null ? Number(li.lineTotal) : 0), 0);
-
-  const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue + subHireGroupedRevenue);
-
-  // 3. Service financials. project_service is Convex-only — read the org's
-  // services and filter to this project's non-CANCELLED rows in JS (replaces the
-  // Prisma findMany by projectId + status != CANCELLED).
-  const services = allOrgServices.filter(
-    (s) => s.projectId === projectId && s.status !== "CANCELLED",
-  );
-
-  // costTotal = what it costs us (all services)
-  const serviceCostTotal = roundCurrency(
-    services.reduce((sum, s) => sum + (s.costTotal != null ? Number(s.costTotal) : 0), 0)
-  );
-
-  // serviceRevenue = what we charge the client (only billable services shown on documents)
-  const serviceRevenue = roundCurrency(
-    services
-      .filter((s) => s.showOnDocuments === true)
-      .reduce((sum, s) => sum + (s.lineTotal != null ? Number(s.lineTotal) : 0), 0)
-  );
-
-  // 4. Labour costs from crew assignments (read from Convex — dual-written;
-  // fetched in the parallel wave above).
-  const labourCostTotal = roundCurrency(
-    assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
-  );
-
-  // 5. Sub-hire costs (what we pay suppliers) — sub-hires are dual-written; read
-  // from Convex and filter out CANCELLED/DRAFT in JS.
-  const subHires = allSubHires.filter(
-    (sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT",
-  );
-
-  const subHireCostTotal = roundCurrency(
-    subHires.reduce((sum, sh) => sum + (sh.totalCost != null ? Number(sh.totalCost) : 0), 0)
-  );
-
-  // 6. Calculate totals (equipment + billable services)
-  const subtotal = roundCurrency(equipmentRevenue + serviceRevenue);
-  const discountPercent = project.discountPercent != null ? Number(project.discountPercent) : 0;
-  const discountAmount = roundCurrency(subtotal * (discountPercent / 100));
-  const taxableAmount = roundCurrency(subtotal - discountAmount);
-
-  // Tax rate: project override → org default → 10% (org default fetched in the
-  // parallel wave above, only when the project has no override).
-  let taxRate = 10;
-  if (project.taxRate != null) {
-    taxRate = Number(project.taxRate);
-  } else if (orgDefaultTaxRate != null) {
-    taxRate = Number(orgDefaultTaxRate);
-  }
-
-  const taxAmount = roundCurrency(taxableAmount * (taxRate / 100));
-  const total = roundCurrency(taxableAmount + taxAmount);
-  const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
-
-  // project is Convex-only — patch the recomputed totals directly. (The prior
-  // Prisma update + mirror left the Convex totals stale when the mirror was a
-  // no-op; this is now the single source of truth.)
-  await convex.mutation(api.projects.patchProject, {
-    id: projectId,
-    set: {
-      equipmentRevenue,
-      serviceCostTotal,
-      labourCostTotal,
-      subHireCostTotal,
-      subtotal,
-      discountAmount,
-      taxAmount,
-      total,
-      margin,
-      updatedAt: Date.now(),
-    },
-  });
-
-  // Push the booked revenue down onto the gear that earned it (per-model ROI).
-  // The native path does this inline inside recalcNative off reads it already had;
-  // this slow path pays one extra round-trip for it. Flipping NATIVE_RECALC changes
-  // latency, never the numbers. See convex/lib/allocation.ts.
-  await convex.mutation(api.revenueAllocation.recomputeForProject, {
+  // One backend-local recalc mutation (the 6–12s write tail collapsed to one
+  // round-trip). orgDefaultTaxRate is resolved inside the mutation from orgSettings
+  // (source of truth) — the client no longer supplies it (a spoofable, money-affecting
+  // value). recalc.ts is parity-tested (convex/recalc.test.ts).
+  await convex.mutation(api.lineItemWrites.recalcNative, {
     projectId,
     orgId,
     now: Date.now(),

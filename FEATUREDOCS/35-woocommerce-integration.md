@@ -75,8 +75,9 @@ Location meta key configured?
 
 | File | Purpose |
 |------|---------|
-| `prisma/schema.prisma` | `WooCommerceIntegration`, `WooCommerceOrderLog`, `WooOrderLogStatus` enum, `Model.sku` |
-| `src/server/woocommerce.ts` | Server actions + `processWooCommerceOrder` background processor |
+| `convex/schema.ts` | `wooCommerceIntegrations`, `wooCommerceOrderLogs` tables, `Model.sku` field (moved here from Prisma in the Convex-native domain migration; only a vestigial `WooOrderLogStatus` enum remains in `prisma/schema.prisma`) |
+| `convex/wooCommerceIntegrations.ts`, `convex/wooCommerceOrderLogs.ts`, `convex/wooCommerceActions.ts`, `convex/wooCommerceInternal.ts` | Convex queries/mutations/actions backing the integration + order log |
+| `src/server/woocommerce.ts` | Server actions (still `"use server"`, reading/writing via the Convex client above) + `processWooCommerceOrder` background processor |
 | `src/lib/woocommerce-utils.ts` | `verifyWebhookSignature` (HMAC-SHA256), `flexibleDateParse` (multi-format) |
 | `src/lib/validations/woocommerce.ts` | Zod schema for settings form |
 | `src/app/api/integrations/woocommerce/webhook/route.ts` | POST webhook endpoint (public, in middleware allowlist) |

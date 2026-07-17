@@ -20,26 +20,30 @@ Containers are **not backed by kits** — they are purely a `prepContainer` stri
 - Auto-deployed when all contents are deployed, auto-returned when all contents are returned
 
 ### Container Sources
-1. **Case category assets** — Assets from the org's configured case category (`prepKitCategoryId` in org settings). Searched via `searchContainerAssets()` in `src/server/categories.ts`. Dropdown shows asset tag alongside the name.
+1. **Case category assets** — Assets from the org's configured case category (`prepKitCategoryId` in org settings). Searched via the `containerAssetSearch` query in `convex/categories.ts`. Dropdown shows asset tag alongside the name.
 2. **Custom names** — Users can type any name in the creatable combobox to create ad-hoc container names.
 3. **Existing containers** — Any `prepContainer` value already set on project line items appears in the dropdown.
 
 ## Server Actions
 
-### `searchContainerAssets(query)` — `src/server/categories.ts`
+Container operations are now browser-direct Convex mutations (see
+[54-convex-data-layer](./54-convex-data-layer.md)), called via
+`src/hooks/use-warehouse-writes.ts`.
+
+### `containerAssetSearch(query)` — `convex/categories.ts`
 Searches assets in the configured case category tree (BFS from `prepKitCategoryId`). Returns `{ value, label, assetId, assetTag, modelId }[]` for the combobox. Shows asset tag in labels. Supports searching by asset tag, custom name, or model name. Limited to 20 results.
 
-### `clearPrepContainer(projectId, containerName)` — `src/server/warehouse.ts`
+### `clearPrepContainer(projectId, containerName)` — `convex/warehouseWrites.ts`
 Nulls out `prepContainer` on all line items matching the given container name. Used by the X button on container headers.
 
-### `ensureContainerOnProject(projectId, assetId, modelId, containerName)` — `src/server/warehouse.ts`
+### `ensureContainerOnProject(projectId, assetId, modelId, containerName)` — `convex/warehouseWrites.ts`
 Adds a container asset to the project as a line item with `isContainerLineItem: true` if not already present. Called automatically when prepping the first item into a container asset. The container line item gets `prepContainer` set to its own container name and `prepStatus: PACKED`.
 
-### `syncContainerStatus(projectId, containerName)` — `src/server/warehouse.ts`
+### `syncContainersBatch(projectId, containerNames)` — `convex/warehouseWrites.ts`
 Checks if all non-container items in a container are deployed or returned, and auto-updates the container line item's status accordingly:
 - All deployed → container auto-deployed (status: `CHECKED_OUT`, asset status: `CHECKED_OUT`)
 - All returned → container auto-returned (status: `RETURNED`, asset status: `AVAILABLE`)
-Called after every `checkOutItems` and `checkInItems` operation.
+Called after every checkout/checkin operation. (The old singular `syncContainerStatus` was dropped — no live caller — in favour of the batched version.)
 
 ### Batched prep (`prepItemsBatch`)
 Bulk prep flows ("Prep Selected", finish-check-queue direct prep, asset-picker
@@ -54,9 +58,11 @@ into one entry per unit (a bulk-no-check line of qty 3 → three `{quantity:1}`
 entries) so the server replays the identical `prepUnit` calls. The blocking-comment
 gate is read once (project summary + line groups) instead of per item; a
 project/line/group blocker fails the whole (atomic) batch, matching the old loop's
-throw-on-first-blocked behaviour. Parity with the per-item loop is proven in
-`src/server/warehouse-prep.int.test.ts` ("prepItemsBatch — parity …"). See
-`docs/designs/bulk-operations-batching.md` (Wave 1a).
+throw-on-first-blocked behaviour. Parity with the per-item loop was originally proven in
+`src/server/warehouse-prep.int.test.ts` ("prepItemsBatch — parity …"); that Prisma-backed
+int test was deleted in the Phase 3 Convex-native decommission (dropped domain tables) —
+no direct Convex-side parity test currently covers `checkRecordOps.prepItems`. See
+`../docs/designs/archive/bulk-operations-batching.md` (Wave 1a).
 
 ### Modified Actions
 - **`prepItemDirect()`** — Accepts optional `prepContainer` parameter (6th arg). Sets `prepContainer` on the line item during prep. Still used for genuine single-item preps (drag-drop, single scan); bulk loops now use `prepItemsBatch`.

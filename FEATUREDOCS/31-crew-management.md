@@ -64,7 +64,14 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 
 ## Server Actions
 
-### `src/server/crew.ts` (Phase 1)
+Crew domain data lives in Convex now (this was a Prisma→Convex migration; see
+[54-convex-data-layer](./54-convex-data-layer.md)). The tables below list the
+original server-action names/permissions for reference; the current Convex
+files are noted per phase. Reads are `query`s (typically `list`/`getById`-style
+exports), writes are `mutation`s — names don't map 1:1 to the old function
+names below.
+
+### `src/server/crew.ts` (Phase 1) → `convex/crew.ts` + `convex/crewWrites.ts` (also `convex/crewMembers.ts`, `convex/crewRoles.ts`, `convex/crewSkills.ts`)
 | Function | Permission | Description |
 |----------|-----------|-------------|
 | `getCrewMembers(params)` | crew.read | Paginated list with search, filters, sorting |
@@ -88,7 +95,7 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 | `updateCrewMemberImage(id, image)` | crew.update | Update profile picture URL |
 | `linkCrewMemberToUser(id, userId)` | crew.update | Link/unlink crew to platform user |
 
-### `src/server/crew-assignments.ts` (Phase 2)
+### `src/server/crew-assignments.ts` (Phase 2) → `convex/crewAssignments.ts` + `convex/crewAssignmentsWrites.ts` (shifts: `convex/crewShifts.ts`)
 | Function | Permission | Description |
 |----------|-----------|-------------|
 | `getProjectCrew(projectId)` | crew.read | All assignments for a project |
@@ -102,7 +109,7 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 | `getProjectLabourCost(projectId)` | crew.read | Aggregate estimated cost |
 | `getCrewMembersForAssignment(projectId)` | crew.read | Available crew for picker |
 
-### `src/server/crew-availability.ts` (Phase 3)
+### `src/server/crew-availability.ts` (Phase 3) → `convex/crewAvailability.ts` + `convex/crewAvailabilities.ts` + `convex/crewAvailabilityWrites.ts`
 | Function | Permission | Description |
 |----------|-----------|-------------|
 | `getCrewAvailability(crewMemberId, start?, end?)` | crew.read | Availability blocks for a member |
@@ -189,7 +196,9 @@ create/update permission gates.
 - **Call Sheet** button in crew tab and Documents dropdown
 
 ## Call Sheet PDF
-- `src/lib/pdf/call-sheet-pdf.tsx` — landscape A4 document
+- `generateCallSheetPdf()` in `src/lib/pdfme/generate-pdf.ts`, using the pdfme templates
+  `src/lib/pdfme/templates/call-sheet.ts` / `call-sheet-services.ts` and plugin
+  `src/lib/pdfme/plugins/gearflow-call-sheet-info.ts` (see [13-pdfs](./13-pdfs.md)) — landscape A4 document
 - API route: `GET /api/documents/call-sheet/[projectId]?date=YYYY-MM-DD`
 - Lists all non-cancelled crew sorted by call time then role
 - Includes: project info, location, site contact, crew table (name, role, phase, call/wrap times, phone, notes)
@@ -310,7 +319,7 @@ exception is `getMyCrewMemberId`, which uses `getOrgContext()` so a
 user can always look up their own crew profile regardless of crew
 read permission.
 
-## Crew Dashboard (`src/server/crew-dashboard.ts`)
+## Crew Dashboard (`convex/crewDashboard.ts`)
 - Manager/admin/owner only — users with `crew.update` permission see the dashboard; others see the crew table
 - **Stats**: active crew, assignments, pending offers, submitted timesheets, hours (7d), expiring certs
 - **Four list boxes** (pending timesheets, active assignments, upcoming shifts, pending offers) use a shared `DashboardListCard`: fixed header (title + count chip + optional action) over a **height-capped, internally scrolling body** (`max-h-[19rem] overflow-y-auto`). Caps each box so a long list (e.g. lots of pending offers) can't grow to swallow the page and hide its siblings; all four stay balanced. Error / loading / empty states handled inside the card.

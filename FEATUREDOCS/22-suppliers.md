@@ -3,7 +3,7 @@
 ## Suppliers
 - **Routes**: `/suppliers` (list), `/suppliers/[id]` (detail), `/suppliers/[id]/edit`, `/suppliers/new`, `/suppliers/[id]/orders/new`
 - **Fields**: name (required), contactName, email, phone, website, address, notes, accountNumber, paymentTerms, defaultLeadTime, tags, isActive
-- **Server actions**: `src/server/suppliers.ts` — `getSuppliers()`, `getSuppliersPaginated()`, `getSupplierById()`, `getSupplierAssets()`, `getSupplierSubhires()`, `createSupplier()`, `updateSupplier()`, `deleteSupplier()`
+- **Convex functions**: `convex/suppliers.ts` (reads: `list`, `getById`, `counts`, `detail`, `assetsPage`, `subhiresPage`; mutations: `create`, `update`, `remove`) + `convex/suppliersWrites.ts` (browser-direct: `createNative`, `updateNative`, `removeNative`)
 - **Permissions**: `"supplier"` resource with full CRUD. Owner/admin: all, manager: create/read/update, member/viewer: read
 - **Sidebar**: Between Clients and Locations with `Truck` icon
 - **Search**: Global search matches name, contactName, accountNumber, email, tags. In PAGE_COMMANDS with `searchType: "supplier"`
@@ -37,7 +37,7 @@
 ## Supplier Orders (Purchase Orders)
 - **Models**: `SupplierOrder` and `SupplierOrderItem`
 - **Enums**: `SupplierOrderType` (PURCHASE, SUBHIRE, REPAIR, OTHER), `SupplierOrderStatus` (DRAFT, SUBMITTED, CONFIRMED, PARTIAL, RECEIVED, CANCELLED)
-- **Server actions**: `src/server/supplier-orders.ts` — full CRUD for orders and items
+- **Convex functions**: `convex/supplierOrders.ts` (reads: `list`, `getById`, `listBySupplier`; mutations: `create`, `update`, `remove`) + `convex/supplierOrdersWrites.ts` (browser-direct: `createNative`) — full CRUD for orders and items
 - **Order fields**: orderNumber (unique per org), type, status, dates, financials (Decimal), supplierId, projectId, createdById, notes
 - **Order items**: description, quantity, unitPrice, lineTotal (auto-calculated), modelId, assetId, notes, sortOrder
 - **Auto-calculations**: `recalculateOrderTotals()` sums item lineTotals, applies 10% GST

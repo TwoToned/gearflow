@@ -52,6 +52,10 @@ const base = {
 describe("testTagRecordsWrites.createNative", () => {
   test("PASS: record + subtests + asset scalars + status by due date", async () => {
     const t = makeT(); await seed(t); await seedAsset(t);
+    // testProfile the args reference — createNative now org-validates the testProfileId FK.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testProfiles", { id: "prof1", organizationId: ORG, name: "Standard", visualChecks: {}, electricalTests: {}, thresholds: {} });
+    });
     const res = await t.withIdentity(asUser).mutation(api.testTagRecordsWrites.createNative, {
       ...base, nextDueDate: NOW + 60 * DAY, testProfileId: "prof1", outletCount: 4,
       subTests: [

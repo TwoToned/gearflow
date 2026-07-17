@@ -9,6 +9,7 @@ import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
 import { assertFinite } from "./lib/moneyGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -341,6 +342,14 @@ export const createNative = mutation({
       });
     }
 
+    // Org-validate every client-supplied FK (by_cuid is GLOBAL — the referenced row
+    // could belong to another org; the service-token read path never re-checks).
+    await assertRefInOrg(ctx, "models", fields.modelId, fields.organizationId);
+    if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
+    if (fields.supplierId) await assertRefInOrg(ctx, "suppliers", fields.supplierId, fields.organizationId);
+    if (fields.parentAssetId) await assertRefInOrg(ctx, "assets", fields.parentAssetId, fields.organizationId);
+    if (fields.kitId) await assertRefInOrg(ctx, "kits", fields.kitId, fields.organizationId);
+
     await ctx.db.insert("assets", fields);
     await bumpAssetCounters(ctx, fields.organizationId, null, fields);
     const createNow = fields.createdAt ?? fields.updatedAt ?? 0;
@@ -413,6 +422,14 @@ export const updateNative = mutation({
         });
       }
     }
+
+    // Org-validate any client-supplied FK present in the sanitized `set` (by_cuid is
+    // GLOBAL — a member of org A must not point their asset at org B's model/location/…).
+    if (typeof set.modelId === "string") await assertRefInOrg(ctx, "models", set.modelId, orgId);
+    if (typeof set.locationId === "string") await assertRefInOrg(ctx, "locations", set.locationId, orgId);
+    if (typeof set.supplierId === "string") await assertRefInOrg(ctx, "suppliers", set.supplierId, orgId);
+    if (typeof set.parentAssetId === "string") await assertRefInOrg(ctx, "assets", set.parentAssetId, orgId);
+    if (typeof set.kitId === "string") await assertRefInOrg(ctx, "kits", set.kitId, orgId);
 
     // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
     // mutation `now` (the client `set` omits it; parity with the old updateAsset).
@@ -518,6 +535,10 @@ export const createManyNative = mutation({
       const dup = await ctx.db.query("assets")
         .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", a.assetTag)).first();
       if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag, message: `Asset tag "${a.assetTag}" already exists.` });
+      // Org-validate the client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+      await assertRefInOrg(ctx, "models", a.modelId, orgId);
+      if (a.locationId) await assertRefInOrg(ctx, "locations", a.locationId, orgId);
+      if (a.supplierId) await assertRefInOrg(ctx, "suppliers", a.supplierId, orgId);
       const { auditId: _auditId, ...assetFields } = a;
       const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
       await ctx.db.insert("assets", fields);
@@ -555,6 +576,9 @@ export const bulkUpdateNative = mutation({
     await requireOrgPermission(ctx, orgId, "asset", "update");
     if (ids.length === 0) throw new ConvexError("Nothing selected");
     if (Object.keys(set).length === 0 && clear.length === 0) throw new ConvexError("No changes specified");
+
+    // Org-validate the one client-supplied FK in the shared set (by_cuid is GLOBAL).
+    if (set.locationId) await assertRefInOrg(ctx, "locations", set.locationId, orgId);
 
     const patch = { ...set, updatedAt: now };
     let count = 0;

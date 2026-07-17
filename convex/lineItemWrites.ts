@@ -869,6 +869,16 @@ export const addNative = mutation({
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
 
+    // Org-validate every referenced FK (by_cuid is global — the row could be another
+    // org's; the service-token read path resolves these with no org re-check). Same
+    // block as addLineItemSmartNative, plus supplierId (validated by neither add path before).
+    if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
+    if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
+    if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);
+    if (fields.categoryId) await assertRefInOrg(ctx, "projectCategories", fields.categoryId, organizationId);
+    if (fields.supplierId) await assertRefInOrg(ctx, "suppliers", fields.supplierId, organizationId);
+
     // lineTotal is a DERIVED value (unitPrice × quantity × duration − discount) —
     // assertLineMoneyFields only bounds it, it doesn't verify it matches its inputs. A
     // browser-direct caller could otherwise send `unitPrice: 1` (passes the bound check)
@@ -1306,6 +1316,7 @@ export const addLineItemSmartNative = mutation({
     if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
     if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);
     if (fields.categoryId) await assertRefInOrg(ctx, "projectCategories", fields.categoryId, organizationId);
+    if (fields.supplierId) await assertRefInOrg(ctx, "suppliers", fields.supplierId, organizationId);
 
     // ── Availability / double-booking (copied verbatim from addNative) ─────────
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {

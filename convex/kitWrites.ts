@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { releaseKitMembers, getKitGuarded, assignAssetToKit, releaseAsset, getAssetDoc } from "./kits";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -108,6 +109,10 @@ export const createNative = mutation({
     const dupId = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dupId) throw new ConvexError("Kit already exists");
 
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    if (fields.categoryId) await assertRefInOrg(ctx, "categories", fields.categoryId, fields.organizationId);
+    if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
+
     await ctx.db.insert("kits", fields);
     // Advance the asset-tag counter (parity — createKit reserved 1 after insert).
     await reserveAssetTagCounter(ctx, fields.organizationId, 1, fields.createdAt ?? fields.updatedAt ?? 0);
@@ -165,6 +170,10 @@ export const updateNative = mutation({
         });
       }
     }
+
+    // Org-validate client-supplied FKs in the patch (by_cuid is GLOBAL — cross-org refs leak).
+    if (patch.categoryId) await assertRefInOrg(ctx, "categories", patch.categoryId, orgId);
+    if (patch.locationId) await assertRefInOrg(ctx, "locations", patch.locationId, orgId);
 
     await ctx.db.patch(doc._id, sanitizeClientSet(patch)); // strip organizationId/id — no cross-tenant reassign
 

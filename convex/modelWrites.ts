@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -151,6 +152,10 @@ export const createNative = mutation({
     const dup = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Model already exists");
 
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.categoryId) await assertRefInOrg(ctx, "categories", a.categoryId, a.orgId);
+    if (a.defaultTestProfileId) await assertRefInOrg(ctx, "testProfiles", a.defaultTestProfileId, a.orgId);
+
     await ctx.db.insert("models", { id: a.id, organizationId: a.orgId, ...toDoc(a), createdAt: a.now, updatedAt: a.now });
 
     if (a.requiresTestAndTag) await backfillTestTagAssetsCore(ctx, a.orgId, a.now);
@@ -175,6 +180,10 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.categoryId) await assertRefInOrg(ctx, "categories", a.categoryId, a.orgId);
+    if (a.defaultTestProfileId) await assertRefInOrg(ctx, "testProfiles", a.defaultTestProfileId, a.orgId);
 
     await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
 

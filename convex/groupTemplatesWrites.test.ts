@@ -222,6 +222,9 @@ describe("groupTemplatesWrites.applyNative", () => {
       await ctx.db.insert("groupTemplateItems", { id: "it2", organizationId: ORG, templateId: "tpl1", kitId: "k1", quantity: 1, sortOrder: 1 });
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Speaker", dailyRate: 100, weeklyRate: 500 });
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "K1", name: "Rack", status: opts.kitStatus ?? "AVAILABLE" });
+      // projectCategory the args reference (categoryId "cat1") — applyNative now
+      // org-validates that FK, so it must exist in the org/project.
+      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Cat", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED",
         defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999,

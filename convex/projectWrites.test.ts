@@ -220,6 +220,19 @@ describe("projectWrites.updateNative", () => {
       expect(p?.isTemplate).toBe(false); // no in-place template flip
     });
   });
+  test("rejects an out-of-bounds money field a browser caller bypassing Zod could forge", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { taxRate: 150, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/tax rate/i);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { discountPercent: Number.NaN, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/discount percent/i);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { depositPaid: -50, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/deposit paid/i);
+  });
 });
 
 describe("projectWrites.createNative", () => {
@@ -265,6 +278,13 @@ describe("projectWrites.createNative", () => {
       expect(p?.margin).toBeUndefined();
       expect(p?.equipmentRevenue).toBeUndefined();
     });
+  });
+  test("rejects an out-of-bounds money field on create", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, invoicedTotal: -1 } as typeof cargs),
+    ).rejects.toThrow(/invoiced total/i);
   });
 });
 
@@ -631,6 +651,23 @@ describe("projectWrites.duplicateNative", () => {
     await seedSource(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/insufficient permissions/i);
   });
+  test("ignores a client-forged orgDefaultTaxRate — resolves from orgSettings in-mutation", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
+      // Source project has NO taxRate of its own, so the copy falls back to the org default.
+      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, defaultTaxRate: 7 });
+    });
+    // A malicious/stale client sends 99 — must be ignored in favor of the orgSettings row (7).
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, { ...dupArgs, orgDefaultTaxRate: 99 });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "dup1")).first();
+      expect(p?.taxRate).toBeUndefined(); // no scalar copied (source had none)
+      expect(p?.taxAmount).toBe(7); // 100 * 7% — NOT 100 * 99%
+    });
+  });
 });
 
 describe("projectWrites.saveAsTemplateNative", () => {
@@ -691,6 +728,20 @@ describe("projectWrites.saveAsTemplateNative", () => {
       await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/already exists/i);
+  });
+
+  test("ignores a client-forged orgDefaultTaxRate — resolves from orgSettings in-mutation", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", { organizationId: ORG, defaultTaxRate: 7 });
+    });
+    // A malicious/stale client sends 99 — must be ignored in favor of the orgSettings row (7).
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, { ...tplArgs, orgDefaultTaxRate: 99 });
+    await t.run(async (ctx) => {
+      const tpl = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "tpl1")).first();
+      expect(tpl?.taxAmount).toBe(2.8); // 40 (equipmentRevenue) * 7% — NOT * 99%
+    });
   });
 
   test("a viewer is denied (project:create)", async () => {

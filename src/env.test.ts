@@ -49,7 +49,7 @@ describe("env validation", () => {
     const { env } = await loadEnv({});
     expect(env.PASSKEY_RP_ID).toBe("localhost");
     expect(env.PLATFORM_NAME).toBe("RVLT Flow");
-    expect(env.EMAIL_FROM).toBe("RVLT Flow <noreply@gearflow.app>");
+    expect(env.EMAIL_FROM).toBe("RVLT Flow <flow@rvlt.app>");
     expect(env.UPLOAD_MAX_SIZE_MB).toBe(50);
   });
 

@@ -36,7 +36,7 @@ const serverEnvSchema = z.object({
 
   // Email (optional — logs to console if unset)
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default("RVLT Flow <noreply@gearflow.app>"),
+  EMAIL_FROM: z.string().default("RVLT Flow <flow@rvlt.app>"),
 
   // (File storage moved to Convex `_storage`; the S3/Garage env vars were removed.)
 

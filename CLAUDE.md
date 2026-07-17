@@ -99,7 +99,7 @@ npx prisma migrate dev   # Apply all migrations + generate client
 
 **Email (Resend):**
 - `RESEND_API_KEY` — Resend API key (dev logs to console if unset)
-- `EMAIL_FROM` — Sender address (default: `RVLT Flow <noreply@gearflow.app>`)
+- `EMAIL_FROM` — Sender address (default: `RVLT Flow <flow@rvlt.app>`)
 
 **File Storage (S3):**
 - `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`

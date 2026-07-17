@@ -57,7 +57,7 @@ export const deliver = internalAction({
 
     try {
       const apiKey = process.env.RESEND_API_KEY;
-      const from = process.env.EMAIL_FROM ?? "RVLT Flow <noreply@gearflow.app>";
+      const from = process.env.EMAIL_FROM ?? "RVLT Flow <flow@rvlt.app>";
       if (!apiKey || apiKey === "re_xxxxxxxxxxxxxxxxxxxx") {
         // No key on the deployment — mock-log and RECORD delivery (matches the
         // dev-mock in src/lib/email.ts, which returns success without sending).

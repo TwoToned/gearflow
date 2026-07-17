@@ -53,11 +53,13 @@ single live localStorage state per table.
 - **Config shape:** `SavedViewConfig` in `src/lib/saved-views.ts` — `{ filters, sortBy,
   sortOrder, columnVisibility, pageSize }`. Search text is intentionally NOT captured
   (it's an ephemeral lookup, not part of a reusable view).
-- **Server actions:** `src/server/saved-views.ts` — `getSavedViews(tableId)`,
-  `createSavedView`, `updateSavedView`, `deleteSavedView`, `setDefaultSavedView(tableId, id|null)`.
-  Personal data, so they use `getOrgContext()` (auth + org) not `requirePermission`; every
-  query is scoped to BOTH `organizationId` AND `userId`. At most one default per
-  `(user, tableId)`, enforced in the action (a new default unsets the prior one in a txn).
+- **Reads + writes:** `convex/savedTableViews.ts` (`list`, `getById`) and browser-direct
+  mutations in `convex/savedTableViewsWrites.ts` (`createNative`, `updateNative`,
+  `removeNative`, `setDefaultNative`) — the old `src/server/saved-views.ts` server
+  actions (`getSavedViews`, `createSavedView`, `updateSavedView`, `deleteSavedView`,
+  `setDefaultSavedView`) are gone. Personal data, so every query/mutation is scoped
+  to BOTH `organizationId` AND `userId`. At most one default per `(user, tableId)`,
+  enforced in the mutation (a new default unsets the prior one).
 - **Hook surface:** `useTablePreferences` returns `currentConfig` (snapshot for "Save current
   view") and `applyConfig(config)` (restore a saved/default view into live state).
 - **UI:** `SavedViewsMenu` (`src/components/ui/saved-views-menu.tsx`) renders in the DataTable
@@ -66,14 +68,15 @@ single live localStorage state per table.
   "Save current view…" (with a "make default" checkbox), per-view star (default toggle) and
   delete, and "Clear view". The **default view auto-applies on first mount** only when the
   table has no active filters, so it never clobbers a deep-linked or in-progress filter set.
-- **Wired on:** all 14 list pages that use `useTablePreferences` (assets, models, clients,
+- **Wired on:** the 12 list pages that use `useTablePreferences` (assets, models, clients,
   crew, locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
-  damage, timesheets, stocktakes).
+  timesheets). Damage and Stocktakes were both removed as features (`chore: remove
+  Damage Capture feature`, `chore: remove Stocktake feature`) and no longer appear.
 
 ## Mobile data-table primitives (mobile-first redesign, Phase 1)
 
 New primitives for rendering tables and dense data on phones without squishing everything
-into cards. Design system: `docs/designs/mobile-data-table-framework.md`.
+into cards. Design system: `docs/designs/archive/mobile-data-table-framework.md`.
 
 - **`StickyTable` (`src/components/ui/sticky-table.tsx`)** — a horizontally-scrollable table
   with a frozen identity column ("Notion-style": the row label stays put while the rest

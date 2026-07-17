@@ -75,15 +75,15 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 |---|---|
 | Framework | **Next.js 16** — App Router, Turbopack |
 | Language | **TypeScript** — strict mode |
-| UI | **Tailwind CSS v4** + **shadcn/ui** (Base UI primitives) |
-| Database | **PostgreSQL** + **Prisma v6** |
+| UI | **Tailwind CSS v4** + **shadcn/ui** (Radix for overlays, Base UI for sidebar/breadcrumb) |
+| Database | **Convex** (sole copy of domain data) + **PostgreSQL/Prisma v7** for Better Auth + activity log |
 | Auth | **Better Auth** — Organizations, 2FA, Passkeys, Admin |
-| State | **React Query** + **React Hook Form** + **Zod** |
-| PDF | **@react-pdf/renderer** |
+| State | **Convex** `useQuery`/`useMutation` (reactive) + **React Hook Form** + **Zod** |
+| PDF | **pdfme** (`@pdfme/generator` + custom plugins) |
 | Storage | **Convex file storage** |
 | Email | **Resend** |
 | PWA | **@ducanh2912/next-pwa** |
-| Maps | **Leaflet** + **React Leaflet** |
+| Maps | **Google Maps** (`@vis.gl/react-google-maps`) |
 
 ---
 
@@ -137,6 +137,13 @@ NEXT_PUBLIC_APP_URL="http://localhost:3000"
 RESEND_API_KEY="re_your_api_key"
 EMAIL_FROM="onboarding@resend.dev"
 
+# ── Maps ──────────────────────────────────────────────────
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="your-google-maps-api-key"
+
+# ── Convex (primary backend for all domain data) ─────────
+CONVEX_DEPLOY_KEY="your-convex-deploy-key"
+NEXT_PUBLIC_CONVEX_URL="https://your-deployment.convex.cloud"
+
 # ── Admin Bootstrap ───────────────────────────────────────
 SITE_ADMIN_REGISTRATION_ENABLED="true"
 SITE_ADMIN_SECRET_TOKEN="pick-a-secret-token"
@@ -144,14 +151,24 @@ SITE_ADMIN_SECRET_TOKEN="pick-a-secret-token"
 
 > **Tip:** Get a free Resend API key at [resend.com](https://resend.com). During development you can use their sandbox domain.
 
-### 4. Set up the database
+### 4. Set up Convex
+
+RVLT Flow uses [Convex](https://convex.dev) as the primary datastore for all
+domain data (assets, projects, warehouse, etc.) — Postgres only holds Better
+Auth and the audit log. Create a Convex project, then push the schema/functions:
+
+```bash
+npx convex dev --once
+```
+
+### 5. Set up Postgres (Better Auth + activity log)
 
 ```bash
 npx prisma migrate deploy
 npx prisma generate
 ```
 
-### 5. Launch
+### 6. Launch
 
 ```bash
 npm run dev
@@ -179,14 +196,15 @@ http://localhost:3000/register/admin?token=pick-a-secret-token
 | `NEXT_PUBLIC_APP_URL` | Public-facing app URL |
 | `RESEND_API_KEY` | API key from [resend.com](https://resend.com) |
 | `EMAIL_FROM` | Sender email address |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Maps API key (Maps JavaScript API + Places API (New)) |
+| `CONVEX_DEPLOY_KEY` | Convex Cloud deploy key |
+| `NEXT_PUBLIC_CONVEX_URL` | Convex deployment URL the app connects to |
 
 ### Optional
 
 | Variable | Description |
 |---|---|
 | `UPLOAD_MAX_SIZE_MB` | Max file upload size (default: `50`) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth login |
-| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Microsoft OAuth login |
 | `PASSKEY_RP_ID` | WebAuthn relying party ID |
 | `PLATFORM_NAME` | Custom platform display name |
 | `SITE_ADMIN_REGISTRATION_ENABLED` | Enable admin registration route (`true` / `false`) |
@@ -209,6 +227,10 @@ npx prisma studio                        # Browse your data in the browser
 ### Project Structure
 
 ```
+convex/                    # Primary backend — domain data, mutations, queries
+├── schema.ts              # Convex table definitions
+└── *.ts / *Writes.ts      # Queries + browser-direct mutations, per domain
+
 src/
 ├── app/
 │   ├── (auth)/            # Login, register, onboarding
@@ -223,13 +245,13 @@ src/
 │   │   ├── clients/       # Client directory
 │   │   ├── suppliers/     # Vendor directory
 │   │   ├── crew/          # Crew management
-│   │   ├── reports/       # Analytics & reporting
 │   │   └── settings/      # Org config & team
 │   └── (admin)/           # Site admin panel
 ├── components/            # React components
 ├── lib/                   # Auth, validation, utilities
-├── server/                # Server actions
-└── generated/             # Prisma client (auto-generated)
+├── server/                # Server actions — permanent carve-outs only
+│                          # (auth, SSO, webhooks, site admin — not domain CRUD)
+└── generated/             # Prisma client (auto-generated, gitignored)
 ```
 
 ---

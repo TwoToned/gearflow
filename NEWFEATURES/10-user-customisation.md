@@ -1,5 +1,16 @@
 # Feature: User Profile Customisation & Additional Auth Methods
 
+> **Partial status check (this cleanup pass):** Section 1 (Profile Pictures —
+> `UserAvatar` component exists at `src/components/ui/user-avatar.tsx`) and
+> Section 2 (Passkeys — `@better-auth/passkey` is wired server+client in
+> `src/lib/auth.ts`/`auth-client.ts`, with UI on `/account` and `/login`) are
+> **already shipped**. Section 3 (Social Login Providers) is **not** shipped —
+> and re-adding it would directly reverse the deliberate `chore/remove-social-login`
+> decommission from the June 2026 feature-removal sweep
+> (`docs/designs/archive/feature-removal-2026-06.md`). Whether to build social
+> login is a product call, not something this docs-cleanup pass should decide —
+> flagging it here rather than silently deleting or rewriting the spec.
+
 ## Summary
 
 Enhance user profiles with photo uploads and expand authentication options to include passkeys (WebAuthn), social login providers (Google, GitHub, Apple, Microsoft), and improved account management UI. This brings RVLT Flow's user experience up to modern platform standards and gives users flexible, secure ways to authenticate.

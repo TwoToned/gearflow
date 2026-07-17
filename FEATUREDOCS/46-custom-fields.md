@@ -17,7 +17,7 @@ Operator-defined asset attributes. Define fields like rig number, firmware versi
 
 | File | Purpose |
 |------|---------|
-| `src/server/custom-fields.ts` | CRUD server actions for definitions |
+| `convex/customFieldDefinitions.ts` (reads) + `convex/customFieldDefinitionsWrites.ts` (browser-direct `createNative`/`updateNative`/`removeNative` mutations, via `src/hooks/use-custom-fields-writes.ts`) | CRUD for definitions |
 | `src/lib/validations/custom-field.ts` | Zod schemas, value validation per field type |
 | `src/app/(app)/settings/custom-fields/page.tsx` | Definition management UI |
 | `src/components/custom-fields/custom-fields-input.tsx` | Renders definition-driven inputs on a form |

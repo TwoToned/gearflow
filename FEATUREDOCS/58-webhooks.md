@@ -110,5 +110,7 @@ dangerous; nothing there is irreversible.
   race is not.
 - **No replay endpoint.** The delivery log records what happened; re-sending is an
   operator action.
-- Delivery is a Postgres table plus a cron worker, not a queue. If volume demands it,
-  `WebhookDelivery` is already shaped like the queue it would become.
+- Delivery is a Convex table (`webhookDeliveries`) plus a Next.js cron-triggered
+  worker (`src/lib/webhooks/deliver.ts`, driven by `POST /api/cron/webhooks`),
+  not a queue. If volume demands it, `webhookDeliveries` is already shaped like
+  the queue it would become.

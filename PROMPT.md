@@ -1,5 +1,16 @@
 # Claude Code Initial Prompt — RVLT Flow: Asset & Rental Management Platform
 
+> **⚠️ Historical document.** This is the original bootstrap prompt used to
+> start the project — it does not track ongoing changes. The stack, data
+> model, and feature set have moved on substantially since (Convex replaced
+> Postgres/Prisma as the domain datastore, React Query was removed, several
+> features described below as planned/current were later removed in the June
+> 2026 feature-removal sweep). For current architecture, read
+> [`ARCHITECTURE.md`](./ARCHITECTURE.md) and the relevant
+> [`FEATUREDOCS/`](./FEATUREDOCS/) file — treat this file as "what we set out
+> to build," not "what exists today." The Tech Stack section immediately below
+> has been corrected; the rest of the document is left as originally written.
+
 ## Project Overview
 
 Build a full-stack **asset and rental management platform** for companies in the **AV (Audio Visual) and Theatre production industry**. This is a SaaS-style application that will serve as the central source of truth for business operations — housing all assets, equipment information, and project management in one place.
@@ -10,16 +21,19 @@ Build a full-stack **asset and rental management platform** for companies in the
 
 ## Tech Stack
 
-- **Framework:** Next.js 15 (App Router)
+*(corrected to reflect current reality — see the banner above)*
+
+- **Framework:** Next.js 16 (App Router, Turbopack)
 - **Language:** TypeScript (strict mode)
 - **Styling:** Tailwind CSS v4
 - **Authentication:** Better Auth (with the Organization plugin for multi-tenancy)
-- **Database:** PostgreSQL with Prisma ORM
-- **UI Components:** shadcn/ui as the component foundation
-- **State Management:** React Query (TanStack Query) for server state
+- **Database:** Convex — sole copy of all domain data. PostgreSQL/Prisma is
+  scoped to Better Auth + the activity log only.
+- **UI Components:** shadcn/ui — Radix for overlay primitives, Base UI for sidebar/breadcrumb
+- **State Management:** Convex `useQuery`/`useMutation` (reactive, no polling)
 - **Forms:** React Hook Form + Zod validation
-- **File Storage:** Local filesystem initially (abstract for S3/cloud later)
-- **PDF Generation:** For quotes, packing lists, delivery dockets (use @react-pdf/renderer or similar)
+- **File Storage:** S3-compatible (AWS S3 or MinIO) — no local-filesystem path
+- **PDF Generation:** pdfme (`@pdfme/generator` + custom plugins)
 - **Barcode/QR:** Generation and scanning support (use libraries like `react-qr-code` and `html5-qrcode`)
 
 ---

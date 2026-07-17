@@ -41,8 +41,8 @@ npx prisma migrate dev --name <name>  # Create + apply migration
 Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this to bootstrap a new worktree:
 
 ```bash
-# Copy .env from main repo (adjust path if needed)
-cp /Users/jayden/code/ttp-assetmanagement/.env .
+# Copy .env from the main gearflow checkout (adjust path if needed)
+cp /path/to/gearflow/.env .
 
 # Install dependencies
 npm install --legacy-peer-deps
@@ -112,7 +112,14 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
 - `PLATFORM_NAME` — Display name (default: `RVLT Flow`)
-- `ADMIN_REGISTRATION_TOKEN` — Secret token for `/register/admin?token=...`
+- `SITE_ADMIN_SECRET_TOKEN` / `SITE_ADMIN_REGISTRATION_ENABLED` — gate the
+  `/api/admin-register/{verify,promote}` site-admin self-registration routes
+  (`NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED` mirrors the enabled flag client-side)
+
+**Convex (backend):**
+- `CONVEX_DEPLOY_KEY` — Convex Cloud deploy key (CLI pushes, `convex dev`/`convex deploy`)
+- `NEXT_PUBLIC_CONVEX_URL` — Convex deployment URL the app connects to
+- `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` — Better Auth issuer Convex trusts for JWTs
 
 **DB connection hardening (optional, safe defaults):** layered onto the runtime
 `DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
@@ -169,16 +176,17 @@ this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/0
 ### ⚠️ Never regenerate `convex/schema.ts` over itself
 `scripts/generate-convex-schema.cjs` is a **scaffolding** tool, not a source of truth.
 The checked-in schema has diverged on purpose: hand-added `searchIndex`/composite
-indexes the generator never emits, plus (Phase C) Convex tables whose Prisma models
-are already stripped. It currently emits **91 tables against the checked-in 98** —
-running it over the file silently deletes live tables and every search index. To add
-a table: generate into a scratch dir, diff, hand-merge the stanza.
+indexes the generator never emits, plus every Convex table whose Prisma model has
+since been dropped (Postgres now only holds Better-Auth + audit models — the
+generator parses Prisma 1:1, so it would emit a small fraction of the checked-in
+schema). Running it over the file silently deletes live tables and every search
+index. To add a table: generate into a scratch dir, diff, hand-merge the stanza.
 
 Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
 authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
 be checked against `organizationId`, or you have a cross-tenant read.
 
-### Prisma v6
+### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev
 - **Bulk-data migrations MUST end with `ANALYZE "<table>";`.** A large
@@ -268,7 +276,7 @@ This applies everywhere a Prisma row is first written to Convex: `src/lib/*-mirr
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
 - `DropdownMenuLabel` must be inside `DropdownMenuGroup`
-- `@react-pdf/renderer` — Helvetica only, no Unicode symbols
+- `pdfme` (`@pdfme/generator`) — Helvetica only, no Unicode symbols
 - Server action dates arrive as strings — wrap with `new Date()`
 - Kit join tables use `addedAt` (not `createdAt`)
 - Safe areas: use inline `style` with `env()`, not Tailwind arbitrary values
@@ -360,48 +368,3 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
-
-## PR Preview Deployments (Coolify)
-
-Each PR automatically gets a preview deployment via `.github/workflows/preview-deploy.yml`.
-Cleanup runs on PR close via `.github/workflows/preview-cleanup.yml`.
-
-**What gets deployed per PR:**
-- Coolify app at `https://pr-<number>.preview.lab.rvlt.app`
-- Convex functions deployed to the **shared dev deployment** (not isolated per PR)
-- Shared dev Postgres (Prisma migrations applied by the workflow before triggering Coolify)
-
-**Auth bridge — "lying about the domain":**
-All PR preview apps set `BETTER_AUTH_URL=https://preview.lab.rvlt.app` regardless of their
-actual URL. The shared Convex dev deployment trusts that fixed issuer. Session cookies still
-scope to the real PR domain (Better Auth uses the request host, not `BETTER_AUTH_URL`). OAuth
-and passkeys don't work in previews — that's fine.
-
-**One-time Convex dev deployment setup** (set these in the Convex dashboard for the dev deployment):
-```
-CONVEX_AUTH_ISSUER   = https://preview.lab.rvlt.app
-CONVEX_AUTH_JWKS_URL = https://preview.lab.rvlt.app/api/auth/jwks
-```
-
-**One-time Coolify setup:**
-1. Always-on app at `preview.lab.rvlt.app` (main branch) — serves `/api/auth/jwks` as the JWKS host.
-   Must use the same `BETTER_AUTH_SECRET` as all PR previews (`PREVIEW_BETTER_AUTH_SECRET`).
-2. Create a "Previews" project in Coolify and note its UUID
-3. Connect GitHub repo as a source in Coolify (Sources → GitHub App or PAT)
-4. Wildcard DNS: `*.preview.lab.rvlt.app` → Coolify server IP
-5. Wildcard SSL cert in Coolify for `*.preview.lab.rvlt.app`
-6. Adjust the API endpoint in `preview-deploy.yml` (`private-github-app`, `private-github-token`,
-   or `public`) to match how your GitHub source is configured in Coolify
-
-**GitHub secrets required:**
-- `CONVEX_DEPLOY_KEY` — already set (same key used in main.yml)
-- `COOLIFY_TOKEN` — Coolify API bearer token (Coolify → Settings → API Keys)
-- `PREVIEW_DATABASE_URL` — Shared dev Postgres connection string (used by GitHub Actions for migrations)
-- `PREVIEW_DATABASE_URL_INTERNAL` — Same DB, internal Coolify network URL (used by the running app)
-- `PREVIEW_BETTER_AUTH_SECRET` — Must match the always-on `preview.lab.rvlt.app` app
-
-**GitHub variables required (Settings → Variables → Repository):**
-- `COOLIFY_BASE_URL` — Coolify instance URL, e.g. `https://coolify.yourserver.com`
-- `COOLIFY_SERVER_UUID` — Server UUID from Coolify
-- `COOLIFY_PROJECT_UUID` — UUID of the "Previews" project in Coolify
-- `CONVEX_DEV_URL` — Shared dev Convex URL, e.g. `https://groovy-koala-475.convex.cloud`

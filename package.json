@@ -1,6 +1,6 @@
 {
   "name": "rvlt-flow",
-  "version": "0.24.16.0",
+  "version": "0.24.17.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

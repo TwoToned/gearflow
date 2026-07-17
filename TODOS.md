@@ -33,15 +33,11 @@ list) — the right fix is a server-side sum/count query scoped to one client
 
 ## Pricing System
 
-### Margin-Aware Quoting
-**What:** Add a margin view column/tooltip showing cost basis vs. suggested price with margin percentage. Transform the optimizer from a pure calculator into a business decision tool.
-**Why:** The optimizer always picks the cheapest option for the customer. Rental companies sometimes want simpler billing even if slightly more expensive, or need to hit margin targets.
-**Pros:** Transforms pricing from calculator to business tool, helps staff make margin-aware decisions.
-**Cons:** Requires cost basis data (not currently tracked per model). May need a "cost rate" field on Model.
-**Context:** Deferred during /autoplan CEO review. Override tracking (priceOverridden + overrideReason) enables margin decisions but doesn't surface the data.
-**Depends on:** Pricing optimization feature.
-**Estimate:** human ~1 week / CC ~30 min
-**Priority:** P2
+### ~~Margin-Aware Quoting~~ ⚠️ STALE — depends on a removed feature
+Deferred item depended on "Pricing optimization feature," which was removed in
+the June 2026 feature-removal sweep (`docs/designs/archive/feature-removal-2026-06.md`).
+No optimizer exists to add a margin view to today. Revisit only if pricing
+optimization is rebuilt as a deliberate product decision.
 
 ### ~~CSV Rate Import~~ ✅ SHIPPED
 Shipped on branch `feat/csv-rate-import`. New rates-only `importModelRatesCSV`
@@ -82,13 +78,15 @@ in a rolled-back transaction (`is_nullable=NO`, all three defaults `(none)`,
 
 ## Testing Expansion
 
-### Server Action Integration Tests
-**What:** Add integration tests for the 53 server action files (~19k LOC) covering the core business logic.
-**Why:** Server actions contain the most critical logic — availability checking, warehouse checkout, kit expansion, permission enforcement, activity logging. Unit tests on validation schemas catch input errors, but integration tests catch logic bugs in the actual database operations.
-**Pros:** Catches real bugs (stale data, race conditions, permission bypass), enables safe refactoring of the largest files (kits.ts at 58KB, warehouse.ts at 49KB).
-**Cons:** Requires setting up a test database, Prisma test helpers, and auth mocking. Significant one-time setup cost.
-**Context:** Start with the 10 most critical files: assets.ts, projects.ts, kits.ts, warehouse.ts, line-items.ts, categories.ts, clients.ts, bulk-assets.ts, crew.ts, and permissions enforcement in org-context.ts. Also include the new check system files when they ship: check-items.ts, check-records.ts, warehouse-close.ts. Each server action follows the same pattern (requirePermission → query → logActivity → serialize), so test helpers can be shared.
-**Depends on:** Test infrastructure (completed in v0.2.0). Needs test DB setup (docker-compose or test env).
+### Server Action Integration Tests ⚠️ STALE — target architecture moved
+Written when most business logic (`kits.ts`, `warehouse.ts`, `assets.ts`,
+`categories.ts`, `crew.ts`, etc.) lived in `src/server/*.ts` as Prisma-backed
+server actions. That domain layer has since moved to Convex mutations
+(`convex/*.ts`/`convex/*Writes.ts`), which already carry ~104 `*.test.ts`
+files. The underlying goal (integration coverage on the riskiest business
+logic — availability, checkout, kit expansion, permission enforcement) is
+still valid; re-scope against the current Convex mutation surface rather than
+the file list below before picking this back up.
 **Estimate:** human ~4 weeks / CC ~3-4 hours
 
 ### E2E Tests with Playwright
@@ -498,15 +496,19 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 **Estimate:** human ~4-6 weeks initial / ongoing maintenance
 **Priority:** P2
 
-### Dev / Internal Documentation Overhaul
-**What:** Pass through every FEATUREDOCS file plus CLAUDE.md and ARCHITECTURE.md. Verify accuracy against current code, prune stale sections, fill gaps (new features added without doc updates), and re-link cross-references. Improve the index in ARCHITECTURE.md.
-**Why:** Docs drift. FEATUREDOCS has 30+ files but coverage is uneven — some features have extensive docs, others are stubs. A periodic audit keeps the docs trustworthy for both humans and the agent.
-**Pros:** Faster onboarding for new contributors, better agent context, surfaces dead code / orphaned features.
-**Cons:** Time investment with no user-visible output. Easy to defer indefinitely.
-**Context:** User flagged this in their RVLT Flow TODO. Run after a release cluster, not mid-feature.
-**Depends on:** Nothing.
-**Estimate:** human ~1 week / CC ~3-4 hours
-**Priority:** P3
+### ~~Dev / Internal Documentation Overhaul~~ ✅ SHIPPED
+Shipped v0.24.16.0. Full pass through every FEATUREDOCS file, CLAUDE.md,
+ARCHITECTURE.md, README.md, and PROMPT.md against the current Convex-native
+architecture — stale `src/server/*.ts` paths corrected to their
+`convex/*.ts`/`*Writes.ts` equivalents (verified file-by-file via grep, not
+guessed), factual errors fixed (Prisma version, PDF engine, dead React Query/
+Leaflet claims), and 13 fully-shipped design docs archived to
+`docs/designs/archive/`. Also swept and deleted dead deploy config
+(`ecosystem.config.{js,cjs}`, `nixpacks.toml`), a scratch spec, and 3 abandoned
+design docs. Follow-ups intentionally left open (not silently resolved): a
+fresh look at `docs/designs/{app-cleanup-unification,perf-convex-efficiency-2026-06,
+perf-convex-measurement-baseline}.md`, and a component audit for the
+`AccessoryChildRows` gap flagged in `FEATUREDOCS/48`.
 
 ## UI / UX
 

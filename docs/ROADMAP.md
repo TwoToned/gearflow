@@ -38,14 +38,14 @@ on top of it.
 Small, isolated, do now. No dependency on anything else.
 
 ### 0.1 — Checkout duplication bug → promoted to the fulfillment-model rework
-**Effort:** L (was estimated S) · **Status:** planned, build starting
+**Effort:** L (was estimated S) · **Status:** ✅ Shipped v0.7.0.0 (patched v0.7.0.1)
 Scanning units to deploy them produces one project line-item row per physical
 unit instead of one per ordered line — the docket and project screen fragment.
 Investigated and `/autoplan`-reviewed: this is **not** an acute bug, it is the
 one-asset-per-`ProjectLineItem`-row data model showing through. The fix is the
 order-line / fulfillment-unit split — effectively item 1.2 pulled forward.
-Design: [`docs/designs/line-item-fulfillment-model.md`](./designs/line-item-fulfillment-model.md).
-A multi-week, 4-phase build; it supersedes a render-only patch.
+Design: [`docs/designs/archive/line-item-fulfillment-model.md`](./designs/archive/line-item-fulfillment-model.md).
+A multi-week, 4-phase build; it superseded a render-only patch.
 
 ### 0.2 — iCal timezone correctness ✅ Shipped v0.7.1.0
 **Effort:** S
@@ -66,8 +66,8 @@ reference.
 the data-model changes, then the features fall out cleaner. The proper fix for
 the Phase 0 checkout bug folds in here.
 
-Related design docs: `docs/designs/warehouse-checks.md`,
-`docs/designs/pdf-template-builder.md`.
+Related design docs (shipped, archived): `docs/designs/archive/warehouse-checks.md`,
+`docs/designs/archive/pdf-template-builder.md`.
 
 ### 1.1 — Child assets / accessories
 **Effort:** L · **Depends on:** nothing (data-model foundation)
@@ -92,10 +92,14 @@ clamps + 50 TrueCons) and let the operator enter how many are physically in
 front of them and check that count in at once — no per-light drill-down.
 
 ### 1.4 — Delivery docket + pick slip
-**Effort:** M · **Depends on:** 1.2
+**Effort:** M · **Depends on:** 1.2 · **Status:** substantially shipped
 Rework both documents to be group/category-aware. Make the pick slip actually
 make sense for packing; make delivery-docket categorisation smarter. Ties
 directly to the corrected checkout logic from 0.1 / Phase 1.
+`expandProjectGroups`/`packerSort`/sub-hire-group-awareness are live in
+`src/lib/pdfme/build-document-data.ts`/`structure-line-items.ts` — see
+[`docs/designs/archive/pick-list-delivery-docket-grouping.md`](./designs/archive/pick-list-delivery-docket-grouping.md).
+Remaining follow-ups are tracked in `TODOS.md`.
 
 ---
 
@@ -139,16 +143,20 @@ make it feel right. Phases 1 and 2 already remove most of the structural
 clunkiness; this phase is the consistency-and-flow sweep across everything else.
 
 ### 4.1 — UX / flow overhaul
-**Effort:** L
-A holistic pass so every screen feels like it belongs and flows well. Start by
-auditing `docs/designs/ux-ui-redesign.md` — what it delivered vs. what still
-feels off — so this builds on that work rather than restarting it.
+**Effort:** L · **Status:** in progress
+`docs/designs/ux-ui-redesign.md` is the approved CEO-plan decisions record;
+[`docs/designs/rvlt-polish-sweep.md`](./designs/rvlt-polish-sweep.md) is the
+live, chunk-by-chunk execution tracker against it (most chunks done as of
+2026-07-17) — start there for current status, not just the original plan doc.
 
 ### 4.2 — Mobile overhaul
-**Effort:** L · **Depends on:** 4.1
+**Effort:** L · **Depends on:** 4.1 · **Status:** substantially shipped
 The warehouse runs on phones, so mobile quality is semi-operational, not pure
-polish. Still sequence it after the flow fixes — there is no point hardening a
-mobile layout for a workflow that is about to change.
+polish. The CHANGELOG v0.24.0.0–v0.24.15.0 sweep already converted every
+operator-facing list table to cards on mobile — see
+`docs/designs/archive/mobile-first-redesign.md` and
+`docs/designs/archive/mobile-data-table-framework.md`. Remaining mobile work
+should be scoped against what those docs didn't cover, not restarted.
 
 ---
 

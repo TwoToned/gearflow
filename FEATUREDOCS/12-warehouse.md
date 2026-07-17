@@ -164,9 +164,10 @@ a time (return had to be clicked 16×). Fixes:
 ### Bulk Check-In Tab — REMOVED
 The project-wide accessory-totals check-in tab was **removed from the warehouse UI**
 (accessories are no longer surfaced as a separate warehouse concern — they cascade
-silently with their parent). The backend (`src/server/bulk-checkin.ts`,
-`src/lib/bulk-checkin.ts` and their tests) is retained but no longer wired into any
-UI. See [Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
+silently with their parent). `src/server/bulk-checkin.ts`, its int test, and the
+`bulk-checkin-tab.tsx` component are gone; only the pure helper library
+`src/lib/bulk-checkin.ts` (+ its unit tests) remains, dormant. See
+[Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly

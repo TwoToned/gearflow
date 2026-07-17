@@ -1,7 +1,7 @@
 # Search & Command Palette
 
-## Global Search (`src/server/search.ts`)
-`globalSearch(query)` searches across:
+## Global Search (`convex/globalSearch.ts`)
+The `search` query (called via `useGlobalSearch()`, `src/hooks/use-global-search.ts`) searches across:
 - Models (name, manufacturer, modelNumber, description) — children: assets
 - Assets (assetTag, serialNumber, customName)
 - Bulk assets (assetTag)
@@ -17,7 +17,14 @@
 - Group templates (name, description) — deep-links to `/settings/group-templates`
 - Sub-hires (orderNumber, supplier name, supplierReference, item descriptions) — deep-links to the parent project's equipment tab
 
-Uses PostgreSQL ILIKE and trigram similarity for fuzzy matching. Tags matched via raw SQL `EXISTS(SELECT 1 FROM unnest(tags) t WHERE t ILIKE ...)`.
+Native Convex query — re-implements the old Postgres `pg_trgm` engine in pure JS
+(`convex/lib/searchScore.ts`) so results stay live now that the domain tables are
+Convex-primary and Postgres is frozen. `includesLower`/`includesNorm` mirror ILIKE
++ normalized substring matching, `trigramSimilarity` mirrors `pg_trgm` similarity
+(Jaccard index over 3-grams) for fuzzy/typo matching, and `anyTagMatches` mirrors
+the old raw-SQL `EXISTS(SELECT 1 FROM unnest(tags) t WHERE t ILIKE ...)` tag match —
+all computed backend-local over live Convex docs in one round trip. The old
+`src/server/search.ts` file (and its `globalSearch` server action) no longer exists.
 
 ## Command Palette (`src/components/layout/command-search.tsx`)
 - **Normal mode**: Free text → `globalSearch()` results
@@ -65,7 +72,7 @@ Uses PostgreSQL ILIKE and trigram similarity for fuzzy matching. Tags matched vi
 8. Add new path segments to `knownSegments` in `extractEntityId()` if they could be mistaken for IDs (> 5 chars)
 
 ## Adding New Entities to Search
-1. Add search case to `globalSearch()` in `src/server/search.ts`
+1. Add search case to the `search` query in `convex/globalSearch.ts`
 2. Add page to `PAGE_COMMANDS` in `src/lib/page-commands.ts` with `searchable: true` and `searchType`
 3. Add `searchType: ["type"]` to BOTH `typeMap` objects in command-search.tsx
 4. Add icon to `pageIcons` map in command-search.tsx

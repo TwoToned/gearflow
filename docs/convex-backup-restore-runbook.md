@@ -52,7 +52,11 @@ npx convex import --path convex-snapshot-<latest>.zip     # to the scratch deplo
 ```
 
 Then **verify**, don't assume:
-- Row counts per table match the source (reuse `scripts/convex-parity-check.ts`'s counting approach against the restored deployment).
+- Row counts per table match the source. No standing `convex-parity-check.ts`
+  script exists today — compare `npx convex data <table>` counts (or the
+  Convex dashboard's table view) between source and restored deployment
+  table-by-table, or write a one-off script following the pattern in
+  `scripts/convex-auth-roundtrip.ts` if you need this repeatedly.
 - Spot-check a project → line items → units → asset chain resolves.
 - **File bytes:** open a few restored `storageId`s via `storage.getUrl` and confirm the images load (the S3-retirement half fails silently otherwise).
 - App boots against the restored deployment and a login → project view works.

@@ -12,11 +12,11 @@ both.
 | **Org-wide API keys** | `orgSettings.apiKillSwitchAt` | Settings → API keys → kill-switch; checked on every API request (`src/lib/api-key.ts`). |
 | **Server-routed native writes** | `NATIVE_*` env flags (Coolify) | Per-domain; flipping falls back to the (now frozen) Postgres path — a coarse, deploy-scoped control, not an instant brake. |
 
-**The mutation kill-switch is the Phase-3 emergency brake.** Convention: **every
-browser-direct (public) mutation must call `assertWritesEnabled(ctx, "<domain>")`
-first** (`convex/lib/writeGuard.ts`). Wired today into the two live browser-direct
-mutations (`assetWrites.updateNotesNative`, `dashboardCounters.reconcileIfStale`);
-add the call to each new one as Phase 3 lands. Flip:
+**The mutation kill-switch is the emergency brake for the (now fully shipped)
+browser-direct write surface.** Convention: **every browser-direct (public)
+mutation must call `assertWritesEnabled(ctx, "<domain>")` first**
+(`convex/lib/writeGuard.ts`). Wired into every `*Writes.ts` domain module
+today (43 files) — add the call to any new one as it's created. Flip:
 
 ```bash
 docker exec <app> npx tsx scripts/toggle-write-killswitch.ts on  "incident #123"        # kill ALL browser writes

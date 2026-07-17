@@ -25,11 +25,11 @@ declared once in `src/lib/webhooks/events.ts` and served by `webhooks.getWebhook
   "createdAt": "…", "organizationId": "org_…", "data": { } }
 ```
 
-`id` is the **delivery** id, stable across retries and echoed in `X-RVLT Flow-Delivery-Id`.
+`id` is the **delivery** id, stable across retries and echoed in `X-RVLT-Flow-Delivery-Id`.
 Delivery is at-least-once; consumers dedupe on it.
 
 ```
-X-RVLT Flow-Signature: t=<unix>,v1=<hex hmac-sha256 of `${t}.${rawBody}`>
+X-RVLT-Flow-Signature: t=<unix>,v1=<hex hmac-sha256 of `${t}.${rawBody}`>
 ```
 
 Signing the **timestamp** as well as the body is what defeats replay: an attacker cannot

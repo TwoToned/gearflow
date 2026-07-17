@@ -860,16 +860,22 @@ export const addKitNative = mutation({
       id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,
     });
 
+    // Parity with the deleted addKitLineItem: when the client can't resolve the kit
+    // label (kit absent from the current search results), derive it server-side from the
+    // kit doc — "<assetTag> - <name>" — so the audit + collab feed never show a blank kit.
+    const resolvedKitLabel =
+      kitLabel.trim() || (kit ? `${kit.assetTag} - ${kit.name}` : kitLabel);
+
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
       action: "CREATE",
       entityType: "lineItem",
       entityId: id,
-      entityName: kitLabel,
+      entityName: resolvedKitLabel,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Added kit ${kitLabel} to project`,
+      summary: `Added kit ${resolvedKitLabel} to project`,
       projectId,
       kitId,
       createdAt: now,
@@ -900,7 +906,7 @@ export const addKitNative = mutation({
         targetType: "lineItem",
         targetId: id,
         action: "kit_added",
-        summary: `added kit "${kitLabel}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
+        summary: `added kit "${resolvedKitLabel}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
         createdAt: now,
       });
     }

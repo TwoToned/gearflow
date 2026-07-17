@@ -30,18 +30,14 @@ type ParsedCustomLineItem = z.output<typeof customLineItemSchema>;
  * source of truth), so the client never supplies it. The client mints entity + audit
  * cuids and supplies actor/orgId/now, exactly as use-project-groups-writes.ts does.
  *
- * Ships as ready-but-dormant infrastructure: `NATIVE_LINEITEM_BROWSER` is a
- * NEXT_PUBLIC build-inlined flag defaulting OFF, so every consumer keeps calling the
- * unchanged server action until the flag is flipped. `enabled` also requires a resolved
- * org + session; consumers branch on it and keep the server-action path as the else.
+ * `enabled` requires a resolved org + session; consumers guard the submit on it so the
+ * write never fires before auth/org resolve (there is no server-action fallback).
  *
  * Security at the Convex boundary (mutations called with the USER token):
  * assertWritesEnabled + enforceBrowserWriteLimit + requireOrgPermission + resolveActor
  * (audit identity pinned to the verified token) + assertProjectInOrg / assertRefInOrg
  * (by_cuid is a GLOBAL index — every referenced row is org-validated in-mutation).
  */
-export const NATIVE_LINEITEM_BROWSER =
-  process.env.NEXT_PUBLIC_NATIVE_LINEITEM_BROWSER === "true";
 
 /** The Convex `fields` payload addLineItemSmartNative expects — built EXACTLY as the
  *  server's addLineItem does (src/server/line-items.ts ~81-100). lineTotal is NOT
@@ -143,7 +139,7 @@ export function useLineItemWrites() {
     return orgId;
   };
 
-  const enabled = NATIVE_LINEITEM_BROWSER && !!orgId && !!session?.user;
+  const enabled = !!orgId && !!session?.user;
 
   return {
     enabled,

@@ -27,9 +27,6 @@ import { useProjectServices } from "@/hooks/use-project-services";
 import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
-  removeLineItem,
-  updateLineItem,
-  reorderLineItems,
   removeLineItemsBatch,
   updateLineItemsBatch,
   type BulkLineItemPatch,
@@ -498,21 +495,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const updateLineItemMut = useServerMutation({
-    mutationFn: ({ id, data, allowOverbook, baseUpdatedAt }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
-      // Browser-direct native path (flag-gated, default OFF). patchNative re-checks
-      // availability + recalcs + audits + emits the collab feed atomically. NOTE: it has
-      // no baseUpdatedAt stale-revision guard (the server action's optimistic-concurrency
-      // check) — edit locks remain the first line of defence. Reactive useQuery renders
-      // the updated row; when disabled the unchanged server action runs.
-      if (lineItemWrites.enabled) {
-        const parsed = lineItemSchema.parse(data);
-        const { set, clear } = buildLineItemSetClear(parsed);
-        return lineItemWrites.update(id, set, clear, {
-          entityName: parsed.description || "Line item",
-          allowOverbook: allowOverbook ?? false,
-        });
-      }
-      return updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false, baseUpdatedAt);
+    mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
+      // Browser-direct native path. patchNative re-checks availability (on qty increase) +
+      // recalcs + audits + emits the collab feed atomically. NOTE: it has no baseUpdatedAt
+      // stale-revision guard (the server action's optimistic-concurrency check) — edit
+      // locks remain the first line of defence. Reactive useQuery renders the updated row.
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      const parsed = lineItemSchema.parse(data);
+      const { set, clear } = buildLineItemSetClear(parsed);
+      return lineItemWrites.update(id, set, clear, {
+        entityName: parsed.description || "Line item",
+        allowOverbook: allowOverbook ?? false,
+      });
     },
     onSuccess: (_r: unknown, { id }: { id: string }) => {
       invalidate();
@@ -530,13 +524,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   const removeMut = useServerMutation({
     mutationFn: async (id: string) => {
-      // Browser-direct native path (flag-gated, default OFF); else the server action.
-      // Result unused (onSuccess just invalidates), so both paths resolve void.
-      if (lineItemWrites.enabled) {
-        await lineItemWrites.remove(id);
-        return;
-      }
-      await removeLineItem(id);
+      // Browser-direct native path. removeNative applies the child-guard + cascade
+      // (children + units) + recalc + audit + collab atomically. Result unused (onSuccess
+      // just invalidates), so it resolves void.
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      await lineItemWrites.remove(id);
     },
     onSuccess: () => {
       invalidate();
@@ -749,11 +741,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
     const reorderedIds = reordered.map((i) => i.id);
-    // Browser-direct native path (flag-gated, default OFF); else the server action.
-    (lineItemWrites.enabled
-      ? lineItemWrites.reorder(projectId, reorderedIds)
-      : reorderLineItems(projectId, reorderedIds)
-    ).catch(() => {
+    // Browser-direct native path — reorderNative rewrites sortOrder atomically.
+    if (!lineItemWrites.enabled) return;
+    lineItemWrites.reorder(projectId, reorderedIds).catch(() => {
       toast.error("Failed to reorder items");
     });
     invalidate();

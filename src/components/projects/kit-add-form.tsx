@@ -18,7 +18,7 @@ import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn, focusRing } from "@/lib/utils";
-import { addKitLineItem, checkKitAvailability } from "@/server/line-items";
+import { checkKitAvailability } from "@/server/line-items";
 import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -112,33 +112,22 @@ export function KitAddForm({
         kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
       const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
       const effectiveGroupId = (groupId || selectedGroupId) || undefined;
-      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
-      // the new parent + member rows; when disabled the unchanged server action runs.
-      if (lineItemWrites.enabled) {
-        // kitLabel = "<assetTag> - <name>" (what the server derives from the fetched
-        // kit). Prefer the resolved selected-kit label; fall back to the search option.
-        const kitLabel =
-          selectedKitLabel ??
-          kitOptions.find((o) => o.value === selectedKitId)?.label ??
-          "";
-        return lineItemWrites.addKit(projectId, selectedKitId, {
-          pricingMode: kitPricingMode,
-          unitPrice,
-          groupName: undefined,
-          categoryId: effectiveCategoryId,
-          groupId: effectiveGroupId,
-          kitLabel,
-        });
-      }
-      return addKitLineItem(
-        projectId,
-        selectedKitId,
-        kitPricingMode,
+      // Browser-direct native path. addKitNative expands the parent + member children +
+      // recalc + audit + collab atomically; reactive useQuery renders the new rows.
+      // kitLabel = "<assetTag> - <name>" (what the server derived from the fetched kit).
+      // Prefer the resolved selected-kit label; fall back to the search option.
+      const kitLabel =
+        selectedKitLabel ??
+        kitOptions.find((o) => o.value === selectedKitId)?.label ??
+        "";
+      return lineItemWrites.addKit(projectId, selectedKitId, {
+        pricingMode: kitPricingMode,
         unitPrice,
-        undefined, // groupName
-        effectiveCategoryId,
-        effectiveGroupId,
-      );
+        groupName: undefined,
+        categoryId: effectiveCategoryId,
+        groupId: effectiveGroupId,
+        kitLabel,
+      });
     },
     onSuccess: () => {
       onInvalidate();
@@ -245,7 +234,7 @@ export function KitAddForm({
           type="button"
           onClick={() => addKitMut.mutate()}
           loading={addKitMut.isPending}
-          disabled={!selectedKitId || !!unavailable}
+          disabled={!selectedKitId || !!unavailable || !lineItemWrites.enabled}
         >
           Add kit
         </Button>

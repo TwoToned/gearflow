@@ -14,9 +14,9 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { toast } from "sonner";
 
-import { addCustomLineItem } from "@/server/line-items";
 import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { customLineItemSchema } from "@/lib/validations/line-item";
+import type { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,16 +84,14 @@ export function CustomItemAddForm({
   };
 
   const addMut = useServerMutation({
-    mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => {
-      // Browser-direct native path (flag-gated, default OFF). Reactive useQuery renders
-      // the new row; when disabled the unchanged server action runs.
-      if (lineItemWrites.enabled) {
-        const parsed = customLineItemSchema.parse(data);
-        return lineItemWrites.addCustom(projectId, parsed, {
-          groupName: resolveGroupName(parsed.groupId),
-        });
-      }
-      return addCustomLineItem(projectId, data);
+    mutationFn: (data: z.input<typeof customLineItemSchema>) => {
+      // Browser-direct native path. addCustomNative folds recalc + audit + collab into one
+      // transaction; reactive useQuery renders the new row. groupName is resolved locally
+      // from the categories the form already holds (no round-trip).
+      const parsed = customLineItemSchema.parse(data);
+      return lineItemWrites.addCustom(projectId, parsed, {
+        groupName: resolveGroupName(parsed.groupId),
+      });
     },
     onSuccess: () => {
       onInvalidate();
@@ -242,7 +240,7 @@ export function CustomItemAddForm({
         <Button
           type="button"
           loading={addMut.isPending}
-          disabled={!name.trim()}
+          disabled={!name.trim() || !lineItemWrites.enabled}
           onClick={() => {
             addMut.mutate({
               description: name.trim(),

@@ -8,7 +8,10 @@ import { toast } from "sonner";
 import { cn, focusRing } from "@/lib/utils";
 
 import { useKitCounts } from "@/hooks/use-kit-counts";
-import { useKits } from "@/hooks/use-kits";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
+import { api } from "../../../../convex/_generated/api";
 import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
@@ -215,85 +218,54 @@ export default function KitsPage() {
 
   const columns = useKitColumns(locations, categories);
 
-  // Reactive kit list straight from Convex (auto-updates on any kit
-  // create/update/archive and on warehouse check-out/in status changes). The
-  // member-item counts + primary photo are cross-domain (kit media still lives
-  // in Prisma) so they come from a separate, non-reactive server query and are
-  // merged in below; category/location names resolve from the lists already
-  // loaded for the filter options.
-  const allKits = useKits(orgId);
+  // ONE server-side query (filter + sort + category/location joins all done
+  // in Convex) instead of the 3 whole-org live subscriptions this used to
+  // mount (kits/categories/locations) and join/filter/sort client-side. See
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #1. Member-item
+  // counts + primary photo stay a separate cross-domain merge (kit media
+  // still lives in Prisma) — unchanged. Search is debounced since each
+  // keystroke is now a real round-trip.
   const kitCounts = useKitCounts(orgId);
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const statusFilter = filters?.status as string | undefined;
+  const conditionFilter = filters?.condition as string | undefined;
+  const locationFilter = filters?.locationId as string | undefined;
+  const categoryFilter = filters?.categoryId as string | undefined;
+  const tagsFilter = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
+  const kitsPage = useAuthedQuery(
+    api.kits.listPage,
+    orgId
+      ? {
+          orgId,
+          search: debouncedSearch.trim() || undefined,
+          status: statusFilter,
+          condition: conditionFilter,
+          locationId: locationFilter,
+          categoryId: categoryFilter,
+          tagsHasSome: tagsFilter,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+  const { data: pagedKits, total, isLoading: kitsLoading } = usePaginatedTableResult(kitsPage);
 
-  // Filter (active, non-prep + search tag/name/description + status/condition/
-  // location/category/tags) → sort → paginate, all client-side over the reactive
-  // list. The Convex list returns ALL kits (incl. archived + prep), so re-apply
-  // the isActive + isPrep guards the old getKits where-clause enforced.
-  const { kits, total } = useMemo(() => {
-    const source = allKits ?? [];
-    const q = search.trim().toLowerCase();
-    const statusFilter = filters?.status as string | undefined;
-    const conditionFilter = filters?.condition as string | undefined;
-    const locationFilter = filters?.locationId as string | undefined;
-    const categoryFilter = filters?.categoryId as string | undefined;
-    const tagsFilter = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
-    const categoryById = new Map(categories.map((c) => [c.id, c]));
-    const locationById = new Map(locations.map((l) => [l.id, l]));
+  const kits = useMemo(
+    () =>
+      pagedKits.map((k) => {
+        const meta = kitCounts?.[k.id];
+        return {
+          ...k,
+          _count: { serializedItems: meta?.serializedItems ?? 0, bulkItems: meta?.bulkItems ?? 0 },
+          media: meta?.media ? [{ file: meta.media }] : [],
+        };
+      }),
+    [pagedKits, kitCounts],
+  );
 
-    const filtered = source.filter((k) => {
-      if (k.isActive === false) return false;
-      if (k.isPrep === true) return false;
-      if (statusFilter && k.status !== statusFilter) return false;
-      if (conditionFilter && k.condition !== conditionFilter) return false;
-      if (locationFilter && k.locationId !== locationFilter) return false;
-      if (categoryFilter && k.categoryId !== categoryFilter) return false;
-      if (tagsFilter && tagsFilter.length > 0) {
-        if (!(k.tags ?? []).some((t) => tagsFilter.includes(t))) return false;
-      }
-      if (q) {
-        const hit =
-          k.assetTag.toLowerCase().includes(q) ||
-          k.name.toLowerCase().includes(q) ||
-          (k.description?.toLowerCase().includes(q) ?? false);
-        if (!hit) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    const sorted = [...filtered].sort((a, b) => {
-      const av = sortBy === "category"
-        ? categoryById.get(a.categoryId ?? "")?.name
-        : sortBy === "location"
-        ? locationById.get(a.locationId ?? "")?.name
-        : (a as Record<string, unknown>)[sortBy];
-      const bv = sortBy === "category"
-        ? categoryById.get(b.categoryId ?? "")?.name
-        : sortBy === "location"
-        ? locationById.get(b.locationId ?? "")?.name
-        : (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const merged = sorted.map((k) => {
-      const meta = kitCounts?.[k.id];
-      return {
-        ...k,
-        category: k.categoryId ? categoryById.get(k.categoryId) ?? null : null,
-        location: k.locationId ? locationById.get(k.locationId) ?? null : null,
-        _count: { serializedItems: meta?.serializedItems ?? 0, bulkItems: meta?.bulkItems ?? 0 },
-        media: meta?.media ? [{ file: meta.media }] : [],
-      };
-    });
-
-    const start = (page - 1) * pageSize;
-    return { kits: merged.slice(start, start + pageSize), total: merged.length };
-  }, [allKits, kitCounts, categories, locations, search, filters, sortBy, sortOrder, page, pageSize]);
-
-  const isLoading = allKits === undefined;
+  const isLoading = kitsLoading;
 
   return (
     <FadeIn>

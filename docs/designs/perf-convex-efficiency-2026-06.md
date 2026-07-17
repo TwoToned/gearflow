@@ -910,4 +910,86 @@ Tier 3 items (`useCrewRoles` double-subscribe — confirmed still present,
 shares the socket) and the `warehouse/page.tsx` 100-project roundtrip candidate weren't
 re-verified against current source this pass.
 
+---
+
+# Follow-up audit: the rest of the app's entity lists (2026-07-17, same day)
+
+After shipping the asset-list fix, a targeted sweep asked "does this same pattern exist
+anywhere else?" Answer: **yes, on nearly every other entity registry in the app** — each
+had its own hand-rolled whole-org-subscribe + client-side-filter/sort/paginate table,
+independent of the asset one. Grep sweep (checked every `use<Entity>(orgId)`-shaped hook's
+call sites, and separately checked for the *other* anti-pattern — a `useAuthedQuery` call
+inside a per-row/per-card component instead of one page-level subscription passed down as
+props — found none beyond the already-fixed `LineItemRow`; `project-board.tsx`'s cards and
+`activity-feed.tsx`'s rows both correctly take data as props).
+
+**Decision: build the shared pattern once, then apply it to every surface**, rather than
+hand-rolling the fix a 5th–9th time. Two shared modules:
+
+- **`convex/lib/listQuery.ts`** (backend) — `matchesSearch` (case-insensitive substring
+  match), `compareValues` (null-safe, type-aware comparator — null sorts as the maximum
+  value, consistent within a direction), `paginateItems` (slice + pagination metadata).
+  Pure, unit-tested (`convex/lib/listQuery.test.ts`). Each table still gets its OWN
+  `listPage`/`listGallery`/`listBoard` query — Convex needs the literal table name and
+  every entity has different filter dimensions/joins — but the sort/search/paginate
+  boilerplate is now one shared, tested implementation instead of a copy per file.
+  `assets.ts`/`bulkAssets.ts` were retrofitted onto it (behavior unchanged, all existing
+  tests still pass) before extending to the new surfaces.
+- **`src/hooks/use-paginated-table-result.ts`** (frontend) — derives
+  `{data, total, totalPages, isLoading}` from a `listPage`-shaped Convex query result.
+  Every new query standardizes on `{items, total, page, pageSize, totalPages}` so no
+  per-call adapter is needed (the two legacy queries, `assets.listPage`/`bulkAssets.listPage`,
+  keep their existing `assets`/`bulkAssets` field names for back-compat with the T&T-picker
+  consumer and weren't retrofitted onto the new hook — wrapping them would've added glue
+  code for no benefit).
+
+## Fixed this pass (all shipped, tested, typechecked, linted clean)
+
+**Paginated tables** (5 new + assets already done = 6 total registries now server-paginated):
+
+| Table | Old subscriptions | New query | Notable tradeoff |
+|---|---|---|---|
+| `project-table.tsx` | `useProjects`+`useClients`+`useLocations` | `projects.listPage` | none |
+| `kits/page.tsx` | `useKits`+`useCategories`+`useLocations` | `kits.listPage` | none |
+| `crew-table.tsx` | `useCrewMembers`+`useCrewRoles` | `crewMembers.listPage` | search no longer matches the linked platform user's display name (Better Auth, cross-domain — can't join it in Convex); `icalToken` redaction for non-service callers carries over (tested) |
+| `client-table.tsx` | `useClients` | `clients.listPage` | none |
+| `supplier-table.tsx` | `useSuppliers` | `suppliers.listPage` | tag search became case-insensitive (was a pre-existing inconsistency vs. every other field, incidentally fixed by using the shared matcher) |
+
+**Unpaginated "browse everything, grouped" views** (Option A, same shape as the asset
+gallery):
+
+| View | Old subscriptions | New query |
+|---|---|---|
+| `project-board.tsx` (kanban) | `useProjects`+`useClients` | `projects.listBoard` |
+
+Each ships with: a Convex-level test file (all previously had **zero** test coverage —
+`convex/projects.test.ts`, `convex/kits.test.ts`, `convex/crewMembers.test.ts`,
+`convex/clients.test.ts`, `convex/suppliers.test.ts`) covering filter/sort/join/search/
+cross-org-isolation, and a component-level smoke test pinning that the table/board renders
+off a `listPage`/`listBoard`-shaped result and that search is debounced (200ms,
+`useDebouncedValue`) instead of firing a query per keystroke.
+
+## Explicitly NOT fixed this pass — flagged, not silently skipped
+
+**`clients-dashboard.tsx`'s `useProjects` call.** Different problem shape from everything
+above: it's not rendering a list of rows, it's computing **aggregate stats** (revenue/project
+counts for one client) by pulling the whole org's projects into the browser and reducing
+client-side. The right fix is a server-side sum/count query scoped to that one client
+(`projects.by_clientId` index already exists), not a paginated list — genuinely different
+work, not a mechanical application of this session's pattern. Left as a named follow-up.
+
+## Honest limits of this round
+
+- **Read shape didn't change for the unpaginated views** (`asset-gallery.tsx`,
+  `project-board.tsx`) — they still `.collect()` every matching row server-side, because
+  "show everything" is the actual feature. That's fine at today's scale but still carries
+  the Convex `.collect()` size-ceiling risk for a large org; infinite-scroll is the real
+  fix if/when that matters (see the asset-gallery section above for the tradeoff writeup).
+- **None of this is verified against a live deployment.** Same caveat as Finding #0 and
+  everything else in this doc — this worktree has no Convex deploy key configured. Deploy,
+  then re-check the dashboard's per-function Database I/O for `projects.list`, `kits.list`,
+  `crewMembers.list`, `clients.list`, `suppliers.list` (the OLD whole-org queries) — they
+  should drop toward zero as traffic shifts to the new `listPage`/`listBoard` queries, with
+  a corresponding drop in each list page's total Database I/O.
+
 

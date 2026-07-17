@@ -1,7 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
-import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 
 /**
@@ -248,84 +247,5 @@ export const patchService = mutation({
     for (const k of clear ?? []) patch[k] = undefined;
     await ctx.db.patch(doc._id, patch);
     return doc._id;
-  },
-});
-
-// ─── Bulk (multi-select) operations ────────────────────────────────────────
-// One mutation round-trip for an N-service bulk action instead of one
-// server→Convex call per row. Org-scoped per row; foreign rows skipped.
-
-/** Bulk status change across N services. */
-export const patchManyStatus = mutation({
-  args: {
-    ids: v.array(v.string()),
-    orgId: v.string(),
-    status: enums.ServiceStatus,
-    now: v.number(),
-  },
-  handler: async (ctx, { ids, orgId, status, now }) => {
-    await requireService(ctx);
-    const projectIds = new Set<string>();
-    let updated = 0;
-    let skipped = 0;
-    for (const id of ids) {
-      const doc = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
-      await ctx.db.patch(doc._id, { status, updatedAt: now });
-      projectIds.add(doc.projectId);
-      updated++;
-    }
-    return { updated, skipped, projectIds: [...projectIds] };
-  },
-});
-
-/**
- * Bulk cascade-delete N services in one pass. Mirrors deleteProjectService per
- * row: removes the synthetic line item (+ children + units), the service's crew
- * assignments (+ shifts + linked time entries), then the service itself.
- */
-export const removeManyCascade = mutation({
-  args: { ids: v.array(v.string()), orgId: v.string() },
-  handler: async (ctx, { ids, orgId }) => {
-    await requireService(ctx);
-    const projectIds = new Set<string>();
-    let deleted = 0;
-    let skipped = 0;
-    for (const id of ids) {
-      const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-      if (!service || service.organizationId !== orgId) { skipped++; continue; }
-
-      // Synthetic line item cascade (children + units + the line).
-      if (service.lineItemId) {
-        const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", service.lineItemId!)).unique();
-        if (line) {
-          const children = await ctx.db
-            .query("projectLineItems")
-            .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id))
-            .collect();
-          for (const c of [...children, line]) {
-            const units = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", c.id)).collect();
-            for (const u of units) await ctx.db.delete(u._id);
-            await ctx.db.delete(c._id);
-          }
-        }
-      }
-
-      // The service's crew assignments (+ shifts + linked time entries).
-      const assignments = await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", id)).collect();
-      for (const a of assignments) {
-        const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", a.id)).collect();
-        for (const s of shifts) await ctx.db.delete(s._id);
-        const entries = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", a.id)).collect();
-        for (const e of entries) await ctx.db.delete(e._id);
-        await ctx.db.delete(a._id);
-        await bumpCountersForTable(ctx, "crewAssignments", a, null);
-      }
-
-      await ctx.db.delete(service._id);
-      projectIds.add(service.projectId);
-      deleted++;
-    }
-    return { deleted, skipped, projectIds: [...projectIds] };
   },
 });

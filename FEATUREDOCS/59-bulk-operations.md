@@ -49,6 +49,19 @@ checkboxes + a header select-all) and act on the whole selection at once:
   ≥1 item is selected — a shared "{n} selected + actions + Clear" bar extracted
   from the Assets pattern (`asset-table.tsx`). Escape clears the selection.
 
+> **⚠️ Superseded (Phase 3 browser-direct).** The server-action layer this
+> section describes (`src/server/line-items.ts`, `src/server/project-groups.ts`)
+> is gone — line-item bulk ops are now browser-direct via
+> `convex/lineItemWrites.ts` (`removeManyNative`/`patchManyNative`/
+> `reorderNative`, called through `src/hooks/use-line-item-writes.ts`), which
+> fold the same single-transaction batching + org-scoping this section
+> documents, plus a 500-item size cap and in-mutation `lineTotal` recompute
+> (never trusts a client-supplied value). The `projectLineItems.listByIdsForOrg`
+> / `patchMany` / `removeManyCascade` and `projectServices.removeManyCascade` /
+> `patchManyStatus` mutations named below were deleted as dead code once their
+> only callers (these server actions) were removed — kept here as a historical
+> record of the pre-migration design, not a description of current behavior.
+
 ## Server actions (batched)
 
 Each bulk action is **one server-action call → one bulk Convex mutation**. The

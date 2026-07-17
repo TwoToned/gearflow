@@ -1,5 +1,48 @@
 # CLAUDE.md
 
+## ⚖️ Governing policy — POLICY.md is the bible
+
+**[`POLICY.md`](./POLICY.md)** (Codebase Management & Hygiene Policy) is the **authoritative
+standard for this repo**. It uses RFC-2119 language (MUST / SHOULD / MAY) and numbered
+rules (`R-<section>.<n>`, thresholds `T-*`). When anything in this file, a FEATUREDOC, or a
+review comment conflicts with POLICY.md, **POLICY.md wins** — flag the conflict, don't
+silently diverge.
+
+**Profile: `WEB`** (production web/app service — deployed at flow.rvlt.app). This binds the
+R-0.2 applicability matrix. Active §8 categories: **8.1 Frontend, 8.2 Language/type, 8.3
+Backend/DB, 8.4 Auth, 8.6 Forms, 8.7 UI/styling, 8.8 Testing, 8.9 Observability, 8.10
+Integrations, 8.11 Web security, 8.12 Privacy.** **§8.5 Billing = N/A** (no payment provider;
+pricing/quotes are internal, not processed payments).
+
+**Two modes (POLICY.md §0):**
+- **BUILD mode** — writing code (you or a human): every *applicable* `MUST` is a **hard,
+  pre-emission constraint**. Code that violates an applicable MUST is defective and may not
+  merge, even if it works (R-14.4). On conflict, restructure to comply or surface it and
+  request a §15 exception — **never silently violate**.
+- **AUDIT mode** — checking the repo: walk every applicable rule, record
+  PASS / FAIL / ADVISORY / N/A / EXCEPTION with cited evidence. Reports land in
+  **`docs/audits/`** (R-14.2).
+
+**Rules that bite most often here** (not a substitute for reading POLICY.md):
+- **DRY / single source of truth** (R-3.1, R-8.2.4, R-8.6.1): one authoritative definition per
+  business rule, data shape, permission, price, token. A second hand-maintained copy is a
+  defect even if in sync — matches the PDF-consumer + estimator-sync footguns below.
+- **Server is the authority** (R-9.3, R-8.4.2/8.4.3, R-8.5.3): authz, prices, validation are
+  server-side; client is UX only. No monetary amount originates from the client.
+- **Trust boundaries schema-validated** (R-8.2.3, R-8.6.2): every HTTP body / form / webhook /
+  env / vendor response parsed through Zod with the type inferred from the schema.
+- **Cross-tenant reads** (see the `by_cuid`/`organizationId` note below) are R-8.4.3 IDOR
+  Criticals — every doc fetched by global index MUST be org-checked.
+- **Docs update in the same PR** (R-5.2/R-5.3/R-5.8): behaviour/interface changes update the
+  affected FEATUREDOCS **and this file** in the same PR; stale docs are defects equal to stale
+  code. This is already project law (see "Feature Documentation" below) — POLICY.md makes it a
+  gate.
+- **Deviations need a written, expiring exception** (§15) in `docs/exceptions.md`. "We don't do
+  X" is not an exception; a scoped, owned, dated one is.
+
+**Repo-specific budgets & thresholds** (R-0.4) and the exception register (R-15.2) live in
+`docs/exceptions.md` / a threshold table once registered; until then the §13 defaults apply.
+
 ## Documentation Structure
 
 - **`ARCHITECTURE.md`** — High-level overview with links to all feature docs

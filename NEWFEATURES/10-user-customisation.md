@@ -96,7 +96,7 @@ export const auth = betterAuth({
   plugins: [
     // ... existing plugins ...
     passkey({
-      rpID: process.env.PASSKEY_RP_ID || "localhost",     // e.g. "gearflow.com"
+      rpID: process.env.PASSKEY_RP_ID || "localhost",     // e.g. "rvlt.app"
       rpName: "RVLT Flow",
       origin: process.env.BETTER_AUTH_URL || "http://localhost:3000",
     }),
@@ -445,7 +445,7 @@ GITHUB_CLIENT_ID          # GitHub OAuth
 GITHUB_CLIENT_SECRET
 APPLE_CLIENT_ID           # Apple Sign In
 APPLE_CLIENT_SECRET
-PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. "gearflow.com")
+PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. "rvlt.app")
 ```
 
 All optional — features only activate when their env vars are set.
@@ -460,7 +460,7 @@ All optional — features only activate when their env vars are set.
 
 3. **Profile picture content**: Consider basic image validation (file type, size, dimensions) but don't implement content moderation for v1. Store avatars with the same org-scoped S3 access controls as other files.
 
-4. **Passkey RP ID must match the domain**: In production, `PASSKEY_RP_ID` must be set to the actual domain (e.g. `gearflow.com`). If it doesn't match, passkeys won't work. Document this clearly in deployment notes.
+4. **Passkey RP ID must match the domain**: In production, `PASSKEY_RP_ID` must be set to the actual domain (e.g. `rvlt.app`). If it doesn't match, passkeys won't work. Document this clearly in deployment notes.
 
 5. **Social provider token storage**: Better Auth stores OAuth tokens in the `Account` table. These allow account linking but should not be used for ongoing API access to the social provider. They're auth tokens, not API tokens.
 

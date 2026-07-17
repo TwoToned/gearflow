@@ -1,7 +1,7 @@
 <div align="center">
 
 # RVLT Flow
-[![Deploy RVLT Flow](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml)
+[![Build & Deploy](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml/badge.svg)](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml)
 
 ### Equipment & Rental Management for Production Companies
 
@@ -97,8 +97,8 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/gearflow-app/gearflow.git
-cd gearflow
+git clone https://github.com/RVLT-Labs/rvlt-flow.git
+cd rvlt-flow
 npm install
 ```
 

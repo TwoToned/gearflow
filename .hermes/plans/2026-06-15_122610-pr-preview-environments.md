@@ -34,7 +34,7 @@
 
 For PR #123:
 
-- URL: `https://pr-123.dev.gearflow.yourdomain.com`
+- URL: `https://pr-123.dev.rvlt-flow.yourdomain.com`
 - App container: `gearflow-pr-123-web`
 - Database: `gearflow_pr_123` or container `gearflow-pr-123-postgres`
 - MinIO bucket/prefix: `gearflow-pr-123`
@@ -46,7 +46,7 @@ For PR #123:
 Use wildcard DNS:
 
 ```txt
-*.dev.gearflow.yourdomain.com -> server IP
+*.dev.rvlt-flow.yourdomain.com -> server IP
 ```
 
 Use Caddy or Traefik for TLS + reverse proxy. I prefer **Caddy** unless you want container label magic. Caddy is less clever, which is often a feature when you're the poor bastard debugging it at midnight.
@@ -63,8 +63,8 @@ This is the best first version.
 2. GitHub Actions job runs on the self-hosted server.
 3. Script computes preview identity:
    - `PR_NUMBER=123`
-   - `PREVIEW_HOST=pr-123.dev.gearflow.example.com`
-   - `PREVIEW_URL=https://pr-123.dev.gearflow.example.com`
+   - `PREVIEW_HOST=pr-123.dev.rvlt-flow.example.com`
+   - `PREVIEW_URL=https://pr-123.dev.rvlt-flow.example.com`
 4. Script checks out the PR SHA into `/srv/gearflow-previews/pr-123/source`.
 5. Script writes `/srv/gearflow-previews/pr-123/.env` with PR-specific values.
 6. Script builds app image or runs `pnpm install && pnpm build` inside a container.
@@ -133,10 +133,10 @@ Keep this as the v2 if previews become core infrastructure.
 For each PR preview env, set:
 
 ```env
-NEXT_PUBLIC_APP_URL=https://pr-123.dev.gearflow.example.com
-BETTER_AUTH_URL=https://pr-123.dev.gearflow.example.com
-SSO_TRUSTED_ORIGINS=https://pr-123.dev.gearflow.example.com
-PASSKEY_RP_ID=pr-123.dev.gearflow.example.com
+NEXT_PUBLIC_APP_URL=https://pr-123.dev.rvlt-flow.example.com
+BETTER_AUTH_URL=https://pr-123.dev.rvlt-flow.example.com
+SSO_TRUSTED_ORIGINS=https://pr-123.dev.rvlt-flow.example.com
+PASSKEY_RP_ID=pr-123.dev.rvlt-flow.example.com
 ```
 
 Important notes:
@@ -425,7 +425,7 @@ Add a nightly TTL cleanup later for previews older than e.g. 14 days where the P
 4. Install and configure Caddy/Traefik with automatic HTTPS.
 5. Create `/srv/gearflow-previews` owned by runner user.
 6. Set GitHub repo vars:
-   - `PREVIEW_BASE_DOMAIN=dev.gearflow.example.com`
+   - `PREVIEW_BASE_DOMAIN=dev.rvlt-flow.example.com`
    - `APP_DIR` remains production only.
 7. Set GitHub secrets:
    - `PREVIEW_BETTER_AUTH_SECRET`

@@ -489,7 +489,7 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 ## Documentation
 
 ### User Guide (Docusaurus, Separate Repo)
-**What:** Build a public user-facing documentation site with Docusaurus (or similar). Covers onboarding, every major feature (assets, projects, warehouse flow, kits, sub-hires, reports), troubleshooting, and a "what's new" changelog. Hosted at docs.gearflow.app or similar. Likely a separate repo.
+**What:** Build a public user-facing documentation site with Docusaurus (or similar). Covers onboarding, every major feature (assets, projects, warehouse flow, kits, sub-hires, reports), troubleshooting, and a "what's new" changelog. Hosted at docs.rvlt.app or similar. Likely a separate repo.
 **Why:** Operators currently have no self-serve documentation. Every question is a support touch. A real user guide lets new orgs onboard themselves and reduces support load.
 **Pros:** Reduces support burden, improves onboarding, marketing value (SEO, demos), credibility for enterprise sales.
 **Cons:** Significant ongoing maintenance cost — docs go stale fast. Needs writer time, screenshots, and a workflow for keeping docs in sync with releases.

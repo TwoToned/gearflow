@@ -96,7 +96,7 @@ await requirePermission("asset", "create"); // throws if denied
 - **Plugin**: `@better-auth/passkey` — server config in `src/lib/auth.ts`, client in `src/lib/auth-client.ts`.
 - **Login page**: "Sign in with Passkey" button using `authClient.signIn.passkey()`. Email input has `autocomplete="username webauthn"`.
 - **Account page**: Passkey management — list, add (`authClient.passkey.addPasskey()`), rename, delete.
-- **Env vars**: `PASSKEY_RP_ID` (e.g. `gearflow.com` in production, `localhost` for dev).
+- **Env vars**: `PASSKEY_RP_ID` (e.g. `rvlt.app` in production, `localhost` for dev).
 
 ### Social Login (Google & Microsoft) — REMOVED
 - Google/Microsoft OAuth social login was removed end-to-end. There is no longer a `socialProviders` block in `auth.ts`, no `/api/auth/social-providers` route, no social buttons on the login page, and no "Connected Accounts" section on the account page.

@@ -492,7 +492,7 @@ Project shares expose structured business data (financials, crew, schedules) tha
 ### Share Link Format
 
 ```
-https://app.gearflow.com/shared/files/{shareToken}
+https://flow.rvlt.app/shared/files/{shareToken}
 ```
 
 The token is a cryptographically random string (32 bytes, URL-safe base64), stored hashed in `FileShare.shareToken`.

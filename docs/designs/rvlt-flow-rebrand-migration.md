@@ -122,7 +122,12 @@ Order matters. What breaks the moment the repo transfers:
 
 **Phase 1 — Cosmetic sweep (low risk, reversible):** Categories A + B + D-code, **with the entire Category A-HAZARD keep-list excluded from the find-replace** (HKDF contexts, `SERVICE_SUBJECT`, PDF plugin types, SSO `gearflowRole`, localStorage keys, `@gearflow` ICS UIDs, Google Map ID) plus `prisma/migrations/**`. One branch, one PR. Find-replace + filename refactors (filenames OK; the *type strings* stay) + UI fallback strings + `manifest.json` + LICENSE. No infra touched. Ship normally. ⚠️ The "reversible" property only holds *because* the irreversible load-bearing strings (esp. `@gearflow` UIDs and `SERVICE_SUBJECT`) are held out — do not let a broad sed sweep pull them in.
 
-**Phase 2 — Auth issuer + email domain (low risk, external):** Verify `rvlt.app` sending domain in Resend; flip `EMAIL_FROM`; rename TOTP issuer. Note both in release notes.
+**Phase 2 — Auth issuer + email domain + additive expand-contract (SHIPPED in code):**
+- Auth TOTP issuer → "RVLT Flow" (Phase 1).
+- `EMAIL_FROM` default flipped to `RVLT Flow <flow@rvlt.app>` in all five spots (`src/env.ts`, `convex/emailActions.ts`, `.env.example`, `CLAUDE.md`, `src/env.test.ts`). **Prod reads its own env**, so this is safe in code — the deliverability step is yours: verify `rvlt.app` in Resend (SPF/DKIM/DMARC), then set prod `EMAIL_FROM`; keep old `gearflow.app` DKIM alive so replies/bounces survive.
+- **Webhook headers (expand-contract):** now emit `X-RVLT-Flow-Signature/Event/Delivery-Id` + `user-agent: RVLT-Flow-Webhooks/v1` **alongside** the legacy `X-GearFlow-*` headers (identical values). Consumers migrate to the new names; drop the legacy set in a later release.
+- **localStorage migrate-on-read:** all pref keys renamed `gearflow-*` → `rvlt-flow-*` with one-time migration via `src/lib/local-storage-migrate.ts` (no user pref reset).
+- **Deploy workflow:** `build-image.yml` GHCR `IMAGE_NAME` now derives from `github.repository` (lowercased) — auto-adapts to `rvlt-labs/rvlt-flow` at the transfer, no hand-edit.
 
 **Phase 3 — GitHub org move (coordinated, one-way-ish):** Run the Org Move Runbook during a deploy freeze. Highest coordination cost; do it as its own discrete event.
 

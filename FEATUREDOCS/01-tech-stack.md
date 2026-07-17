@@ -31,7 +31,7 @@ S3_BUCKET                 # Default: gearflow-uploads
 RESEND_API_KEY            # Email provider
 SITE_ADMIN_REGISTRATION_ENABLED  # "true" to enable admin signup
 SITE_ADMIN_SECRET_TOKEN   # Token for /register/admin?token=...
-PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, gearflow.com)
+PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, rvlt.app)
 ```
 
 ## Key Config Files

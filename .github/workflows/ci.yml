@@ -94,6 +94,43 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  hygiene:
+    # Advisory (non-blocking) hygiene scans — POLICY.md R-4.2 (dead code) and
+    # R-7.3 (secret scanning). These start with continue-on-error so they surface
+    # findings in the log without failing CI; flip to blocking once the pre-existing
+    # burn-down list is cleared. NOT in build's `needs`, so they never gate merge.
+    name: Hygiene (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Dead-code scan (Knip, advisory)
+        run: pnpm run knip
+        continue-on-error: true
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
+      - name: Secret scan (gitleaks, advisory)
+        run: gitleaks detect --source . --no-git --redact -c .gitleaks.toml
+        continue-on-error: true
+
   build:
     name: Build
     runs-on: ubuntu-latest

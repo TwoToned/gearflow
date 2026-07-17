@@ -131,16 +131,22 @@ The list page (`page.tsx`) is a thin auth-gated wrapper that renders `<AssetsVie
   via `StatusIndicator`), and a muted condition · location line. Whole card is a
   focus-ringed `<Link href="/assets/registry/{id}">` with the RVLT hard-shadow lift.
   Read-only browse surface: carries its **own** search box + the New-asset action.
-- **Table — `AssetTable`** (unchanged) — the dense power view: serialized/bulk
-  toggle, column filters, saved views, bulk-select + bulk-edit, force-return, and
-  CSV import/export. All existing behaviour preserved.
-- **Shared data source:** both views read the SAME reactive Convex source
-  (`useAssets(orgId)`) and the SAME cross-domain photo query
-  (`getAssetRegistryPhotos()`), enriched identically (model + category + location +
-  primary media), so they always show the same serialized assets. The Gallery only
-  shows serialized assets (the visual library); bulk assets remain Table-only.
-  Filters/bulk/CSV are intentionally **not** shared into the Gallery — the Grid
-  keeps its own client-side search only.
+- **Table — `AssetTable`** — the dense power view: serialized/bulk toggle, column
+  filters, saved views, bulk-select + bulk-edit, force-return, and CSV import/export.
+- **Data source (2026-07, perf fix — see `docs/designs/perf-convex-efficiency-2026-06.md`
+  Finding #1):** the two views no longer share one whole-org reactive subscription.
+  `AssetTable` calls `assets.listPage`/`bulkAssets.listPage` (server-side filter/sort/
+  paginate, joins done in Convex) via `useAuthedQuery` — only the current page's rows
+  are subscribed to, not the whole org table. `AssetGallery` calls `assets.listGallery`
+  (also server-side, but unpaginated — it's a "browse everything, grouped by category"
+  view, not a table, so pagination doesn't fit; still reads every active asset in one
+  query instead of the old 4 separate whole-org subscriptions it used to mount). Both
+  still merge in the same cross-domain photo query (`assets.registryPhotos`) separately,
+  client-side. The two views are no longer guaranteed byte-identical (each runs its own
+  query with its own filter logic), but both source from the same underlying `assets`
+  table so they show the same serialized assets in practice. The Gallery only shows
+  serialized assets (the visual library); bulk assets remain Table-only. Filters/bulk/CSV
+  are intentionally **not** shared into the Gallery — the Grid keeps its own search only.
 
 ## Asset Record Page (`/assets/registry/[id]`)
 The serialized-asset detail page mirrors the approved project-detail "bar"

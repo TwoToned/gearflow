@@ -1,6 +1,13 @@
 # Suppliers & Purchase Orders
 
 ## Suppliers
+- **List page data source (2026-07, perf fix):** `SupplierTable`
+  (`src/components/suppliers/supplier-table.tsx`) is server-side paginated —
+  `suppliers.listPage` (filter/sort done in Convex) via `useAuthedQuery`, replacing a
+  whole-org `useSuppliers` live subscription that filtered/sorted client-side. See
+  `docs/designs/perf-convex-efficiency-2026-06.md` Finding #1. Unlike clients/kits,
+  archived suppliers are NOT excluded by default (`isActive` is an explicit filter).
+  Asset/order counts stay a separate, non-reactive cross-domain merge.
 - **Routes**: `/suppliers` (list), `/suppliers/[id]` (detail), `/suppliers/[id]/edit`, `/suppliers/new`, `/suppliers/[id]/orders/new`
 - **Fields**: name (required), contactName, email, phone, website, address, notes, accountNumber, paymentTerms, defaultLeadTime, tags, isActive
 - **Server actions**: `src/server/suppliers.ts` — `getSuppliers()`, `getSuppliersPaginated()`, `getSupplierById()`, `getSupplierAssets()`, `getSupplierSubhires()`, `createSupplier()`, `updateSupplier()`, `deleteSupplier()`
@@ -21,6 +28,14 @@
   actions, fields and permissions are unchanged.
 
 ## Clients & Locations forms
+- **`ClientTable` data source (2026-07, perf fix):** server-side paginated —
+  `clients.listPage` (filter/sort done in Convex) via `useAuthedQuery`, replacing a
+  whole-org `useClients` live subscription that filtered/sorted client-side. Always
+  excludes archived (`isActive: false`) clients. See
+  `docs/designs/perf-convex-efficiency-2026-06.md` Finding #1. Project counts stay
+  a separate, non-reactive cross-domain merge. `ClientsDashboard`'s own `useProjects`
+  call (aggregate revenue/count stats for one client) is a separate, not-yet-converted
+  follow-up — different problem shape (aggregate, not a row list).
 - **Client form** (`src/components/clients/client-form.tsx`) and **location form**
   (`src/components/locations/location-form.tsx`) use the same `SmartFormLayout`
   shell. Client sections: Identity (name + type `Select`) → Contact → Address

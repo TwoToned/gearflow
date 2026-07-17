@@ -1,5 +1,19 @@
 # Project & Rental Management
 
+## Projects List Views (`ProjectTable`, `ProjectBoard`)
+`ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
+paginated: `projects.listPage` (filter/sort/client join done in Convex) via
+`useAuthedQuery`. `ProjectBoard` (kanban, `project-board.tsx`) is unpaginated —
+`projects.listBoard` returns every non-template, non-cancelled project in one
+query, grouped by lifecycle stage client-side (a "browse everything" view, not a
+table). Both replaced whole-org live subscriptions (`useProjects`/`useClients`/
+`useLocations`) that used to filter/join/sort client-side (perf fix, 2026-07 — see
+`docs/designs/perf-convex-efficiency-2026-06.md` Finding #1). Per-page issue flags
+and blocking-comment counts are separate reads already scoped to the current
+page's project ids, unaffected by this change. `ClientsDashboard`'s own
+`useProjects` call (aggregate revenue/count stats, not a list) is a known,
+separate follow-up — not yet converted.
+
 ## Status Flow
 ```
 ENQUIRY → QUOTING → QUOTED → CONFIRMED → PREPPING → CHECKED_OUT → ON_SITE → RETURNED → COMPLETED → INVOICED

@@ -876,6 +876,29 @@ is the exact template if a bound turns out to be correct here.
   independent of this perf effort (consistent with #2/#3/#5/#6a/#8/#9 all having shifted).
   No consolidation needed — nothing unsafe or wasteful left here.
 
+## Finding #1 — SHIPPED (this session, `asset-table.tsx` only)
+
+`src/components/assets/asset-table.tsx` now calls `assets.listPage` / `bulkAssets.listPage`
+(server-side filter/sort/paginate, resolving model/category/location — already existed for
+the T&T-new picker) via `useAuthedQuery` instead of mounting `useAssets`/`useBulkAssets`/
+`useModels` as whole-org live subscriptions and filtering/sorting/paginating in the browser.
+`useLocations`/`useCategories` stay (small, org-config-sized — needed for filter dropdown
+option lists, not per-row data, so not the anti-pattern). Search is debounced 200ms
+(`useDebouncedValue`) since each keystroke is now a real round-trip, not a free client-side
+filter. Added `asset-table.smoke.test.tsx` (zero prior coverage on this component).
+
+**Not fixed — `asset-gallery.tsx` (documented gap, needs a product decision, not a perf
+call).** It still mounts `useAssets`/`useModels` as whole-org subscriptions
+(`asset-gallery.tsx:45-46`), same shape as the original finding. Unlike the table, the
+gallery is an **unpaginated, category-grouped "browse the whole catalogue" view** — it
+shows every active asset, grouped and sorted, on one scroll. `listPage`'s paginated
+contract doesn't fit that UX as-is; forcing it on would mean either (a) adding real
+pagination/infinite-scroll to the gallery (a UX change) or (b) requesting a huge `pageSize`
+to fake "show everything" (defeats the point of pagination, and still whole-org shaped).
+Punting rather than silently leaving this unrecorded — whoever picks it up next needs a
+product answer on whether the gallery should paginate/infinite-scroll before touching the
+query.
+
 ## Not re-checked this pass (lower priority / unaffected by the above)
 
 Tier 3 items (`useCrewRoles` double-subscribe — confirmed still present,

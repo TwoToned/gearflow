@@ -65,7 +65,7 @@ export function useOptimisticProjectNotes(projectId: string, orgId: string | und
 }
 
 /**
- * Native browser-direct project STATUS write — Phase 3, flag-gated + default OFF.
+ * Native browser-direct project STATUS write — Phase 3.
  * Swaps the `updateProjectStatus` server action for a direct
  * `useMutation(api.projectWrites.updateStatusNative)`, passing `emitSideEffects: true`
  * so the mutation folds the `project.status_changed` webhook in-transaction.
@@ -76,23 +76,19 @@ export function useOptimisticProjectNotes(projectId: string, orgId: string | und
  *
  * Security at the Convex boundary (USER token): assertWritesEnabled(project) +
  * enforceBrowserWriteLimit + requireOrgPermission(project, update) + resolveActor
- * (audit identity pinned to the verified token). Flag off → callers keep the server
- * action.
+ * (audit identity pinned to the verified token).
  */
-export const NATIVE_PROJECT_STATUS_BROWSER =
-  process.env.NEXT_PUBLIC_NATIVE_PROJECT_STATUS_BROWSER === "true";
-
 type StatusArg = FunctionArgs<typeof api.projectWrites.updateStatusNative>["status"];
 
 export function useNativeProjectStatus(orgId: string | undefined) {
   const { data: session } = useSession();
   const mutate = useMutation(api.projectWrites.updateStatusNative);
 
-  const enabled = NATIVE_PROJECT_STATUS_BROWSER && !!orgId && !!session?.user;
+  const enabled = !!orgId && !!session?.user;
 
   /** Change a project's status browser-direct. Resolves once the server confirms. */
   const updateStatus = async (projectId: string, status: string): Promise<void> => {
-    if (!orgId || !session?.user) return;
+    if (!orgId || !session?.user) throw new Error("Not ready");
     try {
       await mutate({
         id: projectId,
@@ -109,4 +105,57 @@ export function useNativeProjectStatus(orgId: string | undefined) {
   };
 
   return { enabled, updateStatus };
+}
+
+/**
+ * Native browser-direct project WRITE hook — the simple id-based project-detail
+ * writes (Phase 3): archive (status → CANCELLED) + template delete. Status has its
+ * own dedicated `useNativeProjectStatus` (both consumers already use it); notes has
+ * `useOptimisticProjectNotes`. Each method mints a client cuid for the audit row,
+ * pins the actor to the verified session, and passes `now: Date.now()`.
+ *
+ * Security at the Convex boundary (USER token): assertWritesEnabled(project) +
+ * enforceBrowserWriteLimit + requireOrgPermission(project, update|delete) +
+ * resolveActor (audit identity pinned to the verified token). ConvexError codes
+ * map back to the same UserFacingError toasts via `mapNativeWriteError`.
+ */
+export function useProjectWrites(orgId: string | undefined) {
+  const { data: session } = useSession();
+  const archiveM = useMutation(api.projectWrites.archiveNative);
+  const deleteTemplateM = useMutation(api.projectWrites.deleteTemplateNative);
+
+  const enabled = !!orgId && !!session?.user;
+
+  /** Cancel (archive) a project browser-direct. Resolves once the server confirms. */
+  const archive = async (projectId: string): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      await archiveM({
+        id: projectId,
+        orgId,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  };
+
+  /** Delete a project TEMPLATE browser-direct (full cascade runs in-mutation). */
+  const deleteTemplate = async (templateId: string): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      await deleteTemplateM({
+        id: templateId,
+        orgId,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  };
+
+  return { enabled, archive, deleteTemplate };
 }

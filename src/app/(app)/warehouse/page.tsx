@@ -20,7 +20,6 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-import { updateProjectStatus } from "@/server/projects";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
@@ -260,17 +259,12 @@ export default function WarehousePage() {
   // Post-write refresh is a no-op: the subscription pushes every change live.
   const refetch = useCallback(() => {}, []);
 
-  // Phase 3 browser-direct: status write (flag-gated, default OFF → falls back to the
-  // updateProjectStatus server action). The board list is a reactive useQuery, so the
-  // pipeline column updates on its own once the native mutation commits.
+  // Phase 3 browser-direct: status write (always native). The board list is a reactive
+  // useQuery, so the pipeline column updates on its own once the native mutation commits.
   const statusBrowser = useNativeProjectStatus(orgId);
   const statusMutation = useServerMutation({
     mutationFn: async ({ id, status }: { id: string; status: "CHECKED_OUT" | "RETURNED" | "COMPLETED" }) => {
-      if (statusBrowser.enabled) {
-        await statusBrowser.updateStatus(id, status);
-      } else {
-        await updateProjectStatus(id, status);
-      }
+      await statusBrowser.updateStatus(id, status);
     },
     onSuccess: (_, { status }) => {
       const label = status === "CHECKED_OUT" ? "Deployed" : status === "RETURNED" ? "Returned" : "Completed";

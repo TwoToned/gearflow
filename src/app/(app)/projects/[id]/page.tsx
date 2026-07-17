@@ -41,12 +41,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
-import {
-  updateProjectStatus,
-  updateProjectNotes,
-  archiveProject,
-  deleteProject,
-} from "@/server/projects";
+import { deleteProject } from "@/server/projects";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -74,7 +69,7 @@ import { useMediaWrites } from "@/hooks/use-media-writes";
 import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
-import { useOptimisticProjectNotes, useNativeProjectStatus } from "@/hooks/use-native-project-writes";
+import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -154,37 +149,26 @@ export default function ProjectDetailPage({
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
 
-  // Phase 3 browser-direct: optimistic project-notes save (flag-gated, default OFF →
-  // falls back to the updateProjectNotes server action). Consequence: notes are safe
-  // to optimistic (a wrong save just re-renders; nothing irreversible happens).
+  // Phase 3 browser-direct: optimistic project-notes save (always native — the notes
+  // are safe to optimistic; a wrong save just re-renders, nothing irreversible happens).
   const optimisticNotes = useOptimisticProjectNotes(id, orgId);
   const saveProjectNotes = (
     field: "crewNotes" | "internalNotes" | "clientNotes",
     notes: string,
-  ) =>
-    optimisticNotes.enabled
-      ? optimisticNotes.save(field, notes)
-      : updateProjectNotes(id, field, notes);
+  ) => optimisticNotes.save(field, notes);
 
   const { data: customTemplates } = useServerQuery({
     queryKey: ["document-templates-dropdown", orgId],
     queryFn: () => getPublishedTemplatesForDropdown(),
   });
 
-  // Phase 3 browser-direct: status write (flag-gated, default OFF → falls back to the
-  // updateProjectStatus server action). The detail view is reactive, so it re-renders
-  // on its own once the native mutation commits.
+  // Phase 3 browser-direct: status write (always native). The detail view is reactive,
+  // so it re-renders on its own once the native mutation commits.
   const statusBrowser = useNativeProjectStatus(orgId);
+  const projectWrites = useProjectWrites(orgId);
   const statusMutation = useServerMutation({
     mutationFn: async (nextStatus: string) => {
-      if (statusBrowser.enabled) {
-        await statusBrowser.updateStatus(id, nextStatus);
-      } else {
-        await updateProjectStatus(
-          id,
-          nextStatus as Parameters<typeof updateProjectStatus>[1]
-        );
-      }
+      await statusBrowser.updateStatus(id, nextStatus);
     },
     onSuccess: () => {
       toast.success("Status updated");
@@ -196,7 +180,7 @@ export default function ProjectDetailPage({
   });
 
   const archiveMutation = useServerMutation({
-    mutationFn: () => archiveProject(id),
+    mutationFn: () => projectWrites.archive(id),
     onSuccess: () => {
       toast.success("Project cancelled");
       refreshProjectDetail(id);

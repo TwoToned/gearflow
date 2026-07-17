@@ -41,8 +41,8 @@ npx prisma migrate dev --name <name>  # Create + apply migration
 Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this to bootstrap a new worktree:
 
 ```bash
-# Copy .env from main repo (adjust path if needed)
-cp /Users/jayden/code/ttp-assetmanagement/.env .
+# Copy .env from the main gearflow checkout (adjust path if needed)
+cp /path/to/gearflow/.env .
 
 # Install dependencies
 npm install --legacy-peer-deps
@@ -112,7 +112,14 @@ npx prisma migrate dev   # Apply all migrations + generate client
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
 - `PLATFORM_NAME` — Display name (default: `GearFlow`)
-- `ADMIN_REGISTRATION_TOKEN` — Secret token for `/register/admin?token=...`
+- `SITE_ADMIN_SECRET_TOKEN` / `SITE_ADMIN_REGISTRATION_ENABLED` — gate the
+  `/api/admin-register/{verify,promote}` site-admin self-registration routes
+  (`NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED` mirrors the enabled flag client-side)
+
+**Convex (backend):**
+- `CONVEX_DEPLOY_KEY` — Convex Cloud deploy key (CLI pushes, `convex dev`/`convex deploy`)
+- `NEXT_PUBLIC_CONVEX_URL` — Convex deployment URL the app connects to
+- `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` — Better Auth issuer Convex trusts for JWTs
 
 **DB connection hardening (optional, safe defaults):** layered onto the runtime
 `DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
@@ -169,16 +176,17 @@ this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/0
 ### ⚠️ Never regenerate `convex/schema.ts` over itself
 `scripts/generate-convex-schema.cjs` is a **scaffolding** tool, not a source of truth.
 The checked-in schema has diverged on purpose: hand-added `searchIndex`/composite
-indexes the generator never emits, plus (Phase C) Convex tables whose Prisma models
-are already stripped. It currently emits **91 tables against the checked-in 98** —
-running it over the file silently deletes live tables and every search index. To add
-a table: generate into a scratch dir, diff, hand-merge the stanza.
+indexes the generator never emits, plus every Convex table whose Prisma model has
+since been dropped (Postgres now only holds Better-Auth + audit models — the
+generator parses Prisma 1:1, so it would emit a small fraction of the checked-in
+schema). Running it over the file silently deletes live tables and every search
+index. To add a table: generate into a scratch dir, diff, hand-merge the stanza.
 
 Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
 authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
 be checked against `organizationId`, or you have a cross-tenant read.
 
-### Prisma v6
+### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev
 - **Bulk-data migrations MUST end with `ANALYZE "<table>";`.** A large

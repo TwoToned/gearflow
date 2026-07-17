@@ -133,6 +133,54 @@ export const listPage = query({
 });
 
 /**
+ * ALL of an org's active serialized assets (NOT paginated), sorted by model
+ * name — browser-native backend for the asset gallery's "browse the whole
+ * catalogue" view (`asset-gallery.tsx`). Unlike `listPage`, this returns every
+ * matching row in one shot: the gallery groups everything by category on one
+ * scroll, which doesn't fit a paginated contract (see docs/designs/
+ * perf-convex-efficiency-2026-06.md Finding #1 — "Option A" decision). Read
+ * shape is still O(org's active assets), since "show everything" is the
+ * feature, but it's now ONE query with joins + search done server-side,
+ * replacing the 4 whole-org live subscriptions (assets/models/categories/
+ * locations) the gallery used to mount and filter/join client-side.
+ */
+export const listGallery = query({
+  args: { orgId: v.string(), search: v.optional(v.string()) },
+  handler: async (ctx, { orgId, search }) => {
+    await requireOrgRead(ctx, orgId);
+    const [rows, models, categories, locations] = await Promise.all([
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const modelMap = new Map(models.map((m) => [m.id, m]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const modelNameFor = (id: string) => modelMap.get(id)?.name;
+
+    const filtered = rows.filter((r) => {
+      if ((r.isActive ?? true) !== true) return false;
+      if (search && !aMatchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], search)) return false;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((x, y) =>
+      String(modelNameFor(x.modelId) ?? "").localeCompare(String(modelNameFor(y.modelId) ?? ""), undefined, { sensitivity: "base" }),
+    );
+
+    return sorted.map((r) => {
+      const model = modelMap.get(r.modelId) ?? null;
+      return {
+        ...r,
+        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
+      };
+    });
+  },
+});
+
+/**
  * Primary-photo maps for the asset registry table + gallery — browser-native
  * replacement for getAssetRegistryPhotos. Returns { assetPhotos, modelPhotos }:
  * each id → { url, thumbnailUrl } of its PHOTO+isPrimary media row's file (org-scoped).

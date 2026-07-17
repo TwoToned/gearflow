@@ -7,11 +7,9 @@ import { ImageIcon, Plus, Search } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useAssets } from "@/hooks/use-assets";
-import { useModels } from "@/hooks/use-models";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useLocations } from "@/hooks/use-locations";
-import { useCategories } from "@/hooks/use-categories";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,10 +22,15 @@ import { assetStatusLabels, conditionLabels } from "@/lib/status-labels";
 type AnyAsset = Record<string, any>;
 
 /**
- * Asset gallery — a visual gear library. A responsive card grid (the same
- * serialized assets the AssetTable shows), pulled from the SAME reactive Convex
- * source (`useAssets`) and enriched with the SAME cross-domain photos
- * (`getAssetRegistryPhotos`). Cards group under a calm muted category overline.
+ * Asset gallery — a visual gear library. A responsive card grid of every active
+ * serialized asset, pulled from `assets.listGallery` (one server-side query
+ * doing the model/category/location joins + search filtering Convex-side) and
+ * enriched with the SAME cross-domain photos (`getAssetRegistryPhotos`). Cards
+ * group under a calm muted category overline.
+ *
+ * Deliberately unpaginated ("show everything, grouped" is the feature — see
+ * docs/designs/perf-convex-efficiency-2026-06.md Finding #1 "Option A"), unlike
+ * the Table view (AssetTable), which paginates via `assets.listPage`.
  *
  * Read-only browse surface: it carries its own search box + the New-asset action;
  * the dense filters / bulk-select / CSV live in the Table view (AssetTable).
@@ -41,11 +44,18 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Same reactive sources the AssetTable uses — both views stay in lockstep.
-  const allAssets = useAssets(orgId);
-  const allModels = useModels(orgId);
-  const locationsDocs = useLocations(orgId);
-  const categoriesDocs = useCategories(orgId);
+  // ONE server-side query (filter + sort + model/category/location joins all
+  // done in Convex) instead of the 4 whole-org live subscriptions this used to
+  // mount (assets/models/categories/locations) and join client-side. Still
+  // reads every active asset — "show everything, grouped" is the feature — see
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #1 ("Option A").
+  // Search is debounced since each keystroke is now a real round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const list = useAuthedQuery(
+    api.assets.listGallery,
+    orgId ? { orgId, search: debouncedSearch.trim() || undefined } : "skip",
+  );
+
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const { data: photos } = useServerQuery({
@@ -54,59 +64,23 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
     enabled: !!orgId && isAuthenticated,
   });
 
-  const modelById = useMemo(() => new Map((allModels ?? []).map((m) => [m.id, m])), [allModels]);
-  const categoryById = useMemo(
-    () => new Map((categoriesDocs ?? []).map((c) => [c.id, c])),
-    [categoriesDocs],
-  );
-  const locationById = useMemo(
-    () => new Map((locationsDocs ?? []).map((l) => [l.id, l])),
-    [locationsDocs],
-  );
-
-  // Mirror AssetTable's enrich(): resolve model (+ category + primary media),
-  // location, and the asset's own primary photo from the merged photo query.
+  // listGallery already resolves model (+ category) and location server-side —
+  // enrich only needs to merge in the (separate, non-reactive) photo lookup.
   const enrich = useMemo(() => {
     const assetPhotos = photos?.assetPhotos ?? {};
     const modelPhotos = photos?.modelPhotos ?? {};
     return (row: AnyAsset) => {
-      const model = modelById.get(row.modelId);
-      const category = model?.categoryId ? categoryById.get(model.categoryId) ?? null : null;
-      const mPhoto = modelPhotos[row.modelId];
+      const mPhoto = row.modelId ? modelPhotos[row.modelId] : undefined;
       const aPhoto = assetPhotos[row.id];
       return {
         ...row,
-        model: model ? { ...model, category, media: mPhoto ? [{ file: mPhoto }] : [] } : null,
-        location: row.locationId ? locationById.get(row.locationId) ?? null : null,
+        model: row.model ? { ...row.model, media: mPhoto ? [{ file: mPhoto }] : [] } : null,
         media: aPhoto ? [{ file: aPhoto }] : [],
       };
     };
-  }, [modelById, categoryById, locationById, photos]);
+  }, [photos]);
 
-  // Filter (active only) + client-side search, then enrich. Sorted by model name
-  // so the library reads like a catalogue.
-  const visible = useMemo(() => {
-    if (!allAssets) return undefined;
-    const q = search.trim().toLowerCase();
-    return allAssets
-      .filter((a) => a.isActive !== false)
-      .filter((a) => {
-        if (!q) return true;
-        const name = modelById.get(a.modelId)?.name?.toLowerCase() ?? "";
-        return (
-          a.assetTag.toLowerCase().includes(q)
-          || (a.serialNumber?.toLowerCase().includes(q) ?? false)
-          || (a.customName?.toLowerCase().includes(q) ?? false)
-          || name.includes(q)
-        );
-      })
-      .map(enrich)
-      .sort((a, b) =>
-        String(a.model?.name ?? "").localeCompare(String(b.model?.name ?? ""), undefined, {
-          sensitivity: "base",
-        }),
-      );
-  }, [allAssets, modelById, search, enrich]);
+  const visible = useMemo(() => (list ? list.map(enrich) : undefined), [list, enrich]);
 
   // Group cards under their category (assets with no category fall under
   // "Uncategorised"). Groups are ordered alphabetically; uncategorised last.
@@ -125,7 +99,7 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
     });
   }, [visible]);
 
-  const isLoading = allAssets === undefined;
+  const isLoading = list === undefined;
 
   return (
     <div className="space-y-4">

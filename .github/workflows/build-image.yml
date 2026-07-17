@@ -16,8 +16,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # GHCR requires a lowercase path; github.repository is "TwoToned/gearflow".
-  IMAGE_NAME: twotoned/gearflow
 
 jobs:
   build-and-deploy:
@@ -27,6 +25,14 @@ jobs:
       packages: write # push to GHCR with the built-in GITHUB_TOKEN
     steps:
       - uses: actions/checkout@v4
+
+      # GHCR requires a lowercase path. Derive it from github.repository so the
+      # image path follows the repo automatically across an org/name change
+      # (e.g. TwoToned/gearflow -> RVLT-Labs/rvlt-flow) with no edit needed.
+      # NOTE at the org move: also re-point Coolify's image source to the new
+      # path and reissue its GHCR pull credential — see the rebrand runbook.
+      - name: Compute image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
         with:

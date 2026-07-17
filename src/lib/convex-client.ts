@@ -8,7 +8,7 @@ import { getConvexServiceToken } from "./convex-auth";
  * Used by server actions, scripts, and webhooks to call Convex queries/mutations
  * over HTTP. Since Phase 5 every Convex function requires a valid token; this
  * client attaches the SERVICE token (see src/lib/convex-auth.ts), which identifies
- * the caller as the trusted GearFlow backend. The server action still does all
+ * the caller as the trusted RVLT Flow backend. The server action still does all
  * authorization (requirePermission/validation/logActivity) before calling Convex.
  *
  * The service identity is process-global, so a single ConvexHttpClient with the

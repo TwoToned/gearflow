@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect, useMemo } from "react";
 import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
+import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -29,11 +30,12 @@ import { useActiveOrganization } from "@/lib/auth-client";
 // Optimistic-UI fallback only. The DB (Convex notificationDismissals, via the
 // server actions below) is the source of truth — this just hides items instantly
 // while the mutation is in flight, and is shared with the app-shell bell.
-const DISMISSED_KEY = "gearflow-dismissed-notifications";
+const DISMISSED_KEY = "rvlt-flow-dismissed-notifications";
+const LEGACY_DISMISSED_KEY = "gearflow-dismissed-notifications"; // pre-rebrand
 
 function getDismissedIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
+    const raw = readMigratedLocalStorage(DISMISSED_KEY, LEGACY_DISMISSED_KEY);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch {
     return new Set();

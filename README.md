@@ -1,12 +1,12 @@
 <div align="center">
 
-# GearFlow
-[![Build & Deploy](https://github.com/TwoToned/gearflow/actions/workflows/build-image.yml/badge.svg)](https://github.com/TwoToned/gearflow/actions/workflows/build-image.yml)
+# RVLT Flow
+[![Build & Deploy](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml/badge.svg)](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml)
 
 ### Equipment & Rental Management for Production Companies
 
 Stop wrestling with spreadsheets and generic inventory tools.\
-GearFlow is built from the ground up for AV, theatre, and live event companies\
+RVLT Flow is built from the ground up for AV, theatre, and live event companies\
 who need to track gear, manage projects, and run a warehouse — not fight their software.
 
 [Get Started](#-getting-started) · [Features](#-what-you-get) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Environment Variables](#-environment-variables)
@@ -19,7 +19,7 @@ who need to track gear, manage projects, and run a warehouse — not fight their
 
 Production companies live and die by their gear. You need to know what's available, where it is, who has it, and when it's coming back — across dozens of projects running simultaneously. Most teams end up duct-taping together spreadsheets, whiteboards, and half-forgotten text messages.
 
-GearFlow replaces all of that with a single platform that handles the **entire equipment lifecycle**: from the moment gear arrives in your warehouse to the moment it's checked back in, tested, and shelved for the next show.
+RVLT Flow replaces all of that with a single platform that handles the **entire equipment lifecycle**: from the moment gear arrives in your warehouse to the moment it's checked back in, tested, and shelved for the next show.
 
 ---
 
@@ -80,7 +80,7 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 | Auth | **Better Auth** — Organizations, 2FA, Passkeys, Admin |
 | State | **Convex** `useQuery`/`useMutation` (reactive) + **React Hook Form** + **Zod** |
 | PDF | **pdfme** (`@pdfme/generator` + custom plugins) |
-| Storage | **AWS S3** / **MinIO** |
+| Storage | **Convex file storage** |
 | Email | **Resend** |
 | PWA | **@ducanh2912/next-pwa** |
 | Maps | **Google Maps** (`@vis.gl/react-google-maps`) |
@@ -92,13 +92,13 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ### Prerequisites
 
 - **Node.js 20+**
-- **Docker** (recommended — for PostgreSQL & MinIO) or bring your own Postgres + S3
+- **Docker** (recommended — for PostgreSQL) or bring your own Postgres
 
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/TwoToned/gearflow.git
-cd gearflow
+git clone https://github.com/RVLT-Labs/rvlt-flow.git
+cd rvlt-flow
 npm install
 ```
 
@@ -117,10 +117,8 @@ This gives you:
 | Service | URL | Credentials |
 |---|---|---|
 | PostgreSQL | `localhost:5432` | `postgres` / `postgres` / db: `gearflow` |
-| MinIO (S3) | `localhost:9000` | `minioadmin` / `minioadmin` |
-| MinIO Console | `localhost:9001` | Same as above |
 
-After MinIO starts, open [localhost:9001](http://localhost:9001), log in, and **create a bucket** called `gearflow-uploads`.
+File uploads are stored in **Convex file storage** — no S3/MinIO bucket to create.
 
 ### 3. Configure your environment
 
@@ -134,13 +132,6 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gearflow"
 BETTER_AUTH_SECRET="change-me-to-a-random-64-char-string"
 BETTER_AUTH_URL="http://localhost:3000"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-
-# ── File Storage (MinIO) ─────────────────────────────────
-S3_BUCKET="gearflow-uploads"
-S3_REGION="ap-southeast-2"
-S3_ACCESS_KEY_ID="minioadmin"
-S3_SECRET_ACCESS_KEY="minioadmin"
-S3_ENDPOINT="http://localhost:9000"
 
 # ── Email ─────────────────────────────────────────────────
 RESEND_API_KEY="re_your_api_key"
@@ -162,7 +153,7 @@ SITE_ADMIN_SECRET_TOKEN="pick-a-secret-token"
 
 ### 4. Set up Convex
 
-GearFlow uses [Convex](https://convex.dev) as the primary datastore for all
+RVLT Flow uses [Convex](https://convex.dev) as the primary datastore for all
 domain data (assets, projects, warehouse, etc.) — Postgres only holds Better
 Auth and the audit log. Create a Convex project, then push the schema/functions:
 
@@ -203,10 +194,6 @@ http://localhost:3000/register/admin?token=pick-a-secret-token
 | `BETTER_AUTH_SECRET` | Session encryption key — use a long random string |
 | `BETTER_AUTH_URL` | Base URL for auth callbacks (`http://localhost:3000` for dev) |
 | `NEXT_PUBLIC_APP_URL` | Public-facing app URL |
-| `S3_ACCESS_KEY_ID` | S3 or MinIO access key |
-| `S3_SECRET_ACCESS_KEY` | S3 or MinIO secret key |
-| `S3_BUCKET` | Storage bucket name |
-| `S3_REGION` | S3 region (default: `ap-southeast-2`) |
 | `RESEND_API_KEY` | API key from [resend.com](https://resend.com) |
 | `EMAIL_FROM` | Sender email address |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Maps API key (Maps JavaScript API + Places API (New)) |
@@ -217,8 +204,6 @@ http://localhost:3000/register/admin?token=pick-a-secret-token
 
 | Variable | Description |
 |---|---|
-| `S3_ENDPOINT` | Custom S3 endpoint — set for MinIO, omit for AWS |
-| `S3_PUBLIC_URL` | Public URL for uploaded files |
 | `UPLOAD_MAX_SIZE_MB` | Max file upload size (default: `50`) |
 | `PASSKEY_RP_ID` | WebAuthn relying party ID |
 | `PLATFORM_NAME` | Custom platform display name |
@@ -273,10 +258,10 @@ src/
 
 ## License
 
-GearFlow is source-available under the [Business Source License 1.1](./LICENSE).
+RVLT Flow is source-available under the [Business Source License 1.1](./LICENSE).
 
-**You can** freely use, modify, and self-host GearFlow — including for commercial purposes (e.g., running your own rental business).
+**You can** freely use, modify, and self-host RVLT Flow — including for commercial purposes (e.g., running your own rental business).
 
-**You cannot** offer GearFlow as a hosted or managed service to third parties.
+**You cannot** offer RVLT Flow as a hosted or managed service to third parties.
 
 Each version converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after its release.

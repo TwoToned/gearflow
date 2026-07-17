@@ -29,7 +29,7 @@ export interface SiteSettingsRow {
 /** Mirrors the Prisma `SiteSettings @default(...)` values for the not-yet-created case. */
 export const DEFAULT_SITE_SETTINGS: SiteSettingsRow = {
   id: null,
-  platformName: "GearFlow",
+  platformName: "RVLT Flow",
   platformIcon: null,
   platformLogo: null,
   registrationPolicy: "OPEN",

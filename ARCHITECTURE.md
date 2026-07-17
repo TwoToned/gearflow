@@ -1,4 +1,4 @@
-# GearFlow — Architecture Overview
+# RVLT Flow — Architecture Overview
 
 Multi-tenant asset and rental management platform for AV/theatre production companies. Built with Next.js 16 (App Router), TypeScript strict, Tailwind CSS v4, shadcn/ui, Better Auth, PostgreSQL + Prisma.
 
@@ -12,7 +12,7 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Auth | Better Auth (Organization, TwoFactor, Admin, Passkey plugins) |
 | State | Convex `useQuery`/`useMutation` (reactive, no polling), React Hook Form + Zod |
 | PDF | pdfme (@pdfme/generator + custom plugins, Helvetica only, no Unicode) |
-| Storage | S3/MinIO, org-prefixed paths |
+| Storage | Convex file storage (`_storage`), per-org access records |
 
 ## Commands
 ```bash

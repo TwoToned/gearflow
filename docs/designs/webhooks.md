@@ -6,7 +6,7 @@
 
 ## Intent
 
-Let an agent (or any integration) subscribe to a small set of high-signal GearFlow
+Let an agent (or any integration) subscribe to a small set of high-signal RVLT Flow
 events and receive a signed HTTP POST when they happen, rather than polling
 `list_projects` on a timer.
 
@@ -41,7 +41,7 @@ event with a `get_project` / `get_asset` call.
 ```
 
 - `id` is the **delivery** id. It is stable across retries — consumers use it to
-  deduplicate. Also sent as the `X-GearFlow-Delivery-Id` header.
+  deduplicate. Also sent as the `X-RVLT-Flow-Delivery-Id` header.
 - `version` is per-event. A breaking change to a payload ships as `v2` alongside `v1`,
   and subscriptions name the version they want. Additive fields are not breaking.
 
@@ -50,7 +50,7 @@ event with a `get_project` / `get_asset` call.
 Stripe-style, because it is the convention consumers already know and it defeats replay:
 
 ```
-X-GearFlow-Signature: t=1783600000,v1=<hex hmac-sha256>
+X-RVLT-Flow-Signature: t=1783600000,v1=<hex hmac-sha256>
 ```
 
 The signed message is `${timestamp}.${rawBody}`, keyed by the endpoint's secret

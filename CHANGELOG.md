@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to GearFlow will be documented in this file.
+All notable changes to RVLT Flow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -345,7 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Webhooks.** Subscribe an HTTPS endpoint and GearFlow POSTs you a signed event when something happens, so an agent can react instead of polling. Four events: `project.status_changed`, `line_item.added`, `warehouse.checked_out`, `maintenance.created`. Deliveries are signed (HMAC-SHA256 over the timestamp and body, so they can't be replayed), retried with exponential backoff, logged for debugging, and auto-disabled if an endpoint stays dead. Manage subscriptions through the API like any other operation. Secrets rotate with a grace window during which both the old and new secret verify.
+- **Webhooks.** Subscribe an HTTPS endpoint and RVLT Flow POSTs you a signed event when something happens, so an agent can react instead of polling. Four events: `project.status_changed`, `line_item.added`, `warehouse.checked_out`, `maintenance.created`. Deliveries are signed (HMAC-SHA256 over the timestamp and body, so they can't be replayed), retried with exponential backoff, logged for debugging, and auto-disabled if an endpoint stays dead. Manage subscriptions through the API like any other operation. Secrets rotate with a grace window during which both the old and new secret verify.
 - **Batch availability.** `check_availability_batch` answers for up to 100 models in one call instead of one call per model.
 - **Project line items now include their category name**, so grouping a project's gear by category takes one call.
 - `list_operations` now supports `offset` for paging — with 537+ operations, everything past the first page was previously unreachable — and reports `total`, `offset` and `hasMore`.
@@ -765,7 +765,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.0.0] - 2026-06-04
 
-GearFlow now bridges Discord. Every project gets its own private channel,
+RVLT Flow now bridges Discord. Every project gets its own private channel,
 crew can link their Discord accounts via email, and they can look up assets
 and log faults from their phone without opening the app. The bot runs
 in-process — there's nothing to deploy separately, no `.env` to manage. Admins
@@ -779,7 +779,7 @@ configure everything at **Settings → Discord**.
   RETURNED, CANCELLED`). Crew get channel access as soon as they're assigned;
   late-linking crew get retroactive access on confirm.
 - **`/link [email]` enrollment.** Crew run `/link` in Discord, get a magic
-  link emailed to their GearFlow profile, and click to confirm. Anti-hijack
+  link emailed to their RVLT Flow profile, and click to confirm. Anti-hijack
   hardened (the token binds the invoker's Discord ID at issue time), constant
   "if that email is on file" response (no enumeration oracle), durably
   rate-limited (3/hr per Discord user, 3/day per crew member).
@@ -807,7 +807,7 @@ configure everything at **Settings → Discord**.
 
 ### Changed
 - **Bot architecture: in-process, no separate service.** The bot lives inside
-  the GearFlow Next.js server (booted by `instrumentation.ts`). Slash commands
+  the RVLT Flow Next.js server (booted by `instrumentation.ts`). Slash commands
   call services directly; the outbox poller reads the DB directly. Same
   service-layer invariants (`requireActorPermission`, transactional outbox,
   idempotent converge) as a separate service would have — but with one process,
@@ -1435,7 +1435,7 @@ Hotfix for a production crash introduced in 0.6.0.0.
 ## [0.6.0.0] - 2026-05-21
 
 Wave 3 — the AV-rental wedge. Eight new operational features plus an
-app-wide error-UX overhaul. GearFlow now tracks the full asset lifecycle:
+app-wide error-UX overhaul. RVLT Flow now tracks the full asset lifecycle:
 damage at checkin, the repair queue, ROI per asset, periodic inventory
 counts, and reordering — and lets each operator extend the data model
 to fit their shop.
@@ -1911,7 +1911,7 @@ single-tenant is the operational reality.
 
 ## [0.1.0] - 2026-03-10
 
-Initial release of GearFlow — asset and rental management platform for AV/theatre production companies.
+Initial release of RVLT Flow — asset and rental management platform for AV/theatre production companies.
 
 ### Added
 

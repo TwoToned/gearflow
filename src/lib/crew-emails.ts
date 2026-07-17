@@ -59,7 +59,7 @@ function emailWrapper(content: string, orgName: string): string {
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
       ${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-      <p style="color:#999;font-size:12px;">Sent by ${orgName} via GearFlow</p>
+      <p style="color:#999;font-size:12px;">Sent by ${orgName} via RVLT Flow</p>
     </div>
   `;
 }

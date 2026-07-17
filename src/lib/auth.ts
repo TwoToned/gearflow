@@ -116,7 +116,7 @@ export const auth = betterAuth({
       },
     }),
     twoFactor({
-      issuer: "GearFlow",
+      issuer: "RVLT Flow",
     }),
     admin(),
     passkey({

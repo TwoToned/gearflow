@@ -1,5 +1,5 @@
 /**
- * Role-based permission system for GearFlow.
+ * Role-based permission system for RVLT Flow.
  *
  * Built-in roles only (owner, admin, manager, member, warehouse, viewer) — static
  * defaults, always available. (Custom roles were removed.)

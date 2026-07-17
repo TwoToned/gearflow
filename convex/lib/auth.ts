@@ -81,11 +81,11 @@ export function redactFields<T extends Record<string, unknown>>(
   return out;
 }
 
-/** Throw unless the caller is the trusted GearFlow backend. Use for all writes. */
+/** Throw unless the caller is the trusted RVLT Flow backend. Use for all writes. */
 export async function requireService(ctx: AuthCtx): Promise<void> {
   const auth = await getAuthContext(ctx);
   if (!auth || auth.kind !== "service") {
-    throw new ConvexError("Unauthorized: this operation requires the GearFlow server.");
+    throw new ConvexError("Unauthorized: this operation requires the RVLT Flow server.");
   }
 }
 

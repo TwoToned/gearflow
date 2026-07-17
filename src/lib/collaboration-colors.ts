@@ -3,7 +3,7 @@
  *
  * Each user gets a stable colour derived from their userId so it never
  * changes between sessions. Red/orange are excluded to avoid collision with
- * GearFlow's error/warning semantics.
+ * RVLT Flow's error/warning semantics.
  */
 
 // 12 distinct colours covering the hue wheel, skipping red and orange.

@@ -11,7 +11,7 @@
 
 ## Problem Statement
 
-GearFlow's current PDF generation system has two critical issues:
+RVLT Flow's current PDF generation system has two critical issues:
 1. **Multi-page documents break.** The gearflowTable plugin draws content from a fixed Y-position with no page-break awareness. Projects with 20+ line items produce PDFs where content runs off the page.
 2. **Limited customization.** Users can only toggle fields on/off. They can't reorder sections, add custom content, or control layout.
 

@@ -3,7 +3,10 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 /**
  * Webhook signing, Stripe-style — the convention consumers already know.
  *
- *     X-GearFlow-Signature: t=1783600000,v1=<hex hmac-sha256>
+ *     X-RVLT-Flow-Signature: t=1783600000,v1=<hex hmac-sha256>
+ *
+ * (During the rebrand transition the same value is also sent as the legacy
+ * `X-GearFlow-Signature` header; consumers should migrate to `X-RVLT-Flow-*`.)
  *
  * The signed message is `${timestamp}.${rawBody}`. Signing the TIMESTAMP as well as
  * the body is what makes a captured payload unreplayable: an attacker cannot move an

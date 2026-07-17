@@ -7,8 +7,8 @@ import { usePlatformName } from "@/lib/use-platform-name";
  * Sets the document title and favicon dynamically.
  * Place in any page to override the default title.
  *
- * Usage: <PageMeta title="Pippin" /> → "Pippin — GearFlow"
- *        <PageMeta title="Settings" /> → "Settings — GearFlow"
+ * Usage: <PageMeta title="Pippin" /> → "Pippin — RVLT Flow"
+ *        <PageMeta title="Settings" /> → "Settings — RVLT Flow"
  */
 export function PageMeta({ title }: { title?: string }) {
   const platformName = usePlatformName();

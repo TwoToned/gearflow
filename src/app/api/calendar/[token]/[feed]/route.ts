@@ -138,7 +138,7 @@ async function buildProjectsFeed(
       dtend,
       allDay,
       status: icalStatus,
-      categories: ["GearFlow", (p.status ?? "").replace(/_/g, " ")],
+      categories: ["RVLT Flow", (p.status ?? "").replace(/_/g, " ")],
     });
   }
 
@@ -215,7 +215,7 @@ async function buildServicesFeed(
       status: sStatus === "CONFIRMED" || sStatus === "IN_PROGRESS"
         ? "CONFIRMED"
         : "TENTATIVE",
-      categories: ["GearFlow", s.type.replace(/_/g, " ")],
+      categories: ["RVLT Flow", s.type.replace(/_/g, " ")],
     });
   }
 
@@ -299,7 +299,7 @@ async function buildMaintenanceFeed(
       dtend,
       allDay: true,
       status: r.status === "IN_PROGRESS" ? "CONFIRMED" : "TENTATIVE",
-      categories: ["GearFlow", r.type.replace(/_/g, " ")],
+      categories: ["RVLT Flow", r.type.replace(/_/g, " ")],
     });
 
     // Add a separate event for nextDueDate if set
@@ -315,7 +315,7 @@ async function buildMaintenanceFeed(
         dtend: dueEnd,
         allDay: true,
         status: "TENTATIVE",
-        categories: ["GearFlow", "Maintenance Due"],
+        categories: ["RVLT Flow", "Maintenance Due"],
       });
     }
   }
@@ -401,7 +401,7 @@ async function buildCrewOverviewFeed(
           dtstart,
           dtend,
           status: "CONFIRMED",
-          categories: ["GearFlow", a.phase || ""].filter(Boolean),
+          categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
         });
       }
     } else {
@@ -429,7 +429,7 @@ async function buildCrewOverviewFeed(
         dtstart,
         dtend,
         status: "CONFIRMED",
-        categories: ["GearFlow", a.phase || ""].filter(Boolean),
+        categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
       });
     }
   }

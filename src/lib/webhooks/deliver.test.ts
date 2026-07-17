@@ -63,13 +63,18 @@ describe("deliverPendingWebhooks — success", () => {
     expect(url).toBe("https://hooks.example.com/x");
 
     const headers = init.headers as Record<string, string>;
+    // New RVLT Flow headers.
+    expect(headers["X-RVLT-Flow-Event"]).toBe("project.status_changed");
+    expect(headers["X-RVLT-Flow-Delivery-Id"]).toBe("whd_1");
+    // Legacy headers still emitted during the rebrand transition, same values.
     expect(headers["X-GearFlow-Event"]).toBe("project.status_changed");
     expect(headers["X-GearFlow-Delivery-Id"]).toBe("whd_1");
+    expect(headers["X-GearFlow-Signature"]).toBe(headers["X-RVLT-Flow-Signature"]);
 
     expect(
       verifyWebhookSignature({
         rawBody: init.body as string,
-        header: headers["X-GearFlow-Signature"],
+        header: headers["X-RVLT-Flow-Signature"],
         secrets: [SECRET],
         nowSeconds: Math.floor(NOW.getTime() / 1000),
       }),

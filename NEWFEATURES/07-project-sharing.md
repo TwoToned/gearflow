@@ -4,7 +4,7 @@
 
 Allow organization members to share project pages with two audiences:
 
-1. **Internal users** (GearFlow account holders in the same or different org) — the project appears in a "Shared with me" section on their dashboard. Optionally grant edit access.
+1. **Internal users** (RVLT Flow account holders in the same or different org) — the project appears in a "Shared with me" section on their dashboard. Optionally grant edit access.
 2. **External guests** (no account) — receive an email with a magic link, verify their email to get a 24-hour guest session, and can view a scoped read-only version of the project.
 
 Both share types support **scope controls** that let the sharer decide exactly what information the recipient can see (e.g. hide financials, internal notes, subhire details, etc.).
@@ -214,7 +214,7 @@ Provide preset templates the sharer can pick from, then customise:
 
 ### Who Can Be an Internal Recipient
 
-- Any user who has a GearFlow account. They do NOT need to be in the same organization.
+- Any user who has a RVLT Flow account. They do NOT need to be in the same organization.
 - The sharer searches by name or email. If the email matches a registered user, it's an internal share.
 - If the email does NOT match any registered user, it's an external guest share (see next section).
 
@@ -816,7 +816,7 @@ A "Share" button on the project detail page (`/projects/[id]`). Icon: `Share2` o
 **Step 1: Add Recipients**
 - Email input field with autocomplete that searches org members by name/email
 - As the user types:
-  - If matches a GearFlow user → show their name + avatar + "GearFlow User" badge
+  - If matches a RVLT Flow user → show their name + avatar + "RVLT Flow User" badge
   - If no match → show "Invite as guest" option with the typed email
 - "Add" button adds the recipient to a list below the input
 - Each recipient in the list shows:
@@ -878,7 +878,7 @@ Layout:
 - For authenticated users: small "Back to dashboard" link
 - For guests: "Shared with you by [sharer name] from [org name]" + session expiry timer
 - Main content: project data rendered according to scope (see Section 6)
-- Footer: "Powered by GearFlow" branding (optional)
+- Footer: "Powered by RVLT Flow" branding (optional)
 
 ### For Internal Users with Edit Access
 
@@ -1055,7 +1055,7 @@ On import, `GuestAccessToken` records should probably be cleared (don't import a
 
 ### Share Dialog
 
-- Full-screen on mobile with safe area padding (same pattern as other GearFlow dialogs)
+- Full-screen on mobile with safe area padding (same pattern as other RVLT Flow dialogs)
 - Scope toggles should be in an accordion/collapsible layout on mobile to avoid overwhelming scroll
 
 ---

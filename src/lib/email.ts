@@ -83,11 +83,11 @@ export function invitationEmail({
   acceptUrl: string;
 }) {
   return {
-    subject: `You've been invited to ${orgName} on GearFlow`,
+    subject: `You've been invited to ${orgName} on RVLT Flow`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>You've been invited to join ${orgName}</h2>
-        <p>${inviterName} has invited you to join <strong>${orgName}</strong> as a <strong>${role}</strong> on GearFlow.</p>
+        <p>${inviterName} has invited you to join <strong>${orgName}</strong> as a <strong>${role}</strong> on RVLT Flow.</p>
         <p>
           <a href="${acceptUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
             Accept Invitation
@@ -101,7 +101,7 @@ export function invitationEmail({
 
 export function passwordResetEmail({ resetUrl }: { resetUrl: string }) {
   return {
-    subject: "Reset your GearFlow password",
+    subject: "Reset your RVLT Flow password",
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Password Reset Request</h2>
@@ -141,7 +141,7 @@ export function removedFromOrgEmail({ orgName }: { orgName: string }) {
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Organization Access Removed</h2>
-        <p>You have been removed from <strong>${orgName}</strong> on GearFlow.</p>
+        <p>You have been removed from <strong>${orgName}</strong> on RVLT Flow.</p>
         <p>If you believe this is a mistake, please contact the organization admin.</p>
       </div>
     `,

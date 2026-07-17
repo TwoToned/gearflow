@@ -110,7 +110,15 @@ async function attemptOne(
         redirect: "manual",
         headers: {
           "content-type": "application/json",
-          "user-agent": "GearFlow-Webhooks/v1",
+          "user-agent": "RVLT-Flow-Webhooks/v1",
+          // Rebrand transition (expand-contract): emit the new X-RVLT-Flow-*
+          // headers AND the legacy X-GearFlow-* headers with identical values so
+          // existing consumers keep verifying signatures while they migrate. Drop
+          // the legacy set in a later release once consumers have moved. See
+          // docs/designs/rvlt-flow-rebrand-migration.md.
+          "X-RVLT-Flow-Signature": signature,
+          "X-RVLT-Flow-Event": delivery.event,
+          "X-RVLT-Flow-Delivery-Id": delivery.id,
           "X-GearFlow-Signature": signature,
           "X-GearFlow-Event": delivery.event,
           "X-GearFlow-Delivery-Id": delivery.id,

@@ -1,10 +1,10 @@
-# GearFlow PR Preview Environments Plan
+# RVLT Flow PR Preview Environments Plan
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Automatically create a short-lived GearFlow preview instance for each GitHub PR on Jayden's own server, with a PR-specific domain and matching Better Auth / app URLs, roughly emulating Vercel preview deployments without handing Vercel the keys to the kingdom.
+**Goal:** Automatically create a short-lived RVLT Flow preview instance for each GitHub PR on Jayden's own server, with a PR-specific domain and matching Better Auth / app URLs, roughly emulating Vercel preview deployments without handing Vercel the keys to the kingdom.
 
-**Architecture:** Use GitHub Actions on PR open/sync/reopen/close, a self-hosted runner on the server, Docker Compose per PR, Traefik or Caddy for wildcard HTTPS routing, and per-PR environment generation. Each preview runs an isolated app container, isolated Postgres database/schema, optionally isolated MinIO bucket/prefix, and connects to a shared or per-PR Convex dev deployment depending on what GearFlow needs once Convex lands in the repo.
+**Architecture:** Use GitHub Actions on PR open/sync/reopen/close, a self-hosted runner on the server, Docker Compose per PR, Traefik or Caddy for wildcard HTTPS routing, and per-PR environment generation. Each preview runs an isolated app container, isolated Postgres database/schema, optionally isolated MinIO bucket/prefix, and connects to a shared or per-PR Convex dev deployment depending on what RVLT Flow needs once Convex lands in the repo.
 
 **Tech Stack:** GitHub Actions, self-hosted runner, Docker/Compose, Caddy or Traefik, PostgreSQL, pnpm/Next.js, Prisma, Better Auth, Convex CLI/API, optional GitHub Deployments API.
 
@@ -34,7 +34,7 @@
 
 For PR #123:
 
-- URL: `https://pr-123.dev.gearflow.yourdomain.com`
+- URL: `https://pr-123.dev.rvlt-flow.yourdomain.com`
 - App container: `gearflow-pr-123-web`
 - Database: `gearflow_pr_123` or container `gearflow-pr-123-postgres`
 - MinIO bucket/prefix: `gearflow-pr-123`
@@ -46,7 +46,7 @@ For PR #123:
 Use wildcard DNS:
 
 ```txt
-*.dev.gearflow.yourdomain.com -> server IP
+*.dev.rvlt-flow.yourdomain.com -> server IP
 ```
 
 Use Caddy or Traefik for TLS + reverse proxy. I prefer **Caddy** unless you want container label magic. Caddy is less clever, which is often a feature when you're the poor bastard debugging it at midnight.
@@ -63,8 +63,8 @@ This is the best first version.
 2. GitHub Actions job runs on the self-hosted server.
 3. Script computes preview identity:
    - `PR_NUMBER=123`
-   - `PREVIEW_HOST=pr-123.dev.gearflow.example.com`
-   - `PREVIEW_URL=https://pr-123.dev.gearflow.example.com`
+   - `PREVIEW_HOST=pr-123.dev.rvlt-flow.example.com`
+   - `PREVIEW_URL=https://pr-123.dev.rvlt-flow.example.com`
 4. Script checks out the PR SHA into `/srv/gearflow-previews/pr-123/source`.
 5. Script writes `/srv/gearflow-previews/pr-123/.env` with PR-specific values.
 6. Script builds app image or runs `pnpm install && pnpm build` inside a container.
@@ -121,8 +121,8 @@ Use k3s, ingress-nginx/Traefik, cert-manager, external-dns, per-PR namespaces.
 
 ### Cons
 
-- More moving pieces than GearFlow needs right now.
-- You will spend two evenings arguing with YAML instead of shipping GearFlow.
+- More moving pieces than RVLT Flow needs right now.
+- You will spend two evenings arguing with YAML instead of shipping RVLT Flow.
 
 Keep this as the v2 if previews become core infrastructure.
 
@@ -133,10 +133,10 @@ Keep this as the v2 if previews become core infrastructure.
 For each PR preview env, set:
 
 ```env
-NEXT_PUBLIC_APP_URL=https://pr-123.dev.gearflow.example.com
-BETTER_AUTH_URL=https://pr-123.dev.gearflow.example.com
-SSO_TRUSTED_ORIGINS=https://pr-123.dev.gearflow.example.com
-PASSKEY_RP_ID=pr-123.dev.gearflow.example.com
+NEXT_PUBLIC_APP_URL=https://pr-123.dev.rvlt-flow.example.com
+BETTER_AUTH_URL=https://pr-123.dev.rvlt-flow.example.com
+SSO_TRUSTED_ORIGINS=https://pr-123.dev.rvlt-flow.example.com
+PASSKEY_RP_ID=pr-123.dev.rvlt-flow.example.com
 ```
 
 Important notes:
@@ -201,7 +201,7 @@ Cons:
 - Need Convex token on self-hosted runner.
 - Need cleanup discipline.
 
-Recommended final state: per-PR Convex deployments if GearFlow's active data layer is moving there. Shared dev is acceptable as a temporary bootstrapping hack.
+Recommended final state: per-PR Convex deployments if RVLT Flow's active data layer is moving there. Shared dev is acceptable as a temporary bootstrapping hack.
 
 ---
 
@@ -425,7 +425,7 @@ Add a nightly TTL cleanup later for previews older than e.g. 14 days where the P
 4. Install and configure Caddy/Traefik with automatic HTTPS.
 5. Create `/srv/gearflow-previews` owned by runner user.
 6. Set GitHub repo vars:
-   - `PREVIEW_BASE_DOMAIN=dev.gearflow.example.com`
+   - `PREVIEW_BASE_DOMAIN=dev.rvlt-flow.example.com`
    - `APP_DIR` remains production only.
 7. Set GitHub secrets:
    - `PREVIEW_BETTER_AUTH_SECRET`
@@ -466,7 +466,7 @@ Add a nightly TTL cleanup later for previews older than e.g. 14 days where the P
 ## My recommended implementation order
 
 1. Add Caddy/Traefik and wildcard DNS manually on server.
-2. Add Dockerfile for GearFlow production-ish app if missing.
+2. Add Dockerfile for RVLT Flow production-ish app if missing.
 3. Add `src/app/api/health/route.ts`.
 4. Add `infra/previews/docker-compose.preview.yml`.
 5. Add `deploy-preview.sh` using static env, no Convex automation yet.

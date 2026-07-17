@@ -242,7 +242,7 @@ function buildDigestEmail({
       ${overdueSection}
       ${dueSoonSection}
       <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">
-        This is an automated reminder from GearFlow. Manage your test &amp; tag schedule in the app.
+        This is an automated reminder from RVLT Flow. Manage your test &amp; tag schedule in the app.
       </p>
     </body>
     </html>`;

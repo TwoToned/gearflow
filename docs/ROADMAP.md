@@ -1,6 +1,6 @@
-# GearFlow Roadmap
+# RVLT Flow Roadmap
 
-Operational roadmap for GearFlow, the AV/theatre rental-management platform for
+Operational roadmap for RVLT Flow, the AV/theatre rental-management platform for
 Two Toned Productions. This document sequences known work into priority phases.
 It is the parent index above the individual design docs in `docs/designs/`.
 
@@ -12,7 +12,7 @@ It is the parent index above the individual design docs in `docs/designs/`.
   `XL` (multi-month). AI-assisted build time is a small fraction of this.
 - Each phase item is a candidate for its own `/autoplan` run — one feature, one
   plan, one review pipeline. Do not batch unrelated items into a single plan.
-- Finance stays out of scope. Xero owns invoices, payments, quotes, GST. GearFlow
+- Finance stays out of scope. Xero owns invoices, payments, quotes, GST. RVLT Flow
   is operational tooling. (See `docs/designs/app-cleanup-unification.md`.)
 
 ## The big reframe
@@ -124,12 +124,12 @@ workflows are solid.
 ### 3.1 — Project todo lists
 **Effort:** M
 Add Asana-style todo/task lists to projects so project management lives in
-GearFlow instead of scattered across chat and email.
+RVLT Flow instead of scattered across chat and email.
 
 ### 3.2 — Public API
 **Effort:** L
 A documented API for users to programmatically pull data from and drive
-GearFlow. Needs API-key authentication, rate limiting, versioning, and reference
+RVLT Flow. Needs API-key authentication, rate limiting, versioning, and reference
 docs. Recommend shipping **read-only v1 first** (a much smaller, lower-risk
 surface) and adding write endpoints once the read API has real users. API
 reference docs belong with the user guide (see Continuous tracks).

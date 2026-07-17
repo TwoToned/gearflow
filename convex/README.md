@@ -1,6 +1,6 @@
-# Convex — GearFlow data layer
+# Convex — RVLT Flow data layer
 
-Self-hosted Convex is GearFlow's reactive data layer. This directory holds the
+Self-hosted Convex is RVLT Flow's reactive data layer. This directory holds the
 Convex schema, queries, and mutations. **Business logic stays in Next.js server
 actions** (`src/server/`) — Convex functions are thin CRUD stubs.
 

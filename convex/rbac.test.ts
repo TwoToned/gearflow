@@ -88,7 +88,7 @@ describe("members mirror mutations", () => {
       t
         .withIdentity(asUser(ORG))
         .mutation(api.members.upsert, { id: "m1", organizationId: ORG, userId: USER, role: "viewer" }),
-    ).rejects.toThrow(/requires the GearFlow server/i);
+    ).rejects.toThrow(/requires the RVLT Flow server/i);
   });
 
   test("upsert is idempotent and replaces the role (one row by org+user)", async () => {

@@ -195,7 +195,7 @@ export function SSOGroupMappingSection({
           <div className="space-y-2">
             <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-xs font-medium text-fg-3 px-1">
               <span>IdP Group {groupValueType === "id" ? "ID" : "Name"}</span>
-              <span>GearFlow Role</span>
+              <span>RVLT Flow Role</span>
               <span className="w-8" />
             </div>
             {localMappings.map((mapping, i) => (

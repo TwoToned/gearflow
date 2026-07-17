@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Deterministic thin-CRUD generator for GearFlow Phase 2 (auth-hardened in Phase 5).
+/* Deterministic thin-CRUD generator for RVLT Flow Phase 2 (auth-hardened in Phase 5).
  *
  * For each app-data table, emits convex/<tableKey>.ts with list / getById /
  * create / update / remove (the doc's standard 5). Lookups key off the preserved

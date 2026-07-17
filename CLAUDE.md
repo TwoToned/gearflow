@@ -99,19 +99,19 @@ npx prisma migrate dev   # Apply all migrations + generate client
 
 **Email (Resend):**
 - `RESEND_API_KEY` — Resend API key (dev logs to console if unset)
-- `EMAIL_FROM` — Sender address (default: `GearFlow <noreply@gearflow.app>`)
+- `EMAIL_FROM` — Sender address (default: `RVLT Flow <flow@rvlt.app>`)
 
-**File Storage (S3):**
-- `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
-- `S3_BUCKET` (default: `gearflow-uploads`)
-- `S3_ENDPOINT` — Custom endpoint (optional, for S3-compatible providers)
+**File Storage:** Uploaded file bytes are stored in **Convex file storage** (`_storage`),
+not S3/MinIO. `src/lib/storage.ts` keeps the old `uploadToS3`/`deleteFromS3` API names
+for compatibility but routes through `convex/files.ts` → `ctx.storage`. The legacy S3
+env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
-- `PLATFORM_NAME` — Display name (default: `GearFlow`)
+- `PLATFORM_NAME` — Display name (default: `RVLT Flow`)
 - `SITE_ADMIN_SECRET_TOKEN` / `SITE_ADMIN_REGISTRATION_ENABLED` — gate the
   `/api/admin-register/{verify,promote}` site-admin self-registration routes
   (`NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED` mirrors the enabled flag client-side)

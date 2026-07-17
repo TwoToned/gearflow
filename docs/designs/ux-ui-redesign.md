@@ -3,11 +3,11 @@
 status: ACTIVE
 updated: 2026-06-18
 ---
-# Plan: Full RVLT Flow UI/UX Redesign (GearFlow → RVLT Flow)
+# Plan: Full RVLT Flow UI/UX Redesign (RVLT Flow → RVLT Flow)
 
 ## Overview
 
-GearFlow is being fully rebranded and redesigned into **RVLT Flow**: production-operations software built by a real live-events production company. This is a complete production UI/UX redesign — not a prototype, not an app-shell refresh, not a token swap. Every major page, every core flow, every reusable surface, every empty/loading/error state, every responsive breakpoint.
+RVLT Flow is being fully rebranded and redesigned into **RVLT Flow**: production-operations software built by a real live-events production company. This is a complete production UI/UX redesign — not a prototype, not an app-shell refresh, not a token swap. Every major page, every core flow, every reusable surface, every empty/loading/error state, every responsive breakpoint.
 
 **Product must retain all existing functionality. UI/UX overhaul only.**
 
@@ -133,7 +133,7 @@ Before writing any new UI component:
 
 **Registry bug found:** the shipped `combobox.json` uses `<PopoverTrigger render={…}>`, but the shipped `popover.json` is Radix (`asChild`) — the registry's own combobox doesn't compile against its own popover. We locally patched `combobox.tsx` to `asChild` (commented in-file). **Report upstream; re-apply patch after any `combobox` reinstall.**
 
-**Pre-existing 1290 errors are expected:** the design-system-foundation commit swapped UI primitives to the RVLT API (`asChild`, `primary/halo/line/cream` variants), but the 94 app pages still use the old GearFlow call patterns (`render` prop, `outline`/`destructive`/`secondary` variants, `icon-sm`, EmptyState `label`). Phase 4 page-by-page redesign migrates those call sites. The app does not fully typecheck mid-migration — by design.
+**Pre-existing 1290 errors are expected:** the design-system-foundation commit swapped UI primitives to the RVLT API (`asChild`, `primary/halo/line/cream` variants), but the 94 app pages still use the old RVLT Flow call patterns (`render` prop, `outline`/`destructive`/`secondary` variants, `icon-sm`, EmptyState `label`). Phase 4 page-by-page redesign migrates those call sites. The app does not fully typecheck mid-migration — by design.
 
 ---
 
@@ -348,7 +348,7 @@ Clean verification → commit → push → open PR
 
 ### 1. Brand
 - App reads as RVLT Flow everywhere practical
-- GearFlow legacy branding removed (except historical/user data)
+- RVLT Flow legacy branding removed (except historical/user data)
 - Metadata, nav, auth, onboarding, dashboard, shell all rebranded
 
 ### 2. Design Fidelity
@@ -467,7 +467,7 @@ New spec rules that shipped with this library update (already folded into DESIGN
 - Active Convex migration (FEATUREDOCS/54) — parallel to this plan
 
 **Current DESIGN.md status:** MISALIGNED
-- Existing: GearFlow "Industrial Calm" — teal primary, DM Sans typography, light/dark mode
+- Existing: RVLT Flow "Industrial Calm" — teal primary, DM Sans typography, light/dark mode
 - Required: RVLT Flow design system — dark espresso default, red accent, Hanken Grotesk, BC Alphapipe, Kalam, JetBrains Mono
 - Delta: COLOR SYSTEM is completely different (teal vs red), TYPOGRAPHY is completely different (DM Sans vs Hanken Grotesk/BC Alphapipe), DEFAULT SURFACE is completely different (light+dark vs dark espresso always)
 - **DESIGN.md must be replaced before any page work begins**
@@ -498,7 +498,7 @@ New spec rules that shipped with this library update (already folded into DESIGN
 
 **Anti-patterns to fix:**
 - Card-per-section in forms (documented anti-pattern in current DESIGN.md but still present in many pages)
-- Generic "GearFlow" branding in metadata, sidebar, auth
+- Generic "RVLT Flow" branding in metadata, sidebar, auth
 - DM Sans font loading (needs replacement with Hanken Grotesk stack)
 
 **TODOS.md relevance:**
@@ -512,11 +512,11 @@ New spec rules that shipped with this library update (already folded into DESIGN
 
 **Is this the right problem to solve?**
 
-Yes. The business case is clear: GearFlow is being rebranded to RVLT Flow as TwoToned transitions to a live-events production company brand. The current design system (teal, DM Sans, "Industrial Calm") is disconnected from the RVLT brand identity. The gap is real and visible to anyone who uses the product.
+Yes. The business case is clear: RVLT Flow is being rebranded to RVLT Flow as TwoToned transitions to a live-events production company brand. The current design system (teal, DM Sans, "Industrial Calm") is disconnected from the RVLT brand identity. The gap is real and visible to anyone who uses the product.
 
 **Premises under examination:**
 
-1. **"The product needs a complete redesign, not just a rebrand"** — VALID. The existing design is solidly implemented for GearFlow but does not translate to RVLT Flow. The RVLT design system (dark espresso, red accent, Alphapipe display, Hanken Grotesk) is fundamentally different — not a color swap, a system change. Half-measures will produce visual incoherence.
+1. **"The product needs a complete redesign, not just a rebrand"** — VALID. The existing design is solidly implemented for RVLT Flow but does not translate to RVLT Flow. The RVLT design system (dark espresso, red accent, Alphapipe display, Hanken Grotesk) is fundamentally different — not a color swap, a system change. Half-measures will produce visual incoherence.
 
 2. **"Every page must be touched"** — QUESTIONABLE. 94 pages is correct for an audit, but not every page needs equal depth. Auth/dashboard/project-detail are P1 surfaces where operators spend most time. Admin pages and secondary settings pages are P3 and could receive token-level updates without full JSX rebuilds. **Recommend: tiered approach (P1 full rebuild, P2 hierarchy, P3 token swap).**
 
@@ -527,7 +527,7 @@ Yes. The business case is clear: GearFlow is being rebranded to RVLT Flow as Two
 5. **"Retain all existing functionality"** — CRITICAL CONSTRAINT. This is load-bearing. The redesign must not change server actions, data fetching, auth, or permissions. A strict visual-only constraint enables this to be a pure frontend change with low regression risk.
 
 **What happens if we do nothing?**
-- Product reads as "GearFlow wearing a red RVLT sticker" once the rebrand starts
+- Product reads as "RVLT Flow wearing a red RVLT sticker" once the rebrand starts
 - Operators notice the brand incoherence
 - Cannot use RVLT Flow in client-facing materials with confidence
 - Brand investment is undermined by mismatched product experience
@@ -558,7 +558,7 @@ Yes. The business case is clear: GearFlow is being rebranded to RVLT Flow as Two
 ```
 CURRENT STATE                    THIS PLAN                      12-MONTH IDEAL
 ─────────────────────            ─────────────────────          ─────────────────────
-GearFlow                  --->   RVLT Flow (full           ---> RVLT Flow: opinionated
+RVLT Flow                  --->   RVLT Flow (full           ---> RVLT Flow: opinionated
 Industrial Calm                  rebrand, 94 pages              field-ready ops
 Teal/DM Sans                     rebuilt, RVLT design           platform. Distinctive
 Light + dark mode                language applied,              in the live-events
@@ -570,7 +570,7 @@ cards until it worked"           red accent,                    Deployable on ta
                                                                by RVLT Labs".
 ```
 
-This plan DIRECTLY moves toward the ideal. The only risk: getting 80% done and leaving 20 secondary pages in the old GearFlow style, which produces the "GearFlow wearing a red jacket" failure mode the plan explicitly warns against.
+This plan DIRECTLY moves toward the ideal. The only risk: getting 80% done and leaving 20 secondary pages in the old RVLT Flow style, which produces the "RVLT Flow wearing a red jacket" failure mode the plan explicitly warns against.
 
 ---
 
@@ -584,9 +584,9 @@ APPROACH A: Token + Metadata Swap (Minimal)
   Risk:    Low
   Pros:    Fastest rebrand. No regression risk. Compiles immediately.
            Ships "RVLT Flow" label everywhere visible.
-  Cons:    Product still looks like GearFlow. No UX improvement.
+  Cons:    Product still looks like RVLT Flow. No UX improvement.
            Hierarchy/density/empty states unchanged.
-           Will read as "GearFlow wearing a red jacket" immediately.
+           Will read as "RVLT Flow wearing a red jacket" immediately.
   Reuses:  globals.css token structure, layout.tsx metadata
 
 APPROACH B: Design System Foundation First (Sequential Phased)
@@ -610,7 +610,7 @@ APPROACH C: Full Rebuild All 94 Pages (Comprehensive)
   Effort:  XL (human: ~4-6 weeks / CC: ~3-5 days)
   Risk:    High (regression risk across 94 pages, TypeScript compile failures
            from cascading component changes, prolonged unmerged branch)
-  Pros:    Complete, coherent, no GearFlow legacy visible.
+  Pros:    Complete, coherent, no RVLT Flow legacy visible.
            Satisfies acceptance criteria fully.
            Best long-term quality.
   Cons:    Branch will be enormous and hard to review.
@@ -663,7 +663,7 @@ Key findings (independent, no prior context):
 **CODEX SAYS (CEO — strategy challenge):**
 
 Key findings (adversarial, direct):
-1. DESIGN.md source of truth is broken — plan says "follow DESIGN.md" but DESIGN.md still describes GearFlow teal/DM Sans. Subjective execution without replacing it first.
+1. DESIGN.md source of truth is broken — plan says "follow DESIGN.md" but DESIGN.md still describes RVLT Flow teal/DM Sans. Subjective execution without replacing it first.
 2. Scope wildly mis-sized — 94 pages + shared components + mobile + QA + Mobbin research is not "3-5 day CC effort". Giant half-reviewed branch risk.
 3. "UI only" constraint fragile at this blast radius — JSX rebuilds across quotes, warehouse, permissions, auth will drop actions/edge states/role checks without page-level regression tests
 4. Brand personality vs operator trust — fun/irreverent/mascot in missing-gear/overdue-compliance/warehouse-discrepancy contexts damages trust where users need confidence
@@ -689,7 +689,7 @@ Key findings (adversarial, direct):
 ### CEO SECTIONS 1-10
 
 **Section 1 — Problem/Opportunity:**
-The rebrand opportunity is real and well-reasoned. GearFlow → RVLT Flow is a strategic brand unification, not aesthetic whim. The risk is treating this as purely visual when the actual win requires both brand coherence AND UX quality lift. Examined: plan scope, business rationale, operator usage patterns.
+The rebrand opportunity is real and well-reasoned. RVLT Flow → RVLT Flow is a strategic brand unification, not aesthetic whim. The risk is treating this as purely visual when the actual win requires both brand coherence AND UX quality lift. Examined: plan scope, business rationale, operator usage patterns.
 
 **Section 2 — Error & Rescue Registry:**
 
@@ -810,7 +810,7 @@ Key findings:
 **Design Passes 1-7:**
 
 **Pass 1 — Design System Foundation (6/10):**
-Current DESIGN.md is GearFlow, not RVLT. Must be replaced before any code. RVLT design system from canonical source wins. Red disambiguation rule must be written into new DESIGN.md: define brand red (full-sat, solid button, active nav indicator, primary CTA) vs alert red (70% opacity + icon, semantic status only). Green/amber/blue semantic tokens must survive in new DESIGN.md — they are required for T&T pass/fail, availability state, check record status, and maintenance urgency. Not optional.
+Current DESIGN.md is RVLT Flow, not RVLT. Must be replaced before any code. RVLT design system from canonical source wins. Red disambiguation rule must be written into new DESIGN.md: define brand red (full-sat, solid button, active nav indicator, primary CTA) vs alert red (70% opacity + icon, semantic status only). Green/amber/blue semantic tokens must survive in new DESIGN.md — they are required for T&T pass/fail, availability state, check record status, and maintenance urgency. Not optional.
 
 **Pass 2 — Information Hierarchy (6/10):**
 Dashboard hierarchy is correct (blockers → my work → metrics → upcoming → activity). Not specified for any other module. Warehouse, quote builder, and project detail all need a 3-item priority statement before implementation.
@@ -832,7 +832,7 @@ P1 page decision table needed in plan. AUTO-DECIDED: defer detailed decisions to
 
 **DESIGN COMPLETION SUMMARY:**
 4 critical items must be resolved before Phase 3 begins:
-1. DESIGN.md replacement — new RVLT design system replaces GearFlow version
+1. DESIGN.md replacement — new RVLT design system replaces RVLT Flow version
 2. Red disambiguation rule — brand red vs alert red must be defined
 3. Mobile DESIGN.md §15/§16 — must exist before any mobile implementation
 4. Personality control rule — no personality in alert/compliance/error contexts
@@ -893,7 +893,7 @@ Key findings:
 3. BC Alphapipe not a Google Font — `next/font/google` won't load it (MEDIUM)
 4. `app-sidebar.tsx` permission-conditional render risk — JSX rebuild can silently drop conditional nav items (MEDIUM)
 5. MobileNav + AppSidebar are independent — IA changes must be applied to both (MEDIUM)
-6. PDF pipeline uses hardcoded hex + Helvetica — "remove GearFlow branding" acceptance criterion conflicts with "no backend changes" (MEDIUM)
+6. PDF pipeline uses hardcoded hex + Helvetica — "remove RVLT Flow branding" acceptance criterion conflicts with "no backend changes" (MEDIUM)
 7. `dark:` Tailwind variants in 20 files will break under forced dark espresso (MEDIUM)
 8. Font loading change (root layout) = `--font-dm-sans` CSS var referenced in 8 `!important` globals.css rules — entire `t-*` class system breaks if var renamed but rules not updated (HIGH)
 
@@ -929,7 +929,7 @@ Key findings:
 | 6 | AppSidebar permission gate dropped | MEDIUM | Rebuild omits `resource` prop on nav item | Per-item checklist in sidebar PR |
 | 7 | MobileNav IA diverges from AppSidebar | MEDIUM | Nav IA change applied to one, not both | Sync both in same PR, test both on mobile |
 | 8 | BC Alphapipe missing | MEDIUM | Display headings fall back to system sans | Resolve font licensing before design system PR |
-| 9 | PDF still shows GearFlow branding | MEDIUM | Acceptance criterion says "remove GearFlow" | Scope decision: include PDF header rebrand in plan, or explicitly call it out-of-scope |
+| 9 | PDF still shows RVLT Flow branding | MEDIUM | Acceptance criterion says "remove RVLT Flow" | Scope decision: include PDF header rebrand in plan, or explicitly call it out-of-scope |
 
 **Section 3 — Test Review:**
 Test plan artifact: `~/.gstack/projects/gearflow/worktree-bridge-test-plan-20260618-121305.md`
@@ -939,7 +939,7 @@ Critical gap: ZERO automated visual regression tests. The entire visual correctn
 **Deferred to TODOS.md:**
 - Visual regression test suite (Playwright screenshots)
 - Automated contrast checking (WCAG 4.5:1 per token)
-- PDF rebrand: GearFlow colors/names in PDF pipeline — either include or explicitly out-of-scope
+- PDF rebrand: RVLT Flow colors/names in PDF pipeline — either include or explicitly out-of-scope
 
 **NOT in scope (Eng):**
 - Server action changes
@@ -1032,7 +1032,7 @@ Both design reviewers proposed: Dashboard / Jobs / Warehouse / Crew / Assets. Se
 *Confirm or change the 5 items.*
 
 **T3 — PDF Rebrand Scope (D13)**
-Acceptance criterion says "remove GearFlow branding from PDFs." Constraint says "no backend changes."
+Acceptance criterion says "remove RVLT Flow branding from PDFs." Constraint says "no backend changes."
 The PDF pipeline lives in `src/lib/pdfme/` — it's frontend code, not a schema change. But it has a 5-consumer cross-cutting audit requirement (CLAUDE.md PDF rule). Neither model could auto-decide this.
 *Stakes:* If in scope: adds ~1 week, requires full 5-consumer audit. If out-of-scope: acceptance criterion is unmet at ship.
 

@@ -1,8 +1,8 @@
-# Self-hosted Convex backend + dashboard for GearFlow.
+# Self-hosted Convex backend + dashboard for RVLT Flow.
 #
 # This is the Phase 0 infrastructure for the Convex hybrid migration
 # It runs alongside the existing
-# GearFlow stack and points at a SEPARATE database (gearflow_convex) on the SAME
+# RVLT Flow stack and points at a SEPARATE database (gearflow_convex) on the SAME
 # PostgreSQL instance that Prisma uses — the two never share tables.
 #
 # Adapted from the upstream reference compose:

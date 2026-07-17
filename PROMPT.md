@@ -1,4 +1,4 @@
-# Claude Code Initial Prompt — GearFlow: Asset & Rental Management Platform
+# Claude Code Initial Prompt — RVLT Flow: Asset & Rental Management Platform
 
 > **⚠️ Historical document.** This is the original bootstrap prompt used to
 > start the project — it does not track ongoing changes. The stack, data
@@ -372,7 +372,7 @@ This is a **professional business tool** — design it to be clean, efficient, a
 - Primary: Deep teal or electric blue (professional but distinctive — avoid generic purple SaaS look)
 - Neutral: Slate grays
 - Accent: Amber/orange for warnings, green for available/good, red for alerts/critical
-- The brand is "GearFlow" — consider a two-tone design motif in the UI
+- The brand is "RVLT Flow" — consider a two-tone design motif in the UI
 
 ---
 
@@ -471,4 +471,4 @@ Build this as a modern, fast, professional-grade tool that a small AV company wo
 
 Start with Phase 1 and work through sequentially. Each phase should produce a working, usable increment. Ask clarifying questions if any business logic is ambiguous.
 
-The name of the platform is **"GearFlow"**.
+The name of the platform is **"RVLT Flow"**.

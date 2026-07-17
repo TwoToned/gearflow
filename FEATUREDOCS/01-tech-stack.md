@@ -13,7 +13,7 @@
 | State Management | Convex `useQuery`/`useMutation` | Reactive, live-updating subscriptions — no polling, no manual cache invalidation |
 | Forms | React Hook Form + Zod | `zodResolver()`, `z.input<>` for types |
 | PDF | pdfme (@pdfme/generator + custom plugins) | Helvetica only, no Unicode. pdf.js for client-side preview |
-| Storage | AWS SDK (S3/MinIO) | Org-prefixed file paths |
+| Storage | Convex file storage (`_storage`) | Per-org access records; `storage.ts` keeps S3-era API names |
 | Email | Resend SDK | Invitations, password reset, notifications |
 | Icons | lucide-react | 180+ icons, dynamic icon component |
 | PWA | @ducanh2912/next-pwa | Offline fallback, service worker |
@@ -28,16 +28,11 @@ CONVEX_DEPLOY_KEY         # Convex Cloud deploy key
 NEXT_PUBLIC_CONVEX_URL    # Convex deployment URL the app connects to
 CONVEX_AUTH_ISSUER        # Better Auth issuer Convex trusts for JWTs
 CONVEX_AUTH_JWKS_URL      # JWKS endpoint Convex fetches to verify tokens
-S3_ACCESS_KEY_ID          # AWS/MinIO access key
-S3_SECRET_ACCESS_KEY      # AWS/MinIO secret key
-S3_REGION                 # Default: ap-southeast-2
-S3_ENDPOINT               # MinIO endpoint (omit for AWS)
-S3_BUCKET                 # Default: gearflow-uploads
 RESEND_API_KEY            # Email provider
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY  # Maps JavaScript API + Places API (New)
 SITE_ADMIN_REGISTRATION_ENABLED  # "true" to enable admin signup
 SITE_ADMIN_SECRET_TOKEN   # Token for /register/admin?token=...
-PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, gearflow.com)
+PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, rvlt.app)
 ```
 
 ## Key Config Files

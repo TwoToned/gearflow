@@ -24,7 +24,7 @@ function clampAssignableRole(role: string): string {
 }
 
 /**
- * Resolve a built-in GearFlow role from IdP group memberships via the org's explicit
+ * Resolve a built-in RVLT Flow role from IdP group memberships via the org's explicit
  * group→role mappings (custom roles were removed). Never returns owner or an unknown
  * role — the result is always an assignable built-in role.
  */

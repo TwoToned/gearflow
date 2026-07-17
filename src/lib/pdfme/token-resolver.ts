@@ -214,7 +214,12 @@ function resolveString(
   });
 }
 
-/** Custom plugin types that receive JSON data, not token-resolved text */
+/**
+ * Custom plugin types that receive JSON data, not token-resolved text.
+ * Both the legacy `gearflow*` names and the rebranded `rvltFlow*` aliases are
+ * listed so a template using either name routes to JSON, not raw text. Mirrors
+ * the alias keys in plugins/index.ts — keep the two in sync.
+ */
 const CUSTOM_PLUGIN_TYPES = new Set([
   "gearflowTable",
   "gearflowFinancialSummary",
@@ -223,8 +228,15 @@ const CUSTOM_PLUGIN_TYPES = new Set([
   "gearflowCheckbox",
   "gearflowSignatureLine",
   "gearflowCrewTable",
+  "rvltFlowTable",
+  "rvltFlowFinancialSummary",
+  "rvltFlowPageHeader",
+  "rvltFlowPageFooter",
+  "rvltFlowCheckbox",
+  "rvltFlowSignatureLine",
+  "rvltFlowCrewTable",
 ]);
 
-function isCustomPlugin(type: string): boolean {
+export function isCustomPlugin(type: string): boolean {
   return CUSTOM_PLUGIN_TYPES.has(type);
 }

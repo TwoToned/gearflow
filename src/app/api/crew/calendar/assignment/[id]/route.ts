@@ -106,7 +106,7 @@ export async function GET(
             assignment.status === "CONFIRMED"
               ? "CONFIRMED"
               : "TENTATIVE",
-          categories: ["GearFlow", assignment.phase || ""].filter(Boolean),
+          categories: ["RVLT Flow", assignment.phase || ""].filter(Boolean),
         });
       }
     } else {
@@ -130,7 +130,7 @@ export async function GET(
         dtend,
         status:
           assignment.status === "CONFIRMED" ? "CONFIRMED" : "TENTATIVE",
-        categories: ["GearFlow", assignment.phase || ""].filter(Boolean),
+        categories: ["RVLT Flow", assignment.phase || ""].filter(Boolean),
       });
     }
 

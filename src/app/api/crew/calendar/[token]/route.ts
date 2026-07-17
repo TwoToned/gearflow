@@ -117,7 +117,7 @@ export async function GET(
   // mirror (replaces the old nested `project.location` select).
   const locationMap = await getLocationMap(member.organizationId);
   const events: ICalEvent[] = [];
-  const calName = `GearFlow - ${member.firstName} ${member.lastName}`;
+  const calName = `RVLT Flow - ${member.firstName} ${member.lastName}`;
 
   for (const a of member.assignments) {
     const roleName = a.crewRole?.name || "Crew";
@@ -159,7 +159,7 @@ export async function GET(
           dtstart,
           dtend,
           status: "CONFIRMED",
-          categories: ["GearFlow", a.phase || ""].filter(Boolean),
+          categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
         });
       }
     } else {
@@ -183,7 +183,7 @@ export async function GET(
         dtstart,
         dtend,
         status: "CONFIRMED",
-        categories: ["GearFlow", a.phase || ""].filter(Boolean),
+        categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
       });
     }
   }

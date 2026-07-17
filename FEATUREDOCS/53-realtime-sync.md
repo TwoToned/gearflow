@@ -91,7 +91,7 @@ EventSource handles reconnection natively — on disconnect, the browser automat
 
 ## Limitations
 
-- **Single-process**: The in-memory EventEmitter only works within one Node.js process. If GearFlow scales to multiple pm2 workers, events won't propagate between them. The fix: add a PostgreSQL LISTEN/NOTIFY bridge (the event bus API stays the same).
+- **Single-process**: The in-memory EventEmitter only works within one Node.js process. If RVLT Flow scales to multiple pm2 workers, events won't propagate between them. The fix: add a PostgreSQL LISTEN/NOTIFY bridge (the event bus API stays the same).
 - **Reconnection on org change**: Switching organizations closes and reopens the EventSource. This is intentional — the client shouldn't receive events for orgs it's not viewing.
 - **No data pushing**: Events contain only IDs, not full records. The client refetches via React Query. This keeps SSE payloads tiny and data-fetching logic centralized.
 

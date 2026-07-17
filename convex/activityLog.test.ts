@@ -48,7 +48,7 @@ describe("activityLogWrites.record", () => {
     const t = convexTest(schema, modules);
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.activityLogWrites.record, { id: "log2", organizationId: ORG, action: "CREATE", entityType: "asset", entityId: "e1", entityName: "W", userName: "A", summary: "s", createdAt: NOW }),
-    ).rejects.toThrow(/requires the GearFlow server/i);
+    ).rejects.toThrow(/requires the RVLT Flow server/i);
   });
 });
 

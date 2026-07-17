@@ -128,6 +128,7 @@ Order matters. What breaks the moment the repo transfers:
 - **Webhook headers (expand-contract):** now emit `X-RVLT-Flow-Signature/Event/Delivery-Id` + `user-agent: RVLT-Flow-Webhooks/v1` **alongside** the legacy `X-GearFlow-*` headers (identical values). Consumers migrate to the new names; drop the legacy set in a later release.
 - **localStorage migrate-on-read:** all pref keys renamed `gearflow-*` → `rvlt-flow-*` with one-time migration via `src/lib/local-storage-migrate.ts` (no user pref reset).
 - **Deploy workflow:** `build-image.yml` GHCR `IMAGE_NAME` now derives from `github.repository` (lowercased) — auto-adapts to `rvlt-labs/rvlt-flow` at the transfer, no hand-edit.
+- **PDF plugin type aliases (expand):** every custom pdfme plugin is now registered under its `rvltFlow*` name too (alongside legacy `gearflow*`), mirrored in `token-resolver.ts` `CUSTOM_PLUGIN_TYPES`. New/saved templates can use the rebranded type; existing persisted templates keep rendering. Additive — the legacy keys stay until stored templates are migrated (the eventual "contract" step). Covered by `rebrand-plugin-aliases.test.ts`.
 
 **Phase 3 — GitHub org move (coordinated, one-way-ish):** Run the Org Move Runbook during a deploy freeze. Highest coordination cost; do it as its own discrete event.
 

@@ -35,7 +35,31 @@ export const gearflowPlugins = {
   gearflowDataTable,
   gearflowSummaryBox,
   gearflowTextBlock,
+
+  // ── Rebrand aliases (RVLT Flow) ──────────────────────────────────────────
+  // pdfme matches a schema's `type` against the KEY in this record. Registering
+  // each plugin under its `rvltFlow*` name too lets new/saved templates use the
+  // rebranded type while every existing template (persisted with `gearflow*`
+  // types) keeps rendering. Additive only — do NOT remove the legacy keys until
+  // stored templates have been migrated. Mirrored in CUSTOM_PLUGIN_TYPES
+  // (token-resolver.ts); keep the two in sync.
+  rvltFlowRect: gearflowRect,
+  rvltFlowTable: gearflowTable,
+  rvltFlowFinancialSummary: gearflowFinancialSummary,
+  rvltFlowPageHeader: gearflowPageHeader,
+  rvltFlowPageFooter: gearflowPageFooter,
+  rvltFlowCheckbox: gearflowCheckbox,
+  rvltFlowSignatureLine: gearflowSignatureLine,
+  rvltFlowCrewTable: gearflowCrewTable,
+  rvltFlowCallSheetInfo: gearflowCallSheetInfo,
+  rvltFlowDayHeader: gearflowDayHeader,
+  rvltFlowDataTable: gearflowDataTable,
+  rvltFlowSummaryBox: gearflowSummaryBox,
+  rvltFlowTextBlock: gearflowTextBlock,
 };
+
+/** Preferred (rebranded) name for the plugin registry. Same object, both key sets. */
+export const rvltFlowPlugins = gearflowPlugins;
 
 export {
   gearflowRect,

@@ -92,7 +92,7 @@ describe("write-parity: assets", () => {
 describe("write-parity: line-items", () => {
   const fields = { type: "EQUIPMENT" as const, modelId: "m1", description: "Light", quantity: 2, unitPrice: 15 };
 
-  test("addNative == createLineItem (same resulting parent line)", async () => {
+  test("addNative == createLineItem (same resulting parent line, except lineTotal)", async () => {
     const t = makeT();
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, allowOverbook: true, actor: ACTOR, auditId: "log1", now: NOW });
@@ -101,6 +101,15 @@ describe("write-parity: line-items", () => {
     // sortOrder differs (svc got 0, nat got 1) — normalize it.
     delete (svc as Record<string, unknown>).sortOrder;
     delete (nat as Record<string, unknown>).sortOrder;
+    // lineTotal is a DELIBERATE divergence (security hardening, not a parity bug):
+    // createLineItem is a raw insert with no legitimate callers (grep-confirmed dead —
+    // trusts whatever `fields` it's handed verbatim); addNative now ALWAYS recomputes
+    // lineTotal server-side from unitPrice×quantity×duration−discount rather than
+    // trusting a client-supplied value, closing a same-org invoice-forgery gap a
+    // browser-direct caller could otherwise exploit. 15×2×1 = 30 is the correct value
+    // for this fixture's fields (unitPrice:15, quantity:2, no duration ⇒ 1).
+    expect((nat as Record<string, unknown>).lineTotal).toBe(30);
+    delete (nat as Record<string, unknown>).lineTotal;
     expect(nat).toEqual(svc);
   });
 

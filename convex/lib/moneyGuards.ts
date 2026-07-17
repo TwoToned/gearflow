@@ -83,6 +83,7 @@ export function assertProjectMoneyFields(f: {
   depositPercent?: number | null;
   depositPaid?: number | null;
   invoicedTotal?: number | null;
+  defaultRentalQuantity?: number | null;
 }): void {
   if (f.taxRate != null) {
     if (!Number.isFinite(f.taxRate) || f.taxRate < 0 || f.taxRate > 100) {
@@ -107,6 +108,14 @@ export function assertProjectMoneyFields(f: {
   if (f.invoicedTotal != null) {
     if (!Number.isFinite(f.invoicedTotal) || f.invoicedTotal < 0) {
       throw new ConvexError({ code: "INVALID_INVOICED_TOTAL", message: "Invoiced total must be a non-negative finite number." });
+    }
+  }
+  if (f.defaultRentalQuantity != null) {
+    // Not itself money, but feeds addLineItemSmartNative's auto-pricing as `autoDuration`
+    // (unbounded/NaN here poisons a subsequently-added line's lineTotal, then the
+    // project's recalculated totals). Bounds mirror line-item `duration`'s cap.
+    if (!Number.isFinite(f.defaultRentalQuantity) || !Number.isInteger(f.defaultRentalQuantity) || f.defaultRentalQuantity < 1 || f.defaultRentalQuantity > 3650) {
+      throw new ConvexError({ code: "INVALID_DEFAULT_RENTAL_QUANTITY", message: "Default rental quantity must be a whole number between 1 and 3650." });
     }
   }
 }

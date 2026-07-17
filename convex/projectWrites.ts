@@ -6,7 +6,8 @@ import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
-import { assertProjectMoneyFields } from "./lib/moneyGuards";
+import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
+import { assertRefInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
@@ -277,7 +278,25 @@ export const updateNative = mutation({
       depositPercent: typeof setObj.depositPercent === "number" ? setObj.depositPercent : undefined,
       depositPaid: typeof setObj.depositPaid === "number" ? setObj.depositPaid : undefined,
       invoicedTotal: typeof setObj.invoicedTotal === "number" ? setObj.invoicedTotal : undefined,
+      defaultRentalQuantity: typeof setObj.defaultRentalQuantity === "number" ? setObj.defaultRentalQuantity : undefined,
     });
+
+    // rentalStartDate/rentalEndDate feed the double-booking overlap check in
+    // convex/lib/availabilityCore.ts (`start <= end && end >= start` comparisons) — every
+    // comparison against NaN evaluates false in JS, so a forged `rentalStartDate: NaN`
+    // would silently make every overlap check report "no conflict" and defeat the
+    // double-booking guard for this project's future line-item adds.
+    assertFinite(typeof setObj.rentalStartDate === "number" ? setObj.rentalStartDate : undefined, "rentalStartDate");
+    assertFinite(typeof setObj.rentalEndDate === "number" ? setObj.rentalEndDate : undefined, "rentalEndDate");
+
+    // Org-validate a reassigned clientId — `set` is v.any(), and clientId is read via a
+    // GLOBAL by_cuid index (src/lib/clients-read.ts getClientById), never re-checked
+    // against the project's org at that read site. Without this, a browser-direct caller
+    // could point their own project at another org's client and leak its full PII record
+    // (name/contact/billing address) onto their project detail page.
+    if (typeof setObj.clientId === "string") {
+      await assertRefInOrg(ctx, "clients", setObj.clientId, orgId);
+    }
 
     // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
     // must clear the blocking-comment gate too (parity with the server updateProject path).
@@ -358,8 +377,18 @@ export const createNative = mutation({
     assertProjectMoneyFields({
       taxRate: fields.taxRate, discountPercent: fields.discountPercent,
       depositPercent: fields.depositPercent, depositPaid: fields.depositPaid,
-      invoicedTotal: fields.invoicedTotal,
+      invoicedTotal: fields.invoicedTotal, defaultRentalQuantity: fields.defaultRentalQuantity,
     });
+
+    // See updateNative's comment — NaN here defeats the double-booking overlap check.
+    assertFinite(fields.rentalStartDate, "rentalStartDate");
+    assertFinite(fields.rentalEndDate, "rentalEndDate");
+
+    // Org-validate clientId — see updateNative's comment for the full leak scenario
+    // this closes (a global by_cuid client read with no org re-check downstream).
+    if (fields.clientId) {
+      await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
+    }
 
     // Dup-guard the client-minted cuid first (applies to both number paths). The
     // projectNumber clash-guard below is org-scoped and doesn't catch a cross-org

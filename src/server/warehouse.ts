@@ -38,11 +38,14 @@ export async function getProjectForWarehouse(projectId: string) {
   // ONE parallel wave (was 3 SEQUENTIAL round-trips: line-item tree → client →
   // location). All independent of each other — each needs only projectId/orgId or
   // the project scalars already read above.
-  const [lineItems, client, locationMap] = await Promise.all([
+  const [lineItems, clientRaw, locationMap] = await Promise.all([
     buildWarehouseLineItems(projectId, organizationId),
     project.clientId ? getClientById(project.clientId) : Promise.resolve(null),
     project.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
   ]);
+  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
+  // src/server/projects.ts getProject for the full rationale).
+  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
   const location = project.locationId && locationMap ? locationMap.get(project.locationId) ?? null : null;
   return serialize({ ...project, lineItems, client, location });
 }
@@ -876,7 +879,10 @@ export async function getProjectPullSheet(projectId: string) {
   // Convex-attached tree as `project.lineItems` too (not the model/supplier-less
   // raw Prisma rows) so the payload stays byte-identical to the old include even
   // though current consumers read `groups`, not `project.lineItems`.
-  const client = project.clientId ? await getClientById(project.clientId) : null;
+  const clientRaw = project.clientId ? await getClientById(project.clientId) : null;
+  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
+  // src/server/projects.ts getProject for the full rationale).
+  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
   const location = project.locationId ? locationMap.get(project.locationId) ?? null : null;
   return serialize({
     project: { ...project, lineItems: attachedLineItems, client, location },

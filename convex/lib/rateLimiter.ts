@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { RateLimiter, MINUTE } from "@convex-dev/rate-limiter";
 import { components } from "../_generated/api";
 import type { MutationCtx } from "../_generated/server";
@@ -38,4 +39,22 @@ export async function enforceBrowserWriteLimit(ctx: MutationCtx): Promise<void> 
   const auth = await getAuthContext(ctx);
   if (!auth || auth.kind !== "user") return;
   await rateLimiter.limit(ctx, "browserWrite", { key: auth.userId, throws: true });
+}
+
+/** Per-call cap for `ids`/`items` arrays on bulk browser-direct mutations
+ *  (removeManyNative/patchManyNative/reorderNative/…). `enforceBrowserWriteLimit`
+ *  costs ONE token per call regardless of array size (deliberately, so a legit bulk
+ *  action isn't rate-limited per-item) — without a size cap, a single call with an
+ *  oversized array becomes an uncapped amplification vector: one rate-limit token
+ *  buys N point-queries/writes inside one transaction. 500 comfortably covers the
+ *  largest real bulk UI action (select-all on a big project) with headroom. */
+const MAX_BULK_ITEMS = 500;
+
+export function assertBulkSizeOk(count: number): void {
+  if (count > MAX_BULK_ITEMS) {
+    throw new ConvexError({
+      code: "BULK_TOO_LARGE",
+      message: `Bulk operation exceeds the ${MAX_BULK_ITEMS}-item limit (got ${count}). Split it into smaller batches.`,
+    });
+  }
 }

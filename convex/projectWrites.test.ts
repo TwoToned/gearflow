@@ -233,6 +233,38 @@ describe("projectWrites.updateNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { depositPaid: -50, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/deposit paid/i);
   });
+  test("rejects a cross-org clientId (IDOR guard — a forged clientId must not leak another org's client record)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "foreign-client", organizationId: "other_org", name: "Foreign Co", createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { clientId: "foreign-client", updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/not found in your organization/i);
+  });
+  test("accepts a same-org clientId", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "own-client", organizationId: ORG, name: "Own Co", createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { clientId: "own-client", updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.clientId).toBe("own-client");
+    });
+  });
+  test("rejects an out-of-bounds defaultRentalQuantity / non-finite rental dates (poisons auto-pricing / defeats double-booking)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { defaultRentalQuantity: Number.NaN, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/default rental quantity/i);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { rentalStartDate: Number.NaN, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/rentalStartDate/);
+  });
 });
 
 describe("projectWrites.createNative", () => {
@@ -285,6 +317,16 @@ describe("projectWrites.createNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, invoicedTotal: -1 } as typeof cargs),
     ).rejects.toThrow(/invoiced total/i);
+  });
+  test("rejects a cross-org clientId on create (IDOR guard)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("clients", { id: "foreign-client", organizationId: "other_org", name: "Foreign Co", createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "foreign-client" } as typeof cargs),
+    ).rejects.toThrow(/not found in your organization/i);
   });
 });
 

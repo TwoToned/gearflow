@@ -169,6 +169,39 @@ describe("lineItemWrites.patchNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { lineTotal: Number.NaN, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow();
   });
+  test("recomputes lineTotal server-side — a forged value disconnected from unitPrice/quantity is ignored", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", quantity: 1, unitPrice: 10, duration: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    // Real inputs (unitPrice 10 × quantity 2 × duration 1 = 20) but a forged lineTotal
+    // of 999999 — the forged value must be discarded, not written verbatim.
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { quantity: 2, lineTotal: 999999, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.lineTotal).toBe(20);
+    });
+  });
+  test("recompute survives a stale clear:['lineTotal'] alongside pricing inputs (merge-delete must not wipe the recomputed value)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", quantity: 1, unitPrice: 10, duration: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+    });
+    // A payload that both sets a real unitPrice AND (inconsistently/maliciously) asks
+    // to clear lineTotal — the clear must be reconciled away, not win, since the line
+    // IS priced (10 × 1 × 1 = 10). Also forces the `clear.length > 0` merge-replace path.
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs,
+      set: { unitPrice: 10, updatedAt: NOW },
+      clear: ["lineTotal", "notes"],
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.lineTotal).toBe(10);
+    });
+  });
 });
 
 describe("lineItemWrites.addCustomNative", () => {
@@ -219,6 +252,18 @@ describe("lineItemWrites.addCustomNative", () => {
       expect(li).toBeNull();
     });
   });
+  test("recomputes lineTotal server-side — a forged value is ignored (unitPrice 200 × qty 1 = 200, not 999999)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, {
+      ...cargs,
+      fields: { ...cargs.fields, lineTotal: 999999 },
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first();
+      expect(li?.lineTotal).toBe(200);
+    });
+  });
 });
 
 describe("lineItemWrites.addNative", () => {
@@ -244,6 +289,18 @@ describe("lineItemWrites.addNative", () => {
     const t = makeT();
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, aargs)).rejects.toThrow(/insufficient permissions/i);
+  });
+  test("recomputes lineTotal server-side — a forged value is ignored (unitPrice 15 × qty 2 = 30, not 999999)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, {
+      ...aargs,
+      fields: { ...aargs.fields, lineTotal: 999999 },
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first();
+      expect(li?.lineTotal).toBe(30);
+    });
   });
 });
 
@@ -496,6 +553,19 @@ describe("lineItemWrites.addKitNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/insufficient permissions/i);
   });
 
+  test("rejects a non-finite unitPrice (would poison recalc to NaN)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => { await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "L", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, { ...kargs, unitPrice: Number.NaN }),
+    ).rejects.toThrow();
+    await t.run(async (ctx) => {
+      const parent = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first();
+      expect(parent).toBeNull(); // nothing inserted
+    });
+  });
+
   test("throws KIT_UNAVAILABLE when the kit is IN_MAINTENANCE (unconditional)", async () => {
     const t = makeT();
     await member(t, "member");
@@ -521,6 +591,36 @@ describe("lineItemWrites.addKitNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs),
     ).rejects.toThrow(/KIT-1 is on P2/i);
+  });
+});
+
+describe("lineItemWrites bulk-size cap", () => {
+  // Array size, not per-item body, so build cheap oversized arrays inline.
+  const bigIds = Array.from({ length: 501 }, (_, i) => `id-${i}`);
+
+  test("removeManyNative rejects an oversized ids array (DoS amplification guard)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.removeManyNative, { ids: bigIds, orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW }),
+    ).rejects.toThrow(/exceeds the 500-item limit/i);
+  });
+
+  test("patchManyNative rejects an oversized ids array", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchManyNative, { ids: bigIds, orgId: ORG, patch: {}, actor: ACTOR, auditId: "log1", now: NOW }),
+    ).rejects.toThrow(/exceeds the 500-item limit/i);
+  });
+
+  test("reorderNative rejects an oversized items array", async () => {
+    const t = makeT();
+    await member(t, "member");
+    const items = bigIds.map((id, i) => ({ id, sortOrder: i }));
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items, now: NOW }),
+    ).rejects.toThrow(/exceeds the 500-item limit/i);
   });
 });
 

@@ -57,7 +57,14 @@ export const listPage = query({
     await requireOrgRead(ctx, a.orgId);
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    const sortBy = a.sortBy ?? "lastName";
+    // Allowlisted, not a passthrough: sort runs on the RAW doc (below, before
+    // redaction), so an unvalidated client-supplied sortBy could be used to sort by
+    // icalToken (a bearer secret for the unauthenticated crew-calendar route) —
+    // the token value is stripped from the response, but its relative ordering
+    // across rows would still leak. Only the columns CrewTable actually exposes as
+    // sortable are allowed; anything else falls back to the default.
+    const SORTABLE_FIELDS = new Set(["lastName", "type", "department", "email", "status"]);
+    const sortBy = a.sortBy && SORTABLE_FIELDS.has(a.sortBy) ? a.sortBy : "lastName";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, roles] = await Promise.all([

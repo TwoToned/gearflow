@@ -58,6 +58,20 @@ describe("crewMembers.listPage", () => {
     expect(cm1.icalToken).toBeUndefined();
   });
 
+  test("rejects sortBy:icalToken instead of sorting on the raw pre-redaction value", async () => {
+    // Regression test (found in adversarial review): sorting runs on the raw doc
+    // before redaction, so an unvalidated sortBy could leak icalToken's relative
+    // ordering across rows even though the token value itself is stripped from the
+    // response. sortBy must fall back to the default ("lastName") for any value
+    // outside the allowlisted, UI-exposed sortable columns.
+    const t = makeT();
+    await seed(t);
+    const sortedByToken = await t.withIdentity(asUser).query(api.crewMembers.listPage, { orgId: ORG, sortBy: "icalToken" });
+    const sortedDefault = await t.withIdentity(asUser).query(api.crewMembers.listPage, { orgId: ORG });
+    expect(sortedByToken.items.map((m) => m.id)).toEqual(sortedDefault.items.map((m) => m.id));
+    expect(sortedByToken.items.every((m) => m.icalToken === undefined)).toBe(true);
+  });
+
   test("filters by type/department/status", async () => {
     const t = makeT();
     await seed(t);

@@ -6,9 +6,12 @@ import { Plus, Archive } from "lucide-react";
 import { toast } from "sonner";
 
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useClients } from "@/hooks/use-clients";
 import { useClientProjectCounts } from "@/hooks/use-client-project-counts";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
+import { api } from "../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -156,52 +159,36 @@ export function ClientTable() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Reactive client list straight from Convex (auto-updates on any client
-  // create/update/archive). Project counts are cross-domain (projects still in
-  // Prisma) so they come from a separate, non-reactive server query.
-  const allClients = useClients(orgId);
+  // ONE server-side query (filter + sort done in Convex) instead of the
+  // whole-org live subscription this used to mount (useClients) and filter/
+  // sort client-side. See docs/designs/perf-convex-efficiency-2026-06.md
+  // Finding #1. Project counts are cross-domain (projects still in Prisma) so
+  // they stay a separate, non-reactive server query merged in below —
+  // unchanged. Search is debounced since each keystroke is now a real
+  // round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const typeFilter = filters?.type as string | undefined;
+  const clientsPage = useAuthedQuery(
+    api.clients.listPage,
+    orgId
+      ? {
+          orgId,
+          search: debouncedSearch.trim() || undefined,
+          type: typeFilter,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+  const { data: pagedClients, total, isLoading } = usePaginatedTableResult(clientsPage);
   const projectCounts = useClientProjectCounts(orgId);
 
-  // Filter / sort / paginate in the browser over the reactive list.
-  const { clients, total } = useMemo(() => {
-    const source = allClients ?? [];
-    const q = search.trim().toLowerCase();
-    const typeFilter = filters?.type as string | undefined;
-
-    const filtered = source.filter((c) => {
-      if ((c.isActive ?? true) !== true) return false;
-      if (typeFilter && c.type !== typeFilter) return false;
-      if (q) {
-        const hit =
-          c.name.toLowerCase().includes(q) ||
-          (c.contactName?.toLowerCase().includes(q) ?? false) ||
-          (c.contactEmail?.toLowerCase().includes(q) ?? false);
-        if (!hit) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    filtered.sort((a, b) => {
-      const av = (a as Record<string, unknown>)[sortBy];
-      const bv = (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      if (typeof av === "boolean" && typeof bv === "boolean") return (Number(av) - Number(bv)) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const start = (page - 1) * pageSize;
-    const pageItems = filtered.slice(start, start + pageSize).map((c) => ({
-      ...c,
-      _count: { projects: projectCounts?.[c.id] ?? 0 },
-    }));
-    return { clients: pageItems, total: filtered.length };
-  }, [allClients, projectCounts, search, filters, sortBy, sortOrder, page, pageSize]);
-
-  const isLoading = allClients === undefined;
+  const clients = useMemo(
+    () => pagedClients.map((c) => ({ ...c, _count: { projects: projectCounts?.[c.id] ?? 0 } })),
+    [pagedClients, projectCounts],
+  );
 
   const toolbarActions = (
     <CanDo resource="client" action="create">

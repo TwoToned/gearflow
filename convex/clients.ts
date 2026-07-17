@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -30,6 +31,49 @@ export const getById = query({
     const doc = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDoc(ctx, doc);
     return doc;
+  },
+});
+
+/**
+ * Paginated CLIENT list — browser-native replacement for ClientTable's
+ * useClients whole-org live subscription + client-side filter/sort/paginate
+ * (Finding #1, docs/designs/perf-convex-efficiency-2026-06.md). Always
+ * excludes archived (isActive: false) clients, matching the old behavior.
+ * Project counts are cross-domain (projects still in Prisma) so they stay a
+ * separate merge the caller applies after this query — unchanged.
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    type: v.optional(v.string()),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "name";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const rows = await ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
+
+    const filtered = rows.filter((c) => {
+      if ((c.isActive ?? true) !== true) return false;
+      if (a.type && c.type !== a.type) return false;
+      if (a.search && !matchesSearch([c.name, c.contactName, c.contactEmail], a.search)) return false;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((x, y) =>
+      compareValues((x as unknown as Record<string, unknown>)[sortBy], (y as unknown as Record<string, unknown>)[sortBy], dir),
+    );
+    const { items, total, totalPages } = paginateItems(sorted, page, pageSize);
+
+    return { items, total, page, pageSize, totalPages };
   },
 });
 

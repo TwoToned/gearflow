@@ -36,11 +36,8 @@ model User {
   ssoProviders              SsoProvider[]
   pendingSSOApprovals       PendingSSOApproval[]
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
-  warehouseDashboardTokens  WarehouseDashboardToken[]
-  testTagAuditorTokens      TestTagAuditorToken[]
   apiKeysActingAs           ApiKey[]                    @relation("ApiKeyActingUser")
   createdApiKeys            ApiKey[]                    @relation("ApiKeyCreatedBy")
-  notificationEmailLogs     NotificationEmailLog[]
 
   @@map("user")
 }
@@ -124,18 +121,10 @@ model Organization {
   invitations Invitation[]
 
   // App relations
-  lineItemMergeMaps        LineItemMergeMap[]
   activityLogs             ActivityLog[]
-  documentTemplates        DocumentTemplate[]
-  sectionPresets           SectionPreset[]
   ssoProviders             SsoProvider[]
   pendingSSOApprovals      PendingSSOApproval[]
-  warehouseDashboardTokens WarehouseDashboardToken[]
-  testTagAuditorTokens     TestTagAuditorToken[]
   apiKeys                  ApiKey[]
-  webhooks                 Webhook[]
-  wooCommerceIntegration   WooCommerceIntegration?
-  notificationEmailLogs    NotificationEmailLog[]
 
   @@map("organization")
 }
@@ -616,32 +605,6 @@ enum AccessoryAllocationMode {
 /// mapping so the merge can be audited and (if needed) reversed.
 ///
 /// Permanent — never auto-cleaned. One row per merged (old) line item.
-model LineItemMergeMap {
-  id                    String       @id @default(cuid())
-  organizationId        String
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  /// The line item that was merged away. Kept in the projectLineItem
-  /// table (status: CANCELLED, quantity: 0, assetId: null) so historical
-  /// data isn't destroyed — only made inert.
-  oldLineItemId         String       @unique
-  /// The line item the units / records were re-pointed to.
-  canonicalLineItemId   String
-  /// The unit row that carried the old line's asset/bulk allocation
-  /// after the move. Null when the old row had no unit (rare —
-  /// pre-Phase-2a rows or kit children).
-  movedUnitId           String?
-  checkRecordsRepointed Int          @default(0)
-  serviceRepointed      Boolean      @default(false)
-  /// Free-form notes captured at merge time (eg. the equivalence-key
-  /// snapshot, dry-run vs. apply, the run id).
-  notes                 String?
-  mergedAt              DateTime     @default(now())
-
-  @@index([organizationId])
-  @@index([canonicalLineItemId])
-  @@map("line_item_merge_map")
-}
-
 // ─── Project Category ───────────────────────────────────────────────────────
 
 // ─── Category Slot ──────────────────────────────────────────────────────────
@@ -651,20 +614,6 @@ model LineItemMergeMap {
 // added in the migration SQL — Prisma doesn't support CHECK in schema.prisma).
 // The slot's sortOrder is the canonical ordering for queries that need a
 // unified group list per category.
-
-model CategorySlot {
-  id                String          @id @default(cuid())
-  projectCategoryId String
-  sortOrder         Int
-  projectGroupId    String?         @unique
-  subHireGroupId    String?         @unique
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-
-  @@unique([projectCategoryId, sortOrder])
-  @@index([projectCategoryId])
-  @@map("category_slot")
-}
 
 // ─── Project Group ──────────────────────────────────────────────────────────
 
@@ -759,22 +708,6 @@ model Passkey {
 }
 
 // ─── Site Settings ──────────────────────────────────────────────────────────
-
-model SiteSettings {
-  id                    String   @id @default(cuid())
-  platformName          String   @default("GearFlow")
-  platformIcon          String? // Lucide icon name, e.g. "clapperboard", "zap"
-  platformLogo          String?
-  registrationPolicy    String   @default("OPEN") // OPEN, INVITE_ONLY, DISABLED
-  twoFactorGlobalPolicy String   @default("OFF") // OFF, RECOMMENDED, REQUIRED_SITE_ADMINS, REQUIRED_ALL
-  defaultCurrency       String   @default("AUD")
-  defaultTaxRate        Float    @default(10)
-  allowOrgCreation      Boolean  @default(true)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@map("site_settings")
-}
 
 // ─── Activity Log ────────────────────────────────────────────────────────────
 
@@ -905,98 +838,11 @@ enum ServiceStatus {
 
 // ─── Document Templates ──────────────────────────────────────────────────────
 
-model DocumentTemplate {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name String
-  type String // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
-
-  // Legacy fields (preserved for backward compatibility)
-  basePdf  String? @db.Text // JSON — page size, orientation, margins (legacy only)
-  schemas  String? @db.Text // JSON — pdfme schema array (legacy only)
-  settings String? @db.Text // JSON — TemplateSettings (legacy settings-based config)
-
-  // New section-based fields
-  sections        String? @db.Text // JSON — TemplateSection[] (ordered section list)
-  brandTemplateId String? // references a Convex brandTemplates doc (cuid); FK dropped in Phase B
-  thumbnailData   String? @db.Text // base64 thumbnail image
-
-  isDefault    Boolean   @default(false)
-  isDraft      Boolean   @default(true)
-  version      Int       @default(1)
-  thumbnailUrl String?
-  publishedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@index([organizationId, type])
-  @@map("document_template")
-}
-
 // ─── Section Presets (reusable custom sections across templates) ──────────────
-
-model SectionPreset {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name        String // e.g. "Bank Details", "Terms & Conditions"
-  description String? // optional description
-  sections    String   @db.Text // JSON — TemplateSection[] (one or more sections)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([organizationId])
-  @@map("section_preset")
-}
 
 // ─── Warehouse Dashboard Display ─────────────────────────────────────────────
 
-model WarehouseDashboardToken {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name       String // "Main Warehouse TV", "Loading Dock Screen"
-  token      String // Raw access token (for URL display in settings)
-  tokenHash  String  @unique // SHA-256 of the access token (for lookup)
-  locationId String? // Scope to a specific warehouse location — references a Convex locations doc; FK (SetNull) dropped Phase B
-  isActive   Boolean @default(true)
-  layout     String  @default("standard") // "standard", "compact", "dispatch-only"
-
-  createdById    String
-  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  lastAccessedAt DateTime?
-  createdAt      DateTime  @default(now())
-
-  @@index([organizationId])
-  @@map("warehouse_dashboard_token")
-}
-
 // ─── Test & Tag Auditor Portal ───────────────────────────────────────────────
-
-model TestTagAuditorToken {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name      String // "Insurance Auditor", "Annual Compliance Check"
-  token     String // Raw access token (displayed in settings)
-  tokenHash String    @unique // SHA-256 for secure lookup
-  isActive  Boolean   @default(true)
-  expiresAt DateTime? // Optional expiry date
-  scope     String? // JSON: { categories?, equipmentClasses?, locations?, assetIds? }
-
-  createdById    String
-  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  lastAccessedAt DateTime?
-  createdAt      DateTime  @default(now())
-
-  @@index([organizationId])
-  @@map("test_tag_auditor_token")
-}
 
 // ─── API / MCP access keys ───────────────────────────────────────────────────
 // Hardened, org-scoped bearer keys for the agent-accessible API + MCP layer.
@@ -1055,49 +901,6 @@ model ApiIdempotency {
 
 // ─── WooCommerce Integration ─────────────────────────────────────────────────
 
-model WooCommerceIntegration {
-  id             String       @id @default(cuid())
-  organizationId String       @unique
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  isEnabled     Boolean @default(false)
-  webhookSecret String // Shared secret for HMAC verification
-  storeUrl      String? // WooCommerce store URL (for reference/display)
-
-  // Matching strategy
-  productMatchField String  @default("sku") // "sku", "custom_field", "name"
-  customFieldKey    String? // If productMatchField = "custom_field", which meta key
-
-  // Date field mapping (WooCommerce meta_data keys → project fields)
-  rentalStartKey     String? // e.g. "rental_start_date"
-  rentalEndKey       String? // e.g. "rental_end_date"
-  eventStartKey      String? // e.g. "event_date"
-  deliveryAddressKey String? // e.g. "delivery_address"
-  notesKey           String? // e.g. "order_notes" or "customer_note"
-
-  // Date format preference
-  dateFormat String @default("auto") // "auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"
-
-  // Location mapping
-  locationMetaKey   String? // WooCommerce meta key containing venue/location name
-  defaultLocationId String? // Fallback location if no meta key match
-
-  // Defaults for created projects
-  defaultProjectType String  @default("DRY_HIRE")
-  autoConfirmEnquiry Boolean @default(false) // If true, set status to QUOTING instead of ENQUIRY
-
-  // Notification
-  notifyUserIds String[] @default([]) // User IDs to notify on new website orders
-
-  // Last webhook payload (for "Test & Detect" feature)
-  lastPayload Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("woocommerce_integration")
-}
-
 enum WooOrderLogStatus {
   RECEIVED
   PROCESSING
@@ -1133,20 +936,6 @@ enum WooOrderLogStatus {
  * row per (user, notificationKey) means "this user has been emailed about
  * this thing at least once." Cleared lazily by pruneStaleNotificationLogs.
  */
-model NotificationEmailLog {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId          String
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notificationKey String
-  sentAt          DateTime     @default(now())
-
-  @@unique([userId, notificationKey])
-  @@index([organizationId, sentAt])
-  @@map("notification_email_log")
-}
-
 // ─── Custom Fields (operator-defined entity attributes) ─────────────────────
 
 /**
@@ -1199,69 +988,8 @@ enum ProjectTaskPriority {
 
 /// A subscribed endpoint. `secret` must be readable because we sign with it
 /// (HMAC-SHA256); it is shown once at creation and rotatable with a grace window.
-model Webhook {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  /// Human label, e.g. "Booking agent (Hermes)".
-  description String
-  /// Destination. Must be https:// outside development.
-  url         String
-  /// JSON array of event names, e.g. ["project.status_changed"].
-  events      String @default("[]")
-
-  /// Signing secret (whsec_...). Shown once on create; rotatable.
-  secret                  String
-  /// Previous secret, still accepted during a rotation grace window.
-  previousSecret          String?
-  previousSecretExpiresAt DateTime?
-
-  isActive            Boolean   @default(true)
-  /// Stamped when auto-disabled after repeated failures, or on HTTP 410 Gone.
-  disabledAt          DateTime?
-  /// Reset to 0 by any successful delivery. Auto-disable trips at 20.
-  consecutiveFailures Int       @default(0)
-
-  lastDeliveryAt DateTime?
-  createdById    String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  deliveries WebhookDelivery[]
-
-  @@index([organizationId])
-  @@map("webhook")
-}
-
 /// One attempt-tracked delivery of one event to one endpoint. Doubles as the
 /// queue (claimed by the cron worker) and the operator-facing delivery log.
-model WebhookDelivery {
-  id             String  @id @default(cuid())
-  organizationId String
-  webhookId      String
-  webhook        Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-
-  event   String
-  /// The exact JSON body we POST. Signed as-is, so it must not be re-serialized.
-  payload String
-
-  status         WebhookDeliveryStatus @default(PENDING)
-  attempts       Int                   @default(0)
-  /// When the next attempt becomes eligible. Exponential backoff.
-  nextAttemptAt  DateTime              @default(now())
-  responseStatus Int?
-  lastError      String?
-  deliveredAt    DateTime?
-  createdAt      DateTime              @default(now())
-
-  @@index([webhookId])
-  @@index([organizationId])
-  /// The worker's claim query: pending rows whose backoff has elapsed.
-  @@index([status, nextAttemptAt])
-  @@map("webhook_delivery")
-}
-
 enum WebhookDeliveryStatus {
   PENDING
   SUCCEEDED

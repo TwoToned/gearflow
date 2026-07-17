@@ -12,7 +12,7 @@
 | State Management | React Query | 60s stale time, no refetchOnWindowFocus |
 | Forms | React Hook Form + Zod | `zodResolver()`, `z.input<>` for types |
 | PDF | pdfme (@pdfme/generator + custom plugins) | Helvetica only, no Unicode. pdf.js for client-side preview |
-| Storage | AWS SDK (S3/MinIO) | Org-prefixed file paths |
+| Storage | Convex file storage (`_storage`) | Per-org access records; `storage.ts` keeps S3-era API names |
 | Email | Resend SDK | Invitations, password reset, notifications |
 | Icons | lucide-react | 180+ icons, dynamic icon component |
 | PWA | @ducanh2912/next-pwa | Offline fallback, service worker |
@@ -23,11 +23,6 @@
 ```
 DATABASE_URL              # PostgreSQL connection string
 BETTER_AUTH_SECRET        # Session encryption key
-S3_ACCESS_KEY_ID          # AWS/MinIO access key
-S3_SECRET_ACCESS_KEY      # AWS/MinIO secret key
-S3_REGION                 # Default: ap-southeast-2
-S3_ENDPOINT               # MinIO endpoint (omit for AWS)
-S3_BUCKET                 # Default: gearflow-uploads
 RESEND_API_KEY            # Email provider
 SITE_ADMIN_REGISTRATION_ENABLED  # "true" to enable admin signup
 SITE_ADMIN_SECRET_TOKEN   # Token for /register/admin?token=...

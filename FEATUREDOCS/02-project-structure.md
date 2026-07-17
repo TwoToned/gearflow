@@ -40,7 +40,7 @@ src/
 │   ├── permissions.ts    # rolePermissions map, hasPermission, Resource type
 │   ├── prisma.ts         # Singleton Prisma client
 │   ├── serialize.ts      # Decimal → number conversion for client
-│   ├── storage.ts        # S3/MinIO: uploadToS3, getFromS3, deleteFromS3
+│   ├── storage.ts        # Convex file storage (S3-era API names kept)
 │   ├── email.ts          # Resend SDK wrapper
 │   ├── availability.ts   # computeOverbookedStatus (batch)
 │   ├── media-utils.ts    # resolveModelPhotoUrl, resolveAssetPhotoUrl

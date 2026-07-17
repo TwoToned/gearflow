@@ -12,7 +12,7 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Auth | Better Auth (Organization, TwoFactor, Admin, Passkey plugins) |
 | State | React Query (60s stale), React Hook Form + Zod |
 | PDF | pdfme (@pdfme/generator + custom plugins, Helvetica only, no Unicode) |
-| Storage | S3/MinIO, org-prefixed paths |
+| Storage | Convex file storage (`_storage`), per-org access records |
 
 ## Commands
 ```bash

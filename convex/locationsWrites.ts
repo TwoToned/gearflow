@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -60,6 +61,8 @@ export const createNative = mutation({
 
     const dup = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Location already exists");
+    // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.parentId) await assertRefInOrg(ctx, "locations", a.parentId, a.orgId);
     if (a.isDefault) await unsetOtherDefaults(ctx, a.orgId, undefined, a.now);
 
     await ctx.db.insert("locations", {
@@ -85,6 +88,8 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Location not found");
+    // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.parentId) await assertRefInOrg(ctx, "locations", a.parentId, a.orgId);
     if (a.isDefault) await unsetOtherDefaults(ctx, a.orgId, a.id, a.now);
 
     // Clears use `undefined` (schema optionals reject null).

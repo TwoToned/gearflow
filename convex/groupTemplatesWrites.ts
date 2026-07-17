@@ -10,6 +10,7 @@ import { writeActivityLog } from "./lib/audit";
 import { createKitLineItemCore } from "./projectLineItems";
 import { findKitConflict } from "./lib/availabilityCore";
 import { recalcProjectTotals } from "./lib/recalc";
+import { assertRefInOrg } from "./lib/orgRef";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -392,6 +393,12 @@ export const applyNative = mutation({
     // foreign project here would corrupt another org's totals).
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).first();
     if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
+
+    // Org-validate the client-supplied categoryId FK (by_cuid is GLOBAL — cross-org refs leak).
+    // A group's categoryId references the PROJECT-scoped projectCategories table (same as
+    // projectGroupsWrites.createGroupNative + the line-item add paths), NOT the global model
+    // catalog `categories` — validating against the wrong table would reject every legit apply.
+    if (a.categoryId) await assertRefInOrg(ctx, "projectCategories", a.categoryId, a.orgId);
 
     // Org default tax rate (Postgres-authoritative mirror; read inline, NOT a client arg).
     const settingsRow = await ctx.db

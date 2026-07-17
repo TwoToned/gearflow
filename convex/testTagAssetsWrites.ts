@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -61,6 +62,11 @@ export const createNative = mutation({
 
     const dupId = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dupId) throw new ConvexError("Test tag asset already exists");
+
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.assetId) await assertRefInOrg(ctx, "assets", a.assetId, a.orgId);
+    if (a.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", a.bulkAssetId, a.orgId);
+    if (a.testProfileId) await assertRefInOrg(ctx, "testProfiles", a.testProfileId, a.orgId);
 
     // If linking to a serialized asset, use the asset's tag as the test tag ID.
     let testTagId = a.testTagId;
@@ -180,6 +186,12 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Test tag asset not found");
+
+    // Org-validate client-supplied FKs when SET to a non-empty value (by_cuid is GLOBAL —
+    // cross-org refs leak). A null/"" is a clear and needs no check.
+    if (typeof patch.assetId === "string" && patch.assetId) await assertRefInOrg(ctx, "assets", patch.assetId, orgId);
+    if (typeof patch.bulkAssetId === "string" && patch.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", patch.bulkAssetId, orgId);
+    if (typeof patch.testProfileId === "string" && patch.testProfileId) await assertRefInOrg(ctx, "testProfiles", patch.testProfileId, orgId);
 
     // undefined = leave; null/"" = clear (Convex removes undefined keys).
     const set: Record<string, unknown> = { updatedAt: now };

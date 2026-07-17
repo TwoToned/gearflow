@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -82,6 +83,10 @@ export const createNative = mutation({
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", a.orgId).eq("assetTag", a.assetTag)).first();
     if (dupTag) throw new ConvexError(`Asset tag "${a.assetTag}" already exists.`);
 
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    await assertRefInOrg(ctx, "models", a.modelId, a.orgId);
+    if (a.locationId) await assertRefInOrg(ctx, "locations", a.locationId, a.orgId);
+
     const total = a.totalQuantity ?? 0;
     const doc = {
       id: a.id,
@@ -129,6 +134,10 @@ export const updateNative = mutation({
         .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", a.orgId).eq("assetTag", a.assetTag)).first();
       if (dup && dup.id !== a.id) throw new ConvexError(`Asset tag "${a.assetTag}" already exists.`);
     }
+
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
+    await assertRefInOrg(ctx, "models", a.modelId, a.orgId);
+    if (a.locationId) await assertRefInOrg(ctx, "locations", a.locationId, a.orgId);
 
     // Availability recompute from the total delta (parity).
     const prevTotal = doc.totalQuantity ?? 0;

@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertRefInOrg } from "./lib/orgRef";
 
 /**
  * Native CATEGORY write mutations (Phase 3 browser-direct — replaces createCategory/
@@ -63,6 +64,9 @@ export const createNative = mutation({
     const dup = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Category already exists");
 
+    // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.parentId) await assertRefInOrg(ctx, "categories", a.parentId, a.orgId);
+
     await ctx.db.insert("categories", {
       id: a.id,
       organizationId: a.orgId,
@@ -99,6 +103,9 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Category not found");
+
+    // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.parentId) await assertRefInOrg(ctx, "categories", a.parentId, a.orgId);
 
     // Clears use `undefined` (Convex removes the optional; the schema rejects null).
     await ctx.db.patch(doc._id, {

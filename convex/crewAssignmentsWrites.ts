@@ -8,7 +8,21 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+
+/**
+ * Reject a non-finite OR negative money/hours input before it flows into resolveRate /
+ * calculateEstimatedCost → estimatedCost → project labourCostTotal. Convex `v.number()`
+ * accepts NaN/Infinity/negatives; a browser-direct caller bypasses the server-side Zod,
+ * and a negative/Infinity rate silently poisons the project's margin. `null`/`undefined`
+ * skip (unset). */
+function assertCrewMoney(value: number | undefined, field: string): void {
+  if (value == null) return;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new ConvexError({ code: "INVALID_NUMBER", message: `${field} must be a non-negative finite number.` });
+  }
+}
 
 /**
  * Native CREW-ASSIGNMENT + shift write mutations (Phase 3 browser-direct — replaces
@@ -90,6 +104,13 @@ export const createNative = mutation({
     const dup = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Assignment already exists");
 
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
+    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin).
+    if (a.crewRoleId) await assertRefInOrg(ctx, "crewRoles", a.crewRoleId, a.orgId);
+    if (a.serviceId) await assertRefInOrg(ctx, "projectServices", a.serviceId, a.orgId);
+    assertCrewMoney(a.rateOverride, "rateOverride");
+    assertCrewMoney(a.estimatedHours, "estimatedHours");
+
     const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, a.crewMemberId, a.crewRoleId);
     const { rate, rateType } = resolveRate(a.rateOverride, a.rateType ?? null, crewMember, crewRole);
     const estimatedCost = calculateEstimatedCost(rate, rateType, a.startDate ?? null, a.endDate ?? null, a.estimatedHours ?? null);
@@ -131,6 +152,14 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Assignment not found");
+
+    // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
+    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin).
+    if (a.crewRoleId) await assertRefInOrg(ctx, "crewRoles", a.crewRoleId, a.orgId);
+    if (a.serviceId) await assertRefInOrg(ctx, "projectServices", a.serviceId, a.orgId);
+    assertCrewMoney(a.rateOverride, "rateOverride");
+    assertCrewMoney(a.estimatedHours, "estimatedHours");
+
     const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, doc.crewMemberId, a.crewRoleId);
     const { rate, rateType } = resolveRate(a.rateOverride, a.rateType ?? null, crewMember, crewRole);
     const estimatedCost = calculateEstimatedCost(rate, rateType, a.startDate ?? null, a.endDate ?? null, a.estimatedHours ?? null);

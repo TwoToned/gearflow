@@ -6,6 +6,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 
 /**
@@ -123,6 +124,9 @@ export const createNative = mutation({
       .withIndex("by_cuid", (q) => q.eq("id", a.testTagAssetId))
       .unique();
     if (!asset || asset.organizationId !== a.orgId) throw new ConvexError("Test tag asset not found");
+
+    // Org-validate the client-supplied testProfileId FK (by_cuid is GLOBAL — cross-org refs leak).
+    if (a.testProfileId) await assertRefInOrg(ctx, "testProfiles", a.testProfileId, a.orgId);
 
     // 3) Tester defaults to the verified actor; a supplied non-self tester must be
     //    a member of the org (the members mirror replaces prisma.member.findFirst).

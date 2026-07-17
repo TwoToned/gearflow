@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertProjectInOrg } from "./projectLineItems";
 
 /**
  * Native PROJECT-CATEGORY write mutations (Phase 3 browser-direct — replaces the
@@ -112,6 +113,10 @@ export const createCategoryNative = mutation({
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
     assertValidName(name);
+    // Client-supplied projectId: prove it's the caller's org before inserting a category
+    // that references it (by_cuid/by_projectId are GLOBAL — else a member could attach a
+    // category to another org's project).
+    await assertProjectInOrg(ctx, projectId, orgId);
 
     // Idempotent: a retried create with the same cuid short-circuits (no dup row,
     // no second audit — the by_cuid index is global so re-check org on a hit).

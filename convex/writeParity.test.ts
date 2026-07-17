@@ -49,6 +49,8 @@ describe("write-parity: assets", () => {
 
   test("createNative == assets.create (same resulting doc)", async () => {
     const t = makeT();
+    // Model the fixtures reference — createNative now org-validates the modelId FK.
+    await t.run(async (ctx) => { await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" }); });
     // Distinct tags (native has a dup-guard the service mutation lacks); exclude the tag.
     await t.withIdentity(SERVICE).mutation(api.assets.create, { id: "svc", ...baseFields, assetTag: "TAG-S" });
     await t.withIdentity(SERVICE).mutation(api.assetWrites.createNative, { id: "nat", ...baseFields, assetTag: "TAG-N", actor: ACTOR, auditId: "log1" });
@@ -94,6 +96,8 @@ describe("write-parity: line-items", () => {
 
   test("addNative == createLineItem (same resulting parent line, except lineTotal)", async () => {
     const t = makeT();
+    // Model the fields reference — addNative now org-validates the modelId FK.
+    await t.run(async (ctx) => { await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" }); });
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, allowOverbook: true, actor: ACTOR, auditId: "log1", now: NOW });
     const svc = normalize(await readByCuid(t, "projectLineItems", "svc"));

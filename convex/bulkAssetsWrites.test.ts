@@ -27,7 +27,12 @@ function makeT(): T {
   return t;
 }
 async function seedMember(t: T, role = "admin") {
-  await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role }); });
+  await t.run(async (ctx) => {
+    await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
+    // Model the `base` fixture (modelId "mdl1") references — createNative/updateNative now
+    // org-validate the modelId FK, so the referenced model must exist in the org.
+    await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Cable" });
+  });
 }
 const bulk = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const base = { id: "bk1", orgId: ORG, modelId: "mdl1", assetTag: "BK-1", totalQuantity: 5, now: NOW, actor, auditId: "a1" } as const;
@@ -100,7 +105,7 @@ describe("bulkAssets reads", () => {
   test("listPage: active only, tag asc, with model+location, org-scoped", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Cable" });
+      // model "mdl1" (name "Cable") is already seeded by seedMember.
       await ctx.db.insert("locations", { id: "loc1", organizationId: ORG, name: "Warehouse", type: "WAREHOUSE" });
       await ctx.db.insert("bulkAssets", { id: "b2", organizationId: ORG, assetTag: "B", modelId: "mdl1", locationId: "loc1", isActive: true });
       await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, assetTag: "A", modelId: "mdl1", isActive: true });

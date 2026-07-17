@@ -235,6 +235,7 @@ describe("assetWrites.createNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
     expect(res.id).toBe("new1");
@@ -268,6 +269,7 @@ describe("assetWrites.createNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, createArgs);
     // Same id, different tag (so it's the id guard firing, not the tag guard).

@@ -8,7 +8,8 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { BookTemplate, Plus, Trash2, Copy } from "lucide-react";
-import { getTemplates, deleteTemplate, duplicateProject } from "@/server/projects";
+import { getTemplates, duplicateProject } from "@/server/projects";
+import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,7 @@ export default function TemplatesPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const projectWrites = useProjectWrites(orgId);
 
   const { data: templates, isLoading, error, refetch: refetchTemplates } = useServerQuery({
     queryKey: ["templates", orgId],
@@ -68,7 +70,7 @@ export default function TemplatesPage() {
   });
 
   const deleteMut = useServerMutation({
-    mutationFn: deleteTemplate,
+    mutationFn: (id: string) => projectWrites.deleteTemplate(id),
     onSuccess: () => {
       refetchTemplates();
       toast.success("Template deleted");

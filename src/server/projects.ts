@@ -794,94 +794,6 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   return serialize(updated);
 }
 
-export async function updateProjectStatus(
-  id: string,
-  status: ProjectFormValues["status"]
-) {
-  const { organizationId, userId, userName } = await requirePermission("project", "update");
-  const project = await getProjectByIdMapped(id, organizationId);
-  if (!project) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Project not found",
-      message: "This project was deleted or moved. Refresh the page to see the latest state.",
-    });
-  }
-  if (project.isTemplate) {
-    throw new UserFacingError({
-      code: "TEMPLATE_STATUS",
-      title: "Cannot change template status",
-      message: "Templates don't have a status — they're a starting point for creating projects.",
-    });
-  }
-
-  if (project.status !== status && isBlockedForwardProjectStatus(status)) {
-    await assertNoBlockingComments(organizationId, id, {
-      actionLabel: `move this project to ${String(status).toLowerCase().replaceAll("_", " ")}`,
-    });
-  }
-
-  // project is Convex-only — patch the status directly.
-  const convex = await getConvexClient();
-  // Template guard + patch + STATUS_CHANGE audit atomic in the mutation.
-  await convex.mutation(api.projectWrites.updateStatusNative, {
-    id,
-    orgId: organizationId,
-    // A status change always carries a concrete status (the field is optional only
-    // in the shared form type).
-    status: status as NonNullable<typeof status>,
-    // The mutation emits the `project.status_changed` webhook itself (in-transaction).
-    emitSideEffects: true,
-    actor: { userId, userName },
-    auditId: createId(),
-    now: Date.now(),
-  });
-
-  const updated = await getProjectByIdMapped(id, organizationId);
-  if (!updated) throw new Error("Project status update failed");
-
-  return serialize(updated);
-}
-
-export async function updateProjectNotes(
-  id: string,
-  field: "crewNotes" | "internalNotes" | "clientNotes",
-  notes: string,
-) {
-  const { organizationId, userId, userName } = await requirePermission("project", "update");
-  // project is Convex-only — patch the single whitelisted notes field (clear when
-  // emptied, mirroring the old `notes || null`).
-  const convex = await getConvexClient();
-  await convex.mutation(api.projectWrites.updateNotesNative, {
-    id,
-    orgId: organizationId,
-    field,
-    notes: notes || null,
-    actor: { userId, userName },
-    auditId: createId(),
-    now: Date.now(),
-  });
-  const updated = await getProjectByIdMapped(id, organizationId);
-  if (!updated) throw new Error("Project notes update failed");
-  return serialize(updated);
-}
-
-export async function archiveProject(id: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "update");
-  // project is Convex-only — set status to CANCELLED.
-  const convex = await getConvexClient();
-  await convex.mutation(api.projectWrites.archiveNative, {
-    id,
-    orgId: organizationId,
-    actor: { userId, userName },
-    auditId: createId(),
-    now: Date.now(),
-  });
-  const updated = await getProjectByIdMapped(id, organizationId);
-  if (!updated) throw new Error("Project archive failed");
-  return serialize(updated);
-}
-
 /**
  * Map a ConvexError thrown by duplicateNative / saveAsTemplateNative back to the
  * rich UserFacingError the legacy server path threw, so the toast UX is identical.
@@ -1011,39 +923,6 @@ export async function getTemplates() {
 
   // Clients live in Convex — attach instead of a Prisma join.
   return serialize(await attachClient(organizationId, withCounts));
-}
-
-export async function deleteTemplate(id: string) {
-  const { organizationId, userId, userName } = await requirePermission("project", "delete");
-
-  // project is Convex-only — read the template scalars from Convex.
-  const template = await getProjectByIdMapped(id, organizationId);
-  if (!template) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Template not found",
-      message: "This template was deleted or moved. Refresh the page to see the latest state.",
-    });
-  }
-  if (!template.isTemplate) {
-    throw new UserFacingError({
-      code: "NOT_A_TEMPLATE",
-      title: "Not a template",
-      message: "That ID points at a project, not a template.",
-    });
-  }
-
-  // The full delete cascade (PM/tasks/services → grouping → line items →
-  // projectModelRevenues → the project row) runs atomically INSIDE Convex — one
-  // round-trip, no orphan window. RBAC + the isTemplate guard are re-checked there.
-  const convexForDelete = await getConvexClient();
-  await convexForDelete.mutation(api.projectWrites.deleteTemplateNative, {
-    id,
-    orgId: organizationId,
-    actor: { userId, userName },
-    now: Date.now(),
-  });
-  return { success: true };
 }
 
 export async function deleteProject(id: string) {

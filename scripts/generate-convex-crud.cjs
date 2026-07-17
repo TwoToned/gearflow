@@ -6,7 +6,7 @@
  * cuid (`id`) via the by_cuid index; org-scoped tables list by_organizationId,
  * others by their parent FK.
  *
- * Phase 5 auth (convex/lib/auth.ts, docs/designs/convex-phase5-auth-bridge.md):
+ * Phase 5 auth (convex/lib/auth.ts):
  *   • every MUTATION (create/update/remove) → requireService (the trusted backend
  *     service token; browser writes rejected, RBAC stays in Prisma server actions).
  *   • list/getById are **service-only by default** (requireService). A table opens
@@ -167,7 +167,7 @@ for (const mdl of models) {
   if (counted) out += `import { bumpCountersForTable } from "./lib/counters";\n`;
   if (usesEnums) out += `import * as enums from "./lib/validators";\n`;
   out += `\n`;
-  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${browserReadable ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (not on the browser-readable allowlist)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
+  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${browserReadable ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (not on the browser-readable allowlist)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54.\n */\n\n`;
 
   if (browserReadable && redactArg) {
     // Browser-readable WITH field redaction: the user token gets the row minus

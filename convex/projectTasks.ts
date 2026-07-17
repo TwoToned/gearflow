@@ -7,10 +7,10 @@ import * as enums from "./lib/validators";
  * Thin CRUD for ProjectTask (Convex table "projectTasks"). GENERATED — Phase 2/5.
  *
  * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
- * SERVICE token (browser writes rejected — RBAC stays in the Next.js server
- * actions, which still own permission/validation/audit). Org-scoped reads
+ * SERVICE token (service-only mirror/read helpers; the browser-direct write path with RBAC +
+ * validation + audit enforced inside Convex lives in the *Writes.ts mutations — see FEATUREDOCS/54). Org-scoped reads
  * accept the service token OR a user token scoped to the same org. Lookups use the
- * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
+ * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
 export const list = query({

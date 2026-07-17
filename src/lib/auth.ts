@@ -137,7 +137,7 @@ export const auth = betterAuth({
     }),
     // Convex auth bridge (Phase 5). Mints ES256 JWTs the self-hosted Convex
     // backend validates via its customJwt provider. Two token shapes share this
-    // one signer/JWKS (see docs/designs/convex-phase5-auth-bridge.md):
+    // one signer/JWKS:
     //   • USER token  — GET /api/auth/token (session-gated). Carries orgId/role
     //     from a FRESH membership read; grants org-scoped reads in Convex.
     //   • SERVICE token — auth.api.signJWT() in-process (no HTTP route); carries

@@ -4,7 +4,7 @@
  * Dependency-light (no imports) so both the Better Auth config (src/lib/auth.ts)
  * and the service-token minter (src/lib/convex-auth.ts) can use them without an
  * import cycle. The Convex side (convex/lib/auth.ts) hard-codes the SAME literals
- * — keep them in sync. See docs/designs/convex-phase5-auth-bridge.md.
+ * — keep them in sync.
  */
 
 /** JWT `aud` claim. Convex's customJwt provider requires this applicationID. */

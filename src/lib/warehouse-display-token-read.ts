@@ -21,7 +21,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * `getWarehouseTokenByHash` — the exact match + isActive semantics are preserved
  * in the server action. No Prisma fallback on a Convex miss.
  *
- * See FEATUREDOCS/54 + docs/designs/convex-decommission-RUNBOOK.md.
+ * See FEATUREDOCS/54.
  */
 
 type RawToken = Doc<"warehouseDashboardTokens">;

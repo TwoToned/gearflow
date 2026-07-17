@@ -177,4 +177,4 @@ export const suppliers = query({
 // MULTI-select builder/table (maintenance form, asset table) whose selected-row chips
 // need per-id label resolution the bounded search page can't provide. Their search
 // indexes were dropped from schema.ts too — re-add both (query + index) alongside a
-// real single-select consumer when one is built. See docs/designs/convex-native-read-layer.md.
+// real single-select consumer when one is built.

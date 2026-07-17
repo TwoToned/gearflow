@@ -10,7 +10,7 @@
  *
  * (or `pnpm convex:backfill:dashboard-counters`). The native dashboard also
  * self-heals via `reconcileIfStale` on view, so this is mainly for the initial
- * populate. See docs/designs/convex-native-read-layer.md §3.6.
+ * populate.
  */
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";

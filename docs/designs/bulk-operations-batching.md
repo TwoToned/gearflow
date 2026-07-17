@@ -8,9 +8,9 @@ the read-side asset-picker availability fix. Created 2026-07-06.
 submit item checks, etc.). Root cause is **one server-action round-trip per item**
 in a client loop. Fix = batch each into a single call.
 
-This is effectively an early, high-value slice of **Phase 5 (native writes)** in
-[convex-native-read-layer.md](./convex-native-read-layer.md) — scoped to the hottest
-bulk paths. Batch the round-trip first; go fully Convex-native only where it's clean.
+This is effectively an early, high-value slice of **native writes** — scoped to the
+hottest bulk paths. Batch the round-trip first; go fully Convex-native only where
+it's clean.
 
 ---
 

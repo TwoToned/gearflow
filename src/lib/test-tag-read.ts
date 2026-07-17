@@ -5,7 +5,7 @@ import type { ReportFilters } from "@/lib/test-tag-report-types";
 
 /**
  * Server-side read helpers for the Test & Tag domain (Phase A read-rewiring of
- * the Convex domain-only decommission — see docs/designs/convex-domain-only-decommission.md).
+ * the Convex domain-only decommission).
  *
  * `testTagAsset`, `testTagRecord`, and `subTestRecord` are dual-written
  * (Prisma FK anchor + Convex reactive doc). These helpers read the Convex copy

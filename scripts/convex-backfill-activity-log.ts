@@ -9,7 +9,7 @@
  *
  *   pnpm tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-activity-log.ts
  *
- * See FEATUREDOCS/54 and docs/designs/convex-native-read-layer.md (Phase 5c).
+ * See FEATUREDOCS/54.
  */
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";

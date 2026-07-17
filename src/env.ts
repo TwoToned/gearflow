@@ -54,7 +54,7 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
-  // Convex (hybrid migration — see docs/designs/convex-hybrid-migration.md).
+  // Convex data layer (see FEATUREDOCS/54-convex-data-layer.md).
   // Optional during the migration so the app boots without Convex configured;
   // a domain only depends on Convex once its phase lands. Server actions read
   // the self-hosted URL + admin key to call mutations via convex/nextjs.

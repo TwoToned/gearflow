@@ -102,8 +102,7 @@ export const bundle = query({
  * server action checks via `requirePermission`. This is stronger than the old
  * generated-CRUD org-scope (which is why exposing `units` here is safe: only a user
  * who may read this project's equipment receives it — exactly what the server
- * action already returns to that user). See docs/designs/convex-native-read-layer.md
- * §3.3/§3.5. Org+project scoping is enforced by the indexed reads + the org filter.
+ * action already returns to that user). Org+project scoping is enforced by the indexed reads + the org filter.
  *
  * Not consumed yet — the equipment-tab cutover (Phase 1d) wires `useQuery` onto this
  * behind a feature flag; until then this is additive and inert.

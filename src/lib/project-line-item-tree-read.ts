@@ -2,7 +2,6 @@
  * Pure reconstruction of the project equipment **line-item tree** from FLAT
  * Convex rows — the keystone of the Phase A read-rewiring (the shared reader behind
  * getProject / getProjectForWarehouse / getProjectPullSheet / build-document-data).
- * See docs/designs/convex-domain-only-decommission.md "Keystone".
  *
  * Prisma produced the tree via nested `include`s off the `project → category →
  * group → lineItems → childLineItems → units` relations. These functions

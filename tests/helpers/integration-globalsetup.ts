@@ -5,7 +5,7 @@
  * Responsibility: make the Convex service-token trust chain work against the
  * shared DEV Convex deployment (`groovy-koala-475`).
  *
- * The trust chain (see docs/designs/convex-phase5-auth-bridge.md):
+ * The trust chain:
  *   1. The integration runner points DATABASE_URL at the local `gearflow_test`
  *      Postgres (fast, disposable, per-test TRUNCATE).
  *   2. Better Auth's `jwt` plugin signs the SERVICE token with the ES256 private

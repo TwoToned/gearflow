@@ -10,15 +10,15 @@ import {
 /**
  * Convex-side auth enforcement for the Phase 5 auth bridge.
  *
- * Trust model (full write-up: docs/designs/convex-phase5-auth-bridge.md):
+ * Trust model:
  *   • SERVICE token — minted in-process by the Next.js backend
  *     (auth.api.signJWT). Carries sub="gearflow-service" + svc:true. The trusted
  *     server already ran requirePermission/validation, so the service identity
  *     grants everything (reads any org, all writes).
  *   • USER token — Better Auth /api/auth/token (session-gated). Carries the real
- *     user id as sub + orgId/role claims. Grants org-scoped READS only; browser
- *     writes are rejected (RBAC stays in Prisma — Convex is never the authZ
- *     source of truth).
+ *     user id as sub + orgId/role claims. Grants org-scoped reads AND browser-direct
+ *     writes; the write path enforces RBAC IN Convex via requireOrgPermission +
+ *     resolveActor (which pins the actor to the verified sub — unspoofable).
  *
  * Both are ES256 JWTs validated by the same customJwt provider (convex/auth.config.ts).
  *
@@ -128,7 +128,7 @@ export async function requireOrgReadDoc(
 // requireOrgRead enforces only ORG-SCOPING. requireOrgPermission additionally
 // enforces RESOURCE/ACTION permissions inside Convex, so a browser-facing
 // composite query grants exactly what the server-action `requirePermission`
-// would (docs/designs/convex-native-read-layer.md §3.3). The decision logic is
+// would. The decision logic is
 // the isomorphic `decideOrgPermission` (shared with the server path via
 // permissionsCore); this wrapper only resolves the ctx/db inputs:
 //   • the caller's member row by (org, user) — `.first()`, NOT `.unique()`, to

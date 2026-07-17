@@ -94,6 +94,70 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  e2e:
+    # E2E smoke + a11y over the critical-flows list (POLICY.md R-8.8.3, R-8.1.7).
+    # Runs the app against a throwaway Postgres + a dummy Convex URL — critical-flow
+    # #1 (login page) renders client-side before any Convex query, so no live backend
+    # is needed. Blocking: verified green locally with this exact setup.
+    name: E2E (smoke + a11y)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gearflow_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gearflow_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Sync schema to throwaway DB
+        run: pnpm exec prisma db push
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E (chromium)
+        run: pnpm exec playwright test --project=chromium
+        env:
+          BETTER_AUTH_SECRET: ci-e2e-secret-string-at-least-32-characters
+          BETTER_AUTH_URL: http://localhost:3000
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_CONVEX_URL: https://dummy-e2e.convex.cloud
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   hygiene:
     # Hygiene gates. The dependency vulnerability scan (R-6.6) is BLOCKING — the tree
     # is clean at high+. The dead-code (R-4.2) and secret (R-7.3) scans start advisory

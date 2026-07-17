@@ -4,14 +4,15 @@ The E2E smoke suite (`e2e/`, Playwright) MUST cover 100% of this list, and it MU
 and block every deploy (POLICY.md **R-8.8.3**). At minimum this list covers **auth** and the
 **primary revenue path**. Update this list in the same PR that adds or changes a critical flow.
 
-**Status:** the list is defined; E2E coverage is **partial** (see the coverage column). Wiring
-the full suite deploy-blocking (with app + Postgres + Convex + Playwright browsers in CI) is
-tracked as the remaining R-8.8.3 work — until it's green in CI the deploy-blocking clause is an
-open finding, not yet satisfied.
+**Status:** the list is defined and the E2E suite **runs blocking in CI** (the `e2e` job in
+`.github/workflows/ci.yml`: Postgres service + Playwright chromium against a dummy Convex URL).
+Flow #1 is covered with a functional smoke **and** an axe a11y check (R-8.1.7). Flows 2+ need a
+seeded auth user and are the remaining R-8.8.3 work — until they're covered, the "100% of the
+list" clause is partially met (auth entry ✅; sign-in + revenue path pending).
 
 | # | Flow | Steps | E2E coverage |
 |---|------|-------|--------------|
-| 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in form | ✅ `e2e/smoke.spec.ts` |
+| 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in entry form (+ axe a11y, zero serious/critical WCAG 2 A/AA) | ✅ `e2e/smoke.spec.ts`, `e2e/a11y.spec.ts` (CI-gated) |
 | 2 | **Sign in** | Email + password → authenticated → lands on dashboard | ⬜ pending (needs seeded test user) |
 | 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ⬜ pending |
 | 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ⬜ pending |

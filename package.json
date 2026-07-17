@@ -83,6 +83,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.60.0",
     "@size-limit/file": "^12.1.0",
     "@tailwindcss/postcss": "^4.3.0",

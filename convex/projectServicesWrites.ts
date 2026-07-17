@@ -62,7 +62,9 @@ function calculateServiceLineTotal(
   discount: number | undefined,
 ): number | null {
   if (unitPrice == null || unitPrice === 0) return null;
-  const disc = discount ?? 0;
+  // Clamp the discount non-negative here too (defense-in-depth): a negative discount must
+  // never add to the line total even if a caller reaches this without the guard above.
+  const disc = Math.max(0, discount ?? 0);
   return Math.max(0, round(unitPrice - disc));
 }
 
@@ -161,6 +163,16 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.unitPrice, "unitPrice");
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
+  // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
+  // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
+  // → serviceRevenue → project total); a negative costTotal would INFLATE project margin
+  // (margin = total - costs). Both are money forgery, so reject them.
+  if (a.unitPrice != null && a.unitPrice < 0)
+    throw new ConvexError({ code: "INVALID_MONEY", message: "Service unit price cannot be negative." });
+  if (a.discount != null && a.discount < 0)
+    throw new ConvexError({ code: "INVALID_MONEY", message: "Service discount cannot be negative." });
+  if (a.costTotal != null && a.costTotal < 0)
+    throw new ConvexError({ code: "INVALID_MONEY", message: "Service cost cannot be negative." });
   const serviceDate = a.date ?? null;
   let serviceEndDate = a.endDate ?? serviceDate;
   if (!MULTI_DAY_TYPES.has(a.type)) serviceEndDate = serviceDate;

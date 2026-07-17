@@ -297,6 +297,14 @@ export const updateNative = mutation({
     if (typeof setObj.clientId === "string") {
       await assertRefInOrg(ctx, "clients", setObj.clientId, orgId);
     }
+    // Same class as clientId (a sibling the earlier IDOR fix missed): locationId is
+    // resolved by service-token server reads (crew-calendar/project-services) via a GLOBAL
+    // by_cuid `getLocationById` that no-ops requireOrgReadDoc for service tokens — so a
+    // browser-direct caller could point their project at another org's location and leak
+    // its name + physical street address. Validate on write (the only reliable guard).
+    if (typeof setObj.locationId === "string") {
+      await assertRefInOrg(ctx, "locations", setObj.locationId, orgId);
+    }
 
     // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
     // must clear the blocking-comment gate too (parity with the server updateProject path).
@@ -388,6 +396,10 @@ export const createNative = mutation({
     // this closes (a global by_cuid client read with no org re-check downstream).
     if (fields.clientId) {
       await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
+    }
+    // locationId — same cross-tenant leak class as clientId (see updateNative's comment).
+    if (fields.locationId) {
+      await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
     }
 
     // Dup-guard the client-minted cuid first (applies to both number paths). The

@@ -9,7 +9,18 @@ import type { MutationCtx } from "../_generated/server";
  */
 export async function assertRefInOrg(
   ctx: MutationCtx,
-  table: "models" | "assets" | "bulkAssets" | "projectGroups" | "projectCategories" | "clients",
+  table:
+    | "models"
+    | "assets"
+    | "bulkAssets"
+    | "projectGroups"
+    | "projectCategories"
+    | "clients"
+    | "locations"
+    | "suppliers"
+    | "kits"
+    | "categories"
+    | "testProfiles",
   id: string,
   orgId: string,
 ): Promise<void> {

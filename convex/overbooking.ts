@@ -44,47 +44,58 @@ export const bundle = query({
     }
     const modelSet = new Set(unique);
 
-    let lineItemDocs: Doc<"projectLineItems">[];
-    if (thisProjectId != null) {
-      // SCOPED path. Candidate projects = thisProjectId + (when a window is given)
-      // any org project overlapping it — the same range-scan `swapLineItemAsset`
-      // uses (projectLineItems.ts:789-800): a project can only overlap
-      // [rentalStartDate, rentalEndDate] if its rentalStartDate <= rentalEndDate, so
-      // range-scan on that bound and finish the two-sided overlap check in JS on the
-      // much smaller candidate set. This turns an O(all-time bookings for this
-      // model) read into O(projects live/overlapping right now) — the dominant
-      // Database-I/O cost (Phase 0 baseline, 2026-07: 77% of org DB I/O) came from
-      // the unbounded version.
-      const candidateProjectIds = new Set<string>([thisProjectId]);
-      if (rentalStartDate != null && rentalEndDate != null) {
-        for await (const p of ctx.db
-          .query("projects")
-          .withIndex("by_organizationId_rentalStartDate", (q) =>
-            q.eq("organizationId", orgId).lte("rentalStartDate", rentalEndDate),
-          )) {
-          if (p.isTemplate) continue;
-          if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
-          const s = p.rentalStartDate ?? null;
-          const e = p.rentalEndDate ?? null;
-          if (s == null || e == null) continue;
-          if (s <= rentalEndDate && e >= rentalStartDate) candidateProjectIds.add(p.id);
+    // Projects visited by the SCOPED path's range-scan below are cached here so the
+    // final projects-by-id read (for the date-window join) can reuse them instead of
+    // re-fetching the same docs a second time via by_cuid.
+    const projectDocCache = new Map<string, Doc<"projects">>();
+
+    async function buildLineItemDocs(): Promise<Doc<"projectLineItems">[]> {
+      if (thisProjectId != null) {
+        // SCOPED path. Candidate projects = thisProjectId + (when a window is given)
+        // any org project overlapping it — the same range-scan `swapLineItemAsset`
+        // uses (projectLineItems.ts:789-800): a project can only overlap
+        // [rentalStartDate, rentalEndDate] if its rentalStartDate <= rentalEndDate, so
+        // range-scan on that bound and finish the two-sided overlap check in JS on the
+        // much smaller candidate set. This turns an O(all-time bookings for this
+        // model) read into O(projects live/overlapping right now) — the dominant
+        // Database-I/O cost (Phase 0 baseline, 2026-07: 77% of org DB I/O) came from
+        // the unbounded version.
+        const candidateProjectIds = new Set<string>([thisProjectId]);
+        if (rentalStartDate != null && rentalEndDate != null) {
+          for await (const p of ctx.db
+            .query("projects")
+            .withIndex("by_organizationId_rentalStartDate", (q) =>
+              q.eq("organizationId", orgId).lte("rentalStartDate", rentalEndDate),
+            )) {
+            projectDocCache.set(p.id, p);
+            if (p.isTemplate) continue;
+            if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
+            const s = p.rentalStartDate ?? null;
+            const e = p.rentalEndDate ?? null;
+            if (s == null || e == null) continue;
+            if (s <= rentalEndDate && e >= rentalStartDate) candidateProjectIds.add(p.id);
+          }
         }
+        const perProject = await Promise.all(
+          [...candidateProjectIds].map((pid) =>
+            ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", pid)).collect(),
+          ),
+        );
+        return perProject.flat().filter((li) => li.modelId != null && modelSet.has(li.modelId));
       }
-      const perProject = await Promise.all(
-        [...candidateProjectIds].map((pid) =>
-          ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", pid)).collect(),
-        ),
-      );
-      lineItemDocs = perProject.flat().filter((li) => li.modelId != null && modelSet.has(li.modelId));
-    } else {
       // UNSCOPED fallback — unchanged all-time by_modelId scan (pre-rollout callers).
       const lineItemGroups = await Promise.all(
         unique.map((mid) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
       );
-      lineItemDocs = lineItemGroups.flat();
+      return lineItemGroups.flat();
     }
 
-    const [assetGroups, bulkGroups] = await Promise.all([
+    // Line items and assets/bulkAssets are independent reads — run them concurrently
+    // instead of awaiting line items first (the pre-fix shape here awaited line items,
+    // then started assets/bulkAssets, making total latency sum(lineItems, assets+bulk)
+    // instead of max(lineItems, assets+bulk)).
+    const [lineItemDocs, assetGroups, bulkGroups] = await Promise.all([
+      buildLineItemDocs(),
       Promise.all(unique.map((mid) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
       Promise.all(unique.map((mid) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
     ]);
@@ -99,9 +110,15 @@ export const bundle = query({
     // breakdown). Previously this .collect()'d EVERY project + EVERY model in the org
     // and, being a reactive subscription, re-read both whole tables on ANY project/model
     // write org-wide — the dominant Database-I/O cost. by_cuid is global, so re-check org.
+    // Reuse projectDocCache (populated by the SCOPED path's range-scan) before falling
+    // back to a fresh by_cuid read — avoids reading the same project doc twice.
     const projectIds = [...new Set(lineItems.map((li) => li.projectId))];
     const [projectDocs, modelDocs] = await Promise.all([
-      Promise.all(projectIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique())),
+      Promise.all(
+        projectIds.map(
+          (pid) => projectDocCache.get(pid) ?? ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique(),
+        ),
+      ),
       Promise.all(unique.map((mid) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", mid)).unique())),
     ]);
 

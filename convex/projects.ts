@@ -63,10 +63,16 @@ export const listPage = query({
     const sortBy = a.sortBy ?? "rentalStartDate";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
+    // locationNameFor is only consulted inside the `a.search` branch below (location
+    // isn't a column on this table, only a search-widening field) — skip the read
+    // entirely on every unfiltered/non-search page load instead of always collecting
+    // the whole locations table.
     const [rows, clients, locations] = await Promise.all([
       ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
       ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      a.search
+        ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()
+        : Promise.resolve([]),
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const locationMap = new Map(locations.map((l) => [l.id, l]));

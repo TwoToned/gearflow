@@ -276,7 +276,7 @@ This applies everywhere a Prisma row is first written to Convex: `src/lib/*-mirr
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
 - `DropdownMenuLabel` must be inside `DropdownMenuGroup`
-- `@react-pdf/renderer` — Helvetica only, no Unicode symbols
+- `pdfme` (`@pdfme/generator`) — Helvetica only, no Unicode symbols
 - Server action dates arrive as strings — wrap with `new Date()`
 - Kit join tables use `addedAt` (not `createdAt`)
 - Safe areas: use inline `style` with `env()`, not Tailwind arbitrary values

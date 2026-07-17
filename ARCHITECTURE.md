@@ -7,10 +7,10 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Stack | Details |
 |-------|---------|
 | Framework | Next.js 16, React 19, Turbopack |
-| UI | shadcn/ui v4 (Base UI, `render` prop — NOT `asChild`), Tailwind CSS v4 |
-| Database | PostgreSQL + Prisma v6 (client at `src/generated/prisma/`) |
+| UI | shadcn/ui v4 — overlay primitives are Radix (`asChild`), Sidebar/Breadcrumb are Base UI (`render`), Tailwind CSS v4 |
+| Database | Convex (sole copy of domain data) + PostgreSQL/Prisma v7 for Better Auth + activity log only |
 | Auth | Better Auth (Organization, TwoFactor, Admin, Passkey plugins) |
-| State | React Query (60s stale), React Hook Form + Zod |
+| State | Convex `useQuery`/`useMutation` (reactive, no polling), React Hook Form + Zod |
 | PDF | pdfme (@pdfme/generator + custom plugins, Helvetica only, no Unicode) |
 | Storage | S3/MinIO, org-prefixed paths |
 

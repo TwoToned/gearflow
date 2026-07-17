@@ -183,8 +183,8 @@ export default function KitsPage() {
     onSuccess: (count) => {
       toast.success(`Force returned ${count} kits to available`);
       setSelectedIds(new Set());
-      // Kit list + asset registry are both Convex-reactive (useKits / useAssets);
-      // the server action dual-writes, so the WS push refreshes them. No cache.
+      // Kit list is Convex-reactive (kits.listPage via useAuthedQuery); the server
+      // action dual-writes, so the WS push refreshes it. No cache to invalidate.
     },
     onError: (e) => toast.error(e.message),
   });
@@ -227,10 +227,15 @@ export default function KitsPage() {
   // keystroke is now a real round-trip.
   const kitCounts = useKitCounts(orgId);
   const debouncedSearch = useDebouncedValue(search, 200);
-  const statusFilter = filters?.status as string | undefined;
-  const conditionFilter = filters?.condition as string | undefined;
-  const locationFilter = filters?.locationId as string | undefined;
-  const categoryFilter = filters?.categoryId as string | undefined;
+  // Enum filter columns always store FilterValue as string[] (src/lib/table-utils.ts) —
+  // unwrap to the first selected value, matching asset-table.tsx's pick(). Without this,
+  // the array was cast straight into a Convex arg typed v.optional(v.string()), which
+  // throws an ArgumentValidationError the moment any of these filters is applied.
+  const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const statusFilter = pick(filters?.status as string | string[] | undefined);
+  const conditionFilter = pick(filters?.condition as string | string[] | undefined);
+  const locationFilter = pick(filters?.locationId as string | string[] | undefined);
+  const categoryFilter = pick(filters?.categoryId as string | string[] | undefined);
   const tagsFilter = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
   const kitsPage = useAuthedQuery(
     api.kits.listPage,

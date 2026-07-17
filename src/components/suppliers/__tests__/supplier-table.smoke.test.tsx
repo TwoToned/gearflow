@@ -99,4 +99,15 @@ describe("SupplierTable (smoke)", () => {
     fireEvent.change(input, { target: { value: "acme" } });
     expect((lastSuppliersPageArgs as { search?: string })?.search).toBeUndefined();
   });
+
+  it("unwraps an enum filter (stored as string[]) to a single string before calling listPage", () => {
+    // Regression test: filterType "enum" columns always store FilterValue as
+    // string[] (src/lib/table-utils.ts), but suppliers.listPage's isActive arg
+    // is v.optional(v.string()) — passing the raw array through throws a
+    // Convex ArgumentValidationError.
+    currentFilters.isActive = ["true"];
+    render(<SupplierTable />);
+    expect((lastSuppliersPageArgs as { isActive?: unknown })?.isActive).toBe("true");
+    delete currentFilters.isActive;
+  });
 });

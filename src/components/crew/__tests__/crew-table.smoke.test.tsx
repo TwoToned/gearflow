@@ -112,4 +112,15 @@ describe("CrewTable (smoke)", () => {
     fireEvent.change(input, { target: { value: "alice" } });
     expect((lastCrewPageArgs as { search?: string })?.search).toBeUndefined();
   });
+
+  it("unwraps an enum filter (stored as string[]) to a single string before calling listPage", () => {
+    // Regression test: filterType "enum" columns always store FilterValue as
+    // string[] (src/lib/table-utils.ts), but crewMembers.listPage's type/
+    // department/status args are v.optional(v.string()) — passing the raw
+    // array through throws a Convex ArgumentValidationError.
+    currentFilters.type = ["FREELANCER"];
+    render(<CrewTable />);
+    expect((lastCrewPageArgs as { type?: unknown })?.type).toBe("FREELANCER");
+    delete currentFilters.type;
+  });
 });

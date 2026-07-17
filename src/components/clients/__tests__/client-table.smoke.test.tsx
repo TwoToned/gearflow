@@ -104,4 +104,15 @@ describe("ClientTable (smoke)", () => {
     fireEvent.change(input, { target: { value: "acme" } });
     expect((lastClientsPageArgs as { search?: string })?.search).toBeUndefined();
   });
+
+  it("unwraps an enum filter (stored as string[]) to a single string before calling listPage", () => {
+    // Regression test: filterType "enum" columns always store FilterValue as
+    // string[] (src/lib/table-utils.ts), but clients.listPage's type arg is
+    // v.optional(v.string()) — passing the raw array through throws a Convex
+    // ArgumentValidationError.
+    currentFilters.type = ["COMPANY"];
+    render(<ClientTable />);
+    expect((lastClientsPageArgs as { type?: unknown })?.type).toBe("COMPANY");
+    delete currentFilters.type;
+  });
 });

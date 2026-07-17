@@ -115,4 +115,15 @@ describe("KitsPage (smoke)", () => {
     fireEvent.change(input, { target: { value: "drum" } });
     expect((lastKitsPageArgs as { search?: string })?.search).toBeUndefined();
   });
+
+  it("unwraps an enum filter (stored as string[]) to a single string before calling listPage", () => {
+    // Regression test: filterType "enum" columns always store FilterValue as
+    // string[] (src/lib/table-utils.ts), but kits.listPage's status/condition/
+    // locationId/categoryId args are v.optional(v.string()) — passing the raw
+    // array through throws a Convex ArgumentValidationError.
+    currentFilters.status = ["AVAILABLE"];
+    render(<KitsPage />);
+    expect((lastKitsPageArgs as { status?: unknown })?.status).toBe("AVAILABLE");
+    delete currentFilters.status;
+  });
 });

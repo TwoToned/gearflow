@@ -153,7 +153,11 @@ export function SupplierTable() {
   // a separate, non-reactive query merged in below — unchanged. Search is
   // debounced since each keystroke is now a real round-trip.
   const debouncedSearch = useDebouncedValue(search, 200);
-  const activeFilter = filters?.isActive as string | undefined;
+  // Enum filter columns always store FilterValue as string[] (src/lib/table-utils.ts) —
+  // unwrap to the first selected value, matching asset-table.tsx's pick(). Without this,
+  // the array was cast straight into a Convex arg typed v.optional(v.string()), which
+  // throws an ArgumentValidationError the moment this filter is applied.
+  const activeFilter = Array.isArray(filters?.isActive) ? filters.isActive[0] : (filters?.isActive as string | undefined);
   const suppliersPage = useAuthedQuery(
     api.suppliers.listPage,
     orgId

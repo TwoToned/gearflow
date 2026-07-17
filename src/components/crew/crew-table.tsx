@@ -197,9 +197,14 @@ export function CrewTable() {
   // disclosed tradeoff (see crewMembers.ts listPage doc comment). Search is
   // debounced since each keystroke is now a real round-trip.
   const debouncedSearch = useDebouncedValue(search, 200);
-  const typeFilter = filters?.type as string | undefined;
-  const deptFilter = filters?.department as string | undefined;
-  const statusFilter = filters?.status as string | undefined;
+  // Enum filter columns always store FilterValue as string[] (src/lib/table-utils.ts) —
+  // unwrap to the first selected value, matching asset-table.tsx's pick(). Without this,
+  // the array was cast straight into a Convex arg typed v.optional(v.string()), which
+  // throws an ArgumentValidationError the moment any of these filters is applied.
+  const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const typeFilter = pick(filters?.type as string | string[] | undefined);
+  const deptFilter = pick(filters?.department as string | string[] | undefined);
+  const statusFilter = pick(filters?.status as string | string[] | undefined);
   const membersPage = useAuthedQuery(
     api.crewMembers.listPage,
     orgId

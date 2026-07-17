@@ -34,3 +34,39 @@ prop: `"models"`, `"assets"`, and `"rates"` (the rates-only import). The models
 table (`src/components/assets/model-table.tsx`) exposes an **Import Rates** button
 (gated on `model:update`) alongside Export/Import. Recommended flow: **Export →
 fill the rate columns in a spreadsheet → Import Rates**.
+
+## Performance (Phase-3 DoD benchmark, 2026-07-17)
+
+`importAssetsCSV` was benchmarked against prod via `scripts/benchmark-csv-import.ts`
+(the closing item on the original Phase-3 DoD, which called for a throughput check
+"vs the 16k-write/1s-CPU Convex budget"). Results:
+
+| Rows | Concurrency | Wall clock | ms/row |
+|---|---|---|---|
+| 200 | 1 | 111.8s | 559.0 |
+| 500 | 1 | 265.0s | 530.0 |
+| 1000 | 1 | 527.7s | 527.7 |
+| 500 | 4 (2000 total) | 1048.6s | 524.3 |
+
+**Finding: the 16k-write/1s-CPU budget doesn't apply here, and that's the problem.**
+That budget concerns a single Convex mutation's internal write count — but
+`importAssetsCSV` does the opposite of batching: it calls `getConvexClient()` and
+issues one `api.assets.create`/`patchAsset` mutation **per CSV row**, sequentially
+awaited inside a `for` loop in the Next.js server action. So it never risks the
+per-mutation budget (each mutation writes exactly one row), but it also never gets
+the wall-clock benefit of batching — throughput is pure server→Convex round-trip
+latency × row count, a flat **~525-530ms/row regardless of single-call row count
+(200-1000) or concurrent callers (1 vs 4, even at 2000 total rows — no contention,
+but no speedup either)**. A 1000-row import takes **~8.8 minutes** in one blocking
+server-action call — well past any reasonable request timeout or acceptable UI
+wait, for a CSV size a real customer could plausibly upload.
+
+**Not fixed in this pass** (out of scope for a benchmark-only DoD item; flagged as
+a follow-up). The fix, if/when CSV import volume becomes a real usage pattern, is
+the same pattern already applied to line-items/projects this session: collapse the
+per-row loop into ONE backend-local Convex mutation that loops `rows` inside a
+single transaction (see `convex/lineItemWrites.ts` `removeManyNative`/
+`patchManyNative` for the established shape), which trades N round-trips for one —
+at which point the 16k-write/1s-CPU per-mutation budget *does* become the relevant
+constraint, and would need its own row-count cap (mirroring `assertBulkSizeOk` in
+`convex/lib/rateLimiter.ts`).

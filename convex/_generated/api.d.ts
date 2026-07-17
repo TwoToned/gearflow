@@ -165,7 +165,6 @@ import type * as projectTasks from "../projectTasks.js";
 import type * as projectTasksWrites from "../projectTasksWrites.js";
 import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
-import type * as purgeRemovedTables from "../purgeRemovedTables.js";
 import type * as reservationConflicts from "../reservationConflicts.js";
 import type * as revenueAllocation from "../revenueAllocation.js";
 import type * as roi from "../roi.js";
@@ -377,7 +376,6 @@ declare const fullApi: ApiFromModules<{
   projectTasksWrites: typeof projectTasksWrites;
   projectWrites: typeof projectWrites;
   projects: typeof projects;
-  purgeRemovedTables: typeof purgeRemovedTables;
   reservationConflicts: typeof reservationConflicts;
   revenueAllocation: typeof revenueAllocation;
   roi: typeof roi;

@@ -56,3 +56,7 @@ public/fallback-*.js
 .gstack/
 .claude/worktrees/
 package-lock.json
+
+# Playwright E2E artifacts
+playwright-report/
+test-results/

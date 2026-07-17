@@ -16,13 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conventions). Exception register at `docs/exceptions.md`.
 - README governance section: policy profile, docs map, and budget registry (R-0.4).
 - ESLint gates (warn-level) for complexity, file/function length, `no-explicit-any`, and
-  naming conventions.
-- Dependabot configuration for npm + GitHub Actions.
+  naming conventions (R-3.6/R-3.7/R-8.2.2/R-3.9).
+- Dependabot configuration for npm + GitHub Actions (R-6.5).
+- CI hygiene job: advisory Knip dead-code scan (R-4.2) and gitleaks secret scan (R-7.3),
+  plus a **blocking** `pnpm audit` high-severity gate (R-6.6).
+- Advisory bundle-size budget via size-limit (R-8.1.5 / T-8).
+- Security headers: HSTS and a report-only Content-Security-Policy (R-8.11.2).
+- PII data inventory at `docs/pii-inventory.md` (R-8.12.1).
+- E2E: critical-flows list (`docs/critical-flows.md`) and a first login smoke spec (R-8.8.3).
+- Tracked `pnpm-workspace.yaml` (previously gitignored) so dependency overrides ship
+  reproducibly.
 
 ### Fixed
 
-- Corrected `npm`/`npx` commands to `pnpm`/`pnpm exec` across README and `CLAUDE.md`
-  (repo is pnpm-only).
+- Resolved all high-severity dependency advisories via pnpm overrides (serialize-javascript,
+  hono, ws) — `pnpm audit --audit-level high` is clean (R-6.6).
+- Corrected `npm`/`npx` commands to `pnpm`/`pnpm exec` across README, `CLAUDE.md`, and
+  `playwright.config.ts` (repo is pnpm-only) (R-5.3/R-5.8).
 
 ## [0.24.17.0] - 2026-07-17
 

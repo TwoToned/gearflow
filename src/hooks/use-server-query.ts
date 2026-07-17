@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * One-shot, non-reactive server-action read (Phase 6 of the Convex migration —
  * React Query removal).
  *
- * Drop-in replacement for `@tanstack/react-query`'s `useQuery` for GearFlow
+ * Drop-in replacement for `@tanstack/react-query`'s `useQuery` for RVLT Flow
  * datums that have **NO liveness requirement** — cross-domain count/aggregate
  * badges, previews, and other reads that nothing ever invalidates. The
  * object-config API (`{ queryKey, queryFn, enabled }`) mirrors React Query's so

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build a full file management system with a browsable folder structure, drag-and-drop uploads, and deep integration with every entity in GearFlow. Files attached to models, projects, kits, etc. are automatically organised into virtual folders. Users can also create their own folder structure for general documents (rider specs, safety plans, contracts, insurance certificates). Files can be shared with external users and crew using the same token-based guest access pattern from the Project Sharing spec.
+Build a full file management system with a browsable folder structure, drag-and-drop uploads, and deep integration with every entity in RVLT Flow. Files attached to models, projects, kits, etc. are automatically organised into virtual folders. Users can also create their own folder structure for general documents (rider specs, safety plans, contracts, insurance certificates). Files can be shared with external users and crew using the same token-based guest access pattern from the Project Sharing spec.
 
 ---
 
@@ -35,7 +35,7 @@ Build a full file management system with a browsable folder structure, drag-and-
 
 ### Two Worlds of Files
 
-GearFlow has two categories of files:
+RVLT Flow has two categories of files:
 
 1. **Entity-attached files** — photos and documents linked to a specific model, asset, kit, project, client, location, etc. via the existing `{Entity}Media` join tables. These already exist and work via `MediaUploader`. They're tightly coupled to their parent entity.
 
@@ -499,7 +499,7 @@ The token is a cryptographically random string (32 bytes, URL-safe base64), stor
 
 ### Internal User Shares
 
-For internal users (org members or GearFlow account holders), the shared file/folder appears in a "Shared with me" section in the file browser sidebar. No token needed — they access it via their authenticated session.
+For internal users (org members or RVLT Flow account holders), the shared file/folder appears in a "Shared with me" section in the file browser sidebar. No token needed — they access it via their authenticated session.
 
 ### Revoking Shares
 

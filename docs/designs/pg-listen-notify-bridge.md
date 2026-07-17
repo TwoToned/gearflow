@@ -10,7 +10,7 @@
 
 ## The Problem
 
-GearFlow's current real-time sync (`FEATUREDOCS/53-realtime-sync.md`) uses a Node.js `EventEmitter` singleton in `src/lib/events.ts`. When a server action writes data, `logActivity()` emits an event. The SSE endpoint at `/api/realtime/route.ts` subscribes to that EventEmitter and pushes to connected clients.
+RVLT Flow's current real-time sync (`FEATUREDOCS/53-realtime-sync.md`) uses a Node.js `EventEmitter` singleton in `src/lib/events.ts`. When a server action writes data, `logActivity()` emits an event. The SSE endpoint at `/api/realtime/route.ts` subscribes to that EventEmitter and pushes to connected clients.
 
 **This only works within a single process.** If the Next.js server restarts (deploy, pm2 reload, crash), all in-flight events are lost. If you scale to multiple pm2 workers (which is the actual fix for 502s), events emitted by worker A never reach clients connected to worker B.
 
@@ -182,7 +182,7 @@ The dedicated client uses one connection from the PostgreSQL pool. For a self-ho
 
 The listener starts inside the existing `gearflow` pm2 process. No new pm2 process needed. The deploy workflow (`npm run build` → `pm2 restart gearflow`) already handles restarts — the listener will reconnect on boot.
 
-**Kubernetes / multi-replica note:** If GearFlow ever runs across multiple replicas, each replica runs its own LISTEN connection. All receive the same NOTIFY. Each forwards to its own EventEmitter. Because the SSE route also runs per-replica, each replica correctly pushes events to its own connected clients. No change needed.
+**Kubernetes / multi-replica note:** If RVLT Flow ever runs across multiple replicas, each replica runs its own LISTEN connection. All receive the same NOTIFY. Each forwards to its own EventEmitter. Because the SSE route also runs per-replica, each replica correctly pushes events to its own connected clients. No change needed.
 
 ---
 

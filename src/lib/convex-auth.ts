@@ -9,7 +9,7 @@ import {
  *
  * The trusted backend (server actions, scripts, webhooks, cron) calls Convex
  * functions. Convex now requires a valid token on every function; this mints the
- * service token that identifies the caller as the GearFlow backend — the explicit
+ * service token that identifies the caller as the RVLT Flow backend — the explicit
  * form of the old implicit "trust the caller." Server actions still run all real
  * authorization (requirePermission/validation/logActivity) BEFORE calling Convex.
  *

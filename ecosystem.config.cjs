@@ -1,5 +1,5 @@
 /**
- * pm2 process definitions for GearFlow.
+ * pm2 process definitions for RVLT Flow.
  *
  * Two long-lived processes:
  *   - gearflow             : the Next.js web app

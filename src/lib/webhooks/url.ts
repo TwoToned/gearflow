@@ -3,7 +3,7 @@
  *
  * Two jobs. First, force `https://` so a signed payload never crosses the wire in the
  * clear. Second, refuse private and loopback hosts: an org admin (or an agent holding
- * their key) could otherwise aim a webhook at internal infrastructure and use GearFlow
+ * their key) could otherwise aim a webhook at internal infrastructure and use RVLT Flow
  * as an SSRF probe, reading results back through the delivery log's `responseStatus`
  * and `lastError`.
  *

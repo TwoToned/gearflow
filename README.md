@@ -1,12 +1,12 @@
 <div align="center">
 
-# GearFlow
-[![Deploy GearFlow](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml)
+# RVLT Flow
+[![Deploy RVLT Flow](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml)
 
 ### Equipment & Rental Management for Production Companies
 
 Stop wrestling with spreadsheets and generic inventory tools.\
-GearFlow is built from the ground up for AV, theatre, and live event companies\
+RVLT Flow is built from the ground up for AV, theatre, and live event companies\
 who need to track gear, manage projects, and run a warehouse — not fight their software.
 
 [Get Started](#-getting-started) · [Features](#-what-you-get) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Environment Variables](#-environment-variables)
@@ -19,7 +19,7 @@ who need to track gear, manage projects, and run a warehouse — not fight their
 
 Production companies live and die by their gear. You need to know what's available, where it is, who has it, and when it's coming back — across dozens of projects running simultaneously. Most teams end up duct-taping together spreadsheets, whiteboards, and half-forgotten text messages.
 
-GearFlow replaces all of that with a single platform that handles the **entire equipment lifecycle**: from the moment gear arrives in your warehouse to the moment it's checked back in, tested, and shelved for the next show.
+RVLT Flow replaces all of that with a single platform that handles the **entire equipment lifecycle**: from the moment gear arrives in your warehouse to the moment it's checked back in, tested, and shelved for the next show.
 
 ---
 
@@ -251,10 +251,10 @@ src/
 
 ## License
 
-GearFlow is source-available under the [Business Source License 1.1](./LICENSE).
+RVLT Flow is source-available under the [Business Source License 1.1](./LICENSE).
 
-**You can** freely use, modify, and self-host GearFlow — including for commercial purposes (e.g., running your own rental business).
+**You can** freely use, modify, and self-host RVLT Flow — including for commercial purposes (e.g., running your own rental business).
 
-**You cannot** offer GearFlow as a hosted or managed service to third parties.
+**You cannot** offer RVLT Flow as a hosted or managed service to third parties.
 
 Each version converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after its release.

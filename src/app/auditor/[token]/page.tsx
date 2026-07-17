@@ -389,7 +389,7 @@ export default function AuditorPortalPage({
         {/* Footer */}
         <div className={`mt-6 text-center text-xs ${textMuted}`}>
           <p>This is a read-only compliance view. Data shown is live from {data.orgName}.</p>
-          <p className="mt-1">Powered by GearFlow</p>
+          <p className="mt-1">Powered by RVLT Flow</p>
         </div>
       </div>
     </div>

@@ -96,7 +96,7 @@ async function buildAssignmentEmailData(assignmentId: string) {
       siteContactName: project.siteContactName,
       siteContactPhone: project.siteContactPhone,
       notes: assignmentRow.notes,
-      orgName: org?.name || "GearFlow",
+      orgName: org?.name || "RVLT Flow",
     },
   };
 }
@@ -313,7 +313,7 @@ export async function sendBulkMessage(
         project?.projectNumber ?? "",
         message,
         userName,
-        org?.name || "GearFlow"
+        org?.name || "RVLT Flow"
       );
       await sendEmail({
         to: member.email,

@@ -2,7 +2,7 @@
 
 ## Context
 
-This is an extension to the existing GearFlow asset/rental management platform for AV production companies. The core system (assets, models, projects, warehouse scanning, availability engine) is already implemented. This prompt adds **Kits** — physical containers (road cases, flight cases, pelican cases, racks, work boxes) that hold a fixed set of assets and travel as a single unit.
+This is an extension to the existing RVLT Flow asset/rental management platform for AV production companies. The core system (assets, models, projects, warehouse scanning, availability engine) is already implemented. This prompt adds **Kits** — physical containers (road cases, flight cases, pelican cases, racks, work boxes) that hold a fixed set of assets and travel as a single unit.
 
 ---
 

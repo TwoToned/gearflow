@@ -1,7 +1,7 @@
 # Enterprise SSO
 
 ## Overview
-SAML 2.0 and OIDC Single Sign-On via the `@better-auth/sso` plugin. The single org can configure one or more identity providers, control how new users are provisioned, and map IdP groups to GearFlow roles.
+SAML 2.0 and OIDC Single Sign-On via the `@better-auth/sso` plugin. The single org can configure one or more identity providers, control how new users are provisioned, and map IdP groups to RVLT Flow roles.
 
 ## Architecture
 
@@ -42,7 +42,7 @@ Stored as JSON in `Organization.metadata.sso` (type: `OrgSSOSettings` from `src/
 | `allowPasswordLogin` | boolean | `true` | Allow email/password alongside SSO |
 | `enforceSSO` | boolean | `false` | Require SSO (blocks password/social login) |
 | `ssoTestedSuccessfully` | boolean | `false` | Must be true before `enforceSSO` can be enabled |
-| `groupMappings` | array | `[]` | IdP group → GearFlow role mappings |
+| `groupMappings` | array | `[]` | IdP group → RVLT Flow role mappings |
 | `oidcGroupsClaim` | string | `groups` | OIDC token claim name for groups |
 | `samlGroupsAttribute` | string | `groups` | SAML assertion attribute for groups |
 | `groupValueType` | enum | `name` | Match groups by `name` or `id` |
@@ -153,7 +153,7 @@ Icons are defined in `src/lib/sso-icons.tsx` with support for Microsoft, Google,
 2. **Redirect URI**: Add `{APP_URL}/api/auth/sso/callback/{providerId}` as a Web redirect
 3. **API Permissions**: openid, email, profile (admin consent recommended)
 4. **Optional Claims**: Add `preferred_username` to the ID token
-5. **Email Claim**: Set to `preferred_username` in the GearFlow provider edit form
+5. **Email Claim**: Set to `preferred_username` in the RVLT Flow provider edit form
 6. **ID Token Mode**: Automatically enabled — no action needed
 7. **Groups**: Configure group claims in Token Configuration to enable group-to-role mapping
 

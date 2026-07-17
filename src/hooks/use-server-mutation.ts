@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Server-action mutation hook (Phase 6 of the Convex migration — React Query
  * removal).
  *
- * Drop-in replacement for `@tanstack/react-query`'s `useMutation` for GearFlow's
+ * Drop-in replacement for `@tanstack/react-query`'s `useMutation` for RVLT Flow's
  * write paths. Writes always flow **browser → server action → Convex** (browser
  * writes are rejected at Convex by design — Phase 5), so a mutation is just an
  * `async` server-action call. The object-config API intentionally mirrors React

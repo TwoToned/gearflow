@@ -155,7 +155,7 @@ export const upsertSingleton = mutation({
     }
     const _id = await ctx.db.insert("siteSettings", {
       id: fallbackId,
-      platformName: "GearFlow",
+      platformName: "RVLT Flow",
       registrationPolicy: "OPEN",
       twoFactorGlobalPolicy: "OFF",
       defaultCurrency: "AUD",

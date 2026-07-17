@@ -124,7 +124,7 @@ function htmlResponse(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} — GearFlow</title>
+  <title>${title} — RVLT Flow</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f9fafb; margin: 0; padding: 40px 20px; }
     .card { max-width: 500px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -141,7 +141,7 @@ function htmlResponse(
     </div>
     <div class="message">${message}</div>
   </div>
-  <p class="footer">GearFlow</p>
+  <p class="footer">RVLT Flow</p>
 </body>
 </html>`;
 

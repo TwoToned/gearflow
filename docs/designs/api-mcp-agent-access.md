@@ -12,7 +12,7 @@
 <!-- dispatch). confirm+idempotency rails on dangerous/stock-affecting writes. See FEATUREDOCS/56. -->
 
 <!-- Full review artifact + decision audit trail: ~/.gstack/projects/TwoToned-gearflow/jayden-worktree-bridge-cse_01F1scZAF9AgfUgiUhzWSRTi-design-20260707-153700.md -->
-# GearFlow — Agent-Accessible API + MCP
+# RVLT Flow — Agent-Accessible API + MCP
 
 **Branch:** `worktree-bridge-cse_01F1scZAF9AgfUgiUhzWSRTi`
 **Created:** 2026-07-07
@@ -23,7 +23,7 @@
 
 ## Intent
 
-Let AI agents (Claude, OpenClaw, scripts) and power users read GearFlow broadly and write to it safely,
+Let AI agents (Claude, OpenClaw, scripts) and power users read RVLT Flow broadly and write to it safely,
 through a stable API exposed **MCP-first** with a REST + webhook surface over the same contract. An agent should
 be able to answer "what gear is free next week?" and *act* — "draft a booking and reserve the kit" — while being
 bound by exactly the overbooking / RBAC / audit protections a human operator has in the UI.

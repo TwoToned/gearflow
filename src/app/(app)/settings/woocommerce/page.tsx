@@ -218,7 +218,7 @@ export default function WooCommerceSettingsPage() {
 
         {/* Connection */}
         <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <FormSection title="Connection" description="Configure the webhook connection between WooCommerce and GearFlow.">
+          <FormSection title="Connection" description="Configure the webhook connection between WooCommerce and RVLT Flow.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="storeUrl">Store URL</Label>
@@ -297,7 +297,7 @@ export default function WooCommerceSettingsPage() {
 
         {/* Product Matching */}
         <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <FormSection title="Product Matching" description="How to match WooCommerce products to GearFlow models.">
+          <FormSection title="Product Matching" description="How to match WooCommerce products to RVLT Flow models.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label>Match Strategy</Label>
@@ -545,7 +545,7 @@ export default function WooCommerceSettingsPage() {
           >
             <div className="text-left">
               <h3 className="t-heading text-fg">WordPress Setup Guide</h3>
-              <p className="mt-0.5 text-[12px] text-fg-3">How to configure WooCommerce to send orders to GearFlow.</p>
+              <p className="mt-0.5 text-[12px] text-fg-3">How to configure WooCommerce to send orders to RVLT Flow.</p>
             </div>
             {showSetupGuide ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
@@ -557,7 +557,7 @@ export default function WooCommerceSettingsPage() {
                   In WordPress admin: WooCommerce &rarr; Settings &rarr; Advanced &rarr; Webhooks &rarr; Add Webhook
                 </p>
                 <ul className="list-disc pl-6 space-y-1 text-fg-3">
-                  <li><strong>Name:</strong> GearFlow Project Creation</li>
+                  <li><strong>Name:</strong> RVLT Flow Project Creation</li>
                   <li><strong>Status:</strong> Active</li>
                   <li><strong>Topic:</strong> Order created</li>
                   <li><strong>Delivery URL:</strong> Copy the Webhook URL above</li>
@@ -588,7 +588,7 @@ export default function WooCommerceSettingsPage() {
               <div className="space-y-2">
                 <h4 className="font-medium">3. Set Product SKUs</h4>
                 <p className="text-fg-3">
-                  For SKU matching: set each WooCommerce product&apos;s SKU to match the corresponding GearFlow model&apos;s SKU or Model Number.
+                  For SKU matching: set each WooCommerce product&apos;s SKU to match the corresponding RVLT Flow model&apos;s SKU or Model Number.
                   Go to Products &rarr; Edit &rarr; Inventory &rarr; SKU.
                 </p>
               </div>

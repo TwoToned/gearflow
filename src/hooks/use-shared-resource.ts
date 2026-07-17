@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
  * the exact behaviour React Query's shared cache gave a `["key", orgId]` query,
  * where one writer's `invalidateQueries(["key"])` refreshed every reader.
  *
- * GearFlow has two such auth/RBAC datums that stay in Prisma forever (Convex is
+ * RVLT Flow has two such auth/RBAC datums that stay in Prisma forever (Convex is
  * never the authZ source of truth) but are genuinely multi-reader/multi-writer:
  * - **organization** — read by the always-mounted layout `BrandingProvider` +
  *   `DynamicFavicon` (so a settings edit must live-update the layout) plus the

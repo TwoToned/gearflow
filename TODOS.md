@@ -481,7 +481,7 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 **Why:** Operators want to integrate with their accounting (Xero), CRM (HubSpot), or custom dashboards. Currently the only integration is WooCommerce. A general API unlocks every other workflow.
 **Pros:** Unlocks third-party integrations, makes the platform a hub instead of a silo, enables enterprise deals that require integration.
 **Cons:** Large surface to design, document, version, and maintain. Need API key management UI, rate limits, scopes, versioning strategy. Security review essential.
-**Context:** User flagged this in their Gearflow TODO. Existing server actions follow consistent patterns (permission check → query → log → serialize) which makes API wrappers straightforward, but the actions are RPC-shaped, not REST-shaped — wrapping vs. rewriting is a design call.
+**Context:** User flagged this in their RVLT Flow TODO. Existing server actions follow consistent patterns (permission check → query → log → serialize) which makes API wrappers straightforward, but the actions are RPC-shaped, not REST-shaped — wrapping vs. rewriting is a design call.
 **Depends on:** Nothing (greenfield).
 **Estimate:** human ~6-8 weeks / CC ~1 day for scaffolding
 **Priority:** P2
@@ -493,7 +493,7 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 **Why:** Operators currently have no self-serve documentation. Every question is a support touch. A real user guide lets new orgs onboard themselves and reduces support load.
 **Pros:** Reduces support burden, improves onboarding, marketing value (SEO, demos), credibility for enterprise sales.
 **Cons:** Significant ongoing maintenance cost — docs go stale fast. Needs writer time, screenshots, and a workflow for keeping docs in sync with releases.
-**Context:** User flagged this in their Gearflow TODO. Separate repo recommended to keep the main app's CI fast and let docs ship independently.
+**Context:** User flagged this in their RVLT Flow TODO. Separate repo recommended to keep the main app's CI fast and let docs ship independently.
 **Depends on:** Nothing.
 **Estimate:** human ~4-6 weeks initial / ongoing maintenance
 **Priority:** P2
@@ -503,7 +503,7 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 **Why:** Docs drift. FEATUREDOCS has 30+ files but coverage is uneven — some features have extensive docs, others are stubs. A periodic audit keeps the docs trustworthy for both humans and the agent.
 **Pros:** Faster onboarding for new contributors, better agent context, surfaces dead code / orphaned features.
 **Cons:** Time investment with no user-visible output. Easy to defer indefinitely.
-**Context:** User flagged this in their Gearflow TODO. Run after a release cluster, not mid-feature.
+**Context:** User flagged this in their RVLT Flow TODO. Run after a release cluster, not mid-feature.
 **Depends on:** Nothing.
 **Estimate:** human ~1 week / CC ~3-4 hours
 **Priority:** P3
@@ -546,7 +546,7 @@ Follow-up: add a "My tasks" panel once Project Tasks merges (`getMyOpenTasks` is
 **Why:** User flagged this as "revise this and think big on how it can be way smarter and integrate together better." The smaller crewing TODOs (travel distance, availability index) are tactical — this is the strategic rework.
 **Pros:** Aligns the whole crew/services surface, unlocks the smaller deferred items as natural consequences instead of bolt-ons.
 **Cons:** Strategy task, not an implementation task. Easy to over-scope. Needs `/office-hours` or `/plan-ceo-review` before any code is written.
-**Context:** User flagged this in their Gearflow TODO. Existing surface: CrewMember, CrewAssignment, ProjectService, service categories, schedule view, call sheets. Pay rates and travel exist but aren't fully wired into assignment decisions.
+**Context:** User flagged this in their RVLT Flow TODO. Existing surface: CrewMember, CrewAssignment, ProjectService, service categories, schedule view, call sheets. Pay rates and travel exist but aren't fully wired into assignment decisions.
 **Depends on:** Nothing (planning task).
 **Estimate:** planning ~1 week / implementation depends on outcome
 **Priority:** P2

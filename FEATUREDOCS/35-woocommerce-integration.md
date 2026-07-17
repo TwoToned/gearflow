@@ -1,6 +1,6 @@
 # WooCommerce Integration
 
-Automatically creates GearFlow projects from WooCommerce orders via webhook.
+Automatically creates RVLT Flow projects from WooCommerce orders via webhook.
 
 ## Architecture
 
@@ -97,7 +97,7 @@ Location meta key configured?
 
 - `verifyWebhookSignature` and `flexibleDateParse` are in `src/lib/woocommerce-utils.ts` (NOT in the server action file) because `"use server"` requires all exports to be async
 - WooCommerce ping requests are accepted without HMAC verification (topic: `action.woocommerce_webhook_delivery` or missing `id`)
-- The webhook secret in GearFlow must be copied to WooCommerce's webhook Secret field — they must match
+- The webhook secret in RVLT Flow must be copied to WooCommerce's webhook Secret field — they must match
 - Prisma `Json` fields need `as unknown as Type` casting (e.g., `log.payload as unknown as WooOrder`)
 - `PricingType` enum uses `PER_DAY` not `DAILY`
 - Select components need explicit `defaultValues` in `useForm` to avoid controlled/uncontrolled warnings

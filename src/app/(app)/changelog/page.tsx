@@ -19,7 +19,7 @@ export default function ChangelogPage() {
         <div className="mb-8">
           <h1 className="t-title">Changelog</h1>
           <p className="mt-2 text-fg-3">
-            Build history for GearFlow.
+            Build history for RVLT Flow.
           </p>
         </div>
 

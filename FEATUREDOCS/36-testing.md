@@ -2,7 +2,7 @@
 
 ## Overview
 
-GearFlow uses **Vitest** for unit/integration tests and **Playwright** for E2E tests. Tests are colocated with source files (`*.test.ts` next to `*.ts`).
+RVLT Flow uses **Vitest** for unit/integration tests and **Playwright** for E2E tests. Tests are colocated with source files (`*.test.ts` next to `*.ts`).
 
 ## Commands
 

@@ -1,6 +1,6 @@
 {
-  "name": "GearFlow — Asset & Rental Management",
-  "short_name": "GearFlow",
+  "name": "RVLT Flow — Asset & Rental Management",
+  "short_name": "RVLT Flow",
   "description": "Professional asset and rental management for AV and theatre production companies.",
   "start_url": "/dashboard",
   "display": "standalone",

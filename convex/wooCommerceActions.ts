@@ -651,7 +651,7 @@ export const processOrder = internalAction({
       // 2. Extract rental dates from order meta
       const dates = extractDates(order, integration);
 
-      // 3. Match order line items to GearFlow models
+      // 3. Match order line items to RVLT Flow models
       const matchResults = await matchProducts(ctx, orgId, order.line_items, integration);
 
       // 4. Resolve location (from meta field or default)

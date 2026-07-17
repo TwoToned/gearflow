@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import * as enums from "./lib/validators";
 
 /**
- * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).
+ * RVLT Flow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
  * 98 tables mirroring the Prisma models. Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`

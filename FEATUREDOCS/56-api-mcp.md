@@ -14,7 +14,7 @@
 > design of record below are the blueprint. The rest of this file describes the removed
 > design.
 
-Lets AI agents (Claude, OpenClaw, scripts) and power users read and write GearFlow
+Lets AI agents (Claude, OpenClaw, scripts) and power users read and write RVLT Flow
 through a stable, org-scoped API exposed **MCP-first** with a REST facade.
 
 **Coverage: everything a user can do.** All 537 operations — every read and every write

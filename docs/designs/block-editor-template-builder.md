@@ -184,7 +184,7 @@ Added by /plan-design-review on 2026-03-19. All decisions calibrated against DES
   - Dot + text status indicator ("Published" / "Draft")
   - Left-edge teal bar for the org default template
   - Quick actions (Edit, Duplicate, Delete) on hover
-- Uses existing GearFlow table row hover pattern
+- Uses existing RVLT Flow table row hover pattern
 
 ### Template Creation Dialog
 On "+ New Template":

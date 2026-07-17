@@ -531,12 +531,12 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-06-18 | RVLT Flow rebrand from GearFlow | Full brand/identity change per company direction |
+| 2026-06-18 | RVLT Flow rebrand from RVLT Flow | Full brand/identity change per company direction |
 | 2026-06-18 | Dark espresso forced, no light mode | RVLT brand identity; operator screens in low-light venues |
 | 2026-06-18 | Single RVLT red accent | Brand distinction; no palette sprawl |
 | 2026-06-18 | Hard offset shadows | Tactile, distinctive, avoids generic SaaS shadow blur |
 | 2026-06-18 | Archivo as display font (not BC Alphapipe) | Preferred the Archivo look; BC Alphapipe removed entirely |
-| 2026-06-18 | Hanken Grotesk as font-sans | Registry canonical; replaces DM Sans from old GearFlow layout |
+| 2026-06-18 | Hanken Grotesk as font-sans | Registry canonical; replaces DM Sans from old RVLT Flow layout |
 | 2026-06-18 | Geist Mono as font-mono | Registry canonical (`--font-mono: "Geist Mono"`) |
 | 2026-06-18 | Red disambiguation: fill vs tint, not separate hues | Single accent is non-negotiable; treatment carries semantic meaning |
 | 2026-06-18 | Personality banned from alert/compliance contexts | Operator trust; clarity over character in high-stakes UI moments |

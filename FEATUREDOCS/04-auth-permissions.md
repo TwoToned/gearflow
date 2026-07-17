@@ -19,7 +19,7 @@ This instance runs in **single-org mode**: exactly one `Organization` row exists
 - `getSingleOrgSSOInfo()` — Returns SSO config for the single org (used by login page for domain-based SSO detection)
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
-- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`
+- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`
 - Social OAuth login (Google/Microsoft) was removed — only email/password, passkeys, and SSO remain. (Existing `account` rows for legacy google/microsoft links are left untouched.)
 - SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — org provider configuration
 - Account linking: `accountLinking: { enabled: true, trustedProviders: ["sso"] }` — existing users with matching email auto-linked on SSO login
@@ -132,7 +132,7 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 - `roleSyncBehavior` — `SYNC_ON_LOGIN`, `INITIAL_ONLY`, or `MANUAL_ONLY`
 - `allowPasswordLogin` — Allow email/password alongside SSO
 - `enforceSSO` — Require SSO (must pass test login first via `ssoTestedSuccessfully`)
-- `groupMappings` — Array of IdP group → GearFlow role mappings
+- `groupMappings` — Array of IdP group → RVLT Flow role mappings
 - `oidcGroupsClaim` / `samlGroupsAttribute` — Claim names for group extraction
 
 ### Provisioning Modes

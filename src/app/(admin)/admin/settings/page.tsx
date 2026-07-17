@@ -22,7 +22,7 @@ export default function AdminSettingsPage() {
   });
 
   const [form, setForm] = useState({
-    platformName: "GearFlow",
+    platformName: "RVLT Flow",
     platformIcon: null as string | null,
     registrationPolicy: "OPEN",
     defaultCurrency: "AUD",
@@ -32,7 +32,7 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     if (settings) {
       setForm({ // eslint-disable-line react-hooks/set-state-in-effect
-        platformName: settings.platformName || "GearFlow",
+        platformName: settings.platformName || "RVLT Flow",
         platformIcon: settings.platformIcon || null,
         registrationPolicy: settings.registrationPolicy || "OPEN",
         defaultCurrency: settings.defaultCurrency || "AUD",

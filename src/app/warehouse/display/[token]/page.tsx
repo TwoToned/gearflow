@@ -597,7 +597,7 @@ function Footer({ lastUpdated }: { lastUpdated: Date | null }) {
 
   return (
     <div className="mt-4 flex items-center justify-between text-xs text-gray-600 border-t border-gray-800 pt-3">
-      <span>GearFlow Warehouse Display</span>
+      <span>RVLT Flow Warehouse Display</span>
       <span>{timeAgo} &middot; Auto-refreshes every 60s</span>
     </div>
   );

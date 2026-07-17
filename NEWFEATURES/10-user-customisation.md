@@ -2,7 +2,7 @@
 
 ## Summary
 
-Enhance user profiles with photo uploads and expand authentication options to include passkeys (WebAuthn), social login providers (Google, GitHub, Apple, Microsoft), and improved account management UI. This brings GearFlow's user experience up to modern platform standards and gives users flexible, secure ways to authenticate.
+Enhance user profiles with photo uploads and expand authentication options to include passkeys (WebAuthn), social login providers (Google, GitHub, Apple, Microsoft), and improved account management UI. This brings RVLT Flow's user experience up to modern platform standards and gives users flexible, secure ways to authenticate.
 
 ---
 
@@ -97,7 +97,7 @@ export const auth = betterAuth({
     // ... existing plugins ...
     passkey({
       rpID: process.env.PASSKEY_RP_ID || "localhost",     // e.g. "gearflow.com"
-      rpName: "GearFlow",
+      rpName: "RVLT Flow",
       origin: process.env.BETTER_AUTH_URL || "http://localhost:3000",
     }),
   ],
@@ -385,11 +385,11 @@ export const auth = betterAuth({
   // ... existing config ...
   plugins: [
     organization(),
-    twoFactor({ issuer: "GearFlow" }),
+    twoFactor({ issuer: "RVLT Flow" }),
     admin(),
     passkey({
       rpID: process.env.PASSKEY_RP_ID || "localhost",
-      rpName: process.env.PLATFORM_NAME || "GearFlow",
+      rpName: process.env.PLATFORM_NAME || "RVLT Flow",
       origin: process.env.BETTER_AUTH_URL || "http://localhost:3000",
     }),
     sso({ /* ... from SSO spec ... */ }),
@@ -456,7 +456,7 @@ All optional — features only activate when their env vars are set.
 
 1. **Lockout prevention**: Never allow a user to remove their last auth method. Before disconnecting a social provider, removing a passkey, or disabling a password, check that at least one other method remains.
 
-2. **Account linking verification**: When linking a social account, the email from the social provider must match the user's GearFlow email (or be verified). This prevents account takeover via a social login with a different email.
+2. **Account linking verification**: When linking a social account, the email from the social provider must match the user's RVLT Flow email (or be verified). This prevents account takeover via a social login with a different email.
 
 3. **Profile picture content**: Consider basic image validation (file type, size, dimensions) but don't implement content moderation for v1. Store avatars with the same org-scoped S3 access controls as other files.
 
@@ -529,4 +529,4 @@ All optional — features only activate when their env vars are set.
 - Passkeys are also user-level, not org-level. A passkey registered by a user works across all their org memberships.
 - Profile pictures should be quick to load — resize to 256×256 server-side and serve via the existing S3 file proxy. Consider generating a tiny thumbnail (32×32) for inline list usage.
 - The `UserAvatar` component will be used extensively across the app (crew, team, activity log, etc.), so build it well as a foundational component early.
-- Better Auth handles most of the complex auth logic (token management, session creation, account linking). GearFlow's work is primarily UI and configuration.
+- Better Auth handles most of the complex auth logic (token management, session creation, account linking). RVLT Flow's work is primarily UI and configuration.

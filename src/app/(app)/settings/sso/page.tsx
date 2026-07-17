@@ -101,7 +101,7 @@ export default function SSOSettingsPage() {
 
             <FormSection
               title="Group-to-Role Mapping"
-              description="Map identity provider groups to GearFlow roles."
+              description="Map identity provider groups to RVLT Flow roles."
             >
               <div className="sm:col-span-2">
                 <SSOGroupMappingSection

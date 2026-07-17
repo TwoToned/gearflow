@@ -1,6 +1,6 @@
 # Project Tasks (Asana-style to-do lists)
 
-Per-project task lists so operators can track project work inside GearFlow instead of
+Per-project task lists so operators can track project work inside RVLT Flow instead of
 external tools (Asana, Slack threads). Each project gets a **Tasks** tab.
 
 ## Data model

@@ -32,7 +32,7 @@ function emailWrapper(
       ${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
       <p style="color:#999;font-size:12px;">
-        Sent by ${data.orgName} via GearFlow.
+        Sent by ${data.orgName} via RVLT Flow.
         <a href="${prefsUrl}" style="color:#0d9488;">Update notification preferences</a>.
       </p>
     </div>
@@ -143,7 +143,7 @@ export interface PendingInvitationEmailData extends BaseEmailData {
 export function pendingInvitationEmail(data: PendingInvitationEmailData) {
   const link = absolute(data.appBaseUrl, data.href);
   return {
-    subject: `Invitation to ${data.invitingOrgName} on GearFlow`,
+    subject: `Invitation to ${data.invitingOrgName} on RVLT Flow`,
     html: emailWrapper(
       `
         <h2>You have a pending invitation</h2>

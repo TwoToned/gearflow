@@ -1,7 +1,7 @@
 <!-- /autoplan restore point: /Users/jayden/.gstack/projects/TwoToned-gearflow/claude-strange-chebyshev-58d336-autoplan-restore-20260514-090134.md -->
 <!-- STATUS: APPROVED 2026-05-14 — paused before execution, awaiting usage reset -->
 <!-- Next step on resume: begin Wave 1 day 0 (env validation → Sentry → BulkAsset reconcile script → shared inventory mutation helper → kit fix → maintenance fix → T&T enforcement) -->
-# GearFlow — App-Wide Cleanup, Unification & Feature-Completeness Audit
+# RVLT Flow — App-Wide Cleanup, Unification & Feature-Completeness Audit
 
 **Branch:** `claude/strange-chebyshev-58d336`
 **Created:** 2026-05-14
@@ -11,7 +11,7 @@
 
 ## Intent
 
-GearFlow is a rental management SaaS for AV/Theatre (Two Toned Productions). Phase 1–6 + User Management are marked COMPLETE in memory. The user wants the v2 polish pass: every feature works, every feature connects to every other feature, nothing is forgotten, and the obvious feature gaps are filled.
+RVLT Flow is a rental management SaaS for AV/Theatre (Two Toned Productions). Phase 1–6 + User Management are marked COMPLETE in memory. The user wants the v2 polish pass: every feature works, every feature connects to every other feature, nothing is forgotten, and the obvious feature gaps are filled.
 
 **Two focal areas the user named:**
 1. **Projects** — the central booking/quoting/dispatch entity that ties everything together
@@ -601,7 +601,7 @@ The `/check/[assetTag]` route exists but is hidden from the sidebar (per cross-c
 
 ### Multi-tenancy enforcement (Wave 2) — revised per P10
 
-**Revised 2026-05-14**: The original Eng-review recommendation was a four-layer defense (AST scanner, Prisma query scanner, manual audit, runtime probe tests) treating cross-tenant leaks as critical. Per P10, GearFlow operates single-tenant — the multi-tenancy harness is defense-in-depth dead plumbing, not a live security boundary. There is no second tenant to leak to.
+**Revised 2026-05-14**: The original Eng-review recommendation was a four-layer defense (AST scanner, Prisma query scanner, manual audit, runtime probe tests) treating cross-tenant leaks as critical. Per P10, RVLT Flow operates single-tenant — the multi-tenancy harness is defense-in-depth dead plumbing, not a live security boundary. There is no second tenant to leak to.
 
 **What stays:**
 1. **AST scanner CI script (soft warn-only)** (`scripts/audit-server-actions.ts`, ~150 LOC, ts-morph): every exported async in `src/server/*.ts` must call `getOrgContext` or `requirePermission` or be allowlisted with a documented reason. **Warn in PR review, do not block CI.** This is documentation + regression guard, not enforcement. ~1 day to build.
@@ -702,7 +702,7 @@ Current ~4.8/10, Wave 1+2 target ~8.5/10.
 
 ## Design scope (per CEO P9 — internal-only)
 
-GearFlow is a back-office operations console. Density-per-click > onboarding gradient. The user is the ops team (warehouse staff, project managers, crew coordinators, admins). The ONLY client-facing surface is the delivery docket.
+RVLT Flow is a back-office operations console. Density-per-click > onboarding gradient. The user is the ops team (warehouse staff, project managers, crew coordinators, admins). The ONLY client-facing surface is the delivery docket.
 
 ## Design Dual Voices — Consensus
 
@@ -824,7 +824,7 @@ Wave 2 lifts the average from ~4.4/10 to ~8.4/10.
 
 **The audit's framing premise is: "Fine-tooth-comb the whole app, fix everything, dream big on missing features." Both reviewing voices reject this framing.**
 
-The audit catalogues the codebase accurately but draws the wrong conclusion. GearFlow's CRITICAL findings cluster overwhelmingly into one place: **the commercial transaction spine**. There is no `Quote` model, no `Invoice` model, no `Payment` model, no Stripe, no quote acceptance, no payment reconciliation, no AP for sub-hires, no maintenance cost flow into project P&L, no platform billing/subscription, no email delivery for documents/notifications. The product can track inventory and produce PDFs. It cannot complete a financial transaction.
+The audit catalogues the codebase accurately but draws the wrong conclusion. RVLT Flow's CRITICAL findings cluster overwhelmingly into one place: **the commercial transaction spine**. There is no `Quote` model, no `Invoice` model, no `Payment` model, no Stripe, no quote acceptance, no payment reconciliation, no AP for sub-hires, no maintenance cost flow into project P&L, no platform billing/subscription, no email delivery for documents/notifications. The product can track inventory and produce PDFs. It cannot complete a financial transaction.
 
 Every other finding — DESIGN.md typography drift, naming consistency, `groupTemplate` not in search, integration checklist gaps — is a rounding error against "the product has no financial spine."
 
@@ -833,8 +833,8 @@ Every other finding — DESIGN.md typography drift, naming consistency, `groupTe
 | # | Premise | Stance | Implication |
 |---|---|---|---|
 | P1 | The product's CRITICAL gap is the **quote-to-cash financial spine**, not feature completeness | **Adopt** | Reframe work as "Q2C + SaaS-readiness", not "audit everything" |
-| P2 | Accounting-grade ledgers belong in **Xero/MYOB/QBO**, not in GearFlow. GearFlow owns operational rental truth and syncs finalized invoices/payments outward | **Adopt** (requires user confirmation of accounting system Two Toned uses) | Build minimal `Invoice/Payment` models as cache + sync layer, not source of truth |
-| P3 | GearFlow's wedge is **AV/theatre-specific workflow density + modern UX + Two Toned dogfooding moat**, not feature-by-feature parity with Rentman/HireHop/Current RMS | **Adopt** | Kill features outside the wedge. Buy don't build for: e-signature (DocuSign), routes (Onfleet), payments (Stripe), accounting (Xero), SMS (Twilio when ready) |
+| P2 | Accounting-grade ledgers belong in **Xero/MYOB/QBO**, not in RVLT Flow. RVLT Flow owns operational rental truth and syncs finalized invoices/payments outward | **Adopt** (requires user confirmation of accounting system Two Toned uses) | Build minimal `Invoice/Payment` models as cache + sync layer, not source of truth |
+| P3 | RVLT Flow's wedge is **AV/theatre-specific workflow density + modern UX + Two Toned dogfooding moat**, not feature-by-feature parity with Rentman/HireHop/Current RMS | **Adopt** | Kill features outside the wedge. Buy don't build for: e-signature (DocuSign), routes (Onfleet), payments (Stripe), accounting (Xero), SMS (Twilio when ready) |
 | P4 | SaaS-platform plumbing (Stripe Billing for tenants, feature flags, multi-tenant org-export polish, public API, i18n) is **premature** until there is a second paying tenant | **Adopt** | Defer all SaaS plumbing. Keep: Sentry, env-validation, structured logging (cheap + always pays off) |
 | P5 | The 4 CRITICAL data-integrity bugs (kit bulk-asset availability, maintenance non-transactional, T&T-FAILED checkout-block, maintenance asset-removal stuck IN_MAINTENANCE) must be fixed **first** — they are corrupting live data right now | **Adopt** | 2-week bug-fix sprint before any rebuild |
 | P6 | Test coverage should be written **alongside the financial spine rebuild**, not retroactively on the existing 19k LOC of server actions | **Adopt** | Locks the next 19k in well-tested form; existing buggy code gets replaced not tested |
@@ -878,7 +878,7 @@ Inventory + PDF tracker        →  Quote-to-cash SaaS              →  Best-in
                                →    (test coverage on new code)    →
 ```
 
-**Where this plan leaves us:** GearFlow that can take a quote from inquiry through payment, with audit trails and observable failures. NOT feature-complete. Not multi-tenant ready in the SaaS sense. But: **commercially complete for one tenant (Two Toned), with the option to sell to a second tenant when one materializes.**
+**Where this plan leaves us:** RVLT Flow that can take a quote from inquiry through payment, with audit trails and observable failures. NOT feature-complete. Not multi-tenant ready in the SaaS sense. But: **commercially complete for one tenant (Two Toned), with the option to sell to a second tenant when one materializes.**
 
 ---
 
@@ -889,7 +889,7 @@ Inventory + PDF tracker        →  Quote-to-cash SaaS              →  Best-in
 | Approach | Effort (CC) | Risk | Pros | Cons |
 |---|---|---|---|---|
 | **A. Build internal source-of-truth Invoice/Payment** | 6-8 weeks | High | Full control, no vendor lock-in | Parallel ledger to Two Toned's accounting software; reconciliation nightmare; compliance gap (AU GST/BAS) |
-| **B. Stripe Payment Links + Xero source-of-truth (RECOMMENDED)** | 4-5 weeks | Med | Xero owns accounting; Stripe owns payment collection; GearFlow owns operational state | Vendor dependency on Xero/Stripe; need Xero connector reliability |
+| **B. Stripe Payment Links + Xero source-of-truth (RECOMMENDED)** | 4-5 weeks | Med | Xero owns accounting; Stripe owns payment collection; RVLT Flow owns operational state | Vendor dependency on Xero/Stripe; need Xero connector reliability |
 | **C. Stripe Billing for everything** | 5-6 weeks | Med-High | Stripe owns invoicing too; minimal code | Stripe Billing is awkward for rental (variable per-event invoicing); doesn't replace Xero for BAS |
 
 **P2-aligned pick: B.** Validate first that Two Toned uses Xero (highly likely for AU). If MYOB or another system: same pattern, different adapter.
@@ -934,7 +934,7 @@ Per /autoplan rules, mode is SELECTIVE EXPANSION (auto-decided). The expansion t
 | WEEK 4 | "Quote model + Invoice model exist. Stripe Payment Link can be generated from an Invoice. Xero adapter is scaffolded." |
 | WEEK 8 | "End-to-end Q2C works for one project type. Email delivery works. P&L is trustworthy." |
 | WEEK 12 | "Sub-hire AP closed loop. Crew time → billing. Damage cost-back. Integration checklist gaps closed for the recent features." |
-| 6 MONTHS | "GearFlow has been used to invoice and collect payment for $X of Two Toned revenue. A second rental company has agreed to evaluate it." |
+| 6 MONTHS | "RVLT Flow has been used to invoice and collect payment for $X of Two Toned revenue. A second rental company has agreed to evaluate it." |
 
 ---
 
@@ -958,7 +958,7 @@ that the audit framing needs to be reframed before any execution decision.
 ```
 
 ### CODEX SAYS (CEO — strategy challenge):
-- "Reframe the next release as 'GearFlow quote-to-cash and SaaS-readiness release.'"
+- "Reframe the next release as 'RVLT Flow quote-to-cash and SaaS-readiness release.'"
 - "If finances are foundationally wrong, rip-and-replace the finance domain deliberately instead of patching PDFs and denormalized totals."
 - "Accounting should probably be integrated, not rebuilt. Xero or QuickBooks should own accounting-grade ledgers."
 - "Building Customer Portal before invoices/payments are real would be premature."
@@ -977,21 +977,21 @@ that the audit framing needs to be reframed before any execution decision.
 
 ## Step 0F — Premises CONFIRMED (final, after user clarification)
 
-**Major user clarification at the premise gate: "I don't want the financial spine. Xero is the finance platform. GearFlow is the operations platform."**
+**Major user clarification at the premise gate: "I don't want the financial spine. Xero is the finance platform. RVLT Flow is the operations platform."**
 
-This is the load-bearing pivot. GearFlow is **NOT** a finance system. It does not own Invoice, Payment, or CreditNote. Xero owns ALL of that — including payment collection (Xero has native Stripe support; invoices delivered through Xero include Stripe Pay buttons). GearFlow's job is purely: projects, kits, warehouse, maintenance, crew, check-items, reports, documents-as-PDFs. Quote acceptance stays as the existing PDF + email + "Mark as accepted" button flow. No GearFlow-side Stripe. No GearFlow-side Xero integration.
+This is the load-bearing pivot. RVLT Flow is **NOT** a finance system. It does not own Invoice, Payment, or CreditNote. Xero owns ALL of that — including payment collection (Xero has native Stripe support; invoices delivered through Xero include Stripe Pay buttons). RVLT Flow's job is purely: projects, kits, warehouse, maintenance, crew, check-items, reports, documents-as-PDFs. Quote acceptance stays as the existing PDF + email + "Mark as accepted" button flow. No RVLT Flow-side Stripe. No RVLT Flow-side Xero integration.
 
 | # | Premise | Final position |
 |---|---|---|
-| P1 | ~~Q2C spine in GearFlow~~ → **GearFlow is operations-only. Xero is finance.** | REJECTED in favor of stronger position: no GearFlow-side finance models at all |
+| P1 | ~~Q2C spine in RVLT Flow~~ → **RVLT Flow is operations-only. Xero is finance.** | REJECTED in favor of stronger position: no RVLT Flow-side finance models at all |
 | P2 | Xero owns accounting | ACCEPT — **and Xero also owns invoicing + payment collection** (Two Toned operates Xero independently) |
 | P3 | AV-specific wedge over feature parity | ACCEPT |
 | P4 | SaaS plumbing deferred until 2nd paying tenant | ACCEPT — keep cheap wins (Sentry, env-validation, structured logging) |
 | P5 | Fix 4 CRITICAL bugs first | ACCEPT |
 | P6 | Tests alongside new code | ACCEPT |
 | P7 | Wedge + cheap wins | ACCEPT |
-| **P8 (new)** | **GearFlow stays an operations platform. Period.** No invoicing, no payments, no accounting integration. | **ACCEPT (user's explicit direction)** |
-| **P9 (new)** | **GearFlow is fully back-of-house / internal-only.** The operations team is the user. Clients see only ONE artifact: the **delivery docket**. No client portal, no quote-to-client email flow, no client-facing acceptance UI, no invoice emails. Quote/Invoice PDFs (if any) are *internal* documents — Xero produces the real client-facing finance documents. | **ACCEPT (user's explicit direction)** |
+| **P8 (new)** | **RVLT Flow stays an operations platform. Period.** No invoicing, no payments, no accounting integration. | **ACCEPT (user's explicit direction)** |
+| **P9 (new)** | **RVLT Flow is fully back-of-house / internal-only.** The operations team is the user. Clients see only ONE artifact: the **delivery docket**. No client portal, no quote-to-client email flow, no client-facing acceptance UI, no invoice emails. Quote/Invoice PDFs (if any) are *internal* documents — Xero produces the real client-facing finance documents. | **ACCEPT (user's explicit direction)** |
 | **P10 (new)** | **Single-tenant operational reality.** The multi-tenancy harness exists in code (`organizationId` columns, `getOrgContext`, `requirePermission`, Better Auth Organization plugin) but only one tenant will ever exist at a time. Cross-tenant leaks are theoretical, not real — no second tenant to leak to. The harness stays (ripping it out is enormous; defense-in-depth is harmless), but multi-tenant-specific investment stops. Org-export/import remains valid as a **backup/DR mechanism**, not as a tenant-migration feature. | **ACCEPT (2026-05-14, user-directed)** |
 
 ## Final execution plan — THREE WAVES (revised: no finance rebuild)
@@ -1021,7 +1021,7 @@ WAVE 2 — AUDIT CLEANUP / "NOTHING FORGOTTEN" (~3-4 weeks)
   ▸ Standardize delete dialogs (Dialog not AlertDialog everywhere)
   ▸ DESIGN.md violations: standardize on t-micro/t-body/t-label scale, audit color/spacing
   ▸ Naming drift: align enum casing for status fields
-  Operational P&L visibility (Xero-OUT — GearFlow shows what it owns):
+  Operational P&L visibility (Xero-OUT — RVLT Flow shows what it owns):
   ▸ Project "operational cost view": equipment revenue (already computed) + crew time cost + sub-hire cost + maintenance cost + damage events
   ▸ This is for decision-making, NOT for invoicing. Xero owns the actual invoice/payment.
   ▸ Link maintenance records to the project that incurred the damage (so cost can attribute)
@@ -1058,8 +1058,8 @@ WAVE 3 — DREAM BIG INSIDE THE WEDGE (ongoing — formerly Wave 4)
   ▸ Reservation conflict resolution UI (swap proposals)
 
 EXPLICITLY DEFERRED / EXCLUDED — NOT IN ANY WAVE (per P8: operations-only, P9: internal-only)
-  Finance (Xero owns these — GearFlow never builds them):
-  ▸ Invoice, InvoiceLine, Payment, CreditNote, Refund models in GearFlow
+  Finance (Xero owns these — RVLT Flow never builds them):
+  ▸ Invoice, InvoiceLine, Payment, CreditNote, Refund models in RVLT Flow
   ▸ Stripe integration of any kind (Xero invoices include Stripe Pay buttons natively)
   ▸ Quote model / acceptance state machine (existing PDF + status flag is sufficient; client gets the real quote via Xero)
   ▸ AU GST/BAS reporting (Xero handles)
@@ -1069,7 +1069,7 @@ EXPLICITLY DEFERRED / EXCLUDED — NOT IN ANY WAVE (per P8: operations-only, P9:
   Client-facing surfaces (out of scope per P9 — except delivery docket):
   ▸ Client portal of any kind
   ▸ Public booking widget / embeddable
-  ▸ Quote-email-to-client flow (the client gets a quote from Xero, not GearFlow)
+  ▸ Quote-email-to-client flow (the client gets a quote from Xero, not RVLT Flow)
   ▸ Invoice-email-to-client flow (Xero)
   ▸ Client-facing accept link
   ▸ Customer-facing dashboards or status pages
@@ -1145,19 +1145,19 @@ After Wave 2 (~6 weeks total): audit-debt closed. Integration checklist enforced
 
 After Wave 3 onwards: each wedge feature ships independently with its own /autoplan. Damage capture, workshop queue, asset utilization, stocktake, cross-warehouse transfers all become individual sprints.
 
-**Notably NOT in any wave:** any invoicing or payment logic. Xero handles all of it. GearFlow does operations.
+**Notably NOT in any wave:** any invoicing or payment logic. Xero handles all of it. RVLT Flow does operations.
 
 ### Section 7: Competitive risk (re-confirmed)
 
-GearFlow wins on AV/theatre workflow density (kits/cases/preps/AS-NZS 3760/crew) + modern UX + Two Toned dogfooding. Loses on feature breadth. Strategy: stay opinionated, refuse to compete on every feature, **be the best tool for AV/theatre rental companies that find Rentman/HireHop too heavy and Current RMS too dated**.
+RVLT Flow wins on AV/theatre workflow density (kits/cases/preps/AS-NZS 3760/crew) + modern UX + Two Toned dogfooding. Loses on feature breadth. Strategy: stay opinionated, refuse to compete on every feature, **be the best tool for AV/theatre rental companies that find Rentman/HireHop too heavy and Current RMS too dated**.
 
 ### Section 8: Pricing model
 
-Per P8, pricing-engine sophistication is **deferred** along with the rest of the finance work. GearFlow continues to produce per-day rate × duration totals (with discountPercent and taxRate as today). Anything more complex (dry-hire vs wet-hire, weekend rules, long-term discounts, package pricing, damage waivers) becomes a Xero-side concern OR a future wedge feature inside Wave 3 if Two Toned needs it operationally.
+Per P8, pricing-engine sophistication is **deferred** along with the rest of the finance work. RVLT Flow continues to produce per-day rate × duration totals (with discountPercent and taxRate as today). Anything more complex (dry-hire vs wet-hire, weekend rules, long-term discounts, package pricing, damage waivers) becomes a Xero-side concern OR a future wedge feature inside Wave 3 if Two Toned needs it operationally.
 
 ### Section 9: Security / Multi-tenancy (revised per P10)
 
-The audit framed cross-tenant leaks as "customer-killing." With P10 locked (single-tenant operational reality), this is no longer a security severity — there is no second tenant to leak to. The multi-tenancy harness stays in place as defense-in-depth dead plumbing, and a soft warn-only AST lint flags new harness violations in PRs. No retroactive pen-test sweep, no two-org runtime probes. If GearFlow ever onboards a second tenant, lift the lint to hard-block first.
+The audit framed cross-tenant leaks as "customer-killing." With P10 locked (single-tenant operational reality), this is no longer a security severity — there is no second tenant to leak to. The multi-tenancy harness stays in place as defense-in-depth dead plumbing, and a soft warn-only AST lint flags new harness violations in PRs. No retroactive pen-test sweep, no two-org runtime probes. If RVLT Flow ever onboards a second tenant, lift the lint to hard-block first.
 
 ### Section 10: Success metrics (revised)
 

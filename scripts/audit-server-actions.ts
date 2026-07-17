@@ -1,7 +1,7 @@
 /**
  * Soft warn-only AST lint for the multi-tenancy harness.
  *
- * Per P10 (single-tenant operational reality), GearFlow has the multi-tenancy
+ * Per P10 (single-tenant operational reality), RVLT Flow has the multi-tenancy
  * plumbing (`organizationId` columns, `getOrgContext`, `requirePermission`,
  * Better Auth Organization plugin) but only one tenant will ever exist at a
  * time. The harness is defense-in-depth dead plumbing, not a live security

@@ -12,7 +12,7 @@ export const CONVEX_JWT_AUDIENCE = "convex";
 
 /**
  * `sub` of the server-side service token. A token is treated as the trusted
- * GearFlow backend ONLY when BOTH `sub === SERVICE_SUBJECT` AND `svc === true`
+ * RVLT Flow backend ONLY when BOTH `sub === SERVICE_SUBJECT` AND `svc === true`
  * (strict, defense-in-depth — see codex review notes in the design doc). User
  * tokens carry the real user id as `sub` and never set `svc`.
  */

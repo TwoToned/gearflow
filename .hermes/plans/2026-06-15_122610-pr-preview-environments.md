@@ -1,10 +1,10 @@
-# GearFlow PR Preview Environments Plan
+# RVLT Flow PR Preview Environments Plan
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Automatically create a short-lived GearFlow preview instance for each GitHub PR on Jayden's own server, with a PR-specific domain and matching Better Auth / app URLs, roughly emulating Vercel preview deployments without handing Vercel the keys to the kingdom.
+**Goal:** Automatically create a short-lived RVLT Flow preview instance for each GitHub PR on Jayden's own server, with a PR-specific domain and matching Better Auth / app URLs, roughly emulating Vercel preview deployments without handing Vercel the keys to the kingdom.
 
-**Architecture:** Use GitHub Actions on PR open/sync/reopen/close, a self-hosted runner on the server, Docker Compose per PR, Traefik or Caddy for wildcard HTTPS routing, and per-PR environment generation. Each preview runs an isolated app container, isolated Postgres database/schema, optionally isolated MinIO bucket/prefix, and connects to a shared or per-PR Convex dev deployment depending on what GearFlow needs once Convex lands in the repo.
+**Architecture:** Use GitHub Actions on PR open/sync/reopen/close, a self-hosted runner on the server, Docker Compose per PR, Traefik or Caddy for wildcard HTTPS routing, and per-PR environment generation. Each preview runs an isolated app container, isolated Postgres database/schema, optionally isolated MinIO bucket/prefix, and connects to a shared or per-PR Convex dev deployment depending on what RVLT Flow needs once Convex lands in the repo.
 
 **Tech Stack:** GitHub Actions, self-hosted runner, Docker/Compose, Caddy or Traefik, PostgreSQL, pnpm/Next.js, Prisma, Better Auth, Convex CLI/API, optional GitHub Deployments API.
 
@@ -121,8 +121,8 @@ Use k3s, ingress-nginx/Traefik, cert-manager, external-dns, per-PR namespaces.
 
 ### Cons
 
-- More moving pieces than GearFlow needs right now.
-- You will spend two evenings arguing with YAML instead of shipping GearFlow.
+- More moving pieces than RVLT Flow needs right now.
+- You will spend two evenings arguing with YAML instead of shipping RVLT Flow.
 
 Keep this as the v2 if previews become core infrastructure.
 
@@ -201,7 +201,7 @@ Cons:
 - Need Convex token on self-hosted runner.
 - Need cleanup discipline.
 
-Recommended final state: per-PR Convex deployments if GearFlow's active data layer is moving there. Shared dev is acceptable as a temporary bootstrapping hack.
+Recommended final state: per-PR Convex deployments if RVLT Flow's active data layer is moving there. Shared dev is acceptable as a temporary bootstrapping hack.
 
 ---
 
@@ -466,7 +466,7 @@ Add a nightly TTL cleanup later for previews older than e.g. 14 days where the P
 ## My recommended implementation order
 
 1. Add Caddy/Traefik and wildcard DNS manually on server.
-2. Add Dockerfile for GearFlow production-ish app if missing.
+2. Add Dockerfile for RVLT Flow production-ish app if missing.
 3. Add `src/app/api/health/route.ts`.
 4. Add `infra/previews/docker-compose.preview.yml`.
 5. Add `deploy-preview.sh` using static env, no Convex automation yet.

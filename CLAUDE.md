@@ -99,7 +99,7 @@ npx prisma migrate dev   # Apply all migrations + generate client
 
 **Email (Resend):**
 - `RESEND_API_KEY` — Resend API key (dev logs to console if unset)
-- `EMAIL_FROM` — Sender address (default: `GearFlow <noreply@gearflow.app>`)
+- `EMAIL_FROM` — Sender address (default: `RVLT Flow <noreply@gearflow.app>`)
 
 **File Storage (S3):**
 - `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
@@ -111,7 +111,7 @@ npx prisma migrate dev   # Apply all migrations + generate client
 
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
-- `PLATFORM_NAME` — Display name (default: `GearFlow`)
+- `PLATFORM_NAME` — Display name (default: `RVLT Flow`)
 - `ADMIN_REGISTRATION_TOKEN` — Secret token for `/register/admin?token=...`
 
 **DB connection hardening (optional, safe defaults):** layered onto the runtime

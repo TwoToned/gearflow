@@ -1,5 +1,11 @@
 # Project Line-Item Fulfillment Model
 
+> **SHIPPED as v0.7.0.0** (2026-05-27, patched v0.7.0.1 same week). The
+> `projectLineItemUnit` model this doc designed is live in `convex/schema.ts`.
+> Archived here as design rationale — `kit-per-unit-fulfillment.md` (the
+> follow-on doc that finished this migration for kits) depends on its
+> vocabulary, hence archived alongside it.
+
 Replaces the one-asset-per-row line-item shape with an order/fulfillment split.
 Motivated by the checkout duplication bug (roadmap Phase 0.1). The `/autoplan`
 CEO review found the bug is a **data-model defect**, not a display defect, and
@@ -293,7 +299,7 @@ displayed the units**: `equipment-tab-reconstruct` passed an empty
 lines showed nothing, and kit-member serials were dropped. The pull-sheet /
 `getProject` reconstruct already loaded units — this brought the tab in line.
 
-Shipped (see [FEATUREDOCS/60](../../FEATUREDOCS/60-assets-on-a-job.md)):
+Shipped (see [FEATUREDOCS/60](../../../FEATUREDOCS/60-assets-on-a-job.md)):
 
 - `equipmentTab.bundle` loads `projectLineItemUnits`; reconstruct feeds a real
   units map; the tab renders inline tags (single), expandable per-unit rows with

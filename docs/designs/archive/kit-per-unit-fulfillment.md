@@ -1,5 +1,10 @@
 # Kit Per-Unit Fulfillment
 
+> **SHIPPED.** All 4 phases merged (PRs #409, #414, #415) plus a follow-up
+> bulk single-call checkout/checkin commit. Kit members carry real
+> `projectLineItemUnit` rows with full loose-gear parity. Archived here as
+> design rationale.
+
 Unify **physical kit members** into the per-unit fulfillment model so their
 serials are tracked per-job like loose gear — visible on the Equipment tab,
 carrying per-unit prep/deploy/return/history, and eventually reassignable.

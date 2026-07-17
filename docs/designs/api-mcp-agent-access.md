@@ -17,7 +17,7 @@
 **Branch:** `worktree-bridge-cse_01F1scZAF9AgfUgiUhzWSRTi`
 **Created:** 2026-07-07
 **Source:** /autoplan request — "I want to add an API/MCP to the app, so users can use the API and connect AI agents to the app to read/write etc."
-**Related designs:** [`line-item-fulfillment-model.md`](./line-item-fulfillment-model.md), [`FEATUREDOCS/54-convex-data-layer.md`](../../FEATUREDOCS/54-convex-data-layer.md)
+**Related designs:** [`line-item-fulfillment-model.md`](./line-item-fulfillment-model.md), [`FEATUREDOCS/54-convex-data-layer.md`](../../../FEATUREDOCS/54-convex-data-layer.md)
 
 ---
 

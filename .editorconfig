@@ -1,0 +1,23 @@
+# EditorConfig — https://editorconfig.org
+# Required root file per POLICY.md R-2.1. Keeps whitespace/encoding consistent
+# across editors so diffs stay clean.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown: trailing whitespace can be a hard line break — don't strip it.
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefiles require tabs.
+[Makefile]
+indent_style = tab
+
+[*.{yml,yaml,json,jsonc}]
+indent_size = 2

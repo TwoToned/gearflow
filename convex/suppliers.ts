@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 
 /**
  * Thin CRUD for Supplier (Convex table "suppliers"). GENERATED — Phase 2/5.
@@ -29,6 +30,54 @@ export const getById = query({
     const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDoc(ctx, doc);
     return doc;
+  },
+});
+
+/**
+ * Paginated SUPPLIER list — browser-native replacement for SupplierTable's
+ * useSuppliers whole-org live subscription + client-side filter/sort/paginate
+ * (Finding #1, docs/designs/perf-convex-efficiency-2026-06.md). Unlike
+ * clients/kits, archived suppliers are NOT excluded by default — `isActive`
+ * is an optional "true"/"false" single-value filter, matching the old
+ * behavior (no filter selected shows both). Asset/order counts are a
+ * cross-domain aggregate that stays a separate merge the caller applies after
+ * this query — unchanged. Tag search is now case-insensitive (via the shared
+ * matchesSearch helper) — the old client-side check compared the lowercased
+ * query against the tag's raw case, a minor pre-existing inconsistency with
+ * every other search field here that this consolidation incidentally fixes.
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    isActive: v.optional(v.string()),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "name";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const rows = await ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
+
+    const filtered = rows.filter((s) => {
+      if (a.isActive === "true" && (s.isActive ?? true) !== true) return false;
+      if (a.isActive === "false" && (s.isActive ?? true) !== false) return false;
+      if (a.search && !matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search)) return false;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((x, y) =>
+      compareValues((x as unknown as Record<string, unknown>)[sortBy], (y as unknown as Record<string, unknown>)[sortBy], dir),
+    );
+    const { items, total, totalPages } = paginateItems(sorted, page, pageSize);
+
+    return { items, total, page, pageSize, totalPages };
   },
 });
 

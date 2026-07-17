@@ -12,8 +12,8 @@ import { cn, focusRing, disabledState } from "@/lib/utils";
 import { useAssetWrites } from "@/hooks/use-asset-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useAssets, useBulkAssets } from "@/hooks/use-assets";
-import { useModels } from "@/hooks/use-models";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useLocations } from "@/hooks/use-locations";
@@ -413,14 +413,62 @@ export function AssetTable() {
   const serializedColumns = useAssetColumns(locations, categories);
   const bulkColumns = useBulkAssetColumns(locations);
 
-  // Reactive asset + bulk lists straight from Convex (auto-update on any CRUD AND
-  // any warehouse status/location change). Model name/category + location resolve
-  // from the Convex models/categories/locations the table already loads; primary
-  // photos are cross-domain (asset/model media still Prisma) so they come from a
-  // separate, non-reactive server query and are merged in.
-  const allAssets = useAssets(orgId);
-  const allBulkAssets = useBulkAssets(orgId);
-  const allModels = useModels(orgId);
+  // Reactive asset + bulk PAGES straight from Convex — one filtered/paginated
+  // query per view instead of 5 whole-org live subscriptions re-pushing the
+  // entire table to every open tab on any single check-in/out anywhere (Phase 0
+  // baseline: this was the #1 driver of "heaps of calls on every action" —
+  // Finding #1, docs/designs/perf-convex-efficiency-2026-06.md).
+  // assets.listPage / bulkAssets.listPage already mirror this table's exact
+  // filter/sort/paginate logic server-side (built for the T&T-new picker) —
+  // reuse them instead of re-deriving locally over a whole-org `.collect()`.
+  // Search is debounced: unlike the old client-side filter, each change is now
+  // a real Convex round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const statusF = pick(filters?.status as string | string[] | undefined);
+  const conditionF = pick(filters?.condition as string | string[] | undefined);
+  const locationF = pick(filters?.locationId as string | string[] | undefined);
+  const categoryF = pick(filters?.categoryId as string | string[] | undefined);
+  const tagsF = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
+  const trimmedSearch = debouncedSearch.trim() || undefined;
+
+  const assetsPage = useAuthedQuery(
+    api.assets.listPage,
+    orgId && view === "serialized"
+      ? {
+          orgId,
+          search: trimmedSearch,
+          status: statusF,
+          condition: conditionF,
+          locationId: locationF,
+          categoryId: categoryF,
+          tagsHasSome: tagsF,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+  const bulkPage = useAuthedQuery(
+    api.bulkAssets.listPage,
+    orgId && view === "bulk"
+      ? {
+          orgId,
+          search: trimmedSearch,
+          status: statusF,
+          locationId: locationF,
+          categoryId: categoryF,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+
+  // Primary photos are cross-domain (asset/model media still Prisma) so they
+  // come from a separate, non-reactive server query and are merged in below.
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const { data: photos } = useServerQuery({
@@ -429,115 +477,27 @@ export function AssetTable() {
     enabled: !!orgId && isAuthenticated,
   });
 
-  const modelById = useMemo(() => new Map((allModels ?? []).map((m) => [m.id, m])), [allModels]);
-  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
-  const locationById = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
-
-  // Attach a resolved `model` (with `category` + primary `media`), `location`, and
-  // own primary `media` to a Convex asset/bulk doc, matching the old Prisma include.
+  // listPage already resolves model (+ category) and location server-side —
+  // enrich only needs to merge in the photo lookup.
   const enrich = useMemo(() => {
     const assetPhotos = photos?.assetPhotos ?? {};
     const modelPhotos = photos?.modelPhotos ?? {};
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (row: any) => {
-      const model = modelById.get(row.modelId);
-      const category = model?.categoryId ? categoryById.get(model.categoryId) ?? null : null;
-      const mPhoto = modelPhotos[row.modelId];
+      const mPhoto = row.modelId ? modelPhotos[row.modelId] : undefined;
       const aPhoto = assetPhotos[row.id];
       return {
         ...row,
-        model: model ? { ...model, category, media: mPhoto ? [{ file: mPhoto }] : [] } : null,
-        location: row.locationId ? locationById.get(row.locationId) ?? null : null,
+        model: row.model ? { ...row.model, media: mPhoto ? [{ file: mPhoto }] : [] } : null,
         media: aPhoto ? [{ file: aPhoto }] : [],
       };
     };
-  }, [modelById, categoryById, locationById, photos]);
+  }, [photos]);
 
-  // Client-side filter → sort → paginate over the reactive serialized list.
-  const { assets, serializedTotal } = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const statusF = filters?.status as string | string[] | undefined;
-    const conditionF = filters?.condition as string | string[] | undefined;
-    const locationF = filters?.locationId as string | string[] | undefined;
-    const categoryF = filters?.categoryId as string | string[] | undefined;
-    const tagsF = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
-    const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-
-    const filtered = (allAssets ?? []).filter((a) => {
-      if (a.isActive === false) return false;
-      if (pick(statusF) && a.status !== pick(statusF)) return false;
-      if (pick(conditionF) && a.condition !== pick(conditionF)) return false;
-      if (pick(locationF) && a.locationId !== pick(locationF)) return false;
-      if (pick(categoryF) && modelById.get(a.modelId)?.categoryId !== pick(categoryF)) return false;
-      if (tagsF && tagsF.length > 0 && !(a.tags ?? []).some((t) => tagsF.includes(t))) return false;
-      if (q) {
-        const name = modelById.get(a.modelId)?.name?.toLowerCase() ?? "";
-        const hit = a.assetTag.toLowerCase().includes(q)
-          || (a.serialNumber?.toLowerCase().includes(q) ?? false)
-          || (a.customName?.toLowerCase().includes(q) ?? false)
-          || name.includes(q);
-        if (!hit) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    const sorted = [...filtered].sort((a, b) => {
-      const av = sortBy === "model" ? modelById.get(a.modelId)?.name
-        : sortBy === "location" ? locationById.get(a.locationId ?? "")?.name
-        : (a as Record<string, unknown>)[sortBy];
-      const bv = sortBy === "model" ? modelById.get(b.modelId)?.name
-        : sortBy === "location" ? locationById.get(b.locationId ?? "")?.name
-        : (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const start = (page - 1) * pageSize;
-    return { assets: sorted.slice(start, start + pageSize).map(enrich), serializedTotal: sorted.length };
-  }, [allAssets, modelById, locationById, search, filters, sortBy, sortOrder, page, pageSize, enrich]);
-
-  // Client-side filter → sort → paginate over the reactive bulk list.
-  const { bulkAssets, bulkTotal } = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const statusF = Array.isArray(filters.status) ? filters.status[0] : (filters.status as string | undefined);
-    const locationF = Array.isArray(filters.locationId) ? filters.locationId[0] : (filters.locationId as string | undefined);
-
-    const filtered = (allBulkAssets ?? []).filter((b) => {
-      if (b.isActive === false) return false;
-      if (statusF && b.status !== statusF) return false;
-      if (locationF && b.locationId !== locationF) return false;
-      if (q) {
-        const name = modelById.get(b.modelId)?.name?.toLowerCase() ?? "";
-        if (!(b.assetTag.toLowerCase().includes(q) || name.includes(q))) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    const sorted = [...filtered].sort((a, b) => {
-      const av = sortBy === "model" ? modelById.get(a.modelId)?.name
-        : sortBy === "location" ? locationById.get(a.locationId ?? "")?.name
-        : (a as Record<string, unknown>)[sortBy];
-      const bv = sortBy === "model" ? modelById.get(b.modelId)?.name
-        : sortBy === "location" ? locationById.get(b.locationId ?? "")?.name
-        : (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const start = (page - 1) * pageSize;
-    return { bulkAssets: sorted.slice(start, start + pageSize).map(enrich), bulkTotal: sorted.length };
-  }, [allBulkAssets, modelById, locationById, search, filters, sortBy, sortOrder, page, pageSize, enrich]);
-
-  const isLoading = view === "serialized" ? allAssets === undefined : allBulkAssets === undefined;
-  const total = view === "serialized" ? serializedTotal : bulkTotal;
+  const assets = useMemo(() => (assetsPage?.assets ?? []).map(enrich), [assetsPage, enrich]);
+  const bulkAssets = useMemo(() => (bulkPage?.bulkAssets ?? []).map(enrich), [bulkPage, enrich]);
+  const isLoading = view === "serialized" ? assetsPage === undefined : bulkPage === undefined;
+  const total = view === "serialized" ? (assetsPage?.total ?? 0) : (bulkPage?.total ?? 0);
 
   const clearSelection = () => {
     setSelectedIds(new Set());

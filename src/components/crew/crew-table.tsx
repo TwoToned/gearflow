@@ -9,7 +9,9 @@ import { focusRing } from "@/lib/utils";
 
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useCrewMembers, useCrewRoles } from "@/hooks/use-crew";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { crewMemberStatusLabels, crewMemberTypeLabels, formatLabel } from "@/lib/status-labels";
@@ -185,12 +187,42 @@ export function CrewTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Reactive roster straight from Convex (auto-updates on any member/role
-  // create/update/delete). The linked platform user is cross-domain (Better Auth)
-  // so it comes from a separate, non-reactive server query and is merged below.
-  // crewRole name/color is resolved from the reactive crewRoles list.
-  const allMembers = useCrewMembers(orgId);
-  const roles = useCrewRoles(orgId);
+  // ONE server-side query (filter + sort + crewRole join all done in Convex)
+  // instead of the 2 whole-org live subscriptions this used to mount
+  // (crewMembers/crewRoles) and join/filter/sort client-side. See
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #1. The linked
+  // platform user is cross-domain (Better Auth) so it stays a separate,
+  // non-reactive server query merged in below — search no longer matches the
+  // linked user's display name (only this table's own fields), a narrow,
+  // disclosed tradeoff (see crewMembers.ts listPage doc comment). Search is
+  // debounced since each keystroke is now a real round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  // Enum filter columns always store FilterValue as string[] (src/lib/table-utils.ts) —
+  // unwrap to the first selected value, matching asset-table.tsx's pick(). Without this,
+  // the array was cast straight into a Convex arg typed v.optional(v.string()), which
+  // throws an ArgumentValidationError the moment any of these filters is applied.
+  const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const typeFilter = pick(filters?.type as string | string[] | undefined);
+  const deptFilter = pick(filters?.department as string | string[] | undefined);
+  const statusFilter = pick(filters?.status as string | string[] | undefined);
+  const membersPage = useAuthedQuery(
+    api.crewMembers.listPage,
+    orgId
+      ? {
+          orgId,
+          search: debouncedSearch.trim() || undefined,
+          type: typeFilter,
+          department: deptFilter,
+          status: statusFilter,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+  const { data: pagedMembers, total, isLoading } = usePaginatedTableResult(membersPage);
+
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
   const { data: extras } = useServerQuery({
@@ -199,56 +231,17 @@ export function CrewTable() {
     enabled: !!orgId && isAuthenticated,
   });
 
-  // Filter (search + type/department/status) → sort → paginate, all client-side
-  // over the reactive list, merging the cross-domain role/user/skills/cert count.
-  const { crewMembers, total } = useMemo(() => {
-    const source = allMembers ?? [];
-    const roleById = new Map((roles ?? []).map((r) => [r.id, r]));
-    const q = search.trim().toLowerCase();
-    const typeFilter = filters?.type as string | undefined;
-    const deptFilter = filters?.department as string | undefined;
-    const statusFilter = filters?.status as string | undefined;
-
-    const merged = source.map((m) => {
-      const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
-      const extra = extras?.[m.id];
-      return {
-        ...m,
-        crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,
-        user: extra?.userName || extra?.userImage ? { name: extra.userName, image: extra.userImage } : null,
-      };
-    });
-
-    const filtered = merged.filter((m) => {
-      if (typeFilter && m.type !== typeFilter) return false;
-      if (deptFilter && m.department !== deptFilter) return false;
-      if (statusFilter && m.status !== statusFilter) return false;
-      if (q) {
-        const hay = [
-          m.firstName, m.lastName, m.user?.name, m.email, m.phone, m.department,
-          ...(m.tags ?? []),
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    const sorted = [...filtered].sort((a, b) => {
-      const av = (a as Record<string, unknown>)[sortBy];
-      const bv = (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const start = (page - 1) * pageSize;
-    return { crewMembers: sorted.slice(start, start + pageSize), total: sorted.length };
-  }, [allMembers, roles, extras, search, filters, sortBy, sortOrder, page, pageSize]);
-
-  const isLoading = allMembers === undefined;
+  const crewMembers = useMemo(
+    () =>
+      pagedMembers.map((m) => {
+        const extra = extras?.[m.id];
+        return {
+          ...m,
+          user: extra?.userName || extra?.userImage ? { name: extra.userName, image: extra.userImage } : null,
+        };
+      }),
+    [pagedMembers, extras],
+  );
 
   const toolbarActions = (
     <CanDo resource="crew" action="create">

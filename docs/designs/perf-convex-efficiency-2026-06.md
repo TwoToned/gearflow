@@ -627,4 +627,369 @@ Taste decisions resolved by user:
 split) → paginate via denormalize+searchIndex (T3) → trim fan-out → ship + skeletons →
 re-measure gate → (deferred) instant-feel. Ship-blocker tests T-A…T-E enforced. P4 dropped.
 
+---
+
+# Phase 0 — Measured Baseline (real prod data, 2026-07, org has 2 users)
+
+**Status of Phase 0.5:** #9 (`getByIcalToken`) already uses `.withIndex("by_icalToken", …)`
+in the current tree (`convex/crewMembers.ts:50-58`) — the security hotfix has shipped.
+Nothing to do there.
+
+Convex dashboard, current month, org has **2 active users** and "pretty small usage":
+
+| Resource | Value |
+|---|---|
+| Function calls | 266K |
+| Database I/O | **6.05 GB** |
+| Action compute | 0.00091 GB-hours |
+| Database storage | 131.75 MB |
+
+**This overturns the plan's priority order.** One function accounts for **4.66 GB of the
+6.05 GB total (77%)** — more than 10× the next-largest contributor, and more than every
+Tier-1/Tier-2 finding above combined. It wasn't named in the original findings because it's
+a newer Convex-native composite (`convex/overbooking.ts`) that post-dates the audit's
+initial pass. It becomes **Finding #0 — highest priority, ahead of #1-#9.**
+
+### Finding #0 (NEW, CRITICAL): `overbooking.bundle` — unbounded all-time `by_modelId` scan, live-reactive
+
+`convex/overbooking.ts:26` — for every model id in scope, `.withIndex("by_modelId", …)
+.collect()` against `projectLineItems` with **no date or status bound at the query layer**.
+The docstring (`overbooking.ts:6-12,35-40`) correctly notes an *earlier* version of this bug
+was fixed — it used to `.collect()` the whole `projects`/`models` tables — but the
+`projectLineItems` read itself is still unbounded: it returns **every line item ever booked
+against that model, across every project, for all of history**, not just projects whose
+rental window overlaps the one being viewed. The date-window filter
+(`sumBookingsByModel` → `projectMatchesWindow`, `src/lib/overbooking-core.ts:119-125,154-160`)
+only runs **after** the fetch, in JS.
+
+Two things compound this into the dominant cost:
+1. **No time bound at the index level.** `projectLineItems.by_modelId` has no
+   `status`/date component (mirrors the schema gap already noted in Finding #5 for
+   `by_projectId`). A model that's been booked across dozens of historical
+   (CANCELLED/RETURNED/COMPLETED/INVOICED) projects pays for all of them, every time,
+   forever — this scan only gets *more* expensive as the org's history grows. It is
+   the same shape as Finding #8 (`swapLineItemAsset` full org-project scan for a
+   date-overlap check) but on the hotter path and with no bound at all (not even
+   "whole org," but "whole org history").
+2. **It's a live `useQuery` subscription** (`src/hooks/use-native-project-equipment.ts:84-90`,
+   `src/hooks/use-native-equipment-tab.ts:87-93`), mounted once per open project-detail /
+   equipment-tab view, keyed on that project's referenced model ids. Any write to
+   `projectLineItems`/`assets`/`bulkAssets` for a shared model — from **any project, any
+   user, anywhere in the org** — re-triggers the full unbounded re-scan for every other open
+   viewer subscribed to that model. With 2 users this already produced 19K calls / 4.66 GB
+   this month; it scales with (org history size) × (concurrent viewers) × (write rate on
+   shared models), not with the 2-user workload.
+
+*Fix (two parts, can ship independently):*
+- **Bound the query, not just the JS filter.** The cheapest correct bound: line items whose
+  parent *project* is one of the excluded terminal statuses
+  (`EXCLUDED_PROJECT_STATUSES` — CANCELLED/RETURNED/COMPLETED/INVOICED) are dead weight for
+  every future read of that model, forever — they only ever get read and thrown away by
+  `projectMatchesWindow`. That's a status stored on `projects`, not `projectLineItems`, so a
+  composite index can't filter it directly without denormalizing project status (or the
+  rental window) onto the line item, mirroring the T3 pagination decision (denormalize +
+  index) already accepted elsewhere in this doc. Cheapest first cut: denormalize
+  `projectStatus` onto `projectLineItems` (mirror on project status change, same shape as the
+  T3 sync path) and add `by_modelId_projectStatus`, so terminal-status bookings never come
+  off disk. This shrinks the candidate set for any org with real history, without touching
+  the date-window math (still correct, still done in JS on the smaller set).
+- **Reconsider live-reactivity for this composite.** Overbooking status doesn't need to
+  update on writes to *unrelated* projects sharing a model in real time — a coarser
+  invalidation (or converting to a one-shot fetch refreshed on the same version-vector tick
+  as the rest of project detail, per the Tier-1 #3 "double refetch" fix) would cut the
+  fan-out multiplier without touching the read shape.
+- Ship-blocker: a parity test asserting `reconstructOverbookedStatus` output is unchanged
+  before/after adding the status bound (same shape as T-C/T-D for #2).
+
+### Finding #0b (confirms existing pattern, adds evidence): `projectLineItems.list` whole-org collect, called from scheduled/server code
+
+`convex/projectLineItems.ts:23-32` — `.withIndex("by_organizationId", …).collect()`, the
+same whole-org-collect shape as Finding #1, but this call site isn't a browser subscription —
+it's called from **`src/server/notification-email-sender.ts:298`,
+`src/server/notifications.ts:235`, and `src/lib/line-item-count-read.ts:29`**, i.e. scheduled/
+cron notification code re-reading every line item in the org on each run. 3.9K calls / 371.64
+MB this month (2nd-largest DB I/O consumer after #0) — confirms the "whole-org `.collect()`"
+pattern isn't confined to list-page UI as originally scoped; it also costs on the batch side.
+*Fix:* scope the notification scan to what it actually iterates (by project/date-range, not
+whole org) — same remedy family as Finding #1, different call site to convert.
+
+### Re-prioritized fix order (Phase 1, given real numbers)
+
+1. **Finding #0** (`overbooking.bundle` status bound) — 77% of measured I/O, ship first.
+2. Existing Finding #2 (`getKit`/`getAsset` scoping) and Finding #1 (asset-list pagination) —
+   unchanged rationale, now confirmed second-order by volume (assets.create/remove,
+   models.list, assets.list all appear mid-table but nowhere near #0's magnitude).
+3. Finding #0b (notification scan scoping) — cheap, same shape as #1, bundle into that work.
+4. Rest of Tier-1/Tier-2 as previously sequenced.
+
+**Everything else in the original Phase 0 plan (spike T1, #2 additive queries, #5 index,
+#6 split, T-A…T-I tests) still stands** — this section only re-orders by measured impact and
+adds two findings the original static-analysis pass couldn't see because `overbooking.bundle`
+postdates it.
+
+### Finding #0 — SHIPPED (this session)
+
+`convex/overbooking.ts` `bundle` now takes optional `thisProjectId` /
+`rentalStartDate` / `rentalEndDate` args. When present (the new callers), it range-scans
+`projects.by_organizationId_rentalStartDate` for the small set of projects overlapping the
+viewed project's window (the same overlap pattern `swapLineItemAsset` already uses,
+`convex/projectLineItems.ts:789-800`), excludes `CANCELLED`/`RETURNED`/`COMPLETED`/`INVOICED`
+projects up front, then reads line items **per candidate project** via the existing
+`by_projectId` index — instead of an unbounded all-time `by_modelId` scan across every project
+that has ever booked the model. **No schema/index changes needed** — both
+`projectLineItems.by_projectId` and `projects.by_organizationId_rentalStartDate` already
+existed. Args are optional (expand-contract) so a caller still on the previous app build
+during a deploy window falls back to the old unscoped-but-correct path unchanged.
+
+Updated callers (same commit, per the doc's own "index + consuming code together" rule):
+`src/lib/availability.ts` (`computeOverbookedStatus`), `src/hooks/use-native-project-equipment.ts`
+(`useNativeProjectDetail`), `src/hooks/use-native-equipment-tab.ts` (`useNativeEquipmentTab`).
+
+Ship-blocker parity test added: `convex/overbooking.test.ts` — asserts
+`reconstructOverbookedStatus` output is byte-identical between the scoped and unscoped paths
+over a fixture with an overlapping booking (counts), a cancelled-but-date-overlapping project
+(must not count), a non-overlapping project (must not count), and a 400-day-old returned
+project on the same popular model (must not count, and must not even reach the scoped
+candidate walk) — plus an over-capacity regression check and a dateless-project case (scopes
+to zero org-wide reads). 4/4 new tests pass; full existing suite (3242 tests) unaffected.
+
+**Not yet done (deferred, needs a live deployment to verify against real numbers):**
+push to a Convex deployment, re-measure `overbooking.bundle`'s Database I/O against this
+month's 4.66 GB baseline, and confirm the drop. This worktree had no `.env` / deploy key
+configured, so the change is unverified against a live deployment — do that before/as part of
+the next deploy. Also deferred: reconsidering the subscription's live-reactivity (still
+re-runs on any write to a shared model within the candidate window across all open viewers) —
+noted as a follow-up in the original finding, not addressed by this scoping fix.
+
+---
+
+# Full re-audit against current `main` + official `convex-demos` patterns (2026-07-17)
+
+A lot has changed in this codebase since the original findings/Eng review were written —
+independent of this perf effort (the Convex-native browser-direct migration, per project
+memory, hit a major milestone the same day this session ran). Re-checked **every** remaining
+finding against the current tree, and cross-referenced the still-open ones against
+[get-convex/convex-demos](https://github.com/get-convex/convex-demos) (`pagination`, `search`,
+`presence-facepile`) for the canonical Convex pattern.
+
+## Findings that are now OBSOLETE (architecture they were about no longer exists)
+
+- **#2 (`getKit`/`getAsset` whole-org composites).** `src/server/kits.ts` and
+  `src/server/assets.ts` **don't exist anymore.** The "replace, don't scope" side of the T1
+  spike won: kit/asset detail now reads through the native browser-direct hooks
+  (`use-native-*`), not a server-action composite. Nothing to scope — the thing being scoped
+  is gone.
+- **#3 (double refetch via the version-vector waterfall) / the T1 spike's premise.**
+  `src/hooks/use-reactive-server-query.ts` **doesn't exist anymore** — zero references
+  anywhere in `src`. The whole "Convex push → detect change → second server roundtrip →
+  full Prisma composite re-read" architecture this finding and the T1 spike were about has
+  been deleted, not narrowed. Confirms the same T1 outcome as #2.
+
+## Findings CONFIRMED FIXED (verified against current source, not re-fixed this session)
+
+- **#5 (`projectLineItems.by_projectId_status` index).** Exists (`convex/schema.ts:949`) and
+  `checkInBulkTotals` uses it (`convex/warehouseOps.ts:1542`). Done.
+- **#6(a) (`checkoutItems` pre-mutation dedup).** `gatherTestTagAssetsAndAssert` caches each
+  line's units in a `Map` that `expandPrepUnitAssignments` reuses instead of re-reading —
+  exactly the fix prescribed, with an inline comment documenting the safety invariant
+  (`convex/warehouseOps.ts:181-238`). Done.
+- **#8 (`swapLineItemAsset` full org-project scan).** Already uses the
+  `by_organizationId_rentalStartDate` range-scan + JS overlap check
+  (`convex/projectLineItems.ts:789-800`) — the exact pattern reused for Finding #0 this
+  session. Done (found while building #0's fix).
+- **#9 (`getByIcalToken` full scan).** Uses `.withIndex("by_icalToken", …)`
+  (`convex/crewMembers.ts:50-58`). Done.
+
+## Findings STILL OPEN — cross-referenced against convex-demos
+
+**#1. List pagination (asset-table + friends) — still whole-org, but the hard part is already
+half-built.** `asset-table.tsx` still mounts 5 whole-org live subscriptions
+(`useAssets`/`useBulkAssets`/`useModels`/`useLocations`/`useCategories`,
+`src/components/assets/asset-table.tsx:15,16,19,20`). There's also now a NEWER
+`assets.listPage` query (`convex/assets.ts:54-100`+) built for a picker — but it still
+`.collect()`s the whole org for assets/models/categories/locations and filters/sorts/paginates
+**in JS**, same anti-pattern, just server-side instead of client-side. **However:** the schema
+already has real search indexes on `models`/`assets` — `search_name` /`search_manufacturer`/
+`search_assetTag`, each with `filterFields: ["organizationId", "isActive", …]`
+(`convex/schema.ts:336,341,367,556,560`). This is exactly what T3 (denormalize + searchIndex)
+needed, and it's already there. The `convex-demos/search` demo confirms the pattern:
+`.withSearchIndex("search_body", q => q.search(field, term)).take(n)` — and Convex search
+indexes support `.paginate()` too, so search + pagination compose in one query. **Gap is
+narrower than the doc assumed**: the client wiring (asset-table → paginated/search query) is
+the missing piece, not the search infra. Convex's own `pagination` demo pattern
+(`paginationOptsValidator` arg + `.paginate(args.paginationOpts)` + client
+`usePaginatedQuery`) is the mechanism to use for the non-search-filtered path.
+
+**#4. Project-detail fan-out — still separate subscriptions, not collapsed.**
+`equipment-tab.tsx` fires `api.collaboration.listLocksForEntity` and
+`api.collaboration.listThreadCommentCounts` as separate `useAuthedQuery` calls
+(`equipment-tab.tsx:137-144`); `use-collaboration.ts` separately subscribes to
+`listPresence` (`:100-101`) and `getLock` (`:237-238`). Still ~4-5 live subscriptions per
+page, not one composite. **Cross-check against convex-demos:** the per-entity reads
+themselves are fine — `listPresence`/`listLocksForEntity` are scoped to one entity (bounded by
+concurrent viewers of *this* page, not org history), which already matches the
+`presence-facepile` demo's shape (indexed lookup, small result set). The finding here is
+purely about **subscription count**, not unbounded reads — no demo directly shows "collapse N
+queries into one," but it's the same composite-query pattern already used elsewhere in this
+codebase (`equipmentTab.bundle`, `projectDetail.bundle`). Worth adding a defensive `.take(n)`
+cap to `listPresence`/`listLocksForEntity` regardless (the demo's `LIST_LIMIT = 20` pattern) —
+currently no cap, relying on "one page's viewers/locks is naturally small."
+
+**#6(b). Nested-kit `setAssetsStatus` consolidation — still not attempted, but the
+ship-blocking test gap may have closed.** The original finding said "ZERO test coverage" for
+`checkoutKit`/`checkinKit`/`forceReturnKit`. `convex/kitPerUnit.test.ts` now has tests for all
+three, including `"forceReturnKit returns the member's accessory (no stuck asset)"`. **Not
+verified whether these specifically cover a kit-within-kit / overlapping-set final-state
+assertion** (the exact race the original finding was worried about) — re-check before treating
+this as unblocked.
+
+**#7. Unbounded check-record reads — still unbounded, but may be dead code.**
+`checkRecords.ts:53` `listRecentByAssetAndCheckItem` still `.collect()`s an asset's entire
+check history and filters/sorts/slices in JS. **New finding: it has zero live callers** —
+only a comment reference in `checkPredictiveMaintenanceCore.ts:54` ("mirrors
+`listRecentByAssetAndCheckItem`"), meaning the real logic was likely reimplemented inline
+there rather than calling this function. If confirmed dead, delete it rather than fix it.
+`listByOrgAndAsset` (`:40`, also unbounded) DOES have a live caller
+(`src/lib/check-record-read.ts:119`) — check whether that caller needs full history or would
+tolerate a bound before assuming it needs the fix from the original finding. The
+`presence-facepile` demo's `list` query (`by_room_updated` index + `.order("desc").take(20)`)
+is the exact template if a bound turns out to be correct here.
+
+## Findings resolved this session (2026-07-17, continued)
+
+- **#7.** `checkRecords.listRecentByAssetAndCheckItem` deleted — confirmed zero live callers,
+  `checkPredictiveMaintenanceCore.ts` reimplements the same lookup inline.
+- **#4.** `LineItemRow` no longer mounts its own `getLock`/`getReviewMarker` subscription per
+  row (2N un-dedupeable subscriptions for N line items — the actual mechanism behind
+  `collaboration.getLock`/`getReviewMarker`'s disproportionate call counts, 9.6K/9.1K this
+  month on a 2-user org). `equipment-tab.tsx` now fetches both project-wide, once, via the
+  already-existing `listLocksForEntity`/`listReviewMarkersForEntity` queries (the
+  `by target key` lookup pattern `src/lib/collaboration-targets.ts` documents was already
+  half-applied to section/group locks — this finishes it for line items and extends it to
+  review markers).
+- **#6(b) — REASSESSED, no longer applicable.** Read the current `checkoutKitCore` /
+  `checkinKitCore` / `forceReturnKitCore` (`convex/warehouseOps.ts`) in full: each calls
+  `setAssetsStatus` exactly once for a kit's direct members' assets, plus once per nested kit
+  for that nested kit's members' assets — disjoint sets (a `projectLineItem.assetId` can only
+  belong to one line), not the "~6× over overlapping sets, last-write-wins" pattern the
+  original finding described. That pattern must have been refactored away by other work
+  independent of this perf effort (consistent with #2/#3/#5/#6a/#8/#9 all having shifted).
+  No consolidation needed — nothing unsafe or wasteful left here.
+
+## Finding #1 — SHIPPED (this session, `asset-table.tsx` only)
+
+`src/components/assets/asset-table.tsx` now calls `assets.listPage` / `bulkAssets.listPage`
+(server-side filter/sort/paginate, resolving model/category/location — already existed for
+the T&T-new picker) via `useAuthedQuery` instead of mounting `useAssets`/`useBulkAssets`/
+`useModels` as whole-org live subscriptions and filtering/sorting/paginating in the browser.
+`useLocations`/`useCategories` stay (small, org-config-sized — needed for filter dropdown
+option lists, not per-row data, so not the anti-pattern). Search is debounced 200ms
+(`useDebouncedValue`) since each keystroke is now a real round-trip, not a free client-side
+filter. Added `asset-table.smoke.test.tsx` (zero prior coverage on this component).
+
+**`asset-gallery.tsx` — SHIPPED (Option A, this session).** User chose to keep the gallery's
+"show everything, grouped by category" UX rather than add infinite-scroll (that was the other
+option — bounds the read for real, but breaks category counts mid-scroll and is a bigger
+change to a live feature). Added `assets.listGallery` — same read shape as before (every
+active asset; that's the feature, not a bug), but ONE server-side query doing the model/
+category/location joins and search filtering, replacing the 4 whole-org subscriptions
+(`useAssets`/`useModels`/`useLocations`/`useCategories`) the gallery used to mount and join
+client-side. Search debounced 200ms. `convex/assets.test.ts` added (zero prior coverage on
+this file — covers `listGallery`'s filter/sort/join + cross-org isolation).
+
+Residual, deliberately accepted: `listGallery` still reads every active asset in the org in
+one `.collect()` server-side — this is the feature ("browse everything"), not a leftover bug,
+but it means this query still carries the same Convex `.collect()` size-ceiling risk the
+design doc flags generally for large orgs (see "Convex limits & risks"). If the org's active
+asset count grows large enough to matter, infinite-scroll becomes the real fix — revisit then.
+
+## Not re-checked this pass (lower priority / unaffected by the above)
+
+Tier 3 items (`useCrewRoles` double-subscribe — confirmed still present,
+`services-panel.tsx:1242` / `crew-panel.tsx:922`, doc already called it minor since Convex
+shares the socket) and the `warehouse/page.tsx` 100-project roundtrip candidate weren't
+re-verified against current source this pass.
+
+---
+
+# Follow-up audit: the rest of the app's entity lists (2026-07-17, same day)
+
+After shipping the asset-list fix, a targeted sweep asked "does this same pattern exist
+anywhere else?" Answer: **yes, on nearly every other entity registry in the app** — each
+had its own hand-rolled whole-org-subscribe + client-side-filter/sort/paginate table,
+independent of the asset one. Grep sweep (checked every `use<Entity>(orgId)`-shaped hook's
+call sites, and separately checked for the *other* anti-pattern — a `useAuthedQuery` call
+inside a per-row/per-card component instead of one page-level subscription passed down as
+props — found none beyond the already-fixed `LineItemRow`; `project-board.tsx`'s cards and
+`activity-feed.tsx`'s rows both correctly take data as props).
+
+**Decision: build the shared pattern once, then apply it to every surface**, rather than
+hand-rolling the fix a 5th–9th time. Two shared modules:
+
+- **`convex/lib/listQuery.ts`** (backend) — `matchesSearch` (case-insensitive substring
+  match), `compareValues` (null-safe, type-aware comparator — null sorts as the maximum
+  value, consistent within a direction), `paginateItems` (slice + pagination metadata).
+  Pure, unit-tested (`convex/lib/listQuery.test.ts`). Each table still gets its OWN
+  `listPage`/`listGallery`/`listBoard` query — Convex needs the literal table name and
+  every entity has different filter dimensions/joins — but the sort/search/paginate
+  boilerplate is now one shared, tested implementation instead of a copy per file.
+  `assets.ts`/`bulkAssets.ts` were retrofitted onto it (behavior unchanged, all existing
+  tests still pass) before extending to the new surfaces.
+- **`src/hooks/use-paginated-table-result.ts`** (frontend) — derives
+  `{data, total, totalPages, isLoading}` from a `listPage`-shaped Convex query result.
+  Every new query standardizes on `{items, total, page, pageSize, totalPages}` so no
+  per-call adapter is needed (the two legacy queries, `assets.listPage`/`bulkAssets.listPage`,
+  keep their existing `assets`/`bulkAssets` field names for back-compat with the T&T-picker
+  consumer and weren't retrofitted onto the new hook — wrapping them would've added glue
+  code for no benefit).
+
+## Fixed this pass (all shipped, tested, typechecked, linted clean)
+
+**Paginated tables** (5 new + assets already done = 6 total registries now server-paginated):
+
+| Table | Old subscriptions | New query | Notable tradeoff |
+|---|---|---|---|
+| `project-table.tsx` | `useProjects`+`useClients`+`useLocations` | `projects.listPage` | none |
+| `kits/page.tsx` | `useKits`+`useCategories`+`useLocations` | `kits.listPage` | none |
+| `crew-table.tsx` | `useCrewMembers`+`useCrewRoles` | `crewMembers.listPage` | search no longer matches the linked platform user's display name (Better Auth, cross-domain — can't join it in Convex); `icalToken` redaction for non-service callers carries over (tested) |
+| `client-table.tsx` | `useClients` | `clients.listPage` | none |
+| `supplier-table.tsx` | `useSuppliers` | `suppliers.listPage` | tag search became case-insensitive (was a pre-existing inconsistency vs. every other field, incidentally fixed by using the shared matcher) |
+
+**Unpaginated "browse everything, grouped" views** (Option A, same shape as the asset
+gallery):
+
+| View | Old subscriptions | New query |
+|---|---|---|
+| `project-board.tsx` (kanban) | `useProjects`+`useClients` | `projects.listBoard` |
+
+Each ships with: a Convex-level test file (all previously had **zero** test coverage —
+`convex/projects.test.ts`, `convex/kits.test.ts`, `convex/crewMembers.test.ts`,
+`convex/clients.test.ts`, `convex/suppliers.test.ts`) covering filter/sort/join/search/
+cross-org-isolation, and a component-level smoke test pinning that the table/board renders
+off a `listPage`/`listBoard`-shaped result and that search is debounced (200ms,
+`useDebouncedValue`) instead of firing a query per keystroke.
+
+## Explicitly NOT fixed this pass — flagged, not silently skipped
+
+**`clients-dashboard.tsx`'s `useProjects` call.** Different problem shape from everything
+above: it's not rendering a list of rows, it's computing **aggregate stats** (revenue/project
+counts for one client) by pulling the whole org's projects into the browser and reducing
+client-side. The right fix is a server-side sum/count query scoped to that one client
+(`projects.by_clientId` index already exists), not a paginated list — genuinely different
+work, not a mechanical application of this session's pattern. Left as a named follow-up.
+
+## Honest limits of this round
+
+- **Read shape didn't change for the unpaginated views** (`asset-gallery.tsx`,
+  `project-board.tsx`) — they still `.collect()` every matching row server-side, because
+  "show everything" is the actual feature. That's fine at today's scale but still carries
+  the Convex `.collect()` size-ceiling risk for a large org; infinite-scroll is the real
+  fix if/when that matters (see the asset-gallery section above for the tradeoff writeup).
+- **None of this is verified against a live deployment.** Same caveat as Finding #0 and
+  everything else in this doc — this worktree has no Convex deploy key configured. Deploy,
+  then re-check the dashboard's per-function Database I/O for `projects.list`, `kits.list`,
+  `crewMembers.list`, `clients.list`, `suppliers.list` (the OLD whole-org queries) — they
+  should drop toward zero as traffic shifts to the new `listPage`/`listBoard` queries, with
+  a corresponding drop in each list page's total Database I/O.
+
 

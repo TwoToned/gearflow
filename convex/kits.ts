@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
+import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 
 /**
@@ -34,6 +35,76 @@ export const getById = query({
     const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDoc(ctx, doc);
     return doc;
+  },
+});
+
+/**
+ * Paginated KIT list — browser-native replacement for KitsPage's useKits/
+ * useLocations/useCategories whole-org live subscriptions + client-side
+ * filter/sort/paginate (Finding #1, docs/designs/perf-convex-efficiency-2026-06.md).
+ * Always excludes archived (isActive: false) and prep (isPrep: true) kits,
+ * matching the old getKits where-clause. category/location are resolved
+ * server-side; member-item counts + primary photo stay a separate cross-domain
+ * merge (kit media/counts still live in Prisma) — unchanged.
+ */
+export const listPage = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    status: v.optional(v.string()),
+    condition: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    categoryId: v.optional(v.string()),
+    tagsHasSome: v.optional(v.array(v.string())),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.string()),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async (ctx, a) => {
+    await requireOrgRead(ctx, a.orgId);
+    const page = a.page ?? 1;
+    const pageSize = a.pageSize ?? 25;
+    const sortBy = a.sortBy ?? "assetTag";
+    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+
+    const [rows, categories, locations] = await Promise.all([
+      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+    ]);
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+    const categoryNameFor = (id: string | null | undefined) => (id ? categoryMap.get(id)?.name : undefined);
+    const locationNameFor = (id: string | null | undefined) => (id ? locationMap.get(id)?.name : undefined);
+
+    const filtered = rows.filter((k) => {
+      if (k.isActive === false) return false;
+      if (k.isPrep === true) return false;
+      if (a.status && k.status !== a.status) return false;
+      if (a.condition && k.condition !== a.condition) return false;
+      if (a.locationId && k.locationId !== a.locationId) return false;
+      if (a.categoryId && k.categoryId !== a.categoryId) return false;
+      if (a.tagsHasSome && a.tagsHasSome.length > 0 && !(k.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
+      if (a.search && !matchesSearch([k.assetTag, k.name, k.description], a.search)) return false;
+      return true;
+    });
+
+    const keyFn = (k: typeof rows[number]): unknown => {
+      if (sortBy === "category") return categoryNameFor(k.categoryId);
+      if (sortBy === "location") return locationNameFor(k.locationId);
+      return (k as unknown as Record<string, unknown>)[sortBy];
+    };
+    const sorted = [...filtered].sort((x, y) => compareValues(keyFn(x), keyFn(y), dir));
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
+
+    const items = pageRows.map((k) => ({
+      ...k,
+      category: k.categoryId ? categoryMap.get(k.categoryId) ?? null : null,
+      location: k.locationId ? locationMap.get(k.locationId) ?? null : null,
+    }));
+
+    return { items, total, page, pageSize, totalPages };
   },
 });
 

@@ -4,6 +4,21 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.24.16.0] - 2026-07-17
+
+### Changed
+
+- Performance: the project overbooking check no longer scans a model's entire booking history across every project ever created — it now only looks at projects whose dates actually overlap the one you're viewing. This was the single largest driver of backend load this month (77% of it) despite the app having just 2 active users.
+- Performance: the asset, project, kit, crew, client, and supplier list/table pages no longer pull the entire org's records into the browser to filter/sort/paginate locally. Filtering, sorting, and paging now happen on the server, so opening any of these tables — and any edit anywhere in the org — no longer re-sends the whole table to every open tab.
+- Performance: the equipment tab no longer opens two extra live connections per line item on a project (previously used for showing who's editing a row and any review flags on it) — that data now comes from two shared connections for the whole tab instead.
+- Reliability: fixed a bug where selecting a Status, Condition, Location, Category, Type, Department, or Active/Archived filter chip on the Kits, Crew, Client, or Supplier tables would error out instead of filtering, introduced by the pagination work above and caught before release.
+- Security: fixed a narrow information leak where sorting the crew list by an unsupported field could reveal the relative ordering of a crew member's private calendar-feed link token, even though the token's value was already hidden from the response.
+
+### Removed
+
+- Deleted an unused check-history query with no live callers, left over from an earlier refactor.
+
 ## [0.24.15.0] - 2026-07-12
 
 ### Changed

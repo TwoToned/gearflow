@@ -44,7 +44,13 @@ export async function computeOverbookedStatus(
   const modelIds = [...new Set(relevantItems.map((li) => li.modelId!))];
 
   const convex = await getConvexClient();
-  const ob = await convex.query(api.overbooking.bundle, { orgId: organizationId, modelIds });
+  const ob = await convex.query(api.overbooking.bundle, {
+    orgId: organizationId,
+    modelIds,
+    thisProjectId: projectId,
+    rentalStartDate: rentalStartDate?.getTime(),
+    rentalEndDate: rentalEndDate?.getTime(),
+  });
 
   return reconstructOverbookedStatus(ob, lineItems, rentalStartDate, rentalEndDate, projectId);
 }

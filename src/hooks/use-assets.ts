@@ -19,16 +19,8 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type AssetDoc = Doc<"assets">;
 export type BulkAssetDoc = Doc<"bulkAssets">;
 
-export function useAssets(orgId: string | undefined): AssetDoc[] | undefined {
-  return useAuthedQuery(api.assets.list, orgId ? { orgId } : "skip");
-}
-
 export function useAsset(id: string | undefined): AssetDoc | null | undefined {
   return useAuthedQuery(api.assets.getById, id ? { id } : "skip");
-}
-
-export function useBulkAssets(orgId: string | undefined): BulkAssetDoc[] | undefined {
-  return useAuthedQuery(api.bulkAssets.list, orgId ? { orgId } : "skip");
 }
 
 export function useBulkAsset(id: string | undefined): BulkAssetDoc | null | undefined {

@@ -4,12 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, AlertTriangle, ShieldAlert, Search } from "lucide-react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { api } from "../../../convex/_generated/api";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { useProjects } from "@/hooks/use-projects";
-import { useClients } from "@/hooks/use-clients";
 import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -73,18 +72,18 @@ export function ProjectBoard() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const allProjects = useProjects(orgId);
-  const clients = useClients(orgId);
-  const clientMap = useMemo(() => new Map((clients ?? []).map((c) => [c.id, c.name])), [clients]);
-
-  const visible = useMemo(() => {
-    if (!allProjects) return undefined;
-    const q = search.trim().toLowerCase();
-    return allProjects
-      .filter((p) => !p.isTemplate && p.status !== "CANCELLED")
-      .map((p) => ({ ...p, client: p.clientId ? { name: clientMap.get(p.clientId) ?? null } : null }))
-      .filter((p) => !q || p.name.toLowerCase().includes(q) || p.projectNumber.toLowerCase().includes(q) || (p.client?.name?.toLowerCase().includes(q) ?? false));
-  }, [allProjects, clientMap, search]);
+  // ONE server-side query (filter + search + client join all done in Convex)
+  // instead of the 2 whole-org live subscriptions this used to mount
+  // (projects/clients) and join/filter client-side. See docs/designs/
+  // perf-convex-efficiency-2026-06.md Finding #1 ("Option A" — the board is
+  // an unpaginated "browse everything, grouped by stage" view, same shape as
+  // the asset gallery). Search is debounced since each keystroke is now a
+  // real round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  const visible = useAuthedQuery(
+    api.projects.listBoard,
+    orgId ? { orgId, search: debouncedSearch.trim() || undefined } : "skip",
+  );
 
   const ids = useMemo(() => (visible ?? []).map((p) => p.id), [visible]);
   const { data: issueFlags } = useServerQuery({
@@ -107,7 +106,7 @@ export function ProjectBoard() {
     return m;
   }, [visible]);
 
-  const isLoading = allProjects === undefined;
+  const isLoading = visible === undefined;
 
   return (
     <div className="space-y-4">

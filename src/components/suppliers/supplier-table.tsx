@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { useSupplierCounts } from "@/hooks/use-supplier-counts";
-import { useSuppliers } from "@/hooks/use-suppliers";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
+import { api } from "../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -143,60 +146,46 @@ export function SupplierTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Reactive supplier list straight from Convex (auto-updates on any supplier
-  // create/update/delete). Asset + order counts are a cross-domain aggregate
-  // that nothing invalidates (no liveness need) so they come from a one-shot,
-  // non-reactive browser-native Convex query (useSupplierCounts → suppliers.counts).
-  const allSuppliers = useSuppliers(orgId);
+  // ONE server-side query (filter + sort done in Convex) instead of the
+  // whole-org live subscription this used to mount (useSuppliers) and filter/
+  // sort client-side. See docs/designs/perf-convex-efficiency-2026-06.md
+  // Finding #1. Asset + order counts are a cross-domain aggregate that stays
+  // a separate, non-reactive query merged in below — unchanged. Search is
+  // debounced since each keystroke is now a real round-trip.
+  const debouncedSearch = useDebouncedValue(search, 200);
+  // Enum filter columns always store FilterValue as string[] (src/lib/table-utils.ts) —
+  // unwrap to the first selected value, matching asset-table.tsx's pick(). Without this,
+  // the array was cast straight into a Convex arg typed v.optional(v.string()), which
+  // throws an ArgumentValidationError the moment this filter is applied.
+  const activeFilter = Array.isArray(filters?.isActive) ? filters.isActive[0] : (filters?.isActive as string | undefined);
+  const suppliersPage = useAuthedQuery(
+    api.suppliers.listPage,
+    orgId
+      ? {
+          orgId,
+          search: debouncedSearch.trim() || undefined,
+          isActive: activeFilter,
+          page,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }
+      : "skip",
+  );
+  const { data: pagedSuppliers, total, isLoading } = usePaginatedTableResult(suppliersPage);
   const supplierCounts = useSupplierCounts(orgId);
 
-  // Filter / sort / paginate in the browser over the reactive list (mirrors the
-  // old getSuppliersPaginated where: isActive enum filter + name/contact/email/
-  // account#/tags search).
-  const { suppliers, total } = useMemo(() => {
-    const source = allSuppliers ?? [];
-    const q = search.trim().toLowerCase();
-    const activeFilter = filters?.isActive as string | undefined;
-
-    const filtered = source.filter((s) => {
-      if (activeFilter === "true" && (s.isActive ?? true) !== true) return false;
-      if (activeFilter === "false" && (s.isActive ?? true) !== false) return false;
-      if (q) {
-        const hit =
-          s.name.toLowerCase().includes(q) ||
-          (s.contactName?.toLowerCase().includes(q) ?? false) ||
-          (s.email?.toLowerCase().includes(q) ?? false) ||
-          (s.accountNumber?.toLowerCase().includes(q) ?? false) ||
-          (s.tags?.some((t) => t.includes(q)) ?? false);
-        if (!hit) return false;
-      }
-      return true;
-    });
-
-    const dir = sortOrder === "desc" ? -1 : 1;
-    filtered.sort((a, b) => {
-      const av = (a as Record<string, unknown>)[sortBy];
-      const bv = (b as Record<string, unknown>)[sortBy];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      if (typeof av === "boolean" && typeof bv === "boolean") return (Number(av) - Number(bv)) * dir;
-      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
-    });
-
-    const start = (page - 1) * pageSize;
-    const pageItems = filtered.slice(start, start + pageSize).map((s) => ({
-      ...s,
-      _count: {
-        assets: supplierCounts?.[s.id]?.assets ?? 0,
-        orders: supplierCounts?.[s.id]?.orders ?? 0,
-      },
-    }));
-    return { suppliers: pageItems, total: filtered.length };
-  }, [allSuppliers, supplierCounts, search, filters, sortBy, sortOrder, page, pageSize]);
-
-  const isLoading = allSuppliers === undefined;
+  const suppliers = useMemo(
+    () =>
+      pagedSuppliers.map((s) => ({
+        ...s,
+        _count: {
+          assets: supplierCounts?.[s.id]?.assets ?? 0,
+          orders: supplierCounts?.[s.id]?.orders ?? 0,
+        },
+      })),
+    [pagedSuppliers, supplierCounts],
+  );
 
   const toolbarActions = (
     <CanDo resource="supplier" action="create">

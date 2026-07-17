@@ -3,15 +3,20 @@
 import { useState, useCallback, useMemo } from "react";
 import type { FilterValue } from "@/lib/table-utils";
 import type { SavedViewConfig } from "@/lib/saved-views";
+import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 
 type SortOrder = "asc" | "desc";
 
-const STORAGE_PREFIX = "gearflow-table-";
+const STORAGE_PREFIX = "rvlt-flow-table-";
+const LEGACY_STORAGE_PREFIX = "gearflow-table-"; // pre-rebrand; migrated on read
 
 function getStored<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
-    const stored = localStorage.getItem(STORAGE_PREFIX + key);
+    const stored = readMigratedLocalStorage(
+      STORAGE_PREFIX + key,
+      LEGACY_STORAGE_PREFIX + key,
+    );
     if (stored !== null) return JSON.parse(stored) as T;
   } catch {
     // ignore

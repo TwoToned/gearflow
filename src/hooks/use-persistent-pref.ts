@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
+import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 
-const PREFIX = "gearflow-pref-";
+const PREFIX = "rvlt-flow-pref-";
+// Rebrand transition: legacy prefix used before RVLT Flow. Migrated on first read
+// so a user's saved prefs survive the rename instead of silently resetting.
+const LEGACY_PREFIX = "gearflow-pref-";
 
 function scopedKey(scope: string, key: string) {
   return `${PREFIX}${scope}-${key}`;
@@ -12,7 +16,10 @@ function scopedKey(scope: string, key: string) {
 function read<T>(scope: string, key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = localStorage.getItem(scopedKey(scope, key));
+    const raw = readMigratedLocalStorage(
+      scopedKey(scope, key),
+      `${LEGACY_PREFIX}${scope}-${key}`,
+    );
     if (raw !== null) return JSON.parse(raw) as T;
   } catch {
     // ignore malformed / unavailable storage

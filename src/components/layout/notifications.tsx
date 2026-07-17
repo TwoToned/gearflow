@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useEffect } from "react";
+import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
 import { useNotificationDismissals } from "@/hooks/use-notification-dismissals";
@@ -28,12 +29,13 @@ import { useActiveOrganization } from "@/lib/auth-client";
 
 // Optimistic-UI fallback. The DB is the source of truth; this just hides the
 // item instantly while the server mutation is in flight.
-const DISMISSED_KEY = "gearflow-dismissed-notifications";
+const DISMISSED_KEY = "rvlt-flow-dismissed-notifications";
+const LEGACY_DISMISSED_KEY = "gearflow-dismissed-notifications"; // pre-rebrand
 
 function readLocalDismissed(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = window.localStorage.getItem(DISMISSED_KEY);
+    const raw = readMigratedLocalStorage(DISMISSED_KEY, LEGACY_DISMISSED_KEY);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch {
     return new Set();

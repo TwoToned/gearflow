@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
@@ -200,11 +201,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   // 8H — "Show margin" toggle reveals a Cost column. Persisted to
   // localStorage so each user keeps the column they prefer. Default OFF.
-  const SHOW_COST_KEY = "gearflow-projects-show-cost";
+  const SHOW_COST_KEY = "rvlt-flow-projects-show-cost";
+  const LEGACY_SHOW_COST_KEY = "gearflow-projects-show-cost"; // pre-rebrand
   const [showCostColumn, setShowCostColumn] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     try {
-      return localStorage.getItem(SHOW_COST_KEY) === "true";
+      return (
+        readMigratedLocalStorage(SHOW_COST_KEY, LEGACY_SHOW_COST_KEY) === "true"
+      );
     } catch {
       return false;
     }

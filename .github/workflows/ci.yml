@@ -95,11 +95,11 @@ jobs:
         run: pnpm test
 
   hygiene:
-    # Advisory (non-blocking) hygiene scans — POLICY.md R-4.2 (dead code) and
-    # R-7.3 (secret scanning). These start with continue-on-error so they surface
-    # findings in the log without failing CI; flip to blocking once the pre-existing
-    # burn-down list is cleared. NOT in build's `needs`, so they never gate merge.
-    name: Hygiene (advisory)
+    # Hygiene gates. The dependency vulnerability scan (R-6.6) is BLOCKING — the tree
+    # is clean at high+. The dead-code (R-4.2) and secret (R-7.3) scans start advisory
+    # (continue-on-error) so they surface findings without failing CI; flip them blocking
+    # once the pre-existing burn-down is cleared. NOT in build's `needs`.
+    name: Hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -116,6 +116,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Blocking (POLICY.md R-6.6 — zero known high/critical at merge). The tree is
+      # currently clean at high+; remaining low/moderate advisories are tracked, not gated.
+      - name: Dependency vulnerability scan
+        run: pnpm audit --audit-level high
 
       - name: Dead-code scan (Knip, advisory)
         run: pnpm run knip

@@ -1,0 +1,49 @@
+# pnpm workspace configuration.
+#
+# Previously this file was kept untracked per-checkout, so pnpm settings (build-script
+# approvals, release-age excludes) and — critically — dependency `overrides` were not
+# committed and did not ship reproducibly. Tracking it fixes that (supports POLICY.md
+# R-6.1/R-6.2 reproducible installs). NOTE for anyone with a local untracked copy: delete
+# it before pulling so git can check this tracked version out.
+
+# Security overrides (POLICY.md R-6.6 — zero known high/critical at merge). All transitive;
+# these force the patched versions without risky major bumps of the direct deps:
+#   serialize-javascript  (next-pwa build)   <7.0.3
+#   hono                  (prisma dev tools)  <4.12.25
+#   ws                    (convex runtime)    8.0.0–8.20.x
+# NOT overridden: undici — its only consumer is jsdom@29 (test env only). It resolves
+# naturally to the patched 7.28.0, which jsdom is happy with; a forced override instead
+# flattens it in a way that breaks jsdom's resource dispatcher, so we leave it to the
+# resolver (verified: 0 high, full test suite green).
+overrides:
+  serialize-javascript@<7.0.3: '>=7.0.3'
+  hono@<4.12.25: '>=4.12.25'
+  ws@>=8.0.0 <8.21.0: '>=8.21.0'
+
+# Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
+# supports R-6.7 install-script hardening).
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@sentry/cli': true
+  canvas: true
+  core-js: true
+  esbuild: true
+  msw: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+
+# Packages excluded from the minimum-release-age gate (first-party pinned versions we
+# adopt immediately).
+minimumReleaseAgeExclude:
+  - '@better-auth/core@1.6.15'
+  - '@better-auth/drizzle-adapter@1.6.15'
+  - '@better-auth/kysely-adapter@1.6.15'
+  - '@better-auth/memory-adapter@1.6.15'
+  - '@better-auth/mongo-adapter@1.6.15'
+  - '@better-auth/passkey@1.6.15'
+  - '@better-auth/prisma-adapter@1.6.15'
+  - '@better-auth/sso@1.6.15'
+  - '@better-auth/telemetry@1.6.15'
+  - better-auth@1.6.15

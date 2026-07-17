@@ -55,5 +55,4 @@ public/swe-worker-*.js
 public/fallback-*.js
 .gstack/
 .claude/worktrees/
-pnpm-workspace.yaml
 package-lock.json

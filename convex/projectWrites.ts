@@ -602,8 +602,8 @@ export const deleteNative = mutation({
     for (const a of assignments) await deleteCrewAssignmentCascadeCore(ctx, a);
 
     // Step 6 — project managers / tasks / services (org-filtered inline deletes).
-    // NOT projectServices.removeManyCascade — that would re-cascade lines/crew we
-    // already handled above.
+    // NOT a bulk-cascade helper — that would re-cascade lines/crew we already
+    // handled above.
     const pms = (
       await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);

@@ -98,6 +98,43 @@ export const listPage = query({
 });
 
 /**
+ * ALL of an org's non-template, non-cancelled projects (NOT paginated), with
+ * client resolved server-side — browser-native backend for the project
+ * board's "browse everything, grouped by lifecycle stage" kanban view
+ * (project-board.tsx). Unlike `listPage`, this returns every matching row in
+ * one shot: the board groups everything by status column on one screen,
+ * which doesn't fit a paginated contract (same "Option A" shape as
+ * assets.listGallery — see docs/designs/perf-convex-efficiency-2026-06.md
+ * Finding #1). CANCELLED is excluded because the board has no column for it
+ * (matches the old client-side filter); no sort is applied (matches the old
+ * behavior — cards were never explicitly ordered within a column).
+ */
+export const listBoard = query({
+  args: { orgId: v.string(), search: v.optional(v.string()) },
+  handler: async (ctx, { orgId, search }) => {
+    await requireOrgRead(ctx, orgId);
+    const [rows, clients] = await Promise.all([
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ]);
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);
+
+    const filtered = rows.filter((p) => {
+      if (p.isTemplate) return false;
+      if (p.status === "CANCELLED") return false;
+      if (search && !matchesSearch([p.name, p.projectNumber, clientNameFor(p.clientId)], search)) return false;
+      return true;
+    });
+
+    return filtered.map((p) => ({
+      ...p,
+      client: p.clientId ? { name: clientNameFor(p.clientId) ?? null } : null,
+    }));
+  },
+});
+
+/**
  * Batch point-read projects by cuid, scoped to one org. Lets a detail composite
  * attach projects to its line-items / scan-logs by id instead of collecting every
  * project in the org (getProjectsByOrg) just to build a lookup map. Cross-org ids

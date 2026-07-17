@@ -40,16 +40,20 @@ async function seed(t: T) {
       id: "P3", organizationId: ORG, projectNumber: "P-003", name: "Template job",
       status: "CONFIRMED", isTemplate: true,
     });
+    await ctx.db.insert("projects", {
+      id: "P4", organizationId: ORG, projectNumber: "P-004", name: "Cancelled Show",
+      status: "CANCELLED", isTemplate: false,
+    });
   });
 }
 
 describe("projects.listPage", () => {
-  test("excludes templates", async () => {
+  test("excludes templates (but not cancelled — listPage has no status guard)", async () => {
     const t = makeT();
     await seed(t);
     const result = await t.withIdentity(asUser).query(api.projects.listPage, { orgId: ORG });
-    expect(result.items.map((p) => p.id).sort()).toEqual(["P1", "P2"]);
-    expect(result.total).toBe(2);
+    expect(result.items.map((p) => p.id).sort()).toEqual(["P1", "P2", "P4"]);
+    expect(result.total).toBe(3);
   });
 
   test("resolves client name server-side", async () => {
@@ -89,8 +93,9 @@ describe("projects.listPage", () => {
     const t = makeT();
     await seed(t);
     const asc = await t.withIdentity(asUser).query(api.projects.listPage, { orgId: ORG, sortBy: "client", sortOrder: "asc" });
-    // P1 has a client ("Acme Corp"), P2 has none (null sorts last ascending).
-    expect(asc.items.map((p) => p.id)).toEqual(["P1", "P2"]);
+    // P1 has a client ("Acme Corp"); P2/P4 have none (null sorts last ascending,
+    // stable-sort ties preserve their relative order).
+    expect(asc.items.map((p) => p.id)).toEqual(["P1", "P2", "P4"]);
   });
 
   test("cross-org isolation", async () => {
@@ -109,8 +114,46 @@ describe("projects.listPage", () => {
     await seed(t);
     const p1 = await t.withIdentity(asUser).query(api.projects.listPage, { orgId: ORG, pageSize: 1, page: 1, sortBy: "projectNumber" });
     expect(p1.items.map((p) => p.id)).toEqual(["P1"]);
-    expect(p1.totalPages).toBe(2);
+    expect(p1.totalPages).toBe(3);
     const p2 = await t.withIdentity(asUser).query(api.projects.listPage, { orgId: ORG, pageSize: 1, page: 2, sortBy: "projectNumber" });
     expect(p2.items.map((p) => p.id)).toEqual(["P2"]);
+  });
+});
+
+describe("projects.listBoard", () => {
+  test("excludes templates and cancelled projects", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(asUser).query(api.projects.listBoard, { orgId: ORG });
+    expect(result.map((p) => p.id).sort()).toEqual(["P1", "P2"]);
+  });
+
+  test("resolves client name server-side", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(asUser).query(api.projects.listBoard, { orgId: ORG });
+    const p1 = result.find((p) => p.id === "P1")!;
+    expect(p1.client?.name).toBe("Acme Corp");
+    const p2 = result.find((p) => p.id === "P2")!;
+    expect(p2.client).toBeNull();
+  });
+
+  test("search matches name, projectNumber, and joined client name", async () => {
+    const t = makeT();
+    await seed(t);
+    const byName = await t.withIdentity(asUser).query(api.projects.listBoard, { orgId: ORG, search: "splendour" });
+    expect(byName.map((p) => p.id)).toEqual(["P1"]);
+    const byClient = await t.withIdentity(asUser).query(api.projects.listBoard, { orgId: ORG, search: "acme" });
+    expect(byClient.map((p) => p.id)).toEqual(["P1"]);
+  });
+
+  test("cross-org isolation", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m2", organizationId: "org_2", userId: "user_2", role: "owner" });
+    });
+    const result = await t.withIdentity({ subject: "user_2", orgId: "org_2" }).query(api.projects.listBoard, { orgId: "org_2" });
+    expect(result).toEqual([]);
   });
 });

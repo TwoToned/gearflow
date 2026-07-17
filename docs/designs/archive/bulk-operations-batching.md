@@ -1,5 +1,15 @@
 # Bulk-Operation Batching — N+1 round-trip audit & fix plan
 
+> **Mostly shipped, archived.** Headline Class 1 + Class 2 items landed (see
+> status line below, and `checkOutKitsBatch`/`checkInKitsBatch` in
+> `src/server/warehouse.ts`). The remaining "Class 2 remaining"/Wave 3 file
+> list further down cites `src/server/*.ts` files that no longer exist post
+> Convex migration (`models.ts`, `project-categories.ts`, `kits.ts`,
+> `supplier-orders.ts`, `crew-assignments.ts`, `project-managers.ts`) — that
+> tail either shipped differently under native Convex mutations or is moot.
+> Treat any remaining item here as needing re-scoping against the current
+> `convex/*Writes.ts` surface, not as an actionable TODO against these paths.
+
 **Status:** audit complete; **all Class 1 + Class 2 waves shipped** (prep, deprep,
 project managers, crew time, kits, project duplicate/template, sub-hires, bulk
 asset create, model rate/T&T + reorder, and the Class 2 mirror-loop cascades) plus

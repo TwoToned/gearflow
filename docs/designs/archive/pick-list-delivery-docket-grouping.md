@@ -2,7 +2,12 @@
 
 # Pick List + Delivery Docket Grouping Rework
 
-**Status**: Draft for review
+> **SHIPPED.** `expandProjectGroups`/`packerSort`/`getPackerSortOrder` and
+> sub-hire-group-awareness are all live in
+> `src/lib/pdfme/structure-line-items.ts` / `build-document-data.ts`. Archived
+> here as design rationale.
+
+**Status**: ~~Draft for review~~ Shipped
 **Branch**: `feat/pick-list-grouping-rework`
 **Owner**: Jayden
 **Date**: 2026-06-02

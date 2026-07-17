@@ -1,5 +1,11 @@
 # Spike (T1): replace vs optimize the version-vector → server-action waterfall
 
+> **SHIPPED — recommendation adopted.** `src/hooks/use-reactive-server-query.ts`
+> no longer exists; detail surfaces moved to pure Convex `useQuery`
+> subscriptions as part of the broader Convex-native migration (Option B,
+> "mirror users into Convex," is live — `convex/schema.ts` has a `users`
+> table). Archived here as design rationale.
+
 **Status:** spike findings (approved at the autoplan final gate). Time-box ~1 day of
 investigation; this is the writeup + recommendation, no production code.
 

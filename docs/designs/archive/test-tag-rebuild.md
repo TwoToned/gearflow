@@ -1,9 +1,14 @@
 # Test & Tag Rebuild — AS/NZS 3760:2022 Digital Compliance Platform
 
+> **SHIPPED.** The compliance platform, per-outlet sub-testing, and
+> class-based test wizards designed here are all live — see
+> [FEATUREDOCS/14-test-and-tag.md](../../../FEATUREDOCS/14-test-and-tag.md).
+> Archived here as design rationale.
+
 **Branch:** claude/vigilant-nash
 **Mode:** SCOPE EXPANSION
 **Date:** 2026-03-25
-**Status:** ACTIVE
+**Status:** ~~ACTIVE~~ Shipped
 
 ## Vision
 

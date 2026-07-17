@@ -6,7 +6,7 @@ Deferred work items tracked from engineering reviews and planning sessions.
 
 ### ~~Margin-Aware Quoting~~ ⚠️ STALE — depends on a removed feature
 Deferred item depended on "Pricing optimization feature," which was removed in
-the June 2026 feature-removal sweep (`docs/designs/feature-removal-2026-06.md`).
+the June 2026 feature-removal sweep (`docs/designs/archive/feature-removal-2026-06.md`).
 No optimizer exists to add a margin view to today. Revisit only if pricing
 optimization is rebuilt as a deliberate product decision.
 

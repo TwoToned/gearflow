@@ -9,6 +9,20 @@
 6. `isOverbooked = totalBooked > effectiveStock`
 7. `isReducedStock = unavailableAssets > 0 && totalBooked > effectiveStock - unavailableAssets`
 
+### `overbooking.bundle` read scoping (perf, 2026-07)
+`convex/overbooking.ts` `bundle` reads the org's line items/assets/bulk-assets/projects/models
+for a set of model ids in one backend-local round trip. It takes optional `thisProjectId` /
+`rentalStartDate` / `rentalEndDate`: when supplied, the line-item read is scoped to projects
+overlapping that window (range-scan on `projects.by_organizationId_rentalStartDate`, excluding
+dead statuses, then per-project reads via `by_projectId`) instead of an unbounded all-time
+`by_modelId` scan across every project that has ever booked the model. All three callers
+(`src/lib/availability.ts`, `use-native-project-equipment.ts`, `use-native-equipment-tab.ts`)
+pass these args. The args are optional so a caller on a stale app build still gets a correct
+(just unscoped) result — don't remove that fallback without confirming the rollout is complete.
+See docs/designs/perf-convex-efficiency-2026-06.md Finding #0 for the measured impact
+(this query was 77% of the org's monthly Convex Database I/O before scoping) and
+`convex/overbooking.test.ts` for the scoped/unscoped parity test.
+
 ## Dateless Stock Checks
 When a project has **no rental dates**, availability is still calculated:
 - `computeOverbookedStatus` compares this project's line item quantities against total stock (no cross-project overlap)

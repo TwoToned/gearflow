@@ -627,4 +627,138 @@ Taste decisions resolved by user:
 split) → paginate via denormalize+searchIndex (T3) → trim fan-out → ship + skeletons →
 re-measure gate → (deferred) instant-feel. Ship-blocker tests T-A…T-E enforced. P4 dropped.
 
+---
+
+# Phase 0 — Measured Baseline (real prod data, 2026-07, org has 2 users)
+
+**Status of Phase 0.5:** #9 (`getByIcalToken`) already uses `.withIndex("by_icalToken", …)`
+in the current tree (`convex/crewMembers.ts:50-58`) — the security hotfix has shipped.
+Nothing to do there.
+
+Convex dashboard, current month, org has **2 active users** and "pretty small usage":
+
+| Resource | Value |
+|---|---|
+| Function calls | 266K |
+| Database I/O | **6.05 GB** |
+| Action compute | 0.00091 GB-hours |
+| Database storage | 131.75 MB |
+
+**This overturns the plan's priority order.** One function accounts for **4.66 GB of the
+6.05 GB total (77%)** — more than 10× the next-largest contributor, and more than every
+Tier-1/Tier-2 finding above combined. It wasn't named in the original findings because it's
+a newer Convex-native composite (`convex/overbooking.ts`) that post-dates the audit's
+initial pass. It becomes **Finding #0 — highest priority, ahead of #1-#9.**
+
+### Finding #0 (NEW, CRITICAL): `overbooking.bundle` — unbounded all-time `by_modelId` scan, live-reactive
+
+`convex/overbooking.ts:26` — for every model id in scope, `.withIndex("by_modelId", …)
+.collect()` against `projectLineItems` with **no date or status bound at the query layer**.
+The docstring (`overbooking.ts:6-12,35-40`) correctly notes an *earlier* version of this bug
+was fixed — it used to `.collect()` the whole `projects`/`models` tables — but the
+`projectLineItems` read itself is still unbounded: it returns **every line item ever booked
+against that model, across every project, for all of history**, not just projects whose
+rental window overlaps the one being viewed. The date-window filter
+(`sumBookingsByModel` → `projectMatchesWindow`, `src/lib/overbooking-core.ts:119-125,154-160`)
+only runs **after** the fetch, in JS.
+
+Two things compound this into the dominant cost:
+1. **No time bound at the index level.** `projectLineItems.by_modelId` has no
+   `status`/date component (mirrors the schema gap already noted in Finding #5 for
+   `by_projectId`). A model that's been booked across dozens of historical
+   (CANCELLED/RETURNED/COMPLETED/INVOICED) projects pays for all of them, every time,
+   forever — this scan only gets *more* expensive as the org's history grows. It is
+   the same shape as Finding #8 (`swapLineItemAsset` full org-project scan for a
+   date-overlap check) but on the hotter path and with no bound at all (not even
+   "whole org," but "whole org history").
+2. **It's a live `useQuery` subscription** (`src/hooks/use-native-project-equipment.ts:84-90`,
+   `src/hooks/use-native-equipment-tab.ts:87-93`), mounted once per open project-detail /
+   equipment-tab view, keyed on that project's referenced model ids. Any write to
+   `projectLineItems`/`assets`/`bulkAssets` for a shared model — from **any project, any
+   user, anywhere in the org** — re-triggers the full unbounded re-scan for every other open
+   viewer subscribed to that model. With 2 users this already produced 19K calls / 4.66 GB
+   this month; it scales with (org history size) × (concurrent viewers) × (write rate on
+   shared models), not with the 2-user workload.
+
+*Fix (two parts, can ship independently):*
+- **Bound the query, not just the JS filter.** The cheapest correct bound: line items whose
+  parent *project* is one of the excluded terminal statuses
+  (`EXCLUDED_PROJECT_STATUSES` — CANCELLED/RETURNED/COMPLETED/INVOICED) are dead weight for
+  every future read of that model, forever — they only ever get read and thrown away by
+  `projectMatchesWindow`. That's a status stored on `projects`, not `projectLineItems`, so a
+  composite index can't filter it directly without denormalizing project status (or the
+  rental window) onto the line item, mirroring the T3 pagination decision (denormalize +
+  index) already accepted elsewhere in this doc. Cheapest first cut: denormalize
+  `projectStatus` onto `projectLineItems` (mirror on project status change, same shape as the
+  T3 sync path) and add `by_modelId_projectStatus`, so terminal-status bookings never come
+  off disk. This shrinks the candidate set for any org with real history, without touching
+  the date-window math (still correct, still done in JS on the smaller set).
+- **Reconsider live-reactivity for this composite.** Overbooking status doesn't need to
+  update on writes to *unrelated* projects sharing a model in real time — a coarser
+  invalidation (or converting to a one-shot fetch refreshed on the same version-vector tick
+  as the rest of project detail, per the Tier-1 #3 "double refetch" fix) would cut the
+  fan-out multiplier without touching the read shape.
+- Ship-blocker: a parity test asserting `reconstructOverbookedStatus` output is unchanged
+  before/after adding the status bound (same shape as T-C/T-D for #2).
+
+### Finding #0b (confirms existing pattern, adds evidence): `projectLineItems.list` whole-org collect, called from scheduled/server code
+
+`convex/projectLineItems.ts:23-32` — `.withIndex("by_organizationId", …).collect()`, the
+same whole-org-collect shape as Finding #1, but this call site isn't a browser subscription —
+it's called from **`src/server/notification-email-sender.ts:298`,
+`src/server/notifications.ts:235`, and `src/lib/line-item-count-read.ts:29`**, i.e. scheduled/
+cron notification code re-reading every line item in the org on each run. 3.9K calls / 371.64
+MB this month (2nd-largest DB I/O consumer after #0) — confirms the "whole-org `.collect()`"
+pattern isn't confined to list-page UI as originally scoped; it also costs on the batch side.
+*Fix:* scope the notification scan to what it actually iterates (by project/date-range, not
+whole org) — same remedy family as Finding #1, different call site to convert.
+
+### Re-prioritized fix order (Phase 1, given real numbers)
+
+1. **Finding #0** (`overbooking.bundle` status bound) — 77% of measured I/O, ship first.
+2. Existing Finding #2 (`getKit`/`getAsset` scoping) and Finding #1 (asset-list pagination) —
+   unchanged rationale, now confirmed second-order by volume (assets.create/remove,
+   models.list, assets.list all appear mid-table but nowhere near #0's magnitude).
+3. Finding #0b (notification scan scoping) — cheap, same shape as #1, bundle into that work.
+4. Rest of Tier-1/Tier-2 as previously sequenced.
+
+**Everything else in the original Phase 0 plan (spike T1, #2 additive queries, #5 index,
+#6 split, T-A…T-I tests) still stands** — this section only re-orders by measured impact and
+adds two findings the original static-analysis pass couldn't see because `overbooking.bundle`
+postdates it.
+
+### Finding #0 — SHIPPED (this session)
+
+`convex/overbooking.ts` `bundle` now takes optional `thisProjectId` /
+`rentalStartDate` / `rentalEndDate` args. When present (the new callers), it range-scans
+`projects.by_organizationId_rentalStartDate` for the small set of projects overlapping the
+viewed project's window (the same overlap pattern `swapLineItemAsset` already uses,
+`convex/projectLineItems.ts:789-800`), excludes `CANCELLED`/`RETURNED`/`COMPLETED`/`INVOICED`
+projects up front, then reads line items **per candidate project** via the existing
+`by_projectId` index — instead of an unbounded all-time `by_modelId` scan across every project
+that has ever booked the model. **No schema/index changes needed** — both
+`projectLineItems.by_projectId` and `projects.by_organizationId_rentalStartDate` already
+existed. Args are optional (expand-contract) so a caller still on the previous app build
+during a deploy window falls back to the old unscoped-but-correct path unchanged.
+
+Updated callers (same commit, per the doc's own "index + consuming code together" rule):
+`src/lib/availability.ts` (`computeOverbookedStatus`), `src/hooks/use-native-project-equipment.ts`
+(`useNativeProjectDetail`), `src/hooks/use-native-equipment-tab.ts` (`useNativeEquipmentTab`).
+
+Ship-blocker parity test added: `convex/overbooking.test.ts` — asserts
+`reconstructOverbookedStatus` output is byte-identical between the scoped and unscoped paths
+over a fixture with an overlapping booking (counts), a cancelled-but-date-overlapping project
+(must not count), a non-overlapping project (must not count), and a 400-day-old returned
+project on the same popular model (must not count, and must not even reach the scoped
+candidate walk) — plus an over-capacity regression check and a dateless-project case (scopes
+to zero org-wide reads). 4/4 new tests pass; full existing suite (3242 tests) unaffected.
+
+**Not yet done (deferred, needs a live deployment to verify against real numbers):**
+push to a Convex deployment, re-measure `overbooking.bundle`'s Database I/O against this
+month's 4.66 GB baseline, and confirm the drop. This worktree had no `.env` / deploy key
+configured, so the change is unverified against a live deployment — do that before/as part of
+the next deploy. Also deferred: reconsidering the subscription's live-reactivity (still
+re-runs on any write to a shared model within the candidate window across all open viewers) —
+noted as a follow-up in the original finding, not addressed by this scoping fix.
+
 

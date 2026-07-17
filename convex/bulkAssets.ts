@@ -42,8 +42,9 @@ const BULK_STATUS_RANK: Record<string, number> = { ACTIVE: 0, LOW_STOCK: 1, OUT_
  * Paginated BULK-ASSET list — browser-native replacement for the getBulkAssets
  * server action. Fetches the org's bulk assets (by_organizationId) + model/location
  * maps, then filters/sorts/paginates in JS (parity with filterBulkAssets/sortBulkAssets/
- * paginate). Each row carries its model (with category) + location. One-shot (the only
- * consumer — the T&T-new picker — reads it non-reactively).
+ * paginate). Each row carries its model (with category) + location. Two consumers: the
+ * T&T-new picker (one-shot, non-reactive) and AssetTable's bulk view (live, via
+ * useAuthedQuery — see docs/designs/perf-convex-efficiency-2026-06.md Finding #1).
  */
 export const listPage = query({
   args: {

@@ -36,8 +36,9 @@ const A_CONDITION_RANK: Record<string, number> = { NEW: 0, GOOD: 1, FAIR: 2, POO
 /**
  * Paginated ASSET list — browser-native replacement for the getAssets server action.
  * Fetches the org's assets + model(with category)/location maps, then filters/sorts/
- * paginates in JS (parity with filterAssets/sortAssets/paginate). One-shot (the only
- * consumer — the T&T-new picker — reads it non-reactively).
+ * paginates in JS (parity with filterAssets/sortAssets/paginate). Two consumers: the
+ * T&T-new picker (one-shot, non-reactive) and AssetTable (live, via useAuthedQuery —
+ * see docs/designs/perf-convex-efficiency-2026-06.md Finding #1).
  */
 export const listPage = query({
   args: {

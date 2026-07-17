@@ -18,10 +18,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
  */
 export type KitDoc = Doc<"kits">;
 
-export function useKits(orgId: string | undefined): KitDoc[] | undefined {
-  return useAuthedQuery(api.kits.list, orgId ? { orgId } : "skip");
-}
-
 export function useKit(id: string | undefined): KitDoc | null | undefined {
   return useAuthedQuery(api.kits.getById, id ? { id } : "skip");
 }

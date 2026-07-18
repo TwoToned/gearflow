@@ -91,6 +91,15 @@ const eslintConfig = [
         { max: 60, skipBlankLines: true, skipComments: true, IIFEs: true },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
+      // Ban @ts-ignore / @ts-nocheck; allow described @ts-expect-error (R-8.2.2).
+      "@typescript-eslint/ban-ts-comment": [
+        "warn",
+        {
+          "ts-ignore": true,
+          "ts-nocheck": true,
+          "ts-expect-error": "allow-with-description",
+        },
+      ],
       "@typescript-eslint/naming-convention": [
         "warn",
         { selector: "typeLike", format: ["PascalCase"] },

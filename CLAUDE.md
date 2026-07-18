@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+<!-- Owner: Jayden Nawotka · Last reviewed: 2026-07-18 (review quarterly — POLICY.md R-5.5) -->
+
 ## ⚖️ Governing policy — POLICY.md is the bible
 
 **[`POLICY.md`](./POLICY.md)** (Codebase Management & Hygiene Policy) is the **authoritative

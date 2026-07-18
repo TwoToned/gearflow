@@ -1,0 +1,21 @@
+name: Link Check
+
+# Markdown link checker (POLICY.md R-5.7). Advisory (fail: false) — surfaces broken
+# links without blocking; flip to failing once the current set is clean.
+on:
+  pull_request:
+    paths: ["**/*.md"]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  linkcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: "--no-progress --exclude-loopback --exclude-path node_modules './**/*.md'"
+          fail: false

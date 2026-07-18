@@ -1,3 +1,4 @@
+<!-- Owner: Jayden Nawotka · Last reviewed: 2026-07-18 (review quarterly — POLICY.md R-5.5) -->
 <div align="center">
 
 # RVLT Flow
@@ -287,11 +288,18 @@ overrides and project-specific (§13B) values:
 | Threshold | Value | Rationale |
 |---|---|---|
 | T-5 Coverage | **70%** (default 80%) | Current baseline over `src/lib/**`; ratcheting toward 80% — not yet CI-gated. |
+| T-9 Interactive query latency | **default** (p95 < 100 ms; > 1 s = incident) | Accept the §13 default for interactive request paths. |
+| T-P1 Audit-log retention | **2 years** | Activity log (`activityLogs`) retained 24 months for operational/dispute history. |
+| T-P2 PII retention | **Active relationship + 12 months** ⚠ *provisional — owner/legal to confirm* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |
 | T-P3 Backup retention | **90 days** | Daily Convex export retained 90 days (`.github/workflows/convex-backup.yml`). |
+| T-P4 Monthly cost budget (metered) | **Maps $50 · Resend $30 · Convex per plan** ⚠ *provisional — owner to confirm* | Initial per-service ceilings for the metered vendors; alert at 80% once cost monitoring exists (R-9.12). |
+| T-P5 Max flaky-quarantine size | **10 tests** | Quarantine caps at 10; beyond that the suite is failing, not flaky. |
+| T-P6 Per-endpoint p95 SLOs | **300 ms API · 1 s page** | Interactive-endpoint targets; breach alerting tracked in R-9.11/R-8.9.6. |
+| T-P7 Queue lag/age alert | **> 5 minutes** | Alert when the webhook/notification queue lags beyond 5 min; tracked in R-9.10. |
 
-Other §13B project thresholds (T-P1 audit-log retention, T-P2 PII retention, T-P4 cost
-budgets, T-P6 endpoint SLOs, T-P7 queue lag) are **not yet registered** — tracked as
-findings in the baseline audit.
+Values marked ⚠ *provisional* satisfy the R-0.4 registration requirement but carry business/legal
+judgment — the owner should confirm them. Registration binds the value; several rules still require
+the *enforcement* to be wired (alerting/monitoring), tracked as their own findings.
 
 ---
 

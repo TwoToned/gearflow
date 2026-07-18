@@ -16,7 +16,7 @@ import { writeActivityLog } from "./lib/audit";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const supplierFields = {
+export const supplierFields = {
   name: v.string(),
   contactName: v.optional(v.string()),
   email: v.optional(v.string()),

@@ -29,7 +29,7 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const modelFields = {
+export const modelFields = {
   name: v.string(),
   manufacturer: v.optional(v.string()),
   modelNumber: v.optional(v.string()),

@@ -31,7 +31,7 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const bulkFields = {
+export const bulkFields = {
   modelId: v.string(),
   assetTag: v.string(),
   totalQuantity: v.optional(v.number()),

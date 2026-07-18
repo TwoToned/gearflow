@@ -19,7 +19,7 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const clientFields = {
+export const clientFields = {
   name: v.string(),
   type: v.optional(enums.ClientType),
   contactName: v.optional(v.string()),

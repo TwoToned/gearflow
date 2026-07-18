@@ -17,7 +17,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const categoryFields = {
+export const categoryFields = {
   name: v.string(),
   parentId: v.optional(v.string()),
   description: v.optional(v.string()),

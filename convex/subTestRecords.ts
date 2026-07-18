@@ -54,7 +54,7 @@ export const listByRecordIds = query({
   },
 });
 
-const subTestFields = {
+export const subTestFields = {
   id: v.string(),
   testTagRecordId: v.string(),
   label: v.string(),

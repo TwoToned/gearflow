@@ -16,7 +16,7 @@ const overlaps = (aStart: number, aEnd: number, rStart: number, rEnd: number) =>
 const iso = (ms: number | null | undefined) => (ms == null ? null : new Date(ms).toISOString());
 
 async function orgMemberIds(ctx: QueryCtx, orgId: string): Promise<Set<string>> {
-  const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+  const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded by the org's crew roster (member-id set)
   return new Set(members.map((m) => m.id));
 }
 
@@ -59,9 +59,9 @@ export const conflicts = query({
       });
     }
 
-    const assignments = (await ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+    const assignments = (await ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: conflict detection over the org's assignment set
       .filter((a) => a.crewMemberId === crewMemberId && !EXCLUDED.has(a.status ?? "") && a.startDate != null && a.endDate != null && overlaps(a.startDate, a.endDate, startMs, endMs) && (excludeAssignmentId ? a.id !== excludeAssignmentId : true));
-    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p]));
+    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p])); // r9.8-ok: conflict detection resolves the org's projects
     for (const a of assignments) {
       const p = projById.get(a.projectId);
       out.push({ type: "assignment", severity: "soft", label: `Already on ${p?.projectNumber ?? ""} - ${p?.name ?? ""}`, startDate: iso(a.startDate) ?? new Date(startMs).toISOString(), endDate: iso(a.endDate) ?? new Date(endMs).toISOString() });
@@ -76,11 +76,11 @@ export const plannerData = query({
   handler: async (ctx, { orgId, startMs, endMs }) => {
     await requireOrgRead(ctx, orgId);
     const [allMembers, allAssignments, roles, projects, allAvail] = await Promise.all([
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewAvailabilities").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("crewAvailabilities").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
     ]);
     const roleById = new Map(roles.map((r) => [r.id, r]));
     const projById = new Map(projects.map((p) => [p.id, p]));

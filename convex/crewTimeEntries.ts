@@ -56,10 +56,10 @@ export const allEntries = query({
 
     const [allE, assignments, members, roles, projects] = await Promise.all([
       ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
     ]);
     const memberById = new Map(members.map((m) => [m.id, m]));
     const asgById = new Map(assignments.map((x) => [x.id, x]));
@@ -107,9 +107,9 @@ export const forMember = query({
 
     const [entriesRaw, assignments, roles, projects] = await Promise.all([
       ctx.db.query("crewTimeEntries").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).collect().then((rows) => rows.filter((e) => e.organizationId === orgId)),
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (forMember enrichment)
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (forMember enrichment)
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (forMember enrichment)
     ]);
     const asgById = new Map(assignments.map((x) => [x.id, x]));
     const roleById = new Map(roles.map((r) => [r.id, r]));

@@ -21,7 +21,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     const docs = await ctx.db
       .query("crewMembers")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded by the org's crew roster (full roster read)
       .collect();
     const auth = await getAuthContext(ctx);
     return auth?.kind === "service" ? docs : docs.map((d) => redactFields(d, ["icalToken"]));
@@ -68,8 +68,8 @@ export const listPage = query({
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, roles] = await Promise.all([
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: deliberate server-side filter/sort/paginate over the bounded roster (design: perf-convex-efficiency-2026-06.md)
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: small bounded per-org config set (crew roles)
     ]);
     const roleMap = new Map(roles.map((r) => [r.id, r]));
 

@@ -127,7 +127,7 @@ export const remove = mutation({
 // can only ever read/write their OWN row. This replaces the getNotificationPreferences
 // / updateNotificationPreferences server actions in src/server/notification-preferences.ts.
 
-const prefFields = {
+export const prefFields = {
   overdueMaintenance: v.boolean(),
   overdueReturn: v.boolean(),
   upcomingProject: v.boolean(),

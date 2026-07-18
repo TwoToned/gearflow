@@ -19,7 +19,7 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const locationFields = {
+export const locationFields = {
   name: v.string(),
   address: v.optional(v.string()),
   latitude: v.optional(v.union(v.number(), v.null())),

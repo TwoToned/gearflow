@@ -36,7 +36,7 @@ function assertCrewMoney(value: number | undefined, field: string): void {
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const assignmentFields = {
+export const assignmentFields = {
   crewMemberId: v.string(),
   crewRoleId: v.optional(v.string()),
   serviceId: v.optional(v.string()),

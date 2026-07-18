@@ -19,7 +19,7 @@ import { calculateTotalHours } from "./lib/crewTimeHours";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
-const entryFields = {
+export const entryFields = {
   assignmentId: v.optional(v.string()),
   crewMemberId: v.string(),
   description: v.optional(v.string()),

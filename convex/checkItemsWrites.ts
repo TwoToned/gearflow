@@ -46,7 +46,7 @@ async function orgKit(ctx: MutationCtx, orgId: string, id: string) {
 
 // ─── Check Item Library ─────────────────────────────────────────────────────
 
-const checkItemFields = {
+export const checkItemFields = {
   label: v.string(),
   description: v.optional(v.string()),
   type: v.optional(CheckItemType),

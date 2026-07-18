@@ -76,7 +76,7 @@ export const create = mutation({
   },
 });
 
-const checkRecordFields = {
+export const checkRecordFields = {
   id: v.string(),
   organizationId: v.string(),
   context: enums.CheckContext,

@@ -1,5 +1,7 @@
 # RVLT Flow — Architecture Overview
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-18 (review quarterly — POLICY.md R-5.5)_
+
 Multi-tenant asset and rental management platform for AV/theatre production companies. Built with Next.js 16 (App Router), TypeScript strict, Tailwind CSS v4, shadcn/ui, Better Auth, PostgreSQL + Prisma.
 
 ## Quick Reference

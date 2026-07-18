@@ -7,6 +7,10 @@ import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
+import {
+  ssoAccessApprovedEmail,
+  ssoAccessRejectedEmail,
+} from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
@@ -346,19 +350,12 @@ export async function approveSSOUser(approvalId: string, role?: string) {
   });
   sendEmail({
     to: claimed.email,
-    subject: `Your access to ${org?.name || "the organization"} has been approved`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Access Approved</h2>
-        <p>Your request to join <strong>${org?.name}</strong> on ${pName} has been approved.</p>
-        <p>You've been assigned the role of <strong>${assignRole}</strong>.</p>
-        <p>
-          <a href="${env.NEXT_PUBLIC_APP_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Go to Dashboard
-          </a>
-        </p>
-      </div>
-    `,
+    ...ssoAccessApprovedEmail({
+      orgName: org?.name || "the organization",
+      role: assignRole,
+      dashboardUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard`,
+      platformName: pName,
+    }),
   }).catch(console.error);
 
   return { success: true };
@@ -403,15 +400,11 @@ export async function rejectSSOUser(approvalId: string, note?: string) {
   });
   sendEmail({
     to: approval.email,
-    subject: `Your access request to ${org?.name || "the organization"} was not approved`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Access Request Not Approved</h2>
-        <p>Your request to join <strong>${org?.name}</strong> on ${pName} was not approved.</p>
-        ${note ? `<p>Reason: ${note}</p>` : ""}
-        <p>If you believe this is a mistake, please contact your organization administrator.</p>
-      </div>
-    `,
+    ...ssoAccessRejectedEmail({
+      orgName: org?.name || "the organization",
+      note,
+      platformName: pName,
+    }),
   }).catch(console.error);
 
   return { success: true };

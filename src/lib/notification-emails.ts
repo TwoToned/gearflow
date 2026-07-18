@@ -2,10 +2,11 @@
  * Email templates for in-app notification delivery.
  *
  * One factory per notification type. Each returns the `{ subject, html }`
- * shape expected by `sendEmail()`. Templates are intentionally lightweight
- * inline HTML to match the rest of the email codebase (`src/lib/email.ts`,
- * `src/lib/crew-emails.ts`) — no MJML / no React Email yet.
+ * shape expected by `sendEmail()`. Chrome (wrapper + CTA button) comes from the
+ * shared `email-layout.ts` helpers so it can't drift from the other templates —
+ * no MJML / no React Email yet.
  */
+import { emailButton, emailShell } from "@/lib/email-layout";
 
 interface BaseEmailData {
   recipientName: string;
@@ -27,26 +28,18 @@ function emailWrapper(
   data: Pick<BaseEmailData, "orgName" | "appBaseUrl">,
 ): string {
   const prefsUrl = `${data.appBaseUrl.replace(/\/$/, "")}/account/notifications`;
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-      ${content}
+  return emailShell(
+    `${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
       <p style="color:#999;font-size:12px;">
         Sent by ${data.orgName} via RVLT Flow.
         <a href="${prefsUrl}" style="color:#0d9488;">Update notification preferences</a>.
-      </p>
-    </div>
-  `;
+      </p>`,
+  );
 }
 
 function ctaButton(url: string, label: string): string {
-  return `
-    <p style="margin:24px 0;">
-      <a href="${url}" style="display:inline-block;padding:12px 24px;background-color:#0d9488;color:white;text-decoration:none;border-radius:6px;font-weight:600;">
-        ${label}
-      </a>
-    </p>
-  `;
+  return emailButton({ href: url, label });
 }
 
 // ─── Per-type templates ──────────────────────────────────────────────────────

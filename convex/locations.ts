@@ -19,7 +19,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("locations")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: locations is a small bounded per-org set
       .collect();
   },
 });
@@ -40,7 +40,7 @@ export const listSimple = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: locations is a small bounded per-org set
     return locs
       .map((l) => ({ id: l.id, name: l.name, type: l.type ?? "WAREHOUSE" }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -58,15 +58,24 @@ export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
     await requireOrgRead(ctx, orgId);
+    // r9.8-ok: locations is a small bounded per-org set (tens of rows).
     const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
     const self = locs.find((l) => l.id === id);
     if (!self) return null; // parity with the deleted getLocation (graceful not-found UI)
 
+    // Read assets/bulk/kits/projects only for THIS location + its immediate children
+    // (by_locationId, org-checked), not a full-org scan (R-9.8). All downstream uses
+    // filter by exactly these locationIds, so the result set is identical.
+    const childrenAll = locs.filter((l) => l.parentId === id);
+    const targetLocIds = [id, ...childrenAll.map((c) => c.id)];
+    const byLoc = async <T extends { organizationId: string }>(rows: Promise<T[]>[]) =>
+      (await Promise.all(rows)).flat().filter((r) => r.organizationId === orgId);
     const [assets, bulk, kits, projects, models] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      byLoc(targetLocIds.map((lid) => ctx.db.query("assets").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
+      byLoc(targetLocIds.map((lid) => ctx.db.query("bulkAssets").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
+      byLoc(targetLocIds.map((lid) => ctx.db.query("kits").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
+      byLoc(targetLocIds.map((lid) => ctx.db.query("projects").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
+      // r9.8-ok: model catalog name map (bounded per-org catalog); resolved for display only.
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     ]);
     const modelName = new Map(models.map((m) => [m.id, m.name]));
@@ -75,7 +84,6 @@ export const detail = query({
     const bulkHere = bulk.filter((b) => b.locationId === id);
     const kitsHere = kits.filter((k) => k.locationId === id);
     const projectsHere = projects.filter((p) => p.locationId === id);
-    const childrenAll = locs.filter((l) => l.parentId === id);
 
     const _count = { assets: assetsHere.length, bulkAssets: bulkHere.length, kits: kitsHere.length, children: childrenAll.length, projects: projectsHere.length };
 
@@ -147,19 +155,19 @@ export const counts = query({
 
     const assets = await ctx.db
       .query("assets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: tallies every org asset/bulk/kit per location (one-shot, not reactive)
       .collect();
     for (const a of assets) if (a.locationId) ensure(a.locationId).assets++;
 
     const bulkAssets = await ctx.db
       .query("bulkAssets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: tallies every org asset/bulk/kit per location (one-shot, not reactive)
       .collect();
     for (const b of bulkAssets) if (b.locationId) ensure(b.locationId).bulkAssets++;
 
     const kits = await ctx.db
       .query("kits")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: tallies every org asset/bulk/kit per location (one-shot, not reactive)
       .collect();
     for (const k of kits) if (k.locationId) ensure(k.locationId).kits++;
 

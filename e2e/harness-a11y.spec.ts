@@ -21,9 +21,11 @@ test.describe("harness: a11y (authenticated)", () => {
 
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      // KNOWN BURN-DOWN: the dashboard has ~7 color-contrast failures (design fix,
-      // needs DESIGN.md sign-off). Baselined so this gate covers the authenticated
-      // surface for every OTHER rule; remove once contrast is fixed. Tracked in #646.
+      // ACCEPTED EXCEPTION (POLICY.md §15 — see docs/exceptions.md, R-8.1.7): the
+      // RVLT brand red (--red #d8353b) fails the 4.5:1 AA contrast floor on the
+      // authenticated surface too. The palette is accepted as-is per DESIGN.md;
+      // baselined so this gate covers the authenticated surface for every OTHER
+      // WCAG A/AA rule. Remove if the palette is re-toned.
       .disableRules(["color-contrast"])
       .analyze();
     const seriousOrCritical = results.violations.filter(

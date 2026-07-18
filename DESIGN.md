@@ -137,6 +137,14 @@ The same hue palette is used for avatar colours (8 deterministic hues, never red
 - The `--red` primary fill is the one exception: it uses `text-white` / `text-primary-foreground` (`#fff`) in both themes
 Use `PersonAvatar` and `FeaturePatch` components, which encode this rule internally — don't hand-roll on-fill colours.
 
+> **Accessibility note (accepted):** white on the `--red` fill lands at ~4.41:1 — just
+> under the WCAG-AA 4.5:1 floor for normal text — and red-on-dark text is lower still.
+> This is **accepted as a deliberate brand trade-off**, not an oversight: the palette is
+> not re-toned. It is recorded as a dated POLICY.md §15 exception (`docs/exceptions.md`,
+> R-8.1.7) and the axe gates baseline the `color-contrast` rule accordingly. Status is
+> still encoded by colour **and** label (never colour-only), so meaning never depends on
+> the contrast delta. Revisit if the brand red is re-toned.
+
 ### §1 Red Disambiguation Rule
 **Two distinct red values for distinct meanings:**
 

@@ -20,7 +20,7 @@ export const list = query({
     await requireService(ctx);
     return await ctx.db
       .query("apiKeys")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org set
       .order("desc")
       .collect();
   },

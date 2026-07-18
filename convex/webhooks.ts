@@ -24,7 +24,7 @@ export const list = query({
     await requireService(ctx);
     return await ctx.db
       .query("webhooks")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org set
       .order("desc")
       .collect();
   },
@@ -37,7 +37,7 @@ export const activeSubscriptions = query({
     await requireService(ctx);
     const rows = await ctx.db
       .query("webhooks")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org set
       .collect();
     return rows
       .filter((w) => w.isActive === true)

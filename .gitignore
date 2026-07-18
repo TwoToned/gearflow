@@ -60,3 +60,6 @@ package-lock.json
 # Playwright E2E artifacts
 playwright-report/
 test-results/
+
+# Local E2E harness temp (self-hosted Convex push tmpdir)
+.convex-tmp/

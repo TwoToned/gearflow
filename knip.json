@@ -8,5 +8,14 @@
     "src/**/*.{ts,tsx}",
     "convex/**/*.ts",
     "scripts/**/*.{ts,cjs,mjs}"
+  ],
+  "ignoreDependencies": [
+    "cmdk",
+    "vaul",
+    "tw-animate-css",
+    "tailwindcss",
+    "shadcn",
+    "@testing-library/jest-dom",
+    "@testing-library/user-event"
   ]
 }

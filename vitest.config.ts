@@ -40,11 +40,15 @@ export default defineConfig({
         "**/*.test.ts",
         "**/*.test.tsx",
       ],
+      // Ratchet floor set to the honest current baseline (~49–50%) so coverage can
+      // be ENFORCED in CI now and only climb (POLICY.md R-8.8.2 / T-5). Raise these
+      // as coverage improves; target is 80%. Was an aspirational 70% that never ran
+      // in CI (actual was ~49%).
       thresholds: {
-        statements: 70,
-        branches: 70,
-        functions: 70,
-        lines: 70,
+        statements: 48,
+        branches: 48,
+        functions: 48,
+        lines: 48,
       },
     },
   },

@@ -85,8 +85,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://dummy:***@localhost:5432/dummy
 
-      - name: Run tests
-        run: pnpm test
+      - name: Run tests (with coverage ratchet)
+        run: pnpm test:coverage
 
   e2e:
     # E2E smoke + a11y over the critical-flows list (POLICY.md R-8.8.3, R-8.1.7).
@@ -175,6 +175,12 @@ jobs:
       # currently clean at high+; remaining low/moderate advisories are tracked, not gated.
       - name: Dependency vulnerability scan
         run: pnpm audit --audit-level high
+
+      - name: Import-cycle check (new cycles only, R-3.5)
+        run: pnpm run depcruise
+
+      - name: Any-ratchet (R-8.2.2)
+        run: pnpm run any-ratchet
 
       - name: Dead-code scan (Knip, advisory)
         run: pnpm run knip

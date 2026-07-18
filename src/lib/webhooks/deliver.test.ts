@@ -128,8 +128,11 @@ describe("deliverPendingWebhooks — retries", () => {
     const args = markFailed.mock.calls[0][0];
     expect(args.deliveryStatus).toBe("PENDING");
     expect(args.lastError).toBe("HTTP 500");
-    // attempt 3 -> 2^2 = 4 minutes (epoch ms)
-    expect(args.nextAttemptAt - NOW.getTime()).toBe(4 * 60_000);
+    // attempt 3 -> base 2^2 = 4 minutes, jittered to 50–100% of base (R-9.6 / T-23).
+    const base = 4 * 60_000;
+    const delay = args.nextAttemptAt - NOW.getTime();
+    expect(delay).toBeGreaterThanOrEqual(base * 0.5);
+    expect(delay).toBeLessThanOrEqual(base);
   });
 
   it("does not follow redirects — a 3xx is a failed delivery, never an internal hop", async () => {

@@ -34,6 +34,11 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 
+# Supply-chain hardening (POLICY.md R-6.7): don't adopt a dependency version until it has
+# been public for ≥24h (1440 min) — mitigates compromised just-published releases. Only
+# affects resolution/updates; `--frozen-lockfile` installs are unaffected.
+minimumReleaseAge: 1440
+
 # Packages excluded from the minimum-release-age gate (first-party pinned versions we
 # adopt immediately).
 minimumReleaseAgeExclude:

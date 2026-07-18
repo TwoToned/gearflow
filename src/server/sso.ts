@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -178,7 +179,10 @@ export async function patchProviderOidcConfig(
       try {
         const issuer = config.issuer || provider.issuer;
         const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
-        const res = await fetch(discoveryUrl);
+        // Cache policy (R-9.9): no-cache — fetched once per SSO-config save (not a hot
+        // path). OIDC discovery docs are cacheable (respect their Cache-Control) if this
+        // ever moves onto a request path.
+        const res = await fetchWithTimeout(discoveryUrl);
         const disc = await res.json();
         config.authorizationEndpoint = disc.authorization_endpoint;
         config.tokenEndpoint = disc.token_endpoint;

@@ -30,7 +30,7 @@ jobs:
           retention-days: 30
 
   license:
-    name: License check (advisory)
+    name: License check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -45,10 +45,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Advisory deny-list check for copyleft/non-commercial licenses in prod deps.
-      # Flip to blocking (remove continue-on-error) once the current tree is confirmed clean.
+      # Blocking deny-list check for copyleft/non-commercial licenses in prod deps
+      # (tree confirmed clean; the check only fails on a genuinely denied license).
       - name: Check licenses (deny GPL/AGPL/SSPL/non-commercial)
-        continue-on-error: true
         run: |
           pnpm licenses list --prod --json > licenses.json || echo '{}' > licenses.json
           node -e '

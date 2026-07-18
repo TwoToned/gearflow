@@ -1,5 +1,9 @@
 import { Resend } from "resend";
+import { z } from "zod";
 import { env } from "@/env";
+
+// Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
+const resendSendResponseSchema = z.object({ id: z.string().min(1) });
 
 // Lazily construct the Resend client. Building it at module scope throws
 // "Missing API key" when RESEND_API_KEY is unset, which breaks `next build`
@@ -68,7 +72,11 @@ export async function sendEmail({
     throw new Error(`Failed to send email: ${error.message}`);
   }
 
-  return data;
+  const parsed = resendSendResponseSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(`Unexpected Resend response: ${parsed.error.message}`);
+  }
+  return parsed.data;
 }
 
 export function invitationEmail({

@@ -5,6 +5,10 @@ const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Correlation id for log/error tracing (POLICY.md R-8.9.5): reuse an inbound
+  // x-request-id or mint one; forwarded to server code and returned to the client.
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
   // CVE-2025-29927: Strip x-middleware-subrequest header to prevent middleware bypass
   if (request.headers.has("x-middleware-subrequest")) {
     return new NextResponse(null, { status: 403 });
@@ -44,7 +48,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const response = NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set("x-request-id", requestId);
   addSecurityHeaders(response);
   return response;
 }

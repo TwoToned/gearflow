@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { z } from "zod";
 import { env } from "@/env";
+import { logger } from "@/lib/logger";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
 const resendSendResponseSchema = z.object({ id: z.string().min(1) });
@@ -43,11 +44,11 @@ export async function sendEmail({
 }) {
   if (!env.RESEND_API_KEY || env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
     if (process.env.NODE_ENV === "development") {
-      console.log(`[Email] Would send to ${to}: ${subject}`);
-      console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
-      if (attachments?.length) {
-        console.log(`[Email] Attachments: ${attachments.map((a) => a.filename).join(", ")}`);
-      }
+      // Dev-mode: don't log the recipient address (PII, R-8.12.4).
+      logger.info("[Email] dev-mode — not sent", {
+        subject,
+        attachments: attachments?.map((a) => a.filename),
+      });
     }
     return { id: "dev-mock" };
   }
@@ -68,7 +69,7 @@ export async function sendEmail({
   });
 
   if (error) {
-    console.error("[Email] Send failed:", error);
+    logger.error("[Email] send failed", { error: error.message });
     throw new Error(`Failed to send email: ${error.message}`);
   }
 

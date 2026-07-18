@@ -27,7 +27,10 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const LEASE_MS = 60_000;
 
 function backoffMs(attempts: number): number {
-  return 2 ** (attempts - 1) * 60_000;
+  // Exponential backoff with jitter (POLICY.md R-9.6 / T-23) — spread retries over
+  // 50–100% of the base interval so concurrent failures don't retry in lockstep.
+  const base = 2 ** (attempts - 1) * 60_000;
+  return Math.round(base * (0.5 + Math.random() * 0.5));
 }
 
 export interface DeliveryOutcome {

@@ -1,4 +1,5 @@
 import { getConvexClient } from "@/lib/convex-client";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -39,7 +40,7 @@ export async function uploadToS3(
 ): Promise<UploadResult> {
   const convex = await getConvexClient();
   const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {});
-  const res = await fetch(uploadUrl, {
+  const res = await fetchWithTimeout(uploadUrl, {
     method: "POST",
     headers: { "Content-Type": options.mimeType },
     // Buffer isn't in the DOM BodyInit types; a plain Uint8Array view is.
@@ -102,7 +103,10 @@ export async function getFileAsDataUri(proxyUrl: string): Promise<string | null>
   const info = await getServeInfo(key);
   if (!info) return null;
   try {
-    const res = await fetch(info.url);
+    // Cache policy (R-9.9): no-cache — called rarely (data-URI generation, e.g. PDF
+    // embedding), not a hot path. File bytes are immutable per storageId, so a TTL
+    // cache keyed on storageId is safe to add here if this ever becomes frequent.
+    const res = await fetchWithTimeout(info.url);
     if (!res.ok) return null;
     const bytes = Buffer.from(await res.arrayBuffer());
     const contentType = info.contentType || "image/png";

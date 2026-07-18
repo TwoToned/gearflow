@@ -287,7 +287,7 @@ overrides and project-specific (§13B) values:
 
 | Threshold | Value | Rationale |
 |---|---|---|
-| T-5 Coverage | **70%** (default 80%) | Current baseline over `src/lib/**`; ratcheting toward 80% — not yet CI-gated. |
+| T-5 Coverage | **48% floor** (default 80%) | Honest current baseline (~49–50%) over the declared scope, **enforced in CI as a ratchet** (`test:coverage`); climbing toward 80%. |
 | T-9 Interactive query latency | **default** (p95 < 100 ms; > 1 s = incident) | Accept the §13 default for interactive request paths. |
 | T-P1 Audit-log retention | **2 years** | Activity log (`activityLogs`) retained 24 months for operational/dispute history. |
 | T-P2 PII retention | **Active relationship + 12 months** ⚠ *provisional — owner/legal to confirm* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |

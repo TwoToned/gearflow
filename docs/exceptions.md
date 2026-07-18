@@ -11,11 +11,10 @@ This is **not** the place for:
 - **Budget overrides** → register in the README budget table (R-0.4).
 - **Permanent categorical carve-outs** (generated/vendored code) → tool-config exclusions (R-0.5).
 
-> **Status: empty.** No exceptions are currently registered. The open findings from the
-> baseline audit (`docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`) are being
-> remediated directly, not exceptioned. If a finding needs to be deferred rather than fixed,
-> add a row below.
+> Findings from the baseline audit (`docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`)
+> are remediated directly wherever possible; the rows below are the deferrals that need a
+> deliberate, dated decision rather than a code fix.
 
 | Rule ID | Reason | Scope | Owner | Expiry |
 |---------|--------|-------|-------|--------|
-| _(none)_ | | | | |
+| R-8.1.7 | RVLT brand red (`--red` `#d8353b`) sits at ~4.41:1 against white on the primary CTA (below the 4.5:1 WCAG-AA floor), and worse for red-on-dark text. The brand palette is **accepted as-is** per DESIGN.md rather than re-toned; `color-contrast` is baselined in the axe gates (`e2e/a11y.spec.ts`, `e2e/harness-a11y.spec.ts`) so they stay deterministic and enforce every other WCAG A/AA rule. | `color-contrast` rule only, on the axe a11y gates | Jayden (design) | 2026-10-18 |

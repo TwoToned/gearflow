@@ -151,10 +151,9 @@ jobs:
           retention-days: 7
 
   hygiene:
-    # Hygiene gates. The dependency vulnerability scan (R-6.6) is BLOCKING — the tree
-    # is clean at high+. The dead-code (R-4.2) and secret (R-7.3) scans start advisory
-    # (continue-on-error) so they surface findings without failing CI; flip them blocking
-    # once the pre-existing burn-down is cleared. NOT in build's `needs`.
+    # Hygiene gates. BLOCKING: dependency vuln scan (R-6.6), secret scan (R-7.3),
+    # import-cycle (R-3.5), any-ratchet (R-8.2.2). Dead-code (Knip, R-4.2) stays
+    # advisory (continue-on-error) until its burn-down clears. NOT in build's `needs`.
     name: Hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -192,9 +191,8 @@ jobs:
             | tar -xz gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
 
-      - name: Secret scan (gitleaks, advisory)
+      - name: Secret scan (gitleaks)
         run: gitleaks detect --source . --no-git --redact -c .gitleaks.toml
-        continue-on-error: true
 
   build:
     name: Build

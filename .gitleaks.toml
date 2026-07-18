@@ -14,4 +14,9 @@ paths = [
   '''.*/__tests__/.*''',
   '''.*\.test\.(ts|tsx)$''',
   '''pnpm-lock\.yaml$''',
+  # Build/generated artifacts (gitignored; vendored crypto libs ship test keys).
+  '''\.next/.*''',
+  '''(^|/)(dist|build|coverage|playwright-report|test-results)/.*''',
+  '''sbom\.cyclonedx\.json$''',
+  '''src/generated/.*''',
 ]

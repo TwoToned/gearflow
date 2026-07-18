@@ -1,0 +1,8 @@
+# Secret scan on staged changes (POLICY.md R-7.3). Skips gracefully if gitleaks
+# isn't installed locally — CI enforces it as a blocking gate regardless.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact -c .gitleaks.toml
+else
+  echo "⚠ gitleaks not installed — skipping local secret scan (CI enforces it)."
+  echo "  Install: https://github.com/gitleaks/gitleaks#installing"
+fi

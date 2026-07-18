@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireSession } from "@/lib/auth-server";
+import { readValidatedBody } from "@/lib/api-validation";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { uploadToS3, deleteFromS3, ensureBucket, storageKeyFromUrl } from "@/lib/storage";
 import { getOrgContext } from "@/lib/org-context";
@@ -111,11 +113,12 @@ export async function DELETE(request: NextRequest) {
   const { organizationId } = await getOrgContext();
 
   try {
-    const { crewMemberId } = await request.json();
-
-    if (!crewMemberId) {
-      return NextResponse.json({ error: "No crew member ID provided" }, { status: 400 });
-    }
+    const parsed = await readValidatedBody(
+      request,
+      z.object({ crewMemberId: z.string().min(1) }),
+    );
+    if (!parsed.ok) return parsed.response;
+    const { crewMemberId } = parsed.data;
 
     const member = await getCrewMemberById(crewMemberId);
     if (!member || member.organizationId !== organizationId) {

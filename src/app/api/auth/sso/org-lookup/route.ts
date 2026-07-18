@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { readValidatedBody } from "@/lib/api-validation";
 
 // Simple in-memory rate limiter: 5 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -24,17 +26,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  let body: { email?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  const parsed = await readValidatedBody(
+    request,
+    z.object({ email: z.string().email() }),
+  );
+  if (!parsed.ok) return parsed.response;
 
-  const email = body.email?.toLowerCase()?.trim();
-  if (!email || !email.includes("@")) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
-  }
+  const email = parsed.data.email.toLowerCase().trim();
 
   const domain = email.split("@")[1];
 

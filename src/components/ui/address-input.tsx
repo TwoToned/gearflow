@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { z } from "zod";
 import { MapPin } from "lucide-react";
 import { useMapsLibrary } from "@/lib/maps-sdk";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,14 @@ import {
   MIN_QUERY_LENGTH,
   type PlaceResult,
 } from "@/lib/address-autocomplete";
+
+// Runtime shape of the Google Places result we consume (R-8.10.3).
+const placeResultSchema = z.object({
+  address: z.string().min(1),
+  latitude: z.number().finite(),
+  longitude: z.number().finite(),
+  placeId: z.string().min(1),
+});
 
 interface Prediction {
   placeId: string;
@@ -117,20 +126,26 @@ export function AddressInput({
 
       const loc = place.location;
       if (loc) {
-        const address = place.formattedAddress || prediction.fullText;
-        const result: PlaceResult = {
-          address,
+        // Validate the Google Places response before it flows into the app
+        // (POLICY.md R-8.10.3 — vendor responses are untrusted input).
+        const parsed = placeResultSchema.safeParse({
+          address: place.formattedAddress || prediction.fullText,
           latitude: loc.lat(),
           longitude: loc.lng(),
           placeId: prediction.placeId,
-        };
-        onChange(address);
-        setIsGeocoded(true);
-        setPredictions([]);
-        setIsOpen(false);
-        setActiveIndex(-1);
-        onPlaceSelect?.(result);
+        });
+        if (parsed.success) {
+          onChange(parsed.data.address);
+          setIsGeocoded(true);
+          setPredictions([]);
+          setIsOpen(false);
+          setActiveIndex(-1);
+          onPlaceSelect?.(parsed.data);
+          return;
+        }
       }
+      // No valid location → fall through to the text-only fallback below.
+      throw new Error("no valid place location");
     } catch {
       // Fallback: use the prediction text without coordinates
       onChange(prediction.fullText);

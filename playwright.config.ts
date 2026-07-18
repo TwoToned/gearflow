@@ -17,6 +17,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
+  // Flaky-test quarantine (POLICY.md R-8.8.4): tag a flaky test `@quarantine` to
+  // exclude it from every automated run (blocking suites stay green) while it's
+  // fixed. Each quarantined test needs an owner + ticket + deadline, fixed or
+  // deleted within a sprint; max quarantine size is T-P5 (10). Run the quarantined
+  // set manually to work on it: `pnpm test:e2e --grep @quarantine`.
+  grepInvert: /@quarantine/,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000",
     trace: "on-first-retry",

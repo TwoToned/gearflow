@@ -125,6 +125,33 @@ const eslintConfig = [
     },
   },
   {
+    // No hardcoded color literals in UI components — use design tokens (POLICY.md
+    // R-8.7.1) so a brand-color change is a one-line diff. Excludes legitimate
+    // non-CSS contexts: canvas (favicon), browser theme-color meta, the brand-default
+    // config constants themselves, Google Maps SDK pin props, and server-rendered HTML.
+    files: ["src/components/**/*.tsx", "src/app/**/*.tsx"],
+    ignores: [
+      "src/components/layout/dynamic-favicon.tsx",
+      "src/app/layout.tsx",
+      "src/components/settings/branding-settings.tsx",
+      "src/components/ui/address-map-inner.tsx",
+      "src/app/api/**",
+      "**/*.test.tsx",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/^#(?:[0-9a-fA-F]{3,4}){1,2}$/]",
+          message:
+            "Hardcoded color literal — use a design token (Tailwind class or var(--…)) per R-8.7.1.",
+        },
+      ],
+    },
+  },
+  {
     // Vendor SDKs must be imported only from their adapter module (POLICY.md R-8.10.1):
     // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
     // (Convex — two runtimes, one adapter each). Sentry is exempt: Next dictates its

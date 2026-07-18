@@ -92,6 +92,7 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ### Prerequisites
 
 - **Node.js 20+**
+- **pnpm** (this repo is pnpm-only — a committed `pnpm-lock.yaml` is the single lockfile)
 - **Docker** (recommended — for PostgreSQL) or bring your own Postgres
 
 ### 1. Clone & install
@@ -99,7 +100,7 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ```bash
 git clone https://github.com/RVLT-Labs/rvlt-flow.git
 cd rvlt-flow
-npm install
+pnpm install
 ```
 
 ### 2. Start the database & file storage
@@ -158,20 +159,20 @@ domain data (assets, projects, warehouse, etc.) — Postgres only holds Better
 Auth and the audit log. Create a Convex project, then push the schema/functions:
 
 ```bash
-npx convex dev --once
+pnpm exec convex dev --once
 ```
 
 ### 5. Set up Postgres (Better Auth + activity log)
 
 ```bash
-npx prisma migrate deploy
-npx prisma generate
+pnpm exec prisma migrate deploy
+pnpm exec prisma generate
 ```
 
 ### 6. Launch
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open [localhost:3000](http://localhost:3000) and register your first account.
@@ -215,13 +216,16 @@ http://localhost:3000/register/admin?token=pick-a-secret-token
 ## Development Commands
 
 ```bash
-npm run dev                              # Dev server with Turbopack
-npm run build                            # Production build + type check
-npm run lint                             # ESLint
+pnpm dev                                  # Dev server with Turbopack
+pnpm build                                # Production build + type check
+pnpm lint                                 # ESLint
+pnpm test                                 # Run unit tests (Vitest)
+pnpm test:coverage                        # Unit tests with coverage report
+pnpm test:integration                     # Integration tests
 
-npx prisma migrate dev --name <name>     # Create + apply a migration
-npx prisma generate                      # Regenerate Prisma client
-npx prisma studio                        # Browse your data in the browser
+pnpm exec prisma migrate dev --name <name> # Create + apply a migration
+pnpm exec prisma generate                 # Regenerate Prisma client
+pnpm exec prisma studio                   # Browse your data in the browser
 ```
 
 ### Project Structure
@@ -253,6 +257,41 @@ src/
 │                          # (auth, SSO, webhooks, site admin — not domain CRUD)
 └── generated/             # Prisma client (auto-generated, gitignored)
 ```
+
+---
+
+## Governance & Documentation
+
+This repository is governed by [`POLICY.md`](./POLICY.md) — the Codebase Management &
+Hygiene Policy (RFC-2119 rules, threshold registry, audit procedure).
+
+- **Policy profile: `WEB`** (R-0.1) — production web/app service. No payment provider,
+  so §8.5 Billing is N/A.
+- **Contributing:** see [`CONTRIBUTING.md`](./CONTRIBUTING.md) — toolchain, branching,
+  commit rules, and the declared naming conventions (R-3.9).
+- **Exceptions:** temporary, expiring deviations are recorded in
+  [`docs/exceptions.md`](./docs/exceptions.md) (§15).
+- **Audits:** compliance audits live in [`docs/audits/`](./docs/audits/) (R-14.2). The
+  current baseline is `docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`.
+
+**Where further docs live:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) (overview + links),
+[`FEATUREDOCS/`](./FEATUREDOCS/) (per-feature docs), [`CLAUDE.md`](./CLAUDE.md) (agent/dev
+conventions), [`DESIGN.md`](./DESIGN.md) (design system), and [`docs/`](./docs/) (designs,
+roadmap, runbooks, audits).
+
+### Budget registry (R-0.4)
+
+This repo **accepts the POLICY.md §13 threshold defaults**, with the following registered
+overrides and project-specific (§13B) values:
+
+| Threshold | Value | Rationale |
+|---|---|---|
+| T-5 Coverage | **70%** (default 80%) | Current baseline over `src/lib/**`; ratcheting toward 80% — not yet CI-gated. |
+| T-P3 Backup retention | **90 days** | Daily Convex export retained 90 days (`.github/workflows/convex-backup.yml`). |
+
+Other §13B project thresholds (T-P1 audit-log retention, T-P2 PII retention, T-P4 cost
+budgets, T-P6 endpoint SLOs, T-P7 queue lag) are **not yet registered** — tracked as
+findings in the baseline audit.
 
 ---
 

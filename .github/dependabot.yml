@@ -1,0 +1,41 @@
+# Dependabot — automated dependency updates (POLICY.md R-6.5).
+# Routine updates batched weekly (≤14 days, T-12); security patches are raised
+# immediately by GitHub regardless of this schedule.
+version: 2
+updates:
+  # JavaScript / pnpm dependencies
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    # Batch routine bumps into a few PRs instead of one-per-dep (T-12).
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+      development-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+
+  # GitHub Actions — keeps CI/deploy workflow actions current (supports R-6.7
+  # digest pinning as it bumps).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ci(deps)

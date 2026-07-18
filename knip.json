@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "convex/**/*.ts!",
+    "scripts/**/*.{ts,cjs,mjs}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "convex/**/*.ts",
+    "scripts/**/*.{ts,cjs,mjs}"
+  ]
+}

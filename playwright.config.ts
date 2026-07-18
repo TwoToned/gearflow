@@ -3,12 +3,12 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright E2E test configuration.
  *
- * Currently a scaffold — no E2E tests written yet.
- * See TODOS.md for the E2E test expansion plan.
+ * Critical flows this suite must cover: docs/critical-flows.md (POLICY.md R-8.8.3).
+ * Coverage is currently partial (login-page smoke); see that file for the plan.
  *
  * Usage:
- *   npm run test:e2e        # Run E2E tests headless
- *   npm run test:e2e:ui     # Run with Playwright UI
+ *   pnpm test:e2e        # Run E2E tests headless
+ *   pnpm test:e2e:ui     # Run with Playwright UI
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -43,7 +43,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    command: "pnpm dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

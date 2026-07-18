@@ -1,5 +1,48 @@
 # CLAUDE.md
 
+## ⚖️ Governing policy — POLICY.md is the bible
+
+**[`POLICY.md`](./POLICY.md)** (Codebase Management & Hygiene Policy) is the **authoritative
+standard for this repo**. It uses RFC-2119 language (MUST / SHOULD / MAY) and numbered
+rules (`R-<section>.<n>`, thresholds `T-*`). When anything in this file, a FEATUREDOC, or a
+review comment conflicts with POLICY.md, **POLICY.md wins** — flag the conflict, don't
+silently diverge.
+
+**Profile: `WEB`** (production web/app service — deployed at flow.rvlt.app). This binds the
+R-0.2 applicability matrix. Active §8 categories: **8.1 Frontend, 8.2 Language/type, 8.3
+Backend/DB, 8.4 Auth, 8.6 Forms, 8.7 UI/styling, 8.8 Testing, 8.9 Observability, 8.10
+Integrations, 8.11 Web security, 8.12 Privacy.** **§8.5 Billing = N/A** (no payment provider;
+pricing/quotes are internal, not processed payments).
+
+**Two modes (POLICY.md §0):**
+- **BUILD mode** — writing code (you or a human): every *applicable* `MUST` is a **hard,
+  pre-emission constraint**. Code that violates an applicable MUST is defective and may not
+  merge, even if it works (R-14.4). On conflict, restructure to comply or surface it and
+  request a §15 exception — **never silently violate**.
+- **AUDIT mode** — checking the repo: walk every applicable rule, record
+  PASS / FAIL / ADVISORY / N/A / EXCEPTION with cited evidence. Reports land in
+  **`docs/audits/`** (R-14.2).
+
+**Rules that bite most often here** (not a substitute for reading POLICY.md):
+- **DRY / single source of truth** (R-3.1, R-8.2.4, R-8.6.1): one authoritative definition per
+  business rule, data shape, permission, price, token. A second hand-maintained copy is a
+  defect even if in sync — matches the PDF-consumer + estimator-sync footguns below.
+- **Server is the authority** (R-9.3, R-8.4.2/8.4.3, R-8.5.3): authz, prices, validation are
+  server-side; client is UX only. No monetary amount originates from the client.
+- **Trust boundaries schema-validated** (R-8.2.3, R-8.6.2): every HTTP body / form / webhook /
+  env / vendor response parsed through Zod with the type inferred from the schema.
+- **Cross-tenant reads** (see the `by_cuid`/`organizationId` note below) are R-8.4.3 IDOR
+  Criticals — every doc fetched by global index MUST be org-checked.
+- **Docs update in the same PR** (R-5.2/R-5.3/R-5.8): behaviour/interface changes update the
+  affected FEATUREDOCS **and this file** in the same PR; stale docs are defects equal to stale
+  code. This is already project law (see "Feature Documentation" below) — POLICY.md makes it a
+  gate.
+- **Deviations need a written, expiring exception** (§15) in `docs/exceptions.md`. "We don't do
+  X" is not an exception; a scoped, owned, dated one is.
+
+**Repo-specific budgets & thresholds** (R-0.4) and the exception register (R-15.2) live in
+`docs/exceptions.md` / a threshold table once registered; until then the §13 defaults apply.
+
 ## Documentation Structure
 
 - **`ARCHITECTURE.md`** — High-level overview with links to all feature docs
@@ -24,16 +67,20 @@ Every feature change **must** update the relevant `FEATUREDOCS/` file. If the fe
 
 ## Commands
 
+**This repo is pnpm-only** (single committed `pnpm-lock.yaml`; CI installs `--frozen-lockfile`).
+Use `pnpm` / `pnpm exec` — never `npm`/`npx` (npm would drift the lockfile). See also the Convex
+note below: **always `pnpm exec convex`, never `npx convex`.**
+
 ```bash
-npm run dev          # Dev server (Turbopack, Next.js 16 default)
-npm run build        # Production build + type check
-npm start            # Start production server
-npm run lint         # ESLint
-npm test             # Run all unit tests
-npm run test:watch   # Run tests in watch mode
-npm run test:coverage # Run tests with coverage report
-npx prisma generate  # Regenerate Prisma client (after schema changes)
-npx prisma migrate dev --name <name>  # Create + apply migration
+pnpm dev             # Dev server (Turbopack, Next.js 16 default)
+pnpm build           # Production build + type check
+pnpm start           # Start production server
+pnpm lint            # ESLint
+pnpm test            # Run all unit tests
+pnpm test:watch      # Run tests in watch mode
+pnpm test:coverage   # Run tests with coverage report
+pnpm exec prisma generate  # Regenerate Prisma client (after schema changes)
+pnpm exec prisma migrate dev --name <name>  # Create + apply migration
 ```
 
 ### Worktree Setup
@@ -45,13 +92,13 @@ Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this
 cp /path/to/gearflow/.env .
 
 # Install dependencies
-npm install --legacy-peer-deps
+pnpm install
 
 # Generate Prisma client
-npx prisma generate
+pnpm exec prisma generate
 ```
 
-After this, `npm run dev`, `npm test`, and `npm run build` will all work.
+After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
 ### Convex Dev in Worktrees
 
@@ -77,7 +124,7 @@ pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
 
 This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
 which the dev server picks up automatically. Run it in a separate terminal alongside
-`npm run dev`. The preview deployment name must not contain `/` — for worktree branches
+`pnpm dev`. The preview deployment name must not contain `/` — for worktree branches
 like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
 
 `CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
@@ -86,7 +133,7 @@ Cloud project deploy key.
 ### DB Setup (first time)
 ```bash
 # Ensure DATABASE_URL is set in .env, then:
-npx prisma migrate dev   # Apply all migrations + generate client
+pnpm exec prisma migrate dev   # Apply all migrations + generate client
 ```
 
 ## Environment Variables
@@ -188,7 +235,7 @@ be checked against `organizationId`, or you have a cross-tenant read.
 
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
-- After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev
+- After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev
 - **Bulk-data migrations MUST end with `ANALYZE "<table>";`.** A large
   `INSERT`/`UPDATE`/`DELETE` leaves the planner on stale row-count statistics
   until autovacuum eventually catches up; until then it can pick pathological
@@ -365,6 +412,6 @@ how to correctly use Convex APIs and patterns. The file contains rules that
 override what you may have learned about Convex from training data.
 
 Convex agent skills for common tasks can be installed by running
-`npx convex ai-files install`.
+`pnpm exec convex ai-files install`.
 
 <!-- convex-ai-end -->

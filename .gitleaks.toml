@@ -1,0 +1,17 @@
+# Gitleaks config (POLICY.md R-7.3 secret scanning).
+# Extends the bundled default ruleset; allowlists known non-secret paths so the
+# scan stays deterministic on the current tree (the baseline audit confirmed no
+# active secret in tracked content).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendored third-party skills, examples, and test fixtures (known non-secrets)"
+paths = [
+  '''\.claude/skills/gstack/.*''',
+  '''.*\.example$''',
+  '''.*secret-vault\.test\.ts$''',
+  '''.*/__tests__/.*''',
+  '''.*\.test\.(ts|tsx)$''',
+  '''pnpm-lock\.yaml$''',
+]

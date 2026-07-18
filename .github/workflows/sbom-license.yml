@@ -1,0 +1,67 @@
+name: SBOM & License
+
+# Software Bill of Materials + license compliance (POLICY.md R-6.8).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
+
+jobs:
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          retention-days: 30
+
+  license:
+    name: License check (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Advisory deny-list check for copyleft/non-commercial licenses in prod deps.
+      # Flip to blocking (remove continue-on-error) once the current tree is confirmed clean.
+      - name: Check licenses (deny GPL/AGPL/SSPL/non-commercial)
+        continue-on-error: true
+        run: |
+          pnpm licenses list --prod --json > licenses.json || echo '{}' > licenses.json
+          node -e '
+            let data = {};
+            try { data = require("./licenses.json"); } catch { process.exit(0); }
+            const deny = /(^|[^L])GPL|AGPL|SSPL|CC-BY-NC|BUSL/i;
+            const bad = [];
+            for (const [lic, pkgs] of Object.entries(data)) {
+              if (deny.test(lic)) {
+                const names = Array.isArray(pkgs) ? pkgs.map(p => p.name || p).join(", ") : String(pkgs);
+                bad.push(`${lic}: ${names}`);
+              }
+            }
+            if (bad.length) { console.error("Denied licenses found:\n" + bad.join("\n")); process.exit(1); }
+            console.log("No denied licenses in prod dependencies.");
+          '

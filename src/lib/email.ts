@@ -80,79 +80,11 @@ export async function sendEmail({
   return parsed.data;
 }
 
-export function invitationEmail({
-  orgName,
-  inviterName,
-  role,
-  acceptUrl,
-}: {
-  orgName: string;
-  inviterName: string;
-  role: string;
-  acceptUrl: string;
-}) {
-  return {
-    subject: `You've been invited to ${orgName} on RVLT Flow`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>You've been invited to join ${orgName}</h2>
-        <p>${inviterName} has invited you to join <strong>${orgName}</strong> as a <strong>${role}</strong> on RVLT Flow.</p>
-        <p>
-          <a href="${acceptUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Accept Invitation
-          </a>
-        </p>
-        <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
-      </div>
-    `,
-  };
-}
-
-export function passwordResetEmail({ resetUrl }: { resetUrl: string }) {
-  return {
-    subject: "Reset your RVLT Flow password",
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Password Reset Request</h2>
-        <p>Click the button below to reset your password.</p>
-        <p>
-          <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Reset Password
-          </a>
-        </p>
-        <p style="color: #666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
-      </div>
-    `,
-  };
-}
-
-export function roleChangedEmail({
-  orgName,
-  newRole,
-}: {
-  orgName: string;
-  newRole: string;
-}) {
-  return {
-    subject: `Your role in ${orgName} has been updated`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Role Update</h2>
-        <p>Your role in <strong>${orgName}</strong> has been changed to <strong>${newRole}</strong>.</p>
-      </div>
-    `,
-  };
-}
-
-export function removedFromOrgEmail({ orgName }: { orgName: string }) {
-  return {
-    subject: `You've been removed from ${orgName}`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Organization Access Removed</h2>
-        <p>You have been removed from <strong>${orgName}</strong> on RVLT Flow.</p>
-        <p>If you believe this is a mistake, please contact the organization admin.</p>
-      </div>
-    `,
-  };
-}
+// Email templates now live in `@/lib/email-templates` (single source, R-8.10.4).
+// Re-exported here for back-compat with existing `@/lib/email` importers.
+export {
+  invitationEmail,
+  passwordResetEmail,
+  roleChangedEmail,
+  removedFromOrgEmail,
+} from "@/lib/email-templates";

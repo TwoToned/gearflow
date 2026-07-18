@@ -2,6 +2,7 @@
  * Email templates for crew assignment communication.
  */
 
+import { emailShell } from "@/lib/email-layout";
 import { phaseLabels } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
 
@@ -55,13 +56,11 @@ const buttonStyle = (bg: string) =>
   `display:inline-block;padding:12px 24px;background-color:${bg};color:white;text-decoration:none;border-radius:6px;font-weight:600;margin-right:8px;`;
 
 function emailWrapper(content: string, orgName: string): string {
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-      ${content}
+  return emailShell(
+    `${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-      <p style="color:#999;font-size:12px;">Sent by ${orgName} via RVLT Flow</p>
-    </div>
-  `;
+      <p style="color:#999;font-size:12px;">Sent by ${orgName} via RVLT Flow</p>`,
+  );
 }
 
 export function crewOfferEmail(

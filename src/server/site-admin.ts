@@ -15,6 +15,7 @@ import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
 import { sendEmail } from "@/lib/email";
+import { siteAdminInvitationEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { env } from "@/env";
@@ -890,20 +891,7 @@ export async function adminInviteUser(email: string) {
 
   await sendEmail({
     to: normalizedEmail,
-    subject: `You've been invited to join ${pName}`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>You've been invited to join ${pName}</h2>
-        <p>A site administrator has invited you to create an account on ${pName}.</p>
-        <p>Click the button below to create your account.</p>
-        <p>
-          <a href="${registerUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Create Account
-          </a>
-        </p>
-        <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
-      </div>
-    `,
+    ...siteAdminInvitationEmail({ registerUrl, platformName: pName }),
   });
 
   await logActivity({

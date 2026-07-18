@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
+import { invitationRegisterEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorById, removeMemberMirror } from "@/lib/member-mirror";
@@ -270,20 +271,12 @@ export async function addMemberByEmail(email: string, role: string) {
 
   await sendEmail({
     to: normalizedEmail,
-    subject: `You've been invited to ${org?.name || "an organization"} on ${pName}`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>You've been invited to join ${org?.name || "an organization"}</h2>
-        <p>You've been invited to join <strong>${org?.name}</strong> as a <strong>${role}</strong> on ${pName}.</p>
-        <p>Click the button below to create your account and accept the invitation.</p>
-        <p>
-          <a href="${registerUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Create Account &amp; Join
-          </a>
-        </p>
-        <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
-      </div>
-    `,
+    ...invitationRegisterEmail({
+      orgName: org?.name || "an organization",
+      role,
+      registerUrl,
+      platformName: pName,
+    }),
   });
 
   await logActivity({

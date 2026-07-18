@@ -4,9 +4,9 @@ WORKDIR /app
 # curl: required by Coolify's container health check (slim has neither curl nor wget)
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm@9
+RUN npm install -g pnpm@11.7.0
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 

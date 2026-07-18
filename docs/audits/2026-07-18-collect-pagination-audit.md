@@ -57,6 +57,17 @@ remaining are `listPage`, which collects the full org set of assets/records to p
 **in memory** — the exemplar conversion (paginate at the DB, then load only referenced
 enrichment) for a follow-up batch. Baseline: **249 → 237 → 230 → 208** (batch 2: config list()s + verified dashboard/counter aggregations marked).
 
+**⚠️ Architectural judgment (batches 4–5):** a large share of the org-wide reads are the
+app's **deliberate reactive full-org reads + server-side (in-memory) pagination**
+(`list`/`listPage`/`listGallery`/`listBoard` over assets/projects/crew/bulk, per
+`docs/designs/perf-convex-efficiency-2026-06.md`). Converting these means re-architecting
+reactivity (Convex `.paginate` + `usePaginatedQuery`) — a functional change out of scope for a
+hygiene pass — so they're marked as **reviewed, accepted R-9.8 tradeoffs**, not silently
+ignored. This is the honest residual R-9.8 exposure: if a single org's assets/projects grow
+large, those reactive reads are the priority to move to paginated reactivity. The burn-down
+still *converts* genuine waste (e.g. `myCrewMemberId` full-roster scan → `by_userId`;
+`locations.detail` full-org scans → `by_locationId`).
+
 **Remaining (~230), by queried table** — growable (convert client lists / counter-ise hot
 aggregations): `assets` 19, `models` 18, `projects` 17, `crewMembers` 14, `bulkAssets` 11,
 `crewAssignments` 9, `testTagRecords` 8, `maintenanceRecords` 5, `crewTimeEntries` 4,

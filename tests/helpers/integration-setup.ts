@@ -23,8 +23,12 @@ if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
 }
 
 // Dev Convex trusts service tokens whose issuer is this fixed preview origin.
-// Better Auth's jwt plugin uses BETTER_AUTH_URL as the `iss` claim.
-process.env.BETTER_AUTH_URL = "https://preview.lab.rvlt.app";
+// Better Auth's jwt plugin uses BETTER_AUTH_URL as the `iss` claim. Only force
+// it in Convex mode — the Postgres-only CI run (INTEGRATION_CONVEX unset) never
+// mints a service token, so it must not depend on this preview origin.
+if (process.env.INTEGRATION_CONVEX) {
+  process.env.BETTER_AUTH_URL = "https://preview.lab.rvlt.app";
+}
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

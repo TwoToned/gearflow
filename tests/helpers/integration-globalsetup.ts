@@ -2,8 +2,14 @@
  * Vitest GLOBAL setup for the integration suite (runs ONCE per `vitest run`,
  * before any worker/test file).
  *
- * Responsibility: make the Convex service-token trust chain work against the
- * shared DEV Convex deployment (`groovy-koala-475`).
+ * Two modes:
+ *   • Postgres-only (default, incl. CI): INTEGRATION_CONVEX unset → skip all of
+ *     the Convex trust setup below and return early. The Convex-dependent suites
+ *     self-skip in lockstep, so only the Postgres integration tests run.
+ *   • Convex (INTEGRATION_CONVEX=1, local dev): establish the service-token trust
+ *     chain against the shared DEV Convex deployment (`groovy-koala-475`).
+ *
+ * Convex trust chain (only when INTEGRATION_CONVEX=1):
  *
  * The trust chain:
  *   1. The integration runner points DATABASE_URL at the local `gearflow_test`
@@ -46,6 +52,21 @@ export default async function globalSetup(): Promise<void> {
       "[integration globalSetup] DATABASE_URL is not set — point it at gearflow_test.",
     );
   }
+
+  // Postgres-only mode (the default in CI): the Convex-trust chain below depends
+  // on a private dev Postgres (CONVEX_TRUST_DATABASE_URL) + the shared dev Convex
+  // deployment, which are not available to — and must not be exposed to — CI
+  // runners. When INTEGRATION_CONVEX is unset we skip the jwks copy entirely; the
+  // Convex-dependent suites self-skip in lockstep (describe.skipIf), so the
+  // Postgres-only integration tests still run as a reliable blocking gate.
+  if (!process.env.INTEGRATION_CONVEX) {
+    console.log(
+      "[integration globalSetup] INTEGRATION_CONVEX unset — Postgres-only mode; " +
+        "skipping Convex service-token trust setup.",
+    );
+    return;
+  }
+
   if (TEST_DB_URL === TRUST_DB_URL) {
     throw new Error(
       "[integration globalSetup] DATABASE_URL must NOT be the dev/prod Postgres — point it at the local gearflow_test DB.",
@@ -82,7 +103,6 @@ export default async function globalSetup(): Promise<void> {
           "expiresAt" = EXCLUDED."expiresAt"
       `;
     }
-    // eslint-disable-next-line no-console
     console.log(
       `[integration globalSetup] Copied ${rows.length} jwks row(s) into the test DB — Convex service-token trust is ready.`,
     );

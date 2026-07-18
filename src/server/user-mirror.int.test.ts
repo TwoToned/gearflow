@@ -14,7 +14,13 @@ import { api } from "../../convex/_generated/api";
 import { mirrorUserToConvex, removeUserFromConvex } from "@/lib/user-mirror";
 import { prisma } from "@/lib/prisma";
 
-describe("user-mirror — Better Auth user → Convex users", () => {
+// Requires a real Convex deployment + the service-token trust chain (see
+// integration-globalsetup.ts). Gated behind INTEGRATION_CONVEX=1 so the default
+// CI integration run (Postgres-only, no private dev infra) skips it — the same
+// opt-in pattern as the E2E_HARNESS-gated specs.
+describe.skipIf(!process.env.INTEGRATION_CONVEX)(
+  "user-mirror — Better Auth user → Convex users",
+  () => {
   beforeEach(async () => {
     await setupIntegrationTest();
   });
@@ -63,4 +69,5 @@ describe("user-mirror — Better Auth user → Convex users", () => {
     await removeUserFromConvex(user.id);
     expect(await convex.query(api.users.getById, { id: user.id })).toBeNull();
   });
-});
+  },
+);

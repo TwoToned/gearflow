@@ -1,0 +1,30 @@
+name: DORA metrics
+
+# Track the five DORA metrics at the project level (POLICY.md R-11.1), computed from
+# GitHub Actions deploy runs + git — no external platform. Results land in the run's
+# job summary each Monday (and on demand).
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  dora:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Compute DORA metrics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/dora-metrics.mjs | tee -a "$GITHUB_STEP_SUMMARY"

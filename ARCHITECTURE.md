@@ -15,15 +15,18 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Storage | Convex file storage (`_storage`), per-org access records |
 
 ## Commands
+
+This repo is pnpm-only — use `pnpm` / `pnpm exec`, never `npm`/`npx`.
+
 ```bash
-npm run dev          # Dev server (Turbopack)
-npm run build        # Production build + type check
-npm run lint         # ESLint
-npm test             # Run all unit tests
-npm run test:watch   # Run tests in watch mode
-npm run test:coverage # Run tests with coverage report
-npx prisma generate  # Regenerate Prisma client
-npx prisma migrate dev --name <name>  # Create + apply migration
+pnpm dev             # Dev server (Turbopack)
+pnpm build           # Production build + type check
+pnpm lint            # ESLint
+pnpm test            # Run all unit tests
+pnpm test:watch      # Run tests in watch mode
+pnpm test:coverage   # Run tests with coverage report
+pnpm exec prisma generate  # Regenerate Prisma client
+pnpm exec prisma migrate dev --name <name>  # Create + apply migration
 ```
 
 ## Feature Documentation

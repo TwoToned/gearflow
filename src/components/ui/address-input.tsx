@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MapPin } from "lucide-react";
-import { useMapsLibrary } from "@vis.gl/react-google-maps";
+import { useMapsLibrary } from "@/lib/maps-sdk";
 import { cn } from "@/lib/utils";
 import {
   DEBOUNCE_MS,

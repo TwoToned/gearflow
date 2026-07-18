@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Map, AdvancedMarker, Pin, InfoWindow, useMap } from "@vis.gl/react-google-maps";
+import { Map, AdvancedMarker, Pin, InfoWindow, useMap } from "@/lib/maps-sdk";
 import { ExternalLink } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";

@@ -124,6 +124,33 @@ const eslintConfig = [
       ],
     },
   },
+  {
+    // Vendor SDKs must be imported only from their adapter module (POLICY.md R-8.10.1):
+    // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
+    // (Convex — two runtimes, one adapter each). Sentry is exempt: Next dictates its
+    // config-file locations (sentry.*.config.ts / instrumentation*.ts), which are the
+    // sanctioned error-capture boundary (§8.9).
+    files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
+    ignores: ["src/lib/maps-sdk.ts", "src/lib/email.ts", "convex/emailActions.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@vis.gl/react-google-maps",
+              message: "Import maps primitives from @/lib/maps-sdk (R-8.10.1).",
+            },
+            {
+              name: "resend",
+              message:
+                "Use the email adapter (src/lib/email.ts or convex/emailActions.ts) (R-8.10.1).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

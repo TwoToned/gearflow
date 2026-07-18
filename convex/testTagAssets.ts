@@ -51,8 +51,11 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireService(ctx);
+    // Consumed only by background T&T reminder/report jobs that need the full per-org
+    // set to find overdue items — off the request hot path, not a client list.
     return await ctx.db
       .query("testTagAssets")
+      // r9.8-ok: background job full scan (see note above)
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .collect();
   },
@@ -190,7 +193,7 @@ export const listPage = query({
       ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
       ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: small bounded per-org config set
     ]);
     const recordCounts = new Map<string, number>();
     for (const r of records) recordCounts.set(r.testTagAssetId, (recordCounts.get(r.testTagAssetId) ?? 0) + 1);
@@ -264,6 +267,7 @@ export const detail = query({
     // Org-wide profile map so EACH record resolves its OWN testProfile (parity with the
     // old getTestTagAsset profileMap — a record tested under a since-changed profile must
     // still show that profile's name, not null).
+    // r9.8-ok: testProfiles is a small bounded per-org config set (a handful of profiles).
     const profiles = await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
     const profileById = new Map(profiles.map((p) => [p.id, p]));
     const resolvedProfile = item.testProfileId ? profileById.get(item.testProfileId) ?? null : null;
@@ -324,11 +328,13 @@ export const dashboardStats = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
+    // r9.8-ok: dashboard tallies aggregate over the full per-org set (counts/overdue
+    // lists need every row). Candidate to move onto sharded counters if it grows hot.
     const [items, records, orgAssets, orgBulk] = await Promise.all([
-      ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
+      ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
+      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
     ]);
     const active = items.filter((a) => a.isActive === true);
     const countBy = (s: string) => active.filter((a) => a.status === s).length;

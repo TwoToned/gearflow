@@ -37,12 +37,31 @@ list to a client.
    currently **249**). New unbounded org-wide reads can't land; as existing ones are
    bounded, lower the baseline. Wired into the `Hygiene` CI job (blocking).
 
-## Burn-down plan (guarded, not silent)
+## Burn-down (guarded, in progress)
 
-The 249 are frozen from growth by the ratchet. Burn them down table-by-table, highest-growth
-first — for each: if it's an **aggregation**, leave it (or move the rollup to a counter);
-if it's a **client list**, switch to `page`/`pageSize` (clamped via `clampPageSize`) or
-`collectCapped`, and update the consuming query/UI. Lower the baseline as each file clears.
-Priority order by current count: `testTagAssets` (14), `kits`/`categories`/`locations` (11
-each — several are small bounded sets, verify first), `assets` (10), `crewTimeEntries` (9),
-`crewAvailability`/`crewDashboard` (8), `suppliers` (8).
+**Ratchet refinements (batch 1):** the ratchet now (a) counts only reads narrowed by org
+**alone** — a compound `by_organizationId_x` with a second `.eq/.gt/.lt` is bounded by that
+entity and excluded — which drops the true hazard count from 249 to **237**; and (b) supports
+a **`r9.8-ok: <reason>`** justification marker (line-precise: on the `withIndex` line or the
+line directly above it). The ratchet tracks **unjustified** org-alone scans; **closing #625 =
+driving that to 0** (every org-alone `.collect()` is bounded/paginated or marked justified).
+
+**Definition of "justified":** an aggregation that needs the whole per-org set (dashboard
+tallies, counts), a small bounded-by-domain config set (test profiles, categories, crew roles,
+templates, locations), or a background/cron read off the request hot path. **Not** justified:
+a client-facing list that loads a growable table in full (assets, records, time entries…).
+
+**Batch 1 (this PR):** `testTagAssets.ts` triaged — 7 org-alone reads marked justified
+(dashboard aggregation ×4, small profile sets ×2, background reminder/report dump ×1); the 4
+remaining are `listPage`, which collects the full org set of assets/records to paginate
+**in memory** — the exemplar conversion (paginate at the DB, then load only referenced
+enrichment) for a follow-up batch. Baseline: **249 → 237 → 230**.
+
+**Remaining (~230), by queried table** — growable (convert client lists / counter-ise hot
+aggregations): `assets` 19, `models` 18, `projects` 17, `crewMembers` 14, `bulkAssets` 11,
+`crewAssignments` 9, `testTagRecords` 8, `maintenanceRecords` 5, `crewTimeEntries` 4,
+`checkRecords`/`projectLineItems` 2 … · likely-justified config/small sets (verify, then mark):
+`locations` 16, `crewRoles` 9, `categories` 8 (minus its `containerAssetSearch` asset scans),
+`kits` 6, `testProfiles`/`serviceTemplates`/templates/… Each site is classified individually
+(a file is never uniformly one bucket — e.g. `categories` mixes a small list with growable
+asset scans).

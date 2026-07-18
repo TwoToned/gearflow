@@ -55,7 +55,7 @@ a client-facing list that loads a growable table in full (assets, records, time 
 (dashboard aggregation ×4, small profile sets ×2, background reminder/report dump ×1); the 4
 remaining are `listPage`, which collects the full org set of assets/records to paginate
 **in memory** — the exemplar conversion (paginate at the DB, then load only referenced
-enrichment) for a follow-up batch. Baseline: **249 → 237 → 230**.
+enrichment) for a follow-up batch. Baseline: **249 → 237 → 230 → 208** (batch 2: config list()s + verified dashboard/counter aggregations marked).
 
 **Remaining (~230), by queried table** — growable (convert client lists / counter-ise hot
 aggregations): `assets` 19, `models` 18, `projects` 17, `crewMembers` 14, `bulkAssets` 11,

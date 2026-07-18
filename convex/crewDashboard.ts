@@ -22,10 +22,10 @@ const cmpStr = (a: string | null | undefined, b: string | null | undefined) => (
 /** The org's crew graph most dashboard reads need. */
 async function crewGraph(ctx: QueryCtx, orgId: string) {
   const [members, assignments, roles, projects] = await Promise.all([
-    ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
+    ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
+    ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
+    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
   ]);
   return {
     members, assignments,
@@ -62,9 +62,9 @@ export const stats = query({
   handler: async (ctx, { orgId, nowMs }) => {
     await requireOrgRead(ctx, orgId);
     const [members, assignments, entries] = await Promise.all([
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
+      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
+      ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation (counter candidate)
     ]);
     const weekAgo = nowMs - 7 * DAY;
     return {

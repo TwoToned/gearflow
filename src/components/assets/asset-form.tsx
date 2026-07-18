@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { AppImage } from "@/components/ui/app-image";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -419,10 +420,9 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           <div className="space-y-2 border-t border-line pt-3">
             <p className="t-overline text-faint">Preview</p>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
-              <div className="flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
+              <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {modelImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={modelImage} alt={modelLabel ?? "Asset"} className="h-full w-full object-cover" />
+                  <AppImage src={modelImage} alt={modelLabel ?? "Asset"} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
                 ) : (
                   <Package className="h-8 w-8 text-faint" strokeWidth={1.5} />
                 )}

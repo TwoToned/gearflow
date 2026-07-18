@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AppImage } from "@/components/ui/app-image";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -122,10 +123,9 @@ export function ModelForm({ initialData }: ModelFormProps) {
           <SmartFormRail eyebrow={isEditing ? "Editing" : "New model"} tip={helperTip} />
           <SmartFormPreview>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
-              <div className="flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
+              <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {previewImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previewImage} alt={previewName} className="h-full w-full object-cover" />
+                  <AppImage src={previewImage} alt={previewName} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
                 ) : (
                   <Package className="h-8 w-8 text-faint" strokeWidth={1.5} />
                 )}

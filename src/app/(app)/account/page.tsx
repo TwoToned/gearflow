@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { AppImage } from "@/components/ui/app-image";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -786,8 +787,7 @@ export default function AccountPage() {
               <div className="space-y-3">
                 {qrDataUrl && (
                   <div className="flex justify-center rounded-[var(--r)] bg-white p-4">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={qrDataUrl} alt="2FA QR code" width={200} height={200} />
+                    <AppImage src={qrDataUrl} alt="2FA QR code" width={200} height={200} />
                   </div>
                 )}
                 <details className="text-center">

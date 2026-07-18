@@ -15,9 +15,18 @@ export interface UploadResult {
   url: string;
 }
 
-/** No-op — Convex storage needs no bucket. Retained so existing callers don't change. */
+/**
+ * No-op — Convex storage needs no bucket. Retained so existing callers don't change.
+ * @deprecated Legacy S3/Garage-era name; storage is Convex now. Removal condition: rename
+ * callers to Convex-storage terminology, then delete. Tracked: POLICY.md R-4.4 / R-8.10.2.
+ */
 export async function ensureBucket(): Promise<void> {}
 
+/**
+ * @deprecated S3-era name — routes to Convex `_storage`, not S3 (the Garage/S3 box is
+ * decommissioned). Removal condition: rename callers to `uploadFile`/Convex terminology,
+ * then delete this alias. Tracked: POLICY.md R-4.4 / R-8.10.2.
+ */
 export async function uploadToS3(
   file: Buffer,
   options: {
@@ -50,6 +59,11 @@ export async function uploadToS3(
   return { storageKey: storageId, url: `/api/files/${storageId}` };
 }
 
+/**
+ * @deprecated S3-era name — deletes from Convex `_storage`, not S3. Removal condition:
+ * rename callers to `deleteFile`/Convex terminology, then delete this alias. Tracked:
+ * POLICY.md R-4.4 / R-8.10.2.
+ */
 export async function deleteFromS3(storageKey: string): Promise<void> {
   const convex = await getConvexClient();
   await convex.mutation(api.files.deleteFile, { storageId: storageKey });

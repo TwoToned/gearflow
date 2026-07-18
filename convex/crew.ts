@@ -14,7 +14,7 @@ import { requireOrgRead, requireOrgPermission, getAuthContext } from "./lib/auth
 const iso = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
 
 async function orgSkillMap(ctx: QueryCtx, orgId: string) {
-  const skills = await ctx.db.query("crewSkills").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+  const skills = await ctx.db.query("crewSkills").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: crewSkills is a small bounded per-org config set
   return new Map(skills.map((s) => [s.id, { id: s.id, name: s.name, category: s.category ?? null }]));
 }
 async function userMirror(ctx: QueryCtx, userId: string | null | undefined) {
@@ -64,7 +64,7 @@ export const memberDetail = query({
 
     const auth = await getAuthContext(ctx);
     const [roles, skillMap, user] = await Promise.all([
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: small bounded per-org config set (crew roles)
       orgSkillMap(ctx, orgId),
       userMirror(ctx, member.userId),
     ]);
@@ -114,7 +114,7 @@ export const memberExtras = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgPermission(ctx, orgId, "crew", "read"); // parity with getCrewMemberExtras (audit)
     const [members, skillMap] = await Promise.all([
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded by the org's crew roster (enrichment map)
       orgSkillMap(ctx, orgId),
     ]);
     const out: Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[] }> = {};
@@ -137,8 +137,14 @@ export const myCrewMemberId = query({
     await requireOrgRead(ctx, orgId);
     const auth = await getAuthContext(ctx);
     if (!auth || auth.kind !== "user") return null;
-    const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
-    return members.find((m) => m.userId === auth.userId)?.id ?? null;
+    // Bounded lookup by the caller's userId (by_userId is global, so org-check the row)
+    // instead of scanning the whole org roster to find one member (R-9.8).
+    const member = await ctx.db
+      .query("crewMembers")
+      .withIndex("by_userId", (q) => q.eq("userId", auth.userId))
+      .filter((q) => q.eq(q.field("organizationId"), orgId))
+      .first();
+    return member?.id ?? null;
   },
 });
 
@@ -148,8 +154,8 @@ export const orgUsersForCrewLink = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgPermission(ctx, orgId, "crew", "update");
     const [members, crew] = await Promise.all([
-      ctx.db.query("members").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("members").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded by org membership (linkable-users picker)
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded by the org's crew roster (picker)
     ]);
     const linked = new Set(crew.map((c) => c.userId).filter((u): u is string => u != null));
     const out: { id: string; name: string; email: string; image: string | null; alreadyLinked: boolean }[] = [];

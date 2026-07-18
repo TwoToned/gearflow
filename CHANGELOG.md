@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-18
+
+### Changed
+
+- **Adopt 3-part Semantic Versioning** (was a 4-part `0.24.17.0` scheme, which is not
+  valid SemVer). This release starts the 3-part sequence at `0.25.0` (R-2.4).
+
 ### Added
 
 - Adopted the Codebase Management & Hygiene Policy (`POLICY.md`, WEB profile) as the

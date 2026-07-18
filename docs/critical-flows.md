@@ -13,7 +13,7 @@ list" clause is partially met (auth entry ✅; sign-in + revenue path pending).
 | # | Flow | Steps | E2E coverage |
 |---|------|-------|--------------|
 | 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in entry form (+ axe a11y, zero serious/critical WCAG 2 A/AA) | ✅ `e2e/smoke.spec.ts`, `e2e/a11y.spec.ts` (CI-gated) |
-| 2 | **Sign in** | Email + password → authenticated → lands on dashboard | ⬜ pending (needs seeded test user) |
+| 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | 🟡 proven via the seeded harness (`e2e/harness-auth.spec.ts`, `E2E_HARNESS=1`); see `docs/e2e-harness.md`. CI automation pending. |
 | 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ⬜ pending |
 | 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ⬜ pending |
 | 5 | **Create a project** (revenue path) | New project with a client → saved, visible in list | ⬜ pending |

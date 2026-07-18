@@ -103,6 +103,24 @@ const eslintConfig = [
       "@typescript-eslint/naming-convention": [
         "warn",
         { selector: "typeLike", format: ["PascalCase"] },
+        // Variables/functions are camelCase (UPPER_CASE for consts, PascalCase for
+        // React components / factories); leading underscore for intentionally-unused
+        // (R-3.9). Object properties are unconstrained — external API payloads use
+        // snake_case and would otherwise be false positives.
+        {
+          selector: "variable",
+          format: ["camelCase", "UPPER_CASE", "PascalCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "function",
+          format: ["camelCase", "PascalCase"],
+        },
+        {
+          selector: "parameter",
+          format: ["camelCase", "PascalCase"],
+          leadingUnderscore: "allow",
+        },
       ],
     },
   },

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
+import { AppImage } from "@/components/ui/app-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -197,10 +198,9 @@ function MaintenanceDetailContent({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={cn("block aspect-square overflow-hidden rounded-[var(--r)] border border-line bg-paper-2 transition-opacity hover:opacity-90", focusRing)}
+                        className={cn("relative block aspect-square overflow-hidden rounded-[var(--r)] border border-line bg-paper-2 transition-opacity hover:opacity-90", focusRing)}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt="" className="h-full w-full object-cover" />
+                        <AppImage src={url} alt="" fill sizes="(max-width: 768px) 50vw, 200px" className="object-cover" />
                       </a>
                     ))}
                   </div>

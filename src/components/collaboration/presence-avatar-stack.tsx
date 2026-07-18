@@ -1,5 +1,6 @@
 "use client";
 
+import { AppImage } from "@/components/ui/app-image";
 import { getUserInitials, getForegroundColor } from "@/lib/collaboration-colors";
 import {
   Tooltip,
@@ -41,8 +42,7 @@ function PresenceAvatar({ userName, userColor, avatarUrl, mode, section, size = 
           aria-label={label}
         >
           {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt={userName} className="h-full w-full object-cover" />
+            <AppImage src={avatarUrl} alt={userName} fill sizes="40px" className="object-cover" />
           ) : (
             <span className="font-medium leading-none">{initials}</span>
           )}

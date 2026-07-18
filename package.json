@@ -11,6 +11,7 @@
     "knip": "knip",
     "depcruise": "depcruise src convex --config .dependency-cruiser.cjs --ignore-known",
     "any-ratchet": "bash scripts/any-ratchet.sh",
+    "collect-ratchet": "node scripts/collect-ratchet.mjs",
     "size": "size-limit",
     "test": "vitest run",
     "test:watch": "vitest",

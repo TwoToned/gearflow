@@ -228,6 +228,9 @@ jobs:
       - name: Any-ratchet (R-8.2.2)
         run: pnpm run any-ratchet
 
+      - name: Unbounded-read ratchet (R-9.8)
+        run: pnpm run collect-ratchet
+
       - name: Dead-code scan (Knip, advisory)
         run: pnpm run knip
         continue-on-error: true

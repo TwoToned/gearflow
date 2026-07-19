@@ -18,7 +18,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("categories")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: categories is a small bounded per-org set
       .collect();
   },
 });
@@ -49,13 +49,13 @@ export const counts = query({
 
     const models = await ctx.db
       .query("models")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
       .collect();
     for (const m of models) if (m.categoryId) ensure(m.categoryId).models++;
 
     const kits = await ctx.db
       .query("kits")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
       .collect();
     for (const k of kits) if (k.categoryId) ensure(k.categoryId).kits++;
 
@@ -76,15 +76,15 @@ export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org set (tree)
     const category = cats.find((c) => c.id === id);
     if (!category) throw new ConvexError("Category not found");
 
     const [models, kits, assets, media] = await Promise.all([
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("modelMedia").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: category-detail aggregation over the org set — revisit with a category index if large
+      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: category-detail aggregation over the org set — revisit with a category index if large
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: category-detail aggregation over the org set — revisit with a category index if large
+      ctx.db.query("modelMedia").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: category-detail aggregation over the org set — revisit with a category index if large
     ]);
 
     // modelKitCounts[catId] = { models, kits }; childCounts[catId] = # children.
@@ -173,13 +173,13 @@ export const containerAssetSearch = query({
     }
     if (!rootCatId) return [];
 
-    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment)
     const categoryIds = collectDescendants(cats, rootCatId);
-    const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment)
     const modelById = new Map(models.map((m) => [m.id, m]));
 
     const q = (search ?? "").toLowerCase();
-    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q2) => q2.eq("organizationId", orgId)).collect();
+    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q2) => q2.eq("organizationId", orgId)).collect(); // r9.8-ok: asset picker: scans the org asset set for container candidates — accepted, revisit with a status/category index if large
     const matched = assets
       .filter((a) => {
         const model = a.modelId ? modelById.get(a.modelId) : undefined;

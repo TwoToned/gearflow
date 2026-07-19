@@ -1,4 +1,5 @@
 "use client";
+// use-client: client navigation hooks (useRouter/useSearchParams) (R-8.1.1)
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";

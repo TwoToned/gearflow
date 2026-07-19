@@ -1,4 +1,5 @@
 "use client";
+// use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
 import { useReducer, useEffect, useCallback, Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";

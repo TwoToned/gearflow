@@ -234,6 +234,9 @@ jobs:
       - name: Dead-code ratchet (Knip, R-4.2 — blocking on any increase)
         run: pnpm run knip-ratchet
 
+      - name: Client-boundary justification (R-8.1.1)
+        run: pnpm run check-client-routes
+
       - name: Install gitleaks
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \

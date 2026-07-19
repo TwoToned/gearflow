@@ -1,4 +1,5 @@
 "use client";
+// use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";

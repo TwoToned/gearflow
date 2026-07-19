@@ -1,4 +1,5 @@
 "use client";
+// use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
 import { use, useMemo, useState } from "react";
 import Link from "next/link";

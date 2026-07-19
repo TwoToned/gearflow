@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive form (react-hook-form + client validation) (R-8.1.1)
 
 /**
  * Custom field settings (Wave 3).

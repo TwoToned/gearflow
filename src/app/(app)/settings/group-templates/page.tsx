@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
 import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";

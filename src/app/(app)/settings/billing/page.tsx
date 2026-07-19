@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

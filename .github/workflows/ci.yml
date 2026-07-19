@@ -199,8 +199,8 @@ jobs:
 
   hygiene:
     # Hygiene gates. BLOCKING: dependency vuln scan (R-6.6), secret scan (R-7.3),
-    # import-cycle (R-3.5), any-ratchet (R-8.2.2). Dead-code (Knip, R-4.2) stays
-    # advisory (continue-on-error) until its burn-down clears. NOT in build's `needs`.
+    # import-cycle (R-3.5), any-ratchet (R-8.2.2), unbounded-read ratchet (R-9.8),
+    # dead-code ratchet (Knip, R-4.2 — blocking on any increase). NOT in build's `needs`.
     name: Hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -231,9 +231,8 @@ jobs:
       - name: Unbounded-read ratchet (R-9.8)
         run: pnpm run collect-ratchet
 
-      - name: Dead-code scan (Knip, advisory)
-        run: pnpm run knip
-        continue-on-error: true
+      - name: Dead-code ratchet (Knip, R-4.2 — blocking on any increase)
+        run: pnpm run knip-ratchet
 
       - name: Install gitleaks
         run: |

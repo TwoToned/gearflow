@@ -23,8 +23,13 @@ try {
   output = `${e.stdout ?? ""}${e.stderr ?? ""}`;
 }
 
-// Sum every section-header count, e.g. "Unused files (19)", "Unused exports (316)".
-const counts = [...output.matchAll(/\((\d+)\)\s*$/gm)].map((m) => parseInt(m[1], 10));
+// Sum only the DEAD-CODE section counts ("Unused …", "Duplicate exports"). Deliberately
+// exclude "Unresolved imports"/"Unlisted dependencies": those are env-fragile (Knip emits
+// phantom unresolved imports in CI when prisma.config.ts can't read DATABASE_URL) and are a
+// different concern from dead code, so they'd make the ratchet flap between local and CI.
+const counts = [...output.matchAll(/^(?:Unused .+|Duplicate exports) \((\d+)\)\s*$/gm)].map(
+  (m) => parseInt(m[1], 10),
+);
 const total = counts.reduce((a, b) => a + b, 0);
 
 if (!counts.length && !/No .*issues|✂/i.test(output)) {

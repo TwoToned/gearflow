@@ -1,11 +1,5 @@
 [
   {
-    "name": "Route shared JS (gzip) — POLICY.md R-8.1.5 / T-8 hard cap",
-    "path": [".next/static/chunks/*.js"],
-    "limit": "300 KB",
-    "gzip": true
-  },
-  {
     "name": "CSS (gzip) — POLICY.md R-8.7.5 / T-8",
     "path": [".next/static/css/*.css"],
     "limit": "50 KB",

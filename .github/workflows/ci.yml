@@ -307,9 +307,7 @@ jobs:
           BETTER_AUTH_URL: http://localhost:3000
           NEXT_PUBLIC_APP_URL: http://localhost:3000
 
-      # Advisory bundle-size budget (POLICY.md R-8.1.5 / T-8). Non-blocking until
-      # the current baseline is measured and a real per-route budget registered;
-      # flip to blocking (remove continue-on-error) once green.
-      - name: Bundle size budget (advisory)
-        run: pnpm run size
-        continue-on-error: true
+      # Bundle-size budget (POLICY.md R-8.1.5 / T-8) — BLOCKING regression gate on the
+      # entry route's First Load JS (gzip). Fails if it grows >5% past the baseline.
+      - name: Bundle-size ratchet (R-8.1.5)
+        run: pnpm run bundle-ratchet

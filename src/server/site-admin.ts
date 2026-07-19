@@ -2,6 +2,7 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { removeUserFromConvex } from "@/lib/user-mirror";
 import {
   upsertMemberMirror,
@@ -600,6 +601,10 @@ export async function adminDeleteUser(userId: string) {
   // Remove the user from the Convex `users` mirror (best-effort).
   await removeUserFromConvex(userId);
 
+  // Verifiable removal (POLICY.md R-8.12.2): confirm the user's IDENTITY PII is actually
+  // gone from both stores after the sweep, so the erasure is auditable, not fire-and-forget.
+  const verification = await verifyUserErased(userId);
+
   const theOrg = await getTheOrg();
   if (theOrg) {
     await logActivity({
@@ -610,11 +615,51 @@ export async function adminDeleteUser(userId: string) {
       entityType: "user",
       entityId: userId,
       entityName: targetUser?.name || userId,
-      summary: `Deleted user ${targetUser?.name || userId}`,
+      summary: `Deleted user ${targetUser?.name || userId}` +
+        (verification.erased ? " — erasure verified" : ` — WARNING: PII remains (${verification.remaining.join(", ")})`),
+    });
+  }
+  if (!verification.erased) {
+    logger.error("[erasure] user PII remains after deletion (R-8.12.2)", {
+      userId,
+      remaining: verification.remaining,
     });
   }
 
-  return { success: true };
+  return { success: true, verification };
+}
+
+/**
+ * Verify a user's identity PII is gone from every store after an erasure
+ * (POLICY.md R-8.12.2). Read-only: returns which stores still reference the user so the
+ * erasure is auditable. Convex search indexes update automatically when the `users`
+ * mirror row is removed, so a clean mirror means the user is unsearchable there too.
+ */
+async function verifyUserErased(
+  userId: string,
+): Promise<{ erased: boolean; remaining: string[] }> {
+  const remaining: string[] = [];
+
+  // Postgres (Better Auth identity tables — sessions/accounts cascade off `user`).
+  const [pgUser, pgSession, pgAccount] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true } }),
+    prisma.session.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.account.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+  if (pgUser) remaining.push("postgres:user");
+  if (pgSession) remaining.push("postgres:session");
+  if (pgAccount) remaining.push("postgres:account");
+
+  // Convex `users` mirror (drives cross-domain name/email resolution + search).
+  try {
+    const convex = await getConvexClient();
+    const mirror = await convex.query(api.users.getById, { id: userId });
+    if (mirror) remaining.push("convex:users-mirror");
+  } catch {
+    remaining.push("convex:unverified");
+  }
+
+  return { erased: remaining.length === 0, remaining };
 }
 
 export async function forceDisable2FA(userId: string) {

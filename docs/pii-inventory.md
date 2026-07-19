@@ -41,11 +41,32 @@ Sentry `beforeSend` (`sentry.server.config.ts`, `instrumentation-client.ts`) str
 `user.email`, `user.ip_address`, and `authorization`/`cookie` headers before send. URLs use
 opaque cuids, not names/emails.
 
-## Known gaps (tracked in the baseline audit)
+## Retention periods (T-P2)
 
-- **R-8.12.2 (retention + deletion):** no registered per-class retention (T-P2) and no
-  end-to-end user-erasure workflow (delete request → verifiable removal incl. search indexes
-  and backups). **Open.**
-- **T-P3 backups:** daily Convex export, 90-day retention (`convex-backup.yml`).
+Registered per PII class. **Durations marked ⟨confirm⟩ are placeholder defaults — the data
+owner must set the real value per legal/compliance obligation before these are authoritative.**
+
+| PII class | Store | Retention | Erasure path |
+|---|---|---|---|
+| User identity (name, email, auth creds) | Postgres (Better Auth) | until account deletion | `adminDeleteUser` → **`verifyUserErased`** (R-8.12.2) |
+| Session / token | Postgres | session TTL / on sign-out | cascades on user delete |
+| Crew PII (DOB, rates, contact, ical token) | Convex `crewMembers` | ⟨confirm — e.g. until archived + 30d⟩ | crew delete + user-erasure sweep (⚠️ `crewMember.userId` link not yet scrubbed — see gap) |
+| Activity / audit logs (actor name) | Convex `activityLogs` / Postgres | ⟨confirm — e.g. 7y for audit⟩ | retained for audit; actor refs scrubbed on erasure |
+| Uploaded files | Convex `_storage` / `storedFiles` | until owner deletes | `/api/files` delete |
+| Backups | Convex export | 90 days (T-P3, `convex-backup.yml`) | ⚠️ point-in-time — erasure not yet propagated to backups |
+
+## User-erasure workflow (R-8.12.2)
+
+`adminDeleteUser` (site-admin) runs a cross-org GDPR sweep — deletes the Postgres identity
+(sessions/accounts cascade), removes the Convex `users` mirror (which also clears search
+indexes), deletes the user's authored kit/scan/test records, and scrubs their FK references
+on line-items / projects / maintenance. It then calls **`verifyUserErased`**, which confirms
+the identity PII is gone from Postgres + the Convex mirror and logs a warning if anything
+remains — making the erasure **verifiable**, not fire-and-forget.
+
+**Remaining gaps (need owner input / infra):** (1) the retention durations above marked
+⟨confirm⟩; (2) `crewMember.userId` is not yet scrubbed on erasure (a Convex `scrubUserRefs`
+mutation on `crewWrites` would close it); (3) erasure is not propagated into the 90-day
+backups (a restore-then-re-erase or crypto-shred process — infra decision).
 
 _Review this inventory at each quarterly sweep (§12) and whenever a PII field is added._

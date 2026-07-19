@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth-server";
 import { readValidatedBody } from "@/lib/api-validation";
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url });
   } catch (error) {
-    console.error("Crew avatar upload error:", error);
+    logger.error("Crew avatar upload error", { error: error });
     return NextResponse.json({ error: "Upload failed." }, { status: 500 });
   }
 }
@@ -140,7 +141,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Crew avatar delete error:", error);
+    logger.error("Crew avatar delete error", { error: error });
     return NextResponse.json({ error: "Failed to remove image." }, { status: 500 });
   }
 }

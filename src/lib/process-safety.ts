@@ -26,6 +26,9 @@ export function installProcessSafetyNet(scope: string): void {
     // Log + report, but do NOT exit. An unhandled rejection is usually isolated
     // to one async chain; the process itself is still healthy. Crashing the
     // whole server over it is exactly what produced the user-visible 502s.
+    // Crash-time floor: minimal work in a process-fault handler; the structured
+    // logger is bypassed on purpose here.
+    // eslint-disable-next-line no-console
     console.error(`[${scope}] unhandledRejection:`, reason);
     capture(reason, scope, "unhandledRejection");
   });
@@ -34,6 +37,8 @@ export function installProcessSafetyNet(scope: string): void {
     // An uncaught exception leaves the process in an undefined state. Log +
     // report + flush, then exit(1) so pm2 restarts a clean process rather than
     // serving from a corrupt one.
+    // Crash-time floor (see above).
+    // eslint-disable-next-line no-console
     console.error(`[${scope}] uncaughtException:`, err);
     try {
       Sentry.captureException(err, { tags: { net: "uncaughtException", scope } });

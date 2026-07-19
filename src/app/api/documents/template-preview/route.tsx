@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { buildSampleDocumentData } from "@/lib/pdfme/sample-document-data";
 import { generatePdfFromSettings, generatePdfFromSections } from "@/lib/pdfme/generate-pdf";
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("Template preview generation failed:", err);
+    logger.error("Template preview generation failed", { error: err });
     return NextResponse.json(
       { error: "Failed to generate preview" },
       { status: 500 }

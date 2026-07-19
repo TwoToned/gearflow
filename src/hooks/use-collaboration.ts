@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
+import { logger } from "@/lib/logger";
 import { useMutation } from "convex/react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
@@ -82,7 +83,7 @@ export function usePresence(options: UsePresenceOptions) {
             mode: "viewing",
           })
         : Promise.resolve(),
-    onError: (e) => console.warn("[presence] heartbeat failed", e),
+    onError: (e) => logger.warn("[presence] heartbeat failed", { error: e }),
   });
 
   const clearMut = useServerMutation({
@@ -203,7 +204,7 @@ export function useEditLock(options: UseEditLockOptions) {
       orgId
         ? acquireLockM({ orgId, entityType, entityId, targetType, targetId, ...ownerFields(), clientSessionId: sid })
         : Promise.resolve(null),
-    onError: (e) => console.warn("[lock] acquire failed", e),
+    onError: (e) => logger.warn("[lock] acquire failed", { error: e }),
   });
 
   const heartbeatMut = useServerMutation({
@@ -223,7 +224,7 @@ export function useEditLock(options: UseEditLockOptions) {
       orgId
         ? takeoverLockM({ orgId, entityType, entityId, targetType, targetId, ...ownerFields(), clientSessionId: sid })
         : Promise.resolve(null),
-    onError: (e) => console.warn("[lock] takeover failed", e),
+    onError: (e) => logger.warn("[lock] takeover failed", { error: e }),
   });
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -41,7 +42,7 @@ export async function mirrorUserToConvex(userId: string): Promise<void> {
     });
   } catch (err) {
     // Swallow — never block the auth/profile flow on a mirror failure.
-    console.error(`[user-mirror] failed to mirror user ${userId}:`, err);
+    logger.error(`[user-mirror] failed to mirror user ${userId}`, { error: err });
   }
 }
 
@@ -54,6 +55,6 @@ export async function removeUserFromConvex(userId: string): Promise<void> {
     const convex = await getConvexClient();
     await convex.mutation(api.users.remove, { id: userId });
   } catch (err) {
-    console.error(`[user-mirror] failed to remove user ${userId} from mirror:`, err);
+    logger.error(`[user-mirror] failed to remove user ${userId} from mirror`, { error: err });
   }
 }

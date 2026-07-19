@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireSession } from "@/lib/auth-server";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/prisma";
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url });
   } catch (error) {
-    console.error("Avatar upload error:", error);
+    logger.error("Avatar upload error", { error: error });
     return NextResponse.json({ error: "Upload failed." }, { status: 500 });
   }
 }
@@ -127,7 +128,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Avatar delete error:", error);
+    logger.error("Avatar delete error", { error: error });
     return NextResponse.json({ error: "Failed to remove avatar." }, { status: 500 });
   }
 }

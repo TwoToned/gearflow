@@ -1,4 +1,5 @@
 import { getConvexClient } from "@/lib/convex-client";
+import { logger } from "@/lib/logger";
 import { api } from "../../convex/_generated/api";
 import { getUserColor } from "@/lib/collaboration-colors";
 
@@ -57,6 +58,6 @@ export async function writeCollabActivityEvent(
       metadata: event.metadata,
     });
   } catch (error) {
-    console.error("Failed to write collab activity event:", error);
+    logger.error("Failed to write collab activity event", { error: error });
   }
 }

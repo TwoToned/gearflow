@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { generateCallSheetPdf } from "@/lib/pdfme/generate-pdf";
 
@@ -78,7 +79,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Call sheet PDF generation error:", error);
+    logger.error("Call sheet PDF generation error", { error: error });
     return NextResponse.json(
       { error: "PDF generation failed", details: String(error) },
       { status: 500 }

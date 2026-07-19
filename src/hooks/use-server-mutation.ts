@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 
 /**
  * Server-action mutation hook (Phase 6 of the Convex migration — React Query
@@ -105,7 +106,7 @@ export function useServerMutation<TData = unknown, TVariables = void>(
         try {
           await cb();
         } catch (cbErr) {
-          console.error("useServerMutation callback threw:", cbErr);
+          logger.error("useServerMutation callback threw", { error: cbErr });
         }
       };
 

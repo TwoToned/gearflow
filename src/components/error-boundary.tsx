@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { logger } from "@/lib/logger";
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -39,9 +40,9 @@ export class GlobalErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error) {
     if (process.env.NODE_ENV === "development") {
-      console.warn(
+      logger.warn(
         "GlobalErrorBoundary: caught DOM manipulation error, recovering…",
-        error.message
+        { error: error.message }
       );
     }
   }

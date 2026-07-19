@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -50,7 +51,7 @@ async function runMirror(
       // Prisma write — never leave Convex granting what Prisma is about to revoke.
       throw err;
     }
-    console.error(`[member-mirror] ${label} failed (best-effort):`, err);
+    logger.error(`[member-mirror] ${label} failed (best-effort)`, { error: err });
   }
 }
 

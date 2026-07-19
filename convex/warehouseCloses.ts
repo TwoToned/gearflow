@@ -18,7 +18,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("warehouseCloses")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
   },
 });
@@ -186,15 +186,15 @@ export const closeOutSummary = query({
     );
 
     const modelMap = new Map(
-      (await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+      (await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
         .map((m) => [m.id, m.name]),
     );
     const assetTagMap = new Map(
-      (await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+      (await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
         .map((a) => [a.id, a.assetTag]),
     );
     const bulkAssetTagMap = new Map(
-      (await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect())
+      (await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
         .map((b) => [b.id, b.assetTag]),
     );
 

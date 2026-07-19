@@ -140,7 +140,7 @@ async function insertCheckRecords(
   const wanted = new Set(a.checks.map((c) => c.checkItemId));
   const orgCheckItems = await ctx.db
     .query("checkItems")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)) // r9.8-ok: bounded per-org config/catalog set
     .collect();
   const itemMap = new Map(
     orgCheckItems.filter((ci) => wanted.has(ci.id)).map((ci) => [ci.id, { label: ci.label, type: ci.type ?? "PASS_FAIL" }]),

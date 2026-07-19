@@ -329,7 +329,7 @@ export const checkoutItems = mutation({
 });
 
 export async function defaultLocationId(ctx: Ctx, organizationId: string): Promise<string | null> {
-  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect();
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set
   return locs.find((l) => l.isDefault)?.id ?? null;
 }
 async function linesByAsset(ctx: Ctx, assetId: string, organizationId: string) {
@@ -719,7 +719,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
 export async function checkinKitFull(ctx: Ctx, a: KitCheckinArgs): Promise<{ kitId: string; affectedKitIds: string[] }> {
   const kitLine = await kitParentLine(ctx, a.projectId, a.organizationId, a.kitId);
   if (!kitLine) throw new ConvexError("Kit not found on this project");
-  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set
   const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
   const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLoc);
   return { kitId: a.kitId, affectedKitIds };
@@ -754,7 +754,7 @@ export type CheckinKitsBatchArgs = {
 
 /** Core batch check-in (per-kit org/project re-check, default loc once). Shared. */
 export async function checkinKitsBatchCore(ctx: Ctx, a: CheckinKitsBatchArgs): Promise<KitBatchResult> {
-  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set
   const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
   const succeeded: string[] = [];
   const errors: { kitId: string; message: string }[] = [];
@@ -799,7 +799,7 @@ export type CheckinItemsArgs = {
  *  line rollups). Shared by the requireService mutation + the browser-direct write. */
 export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{ updatedLineIds: string[] }> {
   // org default location to restore assets to
-  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect();
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set
   const defaultLocationId = locs.find((l) => l.isDefault)?.id ?? null;
 
   const updated = new Set<string>();

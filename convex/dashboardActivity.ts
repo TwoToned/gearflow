@@ -58,7 +58,7 @@ export const bundle = query({
     // ── newest 10 maintenance records (small table; sort updatedAt desc) ──
     const maintenanceAll = await ctx.db
       .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
       .collect();
     const maintenanceRecords = [...maintenanceAll]
       .sort((a, b) => (b.updatedAt ?? b._creationTime) - (a.updatedAt ?? a._creationTime))

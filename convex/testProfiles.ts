@@ -19,7 +19,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("testProfiles")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
       .collect();
   },
 });
@@ -69,7 +69,7 @@ export const resolveForAsset = query({
       }
     }
     // 3/4. Org default, then any active, for the asset's class+type.
-    const orgProfiles = (await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect());
+    const orgProfiles = (await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()); // r9.8-ok: bounded per-org config/catalog set
     const matches = (p: (typeof orgProfiles)[number]) => p.equipmentClass === asset.equipmentClass && p.applianceType === asset.applianceType;
     return (
       orgProfiles.find((p) => matches(p) && p.isDefault === true && p.isActive === true) ??

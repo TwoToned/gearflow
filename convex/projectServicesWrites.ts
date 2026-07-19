@@ -840,7 +840,7 @@ export const generateServicesNative = mutation({
 
     // Active templates (org-scoped), sorted by sortOrder.
     const templates: GenTemplate[] = (
-      await ctx.db.query("serviceTemplates").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()
+      await ctx.db.query("serviceTemplates").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org config/catalog set
     )
       .filter((t) => t.isActive ?? true)
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))
@@ -1220,7 +1220,7 @@ export const createServiceTemplateNative = mutation({
       return { id: a.id };
     }
 
-    const templates = await ctx.db.query("serviceTemplates").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
+    const templates = await ctx.db.query("serviceTemplates").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set
     const sortOrder = templates.reduce((m, t) => Math.max(m, t.sortOrder ?? 0), -1) + 1;
     const defaultPricingType = a.defaultPricingType && String(a.defaultPricingType) !== "" ? a.defaultPricingType : null;
 

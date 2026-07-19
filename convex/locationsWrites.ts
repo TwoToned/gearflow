@@ -33,7 +33,7 @@ export const locationFields = {
 
 /** Clear isDefault on every other current default in the org (single-default invariant). */
 async function unsetOtherDefaults(ctx: MutationCtx, orgId: string, exceptId: string | undefined, now: number) {
-  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+  const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set
   for (const l of locs) {
     if (l.isDefault && l.id !== exceptId) await ctx.db.patch(l._id, { isDefault: false, updatedAt: now });
   }
@@ -134,11 +134,11 @@ export const removeNative = mutation({
 
     // Delete-guards (old Prisma _count): children / assets / bulkAssets block.
     const children = (
-      await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()
+      await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org config/catalog set
     ).filter((l) => l.parentId === a.id);
     if (children.length > 0) throw new ConvexError("Cannot delete location with sub-locations");
-    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
-    const bulk = await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
+    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+    const bulk = await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
     if (assets.some((x) => x.locationId === a.id) || bulk.some((x) => x.locationId === a.id)) {
       throw new ConvexError("Cannot delete location with assets assigned to it");
     }

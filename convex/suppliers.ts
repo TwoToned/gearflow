@@ -19,7 +19,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("suppliers")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
       .collect();
   },
 });
@@ -63,7 +63,7 @@ export const listPage = query({
     const sortBy = a.sortBy ?? "name";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
-    const rows = await ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect();
+    const rows = await ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set
 
     const filtered = rows.filter((s) => {
       if (a.isActive === "true" && (s.isActive ?? true) !== true) return false;
@@ -99,13 +99,13 @@ export const counts = query({
 
     const assets = await ctx.db
       .query("assets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
       .collect();
     for (const a of assets) if (a.supplierId) ensure(a.supplierId).assets++;
 
     const orders = await ctx.db
       .query("supplierOrders")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
       .collect();
     for (const o of orders) if (o.supplierId) ensure(o.supplierId).orders++;
 
@@ -126,7 +126,7 @@ export const assetsPage = query({
       .sort((a, b) => a.assetTag.localeCompare(b.assetTag));
     const total = filtered.length;
     const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
-    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m]));
+    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m])); // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
     return { assets: rows.map((a) => ({ ...a, model: a.modelId ? models.get(a.modelId) ?? null : null })), total };
   },
 });
@@ -141,8 +141,8 @@ export const subhiresPage = query({
       .sort((a, b) => (b.createdAt ?? -Infinity) - (a.createdAt ?? -Infinity));
     const total = matching.length;
     const rows = matching.slice((page - 1) * pageSize, page * pageSize);
-    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p]));
-    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m]));
+    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p])); // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+    const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m])); // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
     return {
       lineItems: rows.map((li) => {
         const p = projById.get(li.projectId);

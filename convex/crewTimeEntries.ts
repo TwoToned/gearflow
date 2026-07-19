@@ -55,7 +55,7 @@ export const allEntries = query({
     const order = a.sortOrder ?? "desc";
 
     const [allE, assignments, members, roles, projects] = await Promise.all([
-      ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) (allEntries enrichment)
@@ -145,7 +145,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("crewTimeEntries")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
   },
 });

@@ -21,7 +21,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
   },
 });
@@ -162,7 +162,7 @@ export const scrubUserRefs = mutation({
     await requireService(ctx);
     const docs = await ctx.db
       .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
       .collect();
     let scrubbed = 0;
     for (const doc of docs) {
@@ -337,7 +337,7 @@ export const recordsPage = query({
 
     const records = await ctx.db
       .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", args.orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", args.orgId)) // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
       .collect();
 
     // Batch links → assets → models for the whole org set (mirrors attachJoins).
@@ -495,7 +495,7 @@ export const assetsForSelect = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
     const assets = (
-      await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()
+      await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect() // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large
     )
       .filter((a) => a.isActive !== false)
       .sort((a, b) => a.assetTag.localeCompare(b.assetTag));

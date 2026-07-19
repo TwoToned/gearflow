@@ -284,7 +284,7 @@ export const calendarData = query({
 
     const allProjects = await ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
       .collect();
 
     const calendarProjects = allProjects

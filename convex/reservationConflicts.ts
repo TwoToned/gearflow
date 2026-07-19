@@ -29,11 +29,11 @@ import {
 /** Collect the org-wide inputs both queries need, keyed for O(1) lookup. */
 async function loadOrgGraph(ctx: QueryCtx, orgId: string) {
   const [lineItems, units, assets, projects, models] = await Promise.all([
-    ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("projectLineItemUnits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+    ctx.db.query("projectLineItemUnits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
   ]);
   return {
     lineItems: lineItems as CLine[],

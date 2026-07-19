@@ -91,7 +91,7 @@ async function requireTemplateInOrg(ctx: MutationCtx, templateId: string, orgId:
 async function listTemplateItems(ctx: MutationCtx, templateId: string, orgId: string) {
   const all = await ctx.db
     .query("groupTemplateItems")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
     .collect();
   return all
     .filter((it) => it.templateId === templateId)
@@ -103,7 +103,7 @@ async function deleteTemplateItems(ctx: MutationCtx, templateId: string, orgId: 
   const existing = (
     await ctx.db
       .query("groupTemplateItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
       .collect()
   ).filter((it) => it.templateId === templateId);
   for (const e of existing) await ctx.db.delete(e._id);

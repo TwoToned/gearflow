@@ -25,7 +25,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("assets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
       .collect();
   },
 });
@@ -69,10 +69,10 @@ export const listPage = query({
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
@@ -137,10 +137,10 @@ export const listGallery = query({
   handler: async (ctx, { orgId, search }) => {
     await requireOrgRead(ctx, orgId);
     const [rows, models, categories, locations] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
@@ -180,7 +180,7 @@ export const registryPhotos = query({
     type Photo = { url: string | null; thumbnailUrl: string | null };
     const build = async (table: "assetMedia" | "modelMedia", fk: "assetId" | "modelId"): Promise<Record<string, Photo>> => {
       const out: Record<string, Photo> = {};
-      const rows = await ctx.db.query(table).withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+      const rows = await ctx.db.query(table).withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: aggregation — org-wide primary-photo map
       for (const m of rows) {
         if (m.type !== "PHOTO" || !m.isPrimary) continue;
         const parentId = (m as Record<string, unknown>)[fk] as string;

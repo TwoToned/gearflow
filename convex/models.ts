@@ -19,7 +19,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("models")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
       .collect();
   },
 });
@@ -52,20 +52,20 @@ export const counts = query({
 
     const assets = await ctx.db
       .query("assets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
       .collect();
     for (const a of assets) if (a.isActive !== false) ensure(a.modelId).assets++;
 
     const bulkAssets = await ctx.db
       .query("bulkAssets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
       .collect();
     for (const b of bulkAssets) if (b.isActive !== false) ensure(b.modelId).bulkAssets++;
 
     // Primary photo per model (PHOTO + isPrimary), file resolved org-scoped.
     const media = await ctx.db
       .query("modelMedia")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
       .collect();
     for (const m of media) {
       if (m.type !== "PHOTO" || !m.isPrimary) continue;
@@ -99,7 +99,7 @@ export const detail = query({
     // Org locations → map (attachLocation equivalent).
     const locations = await ctx.db
       .query("locations")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org catalog/config map (detail enrichment)
       .collect();
     const locationMap = new Map(locations.map((l) => [l.id, l]));
     const attachLoc = <T extends { locationId?: string | null }>(r: T) => ({
@@ -166,7 +166,7 @@ export const detail = query({
     }
 
     // Bulk accessories (with bulkAsset assetTag + model name).
-    const modelsForOrg = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    const modelsForOrg = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (detail enrichment)
     const modelNameMap = new Map(modelsForOrg.map((m) => [m.id, m]));
     const accRows = (await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect())
       .filter((r) => r.organizationId === orgId);

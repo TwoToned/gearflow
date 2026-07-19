@@ -21,7 +21,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
       .collect();
   },
 });
@@ -68,10 +68,10 @@ export const listPage = query({
     // entirely on every unfiltered/non-search page load instead of always collecting
     // the whole locations table.
     const [rows, clients, locations] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
-      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(),
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
       a.search
-        ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()
+        ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org catalog/config map (list enrichment)
         : Promise.resolve([]),
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));
@@ -120,8 +120,8 @@ export const listBoard = query({
   handler: async (ctx, { orgId, search }) => {
     await requireOrgRead(ctx, orgId);
     const [rows, clients] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: kanban board aggregates all org projects into status columns (perf design)
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org enrichment map (board)
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);

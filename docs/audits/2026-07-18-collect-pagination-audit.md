@@ -37,7 +37,24 @@ list to a client.
    currently **249**). New unbounded org-wide reads can't land; as existing ones are
    bounded, lower the baseline. Wired into the `Hygiene` CI job (blocking).
 
-## Burn-down (guarded, in progress)
+## Burn-down: COMPLETE ✅ (2026-07-19)
+
+**Unjustified org-wide `.collect()` scans: 0** (baseline `0`, enforced blocking in CI).
+Every pure-`by_organizationId` `.collect()` is now either **bounded/converted** or a
+**reviewed, marked (`r9.8-ok`) justified read**. Landed across 9 PRs (#688–#697); the ratchet
+now fails CI on any *new* unjustified org-wide read.
+
+**Conversions (genuine waste removed):** `myCrewMemberId` full-roster scan → `by_userId`;
+`locations.detail` full-org asset/bulk/kit/project scans → `by_locationId`;
+`crewDashboard.pendingTimeEntries` full time-entry scan → new `by_organizationId_status` index.
+**Justified (reviewed, marked):** the app's deliberate reactive-full-org reads + server-side
+paginate (perf-convex-efficiency-2026-06.md), per-org aggregations (counts/dashboards/conflict
+detection), small bounded config/catalog sets, and asset-scan pickers. **Residual R-9.8
+exposure (disclosed):** the reactive full-org reads on the largest growable tables
+(assets/projects) — the priority to move to paginated reactivity if a single org's row counts
+grow large; the ratchet prevents any *new* ones.
+
+## Burn-down history (guarded)
 
 **Ratchet refinements (batch 1):** the ratchet now (a) counts only reads narrowed by org
 **alone** — a compound `by_organizationId_x` with a second `.eq/.gt/.lt` is bounded by that

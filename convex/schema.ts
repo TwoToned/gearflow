@@ -1731,7 +1731,8 @@ export default defineSchema({
     .index("by_assignmentId", ["assignmentId"])
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_approvedById", ["approvedById"])
-    .index("by_crewMemberId_date", ["crewMemberId", "date"]),
+    .index("by_crewMemberId_date", ["crewMemberId", "date"])
+    .index("by_organizationId_status", ["organizationId", "status"]),
 
   // ProjectService
   projectServices: defineTable({

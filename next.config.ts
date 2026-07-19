@@ -25,13 +25,24 @@ const nextConfig: NextConfig = {
     "pg",
   ],
   async headers() {
-    // Content-Security-Policy — POLICY.md R-8.11.2. Shipped in REPORT-ONLY first
-    // (the policy's "report-only then enforce" rollout): browsers report violations
-    // but never block, so this cannot break the app. This is the *target* policy for
-    // the known stack (Next, Sentry, Google Maps, Convex, PWA worker); observe reports
-    // in prod, tighten the two `'unsafe-inline'` allowances (Next inline bootstrap +
-    // Tailwind styles) toward nonces, then promote the key to `Content-Security-Policy`.
-    // `frame-ancestors 'none'` mirrors the enforced `X-Frame-Options: DENY` above.
+    // Content-Security-Policy — POLICY.md R-8.11.2, two headers (R-8.11.2 §15 exception
+    // in docs/exceptions.md):
+    //
+    // 1) ENFORCED (`Content-Security-Policy`) — the zero-breakage-risk subset. It sets
+    //    NO restrictive `default-src`, so it only *blocks* what the app never legitimately
+    //    uses: cross-origin `<base>` (base-uri), `<object>/<embed>` (object-src), and being
+    //    framed (frame-ancestors, mirroring the enforced X-Frame-Options: DENY). These
+    //    can't break the known stack, so they're safe to enforce today.
+    // 2) REPORT-ONLY (`…-Report-Only`) — the full target policy. Its script/style
+    //    `'unsafe-inline'`, `form-action`, and `frame-src` directives can't be enforced
+    //    yet without risking SAML SSO (auto-POST to the IdP) and the Google Maps iframes,
+    //    and no violation-collection endpoint has confirmed the allowlist. It stays
+    //    report-only until those are validated + the inline allowances are noncified.
+    const cspEnforced = [
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+    ].join("; ");
     const cspReportOnly = [
       "default-src 'self'",
       "base-uri 'self'",
@@ -55,6 +66,10 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-DNS-Prefetch-Control", value: "off" },
+          {
+            key: "Content-Security-Policy",
+            value: cspEnforced,
+          },
           {
             key: "Content-Security-Policy-Report-Only",
             value: cspReportOnly,

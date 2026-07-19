@@ -1,4 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
+import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
 import { getTheOrg } from "@/lib/single-org";
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
 
   // 12. Process the order asynchronously — respond 200 immediately
   processWooCommerceOrder(orgId, order, integration).catch((err) => {
-    console.error("[WooCommerce] Background processing error:", err);
+    logger.error("[WooCommerce] Background processing error", { error: err });
   });
 
   // 13. Respond 200 immediately (WooCommerce retries on non-200)

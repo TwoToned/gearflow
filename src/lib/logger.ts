@@ -33,7 +33,9 @@ function emit(level: Level, message: string, meta?: Record<string, unknown>) {
     record.meta = scrubbed;
   }
   const line = JSON.stringify(record);
-  // console is just the transport; Sentry still captures error/warn.
+  // This IS the logger's transport; all other app logging must go through `logger.*`
+  // (enforced by the no-console lint rule).
+  // eslint-disable-next-line no-console
   (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(line);
 }
 

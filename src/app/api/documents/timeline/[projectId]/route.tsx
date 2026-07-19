@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { generate } from "@pdfme/generator";
 import { requireOrganization } from "@/lib/auth-server";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
@@ -95,7 +96,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Timeline PDF generation error:", error);
+    logger.error("Timeline PDF generation error", { error: error });
     return NextResponse.json(
       { error: "PDF generation failed", details: String(error) },
       { status: 500 }

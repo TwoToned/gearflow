@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { type FunctionArgs } from "convex/server";
 import { createId } from "@paralleldrive/cuid2";
 import { requireOrganization } from "@/lib/auth-server";
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(fileUpload);
   } catch (error) {
-    console.error("Upload error:", error);
+    logger.error("Upload error", { error: error });
     return NextResponse.json(
       { error: "Upload failed. Please try again." },
       { status: 500 }

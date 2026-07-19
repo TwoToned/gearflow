@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { env } from "@/env";
 import {
   pruneStaleNotificationEmailLogs,
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     const pruned = await pruneStaleNotificationEmailLogs();
     return NextResponse.json({ ...result, prunedLogs: pruned });
   } catch (e) {
-    console.error("[Cron] Notification emails failed:", e);
+    logger.error("[Cron] Notification emails failed", { error: e });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 500 },

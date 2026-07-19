@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { getServeInfo } from "@/lib/storage";
 
@@ -58,7 +59,7 @@ export async function GET(
 
     return new NextResponse(upstream.body, { headers });
   } catch (error) {
-    console.error("File serve error:", error);
+    logger.error("File serve error", { error: error });
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 }

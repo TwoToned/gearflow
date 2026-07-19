@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail, roleChangedEmail, removedFromOrgEmail } from "@/lib/email";
@@ -147,7 +148,7 @@ export async function changeMemberRole(memberId: string, newRole: string) {
   });
   if (org && target.user.email) {
     const emailContent = roleChangedEmail({ orgName: org.name, newRole });
-    sendEmail({ to: target.user.email, ...emailContent }).catch(console.error);
+    sendEmail({ to: target.user.email, ...emailContent }).catch((e) => logger.error("async task failed", { error: e }));
   }
 
   return { success: true };
@@ -206,7 +207,7 @@ export async function removeOrgMember(memberId: string) {
   });
   if (org && target.user.email) {
     const emailContent = removedFromOrgEmail({ orgName: org.name });
-    sendEmail({ to: target.user.email, ...emailContent }).catch(console.error);
+    sendEmail({ to: target.user.email, ...emailContent }).catch((e) => logger.error("async task failed", { error: e }));
   }
 
   return { success: true };

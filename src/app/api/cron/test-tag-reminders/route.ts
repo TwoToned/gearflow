@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { recalculateAllTestTagStatuses, sendTestTagReminderDigests } from "@/server/test-tag-reminders";
 import { env } from "@/env";
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     const result = await sendTestTagReminderDigests();
     return NextResponse.json({ ...result, statusesUpdated });
   } catch (e) {
-    console.error("[Cron] Test tag reminders failed:", e);
+    logger.error("[Cron] Test tag reminders failed", { error: e });
     return NextResponse.json(
       { error: (e as Error).message },
       { status: 500 }

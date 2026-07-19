@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { requireOrganization } from "@/lib/auth-server";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
@@ -235,7 +236,7 @@ export async function GET(
       },
     });
   } catch (e) {
-    console.error("Report generation error:", e);
+    logger.error("Report generation error", { error: e });
     return NextResponse.json({ error: e instanceof Error ? e.message : "Report generation failed" }, { status: 500 });
   }
 }

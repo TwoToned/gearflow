@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "convex/react";
+import { logger } from "@/lib/logger";
 import type { FunctionArgs } from "convex/server";
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
@@ -445,7 +446,7 @@ export function useProjectWrites(orgId: string | undefined) {
       try {
         await recalcM({ projectId: id, orgId, now: Date.now() });
       } catch (e) {
-        console.error("post-update recalc failed (non-fatal):", e);
+        logger.error("post-update recalc failed (non-fatal)", { error: e });
       }
     }
 

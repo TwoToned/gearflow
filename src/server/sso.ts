@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { api } from "../../convex/_generated/api";
@@ -356,7 +357,7 @@ export async function approveSSOUser(approvalId: string, role?: string) {
       dashboardUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard`,
       platformName: pName,
     }),
-  }).catch(console.error);
+  }).catch((e) => logger.error("async task failed", { error: e }));
 
   return { success: true };
 }
@@ -405,7 +406,7 @@ export async function rejectSSOUser(approvalId: string, note?: string) {
       note,
       platformName: pName,
     }),
-  }).catch(console.error);
+  }).catch((e) => logger.error("async task failed", { error: e }));
 
   return { success: true };
 }

@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 const serverEnvSchema = z.object({
   // Core (required)
@@ -123,7 +124,7 @@ const parsed = validated.data;
 // Warn on missing optional config rather than hard-fail
 if (parsed.NODE_ENV !== "test") {
   if (!parsed.RESEND_API_KEY) {
-    console.warn(
+    logger.warn(
       "[env] RESEND_API_KEY is not set — emails will log to console instead of being sent.",
     );
   }

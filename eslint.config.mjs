@@ -125,6 +125,22 @@ const eslintConfig = [
     },
   },
   {
+    // App logging must go through the structured logger (POLICY.md R-8.9.5): raw
+    // console.* is unlevelled, unscrubbed, and carries no correlation id. The two
+    // legitimate low-level uses (the logger's own transport + the crash-time floor
+    // in process-safety) carry an inline eslint-disable with a reason.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "**/*.test.{ts,tsx}",
+      "**/*.spec.{ts,tsx}",
+      "**/__tests__/**",
+      "src/generated/**",
+    ],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
     // No hardcoded color literals in UI components — use design tokens (POLICY.md
     // R-8.7.1) so a brand-color change is a one-line diff. Excludes legitimate
     // non-CSS contexts: canvas (favicon), browser theme-color meta, the brand-default

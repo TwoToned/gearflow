@@ -1,4 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
+import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -44,7 +45,7 @@ export async function logActivity(input: LogActivityInput): Promise<void> {
       createdAt: Date.now(),
     });
   } catch (error) {
-    console.error("Failed to record activity to Convex:", error);
+    logger.error("Failed to record activity to Convex", { error: error });
   }
 }
 
@@ -84,7 +85,7 @@ export async function logActivityMany(inputs: LogActivityInput[]): Promise<void>
       })),
     });
   } catch (error) {
-    console.error("Failed to record activity batch to Convex:", error);
+    logger.error("Failed to record activity batch to Convex", { error: error });
   }
 }
 

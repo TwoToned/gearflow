@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
+import { logger } from "@/lib/logger";
 import { ConvexQueryCacheProvider } from "convex-helpers/react/cache";
 import { authClient } from "@/lib/auth-client";
 import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
@@ -78,7 +79,7 @@ export function ConvexClientProvider({
   // per-domain migration, so nothing depends on Convex until its domain lands.
   if (!client) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn(
+      logger.warn(
         "[convex] NEXT_PUBLIC_CONVEX_URL is not set — Convex provider is inert.",
       );
     }

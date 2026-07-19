@@ -1,4 +1,5 @@
 import "server-only";
+import { logger } from "@/lib/logger";
 
 import { getConvexClient } from "@/lib/convex-client";
 import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
@@ -96,7 +97,7 @@ export async function assertNoBlockingComments(
   try {
     summary = await getProjectBlockingSummary(orgId, projectId);
   } catch (error) {
-    console.error("Failed to read blocking comments before warehouse action", error);
+    logger.error("Failed to read blocking comments before warehouse action", { error: error });
     throw new Error(
       "Can't verify blocking comments right now, so this action is paused. Try again once collaboration status is reachable.",
     );

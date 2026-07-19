@@ -635,7 +635,7 @@ export async function adminDeleteUser(userId: string) {
  * erasure is auditable. Convex search indexes update automatically when the `users`
  * mirror row is removed, so a clean mirror means the user is unsearchable there too.
  */
-export async function verifyUserErased(
+async function verifyUserErased(
   userId: string,
 ): Promise<{ erased: boolean; remaining: string[] }> {
   const remaining: string[] = [];

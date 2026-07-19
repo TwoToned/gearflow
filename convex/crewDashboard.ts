@@ -82,10 +82,14 @@ export const pendingTimeEntries = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
     const g = await crewGraph(ctx, orgId);
-    const entries = await ctx.db.query("crewTimeEntries").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+    // Read only SUBMITTED entries via the status index — the pending set — instead of
+    // scanning the whole (unbounded, grows per shift) time-entry table (R-9.8).
+    const entries = await ctx.db
+      .query("crewTimeEntries")
+      .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "SUBMITTED"))
+      .collect();
     const assignById = new Map(g.assignments.map((a) => [a.id, a]));
     return entries
-      .filter((e) => e.status === "SUBMITTED")
       .sort((a, b) => cmpDescNulls(a.date, b.date))
       .slice(0, 15)
       .map((e) => {

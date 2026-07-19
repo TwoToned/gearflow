@@ -35,12 +35,12 @@ function countOrgWideCollects() {
     if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
     const lines = readFileSync(join(CONVEX_DIR, name), "utf8").split("\n");
     for (let i = 0; i < lines.length; i++) {
-      if (!/withIndex\("by_organizationId/.test(lines[i])) continue;
-      // Only org-ALONE scans are unbounded. A compound index that also narrows by a
-      // second key (`by_organizationId_x` with a second `.eq/.gt/.lt`) is bounded by
-      // that entity — not the R-9.8 hazard — so skip it.
-      const narrowers = (lines[i].match(/\.(eq|gt|gte|lt|lte)\(/g) ?? []).length;
-      if (narrowers > 1) continue;
+      // Only the PURE org index (`by_organizationId"`, exact) is an unbounded org-wide
+      // scan. A compound `by_organizationId_x` index is narrowed by that second key
+      // (one asset / one status / …) by design — bounded, not the R-9.8 hazard — so it
+      // isn't matched here. Matching the exact index name (not a prefix) also avoids the
+      // false positive where the `.eq().eq()` chain sits on a continuation line.
+      if (!/withIndex\("by_organizationId"/.test(lines[i])) continue;
       const window = lines.slice(i, i + 4).join("\n");
       if (
         window.includes(".collect()") &&

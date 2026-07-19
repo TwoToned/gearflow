@@ -12,6 +12,12 @@ import { UserFacingError } from "@/lib/errors/user-facing-error";
  * instead of an inline `sendEmail()` on the request path. Server-side runtime env
  * (Coolify, no rebuild), default OFF. Flip only after the Convex deployment has
  * `RESEND_API_KEY` + `EMAIL_FROM` set and a preview dogfood confirms delivery.
+ *
+ * REMOVE-BY 2026-10-18 (POLICY.md R-4.5 — dated removal condition): this is the last
+ * remaining NATIVE_* legacy fork. Once `NATIVE_EMAIL_SIDEEFFECTS=true` has run in prod
+ * through a full cycle with confirmed delivery, delete the legacy inline-`sendEmail`
+ * branch in `email-side-effect.ts`, make the Convex-scheduler path unconditional, and
+ * drop this flag. Blocked only on setting `RESEND_API_KEY`/`EMAIL_FROM` on prod Convex.
  */
 export const nativeEmailSideEffects = (): boolean =>
   process.env.NATIVE_EMAIL_SIDEEFFECTS === "true";

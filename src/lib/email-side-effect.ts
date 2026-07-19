@@ -33,5 +33,7 @@ export async function deliverSideEffectEmail(args: {
     });
     return;
   }
+  // REMOVE-BY 2026-10-18 (R-4.5): legacy inline-send fork — delete once
+  // NATIVE_EMAIL_SIDEEFFECTS is confirmed stable in prod (see native-writes.ts).
   await sendEmail({ to: args.to, subject: args.subject, html: args.html });
 }

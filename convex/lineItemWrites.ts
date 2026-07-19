@@ -38,7 +38,7 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
  *
  * removeNative mirrors removeLineItemCascade (convex/projectLineItems.ts) + adds the
  * child-removal guard (kit/accessory children can't be removed directly) + the DELETE
- * audit, all atomic. Gated behind NATIVE_LINEITEM_WRITES.
+ * audit, all atomic. Browser-direct (the NATIVE_LINEITEM_WRITES legacy server-action gate was removed in the cutover).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
@@ -1204,7 +1204,7 @@ export const reorderNative = mutation({
  *
  * orgDefaultTaxRate is resolved in-mutation from orgSettings (the source of truth), so
  * a browser caller can't spoof a money-affecting tax rate.
- * Gated behind NATIVE_RECALC; parity with the server-side math is proven by
+ * Browser-direct native recalc (the NATIVE_RECALC legacy gate was removed in the cutover); parity with the server-side math is proven by
  * convex/recalc.test.ts (recalcProjectTotals, the shared core).
  */
 export const recalcNative = mutation({

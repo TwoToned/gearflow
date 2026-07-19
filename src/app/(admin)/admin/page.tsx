@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
 
 import { useServerQuery } from "@/hooks/use-server-query";
 import { AdminShell } from "@/components/admin/admin-shell";

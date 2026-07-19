@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
 
 import { ProjectWizard } from "@/components/projects/project-wizard";
 import { RequirePermission } from "@/components/auth/require-permission";

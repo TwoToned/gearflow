@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
 
 import { Separator } from "@/components/ui/separator";
 import { InviteMember } from "@/components/settings/invite-member";

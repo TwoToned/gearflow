@@ -1,4 +1,5 @@
 "use client";
+// use-client: interactive — event handlers (client-only) (R-8.1.1)
 
 import { WifiOff } from "lucide-react";
 

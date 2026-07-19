@@ -233,6 +233,14 @@ jobs:
 
       - name: Dead-code ratchet (Knip, R-4.2 — blocking on any increase)
         run: pnpm run knip-ratchet
+        # Knip loads prisma.config.ts, which reads DATABASE_URL — without it Knip emits
+        # phantom "unresolved imports" and the count diverges from local. A dummy value
+        # just needs to resolve (no connection).
+        env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+
+      - name: Client-boundary justification (R-8.1.1)
+        run: pnpm run check-client-routes
 
       - name: Install gitleaks
         run: |

@@ -29,7 +29,8 @@
     "convex:backfill:revenue-allocation": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-revenue-allocation.ts",
     "convex:auth:roundtrip": "tsx --env-file=.env --env-file=.env.local scripts/convex-auth-roundtrip.ts",
     "prepare": "husky || true",
-    "check-client-routes": "node scripts/check-client-routes.mjs"
+    "check-client-routes": "node scripts/check-client-routes.mjs",
+    "bundle-ratchet": "node scripts/bundle-ratchet.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

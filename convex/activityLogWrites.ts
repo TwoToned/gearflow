@@ -9,7 +9,7 @@ import { requireService } from "./lib/auth";
  * mutations (convex/lib/audit.ts `writeActivityLog`). The other ~39 domains still emit
  * audit via `logActivity` (src/lib/activity-log.ts, a Postgres write). To make the
  * activity-log SCREENS readable from Convex, every `logActivity` call also mirrors its
- * row here (behind `NATIVE_ACTIVITY_WRITES`), so Convex holds the COMPLETE history.
+ * row here (browser-direct; the NATIVE_ACTIVITY_WRITES legacy gate was removed in the cutover), so Convex holds the COMPLETE history.
  *
  * Idempotent by cuid (`createIfMissing` convention): a retried/duplicate `logActivity`
  * mirror must not double-insert. `id` + `createdAt` are caller-supplied (a cuid +

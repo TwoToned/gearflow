@@ -36,7 +36,7 @@ import { deleteAllForProjectCore } from "./projectCategories";
  * The financial writes (createProject/updateProject and every line-item write) call
  * recalculateProjectTotals and are deliberately NOT here — those stay server-side so
  * the totals math is untouched (parity preserved by construction) until they get the
- * dedicated recalc-parity treatment. Gated behind NATIVE_PROJECT_WRITES.
+ * dedicated recalc-parity treatment. Browser-direct (the NATIVE_PROJECT_WRITES legacy server-action gate was removed in the cutover).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });

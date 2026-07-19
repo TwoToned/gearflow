@@ -17,7 +17,7 @@ const CREW_AUDIT_FIELDS = ["firstName", "lastName", "email", "phone", "type", "s
  * Native CREW write mutations (Phase 5) — same pattern as assetWrites/kitWrites:
  * RBAC(requireOrgPermission "crew") + atomic audit(writeActivityLog) in one
  * transaction. Additive; the generated convex/crewMembers.ts service mutations are
- * untouched. Gated behind NATIVE_CREW_WRITES in src/server/crew.ts.
+ * untouched. Browser-direct (the NATIVE_CREW_WRITES legacy server-action gate was removed in the cutover).
  *
  * Covers create + update (crew has no unique-tag invariant). deleteCrewMember has a
  * multi-table scheduling cascade (assignments → shifts/time-entries, availability) —

@@ -17,7 +17,7 @@ import * as enums from "./lib/validators";
  * ADDITIVE (the generated convex/kits.ts service mutations are untouched), each
  * enforcing RBAC(requireOrgPermission) + invariants + atomic audit(writeActivityLog)
  * in one transaction. `actor`/`auditId`/`now` are caller-generated (deterministic).
- * Gated live behind NATIVE_KIT_WRITES in src/server/kits.ts.
+ * Browser-direct (the NATIVE_KIT_WRITES legacy server-action gate was removed in the cutover).
  *
  * Covers create/update/notes (the clean writes). archive/delete use the existing
  * cascade mutations (kits.archiveCascade / deleteCascade) + their own status guards —

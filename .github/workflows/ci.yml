@@ -206,6 +206,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history so the migration-drift gate can merge-base against origin/main.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
@@ -221,6 +224,11 @@ jobs:
       # currently clean at high+; remaining low/moderate advisories are tracked, not gated.
       - name: Dependency vulnerability scan
         run: pnpm audit --audit-level high
+
+      - name: Migration drift (schema.prisma needs a migration, R-8.3.1)
+        run: |
+          git fetch --no-tags --depth=100 origin main:refs/remotes/origin/main || git fetch --no-tags origin main
+          pnpm run check-migration-drift
 
       - name: Import-cycle check (new cycles only, R-3.5)
         run: pnpm run depcruise

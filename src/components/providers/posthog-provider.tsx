@@ -58,6 +58,9 @@ function ensureInit(): Promise<boolean> {
         autocapture: false,
         capture_pageview: false,
         capture_pageleave: true,
+        // PostHog Error Tracking: capture uncaught errors + unhandled rejections
+        // (client half of #650). Stack only — no DOM/PII (mask_all_* below).
+        capture_exceptions: true,
         disable_session_recording: true,
         mask_all_text: true,
         mask_all_element_attributes: true,

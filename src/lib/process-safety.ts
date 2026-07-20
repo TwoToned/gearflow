@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { captureServerException } from "@/lib/posthog-server";
 
 let installed = false;
 
@@ -40,24 +41,29 @@ export function installProcessSafetyNet(scope: string): void {
     // Crash-time floor (see above).
     // eslint-disable-next-line no-console
     console.error(`[${scope}] uncaughtException:`, err);
+    const exit = () => process.exit(1);
     try {
       Sentry.captureException(err, { tags: { net: "uncaughtException", scope } });
-      void Sentry.flush(2000).finally(() => process.exit(1));
+      // Flush both reporters before exiting so the fault isn't lost on restart.
+      void Promise.allSettled([
+        Sentry.flush(2000),
+        captureServerException(err, { net: "uncaughtException", scope }),
+      ]).finally(exit);
     } catch {
-      process.exit(1);
+      exit();
     }
   });
 }
 
 function capture(reason: unknown, scope: string, net: string): void {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
   try {
-    Sentry.captureException(
-      reason instanceof Error ? reason : new Error(String(reason)),
-      { tags: { net, scope } },
-    );
+    Sentry.captureException(err, { tags: { net, scope } });
   } catch {
     // Sentry not initialized or failed — the console.error above is the floor.
   }
+  // PostHog Error Tracking (server half of #650), alongside Sentry during migration.
+  void captureServerException(err, { net, scope });
 }
 
 /** Test-only: reset the install guard so each test starts clean. */

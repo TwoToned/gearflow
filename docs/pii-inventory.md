@@ -49,6 +49,14 @@ query strings from URLs before send. Only events explicitly emitted via
 `src/lib/analytics.ts` reach PostHog, and by convention their properties are cuid-only (no
 names/emails/notes). Person profiles are `identified_only`.
 
+**PostHog Error Tracking** (migration off Sentry, #650) captures exceptions client-side
+(`capture_exceptions`) and server-side (`src/lib/posthog-server.ts`, `posthog-node`). Server
+exceptions are captured against a fixed `"server"` distinctId — never a real user identity —
+so no name/email/ip is attached. This is parity with the prior Sentry setup: error *messages*
+and stacks are sent as-is (they may occasionally contain user input), but no locals, cookies,
+or auth headers. Runs alongside Sentry until PostHog capture is verified in prod, then Sentry
+is removed.
+
 ## Retention periods (T-P2)
 
 Registered per PII class. **Durations marked ⟨confirm⟩ are placeholder defaults — the data

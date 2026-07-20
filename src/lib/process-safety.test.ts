@@ -13,6 +13,16 @@ vi.mock("@sentry/nextjs", () => ({
   flush: (...args: unknown[]) => flush(...args),
 }));
 
+const phCapture = vi.fn<(...args: unknown[]) => Promise<void>>(() =>
+  Promise.resolve(),
+);
+vi.mock("@/lib/posthog-server", () => ({
+  captureServerException: (...args: unknown[]) => phCapture(...args),
+}));
+
+// Let all queued microtasks (Promise.allSettled(...).finally(exit)) drain.
+const drain = () => new Promise((r) => setTimeout(r, 0));
+
 describe("installProcessSafetyNet", () => {
   const handlers: Record<string, (arg: unknown) => void> = {};
   let onSpy: ReturnType<typeof vi.spyOn>;
@@ -22,6 +32,7 @@ describe("installProcessSafetyNet", () => {
     __resetProcessSafetyNetForTests();
     captureException.mockClear();
     flush.mockClear();
+    phCapture.mockClear();
     for (const k of Object.keys(handlers)) delete handlers[k];
     onSpy = vi
       .spyOn(process, "on")
@@ -53,7 +64,8 @@ describe("installProcessSafetyNet", () => {
     handlers.unhandledRejection?.(new Error("boom"));
 
     expect(errSpy).toHaveBeenCalledWith("[web] unhandledRejection:", expect.any(Error));
-    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledTimes(1); // Sentry
+    expect(phCapture).toHaveBeenCalledTimes(1); // PostHog (migration: both reporters)
     expect(exitSpy).not.toHaveBeenCalled(); // the whole point: do not crash the server
     exitSpy.mockRestore();
   });
@@ -72,11 +84,12 @@ describe("installProcessSafetyNet", () => {
 
     handlers.uncaughtException?.(new Error("fatal"));
 
-    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledTimes(1); // Sentry
+    expect(phCapture).toHaveBeenCalledTimes(1); // PostHog
     expect(flush).toHaveBeenCalled();
-    // flush().finally(() => process.exit(1)) resolves on a later tick — wait for
-    // it so the exit happens while the spy is still installed (no leak).
-    await flush.mock.results[0]!.value;
+    // exit is gated on Promise.allSettled([sentry.flush, posthog capture]).finally,
+    // which resolves on a later tick — drain the queue before asserting (no leak).
+    await drain();
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
   });

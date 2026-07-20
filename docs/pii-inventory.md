@@ -41,6 +41,14 @@ Sentry `beforeSend` (`sentry.server.config.ts`, `instrumentation-client.ts`) str
 `user.email`, `user.ip_address`, and `authorization`/`cookie` headers before send. URLs use
 opaque cuids, not names/emails.
 
+**PostHog (analytics processor).** The browser SDK (`src/components/providers/posthog-provider.tsx`)
+is configured to send **no PII**: `autocapture: false` and `capture_pageview: false` (no
+blanket click/input/pageview capture), `disable_session_recording: true` (no replay),
+`mask_all_text` + `mask_all_element_attributes`, and a `sanitize_properties` hook that strips
+query strings from URLs before send. Only events explicitly emitted via
+`src/lib/analytics.ts` reach PostHog, and by convention their properties are cuid-only (no
+names/emails/notes). Person profiles are `identified_only`.
+
 ## Retention periods (T-P2)
 
 Registered per PII class. **Durations marked ⟨confirm⟩ are placeholder defaults — the data

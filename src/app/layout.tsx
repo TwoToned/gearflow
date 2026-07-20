@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
+import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { DomPatch } from "@/components/dom-patch";
 import { OverlayLockReset } from "@/components/overlay-lock-reset";
 import { ReducedMotionProvider } from "@/components/ui/motion";
@@ -87,13 +88,15 @@ export default function RootLayout({
       >
         <GlobalErrorBoundary>
           <OverlayLockReset />
-          <ThemeProvider>
-            <GoogleMapsProvider>
-              <ConvexClientProvider>
-                <ReducedMotionProvider>{children}</ReducedMotionProvider>
-              </ConvexClientProvider>
-            </GoogleMapsProvider>
-          </ThemeProvider>
+          <PostHogProvider>
+            <ThemeProvider>
+              <GoogleMapsProvider>
+                <ConvexClientProvider>
+                  <ReducedMotionProvider>{children}</ReducedMotionProvider>
+                </ConvexClientProvider>
+              </GoogleMapsProvider>
+            </ThemeProvider>
+          </PostHogProvider>
           <Toaster />
         </GlobalErrorBoundary>
       </body>

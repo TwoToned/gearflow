@@ -53,7 +53,7 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.convex.cloud https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io https://*.ingest.sentry.io https://maps.googleapis.com",
+      "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io https://*.ingest.sentry.io https://maps.googleapis.com https://*.i.posthog.com https://*.posthog.com",
       "frame-src 'self'",
       "worker-src 'self' blob:",
       "manifest-src 'self'",

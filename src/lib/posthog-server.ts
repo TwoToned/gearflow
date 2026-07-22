@@ -53,3 +53,23 @@ export async function captureServerException(
     logger.warn("[posthog] failed to capture server exception", { err });
   }
 }
+
+/**
+ * Capture a server-side metric/event to PostHog (e.g. slow_query, R-8.3.2).
+ * Same fixed `"server"` distinctId and never-throw contract as
+ * captureServerException — this is telemetry, it must never affect the
+ * caller's control flow or latency budget.
+ */
+export async function captureServerEvent(
+  event: string,
+  properties?: Record<string, string | number | boolean>,
+): Promise<void> {
+  const ph = getClient();
+  if (!ph) return;
+  try {
+    ph.capture({ distinctId: "server", event, properties });
+    await ph.flush();
+  } catch (err) {
+    logger.warn("[posthog] failed to capture server event", { err, event });
+  }
+}

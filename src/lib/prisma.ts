@@ -4,6 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "@/env";
 import { buildRuntimeDatabaseUrl } from "./db-url";
+import { withQueryTiming } from "./prisma-query-timing";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -50,7 +51,8 @@ function buildAdapter(): PrismaPg {
   return new PrismaPg(globalForPrisma.prismaTestPool);
 }
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter: buildAdapter() });
+export const prisma =
+  globalForPrisma.prisma ?? withQueryTiming(new PrismaClient({ adapter: buildAdapter() }));
 
 // Cache the singleton everywhere except prod (covers dev AND test, so repeated
 // module evaluation under Vitest reuses the one client + its one pinned pool).

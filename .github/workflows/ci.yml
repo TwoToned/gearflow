@@ -396,3 +396,9 @@ jobs:
       # entry route's First Load JS (gzip). Fails if it grows >5% past the baseline.
       - name: Bundle-size ratchet (R-8.1.5)
         run: pnpm run bundle-ratchet
+
+      # CSS bundle budget (POLICY.md R-8.7.5 / T-8) — BLOCKING absolute cap (50KB
+      # gzip) on .next/static/css/*.css, checked via size-limit (.size-limit.json).
+      # Was previously a dead script never invoked from CI (#623).
+      - name: CSS bundle budget (R-8.7.5)
+        run: pnpm run size

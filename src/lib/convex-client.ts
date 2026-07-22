@@ -1,6 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { env } from "@/env";
 import { getConvexServiceToken } from "./convex-auth";
+import { withConvexOpTiming } from "./convex-op-timing";
 
 /**
  * Server-side Convex client (Phase 3 of the Convex migration; Phase 5 auth bridge).
@@ -31,7 +32,7 @@ export async function getConvexClient(): Promise<ConvexHttpClient> {
         "Convex is not configured — set CONVEX_SELF_HOSTED_URL (or NEXT_PUBLIC_CONVEX_URL).",
       );
     }
-    client = new ConvexHttpClient(url);
+    client = withConvexOpTiming(new ConvexHttpClient(url));
   }
   const token = await getConvexServiceToken();
   if (token !== attachedToken) {

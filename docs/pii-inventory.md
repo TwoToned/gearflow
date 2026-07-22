@@ -37,9 +37,8 @@ redacted for non-service callers via `convex/lib/auth.ts` `redactFields()`.
 
 ## Not logged / not leaked (R-8.12.4)
 
-Sentry `beforeSend` (`sentry.server.config.ts`, `instrumentation-client.ts`) strips
-`user.email`, `user.ip_address`, and `authorization`/`cookie` headers before send. URLs use
-opaque cuids, not names/emails.
+URLs use opaque cuids, not names/emails — enforced by `sanitize_properties` (below) and by
+convention at every emit site.
 
 **PostHog (analytics processor).** The browser SDK (`src/components/providers/posthog-provider.tsx`)
 is configured to send **no PII**: `autocapture: false` and `capture_pageview: false` (no
@@ -49,13 +48,11 @@ query strings from URLs before send. Only events explicitly emitted via
 `src/lib/analytics.ts` reach PostHog, and by convention their properties are cuid-only (no
 names/emails/notes). Person profiles are `identified_only`.
 
-**PostHog Error Tracking** (migration off Sentry, #650) captures exceptions client-side
+**PostHog Error Tracking** (migrated off Sentry, #650) captures exceptions client-side
 (`capture_exceptions`) and server-side (`src/lib/posthog-server.ts`, `posthog-node`). Server
 exceptions are captured against a fixed `"server"` distinctId — never a real user identity —
-so no name/email/ip is attached. This is parity with the prior Sentry setup: error *messages*
-and stacks are sent as-is (they may occasionally contain user input), but no locals, cookies,
-or auth headers. Runs alongside Sentry until PostHog capture is verified in prod, then Sentry
-is removed.
+so no name/email/ip is attached. Error *messages* and stacks are sent as-is (they may
+occasionally contain user input), but no locals, cookies, or auth headers.
 
 ## Retention periods (T-P2)
 

@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
-import { withSentryConfig } from "@sentry/nextjs";
+import { withPostHogConfig } from "@posthog/nextjs-config";
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -53,7 +53,7 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.convex.cloud https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io https://*.ingest.sentry.io https://maps.googleapis.com https://*.i.posthog.com https://*.posthog.com",
+      "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://maps.googleapis.com https://*.i.posthog.com https://*.posthog.com",
       "frame-src 'self'",
       "worker-src 'self' blob:",
       "manifest-src 'self'",
@@ -92,18 +92,25 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Sentry wraps last so it can instrument the fully-composed config.
-// Source-map upload only runs in CI (SENTRY_AUTH_TOKEN must be set).
-export default withSentryConfig(withPWA(nextConfig), {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  // Silent in CI logs (Sentry's progress output is noisy)
-  silent: !process.env.CI,
-  // Hide source maps from client bundles after upload to Sentry
+// PostHog MUST wrap outermost: anything wrapping it after (e.g. withPWA) would
+// return a plain object and drop PostHog's build hooks — no sourcemap upload, no
+// warning either (see github.com/PostHog/posthog-js/issues/3572).
+//
+// sourcemaps.enabled is gated on POSTHOG_SOURCEMAPS_REQUIRED, a flag only the
+// production Dockerfile sets (never in local dev or the PR-validation `Build`
+// job in ci.yml, which run `next build`/`next dev` without deploy creds). When
+// it's on, resolveConfig() throws synchronously if POSTHOG_CLI_TOKEN /
+// POSTHOG_CLI_ENV_ID are missing — a hard build failure, not a silent skip
+// (R-8.9.2: the old Sentry setup depended on env vars that were never actually
+// wired into the deploy pipeline, so its sourcemap upload silently never ran).
+export default withPostHogConfig(withPWA(nextConfig), {
+  personalApiKey: process.env.POSTHOG_CLI_TOKEN ?? "",
+  projectId: process.env.POSTHOG_CLI_ENV_ID,
+  host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
   sourcemaps: {
-    deleteSourcemapsAfterUpload: true,
+    enabled: process.env.POSTHOG_SOURCEMAPS_REQUIRED === "true",
+    releaseName: "rvlt-flow",
+    releaseVersion: process.env.POSTHOG_RELEASE_VERSION,
+    deleteAfterUpload: true,
   },
-  // Disable Sentry's logger on startup
-  disableLogger: true,
 });

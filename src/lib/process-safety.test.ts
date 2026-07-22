@@ -4,15 +4,6 @@ import {
   __resetProcessSafetyNetForTests,
 } from "./process-safety";
 
-const captureException = vi.fn<(...args: unknown[]) => void>();
-const flush = vi.fn<(...args: unknown[]) => Promise<boolean>>(() =>
-  Promise.resolve(true),
-);
-vi.mock("@sentry/nextjs", () => ({
-  captureException: (...args: unknown[]) => captureException(...args),
-  flush: (...args: unknown[]) => flush(...args),
-}));
-
 const phCapture = vi.fn<(...args: unknown[]) => Promise<void>>(() =>
   Promise.resolve(),
 );
@@ -30,8 +21,6 @@ describe("installProcessSafetyNet", () => {
 
   beforeEach(() => {
     __resetProcessSafetyNetForTests();
-    captureException.mockClear();
-    flush.mockClear();
     phCapture.mockClear();
     for (const k of Object.keys(handlers)) delete handlers[k];
     onSpy = vi
@@ -64,8 +53,7 @@ describe("installProcessSafetyNet", () => {
     handlers.unhandledRejection?.(new Error("boom"));
 
     expect(errSpy).toHaveBeenCalledWith("[web] unhandledRejection:", expect.any(Error));
-    expect(captureException).toHaveBeenCalledTimes(1); // Sentry
-    expect(phCapture).toHaveBeenCalledTimes(1); // PostHog (migration: both reporters)
+    expect(phCapture).toHaveBeenCalledTimes(1);
     expect(exitSpy).not.toHaveBeenCalled(); // the whole point: do not crash the server
     exitSpy.mockRestore();
   });
@@ -73,7 +61,7 @@ describe("installProcessSafetyNet", () => {
   it("wraps a non-Error rejection reason in an Error before reporting", () => {
     installProcessSafetyNet("web");
     handlers.unhandledRejection?.("string reason");
-    const reported = captureException.mock.calls[0]?.[0];
+    const reported = phCapture.mock.calls[0]?.[0];
     expect(reported).toBeInstanceOf(Error);
     expect((reported as Error).message).toBe("string reason");
   });
@@ -84,11 +72,9 @@ describe("installProcessSafetyNet", () => {
 
     handlers.uncaughtException?.(new Error("fatal"));
 
-    expect(captureException).toHaveBeenCalledTimes(1); // Sentry
-    expect(phCapture).toHaveBeenCalledTimes(1); // PostHog
-    expect(flush).toHaveBeenCalled();
-    // exit is gated on Promise.allSettled([sentry.flush, posthog capture]).finally,
-    // which resolves on a later tick — drain the queue before asserting (no leak).
+    expect(phCapture).toHaveBeenCalledTimes(1);
+    // exit is gated on captureServerException(...).finally(exit), which resolves
+    // on a later tick — drain the queue before asserting (no leak).
     await drain();
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();

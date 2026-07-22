@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { captureServerException } from "@/lib/posthog-server";
 
 let installed = false;
@@ -13,11 +12,11 @@ let installed = false;
  * backstop for any stray async error.
  *
  * Guarantees the failure is always written to stderr (captured by pm2's log)
- * and reported to Sentry when configured — turning a silent crash into a
- * diagnosable event.
+ * and reported to PostHog Error Tracking when configured — turning a silent
+ * crash into a diagnosable event.
  *
  * Idempotent: safe to call from multiple entrypoints; only the first call wires
- * the listeners. `scope` tags the source in logs and Sentry.
+ * the listeners. `scope` tags the source in logs and PostHog.
  */
 export function installProcessSafetyNet(scope: string): void {
   if (installed) return;
@@ -42,27 +41,13 @@ export function installProcessSafetyNet(scope: string): void {
     // eslint-disable-next-line no-console
     console.error(`[${scope}] uncaughtException:`, err);
     const exit = () => process.exit(1);
-    try {
-      Sentry.captureException(err, { tags: { net: "uncaughtException", scope } });
-      // Flush both reporters before exiting so the fault isn't lost on restart.
-      void Promise.allSettled([
-        Sentry.flush(2000),
-        captureServerException(err, { net: "uncaughtException", scope }),
-      ]).finally(exit);
-    } catch {
-      exit();
-    }
+    // captureServerException never throws (see src/lib/posthog-server.ts).
+    void captureServerException(err, { net: "uncaughtException", scope }).finally(exit);
   });
 }
 
 function capture(reason: unknown, scope: string, net: string): void {
   const err = reason instanceof Error ? reason : new Error(String(reason));
-  try {
-    Sentry.captureException(err, { tags: { net, scope } });
-  } catch {
-    // Sentry not initialized or failed — the console.error above is the floor.
-  }
-  // PostHog Error Tracking (server half of #650), alongside Sentry during migration.
   void captureServerException(err, { net, scope });
 }
 

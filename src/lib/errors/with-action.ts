@@ -13,7 +13,7 @@
  * Errors already typed as UserFacingError, TestTagBlockError, or
  * InventoryError pass through unchanged — they're already structured.
  * Anything else gets a translation attempt; if that fails, the original
- * error rethrows so unexpected failures still surface in logs and Sentry.
+ * error rethrows so unexpected failures still surface in logs and PostHog.
  */
 
 import { translatePrismaError } from "./prisma-translator";
@@ -41,7 +41,7 @@ export function withAction<TArgs extends unknown[], TReturn>(
       const translated = translatePrismaError(e);
       if (translated) throw translated;
 
-      // Unknown — let it bubble. Sentry / global handler will catch.
+      // Unknown — let it bubble. PostHog / global handler will catch.
       throw e;
     }
   };

@@ -158,6 +158,13 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 
+**Analytics (PostHog, optional):**
+- `NEXT_PUBLIC_POSTHOG_KEY` — public write-only ingestion key (`phc_…`); analytics is
+  inert if unset. Must be the `NEXT_PUBLIC_` copy so it's inlined into the browser bundle.
+- `NEXT_PUBLIC_POSTHOG_HOST` — ingest host (default `https://us.i.posthog.com`)
+- Registered budgets/SLOs alerted through PostHog live in `docs/thresholds.md`. The provider
+  is PII-hardened (no autocapture/replay; cuid-only event props) — see `docs/pii-inventory.md`.
+
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
 - `PLATFORM_NAME` — Display name (default: `RVLT Flow`)

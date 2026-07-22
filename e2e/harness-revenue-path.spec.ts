@@ -28,7 +28,7 @@ test.describe("harness: primary revenue path", () => {
     // Postgres + Convex; under this environment's demonstrated latency (100-
     // 300ms even for simple queries) that easily exceeds 30s in total even
     // though every individual step is fast enough on its own.
-    test.setTimeout(150_000);
+    test.setTimeout(180_000);
 
     const unique = Date.now();
     const email = `e2e+revenue-${unique}@harness.local`;
@@ -118,7 +118,7 @@ test.describe("harness: primary revenue path", () => {
       // a while, so wait for the SPECIFIC "1 available" text (not just the
       // generic "available out of" phrase, which matches the placeholder too)
       // before asserting there's no overbook warning.
-      await expect(page.getByText(/1 available/i)).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
       await expect(page.getByText(/overbook/i)).toHaveCount(0);
 
       await page.getByRole("button", { name: "Add to project" }).click();

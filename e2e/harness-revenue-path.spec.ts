@@ -63,7 +63,9 @@ test.describe("harness: primary revenue path", () => {
       await page.goto("/assets/models/new");
       await page.getByPlaceholder("e.g. Shure SM58").fill(modelName);
       await page.getByRole("button", { name: "Create model" }).click();
-      await expect(page).toHaveURL(/\/assets\/models\/[^/]+$/, { timeout: 20000 });
+      // Exclude the literal "new" segment (the create page itself) — see the
+      // comment on the project-creation assertion below for why this matters.
+      await expect(page).toHaveURL(/\/assets\/models\/(?!new$)[^/]+$/, { timeout: 20000 });
     });
 
     await test.step("create a serialized asset for the model (asset tag auto-generated)", async () => {
@@ -72,7 +74,7 @@ test.describe("harness: primary revenue path", () => {
       await page.getByPlaceholder("Search models").fill(modelName);
       await page.getByRole("button", { name: modelName, exact: true }).click();
       await page.getByRole("button", { name: "Create asset" }).click();
-      await expect(page).toHaveURL(/\/assets\/registry\/[^/]+$/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/assets\/registry\/(?!new$)[^/]+$/, { timeout: 20000 });
     });
 
     await test.step("create a project (flow 5)", async () => {
@@ -97,7 +99,14 @@ test.describe("harness: primary revenue path", () => {
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Create job" }).click();
-      await expect(page).toHaveURL(/\/projects\/[^/]+$/, { timeout: 20000 });
+      // NOT /\/projects\/[^/]+$/ — that trivially matches the literal
+      // "/projects/new" creation page itself (the segment "new" satisfies
+      // "one or more non-slash characters" just as well as a real id), so the
+      // assertion resolved instantly without ever waiting for the real
+      // navigation, and every downstream use of `projectId` (extracted from
+      // the URL right after) silently captured the string "new" instead of
+      // an id. Exclude it explicitly so this actually waits for creation.
+      await expect(page).toHaveURL(/\/projects\/(?!new$)[^/]+$/, { timeout: 20000 });
     });
 
     const projectId = new URL(page.url()).pathname.split("/")[2]!;

@@ -21,6 +21,15 @@ test.describe("harness: primary revenue path", () => {
   );
 
   test("project -> line item -> availability -> check-out -> return", async ({ page }) => {
+    // Playwright's default test timeout is 30s — a budget for the WHOLE test,
+    // not per test.step. This flow chains register -> onboard -> model ->
+    // asset -> project (4 wizard steps) -> line item + an async availability
+    // check -> warehouse pipeline across several page loads, each hitting
+    // Postgres + Convex; under this environment's demonstrated latency (100-
+    // 300ms even for simple queries) that easily exceeds 30s in total even
+    // though every individual step is fast enough on its own.
+    test.setTimeout(150_000);
+
     const unique = Date.now();
     const email = `e2e+revenue-${unique}@harness.local`;
     const modelName = `E2E Revenue Model ${unique}`;

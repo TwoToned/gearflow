@@ -127,7 +127,11 @@ test.describe("harness: primary revenue path", () => {
     });
 
     await test.step("check the gear out through the warehouse pipeline (flow 8)", async () => {
-      await page.getByRole("link", { name: "Warehouse" }).click();
+      // getByRole("link", { name: "Warehouse" }) is ambiguous: the app sidebar's
+      // global nav item (-> /warehouse) and the mobile nav both use the exact
+      // same label, alongside this project page's own button (-> /warehouse/
+      // [projectId]). Scope by href to target the project-specific one only.
+      await page.locator(`a[href="/warehouse/${projectId}"]`).click();
       await expect(page).toHaveURL(new RegExp(`/warehouse/${projectId}$`));
 
       await page.getByRole("tab", { name: /^Pick/ }).click();

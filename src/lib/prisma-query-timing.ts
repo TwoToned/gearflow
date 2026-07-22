@@ -2,6 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { logger } from "@/lib/logger";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { AnalyticsEvent } from "@/lib/analytics";
 
 /**
  * T-9 interactive-path latency budget (README.md R-0.4): p95 < 100ms is the
@@ -29,7 +30,7 @@ export function reportIfSlow(model: string, operation: string, durationMs: numbe
     `[db] slow query: ${model}.${operation} took ${durationMs}ms`,
     { model, operation, durationMs, incident },
   );
-  void captureServerEvent("slow_query", { model, operation, duration_ms: durationMs, incident });
+  void captureServerEvent(AnalyticsEvent.SlowQuery, { model, operation, duration_ms: durationMs, incident });
 }
 
 /**

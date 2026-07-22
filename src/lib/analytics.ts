@@ -15,12 +15,17 @@
 /** Canonical event names. Add here, reference by constant — never inline a string. */
 export const AnalyticsEvent = {
   // Performance / latency budget instrumentation (README.md budget registry).
-  // WebVital -> T-7 (Core Web Vitals). ConvexOpLatency -> T-P6 (per-endpoint
-  // SLOs, R-8.9.6/#651): emitted server-side by
-  // src/lib/convex-op-timing.ts for every Convex query/mutation the app
-  // server makes (the backend leg of most interactive server actions).
+  // WebVital -> T-7 (Core Web Vitals). SlowQuery -> T-9 (interactive query
+  // latency, R-8.3.2/#643), emitted by src/lib/prisma-query-timing.ts.
+  // ConvexOpLatency -> T-P6 (per-endpoint SLOs, R-8.9.6/#651): emitted
+  // server-side by src/lib/convex-op-timing.ts for every Convex query/
+  // mutation the app server makes (the backend leg of most interactive
+  // server actions). QueueLag -> T-P7 (webhook queue lag, R-9.10/#623),
+  // emitted by src/lib/queue-lag-timing.ts.
   WebVital: "web_vital",
+  SlowQuery: "slow_query",
   ConvexOpLatency: "convex_op_latency",
+  QueueLag: "queue_lag",
   // Product usage (extend as needed — keep PII out of properties).
   PageView: "$pageview",
 } as const;

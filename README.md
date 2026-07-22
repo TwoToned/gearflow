@@ -297,7 +297,7 @@ overrides and project-specific (§13B) values:
 | T-P4 Monthly cost budget (metered) | **Maps $15 · Resend $15 · Convex plan cap** *(confirmed 2026-07-22)* | Ceilings for the metered vendors; alert at 80% (R-9.12). |
 | T-P5 Max flaky-quarantine size | **10 tests** | Quarantine caps at 10; beyond that the suite is failing, not flaky. |
 | T-P6 Per-endpoint p95 SLOs | **300 ms API · 1 s page** | Interactive-endpoint targets; breach alerting tracked in R-9.11/R-8.9.6. |
-| T-P7 Queue lag/age alert | **> 5 minutes** | Alert when the webhook/notification queue lags beyond 5 min; tracked in R-9.10. |
+| T-P7 Queue lag/age alert | **> 5 minutes** | Instrumented (`src/lib/queue-lag-timing.ts`, wired into the webhook delivery cron, R-9.10/#623) — emits `queue_lag` to PostHog past the 5-min threshold. **PostHog alert not created yet**: pending confirmed live ingestion, same pattern as the CWV alerts (created only after confirming real event flow, not speculatively before). |
 
 Values marked ⚠ *provisional* satisfy the R-0.4 registration requirement but carry business/legal
 judgment — the owner should confirm them. Registration binds the value; several rules still require

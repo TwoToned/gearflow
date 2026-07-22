@@ -6,7 +6,7 @@
  * as the generic "InternalServerError / Try again later." — which is exactly the
  * unactionable string that showed up in the pm2 logs for the projects-read crash.
  * `ConvexError`'s payload survives the prod boundary, so an auth failure surfaces
- * its real message in the Next.js log + Sentry. This test pins that behaviour so a
+ * its real message in the Next.js log + PostHog. This test pins that behaviour so a
  * future edit can't silently regress a guard back to a masked plain `Error`.
  */
 import { describe, it, expect } from "vitest";

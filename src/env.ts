@@ -74,21 +74,17 @@ const serverEnvSchema = z.object({
     .url("NEXT_PUBLIC_CONVEX_SITE_URL must be a valid URL")
     .optional(),
 
-  // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
-  SENTRY_DSN: z.string().optional(),
-  // Source map upload (CI only)
-  SENTRY_AUTH_TOKEN: z.string().optional(),
-  SENTRY_ORG: z.string().optional(),
-  SENTRY_PROJECT: z.string().optional(),
-  // Release identifier — usually set by CI (git SHA)
-  SENTRY_RELEASE: z.string().optional(),
+  // PostHog — error tracking sourcemap upload (deploy pipeline only; see
+  // next.config.ts). Optional here since sourcemaps.enabled itself is gated
+  // on POSTHOG_SOURCEMAPS_REQUIRED, not on these being present.
+  POSTHOG_CLI_TOKEN: z.string().optional(),
+  POSTHOG_CLI_ENV_ID: z.string().optional(),
+  POSTHOG_RELEASE_VERSION: z.string().optional(),
 
   // Public — duplicated in clientEnv for typed access on server too
   NEXT_PUBLIC_APP_URL: z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL"),
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.string().optional(),
   NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED: z.string().optional(),
-  // Sentry — client-side DSN (separate from server DSN by Next convention)
-  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
 });
 
 // In Vitest, process.env.VITEST is set automatically. Provide test-only defaults

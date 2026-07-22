@@ -158,10 +158,16 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 
-**Analytics (PostHog, optional):**
-- `NEXT_PUBLIC_POSTHOG_KEY` — public write-only ingestion key (`phc_…`); analytics is
-  inert if unset. Must be the `NEXT_PUBLIC_` copy so it's inlined into the browser bundle.
+**Analytics + error tracking (PostHog, optional):**
+- `NEXT_PUBLIC_POSTHOG_KEY` — public write-only ingestion key (`phc_…`); analytics +
+  exception capture are inert if unset. Must be the `NEXT_PUBLIC_` copy so it's inlined
+  into the browser bundle.
 - `NEXT_PUBLIC_POSTHOG_HOST` — ingest host (default `https://us.i.posthog.com`)
+- `POSTHOG_CLI_TOKEN` / `POSTHOG_CLI_ENV_ID` — sourcemap upload for readable error-tracking
+  stack traces (`next.config.ts`, `@posthog/nextjs-config`). **Deploy pipeline only** — not
+  needed for local dev (`pnpm dev`/`pnpm build` never require them). The real deploy build
+  (Dockerfile) hardcodes `POSTHOG_SOURCEMAPS_REQUIRED=true`, so a missing token/env-id there
+  fails the build loudly rather than silently skipping the upload (R-8.9.2).
 - Registered budgets/SLOs alerted through PostHog live in `docs/thresholds.md`. The provider
   is PII-hardened (no autocapture/replay; cuid-only event props) — see `docs/pii-inventory.md`.
 

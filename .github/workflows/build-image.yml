@@ -81,10 +81,16 @@ jobs:
             NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
             NEXT_PUBLIC_GOOGLE_CONFIGURED=${{ vars.NEXT_PUBLIC_GOOGLE_CONFIGURED }}
             NEXT_PUBLIC_MICROSOFT_CONFIGURED=${{ vars.NEXT_PUBLIC_MICROSOFT_CONFIGURED }}
-            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=${{ vars.NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED }}
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_POSTHOG_HOST=${{ vars.NEXT_PUBLIC_POSTHOG_HOST }}
+            POSTHOG_CLI_ENV_ID=${{ vars.POSTHOG_CLI_ENV_ID }}
+            POSTHOG_RELEASE_VERSION=${{ github.sha }}
+          # POSTHOG_CLI_TOKEN is a write-scoped personal API key — passed as a
+          # BuildKit secret mount (below), NOT a build-arg, so it never lands in
+          # an image layer or the build cache (unlike build-args, which do).
+          secrets: |
+            posthog_cli_token=${{ secrets.POSTHOG_CLI_TOKEN }}
 
       # Tell Coolify to pull the new image and redeploy. This is Coolify's
       # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):

@@ -34,10 +34,10 @@ docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
   mutation-surface health signal.
 - **Failure alerting (to wire in the dashboard):** Convex Cloud → Settings →
   Integrations supports a **log stream** (Axiom/Datadog) + failure webhooks. Point a
-  webhook at Sentry/Slack keyed on function errors so a spike pages an operator. The
-  app already has `SENTRY_DSN` for the Next.js side; the Convex-side stream is the
-  remaining dashboard-config step (needs Convex dashboard access — not doable
-  headlessly from CI).
+  webhook at PostHog/Slack keyed on function errors so a spike pages an operator. The
+  app already has PostHog Error Tracking (`NEXT_PUBLIC_POSTHOG_KEY`) for the Next.js
+  side; the Convex-side stream is the remaining dashboard-config step (needs Convex
+  dashboard access — not doable headlessly from CI).
 - **Domain anomaly signals already emitting alerts:**
   - **Auth-mirror drift** — `scripts/auth-mirror-reconcile.ts` (daily cron) emails +
     exits non-zero on any drift/parity break.
@@ -47,6 +47,6 @@ docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
 
 ## Remaining ops step (not code)
 
-Wire the Convex dashboard **log stream → Sentry/Slack** + a failure-rate alert
+Wire the Convex dashboard **log stream → PostHog/Slack** + a failure-rate alert
 threshold. Everything code-side (kill-switch, the guard convention, the domain
 alerts) is in place; the external alert sink is a one-time dashboard configuration.

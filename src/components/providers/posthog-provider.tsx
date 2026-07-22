@@ -97,7 +97,8 @@ function ensureInit(): Promise<boolean> {
 
 function useCaptureWebVitals() {
   useReportWebVitals((metric) => {
-    // Maps to the interactive-latency budget in docs/thresholds.md (T-9).
+    // Maps to the Core Web Vitals budget registered in README.md (T-7);
+    // alerting lives in PostHog (see the "CWV p75 —" insights/alerts, R-8.1.5).
     // Await init so a vital that fires before the SDK chunk loads isn't lost.
     void ensureInit().then((ready) => {
       if (!ready) return;

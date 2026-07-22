@@ -14,7 +14,9 @@
 
 /** Canonical event names. Add here, reference by constant — never inline a string. */
 export const AnalyticsEvent = {
-  // Performance / latency budget instrumentation (docs/thresholds.md T-9).
+  // Performance / latency budget instrumentation (README.md budget registry).
+  // WebVital -> T-7 (Core Web Vitals). ConvexOpLatency is unwired — reserved
+  // for T-P6 (per-endpoint SLOs, R-8.9.6/#651), not yet emitted anywhere.
   WebVital: "web_vital",
   ConvexOpLatency: "convex_op_latency",
   // Product usage (extend as needed — keep PII out of properties).

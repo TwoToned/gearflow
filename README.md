@@ -288,6 +288,8 @@ overrides and project-specific (§13B) values:
 | Threshold | Value | Rationale |
 |---|---|---|
 | T-5 Coverage | **48% floor** (default 80%) | Honest current baseline (~49–50%) over the declared scope, **enforced in CI as a ratchet** (`test:coverage`); climbing toward 80%. |
+| T-7 Core Web Vitals p75 | **default** (LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1) | Accept the §13 default. **Alerted in PostHog** at 80% of each bound (LCP 2000 ms / INP 160 ms / CLS 0.08) via the "CWV p75 — LCP/INP/CLS" insights + alerts on `$web_vitals`; bundle-size half of R-8.1.5 enforced in CI (`bundle-ratchet`, blocking). |
+| T-8 Route JS/CSS budget | **default** (≤ 170 KB soft, 300 KB hard) | Accept the §13 default; **enforced in CI as a blocking ratchet** (`bundle-ratchet.mjs`, R-8.1.5). |
 | T-9 Interactive query latency | **default** (p95 < 100 ms; > 1 s = incident) | Accept the §13 default for interactive request paths. |
 | T-P1 Audit-log retention | **2 years** | Activity log (`activityLogs`) retained 24 months for operational/dispute history. |
 | T-P2 PII retention | **Active relationship + 12 months** ⚠ *provisional — owner/legal to confirm* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |

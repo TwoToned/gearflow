@@ -104,7 +104,12 @@ test.describe("harness: primary revenue path", () => {
       // Availability check (flow 7) is inline and automatic here: with exactly
       // one asset created above and quantity defaulted to 1, it renders
       // "1 available out of 1 ..." with no overbook warning/checkbox to confirm.
-      await expect(page.getByText(/available out of/i)).toBeVisible();
+      // The check itself is async (a Convex query) and can start from a 0/0
+      // placeholder before the real count resolves — under CI load that can take
+      // a while, so wait for the SPECIFIC "1 available" text (not just the
+      // generic "available out of" phrase, which matches the placeholder too)
+      // before asserting there's no overbook warning.
+      await expect(page.getByText(/1 available/i)).toBeVisible({ timeout: 20000 });
       await expect(page.getByText(/overbook/i)).toHaveCount(0);
 
       await page.getByRole("button", { name: "Add to project" }).click();

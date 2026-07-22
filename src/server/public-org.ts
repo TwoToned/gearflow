@@ -1,6 +1,6 @@
 "use server";
 
-import { getTheOrg } from "@/lib/single-org";
+import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { serialize } from "@/lib/serialize";
 import { getOrgLoginInfo } from "./sso";
 
@@ -33,4 +33,15 @@ export async function getSingleOrgSSOInfo() {
   if (!org) return null;
   const info = await getOrgLoginInfo(org.slug);
   return info ? serialize(info) : null;
+}
+
+/**
+ * Bust the 5-minute in-process `getTheOrg()` cache. Called by the onboarding
+ * page right after the bootstrap org is created — without this, `getTheOrg()`
+ * (and everything that gates on it, e.g. the (app) layout's onboarding
+ * redirect) can keep serving the cached "no org yet" null for up to 5 minutes
+ * after a successful create.
+ */
+export async function invalidateTheOrgCache(): Promise<void> {
+  invalidateOrgCache();
 }

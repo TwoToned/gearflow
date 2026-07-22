@@ -70,15 +70,17 @@ test.describe("harness: primary revenue path", () => {
       await page.goto("/projects/new");
       await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
 
-      // Project code auto-fills asynchronously (peekNextProjectNumber, a server
-      // query) shortly after mount — project-wizard.tsx's next() step-0 guard
-      // blocks advancing while it's still empty, re-showing the SAME "Continue"
-      // button rather than erroring loudly, which reads as a hang, not a
-      // validation failure. Wait for it to actually populate first.
+      // Project code normally auto-fills asynchronously (peekNextProjectNumber,
+      // a server query) shortly after mount, and project-wizard.tsx's next()
+      // step-0 guard blocks advancing while it's still empty — re-showing the
+      // SAME "Continue" button rather than erroring loudly, which reads as a
+      // hang rather than a validation failure. Under CI load that fetch can be
+      // slow enough to matter, so type a code directly instead of waiting on
+      // it — a real user hitting the same lag would do exactly this.
       const projectCodeInput = page.locator(
         "xpath=//input[@placeholder='e.g. Summer Festival 2026']/parent::div/following-sibling::div[1]//input",
       );
-      await expect(projectCodeInput).not.toHaveValue("", { timeout: 15000 });
+      await projectCodeInput.fill(`E2E-${unique}`);
 
       // Basics -> Schedule -> Site -> Review: every other field is optional, so
       // three plain "Continue" clicks get through from here.

@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
-import { getTheOrgId, invalidateTheOrgCache } from "@/server/public-org";
+import { getTheOrgId, invalidateTheOrgCache, mirrorMyMembership } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +63,11 @@ export default function OnboardingPage() {
         // redirect gates on it, and would otherwise keep seeing "no org yet"
         // for up to 5 minutes after this create.
         await invalidateTheOrgCache();
+        // The org plugin's own create path never mirrors the new owner's
+        // membership into Convex (only src/server/site-admin.ts's admin-driven
+        // path does) — without this, every Convex-authorized action afterward
+        // fails with "not a member of this organization".
+        await mirrorMyMembership(result.data!.id);
         toast.success("Organization created!");
         router.push("/dashboard");
       }

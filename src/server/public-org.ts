@@ -3,6 +3,8 @@
 import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { serialize } from "@/lib/serialize";
 import { getOrgLoginInfo } from "./sso";
+import { getSession } from "@/lib/auth-server";
+import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 
 /**
  * Returns the single org's ID. Safe to call without session context.
@@ -44,4 +46,29 @@ export async function getSingleOrgSSOInfo() {
  */
 export async function invalidateTheOrgCache(): Promise<void> {
   invalidateOrgCache();
+}
+
+/**
+ * Mirror the CALLING session's own membership in `organizationId` into Convex.
+ * Called by the onboarding page right after `organization.create()` +
+ * `setActive()` succeed.
+ *
+ * The self-serve `organization.create()` client call (Better Auth's own
+ * organization plugin) creates the Postgres Organization + Member rows
+ * directly — unlike `adminCreateOrganization` (src/server/site-admin.ts), it
+ * has no way to also call `upsertMemberMirrorByOrgUser`, since that mirror
+ * write lives in this app's code, not the plugin's. Without this, the
+ * bootstrap owner has a real Postgres membership but no Convex-side one, and
+ * every Convex-authorized action (creating a model, a project, ...) fails
+ * with "not a member of this organization" — the app is otherwise unusable
+ * immediately after onboarding.
+ *
+ * Safe for any caller: `upsertMemberMirrorByOrgUser` reads the Postgres
+ * Member row for (org, user) first and no-ops if it doesn't exist, so this
+ * can only mirror a membership that's already real — never fabricate one.
+ */
+export async function mirrorMyMembership(organizationId: string): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  await upsertMemberMirrorByOrgUser(organizationId, session.user.id);
 }

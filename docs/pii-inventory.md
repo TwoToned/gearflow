@@ -3,7 +3,7 @@
 Satisfies POLICY.md **R-8.12.1** (classify personal data: what is stored, where, and why).
 **New PII fields MUST update this file in the same PR** (R-5.2 / R-8.12.1).
 
-**Owner:** Jayden Nawotka · **Last reviewed:** 2026-07-18
+**Owner:** Jayden Nawotka · **Last reviewed:** 2026-07-22
 
 Two persistence systems hold data (see CLAUDE.md dual-backend note):
 
@@ -56,30 +56,34 @@ occasionally contain user input), but no locals, cookies, or auth headers.
 
 ## Retention periods (T-P2)
 
-Registered per PII class. **Durations marked ⟨confirm⟩ are placeholder defaults — the data
-owner must set the real value per legal/compliance obligation before these are authoritative.**
+Registered per PII class. Owner-confirmed 2026-07-22 (README.md R-0.4 budget registry).
 
 | PII class | Store | Retention | Erasure path |
 |---|---|---|---|
-| User identity (name, email, auth creds) | Postgres (Better Auth) | until account deletion | `adminDeleteUser` → **`verifyUserErased`** (R-8.12.2) |
+| User identity (name, email, auth creds) | Postgres (Better Auth) | active relationship + 12 months (T-P2) | `adminDeleteUser` → **`verifyUserErased`** (R-8.12.2) |
 | Session / token | Postgres | session TTL / on sign-out | cascades on user delete |
-| Crew PII (DOB, rates, contact, ical token) | Convex `crewMembers` | ⟨confirm — e.g. until archived + 30d⟩ | crew delete + user-erasure sweep (⚠️ `crewMember.userId` link not yet scrubbed — see gap) |
-| Activity / audit logs (actor name) | Convex `activityLogs` / Postgres | ⟨confirm — e.g. 7y for audit⟩ | retained for audit; actor refs scrubbed on erasure |
+| Crew PII (DOB, rates, contact, ical token) | Convex `crewMembers` | active relationship + 12 months (T-P2) | crew delete + user-erasure sweep; `crewMember.userId` link scrubbed via `crewMembers.scrubUserRefs` |
+| Activity / audit logs (actor name) | Convex `activityLogs` / Postgres | 2 years (T-P1) | retained for audit; actor refs scrubbed on erasure |
 | Uploaded files | Convex `_storage` / `storedFiles` | until owner deletes | `/api/files` delete |
-| Backups | Convex export | 90 days (T-P3, `convex-backup.yml`) | ⚠️ point-in-time — erasure not yet propagated to backups |
+| Backups | Convex export | 90 days (T-P3, `convex-backup.yml`) | point-in-time — see bound below |
 
 ## User-erasure workflow (R-8.12.2)
 
 `adminDeleteUser` (site-admin) runs a cross-org GDPR sweep — deletes the Postgres identity
 (sessions/accounts cascade), removes the Convex `users` mirror (which also clears search
 indexes), deletes the user's authored kit/scan/test records, and scrubs their FK references
-on line-items / projects / maintenance. It then calls **`verifyUserErased`**, which confirms
-the identity PII is gone from Postgres + the Convex mirror and logs a warning if anything
-remains — making the erasure **verifiable**, not fire-and-forget.
+on line-items / projects / maintenance / **crew members** (`crewMembers.scrubUserRefs`, #614).
+It then calls **`verifyUserErased`**, which confirms the identity PII is gone from Postgres,
+the Convex mirror, and any linked `crewMembers` row, and logs a warning if anything remains —
+making the erasure **verifiable**, not fire-and-forget.
 
-**Remaining gaps (need owner input / infra):** (1) the retention durations above marked
-⟨confirm⟩; (2) `crewMember.userId` is not yet scrubbed on erasure (a Convex `scrubUserRefs`
-mutation on `crewWrites` would close it); (3) erasure is not propagated into the 90-day
-backups (a restore-then-re-erase or crypto-shred process — infra decision).
+**Backup exposure bound:** `convex-backup.yml` takes a full daily export retained as a
+GitHub Actions artifact for exactly 90 days (`retention-days: 90`), then GitHub deletes it
+automatically — no manual purge step exists or is needed. A user erased today may still
+appear in a backup snapshot taken *before* the erasure, for up to 90 days after that
+snapshot was taken, after which it is gone by construction. We do not retroactively edit
+already-created snapshot archives (this is pre-launch, non-customer data — disproportionate
+for the current risk level); if/when that changes, revisit as a scoped R-15 exception or a
+restore-then-re-erase drill.
 
 _Review this inventory at each quarterly sweep (§12) and whenever a PII field is added._

@@ -26,8 +26,13 @@ import { capture, AnalyticsEvent } from "@/lib/analytics";
  * convention at emit sites (see src/lib/analytics.ts), not by the SDK.
  */
 const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+// `||`, not `??`: an unset GitHub Actions repo variable is inlined at build
+// time as an empty string, not undefined — `?? default` never catches that,
+// so posthog-js gets api_host: "" and silently sends everything same-origin
+// instead of to PostHog (production symptom: requests to /e, /array/*, /flags
+// on this app's own domain, 307-redirected into the login page).
 const posthogHost =
-  process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
+  process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
 // The SDK (~50 KB gzip) is dynamically imported so it lands in its own async
 // chunk, NOT the entry-route First Load JS (keeps the bundle-ratchet gate green).

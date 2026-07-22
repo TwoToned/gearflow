@@ -16,11 +16,15 @@ import { logger } from "@/lib/logger";
  * Short flush window because serverless/edge-ish handlers may freeze between
  * requests — we flush after each capture rather than relying on the interval.
  */
+// `||`, not `??`: NEXT_PUBLIC_POSTHOG_HOST is inlined at build time, and an
+// unset GitHub Actions repo variable is inlined as an empty string, not
+// undefined — `?? default` never catches that, silently pointing the CLI at
+// api_host: "" instead of the real ingestion host.
 const key =
-  process.env.POSTHOG_KEY ?? process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
+  process.env.POSTHOG_KEY || process.env.NEXT_PUBLIC_POSTHOG_KEY || "";
 const host =
-  process.env.POSTHOG_HOST ??
-  process.env.NEXT_PUBLIC_POSTHOG_HOST ??
+  process.env.POSTHOG_HOST ||
+  process.env.NEXT_PUBLIC_POSTHOG_HOST ||
   "https://us.i.posthog.com";
 
 let client: PostHog | null = null;

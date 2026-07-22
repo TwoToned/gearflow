@@ -292,9 +292,9 @@ overrides and project-specific (§13B) values:
 | T-8 Route JS/CSS budget | **default** (≤ 170 KB soft, 300 KB hard) | Accept the §13 default; **enforced in CI as a blocking ratchet** (`bundle-ratchet.mjs`, R-8.1.5). |
 | T-9 Interactive query latency | **default** (p95 < 100 ms; > 1 s = incident) | Accept the §13 default for interactive request paths. |
 | T-P1 Audit-log retention | **2 years** | Activity log (`activityLogs`) retained 24 months for operational/dispute history. |
-| T-P2 PII retention | **Active relationship + 12 months** ⚠ *provisional — owner/legal to confirm* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |
+| T-P2 PII retention | **Active relationship + 12 months** *(confirmed 2026-07-22)* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |
 | T-P3 Backup retention | **90 days** | Daily Convex export retained 90 days (`.github/workflows/convex-backup.yml`). |
-| T-P4 Monthly cost budget (metered) | **Maps $50 · Resend $30 · Convex per plan** ⚠ *provisional — owner to confirm* | Initial per-service ceilings for the metered vendors; alert at 80% once cost monitoring exists (R-9.12). |
+| T-P4 Monthly cost budget (metered) | **Maps $15 · Resend $15 · Convex plan cap** *(confirmed 2026-07-22)* | Ceilings for the metered vendors; alert at 80% (R-9.12). |
 | T-P5 Max flaky-quarantine size | **10 tests** | Quarantine caps at 10; beyond that the suite is failing, not flaky. |
 | T-P6 Per-endpoint p95 SLOs | **300 ms API · 1 s page** | Interactive-endpoint targets; breach alerting tracked in R-9.11/R-8.9.6. |
 | T-P7 Queue lag/age alert | **> 5 minutes** | Alert when the webhook/notification queue lags beyond 5 min; tracked in R-9.10. |

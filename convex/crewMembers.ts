@@ -276,6 +276,39 @@ export const remove = mutation({
   },
 });
 
+// Service-only existence check for the erasure verification step
+// (verifyUserErased, R-8.12.2, #614) — confirms scrubUserRefs actually worked.
+export const existsByUserId = query({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    await requireService(ctx);
+    const doc = await ctx.db
+      .query("crewMembers")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    return doc !== null;
+  },
+});
+
+// GDPR erasure sweep (R-8.12.2, #614): clear the crewMember.userId link to a
+// deleted platform account. `by_userId` is a global index, so this scrubs
+// every org's crew-member rows in one query — no per-org loop needed (unlike
+// maintenanceRecords.scrubUserRefs, which has no such index).
+export const scrubUserRefs = mutation({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    await requireService(ctx);
+    const docs = await ctx.db
+      .query("crewMembers")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const doc of docs) {
+      await ctx.db.patch(doc._id, { userId: undefined });
+    }
+    return { scrubbed: docs.length };
+  },
+});
+
 // ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
 // Patch with explicit field CLEARING. `set` applies non-null values; every name
 // in `clear` is set to undefined → Convex removes the optional field (the

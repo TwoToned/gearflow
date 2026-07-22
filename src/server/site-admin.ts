@@ -595,6 +595,9 @@ export async function adminDeleteUser(userId: string) {
     ...allOrgsForSweep.map((org) => () =>
       convexForDelete.mutation(api.maintenanceRecords.scrubUserRefs, { organizationId: org.id, userId }),
     ),
+    // crewMembers.userId links a crew profile to this platform account (R-8.12.2,
+    // #614) — by_userId is a global index, so one call covers every org.
+    () => convexForDelete.mutation(api.crewMembers.scrubUserRefs, { userId }),
   ];
   await runWithConcurrency(deletionTasks, 20);
 
@@ -653,8 +656,12 @@ async function verifyUserErased(
   // Convex `users` mirror (drives cross-domain name/email resolution + search).
   try {
     const convex = await getConvexClient();
-    const mirror = await convex.query(api.users.getById, { id: userId });
+    const [mirror, crewMemberLink] = await Promise.all([
+      convex.query(api.users.getById, { id: userId }),
+      convex.query(api.crewMembers.existsByUserId, { userId }),
+    ]);
     if (mirror) remaining.push("convex:users-mirror");
+    if (crewMemberLink) remaining.push("convex:crewMembers.userId");
   } catch {
     remaining.push("convex:unverified");
   }

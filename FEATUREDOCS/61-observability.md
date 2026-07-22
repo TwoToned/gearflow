@@ -45,6 +45,30 @@ skip (R-8.9.2). `POSTHOG_CLI_TOKEN` is passed to the Docker build as a **BuildKi
 mount** (not a build-arg) so the write-scoped personal API key never lands in an image layer;
 `POSTHOG_CLI_ENV_ID` and `POSTHOG_RELEASE_VERSION` (`github.sha`) are ordinary build-args.
 
+## Latency budgets (T-9 query timing, T-P6 per-endpoint SLOs)
+
+Two Prisma/Convex-level extensions time every call and report crossings of the README.md
+R-0.4 budget registry thresholds through `captureServerEvent()` (`src/lib/posthog-server.ts`,
+a general-purpose sibling of `captureServerException`). Both share the same two-tier severity
+shape (structured log always; PostHog event only past the "slow" line; `incident: true` past
+a second, higher line) and are never allowed to throw or alter the wrapped call's result:
+
+- **`src/lib/prisma-query-timing.ts`** (`withQueryTiming`, wired into the `prisma` singleton in
+  `src/lib/prisma.ts`) — times every Prisma query via a Client Extension. `> 100ms` (T-9
+  interactive-path p95) emits `slow_query`; `> 1000ms` escalates to an incident.
+- **`src/lib/convex-op-timing.ts`** (`withConvexOpTiming`, wired into the singleton in
+  `src/lib/convex-client.ts`) — times every `query`/`mutation` the app server sends to Convex
+  via `getFunctionName()` (`convex/server`) for the op name. `> 300ms` (T-P6 "API" p95 target)
+  emits `convex_op_latency`; `> 1000ms` escalates to an incident. This measures the Convex leg
+  only — a server action making several sequential Convex calls (or Convex + Prisma work) can
+  still miss the end-to-end budget with every individual call under 300ms; there is no
+  request-wide wrapper today (would need either an OTEL pipeline or per-action instrumentation
+  across ~30 `src/server/*.ts` files — out of scope here, revisit if the per-call signal proves
+  insufficient).
+
+Both events feed p95 alerts in PostHog once real traffic is flowing (same pattern as the CWV
+alerts in R-8.1.5 — created only after confirming live event volume, not speculatively before).
+
 ## Env vars
 
 See `CLAUDE.md` → Environment Variables → Analytics + error tracking.

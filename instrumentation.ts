@@ -16,4 +16,30 @@ export async function register() {
   }
 }
 
-export { captureRequestError as onRequestError } from "@sentry/nextjs";
+import { captureRequestError } from "@sentry/nextjs";
+import type { Instrumentation } from "next";
+
+/**
+ * Forward server-side request errors to BOTH Sentry and PostHog Error Tracking
+ * during the migration (#650). Sentry is removed once PostHog capture is
+ * confirmed in prod. PostHog capture is dynamically imported so it never loads
+ * in the edge runtime (posthog-node is Node-only).
+ */
+export const onRequestError: Instrumentation.onRequestError = async (
+  err,
+  request,
+  context,
+) => {
+  captureRequestError(err, request, context);
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const { captureServerException } = await import("./src/lib/posthog-server");
+      await captureServerException(err, {
+        route: context.routePath ?? "",
+        method: request.method ?? "",
+      });
+    } catch {
+      // reporting must never crash the handler
+    }
+  }
+};

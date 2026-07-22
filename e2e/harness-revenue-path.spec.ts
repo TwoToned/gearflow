@@ -38,6 +38,18 @@ test.describe("harness: primary revenue path", () => {
       await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
     });
 
+    await test.step("complete onboarding (create the org) if needed", async () => {
+      // The (app) layout redirects every route to /onboarding until an org
+      // exists (src/app/(app)/layout.tsx) — a fresh registration on this harness
+      // has no org yet, so this step is required before any protected page
+      // (the model/asset/project forms below) will render at all.
+      if (new URL(page.url()).pathname === "/onboarding") {
+        await page.getByLabel("Organization name").fill(`Revenue Path Org ${unique}`);
+        await page.getByRole("button", { name: "Create organization" }).click();
+        await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      }
+    });
+
     await test.step("create an equipment model (flow 10: create inventory)", async () => {
       await page.goto("/assets/models/new");
       await page.getByPlaceholder("e.g. Shure SM58").fill(modelName);

@@ -69,8 +69,19 @@ test.describe("harness: primary revenue path", () => {
     await test.step("create a project (flow 5)", async () => {
       await page.goto("/projects/new");
       await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
-      // Basics -> Schedule -> Site -> Review: every field but Name/Project code
-      // (auto-filled) is optional, so three plain "Continue" clicks get through.
+
+      // Project code auto-fills asynchronously (peekNextProjectNumber, a server
+      // query) shortly after mount — project-wizard.tsx's next() step-0 guard
+      // blocks advancing while it's still empty, re-showing the SAME "Continue"
+      // button rather than erroring loudly, which reads as a hang, not a
+      // validation failure. Wait for it to actually populate first.
+      const projectCodeInput = page.locator(
+        "xpath=//input[@placeholder='e.g. Summer Festival 2026']/parent::div/following-sibling::div[1]//input",
+      );
+      await expect(projectCodeInput).not.toHaveValue("", { timeout: 15000 });
+
+      // Basics -> Schedule -> Site -> Review: every other field is optional, so
+      // three plain "Continue" clicks get through from here.
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Continue" }).click();

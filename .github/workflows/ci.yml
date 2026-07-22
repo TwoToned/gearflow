@@ -150,6 +150,83 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  e2e-harness:
+    # Seeded-auth E2E over the primary revenue path (POLICY.md R-8.8.3, #621):
+    # project -> line items -> availability -> check-out -> return. Needs a REAL
+    # Convex backend (unlike the `e2e` job's dummy Convex URL) because these flows
+    # write and read actual domain data. Runs a self-hosted Convex backend in Docker
+    # against its own Postgres db on the same service Postgres instance, exactly as
+    # documented in docs/e2e-harness.md / scripts/e2e-harness-up.sh (proven working
+    # locally). NOT blocking yet: the docker-in-CI networking path (the backend
+    # container reaching the app's JWKS endpoint via host.docker.internal) hasn't
+    # been exercised on a GitHub-hosted runner before — flip continue-on-error off
+    # once a run has gone green here.
+    name: E2E (seeded harness — revenue path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gearflow_harness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gearflow_harness
+      BETTER_AUTH_SECRET: ci-e2e-harness-secret-string-at-least-32-chars
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_DB: gearflow_harness
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Sync schema to throwaway DB
+        run: pnpm exec prisma db push
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Stand up the seeded Convex harness
+        run: bash scripts/e2e-harness-up.sh
+
+      - name: Run E2E (seeded harness, chromium)
+        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-revenue-path.spec.ts
+        env:
+          E2E_HARNESS: "1"
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-harness-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Tear down the seeded Convex harness
+        if: always()
+        run: bash scripts/e2e-harness-down.sh
+
   integration:
     # Integration tests against a real migrated Postgres (POLICY.md R-10.1, R-8.8).
     # Postgres-only mode: INTEGRATION_CONVEX is unset, so the Convex-service-token

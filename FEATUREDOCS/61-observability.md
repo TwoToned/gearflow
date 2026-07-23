@@ -112,6 +112,38 @@ to the originating Next.js request (POLICY.md R-8.9.6). A true W3C `traceparent`
 the Convex function body itself would need threading a trace id through every query/mutation's
 args across all ~43 `*Writes.ts` domain modules — out of scope here.
 
+## Vendor cost budget tracking (T-P4, R-9.12/#764)
+
+The README.md R-0.4 budget registry registers a $15/mo ceiling each for Resend and Google
+Maps (plus a Convex plan cap), but until #764 nothing measured usage against them — a Major
+compliance gap (zero enforcement/alerting). `src/lib/vendor-cost-tracking.ts` adds the
+`vendor_usage` PostHog event (`AnalyticsEvent.VendorUsage`, `{ vendor, operation, units }`) as
+the per-unit signal for the top spend drivers:
+
+- **Resend** — `reportVendorUsage("resend", "send")` fires from `src/lib/email.ts`'s
+  `sendEmail()` after every real (non-dev-mock) send.
+- **Google Maps** — `capture(AnalyticsEvent.VendorUsage, { vendor: "maps", operation: ... })`
+  fires client-side from `src/components/ui/address-input.tsx` for the two billable Places API
+  (New) operations it makes: `"autocomplete"` (`fetchAutocompleteSuggestions`) and
+  `"place_details"` (`place.fetchFields`).
+
+**What this does NOT do (and why):** compute a live $ total or auto-alert at 80%. Either
+needs a way to read usage back over a monthly window — a persistent counter (out of scope:
+no Convex deploy credentials available when this landed, and a new Postgres table would be
+scope creep beyond the Better-Auth/audit models Postgres is limited to post-migration) or a
+PostHog **query-capable** personal API key (the app only holds the public write-only
+ingestion key). `vendor-cost-tracking.ts`'s doc comment carries the target reference lines
+for whichever lands first — Resend 2,400 sends/mo (80% of a 3,000/mo free-tier estimate),
+Maps $12/mo (80% of the $15 budget, priced off Places API Essentials list pricing) — so the
+next engineer has concrete numbers instead of a blank slate. Separately, the PostHog plan's
+5-alert cap is already fully allocated (see `docs/convex-observability-runbook.md`), so even
+a computed ratio would need a freed slot before it could page anyone automatically.
+
+Once deployed and emitting live volume, a "Vendor usage (T-P4)" PostHog insight should be
+created from the `vendor_usage` event (same precedent as the CWV insights above — created
+only after confirming live event volume, not speculatively before) for the named owner
+(Jayden Nawotka, matching R-9.12) to review monthly.
+
 ## Convex job/cron error forwarding
 
 Convex function/cron errors used to land only in the Convex dashboard — never forwarded
@@ -124,6 +156,9 @@ so a failure is reported to PostHog as a `$exception` event before the original 
 re-thrown (Convex's own cron-run log still records it too; reporting is best-effort and never
 masks the real failure). Requires `POSTHOG_KEY` set on the **Convex** deployment (`pnpm exec
 convex env set POSTHOG_KEY <phc_...>` — separate from the Next.js `.env`); inert until set.
+`invokeCronRoute`'s `fetch` also carries an explicit 10s `AbortController` timeout (R-9.6/#763)
+— previously an unbounded call, so a hung executor route could pin a Convex action's execution
+budget indefinitely instead of failing fast into the reporting path above.
 
 **Scope note:** this covers the two cron executors, not the other 43 `*Writes.ts` domain
 mutation modules. See `docs/convex-observability-runbook.md` for the optional blanket
@@ -156,3 +191,8 @@ See `CLAUDE.md` → Environment Variables → Analytics + error tracking.
   the Convex deployment 2026-07-23); Convex-op telemetry correlated with the originating request
   id; crash-free-sessions (T-13) insight + alert created, after retiring the never-fired T-P7
   `queue_lag` alert to free a slot under the PostHog plan's 5-alert cap.
+- v5 (#764): `vendor_usage` PostHog event added for Resend sends + Maps Autocomplete/Place
+  Details requests — the first real signal against the T-P4 cost budget (previously
+  registered with zero enforcement). Live $ computation and 80%-threshold alerting are
+  deferred pending a persistent monthly counter or a query-capable PostHog key; see "Vendor
+  cost budget tracking" above for the concrete target numbers already worked out.

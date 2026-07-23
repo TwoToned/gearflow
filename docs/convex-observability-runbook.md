@@ -71,6 +71,17 @@ docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
 - **PostHog dashboards/insights/alerts, owner: Jayden Nawotka.** Covers the CWV
   (T-7), slow_query (T-9), convex_op_latency (T-P6), and crash-free-sessions
   (T-13) insights/alerts referenced from README.md's budget registry.
+- **Vendor cost usage (T-P4, R-9.12/#764) — tracked, not yet alerted.** A
+  `vendor_usage` PostHog event fires per billable Resend send and per Maps
+  Autocomplete/Place Details request (`src/lib/vendor-cost-tracking.ts` +
+  call sites). A "Vendor usage (T-P4)" insight is to be created once live event
+  volume confirms (same precedent as the CWV insights above), for owner Jayden
+  Nawotka to review monthly. No PostHog Alert object exists for it: computing a live 80%
+  ratio needs either a persistent monthly counter (not built — no Convex
+  deploy credentials when this landed) or a query-capable PostHog key (only
+  the write-only ingestion key is configured), and the 5-alert cap below is
+  already full regardless. See FEATUREDOCS/61 for the target threshold numbers
+  already worked out for whichever lands first.
 
 ## Alert slots (5-alert plan cap)
 

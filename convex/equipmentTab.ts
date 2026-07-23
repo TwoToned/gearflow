@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * BROWSER-facing composite for the project EQUIPMENT EDITING TAB (Phase 5 native
@@ -103,7 +104,7 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
   const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
     byCuid(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     byCuid(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    byCuid(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    byCuid(refKitIds.map((id) => getKitByCuid(ctx, id))),
     byCuid(refModelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     byCuid(refSupplierIds.map((id) => ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
   ]);

@@ -11,6 +11,7 @@ import { createKitLineItemCore } from "./projectLineItems";
 import { findKitConflict } from "./lib/availabilityCore";
 import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -499,7 +500,7 @@ export const applyNative = mutation({
     for (const item of templateItems) {
       if (!item.kitId) continue;
       const kitId = item.kitId; // hoist so the narrowing survives the closure below
-      const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+      const kit = await getKitByCuid(ctx, kitId);
       const label = kit?.assetTag ?? kitId;
       if (!kit || kit.organizationId !== a.orgId) {
         kitWarnings.push(`${label}: kit not found`);

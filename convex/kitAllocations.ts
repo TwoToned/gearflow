@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgRead } from "./lib/auth";
 import { suggestKitAllocation, allocationCoversKit } from "./lib/allocation";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Per-MODEL revenue allocation for a kit (see docs/revenue-allocation-design.md).
@@ -52,7 +53,7 @@ export const getKitAllocation = query({
   handler: async (ctx, { kitId, orgId }) => {
     await requireOrgRead(ctx, orgId);
 
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+    const kit = await getKitByCuid(ctx, kitId);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError(`kit not found: ${kitId}`);
 
     const quantities = await kitModelQuantities(ctx, kitId);

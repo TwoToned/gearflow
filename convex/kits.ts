@@ -7,6 +7,7 @@ import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Thin CRUD for Kit (Convex table "kits"). GENERATED — Phase 2/5.
@@ -32,7 +33,7 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await getKitByCuid(ctx, id);
     await requireOrgReadDoc(ctx, doc);
     return doc;
   },
@@ -171,7 +172,7 @@ export const deletability = query({
   }),
   handler: async (ctx, { orgId, id }) => {
     await requireOrgRead(ctx, orgId);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError("Kit not found");
 
     const referencingLineItems = (
@@ -212,7 +213,7 @@ export const listByIds = query({
     const unique = [...new Set(ids)];
     if (unique.length > 1000) throw new ConvexError("kits.listByIds: too many ids (max 1000)");
     const docs = await Promise.all(
-      unique.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+      unique.map((id) => getKitByCuid(ctx, id)),
     );
     return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
   },
@@ -337,7 +338,7 @@ export const createIfMissing = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    const existing = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    const existing = await getKitByCuid(ctx, args.id);
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("kits", args);
     return { _id, created: true };
@@ -377,7 +378,7 @@ export const update = mutation({
   },
   handler: async (ctx, { id, patch }) => {
     await requireService(ctx);
-    const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await getKitByCuid(ctx, id);
     if (!doc) throw new ConvexError("kits not found: " + id);
     const safePatch = { ...patch };
     delete safePatch.organizationId;
@@ -390,7 +391,7 @@ export const remove = mutation({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     await requireService(ctx);
-    const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await getKitByCuid(ctx, id);
     if (!doc) throw new ConvexError("kits not found: " + id);
     // Revenue allocation has no FK to cascade through (Convex-only table). Without
     // this, a recreated kit reusing the id would inherit the old kit's split.
@@ -412,7 +413,7 @@ export const remove = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: string) {
-  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
+  const kit = await getKitByCuid(ctx, kitId);
   if (!kit || kit.organizationId !== organizationId) throw new ConvexError("Kit not found");
   if (kit.status !== "AVAILABLE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
   return kit;
@@ -583,7 +584,7 @@ export const archiveCascade = mutation({
   args: { organizationId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", a.kitId)).unique();
+    const kit = await getKitByCuid(ctx, a.kitId);
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     if (kit.status !== "AVAILABLE") throw new ConvexError("Only AVAILABLE kits can be archived");
     await releaseKitMembers(ctx, a.kitId, a.organizationId, a.now);
@@ -596,7 +597,7 @@ export const deleteCascade = mutation({
   args: { organizationId: v.string(), kitId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", a.kitId)).unique();
+    const kit = await getKitByCuid(ctx, a.kitId);
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     if (kit.status !== "AVAILABLE") throw new ConvexError("Only AVAILABLE kits can be deleted");
     await releaseKitMembers(ctx, a.kitId, a.organizationId, a.now);

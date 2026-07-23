@@ -146,11 +146,12 @@ export const upcomingShifts = query({
     const startOfToday = new Date(nowMs).setHours(0, 0, 0, 0);
     const orgAssignmentIds = new Set(g.assignments.map((a) => a.id));
     const assignById = new Map(g.assignments.map((a) => [a.id, a]));
-    // crewShifts have no org column — scope via the org's assignment ids.
-    const shifts: { id: string; assignmentId: string; date: number; status?: string; callTime?: string; endTime?: string; breakMinutes?: number; location?: string; notes?: string }[] = [];
-    for (const id of orgAssignmentIds) {
-      for (const s of await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect()) shifts.push(s);
-    }
+    // crewShifts have no org column — scope via the org's assignment ids. Batched in
+    // parallel (R-8.3.2) instead of one sequential round-trip per assignment.
+    const shiftLists = await Promise.all(
+      Array.from(orgAssignmentIds, (id) => ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect()),
+    );
+    const shifts = shiftLists.flat();
     return shifts
       .filter((s) => s.status === "SCHEDULED" && s.date >= startOfToday && orgAssignmentIds.has(s.assignmentId))
       .sort((a, b) => cmpAscNulls(a.date, b.date))

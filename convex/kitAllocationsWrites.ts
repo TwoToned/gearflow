@@ -5,6 +5,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { kitModelQuantities } from "./kitAllocations";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Native KIT-REVENUE-ALLOCATION write mutations (Phase 3 browser-direct — replaces the
@@ -35,7 +36,7 @@ export const replaceNative = mutation({
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+    const kit = await getKitByCuid(ctx, kitId);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError(`kit not found: ${kitId}`);
 
     if (rows.length > 0) {
@@ -114,7 +115,7 @@ export const clearNative = mutation({
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+    const kit = await getKitByCuid(ctx, kitId);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError(`kit not found: ${kitId}`);
 
     const rows = await ctx.db

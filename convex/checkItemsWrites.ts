@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { CheckItemType } from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Native CHECK-ITEM write mutations (Phase 3 browser-direct — replaces the
@@ -40,7 +41,7 @@ async function orgModel(ctx: MutationCtx, orgId: string, id: string) {
   return doc && doc.organizationId === orgId ? doc : null;
 }
 async function orgKit(ctx: MutationCtx, orgId: string, id: string) {
-  const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  const doc = await getKitByCuid(ctx, id);
   return doc && doc.organizationId === orgId ? doc : null;
 }
 

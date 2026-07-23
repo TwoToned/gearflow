@@ -11,6 +11,7 @@ import { adjustBulkAvailability } from "./lib/inventory";
 import { releaseKitMembers, getKitGuarded, assignAssetToKit, releaseAsset, getAssetDoc } from "./kits";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Native KIT write mutations (Phase 5) — same shape as convex/assetWrites.ts:
@@ -106,7 +107,7 @@ export const createNative = mutation({
     }
     // The assetTag guard is org-scoped and does NOT catch a cross-org cuid collision —
     // dup-guard the client-minted id too (else another org's kit getById .unique() crashes).
-    const dupId = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    const dupId = await getKitByCuid(ctx, fields.id);
     if (dupId) throw new ConvexError("Kit already exists");
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
@@ -152,7 +153,7 @@ export const updateNative = mutation({
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
-    const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    const doc = await getKitByCuid(ctx, id);
     if (!doc) throw new ConvexError("Kit not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
@@ -212,7 +213,7 @@ export const updateNotesNative = mutation({
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
 
-    const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    const doc = await getKitByCuid(ctx, id);
     if (!doc) throw new ConvexError("Kit not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
@@ -251,7 +252,7 @@ export const archiveNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "kit", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
     if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be archived" });
     await releaseKitMembers(ctx, id, orgId, now);
@@ -273,7 +274,7 @@ export const deleteNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "kit", "delete");
     const actor = await resolveActor(ctx, suppliedActor);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
     if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });
 

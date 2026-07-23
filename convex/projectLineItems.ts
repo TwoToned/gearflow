@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { ensureBulkUnit, ensureSerialisedUnit, expandAccessoryChildLines, syncLineItemRollup } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -601,7 +602,7 @@ export async function createKitLineItemCore(
   },
 ): Promise<{ id: string }> {
     await assertProjectInOrg(ctx, a.projectId, a.organizationId);
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", a.kitId)).unique();
+    const kit = await getKitByCuid(ctx, a.kitId);
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     let sort = await nextLineSort(ctx, a.projectId, a.organizationId);
 

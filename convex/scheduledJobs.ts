@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
+import { reportConvexJobError } from "./lib/errorReporting";
 
 /**
  * Phase 6a — Convex durable cron executors.
@@ -39,6 +40,11 @@ import { internalAction } from "./_generated/server";
  * status summary. Throws on a non-2xx response so the failure surfaces in the
  * Convex dashboard's cron run log (a failed run is logged; the next scheduled
  * run proceeds normally — no retry storm, and the executor is idempotent).
+ *
+ * Also forwards any failure to PostHog (`reportConvexJobError`, R-8.9.1) before
+ * throwing — the Convex dashboard's cron log was previously the ONLY place a
+ * failure was visible; this is the missing forwarding leg. Reporting is
+ * best-effort and never swallows or replaces the thrown error.
  */
 async function invokeCronRoute(
   path: string,
@@ -50,28 +56,33 @@ async function invokeCronRoute(
     return { skipped: true };
   }
 
-  const baseUrl = process.env.CONVEX_CRON_TARGET_URL;
-  const secret = process.env.CRON_SECRET;
-  if (!baseUrl || !secret) {
-    throw new Error(
-      `[convex-cron] CONVEX_CRON_TARGET_URL and CRON_SECRET must both be set on the ` +
-        `Convex deployment to run ${path}`,
-    );
-  }
+  try {
+    const baseUrl = process.env.CONVEX_CRON_TARGET_URL;
+    const secret = process.env.CRON_SECRET;
+    if (!baseUrl || !secret) {
+      throw new Error(
+        `[convex-cron] CONVEX_CRON_TARGET_URL and CRON_SECRET must both be set on the ` +
+          `Convex deployment to run ${path}`,
+      );
+    }
 
-  const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${secret}` },
-  });
-  const body = await res.text();
-  if (!res.ok) {
-    throw new Error(
-      `[convex-cron] ${path} failed: ${res.status} ${body.slice(0, 500)}`,
-    );
+    const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const body = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `[convex-cron] ${path} failed: ${res.status} ${body.slice(0, 500)}`,
+      );
+    }
+    console.log(`[convex-cron] ${path} ok: ${res.status}`);
+    return { status: res.status, body };
+  } catch (err) {
+    await reportConvexJobError(`cron:${path}`, err, { path });
+    throw err;
   }
-  console.log(`[convex-cron] ${path} ok: ${res.status}`);
-  return { status: res.status, body };
 }
 
 /**

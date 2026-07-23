@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { prisma } from "./prisma";
 import { getConvexClient } from "./convex-client";
 import { api } from "../../convex/_generated/api";
-import type { ActorContext } from "./actor-context";
+import type { ActorContext } from "./actor-types";
 
 /**
  * API-key auth for the agent-accessible API + MCP layer.

@@ -88,3 +88,12 @@ All `Select` dropdowns must pass explicit label children to `<SelectValue>` beca
 ## Dependencies
 - `@vis.gl/react-google-maps` (map rendering + Places API loading)
 - Google Maps JavaScript API + Places API (New) (requires API key)
+
+## Testing (Places Fake)
+`src/lib/maps-fake.ts` (`createFakeMapsPlaces()`) stubs the `google.maps.places`
+surface `AddressInput` calls directly (`AutocompleteSuggestion.fetchAutocompleteSuggestions`,
+the `Place` class) so it can be smoke-tested without loading the real Maps JS SDK
+(POLICY.md R-8.10.4 — every vendor adapter should have a local/fake for tests). Pair
+it with mocking `useMapsLibrary` from `@/lib/maps-sdk` to report the library as
+loaded. See `src/components/ui/__tests__/address-input.smoke.test.tsx` for the
+autocomplete → select → Zod-validate coverage this unblocked.

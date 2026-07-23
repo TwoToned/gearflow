@@ -11,6 +11,7 @@ import { runPredictiveMaintenance, type PmPlanEntry } from "./lib/checkPredictiv
 import { completeCheckAndDeprepLineCore, prepItemCore } from "./checkRecordOps";
 import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -109,7 +110,7 @@ async function assertBulkAssetInOrg(ctx: MutationCtx, bulkAssetId: string, orgId
 }
 
 async function assertKitInOrg(ctx: MutationCtx, kitId: string, orgId: string): Promise<void> {
-  const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
+  const k = await getKitByCuid(ctx, kitId);
   if (!k || k.organizationId !== orgId) throw new ConvexError("Kit not found");
 }
 

@@ -58,6 +58,11 @@ Plus, on every mutation:
 - **Per-row org re-check on GLOBAL-index fetches.** `by_cuid`, `by_modelId`, and
   friends are *global* indexes; a fetched doc's `organizationId` must be re-checked
   against the caller's org or you have a cross-tenant read/write.
+- **Kit-by-cuid goes through `getKitByCuid` (`convex/lib/kits.ts`), never an inlined
+  `ctx.db.query("kits").withIndex("by_cuid", ...)`.** One accessor for a global index
+  means one place to get the org re-check right, instead of ~30 independent chances
+  to forget it (R-8.3.4). Callers still MUST check the returned doc's
+  `organizationId` — the helper doesn't scope by org.
 - **Client-supplied FKs are org-validated** via `convex/lib/orgRef.ts`
   (`assertRefInOrg` / `assertMemberInOrg`). Because the service-token server reads
   bypass read-side org scoping, **write-side FK validation is the only reliable

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireService, requireOrgPermission } from "./lib/auth";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * ONE-round-trip read of everything `buildProjectEquipmentTree` needs to rebuild a
@@ -50,7 +51,7 @@ async function readBundle(ctx: QueryCtx, projectId: string, orgId: string) {
   const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
     Promise.all(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     Promise.all(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    Promise.all(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    Promise.all(refKitIds.map((id) => getKitByCuid(ctx, id))),
     Promise.all(refModelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     Promise.all(refSupplierIds.map((id) => ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
   ]);

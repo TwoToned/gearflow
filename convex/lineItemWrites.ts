@@ -13,6 +13,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+import { getKitByCuid } from "./lib/kits";
 import { expandAccessoryChildLines } from "./lib/fulfillment";
 import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
 import {
@@ -907,7 +908,7 @@ export const addNative = mutation({
         // (a) Kit membership — a kit asset must be booked via the kit workflow.
         const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.assetId!)).unique();
         if (asset && asset.organizationId === organizationId && asset.kitId) {
-          const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).unique();
+          const kit = await getKitByCuid(ctx, asset.kitId!);
           const kitTag = kit && kit.organizationId === organizationId ? kit.assetTag : asset.kitId;
           throw new ConvexError({
             code: "ASSET_IN_KIT",
@@ -1072,7 +1073,7 @@ export const addKitNative = mutation({
     // Kit availability enforcement (parity with addKitLineItem, src/server/line-items.ts:
     // 811-860). UNCONDITIONAL — no allowOverbook for kits. (createKitLineItemCore re-reads
     // + org-validates the kit; this pre-read is only for the guards.)
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
+    const kit = await getKitByCuid(ctx, kitId);
     if (kit && kit.organizationId === organizationId) {
       // (a) Block truly unavailable kits (allow checked-out — the date check handles those).
       if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
@@ -1328,7 +1329,7 @@ export const addLineItemSmartNative = mutation({
       if (fields.assetId) {
         const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.assetId!)).unique();
         if (asset && asset.organizationId === organizationId && asset.kitId) {
-          const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).unique();
+          const kit = await getKitByCuid(ctx, asset.kitId!);
           const kitTag = kit && kit.organizationId === organizationId ? kit.assetTag : asset.kitId;
           throw new ConvexError({
             code: "ASSET_IN_KIT",

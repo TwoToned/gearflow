@@ -8,7 +8,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
-import { getModelWithCategoryMap } from "@/lib/models-read";
+import { getModelWithCategoryMap } from "@/lib/model-category-join";
 import { getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";

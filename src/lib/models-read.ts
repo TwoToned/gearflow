@@ -1,5 +1,4 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
-import { getCategoryMap, type ConvexCategory } from "@/lib/categories-read";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -35,31 +34,6 @@ export async function getModelsByOrg(orgId: string): Promise<ConvexModel[]> {
 export async function getModelMap(orgId: string): Promise<Map<string, ConvexModel>> {
   const all = await getModelsByOrg(orgId);
   return new Map(all.map((m) => [m.id, m]));
-}
-
-/** A Convex model with its equipment `category` resolved (nested) — mirrors a
- *  Prisma `model: { include: { category } }` join for the cross-domain reads that
- *  display `model.category.name` (CSV exports, reorder, utilization, reports). */
-export type ModelWithCategory = ConvexModel & { category: ConvexCategory | null };
-
-/**
- * Map of modelId → model with its nested equipment category, replacing a Prisma
- * `model: { include: { category } }` join. Two Convex round-trips (models +
- * categories), deduped per call.
- */
-export async function getModelWithCategoryMap(
-  orgId: string,
-): Promise<Map<string, ModelWithCategory>> {
-  const [models, categoryMap] = await Promise.all([
-    getModelsByOrg(orgId),
-    getCategoryMap(orgId),
-  ]);
-  return new Map(
-    models.map((m) => [
-      m.id,
-      { ...m, category: m.categoryId ? categoryMap.get(m.categoryId) ?? null : null },
-    ]),
-  );
 }
 
 /**

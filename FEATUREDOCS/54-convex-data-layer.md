@@ -33,6 +33,11 @@ domain entity means adding a Convex table + `*Writes.ts` mutations, not a Prisma
   `test-tag-read.ts`, `warehouse-display-token-read.ts`,
   `maintenance-record-asset-read.ts`). These bypass read-side org scoping by design
   (see the write-side FK note below).
+- **Cross-domain joins that need two `*-read.ts` modules both ways** (e.g. a model
+  needs its category, AND a category's counts need the org's models) live in a
+  dedicated `*-join.ts` module (`model-category-join.ts`), not in either domain's
+  own read file — putting the join in either one creates a circular import between
+  the two domain modules (POLICY.md R-3.5).
 
 ## Writes
 

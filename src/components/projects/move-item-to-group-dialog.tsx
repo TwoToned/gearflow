@@ -30,6 +30,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/select";
 import type { CategoryData } from "./equipment-rows";
 
 export interface MoveItemToGroupTarget {
@@ -135,10 +136,10 @@ function MoveItemToGroupDialogBody({
       </DialogHeader>
       {hasGroups && (
         <div className="space-y-2 py-2">
-          <select
+          <NativeSelect
+            variant="compact"
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             {categories.map((cat) =>
               cat.groups.length > 0 ? (
@@ -160,7 +161,7 @@ function MoveItemToGroupDialogBody({
                 ))}
               </optgroup>
             )}
-          </select>
+          </NativeSelect>
         </div>
       )}
       <DialogFooter>

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -27,4 +28,27 @@ const Input = React.forwardRef<
 ));
 Input.displayName = "Input";
 
-export { Input };
+/**
+ * SearchInput — the leading-icon search box used in list toolbars (R-8.7.3).
+ * Wraps its own `relative` positioning; size the outer layout slot around it.
+ */
+const SearchInput = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(({ className, ...props }, ref) => (
+  <div className="relative">
+    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+    <input
+      ref={ref}
+      className={cn(
+        "h-10 w-full rounded-[var(--r)] border-2 border-input bg-card pl-9 pr-3 text-[14px] text-ink placeholder:text-faint",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+        className,
+      )}
+      {...props}
+    />
+  </div>
+));
+SearchInput.displayName = "SearchInput";
+
+export { Input, SearchInput };

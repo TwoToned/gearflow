@@ -44,7 +44,7 @@ function GaffSticker({ className }: { className?: string }) {
       aria-hidden
       className={cn(
         "pointer-events-none relative flex size-[58px] items-center justify-center rounded-full",
-        "bg-[#0C0A08] text-ink shadow-[var(--sh-stk)] ring-2 ring-ink/15",
+        "bg-gaff-tape text-ink shadow-[var(--sh-stk)] ring-2 ring-ink/15",
         className,
       )}
     >

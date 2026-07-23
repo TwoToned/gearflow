@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/select";
 import type { CategoryData } from "./equipment-rows";
 
 const UNCATEGORISED_VALUE = "__uncategorized__";
@@ -96,10 +97,10 @@ function MoveItemToCategoryDialogBody({
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-2 py-2">
-        <select
+        <NativeSelect
+          variant="compact"
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <option value={UNCATEGORISED_VALUE}>Uncategorized</option>
           {categories.map((cat) => (
@@ -107,7 +108,7 @@ function MoveItemToCategoryDialogBody({
               {cat.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <DialogFooter>
         <Button variant="line" onClick={onClose}>

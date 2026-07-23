@@ -55,6 +55,11 @@
   --sh-hover: 0 7px 0 #0C0A08;
   --lit: inset 0 1px 0 rgba(255,253,248,.14);
   --sh-stk: 2px 4px 0 rgba(0,0,0,.5);
+  /* === deliberately theme-independent surfaces (R-8.7.1): fixed regardless of
+     .light — a warehouse kiosk display and the auth page's decorative tape-roll
+     sticker are never meant to flip with the app theme === */
+  --warehouse-display-bg: #0a0f14;
+  --gaff-tape-bg: #0C0A08;
   /* === radius === */
   --radius: 0.875rem;
   --r: 14px; --r-lg: 20px;
@@ -187,6 +192,8 @@
   --color-select: var(--select);
   --color-cream: var(--cream);
   --color-cream-ink: var(--cream-ink);
+  --color-warehouse-display: var(--warehouse-display-bg);
+  --color-gaff-tape: var(--gaff-tape-bg);
   /* shadcn role utilities → bg-primary, text-foreground, border-border, ring-ring… */
   --color-background: var(--background);
   --color-foreground: var(--foreground);

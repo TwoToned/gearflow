@@ -1,4 +1,5 @@
 import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,32 @@ const CardFooter = React.forwardRef<
 ));
 CardFooter.displayName = "CardFooter";
 
+/**
+ * Panel — the lighter-weight surface (1px border-line vs Card's 2px border-border)
+ * used for stat tiles and standalone content sections that don't need the full
+ * Card/CardHeader/CardContent structure (R-8.7.3).
+ */
+const panelVariants = cva(
+  "rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]",
+  {
+    variants: {
+      padding: {
+        default: "p-5",
+        responsive: "p-5 sm:p-6",
+      },
+    },
+    defaultVariants: { padding: "default" },
+  },
+);
+
+const Panel = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & VariantProps<typeof panelVariants>
+>(({ className, padding, ...props }, ref) => (
+  <div ref={ref} className={cn(panelVariants({ padding }), className)} {...props} />
+));
+Panel.displayName = "Panel";
+
 export {
   Card,
   CardHeader,
@@ -80,4 +107,5 @@ export {
   CardDescription,
   CardContent,
   CardFooter,
+  Panel,
 };

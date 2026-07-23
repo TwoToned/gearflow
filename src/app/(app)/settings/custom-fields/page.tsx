@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { NativeSelect } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import {
@@ -178,15 +179,15 @@ function FieldDialog({
 
           <div className="space-y-2">
             <Label htmlFor="cf-type">Type</Label>
-            <select
+            <NativeSelect
+              variant="compact"
               id="cf-type"
               {...form.register("fieldType")}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               {FIELD_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           {fieldType === "SELECT" && (

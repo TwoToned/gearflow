@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ImageIcon, Plus, Search } from "lucide-react";
+import { ImageIcon, Plus } from "lucide-react";
 
 import { cn, focusRing } from "@/lib/utils";
+import { SearchInput } from "@/components/ui/input";
 import { AppImage } from "@/components/ui/app-image";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -106,16 +107,11 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
     <div className="space-y-4">
       {/* toolbar: search + view toggle + new-asset */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <input
+        <div className="max-w-xs flex-1">
+          <SearchInput
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by tag, serial, or name…"
-            className={cn(
-              "h-10 w-full rounded-[var(--r)] border-2 border-input bg-card pl-9 pr-3 text-[14px] text-ink placeholder:text-faint",
-              focusRing,
-            )}
           />
         </div>
         <div className="flex items-center gap-2">

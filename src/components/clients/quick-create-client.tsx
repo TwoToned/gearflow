@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
 interface QuickCreateClientProps {
@@ -67,17 +68,16 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
           </div>
           <div className="space-y-2">
             <Label htmlFor="quick-client-type">Type</Label>
-            <select
+            <NativeSelect
               id="quick-client-type"
               value={type}
               onChange={(e) => setType(e.target.value as typeof type)}
-              className="flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-45"
             >
               <option value="COMPANY">Company</option>
               <option value="INDIVIDUAL">Individual</option>
               <option value="VENUE">Venue</option>
               <option value="PRODUCTION_COMPANY">Production company</option>
-            </select>
+            </NativeSelect>
           </div>
           <div className="space-y-2">
             <Label htmlFor="quick-client-contact">Contact name</Label>

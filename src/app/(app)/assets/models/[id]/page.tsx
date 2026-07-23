@@ -48,6 +48,7 @@ import { ModelAccessoriesManager } from "@/components/assets/model-accessories-m
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Panel } from "@/components/ui/card";
 import { cn, focusRing } from "@/lib/utils";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -479,10 +480,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </div>
                 {model.description && (
-                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <Panel padding="responsive">
                     <p className="text-caption font-medium text-muted mb-3">Description</p>
                     <p className="text-table-cell text-ink-2 whitespace-pre-wrap">{model.description}</p>
-                  </div>
+                  </Panel>
                 )}
               </TabsContent>
 
@@ -659,7 +660,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="photos" className="mt-4">
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <h3 className="t-heading text-ink mb-4">Model photos</h3>
                     <MediaUploader
                       entityType="model"
@@ -680,11 +681,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         await media.reorder(orderedIds);
                       }}
                     />
-                </div>
+                </Panel>
               </TabsContent>
 
               <TabsContent value="documents" className="mt-4">
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <h3 className="t-heading text-ink mb-4">Manuals &amp; documents</h3>
                     <MediaUploader
                       entityType="model"
@@ -699,7 +700,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         await media.remove(mediaId);
                       }}
                     />
-                </div>
+                </Panel>
               </TabsContent>
 
               <TabsContent value="checks" className="mt-4">

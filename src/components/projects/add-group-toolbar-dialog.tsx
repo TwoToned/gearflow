@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
 interface CategoryOption {
@@ -109,24 +110,24 @@ function AddGroupToolbarDialogBody({
       <div className="space-y-3 py-2">
         <div className="space-y-2">
           <Label>Category</Label>
-          <select
+          <NativeSelect
+            variant="compact"
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <option value={UNCATEGORISED_VALUE}>Uncategorized</option>
             {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>{cat.name}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         {templates.length > 0 && (
           <div className="space-y-2">
             <Label>Template (optional)</Label>
-            <select
+            <NativeSelect
+              variant="compact"
               value={templateId}
               onChange={(e) => handleTemplatePick(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <option value="">None (empty group)</option>
               {templates.map((t) => (
@@ -134,7 +135,7 @@ function AddGroupToolbarDialogBody({
                   {t.name} ({t.itemCount} {t.itemCount === 1 ? "item" : "items"})
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
         <div className="space-y-2">

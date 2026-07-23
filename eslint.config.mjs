@@ -160,7 +160,12 @@ const eslintConfig = [
       "no-restricted-syntax": [
         "error",
         {
-          selector: "Literal[value=/^#(?:[0-9a-fA-F]{3,4}){1,2}$/]",
+          // Matches either a literal that IS a hex code, or a Tailwind arbitrary-value
+          // bracket embedding one (e.g. `text-[#fff]`, `bg-[#0a0f14]`) anywhere in the
+          // string — the bracket delimiters keep this from firing on unrelated content
+          // like URL fragments (`#faq`).
+          selector:
+            "Literal[value=/^#(?:[0-9a-fA-F]{3,4}){1,2}$|\\[#(?:[0-9a-fA-F]{3,4}){1,2}\\]/]",
           message:
             "Hardcoded color literal — use a design token (Tailwind class or var(--…)) per R-8.7.1.",
         },

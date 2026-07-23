@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowUpDown } from "lucide-react";
 
 import { Stat } from "@/components/ui/stat";
+import { Panel } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -83,21 +84,21 @@ export function FleetRoi() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        <Panel>
           <Stat bright figure={formatCurrency(data.totalRevenue)} label="Revenue attributed" />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat figure={formatCurrency(data.totalFleetCost)} label="Fleet replacement cost" />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat figure={`${earning}`} label={`Models earning (of ${data.rows.length})`} />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat
             figure={formatCurrency(idleCapital)}
             label={`Idle capital (${idle.length} model${idle.length === 1 ? "" : "s"})`}
           />
-        </div>
+        </Panel>
       </div>
 
       {data.truncated && (

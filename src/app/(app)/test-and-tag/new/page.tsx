@@ -33,7 +33,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -246,9 +246,7 @@ function NewTestTagAssetInner() {
                       <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-faint")}>
                         {previewTag || "No tag yet"}
                       </p>
-                      <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                        {classLabel}
-                      </span>
+                      <SmartFormPreviewPill>{classLabel}</SmartFormPreviewPill>
                       <p className={cn("text-caption", intervalMonths ? "text-muted" : "text-faint")}>
                         {intervalMonths
                           ? `Retest every ${intervalMonths} month${intervalMonths === 1 ? "" : "s"}`
@@ -466,14 +464,14 @@ function NewTestTagAssetInner() {
             </section>
           </div>
 
-          <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <SmartFormActions>
             <Button type="button" variant="line" onClick={() => router.back()}>
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending}>
               Create item
             </Button>
-          </div>
+          </SmartFormActions>
         </SmartFormLayout>
       </div>
     </CanDo>

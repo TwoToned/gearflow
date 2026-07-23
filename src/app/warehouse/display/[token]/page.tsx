@@ -108,7 +108,7 @@ export default function WarehouseDisplayPage({
 
   if (error && !data) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0a0f14] text-white">
+      <div className="flex h-screen items-center justify-center bg-warehouse-display text-white">
         <div className="text-center space-y-2">
           <p className="text-2xl font-bold text-red-400">{error}</p>
           <p className="text-lg text-gray-500">Check the display URL in settings</p>
@@ -119,7 +119,7 @@ export default function WarehouseDisplayPage({
 
   if (!data) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0a0f14] text-white">
+      <div className="flex h-screen items-center justify-center bg-warehouse-display text-white">
         <div className="text-xl text-gray-400 animate-pulse">Loading warehouse display...</div>
       </div>
     );
@@ -150,7 +150,7 @@ function StandardLayout({
   lastUpdated: Date | null;
 }) {
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0a0f14] text-white p-6 flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-warehouse-display text-white p-6 flex flex-col">
       {/* Header */}
       <Header data={data} clock={clock} />
 
@@ -232,7 +232,7 @@ function CompactLayout({
   lastUpdated: Date | null;
 }) {
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0a0f14] text-white p-8 flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-warehouse-display text-white p-8 flex flex-col">
       <Header data={data} clock={clock} />
 
       <div className="flex-1 grid grid-cols-2 gap-6 min-h-0 mt-6">
@@ -288,7 +288,7 @@ function DispatchOnlyLayout({
   lastUpdated: Date | null;
 }) {
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0a0f14] text-white p-8 flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-warehouse-display text-white p-8 flex flex-col">
       <Header data={data} clock={clock} />
 
       <div className="flex-1 min-h-0 mt-6 space-y-6">

@@ -33,7 +33,7 @@ import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateCategory } from "./quick-create-category";
 import { SpecificationsEditor } from "./specifications-editor";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
@@ -135,9 +135,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
                   {previewName}
                 </p>
                 {categoryLabel && (
-                  <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                    {categoryLabel}
-                  </span>
+                  <SmartFormPreviewPill>{categoryLabel}</SmartFormPreviewPill>
                 )}
                 <p className={cn("text-caption", rateLine ? "text-muted" : "text-faint")}>
                   {rateLine || "No daily rate"}
@@ -380,14 +378,14 @@ export function ModelForm({ initialData }: ModelFormProps) {
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update model" : "Create model"}
         </Button>
-      </div>
+      </SmartFormActions>
 
       <QuickCreateCategory
         open={showCreateCategory}

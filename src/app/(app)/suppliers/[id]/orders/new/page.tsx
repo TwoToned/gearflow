@@ -37,7 +37,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -169,9 +169,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
                       </p>
                       <p className="truncate text-caption text-muted">{supplier.name}</p>
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                          {typeLabel}
-                        </span>
+                        <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
                         <StatusIndicator category="supplierOrder" value={v.status ?? "DRAFT"} label={statusLabel} variant="pill" />
                       </div>
                       <p className={cn("text-caption", expectedDate ? "text-muted" : "text-faint")}>
@@ -250,14 +248,14 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
             </SmartFormSection>
           </div>
 
-          <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+          <SmartFormActions>
             <Button type="button" variant="line" onClick={() => router.back()}>
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending}>
               Create order
             </Button>
-          </div>
+          </SmartFormActions>
         </SmartFormLayout>
       </div>
     </FadeIn>

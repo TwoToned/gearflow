@@ -31,7 +31,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 
 interface CrewMemberFormProps {
@@ -159,9 +159,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                   <p className={cn("text-card-title font-semibold leading-tight", previewName === "New crew member" ? "text-faint" : "text-ink")}>
                     {previewName}
                   </p>
-                  <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                    {typeLabel}
-                  </span>
+                  <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
                   <p className={cn("text-caption", rateLine ? "text-muted" : "text-faint")}>
                     {rateLine || "No rate set"}
                   </p>
@@ -390,14 +388,14 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update crew member" : "Create crew member"}
         </Button>
-      </div>
+      </SmartFormActions>
     </SmartFormLayout>
   );
 }

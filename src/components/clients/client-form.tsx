@@ -26,7 +26,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 
 interface ClientFormProps {
@@ -109,9 +109,7 @@ export function ClientForm({ initialData }: ClientFormProps) {
                   <p className={cn("text-card-title font-semibold leading-tight", previewName === "New client" ? "text-faint" : "text-ink")}>
                     {previewName}
                   </p>
-                  <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                    {typeLabel}
-                  </span>
+                  <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
                   <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-faint")}>
                     <Mail className="h-3 w-3 shrink-0" strokeWidth={1.5} />
                     {primaryContact || "No contact yet"}
@@ -284,14 +282,14 @@ export function ClientForm({ initialData }: ClientFormProps) {
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update client" : "Create client"}
         </Button>
-      </div>
+      </SmartFormActions>
     </SmartFormLayout>
   );
 }

@@ -70,6 +70,7 @@ import { EntityCommentsButton } from "@/components/collaboration/entity-comments
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Panel } from "@/components/ui/card";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
@@ -616,7 +617,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Files — merged Photos + Model documents */}
               <TabsContent value="files" className="mt-4 space-y-6">
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <h3 className="t-heading text-ink mb-4">
                     Asset photos
                     {!hasCustomPhoto && photoUrl && (
@@ -646,9 +647,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       await media.setPrimary(id, mediaId);
                     }}
                   />
-                </div>
+                </Panel>
 
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <h3 className="t-heading text-ink mb-4">
                     Model documents
                     <span className="ml-2 text-caption font-normal text-muted">
@@ -682,7 +683,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       ))}
                     </div>
                   )}
-                </div>
+                </Panel>
               </TabsContent>
 
               {/* Notes */}

@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/select";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { Loader2 } from "lucide-react";
 
@@ -83,17 +84,17 @@ export function QuickCreateLocation({ open, onOpenChange, onCreated }: QuickCrea
           </div>
           <div className="space-y-2">
             <Label htmlFor="quick-loc-type">Type</Label>
-            <select
+            <NativeSelect
+              variant="compact"
               id="quick-loc-type"
               value={type}
               onChange={(e) => setType(e.target.value as typeof type)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <option value="WAREHOUSE">Warehouse</option>
               <option value="VENUE">Venue</option>
               <option value="VEHICLE">Vehicle</option>
               <option value="OFFSITE">Offsite</option>
-            </select>
+            </NativeSelect>
           </div>
           <div className="space-y-2">
             <Label>Parent Location</Label>

@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { CheckItemType } from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { assertStrLen } from "./lib/fieldGuards";
 
 /**
  * Native CHECK-ITEM write mutations (Phase 3 browser-direct — replaces the
@@ -58,6 +59,38 @@ export const checkItemFields = {
   dropdownOptions: v.optional(v.any()),
 };
 
+/**
+ * Mirrors `checkItemSchema` (src/lib/validations/check-item.ts) string-length bounds
+ * (+ the dropdown-option label non-empty rule) — `v.string()`/`v.any()` only enforce
+ * type, not these business constraints, so a browser-direct caller bypassing the
+ * client Zod parse would otherwise skip them entirely (R-8.6.2). There is no server
+ * action in this path — `useCheckItemWrites()` (src/hooks/use-check-item-writes.ts)
+ * runs `checkItemSchema.parse()` client-side and calls createCheckItemNative/
+ * updateCheckItemNative directly.
+ */
+function assertCheckItemFields(f: {
+  label?: string;
+  description?: string;
+  category?: string;
+  measurementUnit?: string;
+  dropdownOptions?: unknown;
+}): void {
+  if (f.label != null) assertStrLen(f.label, "label", { min: 1, max: 200 });
+  assertStrLen(f.description, "description", { max: 1000 });
+  assertStrLen(f.category, "category", { max: 100 });
+  assertStrLen(f.measurementUnit, "measurementUnit", { max: 20 });
+  // dropdownOptionSchema requires a non-empty label per option (v.any() lets any shape
+  // through server-side otherwise).
+  if (Array.isArray(f.dropdownOptions)) {
+    for (const opt of f.dropdownOptions) {
+      const label = (opt as { label?: unknown } | null)?.label;
+      if (typeof label !== "string" || label.length < 1) {
+        throw new ConvexError({ code: "INVALID_FIELD", message: "dropdownOptions[].label must be a non-empty string." });
+      }
+    }
+  }
+}
+
 export const createCheckItemNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), ...checkItemFields, now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -70,6 +103,7 @@ export const createCheckItemNative = mutation({
 
     const dup = await ctx.db.query("checkItems").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Check item already exists");
+    assertCheckItemFields(a);
 
     await ctx.db.insert("checkItems", {
       id: a.id, organizationId: a.orgId, label: a.label,
@@ -96,6 +130,7 @@ export const updateCheckItemNative = mutation({
 
     const doc = await orgCheckItem(ctx, a.orgId, a.id);
     if (!doc) throw new ConvexError("Check item not found");
+    assertCheckItemFields(a);
 
     // Full-object submit: present optional → set, absent/empty → clear (undefined).
     await ctx.db.patch(doc._id, {

@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 
 /**
  * Native CATEGORY write mutations (Phase 3 browser-direct — replaces createCategory/
@@ -25,6 +26,21 @@ export const categoryFields = {
   sortOrder: v.optional(v.number()),
   tags: v.optional(v.array(v.string())),
 };
+
+/**
+ * Mirrors `categorySchema` (src/lib/validations/category.ts) string-length + sortOrder
+ * bounds — `v.string()`/`v.number()` only enforce type, not these business constraints,
+ * so a browser-direct caller bypassing the client Zod parse would otherwise skip them
+ * entirely (R-8.6.2). There is no server action in this path — `useCategoryWrites()`
+ * (src/hooks/use-category-writes.ts) runs `categorySchema.parse()` client-side and
+ * calls createNative/updateNative directly.
+ */
+function assertCategoryFields(f: { name: string; description?: string; icon?: string; sortOrder?: number }): void {
+  assertStrLen(f.name, "name", { min: 1, max: 100 });
+  assertStrLen(f.description, "description", { max: 500 });
+  assertStrLen(f.icon, "icon", { max: 10 });
+  assertNumRange(f.sortOrder, "sortOrder", { min: 0, integer: true });
+}
 
 async function logCategory(
   ctx: MutationCtx,
@@ -63,6 +79,7 @@ export const createNative = mutation({
 
     const dup = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Category already exists");
+    assertCategoryFields(a);
 
     // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
     if (a.parentId) await assertRefInOrg(ctx, "categories", a.parentId, a.orgId);
@@ -103,6 +120,7 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Category not found");
+    assertCategoryFields(a);
 
     // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
     if (a.parentId) await assertRefInOrg(ctx, "categories", a.parentId, a.orgId);

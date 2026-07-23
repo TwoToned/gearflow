@@ -61,6 +61,55 @@ describe("checkItem library writes", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.checkItemsWrites.createCheckItemNative, { id: "c9", orgId: ORG, label: "X", now: NOW, actor, auditId: "a3" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing checkItemSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a label over the 200-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.createCheckItemNative, { id: "c1", orgId: ORG, label: "X".repeat(201), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/label/);
+  });
+
+  test("rejects a description over the 1000-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.createCheckItemNative, { id: "c1", orgId: ORG, label: "Torque", description: "X".repeat(1001), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/description/);
+  });
+
+  test("rejects a category over the 100-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.createCheckItemNative, { id: "c1", orgId: ORG, label: "Torque", category: "X".repeat(101), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/category/);
+  });
+
+  test("rejects a measurementUnit over the 20-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.createCheckItemNative, { id: "c1", orgId: ORG, label: "Torque", measurementUnit: "X".repeat(21), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/measurementUnit/);
+  });
+
+  test("rejects a dropdownOptions entry with an empty label", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.createCheckItemNative, {
+        id: "c1", orgId: ORG, label: "Condition", type: "DROPDOWN",
+        dropdownOptions: [{ label: "Good", isFail: false }, { label: "", isFail: true }],
+        now: NOW, actor, auditId: "a1",
+      }),
+    ).rejects.toThrow(/dropdownOptions/);
+  });
+
+  // Same bound, enforced on updateCheckItemNative too (not just create).
+  test("rejects a label over the 200-char bound on update", async () => {
+    const t = makeT(); await seedMember(t); await seedCheckItem(t, "c1");
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkItemsWrites.updateCheckItemNative, { id: "c1", orgId: ORG, label: "X".repeat(201), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/label/);
+  });
 });
 
 describe("model assignments", () => {

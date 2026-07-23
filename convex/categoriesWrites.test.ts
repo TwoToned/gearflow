@@ -66,6 +66,59 @@ describe("categoriesWrites", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "X", now: NOW, actor, auditId: "a2" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing categorySchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a name over the 100-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "X".repeat(101), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/name/);
+  });
+
+  test("rejects an empty name", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/name/);
+  });
+
+  test("rejects a description over the 500-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "Audio", description: "X".repeat(501), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/description/);
+  });
+
+  test("rejects an icon over the 10-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "Audio", icon: "X".repeat(11), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/icon/);
+  });
+
+  test("rejects a negative sortOrder", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "Audio", sortOrder: -1, now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/sortOrder/);
+  });
+
+  test("rejects a non-integer sortOrder", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.createNative, { id: "c1", orgId: ORG, name: "Audio", sortOrder: 1.5, now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/sortOrder/);
+  });
+
+  // Same bounds, enforced on updateNative too (not just createNative).
+  test("rejects a name over the 100-char bound on update", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("categories", { id: "c1", organizationId: ORG, name: "Audio", createdAt: NOW, updatedAt: NOW }); });
+    await expect(
+      t.withIdentity(asUser).mutation(api.categoriesWrites.updateNative, { id: "c1", orgId: ORG, name: "X".repeat(101), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/name/);
+  });
 });
 
 describe("categories.detail composite", () => {

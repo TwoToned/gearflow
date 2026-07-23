@@ -1,6 +1,10 @@
+import { z } from "zod";
 import { getConvexClient } from "@/lib/convex-client";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { api } from "../../convex/_generated/api";
+
+// Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
+const convexUploadResponseSchema = z.object({ storageId: z.string().min(1) });
 
 /**
  * File storage on Convex `_storage` (replaces the self-hosted Garage/S3 box). The
@@ -47,7 +51,11 @@ export async function uploadToS3(
     body: new Uint8Array(file),
   });
   if (!res.ok) throw new Error(`Convex storage upload failed: ${res.status}`);
-  const { storageId } = (await res.json()) as { storageId: string };
+  const parsed = convexUploadResponseSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new Error(`Unexpected Convex upload response: ${parsed.error.message}`);
+  }
+  const { storageId } = parsed.data;
 
   await convex.mutation(api.files.register, {
     storageId,

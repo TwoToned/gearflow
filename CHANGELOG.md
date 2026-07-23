@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-07-23
+
+### Fixed
+
+- Broke 7 of the repo's 19 circular-dependency violations (POLICY.md R-3.5, #730):
+  extracted `equipment-row-types.ts`, `model-category-join.ts`, and `actor-types.ts`
+  so the equipment-tab components, the categories/models Convex reads, and the
+  ActorContext auth seam no longer import each other in a loop. No behavior change.
+
+### Changed
+
+- Import-cycle CI check is now a ratchet (`depcruise-ratchet.mjs` / `.depcruise-baseline`),
+  matching the existing Knip dead-code ratchet: the total circular-dependency count is
+  blocking and may never increase, closing the gap where `--ignore-known` only caught
+  genuinely new cycles. Baseline starts at 12 (down from 19), all remaining cycles rooted
+  in the Better-Auth ↔ Convex service-token bootstrap — tracked in the README budget
+  registry and on #730.
+
 ## [0.25.0] - 2026-07-18
 
 ### Changed

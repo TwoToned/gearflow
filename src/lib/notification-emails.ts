@@ -6,7 +6,7 @@
  * shared `email-layout.ts` helpers so it can't drift from the other templates —
  * no MJML / no React Email yet.
  */
-import { emailButton, emailShell } from "@/lib/email-layout";
+import { emailButton, emailShell, escapeHtml } from "@/lib/email-layout";
 
 interface BaseEmailData {
   recipientName: string;
@@ -32,7 +32,7 @@ function emailWrapper(
     `${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
       <p style="color:#999;font-size:12px;">
-        Sent by ${data.orgName} via RVLT Flow.
+        Sent by ${escapeHtml(data.orgName)} via RVLT Flow.
         <a href="${prefsUrl}" style="color:#0d9488;">Update notification preferences</a>.
       </p>`,
   );
@@ -57,8 +57,8 @@ export function overdueMaintenanceEmail(data: OverdueMaintenanceEmailData) {
     html: emailWrapper(
       `
         <h2>Maintenance is overdue</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.title}</strong> was scheduled for ${
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.title)}</strong> was scheduled for ${
           data.scheduledDate
             ? new Date(data.scheduledDate).toLocaleDateString("en-AU", {
                 day: "numeric",
@@ -67,7 +67,7 @@ export function overdueMaintenanceEmail(data: OverdueMaintenanceEmailData) {
               })
             : "earlier"
         } and is now overdue.</p>
-        <p>${data.description}</p>
+        <p>${escapeHtml(data.description)}</p>
         ${ctaButton(link, "View maintenance")}
       `,
       data,
@@ -89,8 +89,8 @@ export function overdueReturnEmail(data: OverdueReturnEmailData) {
     html: emailWrapper(
       `
         <h2>Project return is overdue</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.projectNumber} — ${data.projectName}</strong> was due back ${
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.projectNumber)} — ${escapeHtml(data.projectName)}</strong> was due back ${
           data.rentalEndDate
             ? `on ${new Date(data.rentalEndDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`
             : "already"
@@ -115,8 +115,8 @@ export function upcomingProjectEmail(data: UpcomingProjectEmailData) {
     html: emailWrapper(
       `
         <h2>A project is starting soon</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.projectNumber} — ${data.projectName}</strong> kicks off ${
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.projectNumber)} — ${escapeHtml(data.projectName)}</strong> kicks off ${
           data.rentalStartDate
             ? new Date(data.rentalStartDate).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" })
             : "within the next few days"
@@ -140,8 +140,8 @@ export function pendingInvitationEmail(data: PendingInvitationEmailData) {
     html: emailWrapper(
       `
         <h2>You have a pending invitation</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p>You've been invited to join <strong>${data.invitingOrgName}</strong>${data.role ? ` as <strong>${data.role}</strong>` : ""}.</p>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p>You've been invited to join <strong>${escapeHtml(data.invitingOrgName)}</strong>${data.role ? ` as <strong>${escapeHtml(data.role)}</strong>` : ""}.</p>
         ${ctaButton(link, "Review invitation")}
       `,
       data,
@@ -160,7 +160,7 @@ export function pendingOffersEmail(data: PendingOffersEmailData) {
     html: emailWrapper(
       `
         <h2>Crew offers awaiting response</h2>
-        <p>Hi ${data.recipientName},</p>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p>You have <strong>${data.count}</strong> crew offer${data.count === 1 ? "" : "s"} waiting on a response.</p>
         ${ctaButton(link, "Review offers")}
       `,
@@ -180,7 +180,7 @@ export function pendingTimesheetsEmail(data: PendingTimesheetsEmailData) {
     html: emailWrapper(
       `
         <h2>Timesheets need your approval</h2>
-        <p>Hi ${data.recipientName},</p>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p><strong>${data.count}</strong> crew timesheet${data.count === 1 ? " has" : "s have"} been submitted for review.</p>
         ${ctaButton(link, "Review timesheets")}
       `,
@@ -203,8 +203,8 @@ export function flaggedAssetEmail(data: FlaggedAssetEmailData) {
     html: emailWrapper(
       `
         <h2>Asset flagged during prep</h2>
-        <p>Hi ${data.recipientName},</p>
-        <p><strong>${data.assetLabel}</strong> was flagged as <strong>${data.reason}</strong> on <strong>${data.projectNumber} — ${data.projectName}</strong>.</p>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.assetLabel)}</strong> was flagged as <strong>${escapeHtml(data.reason)}</strong> on <strong>${escapeHtml(data.projectNumber)} — ${escapeHtml(data.projectName)}</strong>.</p>
         ${ctaButton(link, "Open warehouse")}
       `,
       data,

@@ -14,6 +14,25 @@ const BUTTON_STYLE =
   "display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;";
 const MUTED_STYLE = "color: #666; font-size: 14px;";
 
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+/**
+ * Escape HTML-significant characters before interpolating untrusted text
+ * (org names, invitee names, roles, asset descriptions, etc.) into email
+ * HTML (POLICY.md R-8.11.3). Apply this to every user-controlled string
+ * that lands inside an `html` template — never to plain-text `subject`
+ * lines, which aren't HTML-interpreted.
+ */
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+}
+
 /** Wrap a template body in the standard 600px centred email container. */
 export function emailShell(innerHtml: string): string {
   return `<div style="${WRAPPER_STYLE}">${innerHtml}</div>`;

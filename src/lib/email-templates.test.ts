@@ -65,6 +65,79 @@ describe("email templates", () => {
     expect(ssoAccessRejectedEmail({ orgName: "Acme" }).html).not.toContain("Reason:");
   });
 
+  describe("XSS hardening (POLICY.md R-8.11.3)", () => {
+    const XSS_PAYLOAD = `'<img src=x onerror=alert(1)>'`;
+    const ESCAPED_PAYLOAD = "&#39;&lt;img src=x onerror=alert(1)&gt;&#39;";
+
+    it("escapes orgName, inviterName, and role in invitationEmail", () => {
+      const email = invitationEmail({
+        orgName: XSS_PAYLOAD,
+        inviterName: XSS_PAYLOAD,
+        role: XSS_PAYLOAD,
+        acceptUrl: "https://x/accept",
+      });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName and role in invitationRegisterEmail", () => {
+      const email = invitationRegisterEmail({
+        orgName: XSS_PAYLOAD,
+        role: XSS_PAYLOAD,
+        registerUrl: "https://x/r",
+      });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName and newRole in roleChangedEmail", () => {
+      const email = roleChangedEmail({ orgName: XSS_PAYLOAD, newRole: XSS_PAYLOAD });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName in removedFromOrgEmail", () => {
+      const email = removedFromOrgEmail({ orgName: XSS_PAYLOAD });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName and role in ssoAccessApprovedEmail", () => {
+      const email = ssoAccessApprovedEmail({
+        orgName: XSS_PAYLOAD,
+        role: XSS_PAYLOAD,
+        dashboardUrl: "https://x/d",
+      });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName and note in ssoAccessRejectedEmail", () => {
+      const email = ssoAccessRejectedEmail({ orgName: XSS_PAYLOAD, note: XSS_PAYLOAD });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      expect(email.html).toContain(ESCAPED_PAYLOAD);
+    });
+
+    it("escapes orgName, testTagId, description, and location in testTagDigestEmail", () => {
+      const email = testTagDigestEmail({
+        orgName: XSS_PAYLOAD,
+        overdueAssets: [
+          {
+            testTagId: XSS_PAYLOAD,
+            description: XSS_PAYLOAD,
+            location: XSS_PAYLOAD,
+            nextDueDate: new Date("2026-01-01"),
+          },
+        ],
+        dueSoonAssets: [],
+      });
+      expect(email.html).not.toContain(XSS_PAYLOAD);
+      // orgName appears twice (heading subject + intro paragraph), plus testTagId,
+      // description, and location once each — 5 escaped occurrences total.
+      expect(email.html.split(ESCAPED_PAYLOAD).length - 1).toBe(5);
+    });
+  });
+
   describe("testTagDigestEmail", () => {
     const overdueAsset = {
       testTagId: "TT-001",

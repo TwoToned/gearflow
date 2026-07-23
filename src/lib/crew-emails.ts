@@ -2,7 +2,7 @@
  * Email templates for crew assignment communication.
  */
 
-import { emailShell } from "@/lib/email-layout";
+import { emailShell, escapeHtml } from "@/lib/email-layout";
 import { phaseLabels } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
 
@@ -31,22 +31,22 @@ function buildDetailsHtml(data: AssignmentEmailData): string {
   const phase = data.phase ? phaseLabels[data.phase] || data.phase : null;
 
   const rows: string[] = [];
-  rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Project</td><td style="padding:4px 0;font-size:14px;"><strong>${data.projectNumber}</strong> — ${data.projectName}</td></tr>`);
+  rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Project</td><td style="padding:4px 0;font-size:14px;"><strong>${escapeHtml(data.projectNumber)}</strong> — ${escapeHtml(data.projectName)}</td></tr>`);
   if (data.roleName) {
-    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Role</td><td style="padding:4px 0;font-size:14px;">${data.roleName}</td></tr>`);
+    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Role</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(data.roleName)}</td></tr>`);
   }
   if (phase) {
-    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Phase</td><td style="padding:4px 0;font-size:14px;">${phase}</td></tr>`);
+    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Phase</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(phase)}</td></tr>`);
   }
   rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Dates</td><td style="padding:4px 0;font-size:14px;">${formatDate(data.startDate)}${data.endDate && data.endDate !== data.startDate ? ` — ${formatDate(data.endDate)}` : ""}</td></tr>`);
   if (data.startTime) {
-    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Times</td><td style="padding:4px 0;font-size:14px;">${data.startTime}${data.endTime ? ` — ${data.endTime}` : ""}</td></tr>`);
+    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Times</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(data.startTime)}${data.endTime ? ` — ${escapeHtml(data.endTime)}` : ""}</td></tr>`);
   }
   if (location) {
-    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Location</td><td style="padding:4px 0;font-size:14px;">${location}</td></tr>`);
+    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Location</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(location)}</td></tr>`);
   }
   if (data.siteContactName) {
-    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Site Contact</td><td style="padding:4px 0;font-size:14px;">${data.siteContactName}${data.siteContactPhone ? ` (${data.siteContactPhone})` : ""}</td></tr>`);
+    rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Site Contact</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(data.siteContactName)}${data.siteContactPhone ? ` (${escapeHtml(data.siteContactPhone)})` : ""}</td></tr>`);
   }
 
   return `<table style="border-collapse:collapse;">${rows.join("")}</table>`;
@@ -59,7 +59,7 @@ function emailWrapper(content: string, orgName: string): string {
   return emailShell(
     `${content}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-      <p style="color:#999;font-size:12px;">Sent by ${orgName} via RVLT Flow</p>`,
+      <p style="color:#999;font-size:12px;">Sent by ${escapeHtml(orgName)} via RVLT Flow</p>`,
   );
 }
 
@@ -72,10 +72,10 @@ export function crewOfferEmail(
     subject: `Crew Offer: ${data.projectName} — ${data.roleName || "Crew"}`,
     html: emailWrapper(
       `
-      <h2>Hi ${data.crewFirstName},</h2>
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
       <p>You've been offered a crew position for an upcoming project. Please review the details below and let us know if you're available.</p>
       ${buildDetailsHtml(data)}
-      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}
+      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${escapeHtml(data.notes)}</p>` : ""}
       <div style="margin-top:24px;">
         <a href="${acceptUrl}" style="${buttonStyle("#0d9488")}">Accept</a>
         <a href="${declineUrl}" style="${buttonStyle("#dc2626")}">Decline</a>
@@ -92,10 +92,10 @@ export function crewConfirmationEmail(data: AssignmentEmailData) {
     subject: `Confirmed: ${data.projectName} — ${data.roleName || "Crew"}`,
     html: emailWrapper(
       `
-      <h2>Hi ${data.crewFirstName},</h2>
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
       <p>Your assignment has been <strong>confirmed</strong>. Here are the details:</p>
       ${buildDetailsHtml(data)}
-      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}
+      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${escapeHtml(data.notes)}</p>` : ""}
       `,
       data.orgName
     ),
@@ -107,8 +107,8 @@ export function crewCancellationEmail(data: AssignmentEmailData) {
     subject: `Cancelled: ${data.projectName} — ${data.roleName || "Crew"}`,
     html: emailWrapper(
       `
-      <h2>Hi ${data.crewFirstName},</h2>
-      <p>Your assignment for <strong>${data.projectName}</strong> has been <strong>cancelled</strong>.</p>
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
+      <p>Your assignment for <strong>${escapeHtml(data.projectName)}</strong> has been <strong>cancelled</strong>.</p>
       ${buildDetailsHtml(data)}
       <p style="color:#888;font-size:13px;margin-top:16px;">If you have any questions, please contact us.</p>
       `,
@@ -122,10 +122,10 @@ export function crewUpdateEmail(data: AssignmentEmailData) {
     subject: `Updated: ${data.projectName} — ${data.roleName || "Crew"}`,
     html: emailWrapper(
       `
-      <h2>Hi ${data.crewFirstName},</h2>
-      <p>Your assignment details for <strong>${data.projectName}</strong> have been updated:</p>
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
+      <p>Your assignment details for <strong>${escapeHtml(data.projectName)}</strong> have been updated:</p>
       ${buildDetailsHtml(data)}
-      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}
+      ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${escapeHtml(data.notes)}</p>` : ""}
       `,
       data.orgName
     ),
@@ -144,10 +144,10 @@ export function crewBulkMessageEmail(
     subject: `Message from ${orgName}: ${projectName}`,
     html: emailWrapper(
       `
-      <h2>Hi ${crewFirstName},</h2>
-      <p>You have a message regarding <strong>${projectNumber} — ${projectName}</strong>:</p>
-      <div style="margin:16px 0;padding:16px;background:#f8f8f8;border-radius:6px;font-size:14px;white-space:pre-wrap;">${message}</div>
-      <p style="color:#888;font-size:13px;">— ${senderName}</p>
+      <h2>Hi ${escapeHtml(crewFirstName)},</h2>
+      <p>You have a message regarding <strong>${escapeHtml(projectNumber)} — ${escapeHtml(projectName)}</strong>:</p>
+      <div style="margin:16px 0;padding:16px;background:#f8f8f8;border-radius:6px;font-size:14px;white-space:pre-wrap;">${escapeHtml(message)}</div>
+      <p style="color:#888;font-size:13px;">— ${escapeHtml(senderName)}</p>
       `,
       orgName
     ),

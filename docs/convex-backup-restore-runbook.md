@@ -24,7 +24,9 @@ Prod Convex Cloud deployment: `useful-cuttlefish-334`.
 
 - **Environment variables / secrets** — inventory + store these separately (§4).
 - **Function code** — lives in git + is redeployed by CI.
-- **Better Auth data** — that stays in Postgres (backed up by the Postgres provider, out of scope here).
+- **Better Auth data** — that stays in Postgres, covered separately by
+  [`docs/postgres-backup-restore-runbook.md`](./postgres-backup-restore-runbook.md)
+  (R-8.11.5, issue #762) — don't assume this runbook covers it.
 
 ---
 

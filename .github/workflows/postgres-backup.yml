@@ -1,0 +1,52 @@
+name: Postgres daily backup
+
+# Daily prod Postgres (Better Auth: users, sessions, credentials, activity
+# log) dump -> off-provider cold copy. Closes the "stand up a scheduled
+# pg_dump" half of POLICY.md R-8.11.5 for the data the Convex backup doesn't
+# cover (see docs/postgres-backup-restore-runbook.md — Convex's own runbook
+# explicitly marks Postgres "out of scope" and left it undocumented).
+#
+# Runs on the self-hosted runner (same as migrate.yml), NOT ubuntu-latest:
+# prod DATABASE_URL is only reachable from there (see build-image.yml's
+# "the runner can't reach the prod DB" note for the hosted-runner case).
+# DATABASE_URL is inherited from the self-hosted runner's environment, same
+# as migrate.yml — no secret is declared for it here.
+#
+# STORAGE NOTE: mirrors convex-backup.yml — retained as a 90-day GitHub
+# artifact for now (zero new infra). Move to a dedicated ENCRYPTED bucket
+# once this covers real customer data — see the runbook.
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 03:30 UTC daily (offset from the 03:00 Convex export)
+  workflow_dispatch: {}
+
+concurrency:
+  group: postgres-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Dump prod Postgres (Better Auth + activity log)
+        run: |
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          pg_dump "$DATABASE_URL" --format=custom --file="postgres-snapshot-$TS.dump"
+          ls -lh postgres-snapshot-*.dump
+          # fail loudly if the dump is suspiciously tiny (empty/broken export)
+          SIZE=$(stat -c%s postgres-snapshot-*.dump)
+          if [ "$SIZE" -lt 1024 ]; then echo "::error::snapshot too small ($SIZE bytes)"; exit 1; fi
+
+      - name: Upload snapshot (cold copy, 90-day retention)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: postgres-snapshot
+          path: postgres-snapshot-*.dump
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Clean up local dump
+        if: always()
+        run: rm -f postgres-snapshot-*.dump

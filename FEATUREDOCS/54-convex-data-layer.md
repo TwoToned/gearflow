@@ -109,3 +109,12 @@ duplicated:
   prod Convex directly, so a breaking signature change breaks prod until redeploy.
 - `by_cuid` / `by_modelId` are **global** indexes; `requireOrgPermission` authorises
   the *caller's* org, not the *row's* — re-check `organizationId` on every such fetch.
+- **Derive `Mapped*`/Prisma-row-shaped types from `Doc<"table">`, never hand-duplicate
+  them field-by-field** (POLICY.md R-8.2.4): `Omit<Doc<"table">, "_id" | "_creationTime"
+  | "<transformed fields>"> & { "<transformed fields with their coerced/converted
+  types>" }`. A hand-copied interface silently drifts the moment the Convex schema
+  gains/renames a field — the compiler has no way to catch it. See
+  `src/lib/categories-read.ts` (`MappedCategory`), `src/lib/crew-scheduling-read.ts`,
+  `src/lib/locations-read.ts`, `src/lib/project-line-item-read.ts`,
+  `src/lib/suppliers-read.ts`, `src/lib/assets-read.ts`, and
+  `src/lib/custom-fields-read.ts` for the pattern.

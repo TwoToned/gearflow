@@ -21,6 +21,7 @@ import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-re
 import {
   wooCommerceIntegrationSchema,
   type WooCommerceIntegrationFormValues,
+  type WooOrder,
 } from "@/lib/validations/woocommerce";
 
 // wooCommerceOrderLog is CONVEX-ONLY (bucket-2 Phase B write inversion): every
@@ -242,34 +243,9 @@ export async function getLastPayloadMetaKeys() {
 }
 
 // ─── Webhook Processing (called from API route) ─────────────────────────────
-
-export interface WooOrder {
-  id: number;
-  number?: string;
-  status?: string;
-  billing: {
-    first_name: string;
-    last_name: string;
-    company?: string;
-    email: string;
-    phone?: string;
-    address_1?: string;
-    address_2?: string;
-    city?: string;
-    state?: string;
-    postcode?: string;
-    country?: string;
-  };
-  customer_note?: string;
-  line_items: Array<{
-    name: string;
-    sku?: string;
-    quantity: number;
-    price: string;
-    meta_data?: Array<{ key: string; value: string }>;
-  }>;
-  meta_data?: Array<{ key: string; value: string }>;
-}
+// WooOrder is derived from `wooOrderSchema` (src/lib/validations/woocommerce.ts)
+// via `z.infer` — the runtime Zod parse at the webhook trust boundary
+// (route.ts) is what actually enforces this shape (R-8.2.3).
 
 interface WooCommerceIntegrationConfig {
   id: string;

@@ -22,15 +22,23 @@ Automatically creates RVLT Flow projects from WooCommerce orders via webhook.
 ```
 WooCommerce (order.created) → POST /api/integrations/woocommerce/webhook
   1. Ping detection (accept without HMAC for webhook creation)
-  2. Parse JSON body
+  2. Parse JSON body (cheap `id` presence check only — shape not yet trusted)
   3. Resolve organization (single-org auto-detect or ?org= param)
   4. Load integration config, verify enabled
   5. HMAC-SHA256 signature verification (timing-safe)
-  6. Idempotency check (skip if same order already COMPLETED)
-  7. Store lastPayload (for Test & Detect UI)
-  8. Respond 200 immediately
-  9. Background: processWooCommerceOrder()
+  6. Validate payload shape against `wooOrderSchema` (Zod, R-8.2.3) — 422 on failure
+  7. Idempotency check (skip if same order already COMPLETED)
+  8. Store lastPayload (for Test & Detect UI)
+  9. Respond 200 immediately
+  10. Background: processWooCommerceOrder()
 ```
+
+Signature verification proves the sender holds the shared secret; it says nothing
+about the JSON *shape*. The raw parsed body is only trusted for `.id` (the
+cheap ping check) until it passes `wooOrderSchema.safeParse` — which runs after
+HMAC verification, so an unauthenticated caller can't probe the schema. Unknown
+WooCommerce order fields are silently dropped (default non-strict `z.object`
+behavior); only the fields this integration actually reads are modeled.
 
 ### Order Processing (`processWooCommerceOrder`)
 
@@ -81,7 +89,7 @@ Location meta key configured?
 | `convex/wooCommerceIntegrations.ts`, `convex/wooCommerceOrderLogs.ts`, `convex/wooCommerceActions.ts`, `convex/wooCommerceInternal.ts` | Convex queries/mutations/actions backing the integration + order log |
 | `src/server/woocommerce.ts` | Server actions (still `"use server"`, reading/writing via the Convex client above) + `processWooCommerceOrder` background processor |
 | `src/lib/woocommerce-utils.ts` | `verifyWebhookSignature` (HMAC-SHA256), `flexibleDateParse` (multi-format) |
-| `src/lib/validations/woocommerce.ts` | Zod schema for settings form |
+| `src/lib/validations/woocommerce.ts` | Zod schema for settings form (`wooCommerceIntegrationSchema`) + the webhook trust-boundary schema (`wooOrderSchema`) that `WooOrder` is `z.infer`'d from |
 | `src/app/api/integrations/woocommerce/webhook/route.ts` | POST webhook endpoint (public, in middleware allowlist) |
 | `src/app/(app)/settings/woocommerce/page.tsx` | Settings UI (enable/disable, connection, matching, dates, location, defaults, setup guide, order log) |
 
@@ -101,7 +109,7 @@ Location meta key configured?
 - `verifyWebhookSignature` and `flexibleDateParse` are in `src/lib/woocommerce-utils.ts` (NOT in the server action file) because `"use server"` requires all exports to be async
 - WooCommerce ping requests are accepted without HMAC verification (topic: `action.woocommerce_webhook_delivery` or missing `id`)
 - The webhook secret in RVLT Flow must be copied to WooCommerce's webhook Secret field — they must match
-- Prisma `Json` fields need `as unknown as Type` casting (e.g., `log.payload as unknown as WooOrder`)
+- `WooOrder` is `z.infer<typeof wooOrderSchema>` (`src/lib/validations/woocommerce.ts`), not a hand-written interface — the webhook route parses into it via `wooOrderSchema.safeParse` before any field is read (R-8.2.3). Re-reading an already-processed order from storage (`retryFailedOrder`, `getLastPayloadMetaKeys`) still casts (`as unknown as WooOrder`) since that payload was already validated on the way in and isn't a new trust boundary.
 - `PricingType` enum uses `PER_DAY` not `DAILY`
 - Select components need explicit `defaultValues` in `useForm` to avoid controlled/uncontrolled warnings
 

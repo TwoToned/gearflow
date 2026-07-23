@@ -30,13 +30,26 @@ type RawDef = Doc<"customFieldDefinitions">;
 const toDate = (v: number | undefined): Date | null => (typeof v === "number" ? new Date(v) : null);
 const orNull = <T>(v: T | undefined): T | null => (v === undefined ? null : v);
 
-/** The mapped row — mirrors serialize(prisma.customFieldDefinition row). */
-export interface CustomFieldDefinitionRow {
-  id: string;
-  organizationId: string;
+/**
+ * The mapped row — mirrors serialize(prisma.customFieldDefinition row).
+ * Derived from `Doc<"customFieldDefinitions">` (R-8.2.4) so schema drift is a
+ * compile error instead of a silently-stale duplicate.
+ */
+export type CustomFieldDefinitionRow = Omit<
+  RawDef,
+  | "_id"
+  | "_creationTime"
+  | "entityType"
+  | "fieldType"
+  | "options"
+  | "required"
+  | "helpText"
+  | "sortOrder"
+  | "isActive"
+  | "createdAt"
+  | "updatedAt"
+> & {
   entityType: CustomFieldEntity;
-  label: string;
-  fieldKey: string;
   fieldType: "TEXT" | "NUMBER" | "DATE" | "SELECT" | "BOOLEAN";
   options: string[];
   required: boolean;
@@ -45,7 +58,7 @@ export interface CustomFieldDefinitionRow {
   isActive: boolean;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 /**
  * Map a Convex `customFieldDefinitions` doc back to the Prisma row shape.

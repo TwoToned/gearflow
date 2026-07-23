@@ -4,14 +4,41 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import { Prisma } from "@/generated/prisma/client";
 
 // The Asset/BulkAsset Prisma models are dropped (domain data is Convex-native).
-// These local interfaces preserve the exact Prisma scalar-row shape the mapping
+// These local types preserve the exact Prisma scalar-row shape the mapping
 // helpers below emit and the filter helpers consume, so downstream behaviour is
-// unchanged.
-interface Asset {
-  id: string;
-  organizationId: string;
-  modelId: string;
-  assetTag: string;
+// unchanged. Derived from `Doc<"assets">`/`Doc<"bulkAssets">` (R-8.2.4) rather
+// than hand-duplicated field-by-field, so a schema change is a compile error
+// here instead of a silently-stale shape.
+type Asset = Omit<
+  Doc<"assets">,
+  | "_id"
+  | "_creationTime"
+  | "serialNumber"
+  | "customName"
+  | "status"
+  | "condition"
+  | "purchaseDate"
+  | "purchasePrice"
+  | "purchaseSupplier"
+  | "supplierId"
+  | "purchaseOrderNumber"
+  | "supplierOrderId"
+  | "warrantyExpiry"
+  | "notes"
+  | "locationId"
+  | "customFieldValues"
+  | "lastTestAndTagDate"
+  | "nextTestAndTagDate"
+  | "barcode"
+  | "qrCode"
+  | "images"
+  | "tags"
+  | "isActive"
+  | "createdAt"
+  | "updatedAt"
+  | "kitId"
+  | "parentAssetId"
+> & {
   serialNumber: string | null;
   customName: string | null;
   status: string;
@@ -37,13 +64,23 @@ interface Asset {
   updatedAt: Date;
   kitId: string | null;
   parentAssetId: string | null;
-}
+};
 
-interface BulkAsset {
-  id: string;
-  organizationId: string;
-  modelId: string;
-  assetTag: string;
+type BulkAsset = Omit<
+  Doc<"bulkAssets">,
+  | "_id"
+  | "_creationTime"
+  | "totalQuantity"
+  | "availableQuantity"
+  | "purchasePricePerUnit"
+  | "locationId"
+  | "status"
+  | "notes"
+  | "tags"
+  | "isActive"
+  | "createdAt"
+  | "updatedAt"
+> & {
   totalQuantity: number;
   availableQuantity: number;
   purchasePricePerUnit: Prisma.Decimal | null;
@@ -54,7 +91,7 @@ interface BulkAsset {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 /**
  * Server-side read helpers for the Asset + BulkAsset domains (Phase 3 cutover).

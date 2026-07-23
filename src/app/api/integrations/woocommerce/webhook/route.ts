@@ -6,10 +6,8 @@ import { getTheOrg } from "@/lib/single-org";
 import { verifyWebhookSignature } from "@/lib/woocommerce-utils";
 import { findCompletedOrderLog } from "@/lib/woocommerce-order-logs-read";
 import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
-import {
-  processWooCommerceOrder,
-  type WooOrder,
-} from "@/server/woocommerce";
+import { processWooCommerceOrder } from "@/server/woocommerce";
+import { wooOrderSchema } from "@/lib/validations/woocommerce";
 
 const MAX_PAYLOAD_SIZE = 1_000_000; // 1MB
 
@@ -37,13 +35,16 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, ping: true });
   }
 
-  let parsed: WooOrder | undefined;
+  let rawParsed: unknown;
   try {
-    parsed = JSON.parse(rawBody);
+    rawParsed = JSON.parse(rawBody);
   } catch {
     // Not valid JSON — treat as ping if body is empty/minimal
   }
-  if (!parsed?.id) {
+  // Cheap presence check only — the full shape is NOT trusted until it passes
+  // both signature verification (below) and the wooOrderSchema parse (R-8.2.3).
+  const maybeId = (rawParsed as { id?: unknown } | null | undefined)?.id;
+  if (!maybeId) {
     return Response.json({ ok: true, ping: true });
   }
 
@@ -75,7 +76,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const order = parsed;
+  // 8. Validate the payload shape now that the sender is authenticated (trust
+  //    boundary — R-8.2.3). Only known fields survive; the rest of WooCommerce's
+  //    order payload is dropped.
+  const result = wooOrderSchema.safeParse(rawParsed);
+  if (!result.success) {
+    logger.error("[WooCommerce] Webhook payload failed schema validation", {
+      error: result.error.flatten(),
+    });
+    return Response.json({ error: "Invalid order payload" }, { status: 422 });
+  }
+  const order = result.data;
 
   // 9. Store last payload for "Test & Detect" feature (Convex-only update)
   await (await getConvexClient()).mutation(api.wooCommerceIntegrations.update, {

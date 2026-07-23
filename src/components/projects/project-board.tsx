@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, AlertTriangle, ShieldAlert, Search } from "lucide-react";
+import { Plus, AlertTriangle, ShieldAlert } from "lucide-react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { api } from "../../../convex/_generated/api";
@@ -11,6 +11,7 @@ import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/input";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FlowMascot } from "@/components/ui/flow-mascot";
@@ -112,13 +113,11 @@ export function ProjectBoard() {
     <div className="space-y-4">
       {/* toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <input
+        <div className="max-w-xs flex-1">
+          <SearchInput
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search jobs by name, # or client…"
-            className="h-10 w-full rounded-[var(--r)] border-2 border-input bg-card pl-9 pr-3 text-[14px] text-ink placeholder:text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
           />
         </div>
         <CanDo resource="project" action="create">

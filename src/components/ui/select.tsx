@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
@@ -139,6 +140,34 @@ const SelectSeparator = React.forwardRef<
 ));
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
+/**
+ * NativeSelect — a plain `<select>` for the cases that can't use the Radix
+ * `Select` above (e.g. simple status/category pickers wired straight to
+ * `register()`). Two variants: `default` matches the RVLT Input recipe
+ * (rounded-[var(--radius)], border-2, 16px text); `compact` preserves the
+ * pre-rebrand shadcn recipe still used by a handful of settings/dialog
+ * selects (R-8.7.3 — same class-string cluster, single source of truth now).
+ */
+const nativeSelectVariants = cva("flex w-full disabled:cursor-not-allowed disabled:opacity-45", {
+  variants: {
+    variant: {
+      default:
+        "min-h-11 rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
+      compact:
+        "h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+    },
+  },
+  defaultVariants: { variant: "default" },
+});
+
+const NativeSelect = React.forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement> & VariantProps<typeof nativeSelectVariants>
+>(({ className, variant, ...props }, ref) => (
+  <select ref={ref} className={cn(nativeSelectVariants({ variant }), className)} {...props} />
+));
+NativeSelect.displayName = "NativeSelect";
+
 export {
   Select,
   SelectGroup,
@@ -150,4 +179,5 @@ export {
   SelectSeparator,
   SelectScrollUpButton,
   SelectScrollDownButton,
+  NativeSelect,
 };

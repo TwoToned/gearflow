@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { NativeSelect } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NotesEditor } from "@/components/ui/notes-editor";
@@ -788,22 +789,17 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 }
               >
-                <select
+                <NativeSelect
                   value={kit.status}
                   onChange={(e) => statusMutation.mutate(e.target.value)}
                   disabled={statusMutation.isPending}
-                  className={cn(
-                    "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink",
-                    focusRing,
-                    disabledState,
-                  )}
                 >
                   <option value="AVAILABLE">Available</option>
                   <option value="CHECKED_OUT">Deployed</option>
                   <option value="IN_MAINTENANCE">In maintenance</option>
                   <option value="RETIRED">Retired</option>
                   <option value="INCOMPLETE">Incomplete</option>
-                </select>
+                </NativeSelect>
               </CanDo>
               <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
             </SidebarSection>

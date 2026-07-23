@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { IconPicker } from "@/components/admin/icon-picker";
 import { DynamicIcon } from "@/components/ui/dynamic-icon";
@@ -127,7 +128,8 @@ export default function AdminSettingsPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Registration Policy</Label>
-              <select
+              <NativeSelect
+                variant="compact"
                 value={form.registrationPolicy}
                 onChange={(e) =>
                   setForm((f) => ({
@@ -135,12 +137,11 @@ export default function AdminSettingsPage() {
                     registrationPolicy: e.target.value,
                   }))
                 }
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <option value="OPEN">Open (anyone can register)</option>
                 <option value="INVITE_ONLY">Invite Only</option>
                 <option value="DISABLED">Disabled</option>
-              </select>
+              </NativeSelect>
             </div>
             <Separator />
             <div className="flex items-center gap-2">

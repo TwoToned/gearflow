@@ -125,6 +125,10 @@ leftovers; they will not become browser-direct:
     — scheduled backups + rehearsed restore.
   - [`docs/convex-observability-runbook.md`](../docs/convex-observability-runbook.md)
     — monitoring + the write kill-switch.
+- Postgres (Better Auth + activity log, above) has its own separate backup/restore
+  runbook — [`docs/postgres-backup-restore-runbook.md`](../docs/postgres-backup-restore-runbook.md).
+  The Convex runbook explicitly marks Postgres out of scope; don't assume Convex's
+  backup posture covers it.
 
 ## Gotchas
 

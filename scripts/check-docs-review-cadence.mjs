@@ -21,6 +21,7 @@ const CRITICAL_DOCS = [
   "ARCHITECTURE.md",
   "docs/convex-backup-restore-runbook.md",
   "docs/convex-observability-runbook.md",
+  "docs/postgres-backup-restore-runbook.md",
 ];
 
 const HEADER_RE = /Owner:.*?Last reviewed:\s*(\d{4}-\d{2}-\d{2})/i;

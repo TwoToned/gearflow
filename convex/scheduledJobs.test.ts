@@ -91,6 +91,23 @@ describe("scheduledJobs — enabled", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe("https://flow.rvlt.app/api/cron/test-tag-reminders");
   });
 
+  test("passes an AbortSignal so the call times out (R-9.6)", async () => {
+    process.env.ENABLE_CONVEX_CRONS = "true";
+    process.env.CONVEX_CRON_TARGET_URL = "https://flow.rvlt.app";
+    process.env.CRON_SECRET = "s3cret";
+    const t = convexTest(schema, modules);
+
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      expect(init?.signal?.aborted).toBe(false);
+      return { ok: true, status: 200, text: async () => "ok" };
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await t.action(internal.scheduledJobs.runNotificationEmails, {});
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   test("throws (surfaces the failure) on a non-2xx executor response", async () => {
     process.env.ENABLE_CONVEX_CRONS = "true";
     process.env.CONVEX_CRON_TARGET_URL = "https://flow.rvlt.app";

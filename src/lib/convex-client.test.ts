@@ -35,4 +35,20 @@ describe("withConvexReadRetry", () => {
     await expect(withConvexReadRetry(run)).rejects.toThrow("boom");
     expect(run).toHaveBeenCalledTimes(2);
   });
+
+  it("jitters the retry delay instead of using a fixed value (R-9.6 — no retry storms)", async () => {
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("blip"))
+      .mockResolvedValueOnce("ok");
+
+    await withConvexReadRetry(run);
+
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+    const delay = setTimeoutSpy.mock.calls[0][1] as number;
+    expect(delay).toBeGreaterThanOrEqual(100);
+    expect(delay).toBeLessThan(200);
+    setTimeoutSpy.mockRestore();
+  });
 });

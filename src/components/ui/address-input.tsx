@@ -5,6 +5,7 @@ import { z } from "zod";
 import { MapPin } from "lucide-react";
 import { useMapsLibrary } from "@/lib/maps-sdk";
 import { cn } from "@/lib/utils";
+import { capture, AnalyticsEvent } from "@/lib/analytics";
 import {
   DEBOUNCE_MS,
   MIN_QUERY_LENGTH,
@@ -91,6 +92,8 @@ export function AddressInput({
 
       const { suggestions } =
         await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+      // T-P4 cost tracking (R-9.12/#764) — one billable Autocomplete request.
+      capture(AnalyticsEvent.VendorUsage, { vendor: "maps", operation: "autocomplete" });
 
       const mapped: Prediction[] = suggestions
         .map((s) => {
@@ -123,6 +126,8 @@ export function AddressInput({
       await place.fetchFields({
         fields: ["location", "formattedAddress"],
       });
+      // T-P4 cost tracking (R-9.12/#764) — one billable Place Details request.
+      capture(AnalyticsEvent.VendorUsage, { vendor: "maps", operation: "place_details" });
 
       const loc = place.location;
       if (loc) {

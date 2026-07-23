@@ -7,6 +7,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { AppImage } from "@/components/ui/app-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -281,10 +282,12 @@ export default function AdminOrgDetailPage({
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               {m.user.image ? (
-                                <img
+                                <AppImage
                                   src={m.user.image}
                                   alt=""
-                                  className="h-7 w-7 rounded-full shrink-0"
+                                  width={28}
+                                  height={28}
+                                  className="h-7 w-7 rounded-full shrink-0 object-cover"
                                 />
                               ) : (
                                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-inset text-xs font-medium">

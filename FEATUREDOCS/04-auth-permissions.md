@@ -41,6 +41,10 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 - Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
 - Unauthenticated requests redirect to `/login?callbackUrl=...`
 
+## Session Cookie Hardening (POLICY.md R-8.4.5)
+- `src/lib/cookie-security.ts` — `shouldUseSecureCookies(appUrl)` gates Better Auth's `advanced.useSecureCookies` on the app's serve protocol (`NEXT_PUBLIC_APP_URL`), so local http dev doesn't drop cookies while prod (https) stays hardened. Unit-tested in `src/lib/__tests__/cookie-security.test.ts`.
+- `e2e/harness-cookie-flags.spec.ts` — integration test asserting the Better Auth session cookie carries `HttpOnly` + `SameSite` after a real login (runs against the seeded harness, `E2E_HARNESS=1`).
+
 ## Session Helpers (`src/lib/auth-server.ts`)
 - `getSession()` — Returns session + user or null
 - `requireSession()` — Throws if not authenticated
@@ -62,6 +66,12 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 ## Two-Tier Permission Model
 1. **Site-level**: `User.role` = `"user"` or `"admin"`. Admin gets access to `/admin` panel
 2. **Org-level**: `Member.role` = `owner | admin | manager | member | viewer` (legacy: `staff`, `warehouse`)
+
+### Site-Admin Guard — single source of truth (`src/lib/admin-auth.ts`, POLICY.md R-8.4.2/R-8.4.4)
+All site-admin checks (`User.role === "admin"`) go through exactly one module — no call site re-queries `role` directly:
+- `requireSiteAdmin()` — throws if not a site admin, returns the session. Used by server actions in `src/server/site-admin.ts`.
+- `requireSiteAdminApi()` — for API routes; returns `{ userId }`.
+- `isSiteAdmin()` — boolean check, never throws. `src/server/site-admin.ts` and `src/server/invitations.ts` (`checkIsSiteAdmin()`) both delegate to this; `src/app/(admin)/layout.tsx` uses it directly to redirect non-admins.
 
 ## Resource-Action Matrix (`src/lib/permissions.ts`)
 16 resources: `asset, bulkAsset, model, kit, project, client, supplier, warehouse, testTag, maintenance, location, document, orgSettings, orgMembers, crew, reports`

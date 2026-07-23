@@ -1,6 +1,6 @@
 {
   "name": "rvlt-flow",
-  "version": "0.25.1",
+  "version": "0.25.3",
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "scripts": {

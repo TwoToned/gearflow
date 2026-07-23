@@ -22,32 +22,11 @@ import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { env } from "@/env";
 import { logActivity } from "@/lib/activity-log";
 import { runWithConcurrency } from "@/lib/concurrency";
-
-/** Verify the current user is a site admin. Throws if not. */
-async function requireSiteAdmin() {
-  const session = await requireSession();
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, role: true },
-  });
-  if (!user || user.role !== "admin") {
-    throw new Error("Access denied. Site admin required.");
-  }
-  return session;
-}
+import { requireSiteAdmin, isSiteAdmin as checkIsSiteAdmin } from "@/lib/admin-auth";
 
 /** Check if the current user is a site admin */
 export async function isSiteAdmin(): Promise<boolean> {
-  try {
-    const session = await requireSession();
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-    return user?.role === "admin";
-  } catch {
-    return false;
-  }
+  return checkIsSiteAdmin();
 }
 
 // ─── Site Settings ─────────────────────────────────────────────────────────
@@ -105,19 +84,10 @@ export async function updateSiteSettings(data: {
  * Single-org mode: only allowed if no org exists yet (bootstrap).
  */
 export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isSiteAdmin: boolean }> {
-  try {
-    const session = await requireSession();
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-    const admin = user?.role === "admin";
-    const org = await getTheOrg();
-    // Only allow creation if no org exists (bootstrap)
-    return { allowed: !org && admin, isSiteAdmin: admin };
-  } catch {
-    return { allowed: false, isSiteAdmin: false };
-  }
+  const admin = await checkIsSiteAdmin();
+  const org = await getTheOrg();
+  // Only allow creation if no org exists (bootstrap)
+  return { allowed: !org && admin, isSiteAdmin: admin };
 }
 
 /** Get the single organization for admin pages. */

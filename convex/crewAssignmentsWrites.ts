@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -22,6 +23,20 @@ function assertCrewMoney(value: number | undefined, field: string): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new ConvexError({ code: "INVALID_NUMBER", message: `${field} must be a non-negative finite number.` });
   }
+}
+
+/**
+ * Mirrors `crewAssignmentSchema` (src/lib/validations/crew.ts) string-length bounds +
+ * its required `crewMemberId` — `v.string()` only enforces type, not these business
+ * constraints, so a browser-direct caller bypassing the client Zod parse would
+ * otherwise skip them entirely (R-8.6.2).
+ */
+function assertAssignmentFields(f: { crewMemberId: string; startTime?: string; endTime?: string; notes?: string; internalNotes?: string }): void {
+  assertStrLen(f.crewMemberId, "crewMemberId", { min: 1 });
+  assertStrLen(f.startTime, "startTime", { max: 5 });
+  assertStrLen(f.endTime, "endTime", { max: 5 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+  assertStrLen(f.internalNotes, "internalNotes", { max: 2000 });
 }
 
 /**
@@ -105,11 +120,13 @@ export const createNative = mutation({
     if (dup) throw new ConvexError("Assignment already exists");
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
-    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin).
+    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin)
+    // + the crewAssignmentSchema string-length/required bounds (R-8.6.2).
     if (a.crewRoleId) await assertRefInOrg(ctx, "crewRoles", a.crewRoleId, a.orgId);
     if (a.serviceId) await assertRefInOrg(ctx, "projectServices", a.serviceId, a.orgId);
     assertCrewMoney(a.rateOverride, "rateOverride");
     assertCrewMoney(a.estimatedHours, "estimatedHours");
+    assertAssignmentFields(a);
 
     const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, a.crewMemberId, a.crewRoleId);
     const { rate, rateType } = resolveRate(a.rateOverride, a.rateType ?? null, crewMember, crewRole);
@@ -154,11 +171,13 @@ export const updateNative = mutation({
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Assignment not found");
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
-    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin).
+    // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin)
+    // + the crewAssignmentSchema string-length/required bounds (R-8.6.2).
     if (a.crewRoleId) await assertRefInOrg(ctx, "crewRoles", a.crewRoleId, a.orgId);
     if (a.serviceId) await assertRefInOrg(ctx, "projectServices", a.serviceId, a.orgId);
     assertCrewMoney(a.rateOverride, "rateOverride");
     assertCrewMoney(a.estimatedHours, "estimatedHours");
+    assertAssignmentFields(a);
 
     const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, doc.crewMemberId, a.crewRoleId);
     const { rate, rateType } = resolveRate(a.rateOverride, a.rateType ?? null, crewMember, crewRole);

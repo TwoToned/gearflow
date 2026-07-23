@@ -95,6 +95,40 @@ describe("crewAssignmentsWrites", () => {
     expect(await t.run(async (ctx) => ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "aX")).first())).not.toBeNull(); // foreign survives
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing crewAssignmentSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("create rejects a notes field over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, notes: "x".repeat(2001) }),
+    ).rejects.toThrow(/notes/);
+  });
+
+  test("create rejects a startTime over the 5-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, startTime: "123456" }),
+    ).rejects.toThrow(/startTime/);
+  });
+
+  test("create rejects a blank crewMemberId", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, crewMemberId: "" }),
+    ).rejects.toThrow(/crewMemberId/);
+  });
+
+  test("update rejects an internalNotes field over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, base);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.updateNative, {
+        id: "a1", orgId: ORG, crewMemberId: "c1", status: "PENDING" as const, isProjectManager: false,
+        internalNotes: "x".repeat(2001), now: NOW, actor, auditId: "l2",
+      }),
+    ).rejects.toThrow(/internalNotes/);
+  });
+
   test("generateShifts regenerates SCHEDULED shifts; RBAC + cross-tenant", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, startDate: NOW, endDate: NOW + DAY });

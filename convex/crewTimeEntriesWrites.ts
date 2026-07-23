@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { calculateTotalHours } from "./lib/crewTimeHours";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 
 /**
  * Native CREW-TIME-ENTRY write mutations (Phase 3 browser-direct — replaces
@@ -30,6 +31,26 @@ export const entryFields = {
   notes: v.optional(v.string()),
 };
 type EntryArgs = { assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; notes?: string };
+
+/**
+ * Mirrors `crewTimeEntrySchema` (src/lib/validations/crew.ts) string-length +
+ * `breakMinutes` bounds shared by every entry in a batch — `v.string()`/`v.number()`
+ * only enforce type, not these business constraints, so a browser-direct caller
+ * bypassing the client Zod parse would otherwise skip them entirely (R-8.6.2).
+ */
+function assertTimeEntrySharedFields(f: { description?: string; startTime: string; endTime: string; breakMinutes?: number; notes?: string }): void {
+  assertStrLen(f.description, "description", { max: 500 });
+  assertStrLen(f.startTime, "startTime", { min: 1, max: 5 });
+  assertStrLen(f.endTime, "endTime", { min: 1, max: 5 });
+  assertNumRange(f.breakMinutes, "breakMinutes", { min: 0, integer: true });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+}
+
+/** Adds the per-entry required `crewMemberId` check on top of the shared bounds. */
+function assertTimeEntryFields(f: EntryArgs): void {
+  assertStrLen(f.crewMemberId, "crewMemberId", { min: 1 });
+  assertTimeEntrySharedFields(f);
+}
 
 async function memberName(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<{ ok: boolean; name: string }> {
   const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", crewMemberId)).first();
@@ -79,6 +100,7 @@ export const createNative = mutation({
 
     const dup = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Time entry already exists");
+    assertTimeEntryFields(a); // R-8.6.2 — crewTimeEntrySchema bounds
     const member = await memberName(ctx, a.orgId, a.crewMemberId);
     if (!member.ok) throw new ConvexError("Crew member not found");
     let projectName = a.description || "General";
@@ -103,6 +125,7 @@ export const createManyNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "crew", "create");
     const actor = await resolveActor(ctx, a.actor);
     if (a.entries.length === 0) return { created: [], errors: [] };
+    assertTimeEntrySharedFields(a.shared); // R-8.6.2 — bounds shared across the whole batch
 
     // Resolve the assignment once (org-verified); per-crew match checked below.
     let projectName = a.shared.description || "General";
@@ -118,6 +141,7 @@ export const createManyNative = mutation({
     const created: string[] = [];
     const errors: { crewMemberId: string; message: string }[] = [];
     for (const e of a.entries) {
+      assertStrLen(e.crewMemberId, "crewMemberId", { min: 1 }); // R-8.6.2 — per-item required check
       const member = await memberName(ctx, a.orgId, e.crewMemberId);
       if (!member.ok) { errors.push({ crewMemberId: e.crewMemberId, message: "Crew member not found" }); continue; }
       if (a.shared.assignmentId && assignmentMember != null && assignmentMember !== e.crewMemberId) { errors.push({ crewMemberId: e.crewMemberId, message: "Crew member does not match assignment" }); continue; }
@@ -150,6 +174,7 @@ export const updateNative = mutation({
     const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Time entry not found");
     if (doc.status === "EXPORTED") throw new ConvexError("Cannot edit exported time entries");
+    assertTimeEntryFields(a); // R-8.6.2 — crewTimeEntrySchema bounds on the incoming patch
     const member = await memberName(ctx, a.orgId, doc.crewMemberId);
     if (a.assignmentId) await assignmentProject(ctx, a.orgId, a.assignmentId, null); // org-verify the (possibly new) assignment
 
@@ -247,6 +272,9 @@ export const disputeNative = mutation({
     const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Time entry not found");
     if (!["SUBMITTED", "APPROVED"].includes(doc.status ?? "DRAFT")) throw new ConvexError("Can only dispute submitted or approved time entries");
+    // `reason` is written straight onto `notes` below — bound it to the same cap
+    // crewTimeEntrySchema's `notes` enforces (R-8.6.2).
+    assertStrLen(a.reason, "notes", { max: 2000 });
     const member = await memberName(ctx, a.orgId, doc.crewMemberId);
     const nextNotes = a.reason || doc.notes;
     const set: Record<string, unknown> = { status: "DISPUTED", updatedAt: a.now };

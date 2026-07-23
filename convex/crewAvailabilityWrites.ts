@@ -4,6 +4,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -14,6 +15,19 @@ import * as enums from "./lib/validators";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `crewAvailabilitySchema` (src/lib/validations/crew.ts) string-length bounds +
+ * its required `crewMemberId` — `v.string()` only enforces type, not these business
+ * constraints, so a browser-direct caller bypassing the client Zod parse would
+ * otherwise skip them entirely (R-8.6.2).
+ */
+function assertAvailabilityFields(f: { crewMemberId: string; reason?: string; startTime?: string; endTime?: string }): void {
+  assertStrLen(f.crewMemberId, "crewMemberId", { min: 1 });
+  assertStrLen(f.reason, "reason", { max: 500 });
+  assertStrLen(f.startTime, "startTime", { max: 5 });
+  assertStrLen(f.endTime, "endTime", { max: 5 });
+}
 
 export const addNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -39,10 +53,8 @@ export const addNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     // Boundary validation (parity with crewAvailabilitySchema — the mutation is the
-    // public boundary; the hook's zod runs client-side only).
-    if (a.reason !== undefined && a.reason.length > 500) throw new ConvexError("Reason must be 500 characters or fewer");
-    if (a.startTime !== undefined && a.startTime.length > 5) throw new ConvexError("Invalid start time");
-    if (a.endTime !== undefined && a.endTime.length > 5) throw new ConvexError("Invalid end time");
+    // public boundary; the hook's zod runs client-side only). R-8.6.2.
+    assertAvailabilityFields(a);
 
     const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", a.crewMemberId)).first();
     if (!member || member.organizationId !== a.orgId) throw new ConvexError("Crew member not found");

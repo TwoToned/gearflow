@@ -49,6 +49,22 @@ describe("crewAvailabilityWrites", () => {
     await expect(t.withIdentity(asUser).mutation(api.crewAvailabilityWrites.addNative, { id: "av1", orgId: ORG, crewMemberId: "cmX", startDate: T0, endDate: T0 + DAY, type: "UNAVAILABLE", isAllDay: true, now: T0, actor, auditId: "a1" })).rejects.toThrow(/Crew member not found/i);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing crewAvailabilitySchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("add rejects a reason over the 500-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAvailabilityWrites.addNative, { id: "av1", orgId: ORG, crewMemberId: "cm1", startDate: T0, endDate: T0 + DAY, type: "UNAVAILABLE", isAllDay: true, reason: "x".repeat(501), now: T0, actor, auditId: "a1" }),
+    ).rejects.toThrow(/reason/);
+  });
+
+  test("add rejects a blank crewMemberId", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAvailabilityWrites.addNative, { id: "av1", orgId: ORG, crewMemberId: "", startDate: T0, endDate: T0 + DAY, type: "UNAVAILABLE", isAllDay: true, now: T0, actor, auditId: "a1" }),
+    ).rejects.toThrow(/crewMemberId/);
+  });
+
   test("RBAC: a viewer is rejected", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });

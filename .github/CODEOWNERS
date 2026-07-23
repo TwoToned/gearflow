@@ -1,0 +1,23 @@
+# CODEOWNERS — routes PR review requests to the responsible owner(s).
+# See POLICY.md R-2.1. Keep in sync with active maintainers.
+
+# Default: repo owner reviews anything not matched below.
+*                           @qubered
+
+# Backend data layer — schema, migrations, and Convex functions.
+/prisma/                    @qubered
+/convex/                    @qubered
+
+# Auth — sensitive, security-relevant surface.
+/src/lib/auth.ts            @qubered
+/src/lib/auth-client.ts     @qubered
+/src/lib/auth-server.ts     @qubered
+
+# CI/CD and deploy pipeline.
+/.github/workflows/         @qubered
+/Dockerfile                 @qubered
+/docker-entrypoint.sh       @qubered
+
+# Governing policy and hygiene-audit tracking.
+/POLICY.md                  @qubered
+/docs/exceptions.md         @qubered

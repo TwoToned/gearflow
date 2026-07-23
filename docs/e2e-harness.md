@@ -4,33 +4,48 @@ The missing piece for authenticated E2E (POLICY.md R-8.8.3 / #621): a local
 **self-hosted Convex** backend the app can talk to, so tests can exercise
 authenticated, data-backed flows — not just the client-rendered `/login` page.
 
-**Status: proven working locally; CI job re-added 2026-07-23 with
-`continue-on-error: true` pending a proven green run on a GitHub-hosted runner (see
+**Status: proven working locally; CI job removed again (2026-07-23, see
 `docs/exceptions.md` R-8.8.3).** `scripts/e2e-harness-up.sh` stands up Convex, pushes
 the schema, and wires auth; `e2e/harness-auth.spec.ts` then registers a user and
-reaches the authenticated dashboard (verified locally). The `e2e-harness` job in
-`.github/workflows/ci.yml` runs the same script + the full harness spec set (auth,
-a11y, cookie flags, onboarding, sign-out, create-inventory, and the primary revenue
-path).
+reaches the authenticated dashboard (verified locally). A `e2e-harness` job in
+`.github/workflows/ci.yml` used to run the same script + the full harness spec set
+(auth, a11y, cookie flags, onboarding, sign-out, create-inventory, and the primary
+revenue path) with `continue-on-error: true`.
 
-**Root cause of the prior red runs (#725, investigated 2026-07-23):** NOT the
-docker-in-CI JWKS networking path — `docker-compose.convex.yml` already maps
+**Root cause of the ORIGINAL red runs (#725, investigated 2026-07-23) — fixed:** NOT
+the docker-in-CI JWKS networking path — `docker-compose.convex.yml` already maps
 `host.docker.internal:host-gateway` on Linux (present since the harness was first
-built), and one of the two observed failures (run 2) got well past the JWKS-trust
-steps (through registration and deep into the revenue path) before dying, which
-JWKS misconfiguration wouldn't allow. The actual cause was Playwright's `webServer`
-always spawning **`next dev`**, including in CI. The harness's flow set is far
-longer and touches far more routes than the `e2e` job's plain `/login` smoke check,
-which triggers much more Turbopack on-demand compilation — and that's what surfaced
-a known Next dev-server crash class (`uncaughtException: Error: aborted` /
-`ECONNRESET` when a client aborts a request mid-compile) under CI resource
-pressure. `playwright.config.ts` now runs a prebuilt **`next start`** instead when
+built), and one of the two originally observed failures got well past the
+JWKS-trust steps (through registration and deep into the revenue path) before dying,
+which JWKS misconfiguration wouldn't allow. The actual cause was Playwright's
+`webServer` always spawning **`next dev`**, including in CI. The harness's flow set
+is far longer and touches far more routes than the `e2e` job's plain `/login` smoke
+check, which triggers much more Turbopack on-demand compilation — and that's what
+surfaced a known Next dev-server crash class (`uncaughtException: Error: aborted` /
+`ECONNRESET` when a client aborts a request mid-compile) under CI resource pressure.
+`playwright.config.ts` now runs a prebuilt **`next start`** instead when
 `E2E_PROD_SERVER=1` (set by the `e2e-harness` job only — the `e2e` job's simpler
-smoke suite is untouched and stays on `next dev`), which serves a static build with
-no on-demand compilation and sidesteps the crash entirely — it's also more
-representative of what's actually deployed. To flip `continue-on-error` off:
-confirm a run (ideally a few in a row) has gone green on a GitHub-hosted runner,
-then remove the `continue-on-error: true` line and update `docs/exceptions.md`.
+smoke suite is untouched and stays on `next dev`). **Confirmed fixed** on a
+GitHub-hosted runner across two real CI runs: the dev-server crash never recurred,
+and `harness-auth`, `harness-a11y`, `harness-cookie-flags`, `harness-onboarding`,
+and `harness-sign-out` all passed reliably (`harness-create-inventory` was flaky
+once on a too-tight timeout, fixed by adding `test.setTimeout`).
+
+**A SECOND, distinct bug — not yet root-caused:** `e2e/harness-revenue-path.spec.ts`
+hangs in the warehouse "Prep" step. After clicking the "Prep" button, some dialog is
+left open (`role="dialog"`, `data-state="open"`) that intercepts pointer events for
+every click afterward, so the very next click (`getByRole("tab", { name: /^Prepped/
+})`) retries hundreds of times against a swallowed click instead of failing fast —
+burning the test's full timeout (up to 3 attempts × 240s) on every run rather than
+failing quickly. Playwright's error-context trace shows the dialog contains a
+`combobox`, suggesting "Prep" opens a confirmation dialog requiring a selection that
+the test doesn't fill in — needs a trace review (`playwright-harness-report`
+artifact on the CI run) to confirm. The `e2e-harness` job was pulled again rather
+than burning ~15-20 CI minutes on every PR for a job that's guaranteed red on this
+one test (it was already `continue-on-error: true`, so removing it costs no gating
+value). To restore: fix the harness-revenue-path "Prep" step (either the test needs
+to handle the dialog, or it's a real product bug), confirm a green run, then re-add
+the job (see git history) with `continue-on-error: true` initially.
 
 ## How it works
 
@@ -63,13 +78,15 @@ bootstraps as admin.
 
 ## Remaining finish (scoped)
 
-1. **CI automation** — **done, not yet blocking** (2026-07-23). A dedicated
-   `e2e-harness` job (separate from the dummy-Convex `e2e` job) runs
+1. **CI automation** — **temporarily removed again** (2026-07-23). A dedicated
+   `e2e-harness` job (separate from the dummy-Convex `e2e` job) ran
    `scripts/e2e-harness-up.sh` then the harness spec set with `E2E_HARNESS=1` against
    a prebuilt `next start` server, tearing down via `scripts/e2e-harness-down.sh` in
-   an `if: always()` step. `continue-on-error: true` until a run (ideally a few in a
-   row) is confirmed green on a GitHub-hosted runner — see the root-cause writeup
-   above, `docs/critical-flows.md`, and `docs/exceptions.md` (R-8.8.3) for status.
+   an `if: always()` step — but `harness-revenue-path.spec.ts`'s stuck-dialog bug
+   (see the root-cause writeup above) makes it guaranteed-red, so it was pulled
+   again rather than burning ~15-20 CI minutes on every PR with no gating value
+   (it was already `continue-on-error: true`). See `docs/critical-flows.md` and
+   `docs/exceptions.md` (R-8.8.3) for status.
 2. **Seed domain data + write the revenue-path specs** — done:
    `e2e/harness-revenue-path.spec.ts` covers project → line-items → availability →
    check-out → return (critical-flows #5-9), creating its own model + serialized

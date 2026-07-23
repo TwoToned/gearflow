@@ -4,6 +4,7 @@ import type { ConvexHttpClient } from "convex/browser";
 import { logger } from "@/lib/logger";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { AnalyticsEvent } from "@/lib/analytics";
+import { getAmbientRequestId } from "@/lib/request-context";
 
 /**
  * T-P6 per-endpoint p95 SLO (README.md R-0.4, R-9.11/R-8.9.6): 300ms is the
@@ -32,15 +33,23 @@ export function reportIfSlowConvexOp(
 ): void {
   if (durationMs <= SLOW_OP_MS) return;
   const incident = durationMs > INCIDENT_OP_MS;
+  // Cross-service correlation (POLICY.md R-8.9.6): no W3C traceparent crosses
+  // into the Convex function itself (that would mean threading a trace id
+  // through every query/mutation's args — out of scope here), but reusing the
+  // ambient x-request-id (R-8.9.5) as a de facto trace id — the remediation's
+  // own suggestion — ties this Convex-leg timing back to the Next.js request
+  // that triggered it, in both the log line and the PostHog event.
+  const requestId = getAmbientRequestId();
   logger[incident ? "error" : "warn"](
     `[convex] slow ${kind}: ${name} took ${durationMs}ms`,
-    { name, kind, durationMs, incident },
+    { name, kind, durationMs, incident, ...(requestId ? { requestId } : {}) },
   );
   void captureServerEvent(AnalyticsEvent.ConvexOpLatency, {
     name,
     kind,
     duration_ms: durationMs,
     incident,
+    ...(requestId ? { request_id: requestId } : {}),
   });
 }
 

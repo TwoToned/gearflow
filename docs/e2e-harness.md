@@ -4,16 +4,22 @@ The missing piece for authenticated E2E (POLICY.md R-8.8.3 / #621): a local
 **self-hosted Convex** backend the app can talk to, so tests can exercise
 authenticated, data-backed flows — not just the client-rendered `/login` page.
 
-**Status: proven working locally, CI automation added but not yet verified green.**
-`scripts/e2e-harness-up.sh` stands up Convex, pushes the schema, and wires auth;
-`e2e/harness-auth.spec.ts` then registers a user and reaches the authenticated
-dashboard (verified locally). The `e2e-harness` job in `.github/workflows/ci.yml` runs
-the same script + the full harness spec set (auth, a11y, cookie flags, and the
-primary revenue path) in CI, but is `continue-on-error: true` until a run has
-actually gone green there — the docker-in-CI networking path (the self-hosted Convex
-container reaching the app's JWKS endpoint via `host.docker.internal` from a
-GitHub-hosted runner rather than a developer laptop) hasn't been exercised yet. Flip
-`continue-on-error` off once it has.
+**Status: proven working locally; CI job temporarily removed (2026-07-23, see
+`docs/exceptions.md` R-8.8.3).** `scripts/e2e-harness-up.sh` stands up Convex, pushes
+the schema, and wires auth; `e2e/harness-auth.spec.ts` then registers a user and
+reaches the authenticated dashboard (verified locally). A `e2e-harness` job in
+`.github/workflows/ci.yml` used to run the same script + the full harness spec set
+(auth, a11y, cookie flags, and the primary revenue path) in CI with
+`continue-on-error: true`, but a run never went green there — the docker-in-CI
+networking path (the self-hosted Convex container reaching the app's JWKS endpoint
+via `host.docker.internal` from a GitHub-hosted runner rather than a developer
+laptop) consistently failed/timed out, adding noise with no gating value. The job
+definition was pulled from `ci.yml` rather than left failing on every PR; the specs
+and scripts below are untouched. To restore: root-cause the JWKS networking failure
+(try `--add-host=host.docker.internal:host-gateway` on the backend container, or a
+bridge network alias), confirm a green run, then re-add the job (see git history for
+the last version, removed alongside this doc update) and flip `continue-on-error`
+off once it's proven.
 
 ## How it works
 
@@ -46,13 +52,13 @@ bootstraps as admin.
 
 ## Remaining finish (scoped)
 
-1. **CI automation** — done: a dedicated `e2e-harness` job (separate from the
-   dummy-Convex `e2e` job) runs `scripts/e2e-harness-up.sh` then the harness spec set
-   with `E2E_HARNESS=1`, tearing down via `scripts/e2e-harness-down.sh` in an
-   `if: always()` step. **Not yet verified green in CI** — the one thing left to
-   validate on the GitHub runner is the cross-container `host.docker.internal` JWKS
-   reach; the job runs `continue-on-error: true` until that's confirmed (see
-   `docs/critical-flows.md`).
+1. **CI automation** — **temporarily removed** (2026-07-23). A dedicated `e2e-harness`
+   job (separate from the dummy-Convex `e2e` job) ran `scripts/e2e-harness-up.sh`
+   then the harness spec set with `E2E_HARNESS=1`, tearing down via
+   `scripts/e2e-harness-down.sh` in an `if: always()` step — but the cross-container
+   `host.docker.internal` JWKS reach never went green on a GitHub-hosted runner, so
+   it was pulled from `ci.yml` rather than left red on every PR. See
+   `docs/critical-flows.md` and `docs/exceptions.md` (R-8.8.3) for status.
 2. **Seed domain data + write the revenue-path specs** — done:
    `e2e/harness-revenue-path.spec.ts` covers project → line-items → availability →
    check-out → return (critical-flows #5-9), creating its own model + serialized

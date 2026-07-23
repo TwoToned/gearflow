@@ -26,6 +26,13 @@ export const AnalyticsEvent = {
   SlowQuery: "slow_query",
   ConvexOpLatency: "convex_op_latency",
   QueueLag: "queue_lag",
+  // VendorUsage -> T-P4 (metered vendor cost budget, R-9.12/#764): one event per
+  // billable unit against a metered vendor (Resend send, Google Maps
+  // autocomplete/place-details request), emitted by
+  // src/lib/vendor-cost-tracking.ts + client call sites. No $ conversion is
+  // computed in-app (see that module for why) — this is the raw per-unit signal
+  // the monthly PostHog insight aggregates.
+  VendorUsage: "vendor_usage",
   // Product usage (extend as needed — keep PII out of properties).
   PageView: "$pageview",
 } as const;

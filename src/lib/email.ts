@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { z } from "zod";
 import { env } from "@/env";
 import { logger } from "@/lib/logger";
+import { reportVendorUsage } from "@/lib/vendor-cost-tracking";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
 const resendSendResponseSchema = z.object({ id: z.string().min(1) });
@@ -77,6 +78,7 @@ export async function sendEmail({
   if (!parsed.success) {
     throw new Error(`Unexpected Resend response: ${parsed.error.message}`);
   }
+  reportVendorUsage("resend", "send"); // T-P4 cost tracking, R-9.12/#764
   return parsed.data;
 }
 

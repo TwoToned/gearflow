@@ -8,6 +8,7 @@ import {
   siteAdminInvitationEmail,
   ssoAccessApprovedEmail,
   ssoAccessRejectedEmail,
+  testTagDigestEmail,
   verificationEmail,
 } from "@/lib/email-templates";
 
@@ -62,5 +63,47 @@ describe("email templates", () => {
       "Reason: no seats",
     );
     expect(ssoAccessRejectedEmail({ orgName: "Acme" }).html).not.toContain("Reason:");
+  });
+
+  describe("testTagDigestEmail", () => {
+    const overdueAsset = {
+      testTagId: "TT-001",
+      description: "Extension lead",
+      nextDueDate: new Date("2026-01-01"),
+      location: "Warehouse A",
+    };
+    const dueSoonAsset = {
+      testTagId: "TT-002",
+      description: "Power board",
+      nextDueDate: new Date("2026-02-01"),
+      location: null,
+    };
+
+    it("leads with the overdue count when there are overdue items", () => {
+      const email = testTagDigestEmail({
+        orgName: "Acme",
+        overdueAssets: [overdueAsset],
+        dueSoonAssets: [dueSoonAsset],
+      });
+      expect(email.subject).toContain("1 overdue item — Acme");
+      expect(email.html).toContain("TT-001");
+      expect(email.html).toContain("Warehouse A");
+      expect(email.html).toContain("TT-002");
+      expect(email.html).toContain("Overdue (1)");
+      expect(email.html).toContain("Due Soon (1)");
+    });
+
+    it("falls back to the due-soon count when nothing is overdue", () => {
+      const email = testTagDigestEmail({
+        orgName: "Acme",
+        overdueAssets: [],
+        dueSoonAssets: [dueSoonAsset],
+      });
+      expect(email.subject).toContain("1 item due soon — Acme");
+      expect(email.html).not.toContain("Overdue (");
+      expect(email.html).toContain("Due Soon (1)");
+      // No location on this asset — renders the "-" placeholder, not "null".
+      expect(email.html).not.toContain(">null<");
+    });
   });
 });

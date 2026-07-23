@@ -183,7 +183,10 @@ Models can set:
 
 - `sendTestTagReminderDigests()` + `recalculateAllTestTagStatuses()` in
   `src/server/test-tag-reminders.ts` recompute asset statuses (CURRENT/DUE_SOON/
-  OVERDUE from `nextDueDate`) then email a per-org digest to admins/owners.
+  OVERDUE from `nextDueDate`) then email a per-org digest to admins/owners. The
+  digest HTML itself is built by `testTagDigestEmail()` in
+  `src/lib/email-templates.ts` (POLICY.md R-8.10.4 — templates live in
+  `email-templates.ts`, not hand-built inline in feature code).
 - Executor route: `POST /api/cron/test-tag-reminders` (also GET), `Bearer ${CRON_SECRET}`.
 - **Scheduler: `convex/crons.ts`** — Convex owns the durable daily schedule;
   `internal.scheduledJobs.runTestTagReminders` invokes the route once/day (22:00 UTC

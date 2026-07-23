@@ -1,5 +1,7 @@
 # Crew Management
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 Crew management tracks people (employees, freelancers, contractors, volunteers) for project staffing. Includes core entity CRUD (Phase 1), project crew assignments with scheduling and call sheets (Phase 2), availability management with conflict detection and crew planner (Phase 3), iCal calendar integration (Phase 4), communication and offer flow (Phase 5), and time tracking with timesheets (Phase 6).
 

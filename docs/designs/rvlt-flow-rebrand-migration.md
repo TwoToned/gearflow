@@ -1,5 +1,7 @@
 # Brand Migration: Gearflow → RVLT Flow
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Goal (as stated):** Zero mentions of "gearflow" anywhere — code, comments, docs, folders, UI copy, GitHub. Move the repo from the `TwoToned` org to `RVLT-Labs`. Full external + internal rebrand.
 
 **Decisions locked (2026-07-17 review):**

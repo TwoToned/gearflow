@@ -1,5 +1,7 @@
 # Real-Time Sync System
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 > **⚠️ SUPERSEDED & REMOVED (2026-06-11).** This system was torn out as the
 > next-to-last step of the Phase 6 Convex migration. It never delivered a single
 > cross-user update: the emit side was a no-op (a PascalCase vs lowercase

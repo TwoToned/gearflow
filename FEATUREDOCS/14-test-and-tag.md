@@ -1,5 +1,7 @@
 # Test & Tag Module (AS/NZS 3760:2022)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Equipment Classes
 - `CLASS_I` — Earth continuity + insulation/leakage
 - `CLASS_II` — Insulation/leakage only (no earth)

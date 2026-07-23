@@ -1,5 +1,7 @@
 # 59 — Bulk Operations (multi-select)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Multi-select + bulk actions on list/table surfaces. Shipped across **all four
 project surfaces** — Equipment (Phase 1), then Services, Crew, and Tasks
 (Phases 2–4). The shared pieces (`useSelection`, `BulkActionBar`,

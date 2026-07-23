@@ -1,5 +1,7 @@
 # Page Routes & Layouts
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Layout Architecture
 
 **Root Layout** (`src/app/layout.tsx`): `html > body > ThemeProvider > QueryProvider > {children} > Toaster`

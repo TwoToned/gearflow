@@ -1,5 +1,7 @@
 # Authentication, Single-Org & Permissions
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Single-Org Architecture
 
 This instance runs in **single-org mode**: exactly one `Organization` row exists, and all users belong to it. The Better Auth Organization plugin is retained for its membership, invitation, and role infrastructure, but multi-org features (org switching, org creation beyond bootstrap, org-specific login routes) are removed.

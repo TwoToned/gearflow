@@ -1,5 +1,7 @@
 # Convex Data Layer
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The living reference for the Convex data layer. Read this (plus CLAUDE.md's Convex
 rules) before touching anything under `convex/` or the read/write plumbing in `src/`.
 

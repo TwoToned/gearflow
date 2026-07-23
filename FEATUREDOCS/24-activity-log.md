@@ -1,5 +1,7 @@
 # Activity Log (Audit Trail)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 Tracks every significant write operation across all entities. Full audit
 trail with filtering, searching, and CSV export.

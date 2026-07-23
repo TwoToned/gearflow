@@ -1,5 +1,7 @@
 # Availability & Overbooking Engine
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## How It Works (`src/lib/availability.ts`)
 1. For each line item's model, query all other projects with overlapping rental dates
 2. Exclude finished statuses: `CANCELLED, RETURNED, COMPLETED, INVOICED`

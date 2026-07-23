@@ -1,5 +1,7 @@
 # Kit System
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Kits List Page (`src/app/(app)/kits/page.tsx`)
 Server-side paginated: `kits.listPage` (filter/sort/category+location joins done in
 Convex, one query per page) via `useAuthedQuery`, not a whole-org live subscription

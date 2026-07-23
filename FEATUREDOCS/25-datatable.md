@@ -1,5 +1,7 @@
 # Advanced DataTable System
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Core Component: `DataTable<TData>` (`src/components/ui/data-table.tsx`)
 - **Props**: `data`, `columns`, `totalRows`, `page`, `pageSize`, `sortField`, `sortDirection`, `filters`, `searchValue`, `columnVisibility`, plus callbacks
 - **Features**: Server-side pagination/sorting, column visibility toggles (localStorage), enum filter dropdowns as checkbox popovers, text search, row selection, active filter chips

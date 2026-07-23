@@ -46,3 +46,9 @@ jobs:
             --title "Quarterly hygiene sweep — $(date -u '+%Y-%m-%d')" \
             --label "hygiene-audit" \
             --body-file sweep-report.md
+
+      # Blocking (unlike the report step above): critical docs (architecture,
+      # onboarding, runbooks) MUST be reviewed at least quarterly (R-5.5 / T-14).
+      # A red run here is the alert — the sweep issue above already has the details.
+      - name: Critical doc review-cadence gate (R-5.5 / T-14)
+        run: pnpm run check-docs-review-cadence

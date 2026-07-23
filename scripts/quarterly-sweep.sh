@@ -56,12 +56,20 @@ if [ -f docs/exceptions.md ]; then
   echo "- Exceptions with expiry dates in the past (convert to failures): ${expired:-none}"
 else echo "- docs/exceptions.md missing"; fi
 
-section "9. Manual review checklist"
+section "9. Critical-doc review cadence (R-5.5 / T-14)"
+if command -v pnpm >/dev/null; then
+  pnpm run check-docs-review-cadence 2>&1 | sed 's/^/  /' || true
+else
+  echo "- pnpm unavailable — run \`node scripts/check-docs-review-cadence.mjs\` manually"
+fi
+echo "(This workflow's own CI step — .github/workflows/quarterly-sweep.yml — fails the run, not just this report, when a critical doc is stale.)"
+
+section "10. Manual review checklist"
 cat <<'EOF'
 - [ ] Alert-rule audit + flaky-quarantine review (R-8.9.3 / R-8.8.4)
 - [ ] Backup-restore test (R-8.11.5) — record the drill result in the runbook
 - [ ] PII inventory review (R-8.12.1) — `docs/pii-inventory.md`
-- [ ] Docs review-date refresh (R-5.5) — critical docs' `Last reviewed` headers
+- [ ] Docs review-date refresh (R-5.5) — non-critical FEATUREDOCS/docs headers (critical docs are gated automatically above)
 - [ ] Budget-registry review (R-0.4) — README thresholds still valid?
 EOF
 echo

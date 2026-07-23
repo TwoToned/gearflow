@@ -1,5 +1,7 @@
 # ADR-0004: Route performance regressions through the standard defect workflow
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Status:** Accepted (2026-07-22)
 
 ## Context

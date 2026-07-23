@@ -1,5 +1,7 @@
 # Integration Checklist for New Features
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 When implementing a new feature, ensure it integrates with ALL existing systems.
 
 | System | What to Do |

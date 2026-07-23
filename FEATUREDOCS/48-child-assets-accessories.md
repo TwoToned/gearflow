@@ -1,5 +1,7 @@
 # Child Assets / Accessories
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Permanently attach accessories (cables, clamps, adaptors) to a parent serialised
 asset so they travel together — onto projects, through warehouse checkout/checkin,
 and onto documents. Roadmap Phase 1.1; foundational for Bulk Check-In (1.3).

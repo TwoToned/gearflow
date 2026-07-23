@@ -1,5 +1,7 @@
 # Testing Infrastructure
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 
 RVLT Flow uses **Vitest** for unit/integration tests and **Playwright** for E2E tests. Tests are colocated with source files (`*.test.ts` next to `*.ts`).

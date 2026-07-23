@@ -1,5 +1,7 @@
 # Warehouse Operations
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI

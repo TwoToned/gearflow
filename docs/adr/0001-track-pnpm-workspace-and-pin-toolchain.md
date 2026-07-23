@@ -1,5 +1,7 @@
 # ADR-0001: Track pnpm-workspace.yaml and pin the pnpm/Node toolchain
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Status:** Accepted (2026-07-18)
 
 ## Context

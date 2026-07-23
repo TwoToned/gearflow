@@ -1,5 +1,7 @@
 # 37 — Check Items & Quality Checks
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 
 Quality check system integrated into the warehouse prep/return flow. Warehouse operators scan an asset, fill out model-specific check items (pass/fail, measurement, notes, dropdown), and the system records results before completing checkout/checkin. Includes a check item library, model assignment, ad-hoc checks, close-out workflow, and predictive maintenance triggers.

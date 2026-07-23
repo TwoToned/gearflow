@@ -1,5 +1,7 @@
 # ADR-0002: Adopt next/image but serve app images unoptimized
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Status:** Accepted (2026-07-18)
 
 ## Context

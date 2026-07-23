@@ -3,6 +3,8 @@
 <!-- Next step on resume: begin Wave 1 day 0 (env validation → Sentry → BulkAsset reconcile script → shared inventory mutation helper → kit fix → maintenance fix → T&T enforcement) -->
 # RVLT Flow — App-Wide Cleanup, Unification & Feature-Completeness Audit
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Branch:** `claude/strange-chebyshev-58d336`
 **Created:** 2026-05-14
 **Source:** /autoplan request — "I want to do a clean up and unification of the app. go through with a fine tooth comb. review all features and make sure everything is functional. make sure everything works together and nothing has been forgotten. Let me know if there are any missing features that should be implemented. dream big, i want this to be the most feature-full, bug free rental management system. Pay close attention to projects, and finances."

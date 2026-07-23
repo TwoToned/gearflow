@@ -1,5 +1,7 @@
 # Revenue Allocation & Gear ROI
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Splits what a client paid across the gear that earned it, so per-**model** ROI is
 answerable — including for gear that only ever ships inside a kit or a priced bundle.
 

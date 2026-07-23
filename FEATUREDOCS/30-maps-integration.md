@@ -1,5 +1,7 @@
 # Maps Integration — Address Autocomplete & Interactive Maps
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 Universal address autocomplete (Google Places API) and interactive maps (Google Maps) across Location, Client, and Supplier entities. Selecting a suggestion captures coordinates and displays a map on detail pages. Freeform text works without coordinates — no map, just text.
 

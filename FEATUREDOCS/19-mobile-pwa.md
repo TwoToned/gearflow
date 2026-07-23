@@ -1,5 +1,7 @@
 # Mobile & PWA
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The compliance target is **DESIGN.md §15 (Mobile Rules)** and **§16 (Bottom Nav)**.
 Those sections are the spec; this file records how the app implements them.
 

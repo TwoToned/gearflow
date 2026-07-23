@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { adjustBulkAvailability } from "./lib/inventory";
 import * as enums from "./lib/validators";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 
 /**
  * Native ASSET-ACCESSORY write mutations (Phase 3 browser-direct — replaces
@@ -18,9 +19,28 @@ import * as enums from "./lib/validators";
  * ONE mutation makes the pre-check + pool adjustment + write ATOMIC — the guard and the
  * write see the same transaction, so two concurrent attaches of the same child (or a
  * DEDICATED draw racing the pool) can't both win.
+ *
+ * `useAssetAccessoryWrites()` runs `assetSerializedChildSchema`/`assetBulkChildSchema`
+ * (src/lib/validations/asset.ts) client-side before calling these mutations directly (no
+ * server action in this path); `assertSerializedChildFields`/`assertBulkChildFields`
+ * re-enforce the same string-length/quantity bounds here so a caller invoking the
+ * mutation directly can't skip them (R-8.6.1/R-8.6.2).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/** Mirrors assetSerializedChildSchema (src/lib/validations/asset.ts). */
+function assertSerializedChildFields(f: { childAssetId?: string; notes?: string }): void {
+  assertStrLen(f.childAssetId, "childAssetId", { min: 1 });
+  assertStrLen(f.notes, "notes", { max: 500 });
+}
+
+/** Mirrors assetBulkChildSchema (src/lib/validations/asset.ts). */
+function assertBulkChildFields(f: { bulkAssetId?: string; quantity?: number; notes?: string }): void {
+  assertStrLen(f.bulkAssetId, "bulkAssetId", { min: 1 });
+  assertNumRange(f.quantity, "quantity", { min: 1, integer: true });
+  assertStrLen(f.notes, "notes", { max: 500 });
+}
 
 async function logAccessory(
   ctx: MutationCtx,
@@ -49,6 +69,7 @@ export const addSerializedNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "asset", "update");
     const actor = await resolveActor(ctx, a.actor);
+    assertSerializedChildFields(a);
 
     if (a.childAssetId === a.parentAssetId) throw new ConvexError("Cannot attach an asset to itself");
 
@@ -88,7 +109,7 @@ export const addBulkNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "asset", "update");
     const actor = await resolveActor(ctx, a.actor);
-    if (!Number.isInteger(a.quantity) || a.quantity < 1) throw new ConvexError("Quantity must be a whole number of at least 1");
+    assertBulkChildFields(a);
 
     const parent = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", a.parentAssetId)).first();
     if (!parent || parent.organizationId !== a.orgId) throw new ConvexError("Asset not found");

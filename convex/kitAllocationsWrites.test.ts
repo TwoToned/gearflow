@@ -68,6 +68,13 @@ describe("replaceNative — money guards", () => {
     await expect(replace(t, [row("rx", NaN), row("belt", NaN)])).rejects.toThrow(/out of range/);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing kitAllocationSchema's 2-decimal
+  // refine in the browser hook) must still hit the same precision bound server-side.
+  test("rejects a percent with more than 2 decimal places", async () => {
+    const t = makeT(); await seedKit(t);
+    await expect(replace(t, [row("rx", 33.333), row("belt", 66.667)])).rejects.toThrow(/2 decimal places/);
+  });
+
   test("wholesale replace never deletes another org's rows on a shared kitId", async () => {
     const t = makeT(); await seedKit(t);
     await t.run(async (ctx) => {

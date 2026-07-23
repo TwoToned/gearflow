@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { readValidatedBody } from "@/lib/api-validation";
+import { withValidatedBody } from "@/lib/api-validation";
 
 // Simple in-memory rate limiter: 5 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -20,44 +20,44 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
+const orgLookup = withValidatedBody(
+  z.object({ email: z.string().email() }),
+  async ({ email }) => {
+    const normalized = email.toLowerCase().trim();
+    const domain = normalized.split("@")[1];
+
+    // Find SSO providers matching this email domain
+    const providers = await prisma.ssoProvider.findMany({
+      where: { domain },
+      select: {
+        organizationId: true,
+        organization: {
+          select: { slug: true, name: true },
+        },
+      },
+    });
+
+    // Deduplicate by org and only return orgs that exist
+    const orgMap = new Map<string, { orgSlug: string; orgName: string; hasSSO: boolean }>();
+    for (const p of providers) {
+      if (p.organizationId && p.organization) {
+        orgMap.set(p.organizationId, {
+          orgSlug: p.organization.slug,
+          orgName: p.organization.name,
+          hasSSO: true,
+        });
+      }
+    }
+
+    return NextResponse.json({ orgs: Array.from(orgMap.values()) });
+  },
+);
+
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!checkRateLimit(ip)) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const parsed = await readValidatedBody(
-    request,
-    z.object({ email: z.string().email() }),
-  );
-  if (!parsed.ok) return parsed.response;
-
-  const email = parsed.data.email.toLowerCase().trim();
-
-  const domain = email.split("@")[1];
-
-  // Find SSO providers matching this email domain
-  const providers = await prisma.ssoProvider.findMany({
-    where: { domain },
-    select: {
-      organizationId: true,
-      organization: {
-        select: { slug: true, name: true },
-      },
-    },
-  });
-
-  // Deduplicate by org and only return orgs that exist
-  const orgMap = new Map<string, { orgSlug: string; orgName: string; hasSSO: boolean }>();
-  for (const p of providers) {
-    if (p.organizationId && p.organization) {
-      orgMap.set(p.organizationId, {
-        orgSlug: p.organization.slug,
-        orgName: p.organization.name,
-        hasSSO: true,
-      });
-    }
-  }
-
-  return NextResponse.json({ orgs: Array.from(orgMap.values()) });
+  return orgLookup(request);
 }

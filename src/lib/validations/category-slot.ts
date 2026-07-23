@@ -38,12 +38,12 @@ export type MoveSubHireGroupToCategoryInput = z.input<typeof moveSubHireGroupToC
  * Move a ProjectGroup to a different ProjectCategory, or to the
  * Uncategorized zone (categoryId = null) since v0.9.4.0. Mirrors
  * `moveSubHireGroupToCategorySchema` — both group kinds can live
- * uncategorized.
+ * uncategorized, hence the identical shape (R-8.6.3: derived via `.pick()`
+ * rather than re-declared).
  */
-export const moveProjectGroupToCategorySchema = z.object({
-  groupId: z.string().min(1),
-  /** null = move to uncategorised */
-  categoryId: z.string().min(1).nullable(),
+export const moveProjectGroupToCategorySchema = moveSubHireGroupToCategorySchema.pick({
+  groupId: true,
+  categoryId: true,
 });
 export type MoveProjectGroupToCategoryInput = z.input<typeof moveProjectGroupToCategorySchema>;
 

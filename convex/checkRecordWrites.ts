@@ -12,6 +12,7 @@ import { completeCheckAndDeprepLineCore, prepItemCore } from "./checkRecordOps";
 import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { assertStrLen } from "./lib/fieldGuards";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -115,6 +116,21 @@ async function assertKitInOrg(ctx: MutationCtx, kitId: string, orgId: string): P
 }
 
 /**
+ * Mirrors `checkRecordSchema`'s (src/lib/validations/check-item.ts) `notes` bound —
+ * `v.optional(v.string())` only enforces type, not the 2000-char business constraint.
+ * None of the check-record hooks (src/hooks/use-check-record-writes.ts) actually run
+ * `checkRecordSchema.parse()` before calling these mutations (it's imported only for
+ * its TS type), so this is the ONLY enforcement point, not a redundant mirror
+ * (R-8.6.2). Applied once here rather than duplicated across all 7 mutation handlers,
+ * since every one of them routes its `checks` through `insertCheckRecords`.
+ */
+function assertCheckRecordsFields(checks: CheckArg[]): void {
+  for (const c of checks) {
+    assertStrLen(c.notes, "notes", { max: 2000 });
+  }
+}
+
+/**
  * Insert the submitted check records at their client-minted ids (idempotent per
  * cuid). Port of `saveCheckRecords` + `checkRecords.createManyIfMissing`:
  *   • label/type snapshots come from the org's check items (Convex — CheckItem is
@@ -138,6 +154,7 @@ async function insertCheckRecords(
   },
 ): Promise<void> {
   if (a.checks.length === 0) return;
+  assertCheckRecordsFields(a.checks);
   const wanted = new Set(a.checks.map((c) => c.checkItemId));
   const orgCheckItems = await ctx.db
     .query("checkItems")
@@ -372,6 +389,9 @@ export const completeCheckAndStore = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "warehouse", "check_in");
     const actor = await resolveActor(ctx, a.actor);
+    // Mirrors completeCheckAndStoreSchema's `notes` bound (src/lib/validations/check-item.ts)
+    // — same rationale as assertCheckRecordsFields above, this is the only enforcement point.
+    assertStrLen(a.notes, "notes", { max: 2000 });
 
     const line = await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
 

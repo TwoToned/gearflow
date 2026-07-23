@@ -25,12 +25,12 @@ export const createDocumentTemplateSchema = z.object({
   schemas: z.string(), // JSON string
 });
 
-export const updateDocumentTemplateSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).max(100).optional(),
-  basePdf: z.string().optional(),
-  schemas: z.string().optional(),
-});
+// R-8.6.3: derived from the create schema rather than re-declared — `type`
+// isn't updatable, and every other field becomes optional on update.
+export const updateDocumentTemplateSchema = createDocumentTemplateSchema
+  .omit({ type: true })
+  .partial()
+  .extend({ id: z.string().min(1) });
 
 export type CreateDocumentTemplateValues = z.input<typeof createDocumentTemplateSchema>;
 export type UpdateDocumentTemplateValues = z.input<typeof updateDocumentTemplateSchema>;

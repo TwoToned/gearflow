@@ -235,6 +235,36 @@ describe("completeCheckAndStore", () => {
       }),
     ).rejects.toThrow();
   });
+
+  // R-8.6.2 — mirrors completeCheckAndStoreSchema's `notes` bound (check-item.ts);
+  // this hook never calls checkRecordSchema/completeCheckAndStoreSchema.parse(), so
+  // this is the ONLY enforcement point, not a redundant mirror.
+  test("rejects a top-level notes over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "CHECKED_OUT");
+    await seedLine(t, "L1", { assetId: "as1", status: "CHECKED_OUT" });
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndStore, {
+        orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1", condition: "GOOD",
+        notes: "X".repeat(2001), checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+      }),
+    ).rejects.toThrow(/notes/);
+  });
+});
+
+// ─── R-8.6.2 — checkRecordSchema.notes bound (checks[].notes) ────────────────────
+// Enforced once, inside insertCheckRecords, so it covers every mutation that submits
+// `checks` — verified here via saveAdHocCheck (the simplest caller).
+describe("checkRecordSchema.notes bound (per-check notes)", () => {
+  test("rejects a per-check notes over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
+    await expect(
+      t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
+        orgId: ORG, assetId: "as1",
+        checks: [{ ...mkCheck(), notes: "X".repeat(2001) }],
+        maintenancePlan: [], auditId: "a1", now: NOW, actor,
+      }),
+    ).rejects.toThrow(/notes/);
+  });
 });
 
 // ─── saveAdHocCheck ────────────────────────────────────────────────────────────

@@ -79,6 +79,48 @@ describe("kitWrites.createNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.kitWrites.createNative, createArgs),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing kitSchema.parse() in the browser
+  // hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a name over the 200-char bound", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.createNative, { ...createArgs, name: "x".repeat(201) }),
+    ).rejects.toThrow(/name/);
+  });
+
+  test("rejects an assetTag over the 50-char bound", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.createNative, { ...createArgs, assetTag: "x".repeat(51) }),
+    ).rejects.toThrow(/assetTag/);
+  });
+
+  test("rejects a negative purchasePrice", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.createNative, { ...createArgs, purchasePrice: -1 }),
+    ).rejects.toThrow(/purchasePrice/);
+  });
+
+  test("rejects a negative weight", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "manager" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.createNative, { ...createArgs, weight: -5 }),
+    ).rejects.toThrow(/weight/);
+  });
 });
 
 describe("kitWrites.updateNative", () => {
@@ -114,6 +156,15 @@ describe("kitWrites.updateNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.kitWrites.updateNative, updArgs),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // R-8.6.2 — same bound, enforced on the `patch` object (not just createNative).
+  test("rejects a description over the 2000-char bound on the patch", async () => {
+    const t = makeT();
+    await seedKit(t);
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.kitWrites.updateNative, { ...updArgs, patch: { ...updArgs.patch, description: "x".repeat(2001) } }),
+    ).rejects.toThrow(/description/);
   });
 });
 
@@ -223,6 +274,20 @@ describe("kitWrites member ops", () => {
     });
   });
 
+  // R-8.6.2 — mirrors kitSerializedItemSchema's `position` bound.
+  test("addSerializedItemsNative rejects a position over the 200-char bound", async () => {
+    const t = makeT();
+    await seedKit(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, assetTag: "A1", modelId: "m", status: "AVAILABLE", isActive: true });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.addSerializedItemsNative, {
+        orgId: ORG, kitId: "k1", items: [{ assetId: "a1", position: "x".repeat(201) }], actor: ACTOR, auditId: "l", now: NOW,
+      }),
+    ).rejects.toThrow(/position/);
+  });
+
   test("addSerializedItemsNative rejects a non-AVAILABLE / already-kitted asset", async () => {
     const t = makeT();
     await seedKit(t, "manager");
@@ -253,6 +318,18 @@ describe("kitWrites member ops", () => {
     expect((await t.run(async (ctx) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).first()))?.availableQuantity).toBe(7);
     await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.removeBulkItemNative, { orgId: ORG, kitId: "k1", bulkItemId: memberId, actor: ACTOR, auditId: "l2", now: NOW });
     expect((await t.run(async (ctx) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).first()))?.availableQuantity).toBe(10);
+  });
+
+  // R-8.6.2 — mirrors kitBulkItemSchema's `notes` bound.
+  test("addBulkItemNative rejects notes over the 500-char bound", async () => {
+    const t = makeT();
+    await seedKit(t, "manager");
+    await t.run(async (ctx) => { await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, assetTag: "B1", modelId: "m", status: "ACTIVE", totalQuantity: 10, availableQuantity: 10, isActive: true }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.kitWrites.addBulkItemNative, {
+        orgId: ORG, kitId: "k1", bulkAssetId: "b1", quantity: 1, notes: "x".repeat(501), actor: ACTOR, auditId: "l1", now: NOW,
+      }),
+    ).rejects.toThrow(/notes/);
   });
 
   test("member ops reject when the kit is not AVAILABLE", async () => {

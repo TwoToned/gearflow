@@ -139,4 +139,74 @@ describe("clientWrites", () => {
       }),
     ).rejects.toThrow();
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing clientSchema.parse() in the browser
+  // hook) must still hit the same business-constraint bounds server-side.
+  describe("field bounds (R-8.6.2)", () => {
+    test("rejects a blank name on create", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.createNative, {
+          id: "c1", organizationId: ORG, name: "", actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/name/i);
+    });
+
+    test("rejects a name over the 200-char bound on create", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.createNative, {
+          id: "c1", organizationId: ORG, name: "X".repeat(201), actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/name/i);
+    });
+
+    test("rejects notes over the 2000-char bound on create", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.createNative, {
+          id: "c1", organizationId: ORG, name: "Acme", notes: "x".repeat(2001), actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/notes/);
+    });
+
+    test("rejects a defaultDiscount over 100 on create", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.createNative, {
+          id: "c1", organizationId: ORG, name: "Acme", defaultDiscount: 150, actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/defaultDiscount/);
+    });
+
+    test("rejects a negative defaultDiscount on the update patch", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme", createdAt: NOW, updatedAt: NOW });
+      });
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.updateNative, {
+          id: "c1", orgId: ORG, patch: { defaultDiscount: -5 }, actor, auditId: "a2", now: NOW,
+        }),
+      ).rejects.toThrow(/defaultDiscount/);
+    });
+
+    test("rejects a billingAddress over the 500-char bound on the update patch", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme", createdAt: NOW, updatedAt: NOW });
+      });
+      await expect(
+        t.withIdentity(asUser).mutation(api.clientWrites.updateNative, {
+          id: "c1", orgId: ORG, patch: { billingAddress: "x".repeat(501) }, actor, auditId: "a2", now: NOW,
+        }),
+      ).rejects.toThrow(/billingAddress/);
+    });
+  });
 });

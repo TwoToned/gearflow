@@ -7,6 +7,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
+import { assertNumRange } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { bumpCountersForTable } from "./lib/counters";
@@ -154,6 +155,18 @@ type ServiceInput = {
   crewRoleId?: string;
 };
 
+/**
+ * Mirrors `projectServiceSchema`'s (src/lib/validations/project-service.ts) `quantity`
+ * lower bound — `v.number()` only enforces type, not `.min(1)`. `title` presence is
+ * already enforced separately (`if (!a.title) throw ...` in createServiceNative/
+ * updateServiceNative/createServiceTemplateNative/updateServiceTemplateNative); money
+ * bounds (`unitPrice`/`discount`/`costTotal` non-negative + finite) are already
+ * enforced just below. `quantity` was the one bound neither path re-checked.
+ */
+function assertServiceFields(f: { quantity?: number }): void {
+  assertNumRange(f.quantity, "quantity", { min: 1 });
+}
+
 /** Port of buildServiceData — clamps endDate by type, computes lineTotal, and returns
  *  the normalized `fields` (null = cleared) plus the clamped serviceDate/serviceEndDate. */
 function buildServiceFields(a: ServiceInput) {
@@ -163,6 +176,7 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.unitPrice, "unitPrice");
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
+  assertServiceFields({ quantity: a.quantity });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
   // → serviceRevenue → project total); a negative costTotal would INFLATE project margin

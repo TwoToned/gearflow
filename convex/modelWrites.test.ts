@@ -141,6 +141,47 @@ describe("modelWrites", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.modelWrites.createNative, base)).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing modelSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  describe("field bounds (R-8.6.2)", () => {
+    test("rejects a description over the 2000-char bound on create", async () => {
+      const t = makeT(); await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, description: "d".repeat(2001) }),
+      ).rejects.toThrow(/description/i);
+    });
+
+    test("rejects a manufacturer over the 200-char bound on the update patch", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.withIdentity(asUser).mutation(api.modelWrites.createNative, base);
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, manufacturer: "m".repeat(201), now: NOW + 1, auditId: "a2" }),
+      ).rejects.toThrow(/manufacturer/i);
+    });
+
+    test("rejects a non-integer powerDraw on create", async () => {
+      const t = makeT(); await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, powerDraw: 12.5 }),
+      ).rejects.toThrow(/powerDraw/);
+    });
+
+    test("rejects a non-integer testAndTagIntervalDays on create", async () => {
+      const t = makeT(); await seedMember(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, requiresTestAndTag: true, testAndTagIntervalDays: 90.5 }),
+      ).rejects.toThrow(/testAndTagIntervalDays/);
+    });
+
+    test("rejects a non-integer maintenanceIntervalDays on the update patch", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.withIdentity(asUser).mutation(api.modelWrites.createNative, base);
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, maintenanceIntervalDays: 5.5, now: NOW + 1, auditId: "a2" }),
+      ).rejects.toThrow(/maintenanceIntervalDays/);
+    });
+  });
 });
 
 describe("models.detail", () => {

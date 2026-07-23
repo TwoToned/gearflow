@@ -8,14 +8,19 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
  * Native MODEL write mutations (Phase 3 browser-direct — replaces createModel/
  * updateModel/archiveModel/bulkUpdateRates). Models are Convex-only (Phase B
  * inversion). Each mutation runs the 4 guards + per-row org re-check + atomic
- * audit. The form runs modelSchema before submit; validateModel re-checks the
- * key constraints server-side (the mutation is the boundary, not the form).
+ * audit. There is no server action in this path — `useModelWrites()`
+ * (src/hooks/use-model-writes.ts) runs `modelSchema.parse()` client-side before
+ * calling these mutations directly; `assertModelFields` re-enforces the same
+ * string-length/numeric bounds here so a caller invoking the mutation directly
+ * (valid session, bypassing the UI) can't skip them (R-8.6.1/R-8.6.2 — the
+ * mutation is the boundary, not the form).
  *
  * Side-effects folded in (all atomic now — the old server path made N round-trips):
  *  - create/update with requiresTestAndTag → backfillTestTagAssetsCore (auto-register).
@@ -74,26 +79,37 @@ type ModelArgs = {
   tags?: string[]; isActive?: boolean;
 };
 
-/** Server-side parity with modelSchema — the mutation is the boundary, not the form. */
-function validateModel(a: ModelArgs) {
+/**
+ * Mirrors `modelSchema`'s (src/lib/validations/model.ts) string-length + numeric
+ * bounds — `v.string()`/`v.number()` only enforce type, not these business
+ * constraints, so a browser-direct caller bypassing the client Zod parse would
+ * otherwise skip them entirely (R-8.6.2). `name`'s required-ness and `dailyRate`'s
+ * negative check keep their original domain-specific messages (existing callers/
+ * tests key off "Name is required" / "positive"); every other field uses the
+ * shared `assertStrLen`/`assertNumRange` primitives.
+ */
+function assertModelFields(a: ModelArgs) {
   if (!a.name || a.name.length < 1) throw new ConvexError("Name is required");
-  const maxLen: [string, string | undefined, number][] = [
-    ["Name", a.name, 200], ["Manufacturer", a.manufacturer, 200], ["Model number", a.modelNumber, 100],
-    ["SKU", a.sku, 100], ["Description", a.description, 2000],
-  ];
-  for (const [label, val, cap] of maxLen) if (val && val.length > cap) throw new ConvexError(`${label} is too long`);
-  const nonNeg: [string, number | undefined][] = [
-    ["Default rental price", a.defaultRentalPrice], ["Daily rate", a.dailyRate], ["Weekly rate", a.weeklyRate],
-    ["Monthly rate", a.monthlyRate], ["Purchase price", a.defaultPurchasePrice], ["Replacement cost", a.replacementCost],
-    ["Weight", a.weight], ["Power draw", a.powerDraw], ["Maintenance interval", a.maintenanceIntervalDays],
-  ];
-  for (const [label, val] of nonNeg) {
-    if (val == null) continue;
-    if (!Number.isFinite(val) || val < 0) throw new ConvexError(`${label} must be zero or positive`);
+  assertStrLen(a.name, "name", { max: 200 });
+  assertStrLen(a.manufacturer, "manufacturer", { max: 200 });
+  assertStrLen(a.modelNumber, "modelNumber", { max: 100 });
+  assertStrLen(a.sku, "sku", { max: 100 });
+  assertStrLen(a.description, "description", { max: 2000 });
+
+  if (a.dailyRate != null && (!Number.isFinite(a.dailyRate) || a.dailyRate < 0)) {
+    throw new ConvexError("Daily rate must be zero or positive");
   }
-  if (a.testAndTagIntervalDays != null && (!Number.isFinite(a.testAndTagIntervalDays) || a.testAndTagIntervalDays < 1)) {
-    throw new ConvexError("Test & tag interval must be at least 1 day");
-  }
+  assertNumRange(a.defaultRentalPrice, "defaultRentalPrice", { min: 0 });
+  assertNumRange(a.weeklyRate, "weeklyRate", { min: 0 });
+  assertNumRange(a.monthlyRate, "monthlyRate", { min: 0 });
+  assertNumRange(a.defaultPurchasePrice, "defaultPurchasePrice", { min: 0 });
+  assertNumRange(a.replacementCost, "replacementCost", { min: 0 });
+  assertNumRange(a.weight, "weight", { min: 0 });
+  // Schema also requires these to be whole numbers (z.coerce.number().int()) — the
+  // pre-existing hand-rolled checks missed the integer requirement; fixed here.
+  assertNumRange(a.powerDraw, "powerDraw", { min: 0, integer: true });
+  assertNumRange(a.maintenanceIntervalDays, "maintenanceIntervalDays", { min: 0, integer: true });
+  assertNumRange(a.testAndTagIntervalDays, "testAndTagIntervalDays", { min: 1, integer: true });
 }
 
 /** Build the models doc from parsed form args (mirrors toConvexModelArgs — undefined clears). */
@@ -147,7 +163,7 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "model", "create");
     const actor = await resolveActor(ctx, a.actor);
-    validateModel(a);
+    assertModelFields(a);
 
     const dup = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Model already exists");
@@ -176,7 +192,7 @@ export const updateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "model", "update");
     const actor = await resolveActor(ctx, a.actor);
-    validateModel(a);
+    assertModelFields(a);
 
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");

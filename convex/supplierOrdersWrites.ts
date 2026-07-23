@@ -4,6 +4,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -16,6 +17,17 @@ import * as enums from "./lib/validators";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `supplierOrderSchema`'s (src/lib/validations/supplier-order.ts) string-length
+ * bounds — `v.string()` only enforces type, not `.min()`/`.max()`. The form's Zod parse
+ * runs client-side only; a browser-direct caller invoking this mutation skips it
+ * entirely (R-8.6.2).
+ */
+function assertSupplierOrderFields(f: { orderNumber?: string; notes?: string }): void {
+  if (f.orderNumber != null) assertStrLen(f.orderNumber, "orderNumber", { min: 1, max: 100 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+}
 
 export const createNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -47,6 +59,7 @@ export const createNative = mutation({
     // order's count; a duplicate id also breaks .unique() by_cuid reads.
     const dup = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Order already exists");
+    assertSupplierOrderFields(a);
 
     const supplier = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", a.supplierId)).first();
     if (!supplier || supplier.organizationId !== a.orgId) throw new ConvexError("Supplier not found");

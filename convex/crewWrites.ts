@@ -8,10 +8,62 @@ import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /** Fields diffed for the crew-member UPDATE audit (parity with the old updateCrewMember). */
 const CREW_AUDIT_FIELDS = ["firstName", "lastName", "email", "phone", "type", "status", "department", "defaultDayRate", "defaultHourlyRate", "address", "isActive"];
+
+/**
+ * Mirrors `crewMemberSchema` (src/lib/validations/crew.ts) string-length + rate bounds,
+ * plus its lat/long-together `.refine()` — `v.string()`/`v.number()` only enforce type,
+ * not these business constraints, so a browser-direct caller bypassing the client Zod
+ * parse would otherwise skip them entirely (R-8.6.2). Shared by createNative (full
+ * fields) and updateNative (the `set` patch) — every field is optional here because a
+ * patch may only touch a subset.
+ */
+function assertCrewMemberFields(f: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  currency?: string;
+  address?: string;
+  addressLatitude?: number;
+  addressLongitude?: number;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  abnOrGst?: string;
+  notes?: string;
+  defaultDayRate?: number;
+  defaultHourlyRate?: number;
+  overtimeMultiplier?: number;
+}): void {
+  // firstName/lastName are required (min 1) whenever supplied — both createNative
+  // (always sends them) and updateNative (only when actually being changed).
+  if (f.firstName !== undefined) assertStrLen(f.firstName, "firstName", { min: 1, max: 200 });
+  if (f.lastName !== undefined) assertStrLen(f.lastName, "lastName", { min: 1, max: 200 });
+  assertStrLen(f.email, "email", { max: 200 });
+  assertStrLen(f.phone, "phone", { max: 50 });
+  assertStrLen(f.department, "department", { max: 100 });
+  assertStrLen(f.currency, "currency", { max: 10 });
+  assertStrLen(f.address, "address", { max: 500 });
+  assertStrLen(f.emergencyContactName, "emergencyContactName", { max: 200 });
+  assertStrLen(f.emergencyContactPhone, "emergencyContactPhone", { max: 50 });
+  assertStrLen(f.abnOrGst, "abnOrGst", { max: 50 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+  assertNumRange(f.defaultDayRate, "defaultDayRate", { min: 0 });
+  assertNumRange(f.defaultHourlyRate, "defaultHourlyRate", { min: 0 });
+  assertNumRange(f.overtimeMultiplier, "overtimeMultiplier", { min: 0 });
+  if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "email must be a valid email address." });
+  }
+  // crewMemberSchema .refine(): latitude/longitude must both be present or both absent.
+  if ((f.addressLatitude != null) !== (f.addressLongitude != null)) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "Both latitude and longitude must be provided together." });
+  }
+}
 
 /**
  * Native CREW write mutations (Phase 5) — same pattern as assetWrites/kitWrites:
@@ -75,22 +127,13 @@ export const createNative = mutation({
     if (fields.crewRoleId) await assertRefInOrg(ctx, "crewRoles", fields.crewRoleId, fields.organizationId);
     if (fields.userId) await assertMemberInOrg(ctx, fields.organizationId, fields.userId);
 
-    // Server-side boundary parity with crewMemberSchema (the form's zodResolver + the
-    // hook's .parse cover the UI path; this guards any direct mutation caller).
+    // Server-side boundary parity with crewMemberSchema (R-8.6.2) — the form's
+    // zodResolver + the hook's .parse cover the UI path only; this guards any caller
+    // invoking the mutation directly. firstName/lastName are always sent by the hook, so
+    // require them here too (createNative, unlike updateNative's partial patch).
     if (!fields.firstName || fields.firstName.length < 1) throw new ConvexError("First name is required");
     if (!fields.lastName || fields.lastName.length < 1) throw new ConvexError("Last name is required");
-    const maxLen: [string, string | undefined, number][] = [
-      ["First name", fields.firstName, 200], ["Last name", fields.lastName, 200], ["Email", fields.email, 200],
-      ["Phone", fields.phone, 50], ["Department", fields.department, 100], ["Currency", fields.currency, 10],
-      ["Address", fields.address, 500], ["Emergency contact name", fields.emergencyContactName, 200],
-      ["Emergency contact phone", fields.emergencyContactPhone, 50], ["ABN/GST", fields.abnOrGst, 50], ["Notes", fields.notes, 2000],
-    ];
-    for (const [label, val, cap] of maxLen) if (val && val.length > cap) throw new ConvexError(`${label} is too long`);
-    if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) throw new ConvexError("Invalid email address");
-    for (const [label, val] of [["Day rate", fields.defaultDayRate], ["Hourly rate", fields.defaultHourlyRate], ["Overtime multiplier", fields.overtimeMultiplier]] as [string, number | undefined][]) {
-      if (val != null && (!Number.isFinite(val) || val < 0)) throw new ConvexError(`${label} must be zero or positive`);
-    }
-    if ((fields.addressLatitude != null) !== (fields.addressLongitude != null)) throw new ConvexError("Both latitude and longitude must be provided together");
+    assertCrewMemberFields(fields);
 
     // Idempotent by cuid (mirror convention — a retried create can't duplicate). A
     // cuid belonging to ANOTHER org is a cross-tenant collision → reject (else a false
@@ -147,6 +190,10 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchMember pattern.
     const NEVER_CLEAR = new Set(["id", "organizationId"]);
     const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
+    // R-8.6.2 — the create path already re-enforces crewMemberSchema's bounds; a
+    // direct-mutation caller could otherwise skip them on update by only ever calling
+    // updateNative with an out-of-bound value.
+    assertCrewMemberFields(setObj);
     // Org-validate reassigned FKs; the linked user is validated only when CHANGED so a
     // former member on an existing row can still be re-saved.
     if (typeof setObj.crewRoleId === "string") await assertRefInOrg(ctx, "crewRoles", setObj.crewRoleId, orgId);

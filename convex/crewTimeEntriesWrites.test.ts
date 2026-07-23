@@ -41,6 +41,71 @@ describe("crewTimeEntriesWrites", () => {
     expect((await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "l1")).first()))?.action).toBe("CREATE");
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing crewTimeEntrySchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("create rejects a description over the 500-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, description: "x".repeat(501) }),
+    ).rejects.toThrow(/description/);
+  });
+
+  test("create rejects a startTime over the 5-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, startTime: "123456" }),
+    ).rejects.toThrow(/startTime/);
+  });
+
+  test("create rejects a negative breakMinutes", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, breakMinutes: -5 }),
+    ).rejects.toThrow(/breakMinutes/);
+  });
+
+  test("create rejects a non-integer breakMinutes", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, breakMinutes: 12.5 }),
+    ).rejects.toThrow(/breakMinutes/);
+  });
+
+  test("create rejects a notes field over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, notes: "x".repeat(2001) }),
+    ).rejects.toThrow(/notes/);
+  });
+
+  test("createMany rejects an out-of-bound shared field (applies to the whole batch)", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createManyNative, {
+        orgId: ORG, now: NOW, actor,
+        shared: { date: NOW, startTime: "09:00", endTime: "17:00", breakMinutes: -1 },
+        entries: [{ id: "t1", crewMemberId: "c1", auditId: "l1" }],
+      }),
+    ).rejects.toThrow(/breakMinutes/);
+  });
+
+  test("update rejects an endTime over the 5-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, base);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.updateNative, { ...base, endTime: "123456", auditId: "l2" }),
+    ).rejects.toThrow(/endTime/);
+  });
+
+  test("dispute rejects a reason over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, base);
+    await t.run(async (ctx) => { const d = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "t1")).first(); if (d) await ctx.db.patch(d._id, { status: "SUBMITTED" }); });
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.disputeNative, { id: "t1", orgId: ORG, reason: "x".repeat(2001), now: NOW, actor, auditId: "l2" }),
+    ).rejects.toThrow(/notes/);
+  });
+
   test("createMany partial-success: unknown crew errors, valid ones written", async () => {
     const t = makeT(); await seed(t);
     const res = await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createManyNative, {

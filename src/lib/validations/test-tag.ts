@@ -106,17 +106,25 @@ export type TestTagRecordFormValues = z.input<typeof testTagRecordSchema>;
 
 // ─── Batch Create ───────────────────────────────────────────────────────────
 
-export const batchCreateTestTagSchema = z.object({
-  bulkAssetId: z.string().min(1, "Bulk asset is required"),
-  count: z.coerce.number().int().min(1, "Must create at least 1").max(500),
-  equipmentClass: equipmentClassEnum.default("CLASS_I"),
-  applianceType: applianceTypeEnum.default("APPLIANCE"),
-  testIntervalMonths: z.coerce.number().int().min(1).max(120).default(3),
-  description: z.string().min(1, "Description is required").max(500),
-  make: z.string().max(200).optional(),
-  modelName: z.string().max(200).optional(),
-  location: z.string().max(200).optional(),
-});
+// R-8.6.3: derived from `testTagAssetSchema` (`.omit()` + `.extend()`)
+// rather than re-declared — shares equipmentClass/applianceType/
+// testIntervalMonths/description/make/modelName/location verbatim; drops
+// the per-asset-only fields; and overrides `bulkAssetId` (optional on a
+// single asset, required for a batch) plus adds the batch-only `count`.
+export const batchCreateTestTagSchema = testTagAssetSchema
+  .omit({
+    testTagId: true,
+    serialNumber: true,
+    testProfileId: true,
+    outletCount: true,
+    notes: true,
+    assetId: true,
+    bulkAssetId: true,
+  })
+  .extend({
+    bulkAssetId: z.string().min(1, "Bulk asset is required"),
+    count: z.coerce.number().int().min(1, "Must create at least 1").max(500),
+  });
 
 export type BatchCreateTestTagFormValues = z.input<typeof batchCreateTestTagSchema>;
 

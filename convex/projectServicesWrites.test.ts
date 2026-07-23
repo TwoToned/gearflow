@@ -133,6 +133,20 @@ describe("createServiceNative", () => {
     ).rejects.toThrow(/Project not found/i);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing projectServiceSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bound server-side.
+  test("rejects a quantity below the 1 lower bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, quantity: 0, now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/quantity/i);
+    expect(await svcById(t, "s1")).toBeNull();
+  });
+
   test("cross-org crew member rejected", async () => {
     const t = makeT();
     await member(t, "member");
@@ -221,6 +235,17 @@ describe("updateServiceNative", () => {
         id: "s1", orgId: ORG, ...baseInput, now: NOW, actor: ACTOR, auditId: "logu",
       }),
     ).rejects.toThrow(/Service not found/i);
+  });
+
+  // R-8.6.2 — same bound, enforced on the update path (not just createServiceNative).
+  test("rejects a quantity patch below the 1 lower bound", async () => {
+    const t = makeT();
+    await seedService(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+        id: "s1", orgId: ORG, ...baseInput, quantity: -1, now: NOW + 1, actor: ACTOR, auditId: "logu",
+      }),
+    ).rejects.toThrow(/quantity/i);
   });
 
   test("viewer denied", async () => {

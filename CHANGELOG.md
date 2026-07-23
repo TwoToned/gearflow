@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3] - 2026-07-23
+
+### Fixed
+
+- Closed all four POLICY.md §8.6 Forms & Validation audit findings (#773, #745,
+  #746, #747, #748):
+  - Business constraints (string length caps, numeric min/max bounds, array
+    length caps) are now re-enforced at the Convex boundary for every
+    browser-direct write mutation, not just checked by the client Zod schema —
+    a caller with a valid session could previously invoke a mutation directly
+    and skip them entirely. Added `convex/lib/fieldGuards.ts` (generalising
+    the existing money-field guard pattern) and wired mirrored bounds into
+    asset, kit, crew, category, check-item, client, model, maintenance,
+    line-item, project, project-service, and supplier write files.
+  - Schema variants that re-declared a base schema's fields (e.g. an
+    update/patch form of a create schema) now derive via `.omit()`/`.pick()`/
+    `.partial()` instead, across 12 validation files.
+  - Added a `withValidatedBody()` wrapper (`src/lib/api-validation.ts`) that
+    makes an API route's JSON-body schema a required part of its function
+    signature — an unvalidated route is now a missing wrapper call, not a
+    discipline lapse. Applied it to every route that reads a JSON body,
+    including the document-template preview endpoint, which previously had no
+    validation at all.
+
 ## [0.25.2] - 2026-07-23
 
 ### Fixed

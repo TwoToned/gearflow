@@ -6,7 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
-import { assertFinite } from "./lib/moneyGuards";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
@@ -39,6 +39,33 @@ import * as enums from "./lib/validators";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `assetSchema` (src/lib/validations/asset.ts) string-length + price bounds —
+ * `v.string()`/`v.number()` only enforce type, not these business constraints, so a
+ * browser-direct caller bypassing the client Zod parse would otherwise skip them
+ * entirely (R-8.6.2). `assetTag` presence is checked separately by the dup-tag path;
+ * only its length is a shared concern here.
+ */
+function assertAssetFields(f: {
+  assetTag?: string;
+  serialNumber?: string;
+  customName?: string;
+  purchaseSupplier?: string;
+  purchaseOrderNumber?: string;
+  notes?: string;
+  barcode?: string;
+  purchasePrice?: number;
+}): void {
+  if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
+  assertStrLen(f.serialNumber, "serialNumber", { max: 100 });
+  assertStrLen(f.customName, "customName", { max: 200 });
+  assertStrLen(f.purchaseSupplier, "purchaseSupplier", { max: 200 });
+  assertStrLen(f.purchaseOrderNumber, "purchaseOrderNumber", { max: 100 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+  assertStrLen(f.barcode, "barcode", { max: 100 });
+  assertNumRange(f.purchasePrice, "purchasePrice", { min: 0 });
+}
 
 export const updateNotesNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -274,10 +301,13 @@ const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"
 /**
  * createNative — insert an asset with the dup-tag guard + CREATE audit in ONE
  * transaction. RBAC(asset,create). The dup guard (by_organizationId_assetTag) and
- * the audit are now atomic with the insert, closing the check-then-write race two
- * concurrent creates of the same tag hit in the server-action path. Zod + custom-
- * field validation + the Postgres tag counter + T&T auto-register stay in the server
- * action (create is a form submit, not a client-direct optimistic write). Throws
+ * the audit are atomic with the insert, closing the check-then-write race two
+ * concurrent creates of the same tag would otherwise hit. There is no server action
+ * in this path anymore — `useAssetWrites().create` (src/hooks/use-asset-writes.ts)
+ * calls this mutation directly from the browser after `assetSchema.parse()` +
+ * custom-field resolution client-side; `assertAssetFields` re-enforces the same
+ * string-length/price bounds here so a caller invoking the mutation directly (valid
+ * session, bypassing the UI) can't skip them (R-8.6.1/R-8.6.2). Throws
  * ConvexError({code:"DUPLICATE_ASSET_TAG"}) → mapped to UserFacingError by the caller.
  */
 export const createNative = mutation({
@@ -327,7 +357,7 @@ export const createNative = mutation({
     // (kit add, checkout, detail). Mirrors bulkAssetsWrites/kitWrites createNative.
     const dupId = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dupId) throw new ConvexError({ code: "DUPLICATE_ASSET", message: "Asset already exists." });
-    assertFinite(fields.purchasePrice, "purchasePrice");
+    assertAssetFields(fields);
 
     const dup = await ctx.db
       .query("assets")
@@ -382,8 +412,10 @@ export const createNative = mutation({
 /**
  * updateNative — apply a set/clear patch (the patchAsset clear-to-null pattern) with
  * the tag-change dup guard + UPDATE audit, all in one transaction. RBAC(asset,update).
- * The server action still does Zod + custom-field validation (+ builds set/clear) and
- * the T&T backfill; the dup guard + audit move here (atomic).
+ * `useAssetWrites().update` runs `assetSchema.parse()` + custom-field validation and
+ * builds the set/clear patch client-side before calling this mutation directly (no
+ * server action in this path); `assertAssetFields` re-enforces the same bounds on
+ * `set` here so a direct-mutation caller can't skip them (R-8.6.1/R-8.6.2).
  */
 export const updateNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -405,7 +437,7 @@ export const updateNative = mutation({
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    assertFinite((set as { purchasePrice?: number }).purchasePrice, "purchasePrice");
+    assertAssetFields(set);
 
     // DUP GUARD only when the tag changed (mirrors updateAsset).
     if (set.assetTag && set.assetTag !== doc.assetTag) {
@@ -531,7 +563,7 @@ export const createManyNative = mutation({
     for (const a of assets) {
       const dupId = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
       if (dupId) throw new ConvexError({ code: "DUPLICATE_ASSET", message: `Asset already exists: ${a.id}` });
-      assertFinite(a.purchasePrice, "purchasePrice");
+      assertAssetFields(a);
       const dup = await ctx.db.query("assets")
         .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", a.assetTag)).first();
       if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag, message: `Asset tag "${a.assetTag}" already exists.` });

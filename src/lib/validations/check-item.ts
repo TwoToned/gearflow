@@ -82,19 +82,39 @@ export const submitChecksSchema = z.object({
 
 export type SubmitChecksFormValues = z.input<typeof submitChecksSchema>;
 
-// ─── Complete Check and Pack (prep flow) ────────────────────────────────────
-
-export const completeCheckAndPackSchema = z.object({
+// ─── Complete-check completion actions (Pack / Flag / Store) ────────────────
+// Pack/Flag/Store are 3 distinct terminal actions on the same PREP/RETURN check
+// flow; `projectId`/`lineItemId`/`assetId`/`bulkAssetId`/`checks` were previously
+// re-declared verbatim in all three (R-8.6.3 — DRY schema variants). Each variant
+// now `.pick()`s its fields from one base object instead of retyping the shared
+// validators three times.
+const checkCompletionFieldsSchema = z.object({
   projectId: z.string().min(1),
   lineItemId: z.string().min(1),
   assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
-  prepContainer: z.string().nullish(),
   checks: z.array(checkRecordSchema).min(1),
   // Accessory identities to pack with this unit (serialised assetId / bulk
   // bulkAssetId). Undefined = all; the prep picker passes the ticked set so an
   // operator can leave an accessory off this handheld even on a checked prep.
+  prepContainer: z.string().nullish(),
   includeAccessoryIds: z.array(z.string()).optional(),
+  flagType: z.enum(["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"]),
+  condition: z.enum(["GOOD", "DAMAGED", "MISSING"]),
+  locationId: z.string().optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+// ─── Complete Check and Pack (prep flow) ────────────────────────────────────
+
+export const completeCheckAndPackSchema = checkCompletionFieldsSchema.pick({
+  projectId: true,
+  lineItemId: true,
+  assetId: true,
+  bulkAssetId: true,
+  prepContainer: true,
+  checks: true,
+  includeAccessoryIds: true,
 });
 
 export type CompleteCheckAndPackValues = z.input<
@@ -103,13 +123,13 @@ export type CompleteCheckAndPackValues = z.input<
 
 // ─── Complete Check and Flag (prep flow — faulty/TT overdue) ────────────────
 
-export const completeCheckAndFlagSchema = z.object({
-  projectId: z.string().min(1),
-  lineItemId: z.string().min(1),
-  assetId: z.string().optional(),
-  bulkAssetId: z.string().optional(),
-  checks: z.array(checkRecordSchema).min(1),
-  flagType: z.enum(["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"]),
+export const completeCheckAndFlagSchema = checkCompletionFieldsSchema.pick({
+  projectId: true,
+  lineItemId: true,
+  assetId: true,
+  bulkAssetId: true,
+  checks: true,
+  flagType: true,
 });
 
 export type CompleteCheckAndFlagValues = z.input<
@@ -118,15 +138,15 @@ export type CompleteCheckAndFlagValues = z.input<
 
 // ─── Complete Check and Store (return flow) ─────────────────────────────────
 
-export const completeCheckAndStoreSchema = z.object({
-  projectId: z.string().min(1),
-  lineItemId: z.string().min(1),
-  assetId: z.string().optional(),
-  bulkAssetId: z.string().optional(),
-  checks: z.array(checkRecordSchema).min(1),
-  condition: z.enum(["GOOD", "DAMAGED", "MISSING"]),
-  locationId: z.string().optional(),
-  notes: z.string().max(2000).optional(),
+export const completeCheckAndStoreSchema = checkCompletionFieldsSchema.pick({
+  projectId: true,
+  lineItemId: true,
+  assetId: true,
+  bulkAssetId: true,
+  checks: true,
+  condition: true,
+  locationId: true,
+  notes: true,
 });
 
 export type CompleteCheckAndStoreValues = z.input<

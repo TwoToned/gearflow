@@ -74,6 +74,29 @@ describe("crewWrites.createNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, { ...createArgs, firstName: "" })).rejects.toThrow(/first name/i);
     await expect(t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, { ...createArgs, email: "nope" })).rejects.toThrow(/email/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing crewMemberSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a phone over the 50-char bound", async () => {
+    const t = makeT(); await member(t, "manager");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, { ...createArgs, phone: "5".repeat(51) }),
+    ).rejects.toThrow(/phone/i);
+  });
+
+  test("rejects a negative defaultDayRate", async () => {
+    const t = makeT(); await member(t, "manager");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, { ...createArgs, defaultDayRate: -1 }),
+    ).rejects.toThrow(/defaultDayRate/);
+  });
+
+  test("rejects latitude supplied without longitude (crewMemberSchema .refine())", async () => {
+    const t = makeT(); await member(t, "manager");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.crewWrites.createNative, { ...createArgs, addressLatitude: 10 }),
+    ).rejects.toThrow(/latitude and longitude/i);
+  });
 });
 
 describe("crewWrites.updateNative", () => {
@@ -111,6 +134,25 @@ describe("crewWrites.updateNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.crewWrites.updateNative, updArgs),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // R-8.6.2 — same bound as createNative, enforced on the `set` patch too (previously
+  // only createNative validated; a direct-mutation caller could otherwise skip the
+  // bound entirely by only ever calling updateNative).
+  test("rejects a notes patch over the 2000-char bound", async () => {
+    const t = makeT();
+    await seedCrew(t);
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.crewWrites.updateNative, { ...updArgs, set: { ...updArgs.set, notes: "x".repeat(2001) } }),
+    ).rejects.toThrow(/notes/);
+  });
+
+  test("rejects a blank firstName patch", async () => {
+    const t = makeT();
+    await seedCrew(t);
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.crewWrites.updateNative, { ...updArgs, set: { firstName: "", updatedAt: NOW } }),
+    ).rejects.toThrow(/firstName/);
   });
 });
 

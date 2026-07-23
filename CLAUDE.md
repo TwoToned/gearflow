@@ -274,6 +274,26 @@ be checked against `organizationId`, or you have a cross-tenant read.
 - Zod schemas in `src/lib/validations/` (CANNOT be in `"use server"` files)
 - Use `z.input<typeof schema>` for form types (NOT `z.infer`)
 - React Hook Form + `zodResolver()` + `useMutation()`
+- Derive schema variants (an update/patch form of a base schema) with `.omit()`/
+  `.pick()`/`.partial()` instead of re-declaring the shared fields — a second
+  hand-maintained copy of the same bounds is a defect even in sync (R-8.6.3/R-3.1).
+- **API routes that read a JSON body MUST use `withValidatedBody(schema, handler)`
+  (`src/lib/api-validation.ts`)**, not a bare `request.json()` + manual `.parse()`.
+  It's the structural counterpart to `readValidatedBody` (same file): a handler
+  built with it physically cannot run without a schema, so a route that forgets to
+  validate is a compile error, not a discipline lapse (R-8.6.4). Any pre-body checks
+  (rate limiting, CSRF, auth) stay in the exported route function and call the
+  wrapped handler once they pass — see `src/app/api/admin-register/promote/route.ts`
+  for the pattern. Exception: a route that needs the **raw** body before parsing
+  (e.g. HMAC-verifying a webhook signature) can't use the wrapper — validate with
+  the underlying Zod schema directly after verification instead (see
+  `src/app/api/integrations/woocommerce/webhook/route.ts`).
+- **Convex mutations callable directly from the browser** (`convex/*Writes.ts`
+  `*Native` mutations) must mirror their paired Zod schema's business constraints
+  (string length, numeric bounds, array length caps) server-side too — the client
+  Zod `.parse()` is bypassable by any caller with a valid session hitting the
+  mutation directly. See "The write security bar" in
+  `FEATUREDOCS/54-convex-data-layer.md` and `convex/lib/fieldGuards.ts`.
 
 ### DOM Safety (removeChild Fix)
 - `DomPatch` (in root layout) monkey-patches `removeChild`/`insertBefore` to silently ignore calls where the target node is not a child — prevents the React 19 "Cannot read properties of null" TypeError

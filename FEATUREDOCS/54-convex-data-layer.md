@@ -84,6 +84,19 @@ Plus, on every mutation:
 - **Money is recomputed in-mutation from server truth** (`lineTotal`, `discount`,
   totals) via `convex/lib/moneyGuards.ts`. Never trust monetary values sent by the
   client.
+- **Business constraints (string length caps, numeric min/max, array length caps)
+  are mirrored server-side**, not just checked by the client Zod schema
+  (POLICY.md R-8.6.1/R-8.6.2 — a caller with a valid session can call a public
+  mutation directly and skip the browser's `.parse()` entirely). Each
+  `convex/*Writes.ts` file exposing constrained fields to the browser declares a
+  local `assert<Entity>Fields(...)` mirroring the paired `src/lib/validations/*.ts`
+  schema's bounds, built from the shared primitives in `convex/lib/fieldGuards.ts`
+  (`assertStrLen`/`assertNumRange`/`assertArrayMax` — generalises the
+  `moneyGuards.ts` pattern above to non-money fields). Called at the top of every
+  create/update/createMany/bulk handler that writes those fields, before the DB
+  write. `convex/validationDrift.test.ts` separately guards that the Zod schema and
+  the Convex arg validator's *field set* stay in sync — the `assert*Fields` guards
+  are the matching *value*-level guarantee.
 
 ## What stays a server action (permanent)
 

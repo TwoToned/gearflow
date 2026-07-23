@@ -65,6 +65,19 @@ const customFieldSchema = z.object({
   value: z.string().max(500),
 });
 
+// ─── Block Styling ──────────────────────────────────────────────────────────
+// Declared here (rather than down by the block-editor section) so
+// `layoutHintSchema` below can reuse it instead of re-declaring the same
+// backgroundColor/borderColor/borderWidth/padding/margin shape (R-8.6.3).
+
+export const blockStylingSchema = z.object({
+  backgroundColor: hexColorSchema.optional(),
+  borderColor: hexColorSchema.optional(),
+  borderWidth: z.number().min(0).max(10).optional(),
+  padding: z.number().min(0).max(50).optional(),
+  margin: z.number().min(0).max(50).optional(),
+});
+
 // ─── Per-Section Settings ────────────────────────────────────────────────────
 
 export const headerSectionSettingsSchema = z.object({
@@ -209,15 +222,7 @@ export const layoutHintSchema = z.object({
   columnIndex: z.number().int().min(0).max(3),
   columnWidth: z.number().min(1).max(100),
   columnCount: z.number().int().min(1).max(4),
-  styling: z
-    .object({
-      backgroundColor: hexColorSchema.optional(),
-      borderColor: hexColorSchema.optional(),
-      borderWidth: z.number().min(0).max(10).optional(),
-      padding: z.number().min(0).max(50).optional(),
-      margin: z.number().min(0).max(50).optional(),
-    })
-    .optional(),
+  styling: blockStylingSchema.optional(),
 });
 
 // ─── Template Section ────────────────────────────────────────────────────────
@@ -236,16 +241,6 @@ export const templateSectionsSchema = z
   .array(templateSectionSchema)
   .min(1, "Template must have at least one section")
   .max(50, "Template cannot have more than 50 sections");
-
-// ─── Block Styling ──────────────────────────────────────────────────────────
-
-export const blockStylingSchema = z.object({
-  backgroundColor: hexColorSchema.optional(),
-  borderColor: hexColorSchema.optional(),
-  borderWidth: z.number().min(0).max(10).optional(),
-  padding: z.number().min(0).max(50).optional(),
-  margin: z.number().min(0).max(50).optional(),
-});
 
 // ─── Template Block (editor tree) ────────────────────────────────────────────
 
@@ -290,13 +285,11 @@ export const templateBlocksSchema = z
 
 // ─── Brand Template ──────────────────────────────────────────────────────────
 
-export const brandTemplateHeaderSettingsSchema = z.object({
-  logoMode: z.enum(["logo", "icon", "none"]),
-  showOrgName: z.boolean(),
-  showOrgAddress: z.boolean(),
-  showOrgPhone: z.boolean(),
-  showOrgEmail: z.boolean(),
-  showOrgWebsite: z.boolean(),
+// R-8.6.3: derived via `.omit()` from `headerSectionSettingsSchema` rather
+// than re-declared — identical fields minus `documentTitle`, which only
+// applies to the per-document header section, not the org-wide brand template.
+export const brandTemplateHeaderSettingsSchema = headerSectionSettingsSchema.omit({
+  documentTitle: true,
 });
 
 export const brandTemplateFooterSettingsSchema = z.object({
@@ -316,17 +309,11 @@ export const createBrandTemplateSchema = z.object({
     .or(z.literal("")),
 });
 
-export const updateBrandTemplateSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).max(100).optional(),
-  headerSettings: brandTemplateHeaderSettingsSchema.optional(),
-  footerSettings: brandTemplateFooterSettingsSchema.optional(),
-  accentColor: z
-    .string()
-    .regex(/^#[0-9a-f]{6}$/i)
-    .optional()
-    .or(z.literal("")),
-});
+// R-8.6.3: derived from the create schema (`.partial()` + `id`) rather than
+// re-declared — every field becomes optional on update, plus the `id`.
+export const updateBrandTemplateSchema = createBrandTemplateSchema
+  .partial()
+  .extend({ id: z.string().min(1) });
 
 // ─── Save Sections (for document template) ───────────────────────────────────
 
@@ -370,6 +357,21 @@ export const templateExportSchema = z.object({
 });
 
 export const templateImportSchema = templateExportSchema;
+
+// ─── Template Preview (ad-hoc render, not persisted) ─────────────────────────
+
+export const templatePreviewRequestSchema = z.object({
+  docType: z.enum(DOCUMENT_TYPES),
+  // Section-based preview (new builder).
+  sections: templateSectionsSchema.optional(),
+  docColor: hexColorSchema.optional(),
+  footerText: z.string().max(500).optional(),
+  footerSecondLine: z.string().max(500).optional(),
+  // Legacy settings-based preview — kept loosely typed (not persisted, and the
+  // legacy `TemplateSettings` shape lives in src/lib/pdfme/template-settings.ts,
+  // not mirrored here) but still structurally required to be a plain object.
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

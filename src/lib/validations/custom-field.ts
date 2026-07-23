@@ -26,44 +26,52 @@ export type CustomFieldType = z.infer<typeof customFieldTypeSchema>;
 /** A fieldKey must be a stable, JSON-safe identifier. */
 const fieldKeyRegex = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
-export const customFieldDefinitionSchema = z
-  .object({
-    entityType: customFieldEntitySchema.default("ASSET"),
-    label: z.string().min(1, "Label is required").max(60),
-    fieldKey: z
-      .string()
-      .min(1, "Key is required")
-      .max(40)
-      .regex(fieldKeyRegex, "Key must start with a letter; letters, numbers, underscores only"),
-    fieldType: customFieldTypeSchema.default("TEXT"),
-    options: z.array(z.string().min(1).max(80)).max(50).default([]),
-    required: z.boolean().default(false),
-    helpText: z.string().max(200).optional(),
-    sortOrder: z.number().int().min(0).default(0),
-    isActive: z.boolean().default(true),
-  })
-  .refine(
-    (v) => v.fieldType !== "SELECT" || v.options.length > 0,
-    { message: "SELECT fields need at least one option", path: ["options"] },
-  );
+/**
+ * Base shape shared by create and update. Defined un-refined so both variants can
+ * `.omit()`/derive from a single source of truth for the label/options/helpText/
+ * sortOrder bounds (GitHub #747 — the create/update schemas used to re-declare these
+ * magic numbers independently, which had already drifted risk of one changing without
+ * the other). `.refine()` is applied per-variant below since ZodObject loses `.omit()`
+ * once wrapped in a refinement.
+ */
+const customFieldDefinitionBaseSchema = z.object({
+  entityType: customFieldEntitySchema.default("ASSET"),
+  label: z.string().min(1, "Label is required").max(60),
+  fieldKey: z
+    .string()
+    .min(1, "Key is required")
+    .max(40)
+    .regex(fieldKeyRegex, "Key must start with a letter; letters, numbers, underscores only"),
+  fieldType: customFieldTypeSchema.default("TEXT"),
+  options: z.array(z.string().min(1).max(80)).max(50).default([]),
+  required: z.boolean().default(false),
+  helpText: z.string().max(200).optional(),
+  sortOrder: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
+});
+
+const selectFieldsNeedOptions = (v: { fieldType: string; options: string[] }) =>
+  v.fieldType !== "SELECT" || v.options.length > 0;
+const selectFieldsNeedOptionsIssue = {
+  message: "SELECT fields need at least one option",
+  path: ["options"] as PropertyKey[],
+};
+
+export const customFieldDefinitionSchema = customFieldDefinitionBaseSchema.refine(
+  selectFieldsNeedOptions,
+  selectFieldsNeedOptionsIssue,
+);
 
 export type CustomFieldDefinitionInput = z.input<typeof customFieldDefinitionSchema>;
 
-/** Update form — fieldKey + entityType are immutable once created. */
-export const customFieldDefinitionUpdateSchema = z
-  .object({
-    label: z.string().min(1).max(60),
-    fieldType: customFieldTypeSchema,
-    options: z.array(z.string().min(1).max(80)).max(50).default([]),
-    required: z.boolean().default(false),
-    helpText: z.string().max(200).optional(),
-    sortOrder: z.number().int().min(0).default(0),
-    isActive: z.boolean().default(true),
-  })
-  .refine(
-    (v) => v.fieldType !== "SELECT" || v.options.length > 0,
-    { message: "SELECT fields need at least one option", path: ["options"] },
-  );
+/**
+ * Update form — fieldKey + entityType are immutable once created, so this derives
+ * from the same base via `.omit()` rather than re-declaring label/options/helpText/
+ * sortOrder (the #747 duplication that issue flagged by name).
+ */
+export const customFieldDefinitionUpdateSchema = customFieldDefinitionBaseSchema
+  .omit({ entityType: true, fieldKey: true })
+  .refine(selectFieldsNeedOptions, selectFieldsNeedOptionsIssue);
 
 export type CustomFieldDefinitionUpdateInput = z.input<
   typeof customFieldDefinitionUpdateSchema

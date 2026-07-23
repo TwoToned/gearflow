@@ -10,6 +10,7 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { releaseKitMembers, getKitGuarded, assignAssetToKit, releaseAsset, getAssetDoc } from "./kits";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 
@@ -26,6 +27,33 @@ import { getKitByCuid } from "./lib/kits";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `kitSchema` (src/lib/validations/kit.ts) string-length + weight/price bounds —
+ * `v.string()`/`v.number()` only enforce type, not these business constraints, so a
+ * browser-direct caller bypassing `useKitWrites()`'s client Zod parse would otherwise
+ * skip them entirely (R-8.6.2). `assetTag` presence/uniqueness is checked separately by
+ * the dup-tag path; only its length is a shared concern here.
+ */
+function assertKitFields(f: {
+  name?: string;
+  assetTag?: string;
+  description?: string;
+  caseType?: string;
+  caseDimensions?: string;
+  notes?: string;
+  weight?: number;
+  purchasePrice?: number;
+}): void {
+  if (f.name != null) assertStrLen(f.name, "name", { min: 1, max: 200 });
+  if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
+  assertStrLen(f.description, "description", { max: 2000 });
+  assertStrLen(f.caseType, "caseType", { max: 200 });
+  assertStrLen(f.caseDimensions, "caseDimensions", { max: 200 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+  assertNumRange(f.weight, "weight", { min: 0 });
+  assertNumRange(f.purchasePrice, "purchasePrice", { min: 0 });
+}
 
 const kitPatch = v.object({
   organizationId: v.optional(v.string()),
@@ -109,6 +137,7 @@ export const createNative = mutation({
     // dup-guard the client-minted id too (else another org's kit getById .unique() crashes).
     const dupId = await getKitByCuid(ctx, fields.id);
     if (dupId) throw new ConvexError("Kit already exists");
+    assertKitFields(fields);
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
     if (fields.categoryId) await assertRefInOrg(ctx, "categories", fields.categoryId, fields.organizationId);
@@ -156,6 +185,7 @@ export const updateNative = mutation({
     const doc = await getKitByCuid(ctx, id);
     if (!doc) throw new ConvexError("Kit not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    assertKitFields(patch);
 
     if (patch.assetTag && patch.assetTag !== doc.assetTag) {
       const dup = await ctx.db
@@ -338,6 +368,8 @@ export const addSerializedItemsNative = mutation({
     const kit = await getKitGuarded(ctx, kitId, orgId);
     const ids: string[] = [];
     for (const it of items) {
+      // Mirrors kitSerializedItemSchema's `position` bound (R-8.6.2).
+      assertStrLen(it.position, "position", { max: 200 });
       const asset = await getAssetDoc(ctx, it.assetId);
       if (!asset || asset.organizationId !== orgId) throw new ConvexError("Asset not found");
       if (asset.status !== "AVAILABLE") throw new ConvexError(`Asset ${asset.assetTag} is not AVAILABLE`);
@@ -399,6 +431,9 @@ export const addBulkItemNative = mutation({
     await requireOrgPermission(ctx, orgId, "kit", "update");
     const actor = await resolveActor(ctx, suppliedActor);
     if (!Number.isInteger(quantity) || quantity < 1) throw new ConvexError("Quantity must be at least 1");
+    // Mirrors kitBulkItemSchema's `position`/`notes` bounds (R-8.6.2).
+    assertStrLen(position, "position", { max: 200 });
+    assertStrLen(notes, "notes", { max: 500 });
 
     const kit = await getKitGuarded(ctx, kitId, orgId);
     const id = createId();

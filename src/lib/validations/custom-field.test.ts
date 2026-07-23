@@ -13,6 +13,7 @@ import { describe, it, expect } from "vitest";
 import {
   validateCustomFieldValues,
   customFieldDefinitionSchema,
+  customFieldDefinitionUpdateSchema,
   type CustomFieldDef,
 } from "./custom-field";
 
@@ -143,5 +144,64 @@ describe("customFieldDefinitionSchema", () => {
       options: ["Red", "Blue"],
     });
     expect(r.success).toBe(true);
+  });
+});
+
+// GitHub #747 — customFieldDefinitionUpdateSchema now derives from
+// customFieldDefinitionSchema via `.omit({ entityType, fieldKey })` instead of
+// re-declaring the label/options/helpText/sortOrder bounds. Lock the derived schema
+// still enforces the same bounds and still omits the immutable fields.
+describe("customFieldDefinitionUpdateSchema (derived via .omit from customFieldDefinitionSchema — #747)", () => {
+  const validUpdate = {
+    label: "Rig Number",
+    fieldType: "TEXT" as const,
+    options: [],
+    required: false,
+    sortOrder: 0,
+    isActive: true,
+  };
+
+  it("accepts a valid update payload", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse(validUpdate);
+    expect(r.success).toBe(true);
+  });
+
+  it("does not require/accept entityType or fieldKey (immutable post-create)", () => {
+    expect("entityType" in customFieldDefinitionUpdateSchema.shape).toBe(false);
+    expect("fieldKey" in customFieldDefinitionUpdateSchema.shape).toBe(false);
+  });
+
+  it("rejects a label over the 60-char bound (mirrors the create schema)", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({ ...validUpdate, label: "x".repeat(61) });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects an empty label", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({ ...validUpdate, label: "" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects help text over the 200-char bound", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({ ...validUpdate, helpText: "x".repeat(201) });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects an option over the 80-char bound", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({
+      ...validUpdate,
+      fieldType: "SELECT",
+      options: ["x".repeat(81)],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects a SELECT definition with no options", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({ ...validUpdate, fieldType: "SELECT", options: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects a negative sortOrder", () => {
+    const r = customFieldDefinitionUpdateSchema.safeParse({ ...validUpdate, sortOrder: -1 });
+    expect(r.success).toBe(false);
   });
 });

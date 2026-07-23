@@ -202,6 +202,24 @@ describe("lineItemWrites.patchNative", () => {
       expect(li?.lineTotal).toBe(10);
     });
   });
+
+  // R-8.6.2 — same lineItemSchema string bounds as addNative, enforced on a patch set.
+  test("rejects a description over the 500-char bound in a patch set", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { description: "x".repeat(501), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects a subhireOrderNumber over the 100-char bound in a patch set", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...pargs, set: { subhireOrderNumber: "x".repeat(101), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/subhireOrderNumber/);
+  });
 });
 
 describe("lineItemWrites.addCustomNative", () => {
@@ -264,6 +282,36 @@ describe("lineItemWrites.addCustomNative", () => {
       expect(li?.lineTotal).toBe(200);
     });
   });
+
+  // R-8.6.2 — customLineItemSchema string-length bounds (description 1-200, notes
+  // max 500), mirrored server-side for a direct-mutation caller.
+  test("rejects a description over the 200-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, {
+        ...cargs, fields: { ...cargs.fields, description: "x".repeat(201) },
+      }),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects an empty description (min 1)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, {
+        ...cargs, fields: { ...cargs.fields, description: "" },
+      }),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects notes over the 500-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, {
+        ...cargs, fields: { ...cargs.fields, notes: "x".repeat(501) },
+      }),
+    ).rejects.toThrow(/notes/);
+  });
 });
 
 describe("lineItemWrites.addNative", () => {
@@ -301,6 +349,27 @@ describe("lineItemWrites.addNative", () => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first();
       expect(li?.lineTotal).toBe(30);
     });
+  });
+
+  // R-8.6.2 — lineItemSchema string-length bounds (description max 500,
+  // subhireOrderNumber max 100), mirrored server-side via assertLineItemFields.
+  test("rejects a description over the 500-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, {
+        ...aargs, fields: { ...aargs.fields, description: "x".repeat(501) },
+      }),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects a subhireOrderNumber over the 100-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, {
+        ...aargs, fields: { ...aargs.fields, subhireOrderNumber: "x".repeat(101) },
+      }),
+    ).rejects.toThrow(/subhireOrderNumber/);
   });
 });
 
@@ -922,6 +991,22 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, smartArgs({ modelId: "m1", quantity: 1 }, { over: true })),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // R-8.6.2 — lineItemSchema string-length bounds, mirrored server-side.
+  test("rejects a description over the 500-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, smartArgs({ description: "x".repeat(501) })),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects a subhireOrderNumber over the 100-char bound", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, smartArgs({ subhireOrderNumber: "x".repeat(101) })),
+    ).rejects.toThrow(/subhireOrderNumber/);
   });
 });
 

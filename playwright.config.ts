@@ -49,7 +49,15 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
+    // E2E_PROD_SERVER (set by the e2e-harness CI job) runs a prebuilt `next
+    // start` instead of `next dev` — the harness's longer, heavier revenue-path
+    // flow triggers far more Turbopack on-demand compilation than the plain
+    // /login smoke suite, and that's what surfaced a known Next dev-server
+    // crash class (uncaught ECONNRESET/aborted on a mid-compile request abort,
+    // #725) under CI load. `next start` serves a static build with no
+    // on-demand compilation, sidestepping the crash and matching what's
+    // actually deployed.
+    command: process.env.E2E_PROD_SERVER ? "pnpm start" : "pnpm dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

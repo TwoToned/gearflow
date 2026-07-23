@@ -6,33 +6,33 @@ The E2E smoke suite (`e2e/`, Playwright) MUST cover 100% of this list, and it MU
 and block every deploy (POLICY.md **R-8.8.3**). At minimum this list covers **auth** and the
 **primary revenue path**. Update this list in the same PR that adds or changes a critical flow.
 
-**Status:** the list is defined. Flow #1 runs **blocking** in CI (the `e2e` job in
+**Status:** the list is 100% written. Flow #1 runs **blocking** in CI (the `e2e` job in
 `.github/workflows/ci.yml`: Postgres service + Playwright chromium against a dummy Convex URL)
-with a functional smoke **and** an axe a11y check (R-8.1.7). Flows 2 and 5-9 (the primary
-revenue path) are covered by seeded-harness specs (`e2e/harness-*.spec.ts`,
-`docs/e2e-harness.md`) — verified passing locally, but the **`e2e-harness` CI job is
-temporarily removed** (2026-07-23) after the docker-in-CI networking path (self-hosted Convex
-container → app JWKS endpoint via `host.docker.internal`) never went green on a GitHub-hosted
-runner; it ran `continue-on-error: true` and consistently failed with no gating value, so it
-was pulled rather than left red. Registered as a dated exception (`docs/exceptions.md`,
-R-8.8.3). Flows 3, 4, and 10 (as a standalone flow) remain unwritten.
+with a functional smoke **and** an axe a11y check (R-8.1.7). Flows 2-10 (sign-in through the
+primary revenue path) are covered by seeded-harness specs (`e2e/harness-*.spec.ts`,
+`docs/e2e-harness.md`) — verified passing locally, and the **`e2e-harness` CI job is re-added**
+(2026-07-23) after root-causing the prior red runs (#725) as a Next dev-server crash class
+under `next dev`, not the docker-in-CI JWKS networking path as originally suspected — see
+`docs/e2e-harness.md` for the writeup. It runs `continue-on-error: true` pending a run (ideally
+a few in a row) confirmed green on a GitHub-hosted runner. Registered as a dated exception
+(`docs/exceptions.md`, R-8.8.3) until then.
 
 | # | Flow | Steps | E2E coverage |
 |---|------|-------|--------------|
 | 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in entry form (+ axe a11y, zero serious/critical WCAG 2 A/AA) | ✅ `e2e/smoke.spec.ts`, `e2e/a11y.spec.ts` (CI-gated, blocking) |
-| 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | ✅ `e2e/harness-auth.spec.ts` (`E2E_HARNESS=1`; passes locally, `e2e-harness` CI job temporarily removed — see status above) |
-| 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ⬜ pending |
-| 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ⬜ pending |
+| 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | ✅ `e2e/harness-auth.spec.ts` (`E2E_HARNESS=1`; passes locally, `e2e-harness` CI job — see status above) |
+| 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ✅ `e2e/harness-sign-out.spec.ts` (asserts a post-sign-out visit to `/dashboard` bounces back to `/login`, not just a client-side redirect) |
+| 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ✅ `e2e/harness-onboarding.spec.ts` (asserts a post-onboarding revisit to `/onboarding` itself redirects away, proving the org was actually created) |
 | 5 | **Create a project** (revenue path) | New project with a client → saved, visible in list | ✅ `e2e/harness-revenue-path.spec.ts` (name-only project; client is optional so this run skips it) |
 | 6 | **Add line items + pricing** (revenue path) | Add gear/models to a project → totals compute server-side | ✅ `e2e/harness-revenue-path.spec.ts` (own-stock, by-model) |
 | 7 | **Availability check** (revenue path) | Overlapping booking is flagged; no double-book | ✅ `e2e/harness-revenue-path.spec.ts` (asserts the inline availability panel renders with no overbook warning for a 1-asset/1-unit request) |
 | 8 | **Warehouse check-out** | Project gear checked out (per-unit) from the warehouse | ✅ `e2e/harness-revenue-path.spec.ts` (Pick → Prep → Deploy) |
 | 9 | **Warehouse check-in / return** | Checked-out gear returned; status + history update | ✅ `e2e/harness-revenue-path.spec.ts` (Deployed → Return) |
-| 10 | **Create inventory** | Create a model/asset → asset tag generated | 🟡 exercised as setup within `e2e/harness-revenue-path.spec.ts` (model + serialized asset), not yet its own standalone flow test |
+| 10 | **Create inventory** | Create a model/asset → asset tag generated | ✅ `e2e/harness-create-inventory.spec.ts` (standalone flow; also exercised as setup within `e2e/harness-revenue-path.spec.ts`) |
 
 **Primary revenue path** = flows 5 → 6 → 7 → 8 → 9 (project creation through check-out/return),
 where pricing and availability are server-authoritative (R-9.3). Covered end-to-end by
-`e2e/harness-revenue-path.spec.ts`, not yet verified against a real CI run (see above).
+`e2e/harness-revenue-path.spec.ts`, verified passing locally; CI-run status per the note above.
 
 ## Running
 

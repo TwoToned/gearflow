@@ -4,22 +4,33 @@ The missing piece for authenticated E2E (POLICY.md R-8.8.3 / #621): a local
 **self-hosted Convex** backend the app can talk to, so tests can exercise
 authenticated, data-backed flows — not just the client-rendered `/login` page.
 
-**Status: proven working locally; CI job temporarily removed (2026-07-23, see
+**Status: proven working locally; CI job re-added 2026-07-23 with
+`continue-on-error: true` pending a proven green run on a GitHub-hosted runner (see
 `docs/exceptions.md` R-8.8.3).** `scripts/e2e-harness-up.sh` stands up Convex, pushes
 the schema, and wires auth; `e2e/harness-auth.spec.ts` then registers a user and
-reaches the authenticated dashboard (verified locally). A `e2e-harness` job in
-`.github/workflows/ci.yml` used to run the same script + the full harness spec set
-(auth, a11y, cookie flags, and the primary revenue path) in CI with
-`continue-on-error: true`, but a run never went green there — the docker-in-CI
-networking path (the self-hosted Convex container reaching the app's JWKS endpoint
-via `host.docker.internal` from a GitHub-hosted runner rather than a developer
-laptop) consistently failed/timed out, adding noise with no gating value. The job
-definition was pulled from `ci.yml` rather than left failing on every PR; the specs
-and scripts below are untouched. To restore: root-cause the JWKS networking failure
-(try `--add-host=host.docker.internal:host-gateway` on the backend container, or a
-bridge network alias), confirm a green run, then re-add the job (see git history for
-the last version, removed alongside this doc update) and flip `continue-on-error`
-off once it's proven.
+reaches the authenticated dashboard (verified locally). The `e2e-harness` job in
+`.github/workflows/ci.yml` runs the same script + the full harness spec set (auth,
+a11y, cookie flags, onboarding, sign-out, create-inventory, and the primary revenue
+path).
+
+**Root cause of the prior red runs (#725, investigated 2026-07-23):** NOT the
+docker-in-CI JWKS networking path — `docker-compose.convex.yml` already maps
+`host.docker.internal:host-gateway` on Linux (present since the harness was first
+built), and one of the two observed failures (run 2) got well past the JWKS-trust
+steps (through registration and deep into the revenue path) before dying, which
+JWKS misconfiguration wouldn't allow. The actual cause was Playwright's `webServer`
+always spawning **`next dev`**, including in CI. The harness's flow set is far
+longer and touches far more routes than the `e2e` job's plain `/login` smoke check,
+which triggers much more Turbopack on-demand compilation — and that's what surfaced
+a known Next dev-server crash class (`uncaughtException: Error: aborted` /
+`ECONNRESET` when a client aborts a request mid-compile) under CI resource
+pressure. `playwright.config.ts` now runs a prebuilt **`next start`** instead when
+`E2E_PROD_SERVER=1` (set by the `e2e-harness` job only — the `e2e` job's simpler
+smoke suite is untouched and stays on `next dev`), which serves a static build with
+no on-demand compilation and sidesteps the crash entirely — it's also more
+representative of what's actually deployed. To flip `continue-on-error` off:
+confirm a run (ideally a few in a row) has gone green on a GitHub-hosted runner,
+then remove the `continue-on-error: true` line and update `docs/exceptions.md`.
 
 ## How it works
 
@@ -52,18 +63,20 @@ bootstraps as admin.
 
 ## Remaining finish (scoped)
 
-1. **CI automation** — **temporarily removed** (2026-07-23). A dedicated `e2e-harness`
-   job (separate from the dummy-Convex `e2e` job) ran `scripts/e2e-harness-up.sh`
-   then the harness spec set with `E2E_HARNESS=1`, tearing down via
-   `scripts/e2e-harness-down.sh` in an `if: always()` step — but the cross-container
-   `host.docker.internal` JWKS reach never went green on a GitHub-hosted runner, so
-   it was pulled from `ci.yml` rather than left red on every PR. See
-   `docs/critical-flows.md` and `docs/exceptions.md` (R-8.8.3) for status.
+1. **CI automation** — **done, not yet blocking** (2026-07-23). A dedicated
+   `e2e-harness` job (separate from the dummy-Convex `e2e` job) runs
+   `scripts/e2e-harness-up.sh` then the harness spec set with `E2E_HARNESS=1` against
+   a prebuilt `next start` server, tearing down via `scripts/e2e-harness-down.sh` in
+   an `if: always()` step. `continue-on-error: true` until a run (ideally a few in a
+   row) is confirmed green on a GitHub-hosted runner — see the root-cause writeup
+   above, `docs/critical-flows.md`, and `docs/exceptions.md` (R-8.8.3) for status.
 2. **Seed domain data + write the revenue-path specs** — done:
    `e2e/harness-revenue-path.spec.ts` covers project → line-items → availability →
    check-out → return (critical-flows #5-9), creating its own model + serialized
    asset first since there's no seed-data API reachable from Playwright, only the
-   real UI.
+   real UI. `e2e/harness-onboarding.spec.ts` (#4), `e2e/harness-sign-out.spec.ts`
+   (#3), and `e2e/harness-create-inventory.spec.ts` (#10, standalone) round out the
+   remaining critical flows.
 3. This harness also unblocks verifying the deferred refactors (#616 images, #625
    pagination, #618 validation, #645 code-split, #655 templates, #646 axe pages) by
    driving the real authenticated app.

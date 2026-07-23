@@ -74,19 +74,16 @@ Every Zod validation schema has exhaustive tests covering:
 
 ## E2E (Playwright)
 
-One CI job in `.github/workflows/ci.yml`:
+Two CI jobs in `.github/workflows/ci.yml`:
 
 - **`e2e`** — smoke + a11y (critical-flows #1) against a dummy Convex URL, blocking.
-
-Seeded-auth flows (critical-flows #2, #5-9: sign-in through the primary revenue
-path — project → line items → availability → check-out → return) exist as
-`e2e/harness-*.spec.ts` against a real self-hosted Convex backend stood up in Docker
-(`scripts/e2e-harness-up.sh`) and pass locally, but the **`e2e-harness` CI job that
-ran them is temporarily removed** — the docker-in-CI networking path never went
-green on a GitHub-hosted runner and was failing/timing out on every PR with no
-gating value (it already ran `continue-on-error: true`). Registered as a dated
-exception in `docs/exceptions.md` (R-8.8.3). See `docs/e2e-harness.md` and
-`docs/critical-flows.md` for the full flow list and status.
+- **`e2e-harness`** — seeded-auth flows (critical-flows #2, #3, #4, #5-9, #10: sign-in,
+  onboarding, sign-out, create-inventory, through the primary revenue path —
+  project → line items → availability → check-out → return) against a real
+  self-hosted Convex backend stood up in Docker (`scripts/e2e-harness-up.sh`).
+  `continue-on-error: true` pending a verified green run (or a few, in a row) on a
+  GitHub-hosted runner — see `docs/e2e-harness.md` and `docs/critical-flows.md`
+  (R-8.8.3) for the full flow list, the #725 root-cause writeup, and status.
 
 ## CI Integration
 

@@ -8,7 +8,7 @@
  * NOT a `"use server"` module (plain lib) so it can be imported anywhere and
  * unit-tested directly.
  */
-import { emailButton, emailMutedNote, emailShell } from "@/lib/email-layout";
+import { emailButton, emailMutedNote, emailShell, escapeHtml } from "@/lib/email-layout";
 import { formatDate } from "@/lib/formatters";
 
 export interface EmailContent {
@@ -43,13 +43,15 @@ export function invitationEmail({
   acceptUrl: string;
   platformName?: string;
 }): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  const safeRole = escapeHtml(role);
   const intro = inviterName
-    ? `${inviterName} has invited you to join <strong>${orgName}</strong> as a <strong>${role}</strong> on ${platformName}.`
-    : `You've been invited to join <strong>${orgName}</strong> as a <strong>${role}</strong> on ${platformName}.`;
+    ? `${escapeHtml(inviterName)} has invited you to join <strong>${safeOrgName}</strong> as a <strong>${safeRole}</strong> on ${platformName}.`
+    : `You've been invited to join <strong>${safeOrgName}</strong> as a <strong>${safeRole}</strong> on ${platformName}.`;
   return {
     subject: `You've been invited to ${orgName} on ${platformName}`,
     html: emailShell(
-      `<h2>You've been invited to join ${orgName}</h2>` +
+      `<h2>You've been invited to join ${safeOrgName}</h2>` +
         `<p>${intro}</p>` +
         emailButton({ href: acceptUrl, label: "Accept Invitation" }) +
         emailMutedNote(EXPIRES_7_DAYS),
@@ -72,11 +74,13 @@ export function invitationRegisterEmail({
   registerUrl: string;
   platformName?: string;
 }): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  const safeRole = escapeHtml(role);
   return {
     subject: `You've been invited to ${orgName} on ${platformName}`,
     html: emailShell(
-      `<h2>You've been invited to join ${orgName}</h2>` +
-        `<p>You've been invited to join <strong>${orgName}</strong> as a <strong>${role}</strong> on ${platformName}.</p>` +
+      `<h2>You've been invited to join ${safeOrgName}</h2>` +
+        `<p>You've been invited to join <strong>${safeOrgName}</strong> as a <strong>${safeRole}</strong> on ${platformName}.</p>` +
         `<p>Click the button below to create your account and accept the invitation.</p>` +
         emailButton({ href: registerUrl, label: "Create Account &amp; Join" }) +
         emailMutedNote(EXPIRES_7_DAYS),
@@ -150,7 +154,7 @@ export function roleChangedEmail({
     subject: `Your role in ${orgName} has been updated`,
     html: emailShell(
       `<h2>Role Update</h2>` +
-        `<p>Your role in <strong>${orgName}</strong> has been changed to <strong>${newRole}</strong>.</p>`,
+        `<p>Your role in <strong>${escapeHtml(orgName)}</strong> has been changed to <strong>${escapeHtml(newRole)}</strong>.</p>`,
     ),
   };
 }
@@ -164,7 +168,7 @@ export function removedFromOrgEmail({
     subject: `You've been removed from ${orgName}`,
     html: emailShell(
       `<h2>Organization Access Removed</h2>` +
-        `<p>You have been removed from <strong>${orgName}</strong> on RVLT Flow.</p>` +
+        `<p>You have been removed from <strong>${escapeHtml(orgName)}</strong> on RVLT Flow.</p>` +
         `<p>If you believe this is a mistake, please contact the organization admin.</p>`,
     ),
   };
@@ -185,8 +189,8 @@ export function ssoAccessApprovedEmail({
     subject: `Your access to ${orgName} has been approved`,
     html: emailShell(
       `<h2>Access Approved</h2>` +
-        `<p>Your request to join <strong>${orgName}</strong> on ${platformName} has been approved.</p>` +
-        `<p>You've been assigned the role of <strong>${role}</strong>.</p>` +
+        `<p>Your request to join <strong>${escapeHtml(orgName)}</strong> on ${platformName} has been approved.</p>` +
+        `<p>You've been assigned the role of <strong>${escapeHtml(role)}</strong>.</p>` +
         emailButton({ href: dashboardUrl, label: "Go to Dashboard" }),
     ),
   };
@@ -205,8 +209,8 @@ export function ssoAccessRejectedEmail({
     subject: `Your access request to ${orgName} was not approved`,
     html: emailShell(
       `<h2>Access Request Not Approved</h2>` +
-        `<p>Your request to join <strong>${orgName}</strong> on ${platformName} was not approved.</p>` +
-        (note ? `<p>Reason: ${note}</p>` : "") +
+        `<p>Your request to join <strong>${escapeHtml(orgName)}</strong> on ${platformName} was not approved.</p>` +
+        (note ? `<p>Reason: ${escapeHtml(note)}</p>` : "") +
         `<p>If you believe this is a mistake, please contact your organization administrator.</p>`,
     ),
   };
@@ -217,9 +221,9 @@ const DIGEST_BODY_FONT_SIZE = "14px";
 function testTagDigestRow(item: TestTagDigestAsset): string {
   return `
     <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:13px;">${item.testTagId}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.description}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.location || "-"}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:13px;">${escapeHtml(item.testTagId)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${escapeHtml(item.description)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.location ? escapeHtml(item.location) : "-"}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${formatDate(item.nextDueDate)}</td>
     </tr>`;
 }
@@ -281,9 +285,9 @@ export function testTagDigestEmail({
     <!DOCTYPE html>
     <html>
     <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:${DIGEST_BODY_FONT_SIZE};color:#111827;max-width:640px;margin:0 auto;padding:24px;">
-      <h2 style="font-size:20px;margin:0 0 16px;">${subject}</h2>
+      <h2 style="font-size:20px;margin:0 0 16px;">${escapeHtml(subject)}</h2>
       <p style="margin:0 0 20px;color:#4b5563;">
-        The following test &amp; tag items in <strong>${orgName}</strong> require your attention.
+        The following test &amp; tag items in <strong>${escapeHtml(orgName)}</strong> require your attention.
       </p>
       ${overdueSection}
       ${dueSoonSection}

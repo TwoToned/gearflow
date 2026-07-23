@@ -18,7 +18,7 @@ import { getSiteSettingsFromConvex } from "./site-settings-read";
 import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
 import { getTheOrg } from "./single-org";
-import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL } from "./convex-auth-constants";
+import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL, JWKS_ALG } from "./convex-auth-constants";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -125,7 +125,7 @@ export const auth = betterAuth({
     // only RS256/ES256.
     jwt({
       jwks: {
-        keyPairConfig: { alg: "ES256" },
+        keyPairConfig: { alg: JWKS_ALG },
       },
       // Don't sign a JWT on every /get-session — the browser fetches /api/auth/token
       // explicitly and the server mints service tokens directly. Avoids a DB read +

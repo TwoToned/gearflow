@@ -35,6 +35,15 @@ domain entity means adding a Convex table + `*Writes.ts` mutations, not a Prisma
   `test-tag-read.ts`, `warehouse-display-token-read.ts`,
   `maintenance-record-asset-read.ts`). These bypass read-side org scoping by design
   (see the write-side FK note below).
+- **The service token itself** (`src/lib/convex-auth.ts`'s `getConvexServiceToken`) is
+  minted by `src/lib/convex-service-signer.ts` — a SEPARATE, minimal Better Auth
+  instance carrying only the `jwt` plugin, not the full `auth` instance
+  (`src/lib/auth.ts`). It signs against the same shared Postgres `jwks` table and the
+  same `BETTER_AUTH_SECRET`, so Convex's customJwt provider validates tokens from
+  either instance interchangeably; it is never mounted as an HTTP route. This split
+  exists because `auth.ts`'s hooks mirror data into Convex (which needs the service
+  token, which would need `auth.ts`) — importing the full instance from the signer
+  would be circular (POLICY.md R-3.5).
 - **Cross-domain joins that need two `*-read.ts` modules both ways** (e.g. a model
   needs its category, AND a category's counts need the org's models) live in a
   dedicated `*-join.ts` module (`model-category-join.ts`), not in either domain's

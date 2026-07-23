@@ -1,13 +1,30 @@
 /**
  * Structured, levelled logger (POLICY.md R-8.9.5). Emits one JSON line per event so
  * logs are machine-parseable and levelled; a correlation/request id is attached when
- * provided (set by middleware as `x-request-id`, threaded via `meta.requestId`).
+ * provided (set by middleware as `x-request-id`), either explicitly via
+ * `meta.requestId` or ambiently (see {@link setAmbientRequestIdGetter} below).
  *
  * Sensitive data MUST NOT be logged: keys matching SENSITIVE are redacted from `meta`
  * (defence-in-depth on top of not passing PII in the first place). Covered by
  * logger.test.ts.
  */
 type Level = "debug" | "info" | "warn" | "error";
+
+/**
+ * Server-only ambient requestId source, registered by `instrumentation.ts` at
+ * process start. Deliberately NOT a static import of `request-context.ts` — this
+ * file is isomorphic (imported by "use client" code, e.g. posthog-provider.tsx),
+ * and `request-context.ts` pulls in `node:async_hooks`, which cannot land in the
+ * browser bundle. Registering a plain function keeps `logger.ts` free of any
+ * Node-only import; on the client this just stays unset and `emit` falls back to
+ * whatever `meta.requestId` was passed explicitly (usually nothing).
+ */
+let ambientRequestIdGetter: (() => string | undefined) | undefined;
+
+/** Called once from `instrumentation.ts` (Node runtime only) to enable auto-threading. */
+export function setAmbientRequestIdGetter(getter: () => string | undefined): void {
+  ambientRequestIdGetter = getter;
+}
 
 const SENSITIVE =
   /(pass(word|phrase)?|secret|token|authorization|cookie|api[-_]?key|jwt|ssn|creditcard|email|phone|dateofbirth|dob|icaltoken)/i;
@@ -31,6 +48,12 @@ function emit(level: Level, message: string, meta?: Record<string, unknown>) {
     const scrubbed = scrub(meta) as Record<string, unknown>;
     if (scrubbed.requestId != null) record.requestId = scrubbed.requestId;
     record.meta = scrubbed;
+  }
+  // Explicit meta.requestId always wins; otherwise fall back to the ambient one
+  // set by middleware + threaded via runWithRequestId (request-context.ts).
+  if (record.requestId == null) {
+    const ambient = ambientRequestIdGetter?.();
+    if (ambient != null) record.requestId = ambient;
   }
   const line = JSON.stringify(record);
   // This IS the logger's transport; all other app logging must go through `logger.*`

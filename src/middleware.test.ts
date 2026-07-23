@@ -30,3 +30,36 @@ describe("middleware — session redirect gating", () => {
     expect(redirectsToLogin(middleware(req("/api/crew/respond/tok")))).toBe(false);
   });
 });
+
+describe("middleware — x-request-id correlation (R-8.9.5)", () => {
+  it("mints x-request-id on the response even for a public route", () => {
+    const res = middleware(req("/login"));
+    expect(res.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("mints x-request-id on the response for a public token-based route", () => {
+    const res = middleware(req("/api/calendar/tok/feed"));
+    expect(res.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("mints x-request-id even on the login-redirect response", () => {
+    const res = middleware(req("/dashboard"));
+    expect(res.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("reuses an inbound x-request-id instead of minting a new one", () => {
+    const r = req("/login");
+    r.headers.set("x-request-id", "inbound-id-123");
+    const res = middleware(r);
+    expect(res.headers.get("x-request-id")).toBe("inbound-id-123");
+  });
+
+  it("forwards x-request-id to the downstream request (readable via request.headers), not just the response", () => {
+    const res = middleware(req("/api/calendar/tok/feed"));
+    // NextResponse.next({ request }) mirrors the rewritten request headers back
+    // onto the response's `x-middleware-request-*` headers in the test/edge
+    // runtime — this is how we assert the request-side header was actually set,
+    // not just the response header.
+    expect(res.headers.get("x-middleware-request-x-request-id")).toBeTruthy();
+  });
+});

@@ -6,7 +6,10 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Correlation id for log/error tracing (POLICY.md R-8.9.5): reuse an inbound
-  // x-request-id or mint one; forwarded to server code and returned to the client.
+  // x-request-id or mint one; forwarded to server code and returned to the client
+  // on EVERY branch below (including the public/token early-returns) — a route
+  // handler that only sees the request half of a public route must still be able
+  // to read it via `headers().get("x-request-id")`.
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
 
   // CVE-2025-29927: Strip x-middleware-subrequest header to prevent middleware bypass
@@ -14,9 +17,13 @@ export function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 403 });
   }
 
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  const forwardedRequest = { headers: requestHeaders };
+
   // Allow public routes
   if (publicRoutes.some((route) => pathname.startsWith(route))) {
-    return NextResponse.next();
+    return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
   }
 
   // Allow public token-based routes (no session required)
@@ -34,7 +41,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/auditor/") ||
     pathname.startsWith("/api/cron/")
   ) {
-    return NextResponse.next();
+    return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
   }
 
   // Check for session token cookie (Better Auth uses this)
@@ -45,14 +52,17 @@ export function middleware(request: NextRequest) {
   if (!sessionToken) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(loginUrl);
+    return withRequestId(NextResponse.redirect(loginUrl), requestId);
   }
 
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-request-id", requestId);
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("x-request-id", requestId);
+  const response = NextResponse.next({ request: forwardedRequest });
   addSecurityHeaders(response);
+  return withRequestId(response, requestId);
+}
+
+/** Attach the correlation id to the outbound response (all branches, not just the authed path). */
+function withRequestId(response: NextResponse, requestId: string): NextResponse {
+  response.headers.set("x-request-id", requestId);
   return response;
 }
 

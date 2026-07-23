@@ -1,5 +1,7 @@
 # Database Schema & Data Models
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The domain schema (assets, projects, kits, crew, everything the app is *for*)
 lives in **Convex** (`convex/schema.ts`, 100+ tables) — Postgres/Prisma holds
 only Better Auth and a couple of permanent carve-outs. See

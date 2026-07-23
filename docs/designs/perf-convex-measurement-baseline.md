@@ -1,5 +1,7 @@
 # Phase 0 — Measurement Baseline & Methodology
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The autoplan review made measurement the gating Phase 0: the plan ranks fixes "by inspection"
 with no numbers, so we cannot prove the dominant cost or know when a phase has paid off. This
 doc defines **what to capture, how, and the exit targets** each later phase is measured against.

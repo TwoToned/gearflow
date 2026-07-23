@@ -1,5 +1,7 @@
 # Project Structure
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 > Directories are documented at directory-grain, not file-by-file — a
 > per-file enumeration goes stale every time a file is added, renamed, or
 > moved (which is exactly what happened to the previous version of this

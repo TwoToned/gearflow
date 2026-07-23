@@ -1,5 +1,7 @@
 # RVLT Flow — full polish sweep tracker
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Goal: every page, tab, flow polished to the RVLT design language (DESIGN.md authority +
 preview-v2 aesthetic), informed by proven patterns (Linear/Notion/Airtable/ServiceTitan/
 Jobber/Stripe + Mobbin where available). Functionality preserved. Commit per chunk;

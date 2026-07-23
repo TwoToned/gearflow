@@ -1,5 +1,7 @@
 # Search & Command Palette
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Global Search (`convex/globalSearch.ts`)
 The `search` query (called via `useGlobalSearch()`, `src/hooks/use-global-search.ts`) searches across:
 - Models (name, manufacturer, modelNumber, description) — children: assets

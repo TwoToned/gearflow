@@ -307,6 +307,9 @@ jobs:
           git fetch --no-tags --depth=100 origin main:refs/remotes/origin/main || git fetch --no-tags origin main
           pnpm run check-migration-drift
 
+      - name: Docs npm/npx contradiction check (new only, R-5.3)
+        run: pnpm run check-docs-npm-npx
+
       - name: Import-cycle check (new cycles only, R-3.5)
         run: pnpm run depcruise
 

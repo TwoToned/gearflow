@@ -1,5 +1,7 @@
 # Key Patterns & Conventions
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Convex Browser-Direct Write Pattern (the default for domain writes)
 
 Every domain write is a guarded Convex mutation, called directly from the

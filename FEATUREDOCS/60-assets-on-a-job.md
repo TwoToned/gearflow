@@ -1,5 +1,7 @@
 # 60 — Assets on a Job (per-unit display + reassign)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The project **Equipment tab** shows which specific serialised assets are
 prepped / deployed / returned on a job, down to the individual unit, and lets
 you correct which line an auto-picked asset landed on. The record survives

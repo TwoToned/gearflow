@@ -1,5 +1,7 @@
 # ADR-0003: Enforce Zod↔Convex validation single-source via a drift guard
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Status:** Accepted (2026-07-18)
 
 ## Context

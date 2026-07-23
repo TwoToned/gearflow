@@ -1,5 +1,7 @@
 # 45. Error UX
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 
 App-wide error handling that shows context, not raw exceptions. A `UserFacingError` type plus a Prisma-error translator turn database errors into structured `title + message + hint` toasts. Server actions surface readable failures; the client renders them consistently.

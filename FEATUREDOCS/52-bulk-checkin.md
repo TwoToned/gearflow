@@ -1,5 +1,7 @@
 # Bulk Check-In Totals
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 > **⚠️ UI REMOVED.** The Bulk Check-In tab was removed from the warehouse project
 > page — accessories are no longer surfaced as a separate warehouse concern (they
 > cascade silently with their parent). The backend below (`src/server/bulk-checkin.ts`,

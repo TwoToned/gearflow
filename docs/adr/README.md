@@ -1,5 +1,7 @@
 # Architecture Decision Records (ADRs)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Per POLICY.md **R-5.4**: architecture decisions are recorded here as ADRs — one decision per
 record, immutable once accepted, superseded (not edited) by a later ADR.
 

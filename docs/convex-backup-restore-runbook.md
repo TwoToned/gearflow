@@ -1,5 +1,7 @@
 # Convex Backup & Restore Runbook
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Why this exists:** the full-native migration made Convex the **sole copy** of all domain data *and* file bytes, and dropped the Postgres domain tables at cutover. There is **no other recovery path**. A scheduled backup **and a rehearsed restore drill** are the hard operational gate. See [`FEATUREDOCS/54-convex-data-layer.md`](../FEATUREDOCS/54-convex-data-layer.md) for the current data-layer overview.
 
 Prod Convex Cloud deployment: `useful-cuttlefish-334`.

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Stale npm-based instructions in `FEATUREDOCS/36-testing.md` and
+  `convex/README.md` replaced with `pnpm`/`pnpm exec convex` (R-5.3, #731).
+- 68 FEATUREDOCS/docs files were missing an `Owner`/`Last reviewed` header (R-5.5,
+  #732) — added, matching the existing README/CLAUDE.md/ARCHITECTURE.md convention.
+
+### Added
+
+- CI gate blocking new npm-based doc contradictions introduced in a PR diff
+  (`scripts/check-docs-npm-npx.mjs`, wired into the `hygiene` CI job).
+- Quarterly Sweep gate failing the workflow when a critical doc (architecture,
+  onboarding, runbooks) hasn't been reviewed within the last quarter
+  (`scripts/check-docs-review-cadence.mjs`, R-5.5 / T-14).
+
 ## [0.25.0] - 2026-07-18
 
 ### Changed

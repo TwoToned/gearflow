@@ -1,5 +1,7 @@
 # 57 — Webhooks
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Outbound, signed HTTP events so an agent or integration can **react** instead of polling.
 
 Design of record: [`docs/designs/webhooks.md`](../docs/designs/webhooks.md).

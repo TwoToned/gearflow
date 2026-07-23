@@ -1,5 +1,7 @@
 # Convex observability + kill-switch runbook
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Observability + kill switches for the public mutation surface** — every domain is
 now browser-direct, so these are load-bearing. This is the operator's reference for
 both.

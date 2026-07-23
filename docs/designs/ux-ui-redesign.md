@@ -5,6 +5,8 @@ updated: 2026-06-18
 ---
 # Plan: Full RVLT Flow UI/UX Redesign (RVLT Flow → RVLT Flow)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 
 RVLT Flow is being fully rebranded and redesigned into **RVLT Flow**: production-operations software built by a real live-events production company. This is a complete production UI/UX redesign — not a prototype, not an app-shell refresh, not a token swap. Every major page, every core flow, every reusable surface, every empty/loading/error state, every responsive breakpoint.

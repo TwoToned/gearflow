@@ -1,5 +1,7 @@
 # Suppliers & Purchase Orders
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Suppliers
 - **List page data source (2026-07, perf fix):** `SupplierTable`
   (`src/components/suppliers/supplier-table.tsx`) is server-side paginated —

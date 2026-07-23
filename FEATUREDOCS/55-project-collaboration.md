@@ -1,5 +1,7 @@
 # 55 — Project Collaboration
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Convex-backed collaboration substrate for projects: presence, edit locks, comment
 threads, review markers, blocking gates, and a realtime activity feed. Every piece
 of collaboration state persists to **Convex** (not Prisma) so it is shared and

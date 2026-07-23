@@ -1,5 +1,7 @@
 # Asset Management System
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Three Asset Types
 1. **Serialized** (`Asset`): Individually tracked, unique tag, has status lifecycle
 2. **Bulk** (`BulkAsset`): Quantity-tracked, `totalQuantity`/`availableQuantity`

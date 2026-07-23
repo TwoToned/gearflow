@@ -1,5 +1,7 @@
 # Observability: Analytics + Error Tracking (PostHog)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Single provider for product analytics, Core Web Vitals, and error tracking. PostHog replaced
 Sentry entirely (#650) — Sentry captured errors only; PostHog covers both without a second
 vendor SDK to keep PII-hardened.

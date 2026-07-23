@@ -1,19 +1,12 @@
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/auth-server";
-import { prisma } from "@/lib/prisma";
+import { isSiteAdmin } from "@/lib/admin-auth";
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireSession();
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true },
-  });
-
-  if (!user || user.role !== "admin") {
+  if (!(await isSiteAdmin())) {
     redirect("/dashboard");
   }
 

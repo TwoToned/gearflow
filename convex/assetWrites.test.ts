@@ -289,6 +289,38 @@ describe("assetWrites.createNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, purchasePrice: Number.POSITIVE_INFINITY }),
     ).rejects.toThrow(/finite/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing assetSchema.parse() in the browser
+  // hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a negative purchasePrice", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, purchasePrice: -1 }),
+    ).rejects.toThrow(/purchasePrice/);
+  });
+
+  test("rejects an assetTag over the 50-char bound", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, assetTag: "X".repeat(51) }),
+    ).rejects.toThrow(/assetTag/);
+  });
+
+  test("rejects notes over the 2000-char bound", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, notes: "x".repeat(2001) }),
+    ).rejects.toThrow(/notes/);
+  });
 });
 
 describe("assetWrites.updateNative", () => {
@@ -335,6 +367,15 @@ describe("assetWrites.updateNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNative, updArgs),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // R-8.6.2 — same bound, enforced on the `set` patch (not just createNative).
+  test("rejects a purchasePrice patch below 0", async () => {
+    const t = makeT();
+    await seedAsset(t);
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { ...updArgs, set: { ...updArgs.set, purchasePrice: -50 } }),
+    ).rejects.toThrow(/purchasePrice/);
   });
 });
 

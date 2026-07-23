@@ -39,7 +39,12 @@ const posthogHost =
 let initState: "idle" | "loading" | "ready" | "inert" = "idle";
 let initPromise: Promise<boolean> | null = null;
 
-function ensureInit(): Promise<boolean> {
+/**
+ * Exported so other client components (PostHogIdentify) can await SDK readiness
+ * before calling identify()/capture() directly, without re-implementing the
+ * init/inert/dedup state machine below.
+ */
+export function ensureInit(): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
   if (initState === "ready") return Promise.resolve(true);
   if (initState === "inert") return Promise.resolve(false);

@@ -1,5 +1,7 @@
 # Media & File Storage
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Upload Flow
 1. Client sends multipart form to `POST /api/uploads` (`src/app/api/uploads/route.ts`)
 2. Server uploads to S3 under `{orgId}/{folder}/{entityId}/{uuid}-{filename}`

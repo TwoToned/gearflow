@@ -1,5 +1,7 @@
 # Performance Deep-Dive: Why the App Is Slow & Chatty (June 2026)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Symptom (user report):** "Every tiny thing you do makes heaps and heaps of Convex DB
 calls. It's so inefficient and slow to do anything."
 

@@ -1,5 +1,7 @@
 # Universal Tags System
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Most major entities support free-form string tags stored as an `tags: v.optional(v.array(v.string()))`
 field on their Convex table (`convex/schema.ts`) — not a Postgres array anymore.
 

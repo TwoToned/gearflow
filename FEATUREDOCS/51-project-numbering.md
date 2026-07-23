@@ -1,5 +1,7 @@
 # Configurable Project Numbers (auto-incrementing codes)
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Optional, org-configurable auto-generation of project codes from a template with
 variables. Example: `%YY%MM%INC` with monthly reset → the first June 2026 project is
 `260601`, the 8th July project is `260708`. Off by default — orgs that leave the format

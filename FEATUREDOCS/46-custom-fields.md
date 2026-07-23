@@ -1,5 +1,7 @@
 # 46. Custom Fields
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 
 Operator-defined asset attributes. Define fields like rig number, firmware version, or road-case colour at `/settings/custom-fields`; they render on the asset create/edit form and detail page. Supports text, number, date, dropdown, and yes/no field types.

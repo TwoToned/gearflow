@@ -66,7 +66,7 @@ The backend + dashboard run via Docker. From the repo root:
 ```bash
 docker compose -f docker-compose.convex.yml up -d           # start
 docker compose -f docker-compose.convex.yml exec backend ./generate_admin_key.sh
-npx convex dev                                              # push schema/functions + codegen
+pnpm exec convex dev                                         # push schema/functions + codegen
 docker compose -f docker-compose.convex.yml logs -f backend # tail logs
 docker compose -f docker-compose.convex.yml down            # stop
 ```
@@ -84,6 +84,6 @@ Backend infra config (instance secret, Postgres URL, ports) lives in
 
 ## Generated code
 
-`convex/_generated/` is produced by the Convex CLI (`npx convex dev`/`codegen`).
+`convex/_generated/` is produced by the Convex CLI (`pnpm exec convex dev`/`codegen`).
 It is committed so the Next.js build and CI typecheck without a running backend.
 Don't edit it by hand; re-run codegen after changing the schema or functions.

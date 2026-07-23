@@ -1,5 +1,7 @@
 # UI Component Library
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Critical Convention: overlay primitives are **Radix**, compose with `asChild`
 After the RVLT rebrand, every overlay primitive in `src/components/ui/` —
 `Dialog`, `Sheet`, `DropdownMenu`, `Popover`, `Select`, `Tooltip` — is built on

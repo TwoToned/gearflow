@@ -1,5 +1,7 @@
 # Enterprise SSO
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Overview
 SAML 2.0 and OIDC Single Sign-On via the `@better-auth/sso` plugin. The single org can configure one or more identity providers, control how new users are provisioned, and map IdP groups to RVLT Flow roles.
 

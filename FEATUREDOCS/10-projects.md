@@ -1,5 +1,7 @@
 # Project & Rental Management
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Projects List Views (`ProjectTable`, `ProjectBoard`)
 `ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
 paginated: `projects.listPage` (filter/sort/client join done in Convex) via

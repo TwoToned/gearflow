@@ -1,5 +1,7 @@
 # Server Actions & API Routes
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Server Action Pattern
 
 Server actions are no longer where domain CRUD lives — that's Convex

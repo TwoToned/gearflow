@@ -1,5 +1,7 @@
 # Settings, Branding & Site Admin
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 ## Org Settings (`Organization.metadata` JSON)
 ```json
 {

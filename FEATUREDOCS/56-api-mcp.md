@@ -1,5 +1,7 @@
 # 56 — Agent-Accessible API + MCP
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 > **⚠️ REMOVED 2026-07-14 (dormant — to be reinstated).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
 > `src/lib/api/*` (operations registry, dispatch, MCP, OpenAPI, tool aliases,

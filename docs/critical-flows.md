@@ -1,5 +1,7 @@
 # Critical Flows
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 The E2E smoke suite (`e2e/`, Playwright) MUST cover 100% of this list, and it MUST run on
 and block every deploy (POLICY.md **R-8.8.3**). At minimum this list covers **auth** and the
 **primary revenue path**. Update this list in the same PR that adds or changes a critical flow.

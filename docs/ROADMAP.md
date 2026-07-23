@@ -1,5 +1,7 @@
 # RVLT Flow Roadmap
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 Operational roadmap for RVLT Flow, the AV/theatre rental-management platform for
 Two Toned Productions. This document sequences known work into priority phases.
 It is the parent index above the individual design docs in `docs/designs/`.

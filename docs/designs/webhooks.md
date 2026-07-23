@@ -1,5 +1,7 @@
 # Webhooks — outbound events for agents
 
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+
 **Created:** 2026-07-09
 **Driver:** An agent using the API asked for events so it could react instead of polling.
 **Related:** [`api-mcp-agent-access.md`](./api-mcp-agent-access.md), [FEATUREDOCS/56](../../FEATUREDOCS/56-api-mcp.md)

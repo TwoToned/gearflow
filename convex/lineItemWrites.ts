@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertLineMoneyFields } from "./lib/moneyGuards";
+import { assertStrLen } from "./lib/fieldGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -31,11 +32,13 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
  * SCOPE: only the writes whose logic is cleanly separable from the financial
  * orchestration. recalculateProjectTotals stays SERVER-SIDE and runs post-hoc
  * exactly as before (it already runs after the write, never inside the write
- * transaction — src/server/line-items.ts), so the totals math is byte-identical
- * and parity is preserved by construction. addLineItem is NOT here — its
- * cross-project double-booking check reads every overlapping project (Convex
- * read-limit risk in a mutation) + accessory/kit expansion is ~400 lines of
- * orchestration; it stays server-orchestrated for now.
+ * transaction), so the totals math is byte-identical and parity is preserved by
+ * construction. STALE-COMMENT FIX: this used to say "addLineItem is NOT here ... it
+ * stays server-orchestrated for now" — it since landed as `addLineItemSmartNative`
+ * below, the full in-mutation port (availability + merge-dedup + auto-pricing +
+ * accessory expansion), which is what the browser hook (use-line-item-writes.ts
+ * `add`) actually calls. `addNative` is the simpler fields-only sibling (no
+ * merge-dedup/auto-pricing), currently exercised only by tests/writeParity.
  *
  * removeNative mirrors removeLineItemCascade (convex/projectLineItems.ts) + adds the
  * child-removal guard (kit/accessory children can't be removed directly) + the DELETE
@@ -43,6 +46,20 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `lineItemSchema` (src/lib/validations/line-item.ts) string-length bounds not
+ * already covered by `assertLineMoneyFields` — `description` (max 500) and
+ * `subhireOrderNumber` (max 100). `v.string()` only enforces type, not these business
+ * constraints, so a browser-direct caller bypassing the client Zod parse would
+ * otherwise be able to write an unbounded string into either field (R-8.6.2).
+ * `customLineItemSchema`'s DIFFERENT bounds (description min 1/max 200, notes max 500)
+ * are enforced separately in `addCustomNative` — the two schemas diverge here.
+ */
+function assertLineItemFields(f: { description?: string | null; subhireOrderNumber?: string | null }): void {
+  assertStrLen(f.description, "description", { max: 500 });
+  assertStrLen(f.subhireOrderNumber, "subhireOrderNumber", { max: 100 });
+}
 
 // ─── Collaboration colour (deterministic from userId) ────────────────────────
 // Inlined from src/lib/collaboration-colors.ts getUserColor (same as
@@ -263,9 +280,14 @@ const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTA
 
 /**
  * patchNative — apply a set/clear patch to a line item + UPDATE audit, atomic.
- * RBAC(project, manage_line_items). The server action still does the availability
- * re-check (cross-project, on quantity increase) + the stale-revision guard + builds
- * set/clear; the write + audit move here. recalc stays server-side (post-write).
+ * RBAC(project, manage_line_items). STALE-COMMENT FIX: this used to say "the server
+ * action still does the availability re-check ... + the stale-revision guard + builds
+ * set/clear" — there is no server action anymore. `set`/`clear` are built client-side
+ * (`buildLineItemSetClear` in use-line-item-writes.ts) and the availability re-check on
+ * a quantity increase runs IN-mutation below. There is still NO stale-revision guard
+ * (baseUpdatedAt) on either side — edit locks remain the only defence against a
+ * lost-update race; see the hook's comment. recalc stays server-side (post-write, via
+ * a separate recalcNative call).
  */
 export const patchNative = mutation({
   returns: v.object({ projectId: v.string() }),
@@ -307,6 +329,7 @@ export const patchNative = mutation({
     assertLineMoneyFields(setObj as {
       quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
     });
+    assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string }); // R-8.6.2
 
     // lineTotal is a DERIVED value — assertLineMoneyFields only bounds it, it never
     // verifies it matches unitPrice×quantity×duration−discount. The legit client
@@ -745,6 +768,11 @@ export const addCustomNative = mutation({
     await assertProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org (see helper)
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+    // customLineItemSchema bounds (src/lib/validations/line-item.ts): description is
+    // required 1-200 chars, notes optional up to 500 — DIFFERENT from lineItemSchema's
+    // bounds (assertLineItemFields), so checked inline rather than shared.
+    assertStrLen(fields.description, "description", { min: 1, max: 200 });
+    assertStrLen(fields.notes, "notes", { max: 500 });
 
     // lineTotal is a DERIVED value — see addNative's comment for the full rationale.
     // The legit client already computes it this exact way (use-line-item-writes.ts
@@ -814,10 +842,13 @@ export const addCustomNative = mutation({
  * shared expandAccessoryChildLines, the SAME helper createLineItem uses) + CREATE
  * audit, all in one transaction. RBAC(project, manage_line_items).
  *
- * Option A: the server action keeps the cross-project availability/double-booking
- * check (reads overlapping projects — a mutation can't safely do that at scale) and
- * the price computation; it passes the resolved `fields`, and this mutation does the
- * atomic write (parent + accessory children + units) + audit. recalc stays server-side.
+ * STALE-COMMENT FIX: this used to say "the server action keeps the cross-project
+ * availability/double-booking check ... and the price computation" — that server
+ * action (createLineItem, src/server/line-items.ts) is gone. The availability/
+ * double-booking check now runs IN-mutation below (copied verbatim into
+ * addLineItemSmartNative too), and the price is whatever `fields` carries in — this
+ * mutation does the atomic write (parent + accessory children + units) + audit.
+ * recalc stays server-side (recalcNative, called by the caller after this returns).
  */
 export const addNative = mutation({
   returns: v.object({ id: v.string(), sortOrder: v.number() }),
@@ -869,6 +900,7 @@ export const addNative = mutation({
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+    assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another
     // org's; the service-token read path resolves these with no org re-check). Same
@@ -1306,6 +1338,7 @@ export const addLineItemSmartNative = mutation({
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+    assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
 
     // Org default tax rate resolved in-mutation from orgSettings (source of truth) so a
     // browser caller can't spoof it. Used by recalc on both the merge and insert paths.

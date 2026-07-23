@@ -7,6 +7,7 @@ import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
+import { assertStrLen } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -58,6 +59,44 @@ const NOTES_FIELD = v.union(
   v.literal("internalNotes"),
   v.literal("clientNotes"),
 );
+
+/**
+ * Mirrors `projectSchema` (src/lib/validations/project.ts) string-length/format bounds
+ * not already covered by `assertProjectMoneyFields` — name, projectNumber, description,
+ * the site-contact fields, and the three long-form notes fields. `v.string()` only
+ * enforces type, not these business constraints, so a browser-direct caller bypassing
+ * the client Zod parse could otherwise write an unbounded string (R-8.6.2). `null`/
+ * `undefined` fields are left untouched by the caller — `assertStrLen` skips them.
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function assertProjectFields(f: {
+  name?: string | null;
+  projectNumber?: string | null;
+  description?: string | null;
+  siteContactName?: string | null;
+  siteContactPhone?: string | null;
+  siteContactEmail?: string | null;
+  crewNotes?: string | null;
+  internalNotes?: string | null;
+  clientNotes?: string | null;
+}): void {
+  assertStrLen(f.name, "name", { min: 1, max: 200 });
+  assertStrLen(f.projectNumber, "projectNumber", { max: 50 });
+  assertStrLen(f.description, "description", { max: 2000 });
+  assertStrLen(f.siteContactName, "siteContactName", { max: 200 });
+  assertStrLen(f.siteContactPhone, "siteContactPhone", { max: 50 });
+  // No shared email-format primitive in fieldGuards.ts — small local inline check
+  // (mirrors projectSchema's `.email().max(200)`, empty string allowed — the schema's
+  // `.or(z.literal(""))` escape hatch for "no contact email set").
+  if (f.siteContactEmail != null && f.siteContactEmail !== "") {
+    if (f.siteContactEmail.length > 200 || !EMAIL_RE.test(f.siteContactEmail)) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: "siteContactEmail must be a valid email address." });
+    }
+  }
+  assertStrLen(f.crewNotes, "crewNotes", { max: 5000 });
+  assertStrLen(f.internalNotes, "internalNotes", { max: 5000 });
+  assertStrLen(f.clientNotes, "clientNotes", { max: 5000 });
+}
 
 export const updateStatusNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -154,6 +193,11 @@ export const updateNotesNative = mutation({
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
+    // projectSchema bounds crewNotes/internalNotes/clientNotes to 5000 chars — a
+    // browser-direct caller bypassing the client Zod parse would otherwise be able to
+    // write an unbounded note (R-8.6.2).
+    assertStrLen(notes, field, { max: 5000 });
+
     // `undefined` clears the field (matches the server action's notes || null).
     await ctx.db.patch(project._id, { [field]: notes ?? undefined, updatedAt: now });
 
@@ -240,9 +284,13 @@ const PROJECT_NEVER_CLEAR = new Set<string>([
 
 /**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
- * RBAC(project, update). Option A: the server action keeps Zod validation + the
- * conditional recalc (only when taxRate changes — recalc stays server-side, totals
- * identical); the write + audit move here.
+ * RBAC(project, update). STALE-COMMENT FIX: the former `updateProject` server action
+ * this mutation replaced is gone — `projectSchema.parse()` now runs client-side in
+ * `use-native-project-writes.ts` `update()` before calling this mutation directly, and
+ * the conditional recalc (only when taxRate changes) is a separate best-effort
+ * `recalcNative` call from that same hook, not a server-side step. Because a
+ * browser-direct caller can skip the client Zod parse entirely, `assertProjectMoneyFields`
+ * + `assertProjectFields` re-enforce the same bounds here, server-side (R-8.6.2).
  */
 export const updateNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -280,6 +328,20 @@ export const updateNative = mutation({
       depositPaid: typeof setObj.depositPaid === "number" ? setObj.depositPaid : undefined,
       invoicedTotal: typeof setObj.invoicedTotal === "number" ? setObj.invoicedTotal : undefined,
       defaultRentalQuantity: typeof setObj.defaultRentalQuantity === "number" ? setObj.defaultRentalQuantity : undefined,
+    });
+
+    // Bound-check the string fields projectSchema constrains (same rationale as the
+    // money bound-check above — `set` is v.any()).
+    assertProjectFields({
+      name: typeof setObj.name === "string" ? setObj.name : undefined,
+      projectNumber: typeof setObj.projectNumber === "string" ? setObj.projectNumber : undefined,
+      description: typeof setObj.description === "string" ? setObj.description : undefined,
+      siteContactName: typeof setObj.siteContactName === "string" ? setObj.siteContactName : undefined,
+      siteContactPhone: typeof setObj.siteContactPhone === "string" ? setObj.siteContactPhone : undefined,
+      siteContactEmail: typeof setObj.siteContactEmail === "string" ? setObj.siteContactEmail : undefined,
+      crewNotes: typeof setObj.crewNotes === "string" ? setObj.crewNotes : undefined,
+      internalNotes: typeof setObj.internalNotes === "string" ? setObj.internalNotes : undefined,
+      clientNotes: typeof setObj.clientNotes === "string" ? setObj.clientNotes : undefined,
     });
 
     // rentalStartDate/rentalEndDate feed the double-booking overlap check in
@@ -392,6 +454,20 @@ export const createNative = mutation({
     // See updateNative's comment — NaN here defeats the double-booking overlap check.
     assertFinite(fields.rentalStartDate, "rentalStartDate");
     assertFinite(fields.rentalEndDate, "rentalEndDate");
+
+    // Bound-check the string fields projectSchema constrains — same rationale as
+    // updateNative's assertProjectFields call.
+    assertProjectFields({
+      name: fields.name,
+      projectNumber: suppliedNumber,
+      description: fields.description,
+      siteContactName: fields.siteContactName,
+      siteContactPhone: fields.siteContactPhone,
+      siteContactEmail: fields.siteContactEmail,
+      crewNotes: fields.crewNotes,
+      internalNotes: fields.internalNotes,
+      clientNotes: fields.clientNotes,
+    });
 
     // Org-validate clientId — see updateNative's comment for the full leak scenario
     // this closes (a global by_cuid client read with no org re-check downstream).
@@ -811,6 +887,12 @@ export const duplicateNative = mutation({
     await requireOrgPermission(ctx, orgId, "project", "create");
     const actor = await resolveActor(ctx, suppliedActor);
 
+    // newProjectNumber/newName are raw client strings — unlike create()/update() in
+    // use-native-project-writes.ts, the duplicate() hook never runs them through
+    // projectSchema.parse() first, so this is the ONLY bound check either ever gets
+    // (R-8.6.2).
+    assertProjectFields({ name: newName, projectNumber: newProjectNumber });
+
     // Source project — org-checked (by_cuid is global).
     const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
     if (!source || source.organizationId !== orgId) {
@@ -1048,6 +1130,10 @@ export const saveAsTemplateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "create");
     await resolveActor(ctx, suppliedActor);
+
+    // templateNumber/templateName — same "never Zod-parsed client-side" gap as
+    // duplicateNative (see its comment); the ONLY bound check either ever gets (R-8.6.2).
+    assertProjectFields({ name: templateName, projectNumber: templateNumber });
 
     const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
     if (!source || source.organizationId !== orgId) {

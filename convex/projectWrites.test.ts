@@ -155,6 +155,19 @@ describe("projectWrites.updateNotesNative", () => {
       expect(p?.crewNotes).toBeUndefined();
     });
   });
+
+  // R-8.6.2 — projectSchema bounds crewNotes/internalNotes/clientNotes to 5000 chars;
+  // a direct-mutation caller (bypassing projectSchema.parse() in the browser hook) must
+  // still hit the same bound server-side.
+  test("rejects a notes value over the 5000-char bound", async () => {
+    const t = makeT();
+    await seedProject(t);
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.projectWrites.updateNotesNative, {
+        id: "p1", orgId: ORG, field: "internalNotes", notes: "x".repeat(5001), actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/internalNotes/);
+  });
 });
 
 describe("projectWrites.archiveNative", () => {
@@ -265,6 +278,61 @@ describe("projectWrites.updateNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { rentalStartDate: Number.NaN, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/rentalStartDate/);
   });
+
+  // R-8.6.2 — projectSchema string-length/format bounds, mirrored server-side via
+  // assertProjectFields for a direct-mutation caller that bypasses the client Zod parse.
+  test("rejects a name over the 200-char bound", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "x".repeat(201), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/name/);
+  });
+  test("rejects an empty name (min 1)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "", updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/name/);
+  });
+  test("rejects a projectNumber over the 50-char bound", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { projectNumber: "P-".padEnd(51, "9"), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/projectNumber/);
+  });
+  test("rejects a description over the 2000-char bound", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { description: "x".repeat(2001), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/description/);
+  });
+  test("rejects a malformed siteContactEmail", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "not-an-email", updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/email/i);
+  });
+  test("accepts a well-formed siteContactEmail and an empty string (no-contact escape hatch)", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "crew@example.com", updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.siteContactEmail).toBe("crew@example.com");
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
+  });
+  test("rejects crewNotes/internalNotes/clientNotes over the 5000-char bound", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { crewNotes: "x".repeat(5001), updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/crewNotes/);
+  });
 });
 
 describe("projectWrites.createNative", () => {
@@ -317,6 +385,21 @@ describe("projectWrites.createNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, invoicedTotal: -1 } as typeof cargs),
     ).rejects.toThrow(/invoiced total/i);
+  });
+  // R-8.6.2 — same string bounds as updateNative, enforced on create too.
+  test("rejects a name over the 200-char bound on create", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, name: "x".repeat(201) }),
+    ).rejects.toThrow(/name/);
+  });
+  test("rejects a projectNumber over the 50-char bound on create", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, projectNumber: "x".repeat(51) }),
+    ).rejects.toThrow(/projectNumber/);
   });
   test("rejects a cross-org clientId on create (IDOR guard)", async () => {
     const t = makeT();
@@ -710,6 +793,24 @@ describe("projectWrites.duplicateNative", () => {
       expect(p?.taxAmount).toBe(7); // 100 * 7% — NOT 100 * 99%
     });
   });
+
+  // R-8.6.2 — duplicate()'s hook (use-native-project-writes.ts) never runs
+  // newName/newProjectNumber through projectSchema.parse() at all (unlike create()/
+  // update()), so assertProjectFields is the ONLY bound check either ever gets.
+  test("rejects an oversized newName", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, { ...dupArgs, newName: "x".repeat(201) }),
+    ).rejects.toThrow(/name/);
+  });
+  test("rejects an oversized newProjectNumber", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, { ...dupArgs, newProjectNumber: "x".repeat(51) }),
+    ).rejects.toThrow(/projectNumber/);
+  });
 });
 
 describe("projectWrites.saveAsTemplateNative", () => {
@@ -790,5 +891,21 @@ describe("projectWrites.saveAsTemplateNative", () => {
     const t = makeT();
     await seedSource(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // R-8.6.2 — same "never Zod-parsed client-side" gap as duplicateNative.
+  test("rejects an oversized templateName", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, { ...tplArgs, templateName: "x".repeat(201) }),
+    ).rejects.toThrow(/name/);
+  });
+  test("rejects an oversized templateNumber", async () => {
+    const t = makeT();
+    await seedSource(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, { ...tplArgs, templateNumber: "x".repeat(51) }),
+    ).rejects.toThrow(/projectNumber/);
   });
 });

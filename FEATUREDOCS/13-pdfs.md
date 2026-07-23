@@ -31,17 +31,22 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 
 ### Vendor Boundary
 `@pdfme/generator`'s `generate()` has exactly one call site: `renderPdfTemplate()` in
-`src/lib/pdfme/generate-pdf.ts` (POLICY.md R-8.10.1). Every other generation path —
-the legacy/section pipelines in this file, `templates/call-sheet-services.ts`, and
+`src/lib/pdfme/pdf-render.ts` (POLICY.md R-8.10.1). It lives in its own module rather
+than in `generate-pdf.ts` because `generate-pdf.ts` dynamically imports
+`templates/call-sheet-services.ts` — if that file imported `renderPdfTemplate` back
+from `generate-pdf.ts` the two would form a circular dependency (caught by the
+`depcruise-ratchet` CI check). Every generation path — the legacy/section pipelines
+in `generate-pdf.ts`, `templates/call-sheet-services.ts`, and
 `/api/documents/timeline/[projectId]/route.tsx` — calls `renderPdfTemplate()` instead
 of importing `@pdfme/generator` directly. `no-restricted-imports` in
 `eslint.config.mjs` blocks direct imports of `@pdfme/generator` everywhere except
-`generate-pdf.ts` to keep it that way.
+`pdf-render.ts` to keep it that way.
 
 ### Key Files
 | File | Purpose |
 |------|---------|
-| `src/lib/pdfme/generate-pdf.ts` | Orchestrator — dual pipeline, `loadTemplate()` with brand resolution, `renderPdfTemplate()` (the single `@pdfme/generator` call site) |
+| `src/lib/pdfme/generate-pdf.ts` | Orchestrator — dual pipeline, `loadTemplate()` with brand resolution |
+| `src/lib/pdfme/pdf-render.ts` | `renderPdfTemplate()` — the single `@pdfme/generator` call site |
 | `src/lib/pdfme/section-renderer.ts` | Section-based renderer — converts `TemplateSection[]` → multi-page pdfme `Template` + `inputs` |
 | `src/lib/pdfme/section-types.ts` | Section type definitions, default settings, default section lists per doc type |
 | `src/lib/pdfme/condition-evaluator.ts` | Visibility condition evaluation (doc type filter + data conditions) |

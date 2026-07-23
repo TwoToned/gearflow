@@ -9,12 +9,10 @@
  * Template selection: templateId → org default → system default.
  * Section-based templates are preferred when available.
  */
-import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
 import { getBrandTemplateForOrg } from "@/lib/brand-templates-read";
 import { listDocumentTemplates, getDocumentTemplateById, type DocumentTemplateRow } from "@/lib/document-template-read";
-import { gearflowPlugins } from "./plugins";
-import { getPdfmeFonts } from "./fonts";
+import { renderPdfTemplate } from "./pdf-render";
 import { buildDocumentData } from "./build-document-data";
 import { getTemplateBuilder, getTtReportBuilder } from "./templates";
 import { renderSections } from "./section-renderer";
@@ -114,25 +112,6 @@ async function loadTemplate(
   } catch {
     return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };
   }
-}
-
-// ─── PDF Render (single @pdfme/generator call site) ──────────────────────────
-
-/**
- * The only call site for @pdfme/generator's `generate()` in the app (POLICY.md
- * R-8.10.1) — every PDF generation path routes through this, and
- * `no-restricted-imports` blocks importing `@pdfme/generator` anywhere else.
- */
-export async function renderPdfTemplate(
-  template: Template,
-  inputs: Record<string, string>[],
-): Promise<Uint8Array> {
-  return generate({
-    template,
-    inputs,
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
 }
 
 // ─── Main Generation ─────────────────────────────────────────────────────────

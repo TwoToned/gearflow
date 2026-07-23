@@ -7,7 +7,7 @@ import {
   buildTimelineInputs,
   DEFAULT_TIMELINE_SETTINGS,
 } from "@/lib/pdfme/templates/timeline";
-import { renderPdfTemplate } from "@/lib/pdfme/generate-pdf";
+import { renderPdfTemplate } from "@/lib/pdfme/pdf-render";
 import type { TimelineService, TimelineSettings } from "@/lib/pdfme/templates/timeline";
 
 export async function GET(

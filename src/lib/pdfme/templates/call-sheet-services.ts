@@ -12,7 +12,7 @@ import {
   type MappedCrewAssignment,
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
-import { renderPdfTemplate } from "../generate-pdf";
+import { renderPdfTemplate } from "../pdf-render";
 import { buildDocumentData } from "../build-document-data";
 import type { PageHeaderConfig, FooterConfig } from "../types";
 import type { DataTableColumn, DataTableSection } from "../plugins/gearflow-data-table";

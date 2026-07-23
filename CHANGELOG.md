@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-07-23
+
+### Fixed
+
+- Collapsed the 6 independent `User.role === "admin"` (site-admin) checks into one
+  shared guard, `src/lib/admin-auth.ts` (POLICY.md R-8.4.2 / R-8.4.4, #742, #743):
+  `requireSiteAdmin()`, `requireSiteAdminApi()`, and `isSiteAdmin()` are now the only
+  place that queries `User.role` for site-admin authorization. `src/server/site-admin.ts`,
+  `src/server/invitations.ts` (`checkIsSiteAdmin()`), and `src/app/(admin)/layout.tsx`
+  all delegate to it instead of re-implementing the check. No behavior change.
+- Extracted `shouldUseSecureCookies()` (`src/lib/cookie-security.ts`) out of
+  `src/lib/auth.ts` and added a unit test asserting the Secure-cookie gating logic
+  in both http (dev) and https (prod) modes, closing the last gap in R-8.4.5 (#744) —
+  the existing `e2e/harness-cookie-flags.spec.ts` integration test already covered
+  HttpOnly/SameSite but couldn't exercise Secure locally (no https harness).
+
 ## [0.25.1] - 2026-07-23
 
 ### Fixed

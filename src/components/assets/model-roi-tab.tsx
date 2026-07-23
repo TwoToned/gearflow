@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, Info } from "lucide-react";
 
 import { Stat } from "@/components/ui/stat";
+import { Panel } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
@@ -143,24 +144,24 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        <Panel>
           <Stat bright figure={formatCurrency(data.revenue)} label="Revenue attributed" />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat
             figure={data.fleetCost != null ? formatCurrency(data.fleetCost) : "—"}
             label={`Fleet cost (${data.unitsOwned} unit${data.unitsOwned === 1 ? "" : "s"})`}
           />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat figure={formatPayback(data.payback)} label="Paid for itself" />
-        </div>
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        </Panel>
+        <Panel>
           <Stat
             figure={data.revenuePerUnit != null ? formatCurrency(data.revenuePerUnit) : "—"}
             label="Revenue per unit"
           />
-        </div>
+        </Panel>
       </div>
 
       {data.fleetCost == null ? (
@@ -170,7 +171,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
             : "Set a replacement cost on this model to see how far it is from paying for itself."}
         </p>
       ) : (
-        <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)]">
+        <Panel>
           <div className="mb-3 flex items-baseline justify-between">
             <p className="text-card-title text-ink">Cost recovered</p>
             <p className="text-caption tabular-nums text-muted">
@@ -180,7 +181,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
             </p>
           </div>
           <PaybackBar payback={data.payback} />
-        </div>
+        </Panel>
       )}
 
       <div>

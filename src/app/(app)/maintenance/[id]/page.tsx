@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Panel } from "@/components/ui/card";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -180,17 +181,17 @@ function MaintenanceDetailContent({
             <DetailMain className="space-y-6">
               {/* Description */}
               {description && (
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <SectionHeader label="Description" />
                   <p className="mt-3 whitespace-pre-wrap text-ui-text text-ink-2">
                     {description}
                   </p>
-                </div>
+                </Panel>
               )}
 
               {/* Photos */}
               {Array.isArray(r.photos) && (r.photos as string[]).length > 0 && (
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <SectionHeader label={`Photos (${(r.photos as string[]).length})`} />
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                     {(r.photos as string[]).map((url) => (
@@ -205,11 +206,11 @@ function MaintenanceDetailContent({
                       </a>
                     ))}
                   </div>
-                </div>
+                </Panel>
               )}
 
               {/* Affected assets */}
-              <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+              <Panel padding="responsive">
                 <SectionHeader label={`Affected assets (${assetLinks.length})`} />
                 {assetLinks.length === 0 ? (
                   <p className="mt-3 py-4 text-center text-ui-text text-muted">
@@ -237,11 +238,11 @@ function MaintenanceDetailContent({
                     ))}
                   </div>
                 )}
-              </div>
+              </Panel>
 
               {/* Work details */}
               {(partsUsed || cost != null || result) && (
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <SectionHeader label="Work details" />
                   <div className="mt-3 space-y-3 text-ui-text">
                     {result && (
@@ -271,12 +272,12 @@ function MaintenanceDetailContent({
                       </div>
                     )}
                   </div>
-                </div>
+                </Panel>
               )}
 
               {/* Tags */}
               {tags.length > 0 && (
-                <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                <Panel padding="responsive">
                   <SectionHeader label="Tags" />
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {tags.map((tag) => (
@@ -286,7 +287,7 @@ function MaintenanceDetailContent({
                       </Badge>
                     ))}
                   </div>
-                </div>
+                </Panel>
               )}
             </DetailMain>
 

@@ -36,6 +36,7 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Panel } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -296,7 +297,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </TabsList>
 
                 <TabsContent value="projects" className="mt-4">
-                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <Panel padding="responsive">
                     <h3 className="t-heading mb-4 text-ink">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4" />
@@ -363,7 +364,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         getRowId={(p) => p.id}
                       />
                     )}
-                  </div>
+                  </Panel>
                 </TabsContent>
 
                 <TabsContent value="notes" className="mt-4">
@@ -375,7 +376,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </TabsContent>
 
                 <TabsContent value="files" className="mt-4">
-                  <div className="rounded-[var(--r)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+                  <Panel padding="responsive">
                     <h3 className="t-heading mb-4 text-ink">Files</h3>
                     <MediaUploader
                       entityType="client"
@@ -389,7 +390,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         await media.remove(mediaId);
                       }}
                     />
-                  </div>
+                  </Panel>
                 </TabsContent>
               </Tabs>
             </DetailMain>

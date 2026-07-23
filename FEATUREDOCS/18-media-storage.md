@@ -8,6 +8,12 @@
 3. Creates the `FileUpload` record Convex-only (`api.fileUploads.createIfMissing`) and returns it with `storageKey, url, mimeType, fileSize` — there is no Prisma `FileUpload` table anymore
 4. Entity-specific media join table created (e.g., `ModelMedia` — also Convex-only, `convex/modelMedia.ts` / `convex/mediaWrites.ts`)
 
+## Upload Response Validation
+`uploadToS3()` (`src/lib/storage.ts`) Zod-parses the Convex upload-URL response
+(`{ storageId: string }`, via `convexUploadResponseSchema`) instead of casting it —
+vendor responses are untrusted input (POLICY.md R-8.10.3), same pattern as
+`resendSendResponseSchema` in `email.ts` and `placeResultSchema` in `address-input.tsx`.
+
 ## File Proxy (`GET /api/files/[...path]`)
 - Record-based auth (replaced the old S3 org-prefixed-key path check): looks up the
   file's org via `getServeInfo(storageKey)` (`src/lib/storage.ts`, backed by the

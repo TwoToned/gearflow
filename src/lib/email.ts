@@ -87,4 +87,5 @@ export {
   passwordResetEmail,
   roleChangedEmail,
   removedFromOrgEmail,
+  testTagDigestEmail,
 } from "@/lib/email-templates";

@@ -9,10 +9,19 @@
  * unit-tested directly.
  */
 import { emailButton, emailMutedNote, emailShell } from "@/lib/email-layout";
+import { formatDate } from "@/lib/formatters";
 
 export interface EmailContent {
   subject: string;
   html: string;
+}
+
+/** A single test & tag asset row as summarised for the digest email. */
+export interface TestTagDigestAsset {
+  testTagId: string;
+  description: string;
+  nextDueDate: Date | null;
+  location: string | null;
 }
 
 const EXPIRES_7_DAYS = "This invitation expires in 7 days.";
@@ -201,4 +210,88 @@ export function ssoAccessRejectedEmail({
         `<p>If you believe this is a mistake, please contact your organization administrator.</p>`,
     ),
   };
+}
+
+const DIGEST_BODY_FONT_SIZE = "14px";
+
+function testTagDigestRow(item: TestTagDigestAsset): string {
+  return `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:13px;">${item.testTagId}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.description}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.location || "-"}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${formatDate(item.nextDueDate)}</td>
+    </tr>`;
+}
+
+const TEST_TAG_DIGEST_TABLE_HEADER = `
+    <tr style="background:#f9fafb;">
+      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Tag ID</th>
+      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Description</th>
+      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Location</th>
+      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Due Date</th>
+    </tr>`;
+
+/**
+ * Daily test & tag reminder digest, sent to org admins/owners for DUE_SOON and
+ * OVERDUE active assets. Used by `sendTestTagReminderDigests`
+ * (`src/server/test-tag-reminders.ts`).
+ */
+export function testTagDigestEmail({
+  orgName,
+  overdueAssets,
+  dueSoonAssets,
+}: {
+  orgName: string;
+  overdueAssets: TestTagDigestAsset[];
+  dueSoonAssets: TestTagDigestAsset[];
+}): EmailContent {
+  const totalOverdue = overdueAssets.length;
+  const totalDueSoon = dueSoonAssets.length;
+
+  const subject = totalOverdue > 0
+    ? `Test & Tag: ${totalOverdue} overdue item${totalOverdue !== 1 ? "s" : ""} — ${orgName}`
+    : `Test & Tag: ${totalDueSoon} item${totalDueSoon !== 1 ? "s" : ""} due soon — ${orgName}`;
+
+  let overdueSection = "";
+  if (overdueAssets.length > 0) {
+    overdueSection = `
+      <div style="margin-bottom:24px;">
+        <h3 style="color:#991b1b;font-size:16px;margin:0 0 8px;">Overdue (${totalOverdue})</h3>
+        <table style="width:100%;border-collapse:collapse;">
+          ${TEST_TAG_DIGEST_TABLE_HEADER}
+          ${overdueAssets.map(testTagDigestRow).join("")}
+        </table>
+      </div>`;
+  }
+
+  let dueSoonSection = "";
+  if (dueSoonAssets.length > 0) {
+    dueSoonSection = `
+      <div style="margin-bottom:24px;">
+        <h3 style="color:#92400e;font-size:16px;margin:0 0 8px;">Due Soon (${totalDueSoon})</h3>
+        <table style="width:100%;border-collapse:collapse;">
+          ${TEST_TAG_DIGEST_TABLE_HEADER}
+          ${dueSoonAssets.map(testTagDigestRow).join("")}
+        </table>
+      </div>`;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:${DIGEST_BODY_FONT_SIZE};color:#111827;max-width:640px;margin:0 auto;padding:24px;">
+      <h2 style="font-size:20px;margin:0 0 16px;">${subject}</h2>
+      <p style="margin:0 0 20px;color:#4b5563;">
+        The following test &amp; tag items in <strong>${orgName}</strong> require your attention.
+      </p>
+      ${overdueSection}
+      ${dueSoonSection}
+      <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">
+        This is an automated reminder from RVLT Flow. Manage your test &amp; tag schedule in the app.
+      </p>
+    </body>
+    </html>`;
+
+  return { subject, html };
 }

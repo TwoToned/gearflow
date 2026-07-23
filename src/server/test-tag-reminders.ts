@@ -2,12 +2,10 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
-import { formatDate } from "@/lib/formatters";
+import { testTagDigestEmail } from "@/lib/email-templates";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-
-const EMAIL_BODY_FONT_SIZE = "14px";
 
 /**
  * Recalculate statuses for all active test-tag assets across all orgs.
@@ -145,7 +143,7 @@ export async function sendTestTagReminderDigests(): Promise<{
 
       if (recipients.length === 0) continue;
 
-      const emailContent = buildDigestEmail({
+      const emailContent = testTagDigestEmail({
         orgName: org.name,
         overdueAssets,
         dueSoonAssets,
@@ -171,81 +169,4 @@ export async function sendTestTagReminderDigests(): Promise<{
   }
 
   return { orgsSent, emailsSent, errors };
-}
-
-// ─── Email Template ──────────────────────────────────────────────────────────
-
-function buildDigestEmail({
-  orgName,
-  overdueAssets,
-  dueSoonAssets,
-}: {
-  orgName: string;
-  overdueAssets: { testTagId: string; description: string; nextDueDate: Date | null; location: string | null }[];
-  dueSoonAssets: { testTagId: string; description: string; nextDueDate: Date | null; location: string | null }[];
-}): { subject: string; html: string } {
-  const totalOverdue = overdueAssets.length;
-  const totalDueSoon = dueSoonAssets.length;
-
-  const subject = totalOverdue > 0
-    ? `Test & Tag: ${totalOverdue} overdue item${totalOverdue !== 1 ? "s" : ""} — ${orgName}`
-    : `Test & Tag: ${totalDueSoon} item${totalDueSoon !== 1 ? "s" : ""} due soon — ${orgName}`;
-
-  const buildRow = (item: { testTagId: string; description: string; nextDueDate: Date | null; location: string | null }) => `
-    <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:13px;">${item.testTagId}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.description}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${item.location || "-"}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px;">${formatDate(item.nextDueDate)}</td>
-    </tr>`;
-
-  const tableHeader = `
-    <tr style="background:#f9fafb;">
-      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Tag ID</th>
-      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Description</th>
-      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Location</th>
-      <th style="padding:6px 8px;text-align:left;font-size:12px;color:#6b7280;border-bottom:2px solid #e5e7eb;">Due Date</th>
-    </tr>`;
-
-  let overdueSection = "";
-  if (overdueAssets.length > 0) {
-    overdueSection = `
-      <div style="margin-bottom:24px;">
-        <h3 style="color:#991b1b;font-size:16px;margin:0 0 8px;">Overdue (${totalOverdue})</h3>
-        <table style="width:100%;border-collapse:collapse;">
-          ${tableHeader}
-          ${overdueAssets.map(buildRow).join("")}
-        </table>
-      </div>`;
-  }
-
-  let dueSoonSection = "";
-  if (dueSoonAssets.length > 0) {
-    dueSoonSection = `
-      <div style="margin-bottom:24px;">
-        <h3 style="color:#92400e;font-size:16px;margin:0 0 8px;">Due Soon (${totalDueSoon})</h3>
-        <table style="width:100%;border-collapse:collapse;">
-          ${tableHeader}
-          ${dueSoonAssets.map(buildRow).join("")}
-        </table>
-      </div>`;
-  }
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:${EMAIL_BODY_FONT_SIZE};color:#111827;max-width:640px;margin:0 auto;padding:24px;">
-      <h2 style="font-size:20px;margin:0 0 16px;">${subject}</h2>
-      <p style="margin:0 0 20px;color:#4b5563;">
-        The following test &amp; tag items in <strong>${orgName}</strong> require your attention.
-      </p>
-      ${overdueSection}
-      ${dueSoonSection}
-      <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">
-        This is an automated reminder from RVLT Flow. Manage your test &amp; tag schedule in the app.
-      </p>
-    </body>
-    </html>`;
-
-  return { subject, html };
 }

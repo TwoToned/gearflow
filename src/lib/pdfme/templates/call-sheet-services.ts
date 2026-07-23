@@ -5,7 +5,6 @@
  * Columns: Crew Member, Service, Role, Call, Wrap, Notes.
  * Auto-paginates across multiple pages using gearflowDataTable.
  */
-import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import {
@@ -13,8 +12,7 @@ import {
   type MappedCrewAssignment,
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
-import { gearflowPlugins } from "../plugins";
-import { getPdfmeFonts } from "../fonts";
+import { renderPdfTemplate } from "../pdf-render";
 import { buildDocumentData } from "../build-document-data";
 import type { PageHeaderConfig, FooterConfig } from "../types";
 import type { DataTableColumn, DataTableSection } from "../plugins/gearflow-data-table";
@@ -447,14 +445,7 @@ export async function buildCallSheetFromServices(
   }
 
   // 9. Generate PDF
-  const pdf = await generate({
-    template,
-    inputs,
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, inputs);
 }
 
 /** Format date as "Monday, 7 April 2026" */

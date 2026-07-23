@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { generate } from "@pdfme/generator";
 import { requireOrganization } from "@/lib/auth-server";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import { buildDocumentData } from "@/lib/pdfme/build-document-data";
@@ -8,8 +7,7 @@ import {
   buildTimelineInputs,
   DEFAULT_TIMELINE_SETTINGS,
 } from "@/lib/pdfme/templates/timeline";
-import { gearflowPlugins } from "@/lib/pdfme/plugins";
-import { getPdfmeFonts } from "@/lib/pdfme/fonts";
+import { renderPdfTemplate } from "@/lib/pdfme/pdf-render";
 import type { TimelineService, TimelineSettings } from "@/lib/pdfme/templates/timeline";
 
 export async function GET(
@@ -81,12 +79,7 @@ export async function GET(
 
     const { inputs, template } = buildTimelineInputs(data, timelineServices, settings);
 
-    const pdf = await generate({
-      template,
-      inputs,
-      plugins: gearflowPlugins,
-      options: { font: getPdfmeFonts() },
-    });
+    const pdf = await renderPdfTemplate(template, inputs);
 
     const filename = `Timeline-${data.project_number}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

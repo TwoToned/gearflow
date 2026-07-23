@@ -177,7 +177,7 @@ const eslintConfig = [
     // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
     // (Convex — two runtimes, one adapter each); PostHog → posthog-provider.tsx (client)
     // or posthog-server.ts (server) — the sanctioned error/analytics capture boundary
-    // (§8.9/§8.10).
+    // (§8.9/§8.10); pdfme → src/lib/pdfme/pdf-render.ts (single `generate()` call site).
     files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
     ignores: [
       "src/lib/maps-sdk.ts",
@@ -185,6 +185,7 @@ const eslintConfig = [
       "convex/emailActions.ts",
       "src/components/providers/posthog-provider.tsx",
       "src/lib/posthog-server.ts",
+      "src/lib/pdfme/pdf-render.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -208,6 +209,11 @@ const eslintConfig = [
             {
               name: "posthog-node",
               message: "Use the server adapter (src/lib/posthog-server.ts) (R-8.10.1).",
+            },
+            {
+              name: "@pdfme/generator",
+              message:
+                "Use the PDF adapter (src/lib/pdfme/pdf-render.ts renderPdfTemplate) (R-8.10.1).",
             },
           ],
         },

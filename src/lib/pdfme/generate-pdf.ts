@@ -9,12 +9,10 @@
  * Template selection: templateId → org default → system default.
  * Section-based templates are preferred when available.
  */
-import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
 import { getBrandTemplateForOrg } from "@/lib/brand-templates-read";
 import { listDocumentTemplates, getDocumentTemplateById, type DocumentTemplateRow } from "@/lib/document-template-read";
-import { gearflowPlugins } from "./plugins";
-import { getPdfmeFonts } from "./fonts";
+import { renderPdfTemplate } from "./pdf-render";
 import { buildDocumentData } from "./build-document-data";
 import { getTemplateBuilder, getTtReportBuilder } from "./templates";
 import { renderSections } from "./section-renderer";
@@ -162,13 +160,7 @@ export async function generatePdf(
       loaded.brandFooterSecondLine || undefined,
     );
 
-    const pdf = await generate({
-      template,
-      inputs,
-      plugins: gearflowPlugins,
-      options: { font: getPdfmeFonts() },
-    });
-    return pdf;
+    return renderPdfTemplate(template, inputs);
   }
 
   // 4. Legacy pipeline (fallback) — pass the same merged settings.
@@ -182,14 +174,7 @@ export async function generatePdf(
     template = buildTemplate(settings);
   }
 
-  const pdf = await generate({
-    template,
-    inputs: [inputs],
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, [inputs]);
 }
 
 /**
@@ -325,14 +310,7 @@ export async function generatePdfFromSections(
     footerSecondLine,
   );
 
-  const pdf = await generate({
-    template,
-    inputs,
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, inputs);
 }
 
 /**
@@ -348,14 +326,7 @@ export async function generatePdfFromData(
   const template = buildTemplate();
   const inputs = buildInputs(data, callSheetDate);
 
-  const pdf = await generate({
-    template,
-    inputs: [inputs],
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, [inputs]);
 }
 
 /**
@@ -372,14 +343,7 @@ export async function generatePdfFromSettings(
   const template = buildTemplate(settings);
   const inputs = buildInputs(data, callSheetDate, settings);
 
-  const pdf = await generate({
-    template,
-    inputs: [inputs],
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, [inputs]);
 }
 
 /**
@@ -401,12 +365,5 @@ export async function generateTestTagReport(
   const template = buildTemplate();
   const inputs = buildInputs(reportData, orgData);
 
-  const pdf = await generate({
-    template,
-    inputs: [inputs],
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
-  return pdf;
+  return renderPdfTemplate(template, [inputs]);
 }

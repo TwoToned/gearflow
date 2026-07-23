@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-07-23
+
+### Fixed
+
+- Closed all three POLICY.md §3 DRY/modularity audit findings (#817, #818, #819):
+  - The client-side site-admin nav/badge checks in `user-nav.tsx` and
+    `account/page.tsx` (3 inline `role === "admin"` comparisons) now go through
+    a shared, client-safe `isSiteAdminRole()` helper (`src/lib/admin-role.ts`),
+    also adopted by the server-side `admin-auth.ts` guard (R-3.1).
+  - Added a complexity ratchet (`scripts/complexity-ratchet.mjs`, wired into
+    the CI `hygiene` job) so the warn-only `complexity` ESLint rule can no
+    longer silently regress — the violation count is now blocking on any
+    increase over the committed baseline, mirroring the existing
+    any-ratchet/knip-ratchet/collect-ratchet pattern (R-3.6).
+  - Added `docs/glossary.md` documenting core domain terms and the one
+    intentional alias (`client` vs WooCommerce's `customer_*` payload fields)
+    (R-3.10).
+
 ## [0.25.3] - 2026-07-23
 
 ### Fixed

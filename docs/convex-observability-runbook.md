@@ -34,14 +34,13 @@ docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
   Functions/Health gives per-function call volume, error rate, and latency
   percentiles for every query/mutation/action. This is the source of truth for the
   mutation-surface health signal.
-- **Cron/job failure alerting (R-8.9.1) — wired.** `convex/lib/errorReporting.ts`'s
+- **Cron/job failure alerting (R-8.9.1) — wired and live.** `convex/lib/errorReporting.ts`'s
   `reportConvexJobError` forwards every `scheduledJobs.ts` cron-executor failure
   (`invokeCronRoute` — covers both `runNotificationEmails` and
   `runTestTagReminders`) to PostHog as a `$exception` event, before re-throwing so
-  the Convex dashboard's own cron-run log still records it too. Requires
-  `POSTHOG_KEY` set on the **Convex** deployment (`pnpm exec convex env set
-  POSTHOG_KEY <phc_...>` — the same public write-only key `NEXT_PUBLIC_POSTHOG_KEY`
-  uses; separate from the Next.js `.env`). Inert until that's set.
+  the Convex dashboard's own cron-run log still records it too. `POSTHOG_KEY` is
+  set on the **Convex** deployment (2026-07-23; the same public write-only key
+  `NEXT_PUBLIC_POSTHOG_KEY` uses; separate from the Next.js `.env`).
   **Scope note:** this covers the two durable cron executors, not every one of the
   43 `*Writes.ts` domain mutation modules — a blanket log-stream (below) still adds
   value for full function-level coverage.
@@ -70,21 +69,33 @@ docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
   need threading a trace id through every query/mutation's args, which is out of
   scope here.
 - **PostHog dashboards/insights/alerts, owner: Jayden Nawotka.** Covers the CWV
-  (T-7), slow_query (T-9), convex_op_latency (T-P6), queue_lag (T-P7), and
-  crash-free-sessions (T-13) insights/alerts referenced from README.md's budget
-  registry.
+  (T-7), slow_query (T-9), convex_op_latency (T-P6), and crash-free-sessions
+  (T-13) insights/alerts referenced from README.md's budget registry.
+
+## Alert slots (5-alert plan cap)
+
+The project's PostHog plan caps alerts at 5. Current allocation (2026-07-23):
+
+| Alert | Threshold | Registered as |
+|---|---|---|
+| CWV combined ratio — INP+CLS | > 1.0 (consolidated, #656) | T-7 |
+| LCP p75 | > 2000ms | T-7 |
+| slow_query p95 | > 1000ms | T-9 |
+| convex_op_latency p95 | > 1000ms | T-P6 |
+| **Crash-free sessions** | **< 99.5%** | **T-13** |
+
+**Retired 2026-07-23:** the T-P7 `queue_lag p95 above 300000ms` alert was deleted to free
+the slot the T-13 alert now uses — it had never fired (zero incidents) and was the
+narrowest/most internal of the five (webhook-delivery backlog vs. the others' active or
+product-facing signals). The underlying `queue_lag` PostHog event and structured log line
+(`src/lib/queue-lag-timing.ts`) are untouched — queue lag is still measured and visible,
+just no longer auto-alerting. To restore it: create an alert on the existing
+`"queue_lag p95 duration (T-P7, R-9.10, #623)"` insight, condition `absolute_value`, bounds
+`{upper: 300000}`, type `absolute`, `TrendsAlertConfig` `series_index: 0` — after freeing
+another slot or upgrading the plan.
 
 ## Remaining ops steps (not code)
 
-1. Set `POSTHOG_KEY` on the Convex deployment so the cron-failure forwarding above
-   actually sends (currently inert — no key set yet).
-2. Optionally wire the Convex dashboard **log stream → PostHog/Slack** for
-   full function-level (not just cron) failure coverage — needs interactive
-   dashboard access.
-3. **Crash-free-sessions alert (T-13) is blocked on PostHog's 5-alert plan cap** —
-   the insight ("Crash-free sessions (T-13)", id 10376263) is created and ready,
-   but the project's PostHog plan already has 5/5 alert slots used (CWV combined,
-   LCP, slow_query, convex_op_latency, queue_lag). Either upgrade the plan or
-   retire/consolidate an existing alert to free a slot, then create the alert:
-   condition `absolute_value`, bounds `{lower: 99.5}`, type `absolute`,
-   `TrendsAlertConfig` `series_index: 0` (the formula series).
+Optionally wire the Convex dashboard **log stream → PostHog/Slack** for full
+function-level (not just cron) failure coverage — needs interactive dashboard
+access. Everything else from the 2026-07-22 §8.9 audit (#776) is done.

@@ -133,9 +133,10 @@ function-level log-stream (needs interactive Convex dashboard access).
 
 A "Crash-free sessions (T-13)" PostHog insight (id `10376263`) computes
 `(1 - unique_session($exception) / unique_session($pageview)) * 100` — the README.md R-0.4
-budget registry's ≥99.5% floor. **The paired threshold alert could not be created**: the
-project's PostHog plan is at its 5-alert cap. See `docs/convex-observability-runbook.md` for the
-exact alert config to add once a slot frees up.
+budget registry's ≥99.5% floor, with a paired alert (fires below 99.5%). Created 2026-07-23
+after retiring the never-fired T-P7 `queue_lag` alert to free a slot under the project's
+5-alert PostHog plan cap — see `docs/convex-observability-runbook.md` for the full slot
+allocation and how to restore the queue_lag alert.
 
 ## Env vars
 
@@ -151,6 +152,7 @@ See `CLAUDE.md` → Environment Variables → Analytics + error tracking.
   build to close out #650.
 - v4 (this doc, #776): `x-request-id` correlation fixed to cover every middleware branch and
   auto-thread into `logger.*`/`onRequestError`; `posthog.identify()` wired to the org-membership
-  cuid with sign-out reset; Convex cron/job failures forwarded to PostHog; Convex-op telemetry
-  correlated with the originating request id; crash-free-sessions (T-13) insight created
-  (alert blocked on the PostHog plan's 5-alert cap — see the runbook).
+  cuid with sign-out reset; Convex cron/job failures forwarded to PostHog (`POSTHOG_KEY` set on
+  the Convex deployment 2026-07-23); Convex-op telemetry correlated with the originating request
+  id; crash-free-sessions (T-13) insight + alert created, after retiring the never-fired T-P7
+  `queue_lag` alert to free a slot under the PostHog plan's 5-alert cap.

@@ -10,15 +10,17 @@ and block every deploy (POLICY.md **R-8.8.3**). At minimum this list covers **au
 `.github/workflows/ci.yml`: Postgres service + Playwright chromium against a dummy Convex URL)
 with a functional smoke **and** an axe a11y check (R-8.1.7). Flows 2 and 5-9 (the primary
 revenue path) are covered by seeded-harness specs (`e2e/harness-*.spec.ts`,
-`docs/e2e-harness.md`) that run in the **`e2e-harness` job**, currently `continue-on-error:
-true` pending a green run on a real GitHub-hosted runner (the docker-in-CI networking path
-hasn't been exercised there yet — see that job's comment in `ci.yml`). Flows 3, 4, and 10 (as a
-standalone flow) remain unwritten.
+`docs/e2e-harness.md`) — verified passing locally, but the **`e2e-harness` CI job is
+temporarily removed** (2026-07-23) after the docker-in-CI networking path (self-hosted Convex
+container → app JWKS endpoint via `host.docker.internal`) never went green on a GitHub-hosted
+runner; it ran `continue-on-error: true` and consistently failed with no gating value, so it
+was pulled rather than left red. Registered as a dated exception (`docs/exceptions.md`,
+R-8.8.3). Flows 3, 4, and 10 (as a standalone flow) remain unwritten.
 
 | # | Flow | Steps | E2E coverage |
 |---|------|-------|--------------|
 | 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in entry form (+ axe a11y, zero serious/critical WCAG 2 A/AA) | ✅ `e2e/smoke.spec.ts`, `e2e/a11y.spec.ts` (CI-gated, blocking) |
-| 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | ✅ `e2e/harness-auth.spec.ts` (`E2E_HARNESS=1`, `e2e-harness` CI job, non-blocking pending a verified green run) |
+| 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | ✅ `e2e/harness-auth.spec.ts` (`E2E_HARNESS=1`; passes locally, `e2e-harness` CI job temporarily removed — see status above) |
 | 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ⬜ pending |
 | 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ⬜ pending |
 | 5 | **Create a project** (revenue path) | New project with a client → saved, visible in list | ✅ `e2e/harness-revenue-path.spec.ts` (name-only project; client is optional so this run skips it) |
